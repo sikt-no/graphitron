@@ -1,7 +1,7 @@
 ---
 id: R645
 title: "Admit projected @reference and @externalField leaves at nested depth under NestingField"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -142,147 +142,76 @@ widens. The two are separable commits but not separable items, because the valid
 independent motivation until a leaf with real per-variant checks is admitted at nested depth, and
 the widening is unsafe without it.
 
-## Implementation
+## What landed
 
-### 1. Run per-variant validation at nested depth
+All of it, in `GraphitronSchemaValidator` plus tests at three tiers. Full reactor build green
+(`mvn install -Plocal-db`), which covers the execution tier against a live PostgreSQL.
 
-In `GraphitronSchemaValidator`, `walkNestedVariantsForImplementation` should route each
-non-`NestingField` leaf through the same per-variant arm that `validateField`'s switch selects,
-not just the two implementedness checks. Preferred shape: extract the switch body into a
-`validateVariantSpecific(field, types, errors)` helper that both the top-level walk and the nested
-walk call, so the two sites cannot drift again. A two-case special form for just the newly admitted
-leaves would reintroduce exactly the shadowing this item exists to remove.
+### Per-variant validation now runs at nested depth
 
-The fallout this raises was measured at the Spec review rather than left to the implementer;
-see "Measured fallout" below. It is not empty, and it lands inside this item rather than splitting
-out of it.
+`validateField`'s body became `validateVariantSpecific(field, schema, types, nestedAnchor, errors)`:
+the two guards, the dispatch switch, and the three cross-cutting checks. Three sites call it, so
+none can validate a leaf less than another does: the top-level field walk, the nested walk (renamed
+`walkNestedVariants`, since it is no longer implementedness-only), and `validatePivotSpec`'s slot
+walk. `validateVariantIsImplemented` moved inside the shared helper, so the nested walk no longer
+calls it separately and nothing double-reports.
 
-Two remaining decisions to record in the diff rather than let the refactor answer by accident:
+The decisions the spec asked to be recorded rather than answered by accident, each stated in the
+helper's javadoc where the reader meets the code:
 
-- **The cross-cutting checks around the switch.** `validateField` also runs
-  `validatePaginationRequiresOrdering`, `validateListRequiresOrdering` and
-  `validateVariantIsImplemented`. `validateVariantIsImplemented` already runs in the nested walk, so
-  do not double-report it. The two ordering checks produced zero fallout in the measurement, so the
-  question is purely whether they *belong* at nested depth (they read
-  `SqlGeneratingField.pagination()` / `orderBy()`, which nested `TableField` leaves do carry), not
-  what they would break. Decide and say so.
-- **The two guards ahead of the switch.** `validateField` opens with a site-level reentry
-  implementedness guard (no current leaf can fire it) and an array-typed-DataLoader-key guard on
-  `BatchKeyField`. The latter is live for a leaf already admitted at nested depth:
-  `BatchedTableField` implements `BatchKeyField`, so a nested batched leaf keyed on an array column
-  mis-batches silently today. Extracting only the switch body leaves that hole open. It produced no
-  fallout, which means only that no fixture carries an array-typed key column. Either pull the guard
-  into the shared helper or state why it stays behind.
+- **The cross-cutting checks belong at nested depth**, so they moved in whole.
+  `validatePaginationRequiresOrdering` / `validateListRequiresOrdering` read
+  `SqlGeneratingField.pagination()` / `orderBy()`, which nested `TableField` and `BatchedTableField`
+  leaves genuinely carry; a paginated nested leaf with no ordering encodes a cursor over nothing
+  exactly as at ordinary depth. The authoring surface exists there, so the check does.
+- **Both guards moved in too.** The array-typed DataLoader-key guard was the live hole the spec
+  predicted: `BatchedTableField` implements `BatchKeyField` and its Table-sourced arm is already
+  admitted under a nesting field, so a nested batched leaf keyed on an array column mis-batched
+  silently. The reentry guard fires on no current leaf at any depth; running it uniformly is what
+  keeps that true as arms land, which is the guard's job.
+- **The `ColumnBackedField` false positive: the anchor is threaded, not a `nested` flag.**
+  `validateVariantSpecific` takes the enclosing `NestingField`'s
+  `ReturnTypeRef.TableBoundReturnType` (null at ordinary depth) and hands it to
+  `validateColumnBackedField`, which skips the parent-type gate when it is present. The two options
+  are equivalent in effect, since `TableBoundReturnType` is table-bound by construction; the anchor
+  wins because it states *why* at the call site and because it is the object the next arm to be
+  widened will want. `validateServiceTableField` (fails open) and `validateRecordReadField` (would
+  false-positive the same way) are untouched, per the spec: both their leaves are outside the
+  nested-wireable set, so they stay notes for whoever widens next.
+- **The shadowed nesting-field check is closed.** `validateNestingField` split into
+  `validateNestingFieldShape` (the list-cardinality rejection) plus the walk; the walk applies the
+  shape check at every level and does *not* route nesting fields through the dispatch switch, which
+  would re-enter the walk and double-report the subtree.
 
-#### Measured fallout
+Measured fallout on the real run: exactly the two predicted `NodeIdEncodeKeys` canaries in
+`NestingFieldValidationTest`, nothing else, in the `graphitron` module (3377 tests) or in
+`graphitron-sakila-example`. The spec's 18 `ColumnBackedField` rows never materialised because the
+anchor fix landed in the same commit.
 
-Method: `walkNestedVariantsForImplementation` routed each non-`NestingField` leaf through
-`validateField`, predicate untouched, errors collected into a throwaway list so nothing failed;
-`mvn test -pl :graphitron -DexcludedGroups=execution`, 3375 tests green; reverted. This covers every
-schema the `graphitron` module's own tests validate. It does *not* cover `graphitron-sakila-example`'s
-`schema.graphqls`, which is validated in that module's build; re-measure there before trusting the
-count as total.
+### `isNestedWireableLeaf` widened, javadoc repaired
 
-20 rows, two kinds, no third:
+`ColumnBackedReferenceField` and `ComputedField` arms added, the former ungated on compaction (a
+comment at the arm says why). The javadoc's "expanding this predicate requires the corresponding
+generator-side change" sentence is replaced by what the spike established: the projected leaves
+reach nested depth through a per-anchor projection unit and a parent-independent alias read, so
+admitting one is a validator question; the class-backed and record-sourced leaves are the ones that
+need emit arms. The `BatchedTableField` source-shape paragraph is kept.
 
-| Arm | Rows | Distinct coordinates | Verdict |
-|---|---|---|---|
-| `validateColumnBackedField` "@column is not valid on a non-table-backed type" | 18 | 8 | false positive, blocks step 1 |
-| `validateColumnBackedReferenceField` `NodeIdEncodeKeys` deferral | 2 | 2 | expected; the predicted canary |
+### Tests
 
-**The `ColumnBackedField` rows are the finding.** `validateColumnBackedField` gates on
-`types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType`. A nested leaf's
-`parentTypeName()` is the nesting type, which classifies as `NestingType`, so routing the plain
-nested scalar (the most common nested leaf there is: `FilmDetails.title`, `TranslatedTexts.nb`)
-through its own arm rejects it as invalid schema. The arm is correct at ordinary depth and wrong at
-nested depth, because it reads table-boundness off the immediate parent type when the nesting type
-inherits its table context from the anchor.
-
-So step 1 cannot land as a pure extraction. The per-variant arms were written on the assumption that
-the immediate parent type is the table-bound anchor, and the nested walk falsifies it. Fix inside
-this item: the walk already holds the `NestingField`'s `ReturnTypeRef.TableBoundReturnType` at every
-level, so thread the inherited table context down and have the arm check *that* rather than
-`parentTypeName()`. A `nested` flag that skips the gate is sound too (a classified nested column leaf
-only exists under a table-bound nesting return type, which is the guarantee the gate is reaching
-for), and is the smaller diff; threading the anchor is the more honest check. Either is fine, pick one
-and say why. What is not fine is splitting it out: it is caused by step 1, so step 1 does not ship
-without it.
-
-Two adjacent reads on the same pattern, neither triggered here, both worth a glance while in the
-area: `validateServiceTableField` early-returns on a non-table parent (fails open at nested depth
-rather than false-positiving) and `validateRecordReadField` would false-positive the same way. Both
-leaves are outside the nested-wireable set, so they are notes for whoever widens next, not work here.
-
-#### One more shadowed check, same family
-
-`walkNestedVariantsForImplementation` recurses into a nested `NestingField`'s `nestedFields()`
-without ever calling `validateNestingField` on the nesting field itself, so the list-cardinality
-rejection ("list cardinality on a plain-object nesting field is not supported") fires only at the
-top level. A list-shaped nesting type nested inside another nesting type is unchecked today. That is
-the same shadowing this item exists to remove, and the routing shape prescribed above ("each
-non-`NestingField` leaf") preserves it. Close it here: apply the nesting field's own non-walk checks
-at each level, taking care not to re-enter the walk and double-report the subtree. Add a unit case
-alongside the existing `Film.tags` one, at depth two.
-
-`validatePivotSpec`'s slot walk is a third site running implementedness alone. `PivotSlotField`'s
-arm is empty so there is no fallout, but "so the two sites cannot drift again" is really three; route
-it through the shared helper too, or note the exemption.
-
-### 2. Widen `isNestedWireableLeaf`
-
-Add `ChildField.ColumnBackedReferenceField` and `ChildField.ComputedField` arms returning `true`.
-
-Do **not** gate the `ColumnBackedReferenceField` arm on `CallSiteCompaction.Direct`. Step 1 makes
-`validateColumnBackedReferenceField` fire at nested depth, and it rejects `NodeIdEncodeKeys` on its
-own account with a message that names the actual missing capability ("requires JOIN-with-projection
-emission"). A compaction gate in the predicate would re-shadow that with the vaguer "is not yet
-supported under NestingField", which is the shape of mistake this item is unwinding.
-
-### 3. Repair the predicate's javadoc
-
-Replace the "Expanding this predicate requires the corresponding generator-side change" sentence
-with what the spike established: the projected leaves reach nested depth through a per-anchor
-projection unit and a parent-independent alias read, so admitting one is a validator question,
-while the class-backed and record-sourced leaves are the ones that need emit arms. Keep the
-`BatchedTableField` source-shape paragraph, which is still exactly right and is the reason the
-predicate is a predicate rather than a class set.
-
-## Tests
-
-**Pipeline tier** (`GraphitronSchemaBuilderTest`, following R23's pattern): a fixture that
-classifies a nesting type carrying both leaves and validates clean.
-
-**Unit tier** (`NestingFieldValidationTest`). The two existing cases do not invert, and that is the
-point. `DEFERRED_NESTED_COMPOSITE_REFERENCE` and `DEFERRED_NESTED_COMPOSITE_INSIDE_NESTED_NESTING`
-both build a `NodeIdEncodeKeys` carrier, so their expected message moves from
-"ColumnBackedReferenceField is not yet supported under NestingField" to the
-`validateColumnBackedReferenceField` deferral, not to "no error". The measurement confirmed the
-replacement text for both coordinates ("ColumnBackedReferenceField NodeIdEncodeKeys (rooted-at-parent
-NodeId reference) not yet implemented", then the JOIN-with-projection clause), and that nothing else
-fired on those two fixtures. Those two assertions are the canary for step 1: had only step 2 landed they would have gone green with no error and the
-generator would then crash on the same fixture. Call that out in the diff so a reviewer reads the
-change as a shadowing fix rather than a message tweak. Add alongside them:
-
-- a `Direct`-compaction `ColumnBackedReferenceField` under a nesting type, expecting no error;
-- a `ComputedField` under a nesting type, expecting no error;
-- a `ComputedField` with a non-empty `joinPath` under a nesting type, expecting the
-  `validateComputedField` lift-form deferral. This is the case the spike watched emit silently
-  wrong SQL, so it is the highest-value regression guard in the file.
-
-**Execution tier** (`graphitron-sakila-example`): a nesting type on `Film` carrying a `@field` +
-`@reference` scalar and an `@externalField` leaf, queried alongside the same two leaves declared
-flat on `Film`, asserting the nested and flat values agree. Include an aliased duplicate selection
-(`a: languageName`) to pin the `__rk_<resultKey>` read, and one level of nesting inside nesting.
-All three passed in the spike, so this tier pins verified behaviour rather than exploring.
-
-**Census.** `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` should need no
-edit. `ColumnBackedReferenceField` sits in `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` and
-outside `TypeFetcherGenerator.IMPLEMENTED_LEAVES`, landing in the derived projected bucket where
-the already-admitted `TableField` sits; `ComputedField` is in both sets, one of the dual-arm kinds
-the census pins explicitly (its `generateTypeSpec` arm is a no-op, since `IMPLEMENTED_LEAVES`
-membership means "no `stub(f)` call", not "emits a method"). Neither set keys on nested-depth
-wireability. This reading was taken from source and the spike build ran `-Pquick`, which skips
-tests, so confirm it with a real run rather than inheriting the claim.
+- **Unit** (`NestingFieldValidationTest`): the two `NodeIdEncodeKeys` cases keep asserting an error,
+  with the message moved to `validateColumnBackedReferenceField`'s own deferral; a comment at the
+  cases spells out that they are the canary for the validator half, not a message tweak. Added: a
+  `Direct` reference leaf and a `ComputedField` under a nesting type (no error), a `ComputedField`
+  carrying a `joinPath` (the lift-form deferral, the case the spike watched emit silently wrong
+  SQL), and a list-shaped nesting type at depth two.
+- **Pipeline** (`GraphitronSchemaBuilderTest.nestedProjectedLeaves_referenceAndExternalField_classifyAndValidateClean`):
+  a nesting type carrying both leaves, asserting the classification and that validation is clean.
+- **Execution** (`GraphQLQueryTest.nestingField_projectedLeaves_agreeWithTheirFlatSiblings`, over
+  the new `Film.projected`): both leaves nested, asserted equal to their flat `Film` siblings, with
+  an aliased duplicate selection and a second level of nesting.
+- **Census**: `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` needed no
+  edit, confirmed by a real test run rather than inherited from the `-Pquick` spike.
 
 ## Scoping decisions, resolved
 
