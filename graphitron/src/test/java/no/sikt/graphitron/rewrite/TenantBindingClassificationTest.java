@@ -86,7 +86,7 @@ class TenantBindingClassificationTest {
                 title: String
                 mountedPrincipal: String @service(service: {
                     className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "principalOf",
+                    method: "principalOfBatch",
                     argMapping: "identity: $session"
                 })
             }

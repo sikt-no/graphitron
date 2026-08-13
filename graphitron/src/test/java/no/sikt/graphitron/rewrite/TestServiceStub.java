@@ -66,6 +66,17 @@ class TestServiceStub {
     }
 
     /**
+     * The batched-child sibling of {@link #principalOf}: a Sources parameter keyed on the
+     * parent's record, for {@code $session} classification tests on a table-backed parent
+     * (a child service without a Sources parameter is rejected).
+     */
+    public static java.util.Map<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, String> principalOfBatch(
+            java.util.Set<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> films,
+            org.jooq.DSLContext dsl, String identity) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Fixture: {@code @service} with one {@code Long userId} contextArgument; the
      * {@code userId} name shares with {@link #getRatingByUser} but the Java type is {@code Long},
      * not {@code String} — exercises the ContextArgumentClassifier's ServiceField harvest
