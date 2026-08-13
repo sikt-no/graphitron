@@ -33,6 +33,15 @@ list and the per-parent reconciliation
 target against the decomposed facts and the collapsed leaf set when this reaches Spec, rather than
 against the pre-R431/R432 shapes named here.
 
+Cross-link (added 2026-08-13): R645
+(`nested-depth-projected-reference-and-computed-leaves`) covers the sibling gate
+`GraphitronSchemaValidator.isNestedWireableLeaf`, which rejects `ColumnBackedReferenceField` and
+`ComputedField` at nested depth regardless of how many parents share the nesting type. The two gates
+are independent: admitting a variant at nested depth does not admit it across shared parents, which
+is why the multi-parent `ComputedField` shape R645 measured downstream lands on *this* item's
+catch-all rather than on R645's. R645 also carries a reading of the `LookupTableField` question
+below (the leaf no longer exists in the model), which should be resolved here rather than left open.
+
 Open re-scoping question carried over from R23: `LookupTableField` moved into
 `TypeFetcherGenerator.PROJECTED_LEAVES` alongside `TableField`, so it may be emitter-safe across
 parents by the same argument R23 used for `TableField` (each parent's `$fields` emits its own
