@@ -124,7 +124,7 @@ class TenantFanOutFetcherPipelineTest {
             // stashed under the carrier's own graphitron-owned key.
             .contains("newExecutionInput(org.jooq.DSLContext defaultDsl,\n"
                 + "      java.util.Collection<java.lang.Integer> fanOutTenants)")
-            .contains("newOwnedExecutionInput(java.lang.String claims,\n"
+            .contains("newOwnedExecutionInput(\n"
                 + "      java.util.Collection<java.lang.Integer> fanOutTenants)")
             .contains("java.util.Objects.requireNonNull(fanOutTenants, \"fanOutTenants\")")
             .contains("b.put(fake.code.generated.schema.TenantConnections.FAN_OUT_TENANTS_KEY, fanOutTenants);");

@@ -117,27 +117,26 @@ class GraphitronFacadeGeneratorTest {
     // ===== newOwnedExecutionInput (owned-connection path) =====
 
     @Test
-    void newOwnedExecutionInput_emptySchemaTakesSingleStringClaimsParameter() {
+    void newOwnedExecutionInput_emptySchemaTakesNoParameters() {
+        // No leading claims parameter exists any more: a configured mount's payload parameters
+        // are ordinary contextArguments, so a schema declaring none takes nothing.
         var owned = ownedFactory(emptySchema());
-        assertThat(owned.parameters()).hasSize(1);
-        assertThat(owned.parameters().get(0).name()).isEqualTo("claims");
-        assertThat(owned.parameters().get(0).type().toString()).isEqualTo("java.lang.String");
+        assertThat(owned.parameters()).isEmpty();
         assertThat(owned.returnType().toString()).isEqualTo("graphql.ExecutionInput.Builder");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
 
     @Test
-    void newOwnedExecutionInput_bodyStashesClaimsUnderTheInstrumentationKey_notADslContext() {
+    void newOwnedExecutionInput_bodyWritesTheSingletonButNeverADslContext() {
         var body = ownedFactory(emptySchema()).code().toString();
-        // The owned path publishes the opaque claims under the instrumentation's CLAIMS_KEY constant
-        // (single-sourced with the read site) and the singleton, but never a DSLContext (the
-        // instrumentation produces that from the pinned connection).
+        // The owned path publishes the singleton and the name-keyed contextArguments, but never
+        // a DSLContext: the typed DSLContext.class key belongs to the escape-hatch factory
+        // alone, which is what lets getDslContext distinguish the modes structurally.
         assertThat(body)
-            .contains("java.util.Objects.requireNonNull(claims")
-            .contains("com.example.schema.GraphitronConnectionInstrumentation.CLAIMS_KEY, claims")
             .contains("com.example.schema.GraphitronContext.GraphitronContextImpl.INSTANCE")
             .contains("new org.dataloader.DataLoaderRegistry()")
-            .doesNotContain("DSLContext.class");
+            .doesNotContain("DSLContext.class")
+            .doesNotContain("CLAIMS_KEY");
     }
 
     private static no.sikt.graphitron.javapoet.MethodSpec ownedFactory(no.sikt.graphitron.rewrite.GraphitronSchema schema) {

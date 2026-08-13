@@ -72,12 +72,14 @@ class GraphitronTransactionProviderGeneratorTest {
     }
 
     @Test
-    void topLevel_commitPolicy_commitsAndRestoresAutoCommit() throws Throwable {
+    void topLevel_commitPolicy_commitsAndAssertsAutoCommit() throws Throwable {
+        // No prior mode is captured: autocommit-on is the resting state graphitron asserts on a
+        // connection it owns, so settle re-asserts it unconditionally after the commit.
         Object provider = newProvider(fakeConnection(), commitPolicyCommit);
         begin(provider);
         commit(provider);
 
-        assertThat(events).containsExactly("getAutoCommit", "setAutoCommit:false", "commit", "setAutoCommit:true");
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
     @Test
@@ -122,26 +124,30 @@ class GraphitronTransactionProviderGeneratorTest {
     }
 
     @Test
-    void rollbackOnly_neverFiresTheSettleCallback() throws Throwable {
-        // Nothing settles until release under the deferred realization, so the session-identity
-        // re-fire seam stays unfired; mounted identity is session-scoped state the eventual
-        // release rollback cannot revert.
-        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly, () -> events.add("afterSettle"));
-        begin(provider);
-        commit(provider);
-        begin(provider);
-        rollback(provider);
+    void provider_hasExactlyOneConstructor_andNoSettleCallbackSeam() {
+        // The settle-completion Runnable died with the re-fire: the convenience constructor
+        // existed only to pass an empty callback, so the provider collapses to one canonical
+        // constructor, and no priorAutoCommit field survives (nothing reads the connection's
+        // mode as a value to preserve).
+        assertThat(providerClass.getConstructors()).hasSize(1);
+        assertThat(providerClass.getConstructors()[0].getParameterTypes())
+            .containsExactly(harnessConnectionParam(), commitPolicyCommit.getClass());
+        assertThat(java.util.Arrays.stream(providerClass.getDeclaredFields())
+            .map(java.lang.reflect.Field::getName))
+            .doesNotContain("priorAutoCommit", "afterSettle");
+    }
 
-        assertThat(events).doesNotContain("afterSettle");
+    private static Class<?> harnessConnectionParam() {
+        return Connection.class;
     }
 
     @Test
-    void topLevel_rollback_rollsBackAndRestoresAutoCommit() throws Throwable {
+    void topLevel_rollback_rollsBackAndAssertsAutoCommit() throws Throwable {
         Object provider = newProvider(fakeConnection(), commitPolicyCommit);
         begin(provider);
         rollback(provider);
 
-        assertThat(events).containsExactly("getAutoCommit", "setAutoCommit:false", "rollback", "setAutoCommit:true");
+        assertThat(events).containsExactly("setAutoCommit:false", "rollback", "setAutoCommit:true");
     }
 
     @Test
@@ -153,7 +159,7 @@ class GraphitronTransactionProviderGeneratorTest {
         commit(provider);  // top-level: commit + restore
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false",
+            "setAutoCommit:false",
             "setSavepoint",
             "releaseSavepoint",
             "commit", "setAutoCommit:true");
@@ -168,33 +174,25 @@ class GraphitronTransactionProviderGeneratorTest {
         commit(provider);   // top-level commit
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false",
+            "setAutoCommit:false",
             "setSavepoint",
             "rollbackToSavepoint",
             "commit", "setAutoCommit:true");
     }
 
     @Test
-    void settleCompletionCallback_runsAfterEveryTopLevelSettle_neverOnSavepoints() throws Throwable {
-        // The callback is opaque to the provider (commit policy stays its one axis); the acquisition
-        // machinery wires the session-identity re-fire through it. It must run after autocommit is
-        // restored (so the re-fire executes outside the settled transaction), on both settle outcomes,
-        // and never for nested savepoint settles.
-        Object provider = newProvider(fakeConnection(), commitPolicyCommit, () -> events.add("afterSettle"));
-        begin(provider);    // top-level
-        begin(provider);    // nested savepoint
-        commit(provider);   // nested: no settle, no callback
-        commit(provider);   // top-level settle: callback fires after autocommit restore
-        begin(provider);    // second top-level transaction on the same provider
-        rollback(provider); // rollback settles too
+    void secondTopLevelTransaction_onTheSameProvider_assertsTheModeAgain() throws Throwable {
+        // One provider per pinned connection serves the whole operation: consecutive top-level
+        // transactions each turn autocommit off and settle back to the asserted resting state.
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        begin(provider);
+        commit(provider);
+        begin(provider);
+        rollback(provider);
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false",
-            "setSavepoint",
-            "releaseSavepoint",
-            "commit", "setAutoCommit:true", "afterSettle",
-            "getAutoCommit", "setAutoCommit:false",
-            "rollback", "setAutoCommit:true", "afterSettle");
+            "setAutoCommit:false", "commit", "setAutoCommit:true",
+            "setAutoCommit:false", "rollback", "setAutoCommit:true");
     }
 
     // --- driving helpers -------------------------------------------------------------------------
@@ -202,12 +200,6 @@ class GraphitronTransactionProviderGeneratorTest {
     private Object newProvider(Connection connection, Object policy) throws Throwable {
         Class<?> policyClass = policy.getClass();
         return providerClass.getConstructor(Connection.class, policyClass).newInstance(connection, policy);
-    }
-
-    private Object newProvider(Connection connection, Object policy, Runnable afterSettle) throws Throwable {
-        Class<?> policyClass = policy.getClass();
-        return providerClass.getConstructor(Connection.class, policyClass, Runnable.class)
-            .newInstance(connection, policy, afterSettle);
     }
 
     private void begin(Object provider) throws Throwable { invokeTx(provider, "begin"); }

@@ -1,9 +1,14 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
+import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,57 +19,77 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit-tier behavioural coverage of {@link ConnectionRuntimeClassGenerator}. Because the runtime is
- * emitted (never shipped as a graphitron artifact), the only honest way to assert acquire/connect/
- * disconnect/release <em>ordering</em> "over a fake {@code DataSource}" is to compile the real
- * emitted {@code TypeSpec}s and drive them: {@link EmittedCodeHarness} compiles them once, and every
- * assertion reads the call log recorded by the fake {@code DataSource}/{@code Connection}/
- * {@code SessionHook} proxies, never the emitted source text.
+ * Unit-tier behavioural coverage of {@link ConnectionRuntimeClassGenerator}'s lifecycle contract.
+ * Because the runtime is emitted (never shipped as a graphitron artifact), the only honest way to
+ * assert acquire/mount/unmount/release <em>ordering</em> over a fake {@code DataSource} is to
+ * compile the real emitted {@code TypeSpec}s and drive them: {@link EmittedCodeHarness} compiles
+ * them once, and every assertion reads the interleaved call log recorded by the fake
+ * {@code DataSource}/{@code Connection} proxies and the {@link LifecycleHookFixture} the emitted
+ * hook class calls directly, never the emitted source text.
+ *
+ * <p>The autocommit facts asserted here carry the deleted re-fire's guarantee: graphitron asserts
+ * the transaction mode on a connection it owns (before the mount, so the mount is its own
+ * committed transaction; at release before the unmount, rolling back first because switching
+ * autocommit on commits an open transaction). No {@code afterSettle} and no re-fire exist.
  */
 @UnitTier
 class ConnectionRuntimeClassGeneratorTest {
 
     private static final String PACKAGE = "com.example";
     private static final String SCHEMA_PACKAGE = PACKAGE + ".schema";
+    private static final String FIXTURE = LifecycleHookFixture.class.getName();
 
     private static EmittedCodeHarness harness;
     private static Class<?> pinnedConnectionClass;
-    private static Class<?> sessionHookClass;
     private static Class<?> runtimeClass;
 
-    /** Ordered log of observable lifecycle events, shared by all fakes in one test. */
+    /** Ordered log of observable lifecycle events, shared by all fakes and the hook fixture. */
     private final List<String> events = new ArrayList<>();
+
+    /** The fixture hook pair: {@code Connection}-seam mount with a String payload, String handle. */
+    private static SessionHooks fixtureHooks() {
+        var mount = SessionHooksFixtures.hookRef(FIXTURE, "mount", ClassName.get(String.class),
+            SessionHooksFixtures.connectionSeam(), SessionHooksFixtures.stringPayload("claims"));
+        var unmount = SessionHooksFixtures.hookRef(FIXTURE, "unmount", TypeName.VOID,
+            SessionHooksFixtures.connectionSeam(),
+            SessionHooksFixtures.handleParam(ClassName.get(String.class)));
+        return new SessionHooks.Handled(mount, ClassName.get(String.class), Optional.of(unmount));
+    }
 
     @BeforeAll
     static void compileEmittedRuntime() {
-        // Since slice 2 the runtime's newGraphQL(schema) references the connection instrumentation,
-        // which in turn references the transaction provider: the emitted runtime classes are one connected
-        // cluster, so they compile together. This test still only drives the connection-lifecycle classes below.
+        // The runtime's newGraphQL(schema) references the connection instrumentation, which in
+        // turn references the transaction provider and the carrier: the emitted runtime classes
+        // are one connected cluster, so they compile together. This test still only drives the
+        // connection-lifecycle classes below.
+        harness = compile(fixtureHooks());
+        pinnedConnectionClass = harness.load(SCHEMA_PACKAGE + ".PinnedConnection");
+        runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
+    }
+
+    private static EmittedCodeHarness compile(SessionHooks hooks) {
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, false, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        harness = EmittedCodeHarness.compile(units);
-        pinnedConnectionClass = harness.load(SCHEMA_PACKAGE + ".PinnedConnection");
-        sessionHookClass = harness.load(SCHEMA_PACKAGE + ".SessionHook");
-        runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
+        return EmittedCodeHarness.compile(units);
     }
 
     @AfterAll
@@ -77,161 +102,12 @@ class ConnectionRuntimeClassGeneratorTest {
     @BeforeEach
     void resetEvents() {
         events.clear();
+        LifecycleHookFixture.reset(events);
     }
 
     @Test
     void acquireThenRelease_success_mountsThenUnmountsInOrder() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook("H1", null, null);
-
-        Object pinned = acquire(ds, hook, "claims-payload");
-        release(pinned);
-
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
-    }
-
-    @Test
-    void connectFailure_evictsAndFailsClosedBeforeAnySql() {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook(null, new SQLException("unentitled role"), null);
-
-        assertThatThrownBy(() -> acquire(ds, hook, "claims-payload"))
-            .as("a throwing connect hook rejects the request")
-            .isInstanceOf(Throwable.class);
-
-        // Connection acquired, connect attempted and failed, connection evicted (aborted) rather than
-        // returned; disconnect never runs and no connection is handed back for SQL.
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "abort");
-    }
-
-    @Test
-    void disconnectFailure_evictsInsteadOfReturningToPool() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook("H1", null, new SQLException("unmount failed"));
-
-        Object pinned = acquire(ds, hook, "claims-payload");
-        assertThatThrownBy(() -> release(pinned))
-            .as("a throwing disconnect hook surfaces the failure")
-            .isInstanceOf(Throwable.class);
-
-        // Disconnect attempted and failed, so the physical connection is aborted, never close()d back
-        // into the pool.
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "abort");
-    }
-
-    @Test
-    void release_isIdempotent_cancelThenCompleteUnmountsExactlyOnce() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook("H1", null, null);
-
-        Object pinned = acquire(ds, hook, "claims-payload");
-        release(pinned); // e.g. cancellation signal
-        release(pinned); // e.g. completion signal
-
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
-    }
-
-    @Test
-    void release_isOutcomeAgnostic_disconnectFiresOnEveryCompletionPath() throws Throwable {
-        // Success path: the operation completed and the caller releases.
-        List<String> success = driveRelease(() -> { /* normal completion */ });
-        assertThat(success).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
-
-        // Error path: the operation threw; the caller still releases in its finally.
-        List<String> error = driveRelease(() -> { throw new RuntimeException("operation failed"); });
-        assertThat(error).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
-    }
-
-    @Test
-    void handleThreading_nullHandle_disconnectReceivesNull() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook(null, null, null); // connect returns no handle
-
-        Object pinned = acquire(ds, hook, "claims-payload");
-        release(pinned);
-
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:null", "close");
-    }
-
-    @Test
-    void runtimeDefaultPath_mountsNoIdentityAndReturnsConnection() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object runtime = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
-            .newInstance(ds, SQLDialect.POSTGRES);
-
-        Object pinned = runtimeClass.getMethod("acquire", String.class).invoke(runtime, "claims-payload");
-        release(pinned);
-
-        // No <sessionState> configured -> SessionHook.NONE: the connection is opened and returned to the
-        // pool, and no identity is ever mounted (no connect/disconnect touches our recording hook).
-        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "close");
-    }
-
-    // ===== hooks run outside any transaction (structural guarantee) =====
-
-    @Test
-    void acquire_normalizesAutoCommit_beforeConnectHookRuns() throws Throwable {
-        // The fake DataSource hands out connections with autocommit=false (a pool can be configured
-        // that way); acquire must normalize before connect, or on Postgres the mount's set_config
-        // would sit in an implicit never-committed transaction and revert with a later rollback.
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook("H1", null, null);
-
-        acquire(ds, hook, "claims-payload");
-
-        assertThat(events)
-            .as("autocommit is normalized after pinning and before the connect hook")
-            .startsWith("getConnection", "setAutoCommit:true", "connect");
-    }
-
-    @Test
-    void release_operationLeftTransactionOpen_settlesBeforeDisconnectHookRuns() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeHook("H1", null, null);
-
-        Object pinned = acquire(ds, hook, "claims-payload");
-        // Simulate an operation that died mid-mutation: the provider turned autocommit off and never
-        // settled. Release must roll back and restore autocommit before the disconnect hook, so the
-        // hook's clears commit immediately instead of being reverted by the pool's return-rollback.
-        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
-        connection.setAutoCommit(false);
-        release(pinned);
-
-        assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect",
-            "setAutoCommit:false",                       // the simulated abandoned mutation transaction
-            "rollback", "setAutoCommit:true",            // release settles before unmounting
-            "disconnect:H1", "close");
-    }
-
-    // ===== settle re-fire for unconfirmed hooks =====
-
-    @Test
-    void afterSettle_unconfirmedHook_reFiresPairAndRebindsHandle() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeSequencedHook();
-
-        Object pinned = acquire(ds, hook, "claims-payload", true);
-        afterSettle(pinned); // the provider runs this after a top-level settle
-        release(pinned);
-
-        // The re-fire disconnects the old handle and connects fresh; release binds the NEW handle,
-        // so every produced handle is bound exactly once.
-        assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1",
-            "disconnect:H1", "connect->H2",
-            "disconnect:H2", "close");
-    }
-
-    @Test
-    void afterSettle_survivalConfirmed_neverReFires() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeSequencedHook();
-
-        // remountAfterSettle=false is what the runtime bakes for <stateSurvivesTransactions>true</>,
-        // the <variables> sugar, and the no-hook path alike.
-        Object pinned = acquire(ds, hook, "claims-payload", false);
-        afterSettle(pinned);
+        Object pinned = acquire(fakeDataSource(), "claims-payload");
         release(pinned);
 
         assertThat(events).containsExactly(
@@ -239,54 +115,124 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void afterSettle_remountFailure_evictsImmediately_andReleaseBecomesNoOp() throws Throwable {
-        DataSource ds = fakeDataSource();
-        // First connect succeeds (mount at acquire); the re-fire's connect fails.
-        Object hook = fakeSequencedHook(2, new SQLException("remount rejected"));
+    void mountFailure_evictsAndFailsClosedBeforeAnySql() {
+        LifecycleHookFixture.mountThrows = new RuntimeException("unentitled role");
 
-        Object pinned = acquire(ds, hook, "claims-payload", true);
-        assertThatThrownBy(() -> afterSettle(pinned))
-            .as("a failing remount surfaces the failure")
+        assertThatThrownBy(() -> acquire(fakeDataSource(), "claims-payload"))
+            .as("a throwing mount rejects the request")
             .isInstanceOf(Throwable.class);
-        release(pinned);
 
-        // Identity is unprovable and graphql-java would run later mutation fields serially: the
-        // connection is aborted at the failure point so their SQL fails on a dead connection, and
-        // the subsequent release is a no-op (no second disconnect, no close-into-pool).
-        assertThat(events).containsExactly(
-            "getConnection", "setAutoCommit:true", "connect->H1",
-            "disconnect:H1", "connect->H2", "abort");
+        // Connection acquired, mount attempted and failed, connection evicted (aborted) rather
+        // than returned; unmount never runs and no connection is handed back for SQL.
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect->H1", "abort");
     }
 
     @Test
-    void provider_topLevelSettle_triggersReFire_nestedSavepointsDoNot() throws Throwable {
-        DataSource ds = fakeDataSource();
-        Object hook = fakeSequencedHook();
+    void unmountFailure_evictsInsteadOfReturningToPool() throws Throwable {
+        LifecycleHookFixture.unmountThrows = new RuntimeException("unmount failed");
 
-        Object pinned = acquire(ds, hook, "claims-payload", true);
-        Object provider = providerOver(pinned);
-        txInvoke(provider, "begin");    // top-level: autocommit off
-        txInvoke(provider, "begin");    // nested: savepoint
-        txInvoke(provider, "commit");   // nested: release savepoint, no settle, no re-fire
-        txInvoke(provider, "commit");   // top-level: settle, then re-fire outside the transaction
+        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        assertThatThrownBy(() -> release(pinned))
+            .as("a throwing unmount surfaces the failure")
+            .isInstanceOf(Throwable.class);
+
+        // Unmount attempted and failed, so the physical connection is aborted, never close()d
+        // back into the pool.
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "abort");
+    }
+
+    @Test
+    void release_isIdempotent_cancelThenCompleteUnmountsExactlyOnce() throws Throwable {
+        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        release(pinned); // e.g. cancellation signal
+        release(pinned); // e.g. completion signal
+
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+    }
+
+    @Test
+    void release_isOutcomeAgnostic_unmountFiresOnEveryCompletionPath() throws Throwable {
+        // Success path: the operation completed and the caller releases.
+        assertThat(driveRelease(() -> { /* normal completion */ })).containsExactly(
+            "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+
+        // Error path: the operation threw; the caller still releases in its finally.
+        resetEvents();
+        assertThat(driveRelease(() -> { throw new RuntimeException("operation failed"); }))
+            .containsExactly(
+                "getConnection", "setAutoCommit:true", "connect->H1", "disconnect:H1", "close");
+    }
+
+    @Test
+    void notConfigured_acquireAssertsAutocommitAndMountsNothing() throws Throwable {
+        // The NotConfigured arm emits no hook class and no mount call at all, which is stronger
+        // than holding a no-op; the autocommit assertion stays, as the resting state graphitron
+        // holds an owned connection in.
+        try (var plain = compile(SessionHooks.NotConfigured.INSTANCE)) {
+            Class<?> plainRuntime = plain.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
+            Object runtime = plainRuntime.getConstructor(DataSource.class, SQLDialect.class)
+                .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+            Object pinned = plainRuntime.getMethod("acquire").invoke(runtime);
+            plain.load(SCHEMA_PACKAGE + ".PinnedConnection")
+                .getMethod("release").invoke(pinned);
+
+            assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "close");
+        }
+    }
+
+    // ===== graphitron asserts the connection's transaction mode =====
+
+    @Test
+    void acquire_assertsAutocommit_beforeTheMountRuns() throws Throwable {
+        // The fake DataSource hands out connections with autocommit=false (a pool can be
+        // configured that way); acquire must assert the mode before the mount, or on Postgres
+        // the mount's session-scoped state would sit in an implicit never-committed transaction
+        // and revert with a later rollback, leaving the operation running unmounted under RLS.
+        acquire(fakeDataSource(), "claims-payload");
+
+        assertThat(events)
+            .as("autocommit is asserted after pinning and before the mount")
+            .startsWith("getConnection", "setAutoCommit:true", "connect->H1");
+    }
+
+    @Test
+    void release_operationLeftTransactionOpen_settlesBeforeTheUnmountRuns() throws Throwable {
+        Object pinned = acquire(fakeDataSource(), "claims-payload");
+        // Simulate an operation that died mid-mutation: the provider turned autocommit off and
+        // never settled. Release must roll back and assert autocommit before the unmount (in
+        // that order: switching autocommit on commits an open transaction), so the unmount's
+        // clears commit immediately instead of being reverted by the pool's return-rollback.
+        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        connection.setAutoCommit(false);
         release(pinned);
 
         assertThat(events).containsExactly(
             "getConnection", "setAutoCommit:true", "connect->H1",
-            "setAutoCommit:false",                  // top-level begin
-            "commit", "setAutoCommit:true",         // settle: commit, restore autocommit
-            "disconnect:H1", "connect->H2",         // re-fire, in autocommit, top-level only
-            "disconnect:H2", "close");
+            "setAutoCommit:false",                       // the simulated abandoned mutation transaction
+            "rollback", "setAutoCommit:true",            // release settles before unmounting
+            "disconnect:H1", "close");
     }
 
-    // --- driving helpers -------------------------------------------------------------------------
+    @Test
+    void handle_isCarriedFromMountToRelease_andExposedForTheCarrierEntry() throws Throwable {
+        Object pinned = acquire(fakeDataSource(), "claims-payload");
+
+        assertThat(pinnedConnectionClass.getMethod("handle").invoke(pinned))
+            .as("the mount's returned handle is the pinned carrier's one retained field, "
+                + "read by release and published on the carrier entry's Configuration")
+            .isEqualTo("H1");
+        release(pinned);
+        assertThat(events).last().isEqualTo("close");
+        assertThat(events).contains("disconnect:H1");
+    }
+
+    // --- driving helpers -----------------------------------------------------------------------
 
     /** Runs acquire, then {@code body}, then release in a finally, capturing the event log. */
     private List<String> driveRelease(Runnable body) throws Throwable {
-        List<String> log = new ArrayList<>();
-        DataSource ds = fakeDataSource(log);
-        Object hook = fakeHook(log, "H1", null, null);
-        Object pinned = acquire(ds, hook, "claims-payload");
+        Object pinned = acquire(fakeDataSource(), "claims-payload");
         try {
             body.run();
         } catch (RuntimeException ignored) {
@@ -294,27 +240,15 @@ class ConnectionRuntimeClassGeneratorTest {
         } finally {
             release(pinned);
         }
-        return log;
+        return events;
     }
 
-    private Object acquire(DataSource dataSource, Object hook, String claims) throws Throwable {
-        return acquire(dataSource, hook, claims, false);
-    }
-
-    private Object acquire(DataSource dataSource, Object hook, String claims, boolean remountAfterSettle) throws Throwable {
+    private Object acquire(DataSource dataSource, String claims) throws Throwable {
         Executor sameThread = Runnable::run;
         Method acquire = pinnedConnectionClass.getMethod(
-            "acquire", DataSource.class, sessionHookClass, String.class, Executor.class, boolean.class);
+            "acquire", DataSource.class, SQLDialect.class, Settings.class, Executor.class, String.class);
         try {
-            return acquire.invoke(null, dataSource, hook, claims, sameThread, remountAfterSettle);
-        } catch (InvocationTargetException e) {
-            throw e.getCause();
-        }
-    }
-
-    private void afterSettle(Object pinned) throws Throwable {
-        try {
-            pinnedConnectionClass.getMethod("afterSettle").invoke(pinned);
+            return acquire.invoke(null, dataSource, SQLDialect.POSTGRES, new Settings(), sameThread, claims);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -322,7 +256,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     private void release(Object pinned) throws Throwable {
         try {
-            pinnedConnectionClass.getMethod("release").invoke(pinned);
+            pinned.getClass().getMethod("release").invoke(pinned);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -331,15 +265,11 @@ class ConnectionRuntimeClassGeneratorTest {
     // --- recording fakes -------------------------------------------------------------------------
 
     private DataSource fakeDataSource() {
-        return fakeDataSource(events);
-    }
-
-    private DataSource fakeDataSource(List<String> log) {
-        Connection connection = fakeConnection(log);
+        Connection connection = fakeConnection(events);
         return (DataSource) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{DataSource.class}, (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
-                    log.add("getConnection");
+                    events.add("getConnection");
                     return connection;
                 }
                 return objectMethodOrDefault(proxy, method, args, "fakeDataSource");
@@ -348,11 +278,8 @@ class ConnectionRuntimeClassGeneratorTest {
 
     private Connection fakeConnection(List<String> log) {
         // Starts autocommit=false: pools (Agroal, Hikari) can be configured to hand out connections
-        // that way, and the lifecycle must normalize rather than trust the pool's configuration.
+        // that way, and the lifecycle asserts the mode rather than trusting the pool's configuration.
         boolean[] autoCommit = {false};
-        Object savepoint = Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{java.sql.Savepoint.class},
-            (p, m, a) -> objectMethodOrDefault(p, m, a, "savepoint"));
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "close" -> { log.add("close"); yield null; }
@@ -361,101 +288,7 @@ class ConnectionRuntimeClassGeneratorTest {
                 case "getAutoCommit" -> autoCommit[0];
                 case "commit" -> { log.add("commit"); yield null; }
                 case "rollback" -> { log.add("rollback"); yield null; }
-                // Savepoint plumbing is deliberately unlogged: the provider's own unit test pins it,
-                // and the re-fire assertions here only care that nested settles stay silent.
-                case "setSavepoint" -> savepoint;
-                case "releaseSavepoint" -> null;
                 default -> objectMethodOrDefault(proxy, method, args, "fakeConnection");
-            });
-    }
-
-    private Object fakeHook(String handle, Throwable connectThrows, Throwable disconnectThrows) {
-        return fakeHook(events, handle, connectThrows, disconnectThrows);
-    }
-
-    private Object fakeSequencedHook() {
-        return fakeSequencedHook(Integer.MAX_VALUE, null);
-    }
-
-    /**
-     * A hook whose connect returns a fresh handle per call ({@code H1}, {@code H2}, ...), logged as
-     * {@code connect->Hn}, so re-fire tests can prove the new handle is bound at the next unmount.
-     * The {@code failOnConnect}-th connect (1-based) logs its attempt and then throws {@code failure}.
-     */
-    private Object fakeSequencedHook(int failOnConnect, Throwable failure) {
-        int[] connects = {0};
-        return Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{sessionHookClass}, (proxy, method, args) -> {
-                switch (method.getName()) {
-                    case "connect" -> {
-                        connects[0]++;
-                        String handle = "H" + connects[0];
-                        events.add("connect->" + handle);
-                        if (connects[0] == failOnConnect && failure != null) {
-                            throw failure;
-                        }
-                        return handle;
-                    }
-                    case "disconnect" -> {
-                        events.add("disconnect:" + args[1]);
-                        return null;
-                    }
-                    default -> {
-                        return objectMethodOrDefault(proxy, method, args, "fakeSequencedHook");
-                    }
-                }
-            });
-    }
-
-    /** Builds the emitted provider over {@code pinned}'s connection with {@code pinned::afterSettle} wired. */
-    private Object providerOver(Object pinned) throws Throwable {
-        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
-        Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
-        Class<?> policyClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider$CommitPolicy");
-        Object commitPolicy = policyClass.getField("COMMIT").get(null);
-        Runnable afterSettle = () -> {
-            try {
-                pinnedConnectionClass.getMethod("afterSettle").invoke(pinned);
-            } catch (InvocationTargetException e) {
-                throw e.getCause() instanceof RuntimeException re ? re : new RuntimeException(e.getCause());
-            } catch (ReflectiveOperationException e) {
-                throw new RuntimeException(e);
-            }
-        };
-        return providerClass.getConstructor(Connection.class, policyClass, Runnable.class)
-            .newInstance(connection, commitPolicy, afterSettle);
-    }
-
-    private void txInvoke(Object provider, String name) throws Throwable {
-        try {
-            provider.getClass().getMethod(name, org.jooq.TransactionContext.class).invoke(provider, (Object) null);
-        } catch (InvocationTargetException e) {
-            throw e.getCause();
-        }
-    }
-
-    private Object fakeHook(List<String> log, String handle, Throwable connectThrows, Throwable disconnectThrows) {
-        return Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{sessionHookClass}, (proxy, method, args) -> {
-                switch (method.getName()) {
-                    case "connect" -> {
-                        log.add("connect");
-                        if (connectThrows != null) {
-                            throw connectThrows;
-                        }
-                        return handle;
-                    }
-                    case "disconnect" -> {
-                        log.add("disconnect:" + args[1]);
-                        if (disconnectThrows != null) {
-                            throw disconnectThrows;
-                        }
-                        return null;
-                    }
-                    default -> {
-                        return objectMethodOrDefault(proxy, method, args, "fakeHook");
-                    }
-                }
             });
     }
 

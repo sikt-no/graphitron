@@ -167,6 +167,7 @@ class FactCaptureAgreementTest {
             "graphitron_reference_for", "graphitron_reference_for_step",
             "graphitron_reference_for_step_arg_mapping_pair", "graphitron_service",
             "graphitron_service_context_arg", "graphitron_service_arg_mapping_pair",
+            "graphitron_service_arg_mapping_sigil",
             "graphitron_external_field", "graphitron_source_row", "graphitron_connection", "graphitron_facet",
             "graphitron_order_by", "graphitron_order", "graphitron_order_field", "graphitron_index",
             "graphitron_default_order", "graphitron_default_order_field", "graphitron_mutation",

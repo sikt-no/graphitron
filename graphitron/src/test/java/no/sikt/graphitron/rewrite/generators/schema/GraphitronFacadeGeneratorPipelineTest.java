@@ -63,10 +63,11 @@ class GraphitronFacadeGeneratorPipelineTest {
     }
 
     @Test
-    void ownedFactory_leadsWithStringClaimsThenTheSameContextArguments() {
-        // The owned-connection factory carries the opaque claims first, then the identical
-        // alphabetical contextArgument list. Distinct name from the escape-hatch newExecutionInput, so a
-        // caller passing a DSLContext cannot silently reach the owned path.
+    void ownedFactory_takesExactlyTheAlphabeticalContextArguments() {
+        // The owned-connection factory carries only the alphabetical contextArgument list (a
+        // configured mount's payload parameters would be ordinary entries in it). Distinct name
+        // from the escape-hatch newExecutionInput, so a caller passing a DSLContext cannot
+        // silently reach the owned path.
         String sdl = """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -90,9 +91,9 @@ class GraphitronFacadeGeneratorPipelineTest {
             .orElseThrow();
 
         assertThat(owned.parameters()).extracting(p -> p.name())
-            .containsExactly("claims", "fnr", "userId");
+            .containsExactly("fnr", "userId");
         assertThat(owned.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("java.lang.String", "java.lang.Long", "java.lang.String");
+            .containsExactly("java.lang.Long", "java.lang.String");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
 }

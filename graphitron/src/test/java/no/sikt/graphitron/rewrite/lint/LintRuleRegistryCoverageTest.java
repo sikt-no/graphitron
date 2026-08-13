@@ -81,7 +81,6 @@ class LintRuleRegistryCoverageTest {
             .toList();
         assertThat(codegen).containsExactlyInAnyOrder(
             "no-session-state",
-            "session-state-convention-fence",
             "graphql-java-version-lag",
             "jooq-version-lag");
     }

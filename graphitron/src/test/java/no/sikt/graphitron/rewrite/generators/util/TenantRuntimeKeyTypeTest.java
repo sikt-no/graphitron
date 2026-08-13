@@ -36,13 +36,13 @@ class TenantRuntimeKeyTypeTest {
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
-            .contains("java.util.Map<java.lang.Integer, javax.sql.DataSource> dataSourcesByTenant")
+            .contains("Source> sourcesByTenant")
             .contains("java.util.Map<? extends java.lang.Integer, javax.sql.DataSource> dataSourcesByTenant")
             .contains("acquireForTenant(java.lang.Integer tenantKey");
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
-            .contains("java.util.Map<java.lang.Integer,")
+            .contains("java.util.Optional<java.lang.Integer>")
             .contains("dslFor(java.lang.Integer tenantKey");
     }
 
@@ -71,18 +71,22 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
-    void singleTenantCarrierOmitsTheRoutingStatics() {
+    void singleTenantCarrierOmitsTheRoutingMachinery_butKeepsTheUnifiedResolution() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionHooks.NotConfigured.INSTANCE);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
+            // Genuinely <tenantColumn>-only machinery stays absent in single-tenant builds.
             .doesNotContain("divinedTenant")
             .doesNotContain("tenantSlot")
-            .doesNotContain("DataFetchingEnvironment")
-            // The default-source arm is multi-tenant machinery: absent the element, absent the
-            // surface (no dead dslDefault/defaultPinned in single-tenant builds).
-            .doesNotContain("dslDefault")
+            .doesNotContain("scatter")
+            .doesNotContain("timedOutTenants")
+            // The unified per-key carrier is both topologies' one acquisition seam: the
+            // single-tenant path resolves contexts through of(env) + dslDefault() (the one-key
+            // case), and the untenanted slot is the map's Optional.empty() entry, never a field.
+            .contains("static fake.code.generated.schema.TenantConnections of(")
+            .contains("dslDefault")
             .doesNotContain("defaultPinned");
     }
 
@@ -125,7 +129,7 @@ class TenantRuntimeKeyTypeTest {
             .contains("final class TimedOut<R> implements")
             // Concurrent pinning with per-key single acquisition, and the straggler quarantine.
             .contains("java.util.concurrent.ConcurrentHashMap<>()")
-            .contains("pinnedByTenant.computeIfAbsent(")
+            .contains("entries.computeIfAbsent(")
             .contains("timedOutTenants")
             // The re-entrancy guard fails loudly instead of deadlocking the bounded pool.
             .contains("scatter is not re-entrant");
@@ -180,11 +184,13 @@ class TenantRuntimeKeyTypeTest {
             .doesNotContain("tenantKeys")
             .doesNotContain("java.time.Duration");
 
+        // The concurrent map itself is not fan-out substrate any more: the unified carrier uses
+        // one ConcurrentHashMap in both topologies (computeIfAbsent is the only minting
+        // mechanism), so only the genuinely <tenantColumn>-gated machinery is asserted absent.
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             .doesNotContain("scatter")
             .doesNotContain("Outcome")
-            .doesNotContain("ConcurrentHashMap")
             .doesNotContain("timedOutTenants");
 
         var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
@@ -198,7 +204,8 @@ class TenantRuntimeKeyTypeTest {
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
-            .contains("java.util.Map<java.lang.Object, javax.sql.DataSource> dataSourcesByTenant")
+            .contains("Source> sourcesByTenant")
+            .contains("java.util.Map<?, javax.sql.DataSource> dataSourcesByTenant")
             .contains("acquireForTenant(java.lang.Object tenantKey");
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);

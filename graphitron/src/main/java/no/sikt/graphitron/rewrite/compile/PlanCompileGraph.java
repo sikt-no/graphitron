@@ -254,24 +254,20 @@ public final class PlanCompileGraph {
                     "the entity dispatch family is the sealed relation's data-carrying arm;"
                         + " a fixed row of this kind is unconstructible");
                 case CONNECTION_RUNTIME -> {
-                    var sessionHook = runtimeUnit("SessionHook");
                     var pinned = runtimeUnit("PinnedConnection");
                     var runtime = runtimeUnit("GraphitronRuntime");
                     var tenantConnections = runtimeUnit("TenantConnections");
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
-                    pinned.ifPresent(p -> sessionHook.ifPresent(s -> declared(p, s)));
+                    pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
-                        sessionHook.ifPresent(s -> declared(r, s));
                         refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> declared(r, i));
-                        hookImpl.ifPresent(h -> declared(r, h));
                     });
                     tenantConnections.ifPresent(t -> {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
                         refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(t, tp));
                     });
-                    hookImpl.ifPresent(h -> sessionHook.ifPresent(s -> declared(h, s)));
                 }
                 case TRANSACTION_PROVIDER -> runtimeUnit("PinnedConnection")
                     .ifPresent(p -> declared(fixed.units().get(0), p));
@@ -279,6 +275,9 @@ public final class PlanCompileGraph {
                     var instrumentation = fixed.units().get(0);
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> declared(instrumentation, r));
                     runtimeUnit("PinnedConnection").ifPresent(p -> declared(instrumentation, p));
+                    // Lazy acquisition on every path: the instrumentation publishes the
+                    // per-operation carrier on both topologies.
+                    runtimeUnit("TenantConnections").ifPresent(t -> declared(instrumentation, t));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
                 }
                 case SCHEMA_CLASS -> {

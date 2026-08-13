@@ -995,12 +995,15 @@ public final class ConnectionRuntimeClassGenerator {
         var entriesField = FieldSpec.builder(entryMapType, "entries", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", CONCURRENT_HASH_MAP)
             .addJavadoc("Concurrent in both topologies, with per-key single acquisition\n"
-                + "({@code computeIfAbsent}, the only minting mechanism in the carrier): under fan-out,\n"
-                + "scatter partitions distinct keys one worker each but nothing structural prevents a\n"
-                + "worker and the dispatch thread racing the same key, so one-pin-per-key is this map's\n"
-                + "contract, not an accident of the callers; under lazy single-tenant acquisition,\n"
-                + "serial dispatch is an execution-strategy assumption rather than a structural\n"
-                + "guarantee, and the concurrent map is cheaper than defending it.\n")
+                + "({@code computeIfAbsent}, the only minting mechanism in the carrier): "
+                + (multiTenant
+                    ? "under fan-out,\nscatter partitions distinct keys one worker each but nothing"
+                        + " structural prevents a\nworker and the dispatch thread racing the same key,"
+                        + " so one-pin-per-key is this map's\ncontract, not an accident of the callers"
+                    : "under lazy\nacquisition, serial dispatch is an execution-strategy assumption"
+                        + " rather than a\nstructural guarantee, and the concurrent map is cheaper than"
+                        + " defending it")
+                + ".\n")
             .build();
         var timedOutField = FieldSpec.builder(ParameterizedTypeName.get(SET, tenantKey), "timedOutTenants",
                 Modifier.PRIVATE, Modifier.FINAL)
