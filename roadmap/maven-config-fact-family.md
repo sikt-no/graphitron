@@ -1,13 +1,13 @@
 ---
 id: R612
 title: "The Maven and pom configuration fact family"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-08
-last-updated: 2026-08-12
+last-updated: 2026-08-13
 ---
 
 # The Maven and pom configuration fact family
