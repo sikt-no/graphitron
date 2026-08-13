@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a root field returning a discriminated table interface"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: interface-union
