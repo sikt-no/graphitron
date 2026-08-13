@@ -13,10 +13,12 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +41,9 @@ class DirectiveShapeSmokeTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
+    @TempDir
+    Path tmp;
+
     @Test
     void serviceDirectiveSakilaShapeProducesCompletionsAndDiagnostics() {
         // Lifted from graphitron-sakila-example/.../schema.graphqls.
@@ -55,13 +60,19 @@ class DirectiveShapeSmokeTest {
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmsByService"
         );
+        // Two fixtures, deliberately: the completion arms below read the store and the diagnostics
+        // pass at the end still reads the projection, which is what mid-migration looks like from a
+        // smoke test's seat. Both are built from the same class and method, so a divergence between
+        // them would be this test's own doing rather than the migration's.
+        try (var store = storeWith(
+            "no.sikt.graphitron.rewrite.test.services.SampleQueryService", "filmsByService")) {
         // Class-name completion: cursor inside className: value.
         Point classCursor = pointInside(source, "no.sikt.graphitron");
         var classBytes = source.getBytes(StandardCharsets.UTF_8);
         var classDirective = directiveAt(source, classCursor);
         var classLoc = VOCAB.locateAt(classDirective, classCursor, classBytes).orElseThrow();
         var classContext = no.sikt.graphitron.lsp.completions.CompletionContext.from(classLoc, classBytes);
-        var classItems = ClassNameCompletions.generate(VOCAB, data, classContext);
+        var classItems = ClassNameCompletions.generate(VOCAB, store.handle(), classContext);
         assertThat(classItems).extracting(i -> i.getLabel())
             .contains("no.sikt.graphitron.rewrite.test.services.SampleQueryService");
 
@@ -74,8 +85,9 @@ class DirectiveShapeSmokeTest {
         var methodLoc = VOCAB.locateAt(methodDirective, methodCursor, methodBytes).orElseThrow();
         var methodContext = no.sikt.graphitron.lsp.completions.CompletionContext.from(methodLoc, methodBytes);
         var methodItems = MethodCompletions.generate(
-            VOCAB, data, methodContext, methodDirective, methodCursor, methodBytes);
+            VOCAB, store.handle(), methodContext, methodDirective, methodCursor, methodBytes);
         assertThat(methodItems).extracting(i -> i.getLabel()).contains("filmsByService");
+        }
 
         // Diagnostics: this schema is internally consistent; no errors.
         var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
@@ -162,7 +174,6 @@ class DirectiveShapeSmokeTest {
                     })
             }
             """;
-        var data = catalogWith("com.example.FilmService", "filmsByServiceRenamed");
         // Land between the empty quotes of argMapping.
         int idx = source.indexOf("argMapping: \"") + "argMapping: \"".length();
         Point cursor = lspPoint(source, idx);
@@ -170,19 +181,30 @@ class DirectiveShapeSmokeTest {
         var argMapBytes = source.getBytes(StandardCharsets.UTF_8);
         var argMapDirective = directiveAt(source, cursor);
         var argMapLoc = VOCAB.locateAt(argMapDirective, cursor, argMapBytes);
-        var classItems = argMapLoc
-            .map(loc -> ClassNameCompletions.generate(
-                VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, argMapBytes)))
-            .orElseGet(List::of);
-        var methodItems = argMapLoc
-            .map(loc -> MethodCompletions.generate(
-                VOCAB, data,
-                no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, argMapBytes),
-                argMapDirective, cursor, argMapBytes))
-            .orElseGet(List::of);
+        try (var store = storeWith("com.example.FilmService", "filmsByServiceRenamed")) {
+            var classItems = argMapLoc
+                .map(loc -> ClassNameCompletions.generate(
+                    VOCAB, store.handle(),
+                    no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, argMapBytes)))
+                .orElseGet(List::of);
+            var methodItems = argMapLoc
+                .map(loc -> MethodCompletions.generate(
+                    VOCAB, store.handle(),
+                    no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, argMapBytes),
+                    argMapDirective, cursor, argMapBytes))
+                .orElseGet(List::of);
 
-        assertThat(classItems).isEmpty();
-        assertThat(methodItems).isEmpty();
+            assertThat(classItems).isEmpty();
+            assertThat(methodItems).isEmpty();
+        }
+    }
+
+    /** The same class and method as {@link #catalogWith}, captured into a store of its own. */
+    private StoreFixture storeWith(String className, String methodName) {
+        var methods = methodName == null
+            ? List.<CompletionData.Method>of()
+            : List.of(StoreFixture.method(methodName, "List"));
+        return StoreFixture.ofClasspath(tmp, List.of(StoreFixture.jarClass(className, methods)));
     }
 
     private static CompletionData catalogWith(String className, String methodName) {

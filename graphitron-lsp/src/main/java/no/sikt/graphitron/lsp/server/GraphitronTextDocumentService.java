@@ -240,7 +240,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                             return Either.forLeft(List.of());
                         }
                         var items = Completions.at(
-                            workspace, directiveOpt.get(), pos, params.getPosition(), file.source());
+                            workspace, params.getTextDocument().getUri(), directiveOpt.get(), pos,
+                            params.getPosition(), file.source());
                         span.detail("items", items.size());
                         return Either.forLeft(items);
                     });

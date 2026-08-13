@@ -5,12 +5,15 @@ import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,19 +26,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @record} shares the same {@code ExternalCodeReference.className}
  * coordinate but is deprecated and ignored, so its className slot is
  * carved out and offers no completion.
+ *
+ * <p>The candidates are {@code jvm_class} rows captured from a classpath census, one graph's own, so
+ * these cases also stand on the scoping: a class this graph's walk never met is not a candidate
+ * however much store it shares.
  */
 class ClassNameCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
-    private static final CompletionData DATA = new CompletionData(
-        List.of(),
-        List.of(),
-        List.of(
-            ext("com.example.FilmService"),
-            ext("com.example.CategoryConditions")
-        )
-    );
+    @TempDir
+    static Path tmp;
+
+    private static StoreFixture store;
+
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.ofClasspath(tmp, List.of(
+            StoreFixture.jarClass("com.example.FilmService", List.of()),
+            StoreFixture.jarClass("com.example.CategoryConditions", List.of())));
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
 
     @Test
     void serviceClassNameCompletesFqns() {
@@ -44,8 +59,10 @@ class ClassNameCompletionsTest {
 
         var items = run(source, cursor, "service");
 
+        // Alphabetical within a residence rank, not the order the walk happened to meet them in:
+        // the projection carried the scan's own sequence, which nothing could explain to an author.
         assertThat(items).extracting(i -> i.getLabel())
-            .containsExactly("com.example.FilmService", "com.example.CategoryConditions");
+            .containsExactly("com.example.CategoryConditions", "com.example.FilmService");
     }
 
     @Test
@@ -161,10 +178,6 @@ class ClassNameCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = CompletionContext.from(locOpt.get(), bytes);
-        return ClassNameCompletions.generate(VOCAB, DATA, context);
-    }
-
-    private static CompletionData.ExternalReference ext(String fqn) {
-        return new CompletionData.ExternalReference(fqn, fqn, "", List.of(), List.of());
+        return ClassNameCompletions.generate(VOCAB, store.handle(), context);
     }
 }

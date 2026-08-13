@@ -6,43 +6,47 @@ import no.sikt.graphitron.lsp.completions.ScalarTypeCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Completion for {@code @scalarType(scalar:)} on a {@code scalar X} declaration.
- * Candidates are the {@code className.fieldName} of every {@code GraphQLScalarType}
- * constant carried on {@link CompletionData.ExternalReference#scalarConstants()}
- * (the classpath scan); the constant whose field name matches the enclosing
- * scalar's SDL name (case-insensitive) is offered first.
+ * Candidates are the {@code className.fieldName} of every {@code jvm_scalar_type_field} row the
+ * graph's classpath walk captured; the constant whose field name matches the enclosing scalar's SDL
+ * name (case-insensitive) is offered first.
  */
 class ScalarTypeCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
-    // Source of truth is `data`, not a static table: two scanned classes, a library's
+    @TempDir
+    static Path tmp;
+
+    private static StoreFixture store;
+
+    // Source of truth is the walk, not a static table: two scanned classes, a library's
     // extended-scalars holder and a consumer's own scalar holder, each carrying scalar constants.
-    private static final CompletionData DATA = new CompletionData(
-        List.of(),
-        List.of(),
-        List.of(
-            new CompletionData.ExternalReference(
-                "graphql.scalars.ExtendedScalars", "graphql.scalars.ExtendedScalars", "",
-                List.of(), List.of(),
-                List.of(
-                    new CompletionData.ScalarConstant("GraphQLBigDecimal"),
-                    new CompletionData.ScalarConstant("DateTime"),
-                    new CompletionData.ScalarConstant("UUID"))),
-            new CompletionData.ExternalReference(
-                "com.example.Scalars", "com.example.Scalars", "",
-                List.of(), List.of(),
-                List.of(new CompletionData.ScalarConstant("MONEY")))));
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.ofClasspath(tmp, List.of(
+            StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars",
+                "GraphQLBigDecimal", "DateTime", "UUID"),
+            StoreFixture.scalarHolder("com.example.Scalars", "MONEY")));
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
 
     @Test
     void offersScannedConstantsAsClassDotFieldItems() {
@@ -103,6 +107,6 @@ class ScalarTypeCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return ScalarTypeCompletions.generate(VOCAB, DATA, context, directive, bytes);
+        return ScalarTypeCompletions.generate(VOCAB, store.handle(), context, directive, bytes);
     }
 }

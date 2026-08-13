@@ -20,6 +20,18 @@
     </properties>
 
     <dependencies>
+        <!--
+          The fact store's generated query surface and its read vocabulary. Declared rather than
+          inherited through graphitron, because the direction of travel is that the store is what
+          this module reads and the graphitron dependency below is what it sheds, one type at a
+          time; a transitive edge would leave the pom claiming the opposite.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron</artifactId>

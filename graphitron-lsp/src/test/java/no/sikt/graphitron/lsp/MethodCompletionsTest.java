@@ -4,12 +4,15 @@ import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,21 +27,23 @@ class MethodCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
-    private static final CompletionData DATA = new CompletionData(
-        List.of(),
-        List.of(),
-        List.of(new CompletionData.ExternalReference(
-            "com.example.FilmService",
-            "com.example.FilmService",
-            "",
-            List.of(
-                new CompletionData.Method("list", "List", "",
-                    List.of(new CompletionData.Parameter("limit", "int", null, ""))),
-                new CompletionData.Method("get", "Film", "",
-                    List.of(new CompletionData.Parameter("id", "int", null, "")))
-            )
-        , List.of()))
-    );
+    @TempDir
+    static Path tmp;
+
+    private static StoreFixture store;
+
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.ofClasspath(tmp, List.of(
+            StoreFixture.jarClass("com.example.FilmService", List.of(
+                StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
+                StoreFixture.method("get", "Film", StoreFixture.parameter("id", "int"))))));
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
 
     @Test
     void serviceMethodCompletesMethodsOfSiblingClassName() {
@@ -119,6 +124,6 @@ class MethodCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return MethodCompletions.generate(VOCAB, DATA, context, directive, cursor, bytes);
+        return MethodCompletions.generate(VOCAB, store.handle(), context, directive, cursor, bytes);
     }
 }

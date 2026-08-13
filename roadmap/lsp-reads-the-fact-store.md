@@ -654,6 +654,53 @@ Deliberately not in this increment: the LSP holds no reader yet. The mint and th
 substrate every capability query needs, and wiring a reader into `Workspace` before a capability
 queries it would add a field with no reader.
 
+## Settled while building: completion's first tranche
+
+The four arms whose fact source is the classpath census moved together, and the unit is deliberate:
+`ClassNameBinding`, `MethodNameBinding` and `ScalarTypeBinding` all read
+`CompletionData.externalReferences()`, so migrating one and leaving the others would have had a class
+name coming from the store and its own methods coming from the projection, two snapshots of one census
+inside one popup. `NodeTypeBinding` joined them because it is a single graph-keyed read with nothing
+in its way. What stays on the projection is the pair that renders Javadoc, `CatalogTableBinding` and
+`CatalogColumnBinding`, which wait for the java-source family rather than shipping with a description
+they cannot fill.
+
+* **The two method providers collapsed into one.** The spec called for the narrowing and the ordering
+  "stated in the view"; they are stated in the arm instead, and the view is not written. Two
+  providers chained by dispatch order were expressing, in a provider list, a rule that belongs to the
+  arm: under `@externalField` the offered set narrows to the lifter shape and falls back to the whole
+  list when the class exposes none. One query either way, since the shape is a predicate over rows
+  already fetched. No view, because hover's method arm has not migrated yet and the shared shape is
+  not visible from one consumer; guessing it now is how a store accretes consumer-shaped columns. It
+  becomes a view when the second reader lands and can say what it needs.
+* **Provenance is a join, not a flag.** Class-name candidates rank reactor-resident ahead of
+  jar-resident by joining `store_source.source_kind`, where the projection carried a `fromJar`
+  boolean. The same census can now also answer which jar a class came from, which the boolean had
+  flattened away. Two more differences fell out and both are improvements: an FQN reachable from both
+  a jar and the reactor is one candidate at the better rank rather than two entries, and the order
+  within a rank is by name rather than the walk's own sequence, which nothing could have explained to
+  an author.
+* **Absence has one shape.** No store, a URI naming no file on disk, and a document no graph of this
+  session's has read all reach a handler as an empty handle. Three different absences, and the arm's
+  answer to each is the same empty popup, so distinguishing them at the query site would be inventing
+  a difference the author cannot see. A bare `Launcher` outside a build is the first of those, and it
+  answered nothing catalog-driven before this item too.
+* **The shared-file case is decided by the session, not by the store.** `SourceGraph` hands back both
+  memberships; `StoreAccess` picks the session's own graph when it is one of them, and answers absent
+  when it is not. That is the layer with something to go on: the request came from an editor with one
+  project open. The acceptance case is met by a decision rather than by a row order.
+
+Latency, measured against the new implementation alone as the item asks, and not on the Sakila fixture:
+Sakila's own census is smaller than a real consumer's, so timing it would have measured the wrong
+thing. At 5,000 classes with 40,000 methods and 80,000 parameters, one order of magnitude past Sakila,
+p50/p95 per request came out at 4.6/9.5 ms for the class census (5,040 items), 2.2/6.8 ms for one
+class's methods, 1.6/2.6 ms for the scalar constants and 1.2/2.0 ms for the node types. Nothing
+materializes and no index is added: these are plain queries over base relations, and the class-census
+figure is dominated by building 5,040 completion items rather than by the query, so the lever if it
+ever matters is what the surface offers, not how the store is shaped. The catalog-shaped arms
+(`sql_table`, `sql_column`, `sql_constraint`) are unmeasured because they have not migrated; they get
+their own numbers when they do, which is also when a Sakila-scaled catalog is the right fixture.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,

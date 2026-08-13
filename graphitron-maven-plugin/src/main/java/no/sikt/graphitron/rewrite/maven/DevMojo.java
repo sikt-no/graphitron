@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
+import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -175,6 +176,9 @@ public class DevMojo extends AbstractRewriteMojo {
     // same database, H2 giving one process one database per file). Package-private so
     // DevMojoTest can inject an in-memory store.
     GraphitronModelStore sessionStore;
+    // The language server's own reader over sessionStore, minted once the store opens and closed
+    // ahead of it in cleanup(). Null for the bare mojos that never start a session.
+    StoreAccess lspStore;
     // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
     // the unit tier); reportCompile writes through it beside the console and workspace sinks.
     CompileFacts compileFacts;
@@ -233,6 +237,11 @@ public class DevMojo extends AbstractRewriteMojo {
             new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
 
         var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
+        // The editor's read access to the store, a connection of its own rather than a share of the
+        // writer's: LSP requests arrive concurrently while a capture round holds this handle. The
+        // reader lives with the workspace and is closed with it in cleanup().
+        this.lspStore = new StoreAccess(sessionStore.reader(), initialCtx.graphName());
+        workspace.setStore(lspStore);
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
             workspace.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current, initial.catalogFacts()),
@@ -789,6 +798,10 @@ public class DevMojo extends AbstractRewriteMojo {
         // warm threads die with the JVM regardless.
         if (docsWarm != null && docsWarm.state() instanceof WarmState.Ready<DocsIndex> ready) {
             ready.handle().close();
+        }
+        // Before the store itself, since it reads through a connection the store minted.
+        if (lspStore != null) {
+            lspStore.close();
         }
         // Last, after the servers whose tools read through it: the session's store handle. A
         // file-backed store only releases its connection here; the file stays for the next run.

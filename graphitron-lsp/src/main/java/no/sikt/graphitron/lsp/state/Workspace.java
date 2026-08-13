@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.trace.LspTrace;
+import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
 import java.nio.file.Path;
@@ -18,7 +19,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Per-aggregator state: the set of open schema files plus the catalog the
@@ -65,6 +68,12 @@ public final class Workspace {
     private volatile List<CompileDiagnostic> compileDiagnostics = List.of();
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
+    // The session's read access to the fact store, set once by whoever started the session and
+    // null when nobody did. Not a projection swapped per round like the fields above: the store
+    // is written by capture on its own cadence and read live, so there is nothing here to
+    // refresh. A session without one answers store-backed requests absent, which is what a bare
+    // Launcher outside a build has always done.
+    private volatile StoreAccess store;
 
     public Workspace() {
         this(CompletionData.empty(), LspVocabulary.load());
@@ -190,6 +199,44 @@ public final class Workspace {
 
     public CompletionData catalog() {
         return catalog;
+    }
+
+    /**
+     * Hands this session its read access to the fact store, and takes over closing it. Called once
+     * by whoever started the session and holds the store the session writes through.
+     */
+    public void setStore(StoreAccess store) {
+        this.store = store;
+    }
+
+    /**
+     * Answers a request about the document at {@code uri} from the store, inside one read
+     * transaction and scoped to the graph that document belongs to. {@code answer} receives an empty
+     * handle when there is no store, when the URI names no file on disk, and when no graph of this
+     * session's has read that file: three different absences with one shape, because a handler's
+     * response to all three is the same and telling them apart at a completion site would be
+     * inventing a distinction the author cannot see.
+     *
+     * <p>This is the only door to the store. Nothing hands out a query surface that outlives the
+     * call, since a handle used after its transaction has ended is a read that can tear against a
+     * capture.
+     */
+    public <R> R answering(String uri, Function<Optional<StoreHandle>, R> answer) {
+        StoreAccess access = store;
+        Optional<String> sourceName = StoreAccess.sourceNameOf(uri);
+        if (access == null || sourceName.isEmpty()) {
+            return answer.apply(Optional.empty());
+        }
+        return access.answering(sourceName.get(), answer);
+    }
+
+    /** Releases the session's store access, if it was given one. Idempotent. */
+    public void closeStore() {
+        StoreAccess access = store;
+        store = null;
+        if (access != null) {
+            access.close();
+        }
     }
 
     /**

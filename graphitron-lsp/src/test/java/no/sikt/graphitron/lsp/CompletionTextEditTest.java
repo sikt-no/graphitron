@@ -21,9 +21,13 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +51,29 @@ class CompletionTextEditTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
+    @TempDir
+    static Path tmp;
+
+    /** One capture for every store-backed arm below: a service class, a scalar holder, a @node type. */
+    private static StoreFixture store;
+
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.of(tmp, StoreFixture.GRAPH, """
+            type Query { x: Int }
+            type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
+            """,
+            List.of(
+                StoreFixture.jarClass("com.example.FilmService",
+                    List.of(StoreFixture.method("list", "List"))),
+                StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars", "DateTime")));
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
+
     @Test
     void classNameItem_textEditCoversFullDottedValue() {
         String source = "type Query { x: Int @service(service: {className: \"com.example.FilmServ\", method: \"foo\"}) }\n";
@@ -54,7 +81,7 @@ class CompletionTextEditTest {
         // Cursor mid-value (between FilmS and erv): non-trivial prefix.
         Point cursor = new Point(0, innerStart + "com.example.FilmS".length());
 
-        var items = runClassName(source, cursor, fqn("com.example.FilmService"));
+        var items = runClassName(source, cursor);
 
         assertTextEditRange(items, "com.example.FilmService",
             new Range(new Position(0, innerStart), new Position(0, innerStart + "com.example.FilmServ".length())));
@@ -66,10 +93,7 @@ class CompletionTextEditTest {
         int methodStart = source.indexOf("\"li\"") + 1;
         Point cursor = new Point(0, methodStart + 1);
 
-        var items = runMethod(source, cursor,
-            new CompletionData(List.of(), List.of(), List.of(
-                new CompletionData.ExternalReference("com.example.FilmService", "com.example.FilmService", "",
-                    List.of(new CompletionData.Method("list", "List", "", List.of())), List.of()))));
+        var items = runMethod(source, cursor);
 
         assertTextEditRange(items, "list",
             new Range(new Position(0, methodStart), new Position(0, methodStart + "li".length())));
@@ -153,13 +177,8 @@ class CompletionTextEditTest {
         int innerStart = source.indexOf("\"graphql.scalars.\"") + 1;
         Point cursor = new Point(0, innerStart + "graphql.scalars".length());
 
-        var data = new CompletionData(List.of(), List.of(), List.of(
-            new CompletionData.ExternalReference(
-                "graphql.scalars.ExtendedScalars", "graphql.scalars.ExtendedScalars", "",
-                List.of(), List.of(),
-                List.of(new CompletionData.ScalarConstant("DateTime")))));
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> ScalarTypeCompletions.generate(VOCAB, data, ctx, dir, bytes));
+            (ctx, dir, bytes) -> ScalarTypeCompletions.generate(VOCAB, store.handle(), ctx, dir, bytes));
 
         // The scan carries DateTime on graphql.scalars.ExtendedScalars → composed FQN.
         assertTextEditRange(items, "graphql.scalars.ExtendedScalars.DateTime",
@@ -178,10 +197,8 @@ class CompletionTextEditTest {
         int innerStart = lines[line].indexOf("\"Fi\"") + 1;
         Point cursor = new Point(line, innerStart + 1);
 
-        var data = new CompletionData(List.of(), List.of(), List.of(),
-            Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("film_id"))));
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> NodeTypeCompletions.generate(VOCAB, data, ctx));
+            (ctx, dir, bytes) -> NodeTypeCompletions.generate(VOCAB, store.handle(), ctx));
 
         assertTextEditRange(items, "Film",
             new Range(new Position(line, innerStart), new Position(line, innerStart + "Fi".length())));
@@ -229,7 +246,7 @@ class CompletionTextEditTest {
         int innerCol = source.indexOf("\"\"") + 1;
         Point cursor = new Point(0, innerCol);
 
-        var items = runClassName(source, cursor, fqn("com.example.FilmService"));
+        var items = runClassName(source, cursor);
 
         Range expected = new Range(new Position(0, innerCol), new Position(0, innerCol));
         assertTextEditRange(items, "com.example.FilmService", expected);
@@ -241,7 +258,7 @@ class CompletionTextEditTest {
         int innerStart = source.indexOf("com.example.");
         Point cursor = new Point(0, innerStart + "com.example.".length());
 
-        var items = runClassName(source, cursor, fqn("com.example.FilmService"));
+        var items = runClassName(source, cursor);
 
         assertTextEditRange(items, "com.example.FilmService",
             new Range(new Position(0, innerStart), new Position(0, innerStart + "com.example.".length())));
@@ -257,7 +274,7 @@ class CompletionTextEditTest {
         int openQuote = source.indexOf("\"\"");
         Point cursor = new Point(0, openQuote);
 
-        var items = runClassName(source, cursor, fqn("com.example.FilmService"));
+        var items = runClassName(source, cursor);
 
         Range expected = new Range(new Position(0, openQuote + 1), new Position(0, openQuote + 1));
         assertTextEditRange(items, "com.example.FilmService", expected);
@@ -282,15 +299,14 @@ class CompletionTextEditTest {
         return call.run(context, directive, bytes);
     }
 
-    private static List<CompletionItem> runClassName(String source, Point cursor, CompletionData.ExternalReference ref) {
-        var data = new CompletionData(List.of(), List.of(), List.of(ref));
+    private static List<CompletionItem> runClassName(String source, Point cursor) {
         return runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> ClassNameCompletions.generate(VOCAB, data, ctx));
+            (ctx, dir, bytes) -> ClassNameCompletions.generate(VOCAB, store.handle(), ctx));
     }
 
-    private static List<CompletionItem> runMethod(String source, Point cursor, CompletionData data) {
+    private static List<CompletionItem> runMethod(String source, Point cursor) {
         return runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> MethodCompletions.generate(VOCAB, data, ctx, dir, cursor, bytes));
+            (ctx, dir, bytes) -> MethodCompletions.generate(VOCAB, store.handle(), ctx, dir, cursor, bytes));
     }
 
     private static List<CompletionItem> runArgName(
@@ -303,10 +319,6 @@ class CompletionTextEditTest {
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at " + cursor));
         return ArgNameCompletions.generate(VOCAB, snapshot, directive, cursor, lspPos, bytes);
-    }
-
-    private static CompletionData.ExternalReference fqn(String name) {
-        return new CompletionData.ExternalReference(name, name, "", List.of(), List.of());
     }
 
     private static void assertTextEditRange(List<CompletionItem> items, String label, Range expected) {

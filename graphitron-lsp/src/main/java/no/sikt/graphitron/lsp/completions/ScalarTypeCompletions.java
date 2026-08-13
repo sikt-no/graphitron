@@ -5,35 +5,40 @@ import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.jooq.Field;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
+
+import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
+import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.lower;
+import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.when;
 
 /**
  * Completion for {@code @scalarType(scalar: "|")} on a {@code scalar X}
  * declaration. Suggests {@code className.fieldName} for each
- * {@code public static GraphQLScalarType} constant found on the consumer's
- * codegen classpath, prioritising the constant whose field name matches the
- * enclosing scalar's SDL name.
+ * {@code public static GraphQLScalarType} constant the graph's classpath walk
+ * met, prioritising the constant whose field name matches the enclosing
+ * scalar's SDL name.
  *
- * <p>The candidates come from the classpath scan carried on
- * {@link CompletionData.ExternalReference#scalarConstants()}: the scan
- * enumerates the {@code GraphQLScalarType} fields actually on the classpath,
- * so it surfaces the consumer's own scalar constants
- * ({@code com.example.Scalars.MONEY}) as well as any library's, with no
- * coupling to {@code graphql-java-extended-scalars}. Every suggestion is a
- * well-formed {@code class.field} reference as
+ * <p>The candidates are {@code jvm_scalar_type_field} rows: the walk enumerates
+ * the {@code GraphQLScalarType} fields actually on the classpath, so it surfaces
+ * the consumer's own scalar constants ({@code com.example.Scalars.MONEY}) as
+ * well as any library's, with no coupling to
+ * {@code graphql-java-extended-scalars}. Every suggestion is a well-formed
+ * {@code class.field} reference as
  * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver.ParsedDirectiveValue}
  * defines the shape, so a completed value never rejects as malformed at
- * codegen. The scan sees the field
- * type, not its runtime value; a suggested constant may still fail to bind
- * (null at codegen, erased {@code Coercing}), which the authored-value
- * diagnostics in {@code Diagnostics} report. That is the same best-effort
- * contract method completion already lives under.
+ * codegen. The walk sees the field type, not its runtime value; a suggested
+ * constant may still fail to bind (null at codegen, erased {@code Coercing}),
+ * which the authored-value diagnostics in {@code Diagnostics} report. That is
+ * the same best-effort contract method completion already lives under.
  */
 public final class ScalarTypeCompletions {
 
@@ -41,7 +46,7 @@ public final class ScalarTypeCompletions {
 
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
-        CompletionData data,
+        StoreHandle store,
         CompletionContext context,
         Directives.Directive directive,
         byte[] source
@@ -55,26 +60,30 @@ public final class ScalarTypeCompletions {
             .flatMap(n -> TypeContext.declaredNameOf(n, source))
             .orElse(null);
 
-        // Field-name match for the enclosing `scalar X` is offered first (case-insensitive,
-        // so `scalar UUID` prefers `...ExtendedScalars.UUID`); everything else follows.
-        var preferred = new LinkedHashSet<String>();
-        var rest = new LinkedHashSet<String>();
-        for (CompletionData.ExternalReference ref : data.externalReferences()) {
-            for (CompletionData.ScalarConstant constant : ref.scalarConstants()) {
-                String fqn = ref.className() + "." + constant.fieldName();
-                if (scalarName != null && constant.fieldName().equalsIgnoreCase(scalarName)) {
-                    preferred.add(fqn);
-                } else {
-                    rest.add(fqn);
-                }
-            }
-        }
-        var fqns = new LinkedHashSet<String>(preferred);
-        fqns.addAll(rest);
-        var items = new ArrayList<CompletionItem>(fqns.size());
-        for (String fqn : fqns) {
+        // Field-name match for the enclosing `scalar X` is offered first (case-insensitive, so
+        // `scalar UUID` prefers `...ExtendedScalars.UUID`); everything else follows by name. The
+        // preference is a sort key rather than a partition, so the ordering is one pass over one
+        // result rather than two accumulating sets. Aliased, and ordered by the alias, because a
+        // DISTINCT select may only order by its own result columns and re-rendering the expression
+        // in the ORDER BY makes it a second one.
+        Field<Integer> rank = (scalarName == null
+            ? inline(0)
+            : when(lower(JVM_SCALAR_TYPE_FIELD.FIELD_NAME).eq(scalarName.toLowerCase()), inline(0))
+                .otherwise(inline(1))).as("rank");
+        var rows = store.dsl()
+            // Distinct, because one constant reachable through two sources is one candidate: the
+            // reference an author writes names the class and the field, and says nothing about which
+            // classpath entry it came from.
+            .selectDistinct(JVM_SCALAR_TYPE_FIELD.CLASS_NAME, JVM_SCALAR_TYPE_FIELD.FIELD_NAME, rank)
+            .from(JVM_SCALAR_TYPE_FIELD)
+            .where(store.reads(JVM_SCALAR_TYPE_FIELD.SOURCE_NAME))
+            .orderBy(field(name("rank")), JVM_SCALAR_TYPE_FIELD.CLASS_NAME, JVM_SCALAR_TYPE_FIELD.FIELD_NAME)
+            .fetch();
+        var items = new ArrayList<CompletionItem>(rows.size());
+        for (var row : rows) {
             items.add(CompletionItems.replacing(
-                fqn, CompletionItemKind.Constant, context.replaceRange(), "GraphQLScalarType constant"));
+                row.value1() + "." + row.value2(), CompletionItemKind.Constant,
+                context.replaceRange(), "GraphQLScalarType constant"));
         }
         return items;
     }
