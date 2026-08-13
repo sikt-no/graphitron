@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -23,7 +24,7 @@ import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
  * dimension vocabulary (one wire name per {@code diagnostic} view column), the null-safe
  * {@code where} translation both diagnostics tools share, and the counts-only
  * {@code diagnostics.aggregate} computation. This is the module's first read of the fact store;
- * the handle arrives through {@link GraphitronMcpServer.StoreHandle} from the dev session's one
+ * the handle arrives through {@link StoreHandle} from the dev session's one
  * store owner, never from a file the reader opened itself, and every statement is scoped to the
  * reading session's graph.
  *
@@ -255,7 +256,7 @@ final class DiagnosticFacets {
     // ---- the aggregate ----
 
     static McpSchema.CallToolResult aggregateResult(
-        GraphitronMcpServer.StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
+        StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
     ) {
         if (store == null) {
             return refusal("diagnostics.aggregate");

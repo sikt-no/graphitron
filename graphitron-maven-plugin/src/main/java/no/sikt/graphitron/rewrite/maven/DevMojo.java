@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
@@ -247,7 +248,7 @@ public class DevMojo extends AbstractRewriteMojo {
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
         bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
             buildExecuteToolConfig(initialCtx),
-            new GraphitronMcpServer.StoreHandle(sessionStore.dsl(), initialCtx.graphName()));
+            new StoreHandle(sessionStore.dsl(), initialCtx.graphName()));
         // Seed the source-position index so goto-definition / hover work before
         // the first .java edit; the source watcher refreshes it on the source
         // cadence thereafter. The walk (and its cache) is owned by the workspace.
@@ -314,7 +315,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig,
-        ExecuteTool.Config executeConfig, GraphitronMcpServer.StoreHandle storeHandle)
+        ExecuteTool.Config executeConfig, StoreHandle storeHandle)
         throws MojoExecutionException {
         try {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);

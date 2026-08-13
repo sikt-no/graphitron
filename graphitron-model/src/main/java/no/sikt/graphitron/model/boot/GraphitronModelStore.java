@@ -56,6 +56,10 @@ import java.util.UUID;
  * close; a file-backed one only releases its connection, leaving the file for the next run. The
  * in-memory name carries a fresh {@link UUID}, so concurrent stores (a parallel reactor, forked
  * test JVMs, an LSP session beside a build) never collide.
+ *
+ * <p>A consumer that reads while somebody else writes asks this store for a {@link StoreReader}
+ * rather than sharing {@link #dsl()}. That the URL stays private is the reason the mint exists here:
+ * see {@link #reader()}.
  */
 public final class GraphitronModelStore implements AutoCloseable {
 
@@ -77,13 +81,16 @@ public final class GraphitronModelStore implements AutoCloseable {
     private final boolean warm;
     private final Path location;
     private final boolean dropOnClose;
+    private final String url;
 
-    private GraphitronModelStore(Connection connection, boolean warm, Path location, boolean dropOnClose) {
+    private GraphitronModelStore(Connection connection, boolean warm, Path location,
+                                 boolean dropOnClose, String url) {
         this.connection = connection;
         this.dsl = DSL.using(connection, SQLDialect.H2);
         this.warm = warm;
         this.location = location;
         this.dropOnClose = dropOnClose;
+        this.url = url;
     }
 
     /**
@@ -97,7 +104,7 @@ public final class GraphitronModelStore implements AutoCloseable {
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
-        return new GraphitronModelStore(connection, false, null, true);
+        return new GraphitronModelStore(connection, false, null, true, url);
     }
 
     /**
@@ -139,10 +146,11 @@ public final class GraphitronModelStore implements AutoCloseable {
             return open();
         }
         boolean existing = Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"));
+        String url = fileUrl(directory);
         try {
-            Connection connection = connect(fileUrl(directory));
+            Connection connection = connect(url);
             if (stampMatches(connection)) {
-                return new GraphitronModelStore(connection, true, directory, false);
+                return new GraphitronModelStore(connection, true, directory, false, url);
             }
             if (existing) {
                 // A file at the stamped path whose stamp still mismatches was moved or damaged
@@ -152,7 +160,7 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
             create(connection);
             stamp(connection);
-            return new GraphitronModelStore(connection, false, directory, false);
+            return new GraphitronModelStore(connection, false, directory, false, url);
         } catch (RuntimeException e) {
             // Whatever went wrong is about the file, not the schema: a DDL this module cannot
             // execute fails identically on the in-memory store below, carrying the same message.
@@ -164,9 +172,42 @@ public final class GraphitronModelStore implements AutoCloseable {
         }
     }
 
-    /** The typed query surface over this store; the only handle capture and its readers need. */
+    /**
+     * The typed query surface over this store's own connection: what capture writes through, and
+     * what a caller reads through when it is the same turn-based party that writes. A consumer
+     * answering requests while another party writes wants {@link #reader()} instead, which is a
+     * connection of its own rather than a share of this one.
+     */
     public DSLContext dsl() {
         return dsl;
+    }
+
+    /**
+     * Mints a second connection onto this same database, for a consumer that reads while this
+     * store's owner writes. The store mints it rather than publishing a URL for a reader to open
+     * itself: the in-memory name carries a private {@link UUID} that nothing outside this class can
+     * reproduce, and a file-backed reader recomputing the stamped path would be one edit away from
+     * opening a directory that does not exist, booting empty, and reporting a schema with no facts
+     * in it as a schema with no facts.
+     *
+     * <p>Both shapes admit a second connection, and the fallback needs no special case. An
+     * in-memory database is named and lives in this JVM, so a reader attaches to it by URL like any
+     * other; a file-backed one is in mixed mode and hands out connections to the same process
+     * freely. That is what makes the in-memory fallback a full answer surface rather than a
+     * degraded one: a session whose cache directory was unusable still captures into its private
+     * store, and its reader still sees every row that session wrote. There is no configuration
+     * under which a caller holds a store it cannot read.
+     *
+     * <p>Each call mints a fresh reader, and the caller owns it: readers do not pool, and closing
+     * one leaves this store and any sibling reader untouched. Closing <em>this</em> store while a
+     * reader is open is the one ordering that matters, since an in-memory database goes with its
+     * owner.
+     *
+     * @throws IllegalStateException if the second connection cannot be opened, which means this
+     *         store's own database is gone rather than that the caller asked for the wrong thing
+     */
+    public StoreReader reader() {
+        return new StoreReader(connect(url));
     }
 
     /**

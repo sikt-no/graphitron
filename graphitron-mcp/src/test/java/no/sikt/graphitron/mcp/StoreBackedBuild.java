@@ -2,6 +2,7 @@ package no.sikt.graphitron.mcp;
 
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
@@ -80,8 +81,8 @@ final class StoreBackedBuild implements AutoCloseable {
         }
     }
 
-    GraphitronMcpServer.StoreHandle handle() {
-        return new GraphitronMcpServer.StoreHandle(store.dsl(), graphName);
+    StoreHandle handle() {
+        return new StoreHandle(store.dsl(), graphName);
     }
 
     @Override

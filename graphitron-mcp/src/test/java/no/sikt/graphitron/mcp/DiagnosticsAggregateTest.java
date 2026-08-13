@@ -3,6 +3,7 @@ package no.sikt.graphitron.mcp;
 import graphql.language.SourceLocation;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -225,7 +226,7 @@ class DiagnosticsAggregateTest {
     // ---- helpers ----
 
     private McpSchema.CallToolResult aggregate(
-        GraphitronMcpServer.StoreHandle handle, LspSchemaSnapshot snapshot, Map<String, Object> args
+        StoreHandle handle, LspSchemaSnapshot snapshot, Map<String, Object> args
     ) {
         var result = DiagnosticFacets.aggregateResult(handle, snapshot, args);
         assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
@@ -233,11 +234,11 @@ class DiagnosticsAggregateTest {
     }
 
     /** Writes {@code errors} through the production residue loader and hands back the read handle. */
-    private GraphitronMcpServer.StoreHandle volumeHandle(
+    private StoreHandle volumeHandle(
         GraphitronModelStore store, List<ValidationError> errors
     ) {
         new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity("volume", tmp)).write(errors);
-        return new GraphitronMcpServer.StoreHandle(store.dsl(), "volume");
+        return new StoreHandle(store.dsl(), "volume");
     }
 
     @SuppressWarnings("unchecked")

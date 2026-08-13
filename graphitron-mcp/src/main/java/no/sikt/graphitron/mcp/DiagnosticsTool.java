@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.tables.records.DiagnosticRecord;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -42,7 +43,7 @@ final class DiagnosticsTool {
     static final int DEFAULT_LIMIT = 100;
 
     static McpSchema.CallToolResult diagnosticsResult(
-        GraphitronMcpServer.StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
+        StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
     ) {
         if (store == null) {
             return DiagnosticFacets.refusal("diagnostics");

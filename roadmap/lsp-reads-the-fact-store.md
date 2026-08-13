@@ -602,6 +602,41 @@ The facts landing is the prerequisite; migrating the reader is the capability wo
 contract before a store-reading consumer exists would be a half-migration with nothing on the other
 side.
 
+## Settled while building: the read substrate
+
+The handle and the read connection landed together, since neither is usable without the other, and
+three details were decided in implementation:
+
+* **The handle's package is `read`, not `boot`.** `graphitron-model` compiles
+  `boot/**` and `build/**` at `generate-sources`, before jOOQ codegen has produced a single table
+  class, so nothing in `boot` may name a generated relation. Resolving a source to its graph reads
+  `store_graph_source`, so `StoreHandle` and `SourceGraph` sit in `no.sikt.graphitron.model.read`
+  and only the connection-minting half stays beside the store. The nested copy in
+  `GraphitronMcpServer` is deleted rather than aliased, which is the whole point of moving it: two
+  handles would be two conventions.
+* **The multi-graph arm is named for the fact, not for the trouble.** `SourceGraph.Shared` carries
+  every graph that read the file, ordered by name, because a schema file two modules both read is a
+  member of both and both rows are true; calling it ambiguous would frame a correct store state as a
+  defect. `Uncaptured` is the ordinary state of a file written since the last capture, and absence is
+  its answer. `Scoped` carries the handle rather than the graph name, so the success arm is already
+  the thing every query site needs and no site mints its own.
+* **One read is one transaction, at H2's snapshot level, set at mint.** `read` is the reader's only
+  door and it hands over a `DSLContext` for the duration of one call; no bare query surface is
+  exposed beside it, because a handler holding one past the return is exactly the straddle the
+  transaction removes. The level is stated rather than inherited, and the test that pins it is
+  written to fail at read-committed: a whole capture committing between a read's first and second
+  query is invisible to that read and visible to the next. The transaction ends in a rollback, since
+  a reader has nothing to commit. Reads serialize on the single connection, which is the honest cost
+  of one connection and not a pool waiting to be built; a second reader per thread is a mint away.
+
+The in-memory fallback needed no special case, which is what makes it a full answer surface rather
+than a degraded one: a named in-memory database takes a second connection like a file-backed one, so
+a session whose cache directory was unusable still reads every row it captured.
+
+Deliberately not in this increment: the LSP holds no reader yet. The mint and the scoping are the
+substrate every capability query needs, and wiring a reader into `Workspace` before a capability
+queries it would add a field with no reader.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,

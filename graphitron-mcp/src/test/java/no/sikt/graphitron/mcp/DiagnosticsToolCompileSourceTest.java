@@ -2,6 +2,7 @@ package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
@@ -44,7 +45,7 @@ class DiagnosticsToolCompileSourceTest {
             new CompileFacts(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp))
                 .write(new CompileRound(compile.stream().noneMatch(d -> "ERROR".equals(d.kind())), compile));
             McpSchema.CallToolResult result = DiagnosticsTool.diagnosticsResult(
-                new GraphitronMcpServer.StoreHandle(store.dsl(), GRAPH),
+                new StoreHandle(store.dsl(), GRAPH),
                 LspSchemaSnapshot.unavailable(), args);
             var structured = (Map<String, Object>) result.structuredContent();
             return (List<Map<String, Object>>) structured.get("diagnostics");

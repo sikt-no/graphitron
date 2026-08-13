@@ -169,6 +169,37 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+                The javadoc reference gate reads the project's source roots, and inside this module
+                the generated tables are a source-only symbol: every other module resolves
+                no.sikt.graphitron.model.Tables off this module's jar, but here it exists only under
+                target/generated-sources until compile. The gate forks generate-sources, which
+                regenerates the tree, yet the source root build-helper adds during that fork does not
+                reach the sourcepath the forked javadoc run is given, so a hand-written class in this
+                module that names a generated relation fails the gate with "cannot find symbol"
+                rather than with a dangling link. Naming both roots here is what lets model code use
+                the compile-checked table constants like every downstream reader does.
+
+                The cost, since it is visible: javadoc parses what it resolves, so the generated
+                tree's own comments are scanned too and the gate's output carries a block of
+                "unknown tag" warnings from DDL prose that reads as a javadoc tag (@field, @enum).
+                Warnings, not errors, and failOnWarnings is deliberately unset on the gate in the
+                parent pom. The alternatives were worse: excluding this module's read-side classes
+                would hollow out the gate exactly where new code lands, and dropping the generated
+                constants for dynamic SQL would trade a compile-checked column name for a string.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>check-link-references</id>
+                        <configuration>
+                            <sourcepath>${project.basedir}/src/main/java:${model.generated.sources}</sourcepath>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>

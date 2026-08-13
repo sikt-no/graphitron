@@ -6,6 +6,7 @@ import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTranspor
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationError;
@@ -266,7 +267,7 @@ class ServerInstructionsTest {
     void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
         try (var store = pagedDiagnosticsStore(tmp);
              var server = server(pagedWorkspace(), null,
-                 new GraphitronMcpServer.StoreHandle(store.dsl(), "paged"));
+                 new StoreHandle(store.dsl(), "paged"));
              var client = connect(server.port())) {
             client.initialize();
             var advertised = advertisedSurface(client);
@@ -518,7 +519,7 @@ class ServerInstructionsTest {
     }
 
     private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig,
-        GraphitronMcpServer.StoreHandle storeHandle) throws IOException {
+        StoreHandle storeHandle) throws IOException {
         return new GraphitronMcpServer(
             new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
             workspace, null, null, null, executeConfig, storeHandle);

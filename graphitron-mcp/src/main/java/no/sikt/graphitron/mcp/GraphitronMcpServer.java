@@ -13,6 +13,7 @@ import no.sikt.graphitron.mcp.rag.EmbeddingStore;
 import no.sikt.graphitron.mcp.rag.RagConfig;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
@@ -148,21 +149,6 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The dev session's fact store handle plus the graph whose partition this server reads: the
-     * two diagnostics tools project the store's {@code diagnostic} view through it, scoped to
-     * this graph. The handle is the session's one live {@code DSLContext}, owned by the caller
-     * ({@code DevMojo} opens the store once and closes it at cleanup); this server never opens
-     * the persisted file itself, which could silently be a different store than the one the
-     * session writes.
-     */
-    public record StoreHandle(org.jooq.DSLContext dsl, String graphName) {
-        public StoreHandle {
-            java.util.Objects.requireNonNull(dsl, "dsl");
-            java.util.Objects.requireNonNull(graphName, "graphName");
-        }
-    }
-
-    /**
      * The full production form: the five-arg server plus the {@code execute} tool
      * configuration and the fact store handle. When {@code executeConfig} is {@code null} (no
      * dev database configured), the {@code execute} tool is not registered at all, the stronger
@@ -171,6 +157,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * {@code null} {@code storeHandle} takes the other posture: the diagnostics tools stay
      * advertised and refuse per call, because an empty answer from a missing store would read
      * as a clean schema.
+     *
+     * <p>The handle carries the session's one live {@code DSLContext} and the graph whose partition
+     * this server reads, and the caller owns it: {@code DevMojo} opens the store once and closes it
+     * at cleanup. This server never opens the persisted file itself, which could silently be a
+     * different store than the one the session writes. Sharing the writer's connection is safe here
+     * only because this server is turn-based; a consumer answering concurrently mints a
+     * {@link no.sikt.graphitron.model.boot.StoreReader} instead.
      */
     public GraphitronMcpServer(
         InetSocketAddress address, Workspace workspace,
