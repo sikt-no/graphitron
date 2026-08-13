@@ -137,6 +137,34 @@ public final class GraphitronDevExecutorGenerator {
                 .endControlFlow()
                 .addStatement("$T claimsPayload = claims", String.class);
         }
+        if (mountsIdentity) {
+            // Fail fast with the mount method's own error: inside execution the error router
+            // redacts fetcher failures behind a correlation id, but a rejected dev payload is the
+            // caller's to fix, so the executor runs the pair once up front and lets the method's
+            // exception propagate verbatim. Execution's own mount then overwrites this one on the
+            // same connection (mount establishes identity wholesale).
+            var hookImpl = ClassName.get(schemaPackage,
+                ConnectionRuntimeClassGenerator.SESSION_HOOK_IMPL_CLASS_NAME);
+            var settings = ClassName.get("org.jooq.conf", "Settings");
+            execute
+                .addComment("Preflight: surface a rejected payload as the mount method's own exception.")
+                .addStatement("$T devDialect = $T.valueOf(dialect)", sqlDialect, sqlDialect)
+                .addStatement("$T devSettings = new $T()", settings, settings);
+            String payloadArg = stringPayloadName == null ? "" : ", claimsPayload";
+            if (sessionHooks instanceof SessionHooks.Handled && sessionHooks.unmountRef().isPresent()) {
+                execute.addStatement(
+                    "var preflightHandle = $T.mount(connection, devDialect, devSettings$L)",
+                    hookImpl, payloadArg);
+                execute.addStatement(
+                    "$T.unmount(connection, devDialect, devSettings, preflightHandle)", hookImpl);
+            } else {
+                execute.addStatement("$T.mount(connection, devDialect, devSettings$L)",
+                    hookImpl, payloadArg);
+                if (sessionHooks.unmountRef().isPresent()) {
+                    execute.addStatement("$T.unmount(connection, devDialect, devSettings)", hookImpl);
+                }
+            }
+        }
         execute
             .addStatement("$T runtime = new $T(new $N(connection), $T.valueOf(dialect))",
                 runtime, runtime, DATA_SOURCE_WRAPPER, sqlDialect)
@@ -346,8 +374,9 @@ public final class GraphitronDevExecutorGenerator {
             sb.append("<p>This schema configures {@code <sessionState>}: the mount method receives\n");
             sb.append("{@code claims} as its single String payload exactly as a production caller would\n");
             sb.append("supply it, and a missing or blank payload fails loudly rather than running\n");
-            sb.append("unsecured. The mount runs lazily at the first acquisition inside execution, so a\n");
-            sb.append("mount failure surfaces in the payload's errors channel with the method's own message.\n");
+            sb.append("unsecured. The payload is preflighted through the mount method before execution,\n");
+            sb.append("so a rejected payload propagates as the method's own exception rather than a\n");
+            sb.append("redacted execution error.\n");
         }
         if (payloadUnconstructible) {
             sb.append("\n");

@@ -88,7 +88,7 @@ public final class ExecuteTool {
                 + "the execution result JSON (data plus GraphQL errors). Mutations run in a "
                 + "transaction that is always rolled back, so you can probe writes freely without "
                 + "changing data. If the schema mounts session identity (<sessionState>), the "
-                + "configured claims payload is handed to the real connect hook, so row-level "
+                + "configured claims payload is handed to the real mount method, so row-level "
                 + "security applies exactly as in production.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()

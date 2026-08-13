@@ -19,12 +19,12 @@ import org.jooq.SQLDialect;
  * supplied as a lambda over the generated {@code Graphitron} facade (the only generated-symbol
  * reference the library never names), {@link #engineBuilder()} builds the engine from the
  * application-scoped {@code GraphitronRuntime} over the Quarkus-managed datasource so graphitron
- * pins one connection per operation, mounts the caller's identity through the configured
- * {@code <sessionState>} hook, and demarcates transactions, and {@link #newExecutionInput()}
- * carries only per-request data: the opaque claims payload plus the schema's one
+ * takes one connection per operation, mounts the caller's identity through the configured
+ * {@code <sessionState>} mount method, and demarcates transactions, and {@link #newExecutionInput()}
+ * carries only per-request data: the mount's claims payload plus the schema's one
  * {@code contextArgument} ({@code userId}). A real subgraph would pass the authenticated request's
- * token (e.g. {@code jwt.getRawToken()}, or its decoded claims segment for the {@code <variables>}
- * sugar configured here) and resolve {@code userId} from it rather than hard-coding both.
+ * token (e.g. {@code jwt.getRawToken()}, or its decoded claims segment for a mount that parses
+ * claims JSON) and resolve {@code userId} from it rather than hard-coding both.
  */
 @ApplicationScoped
 public class SakilaGraphitronApplication extends AbstractGraphitronApplication {

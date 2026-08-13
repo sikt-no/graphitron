@@ -30,7 +30,7 @@ var runtime = new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES);
 var graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 ----
 
-Per request, pass the opaque claims through the owned-connection factory (`Graphitron.newOwnedExecutionInput(claims, ...)`). Connections are pinned lazily, one per distinct tenant the operation actually touches; sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant.
+Per request, pass your `<sessionState>` mount's payload through the owned-connection factory (`Graphitron.newOwnedExecutionInput(claims, ...)`; the parameter names and types are your mount method's own). Connections are taken lazily, one per distinct tenant the operation actually touches, and your mount runs on each, so sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant. A `$session`-bound service parameter likewise receives the handle of the tenant connection its call runs on, never a neighbor's.
 
 Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree; node ids and federation representations carry their tenant inside the key and partition per row; global tables read the default source. A tenant-scoped field that nothing routes is a build error, never a silent read of the wrong database.
 

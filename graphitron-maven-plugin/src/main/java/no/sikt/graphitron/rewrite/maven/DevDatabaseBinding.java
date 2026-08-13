@@ -35,7 +35,7 @@ public class DevDatabaseBinding {
     /** The jOOQ dialect, explicit and enumerated: {@code POSTGRES} or {@code ORACLE}. */
     String dialect;
     /**
-     * The opaque per-request claims payload handed to the {@code <sessionState>} connect hook:
+     * The per-request claims payload handed to the {@code <sessionState>} mount method:
      * inline, or {@code @/path/to/file} to keep tokens out of listings. Required when the schema
      * configures {@code <sessionState>} (enforced by the generated executor at call time).
      */

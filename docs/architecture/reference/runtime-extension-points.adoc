@@ -40,7 +40,7 @@ var engine  = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 ----
 
 `runtime.newGraphQL(schema)` attaches the connection-lifecycle instrumentation,
-so you register nothing else. Per request you pass only the opaque claims
+so you register nothing else. Per request you pass only your mount method's
 payload (and any declared `contextArguments`):
 
 [source,java]
@@ -48,69 +48,59 @@ payload (and any declared `contextArguments`):
 var input = Graphitron.newOwnedExecutionInput(claims, userId).query(q).build();
 ----
 
-For that operation Graphitron pins one connection, runs your connect hook to
-mount identity, executes (each top-level mutation field in its own transaction
-that commits or rolls back independently, queries in autocommit), then runs your
-disconnect hook and releases the connection. A connection whose unmount failed
-is evicted, never returned to the pool.
+For that operation Graphitron takes one connection when a field first needs it,
+runs your mount method on it to mount identity, executes (each top-level
+mutation field in its own transaction that commits or rolls back independently,
+queries in autocommit), then runs your unmount method and releases the
+connection. A connection whose unmount failed is evicted, never returned to the
+pool.
 
 === Session identity through `<sessionState>`
 
-Identity goes to the database, not to Java. The claims payload you pass is
-handed untouched to a connect callable you name in the plugin's
-`<sessionState>` configuration; a paired disconnect callable clears it.
-Graphitron parses nothing about the payload, the database does. See
+Identity goes to the database, not to Java. The plugin's `<sessionState>`
+configuration names a static Java `<mount>` method (typically the jOOQ-generated
+executing method of your identity routine, or a hand-written facade of the same
+shape) and an optional `<unmount>`. Graphitron reads the signatures at build
+time: the mount's payload parameters become contextArguments on the generated
+factory, handed through untouched, and its return type is the handle later
+passed to `unmount`. Graphitron parses nothing about the payload; your method
+and the database do. See
 xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
-identity] for the two configuration forms (the function-hook form for
-Oracle/RAS or any privilege-fenced package, and the Postgres `<variables>`
-sugar) and the pairing rules.
+identity] for the configuration and the signature contract.
 
 [#hook-state-contract]
 ==== The hook state contract: session-scoped, never transactional
 
-Session identity is connection-scoped state, and your hooks must treat it that
-way. Graphitron cannot see inside a connect or disconnect routine you author, so
-the contract is stated here and holds for every function-hook `<sessionState>`:
+Session identity is connection-scoped state, and your methods must treat it
+that way. Graphitron cannot see inside the mount or unmount you author, so the
+contract is stated here and holds for every `<sessionState>`:
 
 * *Set and reset session-scoped state only.* On Postgres that means
   `set_config(key, value, false)` (the third argument `false` means
   session-scoped), never `SET LOCAL` and never `set_config(..., true)`, both of
-  which are transaction-scoped and vanish at the next commit or rollback.
-  Oracle RAS attach/detach and VPD context calls are session operations and
-  already comply.
+  which are transaction-scoped and vanish at the end of the statement that set
+  them. Oracle RAS attach/detach and VPD context calls are session operations
+  and already comply.
 * *Do not rely on a surrounding transaction.* Neither mount nor unmount may
   depend on any transaction committing or rolling back: no state that a commit
   wipes (for example a global temporary table declared
   `ON COMMIT DELETE ROWS`), no work left uncommitted for a later commit to
   persist.
-* *You may assume no transaction is open.* Graphitron invokes both hooks
-  outside any open transaction, structurally: acquisition normalizes the pinned
-  connection to autocommit before connect runs (so a pool configured
-  autocommit=false cannot put your mount inside an implicit never-committed
-  transaction), and release settles any transaction the operation left open
-  before disconnect runs (so your clears take effect immediately rather than
-  being reverted by the pool's return-rollback).
+* *You may assume no transaction is open.* Graphitron invokes both methods
+  outside any open transaction, structurally: acquisition asserts the
+  connection arrives in autocommit and fails closed if it does not (a pool
+  configured `autoCommit=false` is a deployment error surfaced at the first
+  acquisition, not silently worked around), and release settles any transaction
+  the operation left open before unmount runs (so your clears take effect
+  immediately rather than being reverted by the pool's return-rollback).
 
-A hook that violates the first two points can leave identity mounted for the
+A mount that violates the first two points can leave identity mounted for the
 pool's next borrower or drop it mid-operation; both are security defects, not
-performance defects.
-
-Because graphitron cannot verify the second point from outside, it does not
-trust documentation alone. Unless the configuration declares
-`<stateSurvivesTransactions>true</stateSurvivesTransactions>`, a paired
-function hook is re-fired after each top-level mutation-field settle
-(disconnect with the old handle, connect capturing a fresh one, in autocommit),
-so a settle can never leave stale or reverted identity for the field's
-read-back or later mutation fields. Queries never settle, so the safe default
-never taxes the read path. The `<variables>` sugar needs no declaration: its
-mounts commit immediately in autocommit and session-scoped variables survive
-settles, so it opts in structurally. One scoped exception: the dev-only
-`ROLLBACK_ONLY` commit policy (the R428 execute tool) defers a single operation
-transaction across field boundaries, so nothing settles mid-operation and the
-re-fire never runs there; dev execution does not exercise an unconfirmed
-re-fire pair between mutation fields. See
-xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
-identity] for the configuration.
+performance defects. The structure is what makes the contract cheap to hold:
+`mount` runs once per taken connection with autocommit on, so what it sets is
+committed session state, and a mutation field's transaction settling later
+cannot revert it. Graphitron therefore never re-runs your methods around
+transaction boundaries.
 
 If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
 build time (`no-session-state`): an unsecured direct-to-database API is a
@@ -351,29 +341,38 @@ closed: an RLS policy must treat both a `NULL` and an empty session variable as
 dialect and pattern, and it is a spectrum, not a yes/no. Choosing where on it to
 sit is the load-bearing security decision.
 
-* *Enforced fence* (strongest). Oracle package-bound contexts and RAS: code on
-  the connection cannot set identity state except through a trusted definer-rights
-  package. Configure this with the function-hook `<sessionState>` form.
-* *Convention fence.* Plain PostgreSQL GUCs set by the `<variables>` sugar (or a
-  `SECURITY DEFINER` function that writes them): any SQL on the connection can
-  overwrite them, so the real guarantee is that Graphitron generates every
-  statement and any `@service` code on the connection behaves. The combination
-  "Postgres `<variables>` sugar + `@service` methods in the schema" earns a loud
-  build-time note (`session-state-convention-fence`), because that is the
-  convention fence with consumer code on the connection.
-* *Cryptographic fence.* Available on both dialects through the function-hook
-  form: pass the raw signed token as the claims payload, verify the signature
-  inside the database, and have policies read identity only through verified
-  state, so even arbitrary SQL on the connection cannot forge another user's
-  identity.
+The gradient is read off the routine your `<mount>` line names, not off
+graphitron configuration: on the headline path there is no consumer Java between
+the Mojo line and the database, so what the routine's own definition says is the
+whole story. Only when `<mount>` names a hand-written facade does "visible in
+the consumer's own code" hold literally, and then the facade is one more place
+to read.
+
+* *Enforced fence* (strongest). The mounted state lives behind a privilege
+  fence: an Oracle package-bound context or RAS session attached by a
+  definer-rights package, so code on the connection cannot set identity state
+  except through the trusted package. `<mount>` names the package's executing
+  method; the fence is the package's own definition.
+* *Convention fence.* Plain PostgreSQL GUCs written by your mount (directly,
+  or via a `SECURITY DEFINER` routine): any SQL on the connection can overwrite
+  them, so the real guarantee is that Graphitron generates every statement and
+  any `@service` code on the connection behaves. The build cannot see which
+  fence a reflected method reference implements, so no warning grades it; the
+  choice is documented here and in xref:../../security.adoc[the security guide]
+  rather than policed at build time.
+* *Cryptographic fence.* Pass the raw signed token as the mount's payload and
+  have the routine verify the signature in-database, reading claims only from
+  verified state, so even arbitrary SQL on the connection cannot forge another
+  user's identity. The fence is the routine's verification logic; `<mount>`
+  merely names it.
 
 === On the owned-connection path
 
-Identity is mounted by your configured `<sessionState>` connect hook (see
-<<owned-connection-path,above>>); your RLS policies read whatever it set. For
-the Postgres `<variables>` sugar the connect hook runs
-`set_config(name, ..., false)` per request and the disconnect hook clears it, so
-a fail-closed policy reads:
+Identity is mounted by your configured `<mount>` method (see
+<<owned-connection-path,above>>); your RLS policies read whatever it set. For a
+mount that writes a session GUC per request (and an unmount that clears it to
+the empty string, since a touched GUC cannot return to unset), a fail-closed
+policy reads:
 
 [source,sql]
 ----
@@ -404,18 +403,19 @@ var input = Graphitron.newExecutionInput(ctx, /* contextArguments... */).query(q
 
 === Producing the claims payload
 
-On the owned-connection path you pass an opaque claims string to
-`Graphitron.newOwnedExecutionInput(claims, ...)`; no auth-framework type enters
-generated code. From MicroProfile JWT (or any JWS bearer) the two forms come
-straight off the injected `JsonWebToken`, and which you pick is the
-integrity-gradient decision:
+On the owned-connection path the generated factory takes one typed parameter
+per payload parameter of your mount method; no auth-framework type enters
+generated code. For the common single-`String` payload you pass an opaque
+claims string to `Graphitron.newOwnedExecutionInput(claims, ...)`. From
+MicroProfile JWT (or any JWS bearer) the two forms come straight off the
+injected `JsonWebToken`, and which you pick is the integrity-gradient decision:
 
 * *Signed compact token* (cryptographic fence): pass `jwt.getRawToken()`. Your
-  connect hook verifies the signature and reads claims in-database, so the
+  mount routine verifies the signature and reads claims in-database, so the
   identity holds even against distrusted SQL on the connection.
-* *Bare claims JSON* (what the `<variables>` sugar expects): the payload segment
-  of a JWS already is the claims JSON, so decode it with the JDK alone, no JSON
-  parser:
+* *Bare claims JSON* (for a mount that parses claims without verifying): the
+  payload segment of a JWS already is the claims JSON, so decode it with the
+  JDK alone, no JSON parser:
 
 [source,java]
 ----
@@ -426,9 +426,10 @@ return Graphitron.newOwnedExecutionInput(claims);
 ----
 
 `getRawToken()` returns the three-segment compact serialization, not JSON;
-passing it where claims JSON is expected fails at the hook's `jsonb` cast. If
-your platform hands you an encrypted token (JWE), the payload segment is
-ciphertext; rebuild the claims JSON from the platform's claim accessors instead.
+passing it where claims JSON is expected fails inside your mount (for example
+at a `jsonb` cast), with the mount's own error. If your platform hands you an
+encrypted token (JWE), the payload segment is ciphertext; rebuild the claims
+JSON from the platform's claim accessors instead.
 
 '''
 

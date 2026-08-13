@@ -108,7 +108,7 @@ The following parameters apply to every goal:
 | `sessionState`
 | `SessionStateBinding`
 | (none)
-| Session identity (R429). A `<sessionState>` block naming how per-request identity is mounted on the pinned connection: either consumer-authored database callables (`<connect call>` / `<disconnect call>`, with an optional OUT `handle`, plus the optional `<stateSurvivesTransactions>` survival declaration) or the Postgres `<variables>` sugar (`<variable name claim>`) that generates both hook halves. Graphitron emits a `SessionHook` from the block that runs at connection acquisition and release; an undeclared function-hook pair is additionally re-fired after each mutation-field transaction settle. An unpaired or handle-inconsistent block fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
+| Session identity. A `<sessionState>` block naming the static Java methods that mount and unmount per-request identity on the pinned connection: `<mount>fqcn#method</mount>` and an optional `<unmount>`. Graphitron reads the method signatures at build time; the mount's payload parameters become contextArguments on the generated factory, and its return type is the handle later passed to `unmount` (and readable in services via the `$session` argMapping sigil). A malformed reference or an `<unmount>` without a `<mount>` fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
 
 | `tenantColumn`
 | `String` (database column name)
@@ -118,7 +118,7 @@ The following parameters apply to every goal:
 | `devDatabase`
 | `DevDatabaseBinding`
 | (none)
-| Dev database for the MCP `execute` tool (`dev` goal only, R428). A `<devDatabase>` block carrying plain connection coordinates: `<url>`, `<user>`, `<password>`, `<dialect>` (explicit and enumerated, `POSTGRES` or `ORACLE`, never defaulted), the `<claims>` payload handed to the `<sessionState>` connect hook (inline, or `@/path/to/file`; the file is re-read on every call), and the `<allowClaimsOverride>` opt-in for a per-call claims argument (default off). Environment variables override the POM on every field (`GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`, `GRAPHITRON_DEV_CLAIMS`, `GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE`), so credentials stay out of the checked-in file. With no url from either source the `execute` tool is simply absent and every other dev tool works without it; a url with a missing or unsupported dialect fails the goal. See xref:../how-to/mcp-agent-context.adoc#execute-tool[Run a query without an app server].
+| Dev database for the MCP `execute` tool (`dev` goal only, R428). A `<devDatabase>` block carrying plain connection coordinates: `<url>`, `<user>`, `<password>`, `<dialect>` (explicit and enumerated, `POSTGRES` or `ORACLE`, never defaulted), the `<claims>` payload handed to the `<sessionState>` mount method (inline, or `@/path/to/file`; the file is re-read on every call), and the `<allowClaimsOverride>` opt-in for a per-call claims argument (default off). Environment variables override the POM on every field (`GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`, `GRAPHITRON_DEV_CLAIMS`, `GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE`), so credentials stay out of the checked-in file. With no url from either source the `execute` tool is simply absent and every other dev tool works without it; a url with a missing or unsupported dialect fails the goal. See xref:../how-to/mcp-agent-context.adoc#execute-tool[Run a query without an app server].
 |===
 
 == `dev`-goal parameters
@@ -239,99 +239,86 @@ The `<lint>` block carries two list children:
 [#session-identity]
 == Session identity
 
-When you run the owned-connection engine (`runtime.newGraphQL(schema)`), graphitron pins one database connection per GraphQL operation. A `<sessionState>` block tells it how to mount per-request identity on that connection, at acquisition, and unmount it at release, so every generated query and mutation runs under the caller's identity without any per-fetcher wiring. Omit the block and no identity is mounted.
+When you run the owned-connection engine (`runtime.newGraphQL(schema)`), graphitron takes one database connection per GraphQL operation, when a field first needs it. A `<sessionState>` block names how per-request identity is mounted on that connection at acquisition and unmounted at release, so every generated query and mutation runs under the caller's identity without any per-fetcher wiring. Omit the block and no identity is mounted.
 
-There are two forms; configure one, not both.
+=== Mounting identity from your own code
 
-=== Function-hook form
-
-Name consumer-authored database callables. `connect` mounts identity from the opaque claims payload (typically the request's JWT); `disconnect` unmounts it. This is the form to use on Oracle, and whenever identity lives behind a privilege fence (a definer-rights package, VPD, RAS):
-
-[source,xml]
-----
-<configuration>
-  <sessionState>
-    <connect>                          <!-- (p_claims IN, p_handle OUT) -->
-      <call>Pk_Ras.Connect</call>
-      <handle>true</handle>
-    </connect>
-    <disconnect>                       <!-- (p_handle IN) -->
-      <call>Pk_Ras.Disconnect</call>
-      <handle>true</handle>
-    </disconnect>
-  </sessionState>
-</configuration>
-----
-
-`<handle>true</handle>` declares that `connect` returns an opaque OUT handle (for example a RAS session id) that `disconnect` is later called with. It must be declared on both sides or neither; a handle produced by one side and not bound by the other fails the build. Everything domain-shaped, claim parsing, entitlement filtering, session management, lives inside the callables, in the database's own language; graphitron only guarantees the pair runs at mount and unmount.
-
-Your callables must set and reset *session-scoped* connection state, never transaction-scoped state. On Postgres use `set_config(key, value, false)`, never `SET LOCAL` or `set_config(..., true)`; Oracle RAS attach/detach and VPD context calls are session operations and already comply. Neither callable may rely on a surrounding transaction committing or rolling back, and both may assume graphitron invokes them outside any open transaction: acquisition normalizes the connection to autocommit before `connect`, and release settles any transaction the operation left open before `disconnect`. See xref:../../architecture/reference/runtime-extension-points.adoc#hook-state-contract[the hook state contract] for why a transaction-scoped mount is a security defect over a pooled connection.
-
-Identity that mounts must unmount, so a `<connect>` without a `<disconnect>` fails the build. A genuinely unmount-free design opts out explicitly with an empty `<disconnect/>`:
+When identity lives behind a database routine, you usually already have the method: jOOQ generates an executing method for every routine into your `Routines` class. Name it. `mount` runs on each connection graphitron takes, before any SQL on it; `unmount` runs when that connection goes back to the pool:
 
 [source,xml]
 ----
 <sessionState>
-  <connect><call>Pk.SetContext</call></connect>
-  <disconnect/> <!-- explicit unmount-free opt-out -->
+  <mount>com.example.db.Routines#connect</mount>
+  <unmount>com.example.db.Routines#disconnect</unmount>
 </sessionState>
 ----
 
-==== Transaction survival and the settle re-fire
+Graphitron reads the signatures at build time: everything but the `Configuration` parameter is the payload, and the return type is the handle later passed to `unmount`. Each payload parameter becomes an ordinary contextArgument on the generated factory, so passing the wrong shape is a compile error rather than a cast failure inside the database. Compile the module that owns the named class with `-parameters` so the parameter names are real (graphitron fails the build naming the method if they are missing); the factory parameter names are the method's own, jOOQ's `pClaims`-style names on a generated routine method, yours on a facade. If a service method also needs the same value, declare it as a `contextArgument` with the same name and type; it is the same fact, supplied once, not two separately-maintained copies:
 
-Graphitron cannot see whether the state your connect callable mounts actually survives a transaction commit or rollback (identity parked in commit-sensitive storage would not). By default it therefore assumes it may not, and re-fires the pair, disconnect with the old handle, connect capturing a fresh one, after each top-level mutation-field transaction settles, so the field's payload read-back and later mutation fields always see mounted identity. Query operations run in autocommit and never settle, so this safe default costs nothing on the read path; what it costs per mutation field is one extra pair of callable round trips riding the field's commit.
-
-If your callables mount plain session-scoped state (RAS sessions, VPD contexts, session variables), declare it and keep acquisition-scoped mounting with no re-fire:
-
-[source,xml]
+[source,java]
 ----
-<sessionState>
-  <connect><call>Pk_Ras.Connect</call><handle>true</handle></connect>
-  <disconnect><call>Pk_Ras.Disconnect</call><handle>true</handle></disconnect>
-  <stateSurvivesTransactions>true</stateSurvivesTransactions>
-</sessionState>
+var input = Graphitron.newOwnedExecutionInput(claims, userId).query(query).build();
 ----
 
-The declaration is a statement about your database code that graphitron trusts; declare it only when the mounted state is genuinely session-scoped (see xref:../../architecture/reference/runtime-extension-points.adoc#hook-state-contract[the hook state contract]). It applies only to a paired function hook: declaring it with the `<variables>` sugar fails the build (the sugar survives settles structurally and needs no declaration), as does declaring it with the empty `<disconnect/>` opt-out (an unmount-free hook has no pair to re-fire).
+When the call needs massaging, a procedure with several OUT parameters, a mount that combines two calls, a payload reshaped before binding, write a static method of the same shape and name that instead:
 
-=== Postgres `<variables>` sugar
-
-For the common Postgres case, graphitron generates both hook halves from a list of session variables, so you write no SQL:
-
-[source,xml]
+[source,java]
 ----
-<sessionState>
-  <variables>
-    <variable>
-      <name>app.user_id</name>
-      <claim>sub</claim>
-    </variable>
-    <variable>
-      <name>app.tenant</name>
-      <claim>tenant</claim>
-    </variable>
-  </variables>
-</sessionState>
+public final class KernelIdentity {
+    public static SessionHandleRecord mount(Configuration cfg, ClaimsRecord claims) {
+        var call = new Connect();
+        call.setPClaims(claims);
+        call.execute(cfg);
+        return call.getPHandle();
+    }
+    public static void unmount(Configuration cfg, SessionHandleRecord handle) { ... }
+}
 ----
 
-`connect` sets each variable from the named claim in the payload JSON in a single round trip (`set_config('app.user_id', ...->>'sub', false)`); `disconnect` clears exactly those variables. Both halves come from the one variable list, so they cannot drift.
+=== Consuming the handle in services
 
-[cols="1,1,3",options="header"]
-|===
-| Child | Type | Description
+Your services can consume the identity your `mount` resolved. Bind a parameter to `mount`'s return value with the `$session` sigil, and the parameter receives the handle from the connection the call runs on:
 
-| `name`
-| `String` (`<name>` element)
-| The Postgres session variable (GUC) to set, for example `app.user_id`. Your RLS policies read it with `current_setting('app.user_id', true)`.
+[source,graphql]
+----
+access: [Entitlement] @service(
+  service: { className: "com.example.AccessService", method: "entitlements" },
+  argMapping: "identity: $session")
+----
 
-| `claim`
-| `String` (`<claim>` element)
-| The claim key read from the payload JSON, for example `sub`.
-|===
+Under tenant fan-out each call sees its own tenant's handle. The parameter's type must match your `mount`'s return type; both are your declarations, checked at build time.
 
-A claim absent from the payload sets the variable to the empty string, and `disconnect` clears each variable to the empty string rather than to `NULL` (Postgres cannot restore a touched session variable to unset). Your RLS policies must therefore treat both `NULL` and the empty string as "no identity" to stay fail-closed, for example with `NULLIF(current_setting('app.user_id', true), '') IS NULL`.
+=== The seam parameter
 
-The sugar generates PostgreSQL. If you build the runtime with a non-Postgres dialect, `Graphitron.runtime(dataSource, dialect)` fails immediately with a clear message rather than at the first request; use the function-hook form for other dialects.
+The `Configuration` you are handed is bound to the connection your `mount` is mounting and carries the jOOQ `Settings` you gave the runtime, so a schema mapping you configured applies to your routine call as it does to graphitron's own SQL. It carries no transaction provider, because both methods run outside any transaction, on a connection graphitron holds in autocommit. Declare a `Connection` parameter instead if you want raw JDBC. A throwing `mount` evicts the connection rather than returning it to the pool, and fails the request before any of your query's SQL runs.
+
+=== When your methods run, and what your `mount` must mount
+
+Graphitron takes a connection when a field first needs one, mounts identity on it, holds it for the rest of the request, and unmounts before returning it to the pool. `mount` runs with autocommit on and no transaction open, so what it sets is committed session state: a mutation field's transaction committing or rolling back later cannot revert it, and graphitron does not re-run your methods around those boundaries. What this asks of you is that identity be _session_-scoped in your database's own vocabulary, session GUCs on Postgres, a session or global application context on Oracle. Transaction-scoped storage will not work, and will not work from the first query rather than failing later: `set_config(..., true)` and `SET LOCAL` revert at the end of the statement that set them, and rows in an `ON COMMIT DELETE ROWS` temp table are deleted by the mount's own implicit commit. One deployment requirement follows: put graphitron in front of a pool that hands out sessions, not a transaction-pooling proxy such as pgbouncer in transaction mode, which resets session state between transactions and would leave your identity on a backend nobody reads.
+
+=== `<unmount>` is optional
+
+If your `mount` establishes identity wholesale rather than adding to whatever the connection already carried, the next request's mount overwrites the last one's, nothing can read stale identity, and unmount only costs you a round trip per request. Omit it. Keep an unmount when something other than graphitron reads scoped data on the same pool, your own DAO code, a migration tool, an admin script, because those readers never mount and would inherit the previous caller's identity.
+
+=== If you have no routine at all
+
+Setting a session variable that your RLS policies read is the same shape, written out:
+
+[source,java]
+----
+public final class Identity {
+    public static void mount(Configuration cfg, String tenantId) {
+        cfg.dsl().execute("select set_config('app.tenant', ?, false)", tenantId);
+    }
+    public static void unmount(Configuration cfg) {
+        cfg.dsl().execute("select set_config('app.tenant', '', false)");
+    }
+}
+----
+
+Note what the unmount clears to: the empty string, not `NULL`. Postgres cannot restore a touched session variable to unset, so a policy that distinguishes "never set" from "cleared" would silently diverge between a fresh connection and a recycled one. Your RLS policies must treat both `NULL` and the empty string as "no identity" to stay fail-closed, for example with `NULLIF(current_setting('app.tenant', true), '') IS NULL`.
+
+Be aware of what this does and does not give you. A session variable is a convention: any SQL running on that connection can overwrite it, including a `@service` method of your own. If you need identity that consumer code on the same connection cannot forge, mount it with a definer-rights routine, or pass a signed token your `mount` verifies in the database. That choice is yours to make and graphitron cannot check it for you, which is why it is explained in xref:../../security.adoc[the security guide] rather than warned about at build time.
 
 == `validate`-goal sentinel
 

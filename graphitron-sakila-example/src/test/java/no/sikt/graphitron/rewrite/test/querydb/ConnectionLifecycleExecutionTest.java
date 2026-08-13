@@ -148,11 +148,11 @@ class ConnectionLifecycleExecutionTest {
     /**
      * Assembles a per-request {@code ExecutionInput} for the owned-connection path via the emitted
      * {@code Graphitron.newOwnedExecutionInput(claims, userId)} factory, the first client
-     * of that factory. It stashes the opaque claims under the instrumentation's key, the sealed
+     * of that factory. It stashes the claims payload under the instrumentation's key, the sealed
      * {@code GraphitronContext} singleton, and the {@code userId} contextArgument, plus a fresh
-     * {@code DataLoaderRegistry}; the instrumentation publishes the pinned {@code DSLContext} itself.
-     * Valid JSON claims because this module configures the Postgres {@code <variables>} sugar, so the
-     * generated connect hook parses the payload as {@code jsonb}.
+     * {@code DataLoaderRegistry}; the connection carrier resolves the pinned {@code DSLContext}
+     * on first demand. Valid JSON claims because this module's configured mount facade extracts
+     * the {@code sub} claim from the payload before binding it to the identity routine.
      */
     private ExecutionInput.Builder ownedInput(String query) {
         return Graphitron.newOwnedExecutionInput("{\"sub\":\"test-user\"}", "test-user")

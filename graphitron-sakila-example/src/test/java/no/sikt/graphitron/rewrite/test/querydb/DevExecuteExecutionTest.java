@@ -38,12 +38,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the response (the mutation transaction ran) but leaves no trace in the database (the
  * {@code ROLLBACK_ONLY} commit policy settled it by rolling back).
  *
- * <p>The claims round-trip rides this module's real {@code <sessionState>}
- * {@code <variables>} sugar: a successful execution proves the configured claims payload mounts
- * through the generated connect hook (the runtime is fail-closed, so execution proceeds only if
- * the hook ran), a malformed payload surfaces the hook's own database error verbatim (the
- * hook-is-the-validator rule; the payload demonstrably reached Postgres's {@code jsonb} parser),
- * and a missing payload fails loudly at the executor's own gate with a pointer at the config knob.
+ * <p>The claims round-trip rides this module's real {@code <sessionState>} mount method: a
+ * successful execution proves the configured claims payload mounts through the configured
+ * facade, a rejected payload surfaces the mount routine's own database error verbatim (the
+ * hook-is-the-validator rule; the payload demonstrably reached the routine), and a missing
+ * payload fails loudly at the executor's own gate with a pointer at the config knob.
  * The RLS half of the hook contract (mounted identity scopes reads) is pinned by
  * {@link SessionHookExecutionTest} on the same emitted hook.
  */
@@ -183,19 +182,17 @@ class DevExecuteExecutionTest {
 
     @Test
     void rejectedClaims_surfaceTheHooksOwnError() throws Exception {
-        // The hook is the validator: the mount routine raises on an unentitled principal, so a
-        // rejected claims payload produces the routine's own error verbatim, proof the claims
-        // string travelled untouched through the executor all the way to the real hook. The
-        // mount runs lazily inside the first fetcher's acquisition, so the failure lands in the
-        // payload's errors channel unredacted (the dev engine installs no redaction handler),
-        // not as a thrown exception.
-        String result;
+        // The hook is the validator: the mount routine raises on an unentitled principal, and
+        // the executor preflights the payload through the mount before execution, so the
+        // rejection propagates as the routine's own error verbatim, proof the claims string
+        // travelled untouched through the executor all the way to the real hook. (Inside
+        // execution the error router would redact it behind a correlation id.)
         try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
-            result = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", "{ films { filmId } }", null,
-                "{\"sub\": \"reject-me\"}", Map.of("userId", USER_ID));
+            assertThatThrownBy(() -> GraphitronDevExecutor.execute(
+                    connection, "POSTGRES", "{ films { filmId } }", null,
+                    "{\"sub\": \"reject-me\"}", Map.of("userId", USER_ID)))
+                .hasMessageContaining("unentitled principal: reject-me");
         }
-        assertThat(result).contains("unentitled principal: reject-me");
     }
 
     /** A DataSource over plain DriverManager connections, for the in-app comparison engine. */

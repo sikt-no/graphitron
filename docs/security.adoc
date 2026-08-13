@@ -18,4 +18,14 @@ Database enforcement doesn't mean the UI can ignore security. Good usability req
 
 What we insist on: *the database is the enforcement point.* If the UI gets it wrong, the result is a confusing experience. If the database gets it wrong, data is exposed. These are not equivalent failures.
 
-The practical approach is PostgreSQL Row-Level Security with the caller's identity mounted per request. On the recommended owned-connection path Graphitron mounts it for you from a database session hook you configure (`<sessionState>`); on the escape-hatch path you set it yourself on the `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`. See xref:architecture/reference/runtime-extension-points.adoc[Runtime Extension Points] for both paths, the fail-closed RLS policy shape, and the integrity gradient that governs how tamper-resistant the mounted identity is.
+The practical approach is PostgreSQL Row-Level Security with the caller's identity mounted per request. On the recommended owned-connection path Graphitron mounts it for you through the static `mount` method you name in `<sessionState>` (typically the jOOQ-generated executing method of your identity routine); on the escape-hatch path you set it yourself on the `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`. See xref:architecture/reference/runtime-extension-points.adoc[Runtime Extension Points] for both paths and the fail-closed RLS policy shape.
+
+== The integrity gradient
+
+How tamper-resistant the mounted identity is depends on what your mount routine does, and it is a spectrum, not a yes/no. Graphitron cannot see which point on it your routine implements (a reflected method reference looks the same for all three), so choosing is the load-bearing security decision, made in your database code rather than in configuration:
+
+* *Session variable set by convention* (weakest). Your mount writes a plain session GUC that RLS policies read. Any SQL that runs on the connection can overwrite it, including a `@service` method of your own, so the real guarantee is behavioral: Graphitron generates every statement, and the consumer code on the connection behaves.
+* *Definer-rights routine* (enforced fence). The mounted state lives behind a privilege fence, an Oracle package-bound context or RAS session attached by a definer-rights package, so code on the connection cannot set identity except through the trusted package.
+* *Signed token verified in-database* (cryptographic fence). Your mount's payload is the raw signed token, the routine verifies the signature inside the database, and policies read identity only through verified state. Even arbitrary SQL on the connection cannot forge another caller's identity.
+
+The fail-closed complement holds at every point on the gradient: an RLS policy must treat an absent identity and a cleared one identically and deny. On Postgres that means treating both `NULL` and the empty string as "no identity" (a touched session variable cannot return to unset, so a cleared connection reads `''` where a fresh one reads `NULL`).

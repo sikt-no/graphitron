@@ -147,15 +147,15 @@ class ExecuteToolTest {
         var tool = new ExecuteTool(config("pinned", false),
             (wiring, db, query, variables, contextArgs) -> {
                 throw new DevQueryExecutor.DevExecutionException(
-                    "connect hook rejected the payload: missing claim 'sub'");
+                    "mount method rejected the payload: missing claim 'sub'");
             });
         var result = tool.executeResult(Map.of("query", "{ ping }"));
 
         assertThat(result.isError()).isTrue();
-        assertThat(text(result)).isEqualTo("connect hook rejected the payload: missing claim 'sub'");
+        assertThat(text(result)).isEqualTo("mount method rejected the payload: missing claim 'sub'");
         assertThat(structured(result))
             .containsEntry("status", "error")
-            .containsEntry("message", "connect hook rejected the payload: missing claim 'sub'");
+            .containsEntry("message", "mount method rejected the payload: missing claim 'sub'");
     }
 
     @Test

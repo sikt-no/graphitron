@@ -41,7 +41,7 @@ class DevQueryExecutorTest {
             public static String execute(Connection connection, String dialect, String query,
                     Map<String, Object> variables, String claims, Map<String, Object> contextArgs) {
                 if ("boom".equals(claims)) {
-                    throw new IllegalStateException("connect hook rejected the payload: missing claim 'sub'");
+                    throw new IllegalStateException("mount method rejected the payload: missing claim 'sub'");
                 }
                 boolean tccl = Thread.currentThread().getContextClassLoader()
                     == GraphitronDevExecutor.class.getClassLoader();
@@ -191,7 +191,7 @@ class DevQueryExecutorTest {
         assertThatThrownBy(() ->
             DevQueryExecutor.execute(wiring(), db("boom"), "{ ping }", null, null))
             .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
-            .hasMessage("connect hook rejected the payload: missing claim 'sub'");
+            .hasMessage("mount method rejected the payload: missing claim 'sub'");
         assertThat(System.getProperty(CLOSED)).as("connection closed on failure too").isEqualTo("true");
     }
 

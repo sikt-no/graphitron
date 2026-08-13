@@ -523,7 +523,7 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * {@code abort()}: the straggler release path. A scatter worker past its deadline may still be
-     * mid-statement on this connection, so neither the disconnect hook (a second concurrent user of
+     * mid-statement on this connection, so neither the unmount method (a second concurrent user of
      * the connection) nor {@code close()} (returns a possibly-live connection to the pool) is safe;
      * {@code Connection.abort} is the JDBC primitive designed for exactly this. {@code synchronized}
      * because a straggler worker's self-abort and the dispatch thread's {@code releaseAll} can race
@@ -540,7 +540,7 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .addStatement("released = true")
             .addStatement("evict(connection, abortExecutor)")
-            .addJavadoc("Evicts the connection without running the disconnect hook, for a connection whose\n"
+            .addJavadoc("Evicts the connection without running the unmount method, for a connection whose\n"
                 + "worker may still be executing on it (a scatter straggler past the join deadline). The\n"
                 + "identity cannot be proven unmounted and the connection cannot be proven idle, so it is\n"
                 + "aborted and never returned to the pool; the straggler's eventual completion lands\n"

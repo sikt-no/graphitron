@@ -136,7 +136,7 @@ class TenantRuntimeKeyTypeTest {
 
         var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
         assertThat(pinned)
-            .as("the straggler abort seam: evict without the disconnect hook")
+            .as("the straggler abort seam: evict without the unmount method")
             .contains("synchronized void abort()");
     }
 
