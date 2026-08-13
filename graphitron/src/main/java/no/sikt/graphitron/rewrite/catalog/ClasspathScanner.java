@@ -40,8 +40,12 @@ import java.util.zip.ZipFile;
  * because consumers do reference them as {@code @record} class names and as
  * service-method-bearing interfaces. Picking the wrong one is a one-keystroke
  * fix; missing a valid one in the list is a worse failure. Classes under the
- * jOOQ-generated package are excluded (referenced through {@code @table} /
- * {@code @reference}, not {@code @service}).
+ * jOOQ-generated package are excluded: they are referenced through
+ * {@code @table} / {@code @reference} (catalog concepts, not classpath ones),
+ * or reflection-only through the {@code <sessionState>} {@code <mount>} /
+ * {@code <unmount>} method references (resolved at build time with no census
+ * row needed), never through {@code @service}. Admitting the routine surface
+ * would grow the {@code jvm_} fact relations for no present consumer.
  *
  * <p>Method type information comes off the erased JVM descriptor, enough for
  * hover signatures and unknown-method diagnostics. Parameter names follow the
