@@ -153,6 +153,13 @@ routine-result-only column only against the routine result. Terminus resolution 
 correct target on expressiveness grounds, which is a stronger reason than performance and does
 not depend on a planner detail.
 
+That cuts both ways, and the other half is out of scope here: resolving against the terminus
+means a column existing only on the routine's result is unreachable once a `@reference` hop
+follows it, even though its alias is live in the emitted query. Widening ordering to name columns
+from any chain node is filed as `roadmap/routine-chain-ordering-spans-nodes.md` (R662), which
+depends on this item. Nothing in this item forecloses it: the terminus stays the default target
+there too.
+
 The real cost of this item is not which column is named but that an `ORDER BY` now exists where
 none did. That is the price of the contract being true, and it is worth paying.
 
