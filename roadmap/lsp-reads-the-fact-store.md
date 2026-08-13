@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-12
+last-updated: 2026-08-13
 ---
 
 # The LSP is a fact-store client
@@ -51,8 +51,9 @@ intermediate commit and the language server is never broken across a series of t
 point are there two live answers to one request.
 
 The baselines stay on the record as an outcome rather than a gate: `graphitron-lsp` is **9,119**
-main lines and the `rewrite/catalog` seam is **4,008**, with `SourceWalker` and `ClasspathScanner`
-netted out because they exist for MCP and codegen. Report both at the end, plus the SQL added. If
+main lines and the `rewrite/catalog` seam is **3,232** of the package's 4,008, with `SourceWalker`
+and `ClasspathScanner` netted out because they survive the cutover: `SourceWalker` stays (see "What
+retires") and `ClasspathScanner` is codegen's. Report both at the end, plus the SQL added. If
 the totals come out worse than expected that is worth knowing and saying; it is not a trigger for
 anything, because there is no longer an incumbent to fall back to.
 
@@ -63,8 +64,9 @@ only where it carries something the rows do not, and it is the LSP's own. No `gr
 projection type crosses the seam, and none gets rebuilt store-side under a new name: an arm list
 that exists because a Java projection had those arms is the shape being replaced, not a claim on
 the query. The structural test is `graphitron-lsp`'s pom. It names `graphitron` today and imports
-twenty-one types from it, six of them `rewrite/catalog` projections beyond `CompletionData` and
-`LspSchemaSnapshot`; at the cutover it should name `graphitron-model` for the generated store
+twenty-one types from it, ten from `rewrite/catalog`: `CompletionData`, `LspSchemaSnapshot`,
+`CatalogFacts`, `SourceWalker` and the six classification projections named under "What retires".
+At the cutover it should name `graphitron-model` for the generated store
 tables, with whatever remains of the `graphitron` dependency accounted for one type at a time. A
 surviving projection import is a surviving second model, whatever the line count says.
 
@@ -76,8 +78,8 @@ in the `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` m
 (trigger × surface) matrix is an exhaustive partition over answered / declared-no-answer /
 unimplemented, each surface's dispatch a compile-checked exhaustive switch. The axis is trigger,
 not `Behavior` arm: roughly half the inventory below keys on something else (all four inlay-hint
-rows, both code-action branches, four of the five diagnostic sources, the four non-coordinate hover
-rows, the two SDL-keyed definition providers), and that is the half this item changes most. A
+rows, both code-action branches, four of the five diagnostic sources, the four hover rows keyed on
+no `Behavior` arm, the two SDL-keyed definition providers), and that is the half this item changes most. A
 matrix over `Behavior` alone would leave it ungated, which is the position declining the
 shadow-parity gate was meant to avoid. The `†` gaps below stop being silently empty arms and become
 declared facts the test pins, and the inventory becomes a rendered view of the matrix rather than
@@ -132,7 +134,7 @@ than one validity gate. Stage one parses each schema file to its own registry an
 store; a file that will not parse writes its syntax error as a located violation row, and its
 siblings land regardless. Stage two combines the parsed files and assembles the GraphQL schema,
 where graphql-java validates a great deal the parser did not. That stage either fails, and its
-errors are facts, or succeeds, and the facts only an assembled schema can carry land with it:
+errors are facts, or succeeds, and the facts only the combined schema can carry land with it:
 reachability, the input-occurrence rows, `merge_ordinal`. Both outcomes write. Neither leaves the
 store empty.
 
@@ -181,7 +183,7 @@ holds a store it cannot query.
 
 **Sealed resolution outcomes.** The store's keys are honest where the projections' lists were not:
 an unqualified table name may match several rows, and `jvm_method` keys on `descriptor` because
-erased display names collided on overloads. Resolved / ambiguous / not-found needs no type: it is
+overloads share a display name. Resolved / ambiguous / not-found needs no type: it is
 how many rows the query returned, and a `Result` says that already. Nor is there a freshness arm
 beside it. An earlier draft of this item carried one, `Indeterminate`, because the incumbent
 withholds its whole snapshot when a build fails and every consumer had to be forced to notice. Two-
@@ -209,9 +211,9 @@ publishes, and no author is told their schema is undeclared by a store that has 
 **Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it, and what
 comes back is rows. `DeclTarget`'s six variants are not a shape to preserve: they are the projection
 era's dispatch vocabulary, and re-pointing them at the store would carry that shape across the seam
-under a new payload. What a bound field binds to lives on `graphitron_service`,
-`graphitron_external_field` and `graphitron_routine`, which carry the class and the method and, by
-being three relations, say which directive bound it. Not `graphitron_field_binding`: that relation
+under a new payload. What a bound field binds to lives on `graphitron_service` and
+`graphitron_external_field`, which carry the class and the method, and on `graphitron_routine`,
+which carries the routine reference; by being three relations they say which directive bound it. Not `graphitron_field_binding`: that relation
 carries `@field(name:)`'s bound name and defers backing to classification by its own comment.
 
 Parity between hover and definition is that they read the same facts, not that they run the same
@@ -255,7 +257,7 @@ a bad parse, they were never invalidated by it.
 here: `FieldClassification`, `TypeClassification`, `TypeBackingShape`, `DirectiveShape`,
 `InputValueShape` and `InferredDirectiveArgs`. These are the ones the inventory below hides behind
 the word "classification", and they are the ones a port would keep. Each leaves the LSP as a query
-over the classification stratum, not as a store-side rebuild of its arms. Whether the types
+over the claim stratum, not as a store-side rebuild of its arms. Whether the types
 themselves also delete depends on their generator-side readers, which is a separate census; what
 this item owns is that no LSP surface dispatches on them.
 
@@ -266,11 +268,11 @@ the only file that relation cannot speak for is the one stale buffer.
 
 `CatalogFacts` has non-LSP readers that must move with it: `GraphitronMcpServer` (the
 `catalog.tables` and `catalog.describe` tools), `EdgeProducer`, `EdgesTool`, `ReverseEdgeIndex`,
-`NodeRef`, `CatalogDescriptors` and `CatalogSearchIndex` in `graphitron-mcp`, plus
+`CatalogDescriptors` and `CatalogSearchIndex` in `graphitron-mcp`, plus
 `GraphQLRewriteGenerator` in `graphitron`, whose output record carries the projection. Not LSP
-work, not optional; the projection cannot delete while they read it. `TenantScopes` and `McpWire`
-cite it only in javadoc, so they repoint rather than migrate; the `{@link}` gate keeps them from
-being forgotten.
+work, not optional; the projection cannot delete while they read it. `TenantScopes`, `McpWire` and
+`NodeRef` cite it only in javadoc, so they repoint rather than migrate; the `{@link}` gate keeps
+them from being forgotten.
 
 `SourceWalker` stays, and the boundary is shipped doctrine rather than this item's argument: the
 fact model's cadence rule (location is a fact about an entity, joined rather than stored;
@@ -312,7 +314,7 @@ Latency is measured per request on the Sakila fixture, against the new implement
 comparison, since there is nothing left to compare against and the direction is not in doubt: the
 point is to find which paths are slow as views, because that decision has a sanctioned answer and
 needs the numbers to be made. A hot path materializes, with the DDL comment owning why, as the
-reachability rows do; never an ad-hoc cache. Measure early enough in the capability sequence that
+reachability closure `intent_type_domain` does; never an ad-hoc cache. Measure early enough in the capability sequence that
 the first materialization is a design choice rather than a repair.
 
 ## Capability inventory
@@ -324,7 +326,7 @@ is a gap to close rather than a behaviour to reproduce.
 Every fact source below must be a relation or a view. Four rows say "classification", which is not
 one: it names `FieldClassification` and `TypeClassification`, the Java projections retired above,
 and leaving the word there is how a port smuggles them back in. They resolve against the
-classification stratum (`intent_resolved_field_claim` and its siblings; see
+claim stratum (`intent_resolved_field_claim` and its siblings; see
 `docs/architecture/explanation/fact-model.adoc`), and pinning down which view answers which row is
 the first thing the substrate work settles. Which view, not how many queries: four rows projecting
 four different things off one view is a fine outcome, and collapsing them because they share a
@@ -420,9 +422,10 @@ assemble each report exactly why, as rows, per file. Keystroke-live validation o
 is the same later iteration as the wider shadow, and the capture-cadence question above may retire
 it outright.
 
-Compile diagnostics (javac output against generated sources) sit on `Workspace` beside these but
-publish through the MCP diagnostics tool, not the LSP push; they move with the workspace state,
-not with this table.
+Compile diagnostics (javac output against generated sources) are already store-side: `DevMojo`
+writes them through `CompileFacts` and the MCP diagnostics tool reads the store's `diagnostic`
+view, not the LSP push. The `Workspace.compileDiagnostics` slot they once rode has no production
+reader left and retires with the rest of the workspace bookkeeping.
 
 **Lifecycle and state.** `didOpen` / `didChange` (incremental) / `didClose` / `didSave`;
 `didChangeConfiguration` plus a `workspace/configuration` pull after `initialize` for the three inlay
