@@ -24,65 +24,55 @@ works around by hand.
 The store holds these facts as relations, at the grain the facts have, for every graph in the
 workspace.
 
-## The experiment
+## The shape
 
-The claim under test is that a fact-based architecture makes the language server *substantially*
-simpler. Scope is all of `graphitron-lsp`; every feature moves.
+Scope is all of `graphitron-lsp`; every feature moves.
 
-The baseline is recorded now so the measure cannot be chosen afterwards to flatter the result:
-`graphitron-lsp` is **9,119** main lines, the `rewrite/catalog` seam is **4,008**. Report both at
-the end, plus branch points per feature entry point counted the same way on each side, and the SQL
-added. Net out what stays in `rewrite/catalog` (`SourceWalker`, `ClasspathScanner`) so lines that
-exist for MCP and codegen are not credited to the LSP. A result showing no simplification is a
-finding and gets reported as one.
+**A request is a parse, a sealed switch, and a handler that queries.** The parse reads the LSP
+request and the buffer and produces a value naming what is wanted, drawn from the sealed trigger
+type below. An exhaustive switch dispatches it. The arm it selects runs one or more queries, shapes
+the rows into the LSP response, and returns. There is no model between the switch and the store, no
+per-round projection for a handler to consult, and no state a handler shares with another handler
+beyond the store itself. A handler is a query and a rendering, and that is the whole of it.
 
-The work lands additive-then-cutover, the workflow's shape for structural pivots on widely-pinned
-types: substrate first, then features arm by arm, the cutover that deletes the projections last,
-so the acceptance holds at every intermediate commit. The additive phase is the experiment's
-vessel, not scaffolding to hurry past: with both implementations live side by side, the hypothesis
-gets a paired test that neither endpoint can give. Each migrated capability has an incumbent arm
-and a fact-based arm answering the same requests, so lines, branch points and latency are compared
-per feature, like against like. Deleting a hand-written projection layer shrinks the module totals
-whether or not the design is better, so those totals are reported after the cutover as the
-outcome, but the paired comparison during coexistence is the test, and the cutover is gated on it:
-if the comparison does not favour the fact-based arms, or a migrated request is slower than the
-incumbent's linear scan on Sakila, the cutover does not happen, the incumbents stay, and the
-finding is the report.
+That is the simplification, and it is not a hypothesis this item tests. The incumbent rescans lists
+linearly, recomputes per keystroke, fans that recomputation across dependent files, and can only
+answer what a codegen pass thought to pre-project. Indexed reads on the save cadence beat that on
+work done, on latency and on what can be surfaced at all, since the store carries distinctions the
+projections flatten. An earlier draft of this item posed all of that as a claim under test with a
+paired measurement and an abandon path. That framing is dropped, and with it the reason the two
+implementations would have had to coexist behind one facade.
 
-The abandon path is stated here rather than decided in the moment. The substrate stays: per-file
-parsing, two-stage capture, the graph-scoped handle, the read connection and the capture widenings
-are wanted whichever way the comparison goes, and nothing about them is conditional on it. What goes
-is the fact-based feature arms, deleted rather than left standing beside the incumbents, because two
-live implementations of the same nine completion providers, eleven hover arms, four definition
-providers, four hint collectors and five diagnostic sources is precisely the surviving second model
-this item condemns elsewhere. The incumbents keep serving and the report is the deliverable.
+**No compatibility facade.** Nothing shoehorns the new implementation into the incumbent's shape so
+the two can answer side by side. A capability is rewritten against the store and its incumbent is
+deleted in the same commit. That is a strangler fig, not a bake-off: the work still lands
+incrementally, substrate first and then capability by capability, so the acceptance holds at every
+intermediate commit and the language server is never broken across a series of them, but at no
+point are there two live answers to one request.
 
-The verdict is per feature, matching the measurement. Completion getting substantially simpler while
-hover does not is the likeliest real outcome rather than a tie to be broken: each feature cuts over
-on its own comparison, and the item's finding is the set of them, not one verdict standing for all.
-
-That makes separability a constraint on the first substrate commit, not a concern at the end. Both
-arms answer the same request or there is no paired measurement; either arm deletes cleanly or
-neither endpoint is reachable; and the dispatch seam is per feature so a mixed result can cut one
-arm over while deleting another. That rules out interleaving the two behind a shared call path. An
-implementer who learns this at measurement time has already lost the option.
+The baselines stay on the record as an outcome rather than a gate: `graphitron-lsp` is **9,119**
+main lines and the `rewrite/catalog` seam is **4,008**, with `SourceWalker` and `ClasspathScanner`
+netted out because they exist for MCP and codegen. Report both at the end, plus the SQL added. If
+the totals come out worse than expected that is worth knowing and saying; it is not a trigger for
+anything, because there is no longer an incumbent to fall back to.
 
 **The reuse is of facts, not of code.** The seam between the language server and the store is a
 query and its rows, nothing else. The LSP states its data need, fetches exactly that, and reads the
 result as jOOQ's `Result` and `RecordN` tuples off the generated model; a hand-written type appears
 only where it carries something the rows do not, and it is the LSP's own. No `graphitron`
 projection type crosses the seam, and none gets rebuilt store-side under a new name: an arm list
-that exists because a Java projection had those arms is the shape under test, not a requirement on
+that exists because a Java projection had those arms is the shape being replaced, not a claim on
 the query. The structural test is `graphitron-lsp`'s pom. It names `graphitron` today and imports
 twenty-one types from it, six of them `rewrite/catalog` projections beyond `CompletionData` and
 `LspSchemaSnapshot`; at the cutover it should name `graphitron-model` for the generated store
 tables, with whatever remains of the `graphitron` dependency accounted for one type at a time. A
 surviving projection import is a surviving second model, whatever the line count says.
 
-**This is not a port.** The incumbent is what is being judged, so there is no shadow-parity gate and
-no byte-equality on rendered output; pinning the new implementation to the old behaviour would
-import the shape under test. What replaces the gate is an enforcer, not care: a meta-test in the
-`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` mould asserting the
+**This is not a port.** The incumbent's behaviour is not the target, so there is no shadow-parity
+gate and no byte-equality on rendered output; pinning the new implementation to the old would import
+the shape being replaced, and each handler should answer as well as its facts allow rather than as
+well as its predecessor did. What stands in for a parity gate is an enforcer, not care: a meta-test
+in the `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` mould asserting the
 (trigger × surface) matrix is an exhaustive partition over answered / declared-no-answer /
 unimplemented, each surface's dispatch a compile-checked exhaustive switch. The axis is trigger,
 not `Behavior` arm: roughly half the inventory below keys on something else (all four inlay-hint
@@ -93,15 +83,16 @@ shadow-parity gate was meant to avoid. The `†` gaps below stop being silently 
 declared facts the test pins, and the inventory becomes a rendered view of the matrix rather than
 prose that rots.
 
-The mould only transfers if trigger is a sealed type, so producing one is substrate work rather than
-an afterthought at the enforcer. `everyGraphitronFieldLeafHasAKnownDispatchStatus` draws its entire
-universe from `getPermittedSubclasses()` over `GraphitronField`; asserted instead against a
-hand-listed trigger vocabulary, the "exhaustive partition" would be an unguarded inventory relocated
-from prose into a test file, which is the smell and not the cure. So the triggers become a sealed
-hierarchy of their own: `Behavior`'s eight arms are one family inside it, beside the inlay-hint
-toggles, the directive-name and declaration-name tokens, the fix-bearing lint finding and the
-detector re-scan. The clause above about each surface's dispatch being a compile-checked exhaustive
-switch already presupposes that subject; naming it makes it a deliverable instead of an assumption.
+The sealed trigger type is the one the parse produces and the switch dispatches, so it is the
+architecture rather than a scaffold the meta-test needs. It has to be sealed for two reasons that
+now coincide. `everyGraphitronFieldLeafHasAKnownDispatchStatus` draws its entire universe from
+`getPermittedSubclasses()`, so a hand-listed trigger vocabulary would turn the "exhaustive
+partition" into an unguarded inventory relocated from prose into a test file, which is the smell and
+not the cure. And a handler switch that is not exhaustive over a sealed subject is a switch with a
+`default` arm, which is how a capability goes quietly unanswered. `Behavior`'s eight arms are one
+family inside the hierarchy, beside the inlay-hint toggles, the directive-name and declaration-name
+tokens, the fix-bearing lint finding and the detector re-scan. Building it is the first substrate
+commit's output, because every capability migrated afterwards dispatches through it.
 
 ## The division of labour
 
@@ -127,7 +118,7 @@ content, which lags the buffer by exactly one save; that is a stated division of
 currency variant a surface switches on. The first iteration keeps the shadow minimal, simple and
 correct over clever: the live tree supplies the coordinate under the cursor and re-anchors positions
 into text that has moved since capture, never facts. Widening it so live declarations feed answers
-before capture is a later iteration, taken only if the paired measurement shows the wait hurts.
+before capture is a later iteration, taken only if authors report the wait hurting.
 
 A graph is many schema files, so validity is per file, not per workspace. An author typing
 `extend type |` in a new file has one invalid buffer and a workspace of well-formed captured ones;
@@ -202,7 +193,7 @@ silent first match.
 The store updates on save, and unsaved content is seen only by tree-sitter. That is where the
 division of labour sits, not a performance tradeoff to be tuned: the store's subject is the schema
 as it exists, and a buffer nobody has saved is not yet part of it. The line can move later if it
-proves to hurt, and the paired measurement is what would show that.
+proves to hurt, on reports from authors using it.
 
 Saving on save does not bring the retired arm back, and the distinction is worth being exact about,
 because it is easy to slide from one to the other. A store answering from the last saved content is
@@ -317,11 +308,12 @@ Four cases the corpus must carry, each being something the current design cannot
 * One file in two graphs: the request boundary surfaces the multi-graph membership arm, not the
   first row.
 
-Latency measured per request on the Sakila fixture while both implementations coexist, the same
-requests answered by each side, and stated against the abandon condition above. The incumbent is a
-linear scan, so this is a measurement, not a prediction. A hot path that is slow
-as a view already has a sanctioned answer, materialize with the DDL comment owning why, as the
-reachability rows do; not an ad-hoc cache.
+Latency is measured per request on the Sakila fixture, against the new implementation alone. Not a
+comparison, since there is nothing left to compare against and the direction is not in doubt: the
+point is to find which paths are slow as views, because that decision has a sanctioned answer and
+needs the numbers to be made. A hot path materializes, with the DDL comment owning why, as the
+reachability rows do; never an ad-hoc cache. Measure early enough in the capability sequence that
+the first materialization is a design choice rather than a repair.
 
 ## Capability inventory
 
@@ -444,16 +436,15 @@ paragraph above).
 Three questions an earlier draft left to the reviewer, since answered against the workflow and the
 fact model; the reviewer confirms rather than decides.
 
-* **Sequencing** is additive-then-cutover with the abandon condition in "The experiment"; the
-  workflow's rule for structural pivots on widely-pinned types leaves no taste call here. Settled as
-  one item. An earlier review pass argued for splitting substrate from experiment, on the abandon
-  condition rather than on size: the substrate is wanted whichever way the comparison goes, so
-  bundling it left "the incumbents stay" ambiguous about what reverts. The ambiguity was real and
-  the split was the more expensive cure. Stating the abandon path outright, which "The experiment"
-  now does, resolves it for a paragraph rather than a second item carrying a duplicate measurement
-  protocol, and the substrate reaches trunk early either way because every commit ships and the
-  acceptance holds at every intermediate commit. The coupling costs Done-gate bookkeeping, not
-  shipping.
+* **Sequencing** is substrate first, then capability by capability, each rewrite deleting its
+  incumbent in the same commit. Settled as one item, and the question is now much smaller than the
+  drafts that debated it. Two earlier passes argued over splitting substrate from experiment,
+  because an abandon path made it ambiguous which half would revert. With no experiment there is no
+  abandon path and nothing to revert, so the split has lost the problem it was proposed to solve.
+  What remains is ordinary strangler sequencing inside one item: the sealed trigger type and the
+  store-side substrate land first because every capability dispatches through them, and the
+  capability order after that is the implementer's, subject only to the acceptance holding at each
+  commit.
 * **`SourceWalker`'s boundary** is shipped doctrine, cited in "What retires"; nothing to
   re-litigate.
 * **`CatalogFacts`' non-LSP readers** move alongside, in the sibling item
