@@ -48,12 +48,23 @@ The two chain classifiers then diverge on what they do with it:
 exempts the `Chain` arm outright, so the list-shaped-plus-`None` signal that protects every
 other list field is switched off precisely where the drop happens.
 
-Two documentation surfaces overstate what ships today:
+Prose asserting the absent-ordering contract is spread across six sites, all of which the fix
+falsifies. `ResultShape.RecordList`'s javadoc is the load-bearing one, because it is the stated
+contract for a nullable slot in the command vocabulary:
 
-* `docs/manual/reference/directives/routine.adoc` lists `@orderBy` and `@condition` on
-  routine-backed fields as reported deferred, and says nothing about `@defaultOrder`.
+* `ResultShape.RecordList` names "classified root `@routine` chains" as one of three populations
+  with an absent ordering slot; after the fix there are two.
+* `LauncherCommands.routineRow`'s javadoc: "No WHERE slot and no ordering".
+* `FieldBuilder.classifyRootRoutineChain`'s "Ordering note" paragraph.
+* `QueryField`'s class javadoc on the `Chain` read surface being constructor-pinned empty.
 * `validateListRequiresOrdering`'s javadoc claims "`@orderBy` / `@defaultOrder` on `@routine`
-  is a classify-time typed deferral". The `@defaultOrder` half of that sentence is false.
+  is a classify-time typed deferral". The `@defaultOrder` half is false today.
+* `docs/manual/reference/directives/routine.adoc` lists `@orderBy` and `@condition` on
+  routine-backed fields as reported deferred, and says nothing about `@defaultOrder` at root.
+
+One of these is a string, not a comment: `orderOrConditionDeferral`'s message reads "no filter or
+order surface ships for routine-backed fields", and it is emitted to authors. It becomes false
+the moment the fix lands.
 
 ## Position
 
@@ -94,17 +105,57 @@ new is minted; five sites stop hardcoding "unordered".
   targets (the routine-call local for a hop-less chain, the last hop's alias otherwise), so the
   sort columns and the select list resolve against the same alias by construction.
 
-`RoutineDirectiveResolver.orderOrConditionDeferral` is left alone. It covers `@orderBy`
-(argument-driven, needing the `Ordering.Helper` arm and a runtime sort surface over a routine
-result) and `@condition` (a filter surface, not an ordering one); both are honest deferrals that
-do report, and neither is the reported bug. Fixed ordering is the surface that makes the
-contract truthful, and it is the surface the child position already ships.
+`RoutineDirectiveResolver.orderOrConditionDeferral` keeps deferring `@orderBy` (argument-driven,
+needing the `Ordering.Helper` arm and a runtime sort surface over a routine result) and
+`@condition` (a filter surface, not an ordering one). Both are honest deferrals that do report,
+and neither is the reported bug. Only its message changes, since it stops being true.
+
+### The shape that produced this bug
+
+Worth stating, because a fix that leaves it in place invites the next instance. The reported
+defect is not "the root classifier forgot a call". Four independent read-surface axes (filters,
+fixed order, argument-driven order, lookup) are governed by one boolean predicate in
+`orderOrConditionDeferral`, one four-way conjunction in `QueryTableField`'s pin, and one
+`List.of()` literal at each chain classifier, with nothing binding the three. `@defaultOrder`
+fell through because it was absent from the predicate and pinned by the conjunction. This is the
+"duplicated hardcoded skip-lists that must agree, with nothing binding them" smell from
+`development-principles.adoc`, and after the fix as scoped above the generator of holes is still
+there: the constructor keeps pinning `filters` empty on the authority of a predicate a class
+away, and the next read-surface directive falls through both again.
+
+The stronger shape is one gate and one message per axis, with the pin asserting each slot
+against the axis that owns it, so "fixed ordering supported, argument ordering deferred,
+filtering deferred" reads as three axes each carrying its own verdict rather than an exception
+carved out of a blob. Whether that lands here or as a follow-up is the reviewer's call: it is
+strictly larger than the reported bug and touches arms this item otherwise leaves alone, but it
+is also the difference between fixing an instance and fixing the class.
+
+Note the pin should *not* be keyed on terminus kind instead, which was considered and rejected.
+A routine terminus is perfectly orderable: `Actor.films` and `Query.castFilms` in the sakila
+schema both terminate on a routine result, both carry `@defaultOrder(fields: [{name:
+"film_id"}])`, and both work today. What a routine terminus lacks is a primary key, so terminus
+kind governs only whether the PK fallback can fire. Pinning the `orderBy` slot on it would forbid
+at root exactly what the child position ships, re-introducing the asymmetry this item exists to
+remove.
 
 ## The rule bites existing schemas
 
 Removing the exemption is a breaking change for consumer schemas, and deliberately so: every
-schema it breaks is one currently shipping unsorted rows. The break is narrower than it looks,
-because the two terminus kinds land differently.
+schema it breaks is one currently shipping unsorted rows. The break is wider than the test
+fixtures suggest, and the implementer should size it before starting.
+
+`classifyRootRoutineChain` serves the degenerate single-node chain as well as the
+routine-then-hops chain: a root `@routine` with no `@reference` application routes there with
+`hops = []` and the routine result as its own terminus. Since `routineChainVerdict` requires the
+terminus to denote the same jOOQ table as the `@table` return type, and the catalog hands back
+the *function's* result table, a single-node root routine's ordering target is always a PK-less
+TVF result table. So the population that breaks is every single-node root routine list in the
+wild, which is the dominant documented shape and includes the manual's own canonical `@routine`
+example. That example and the sakila schema both grow `@defaultOrder(fields: [...])` in the same
+commit as the validator change; leaving the manual showing a form that no longer builds is not
+an option.
+
+The two terminus kinds land differently.
 
 * **Catalog terminus**: the primary-key fallback in `OrderByResolver.resolveDefaultOrderSpec`
   applies, so these fields gain a deterministic `ORDER BY` with no schema edit.
@@ -116,13 +167,20 @@ because the two terminus kinds land differently.
   the manual already documents that spelling. `Query.tilganger` in the sakila example schema is
   this case; its function returns `(organisasjonskode, rollekode)`, so the fix is one directive.
 
-The build error must say which of the two the author is in, because the remedies differ: a
-catalog terminus that still lands `None` means the terminus table has no primary key, while a
-routine terminus means the result columns have to be named. The existing message ("Add a primary
-key to the target table, or use `@defaultOrder` or `@orderBy`") is wrong on both counts for a
-routine terminus, since the author cannot add a primary key to a function result and `@orderBy`
-is deferred there. Give the routine arm its own message naming the routine and pointing at
-`fields:`.
+Two author-facing messages are wrong for the routine terminus, and both are on the path the fix
+forces authors down. Fixing them is in scope, not polish: an enforcement that tells the author to
+do something impossible is worse than the silent no-op it replaces.
+
+* **The validator's message.** "Add a primary key to the target table, or use `@defaultOrder` or
+  `@orderBy`" is wrong on two of three counts for a routine terminus: the author cannot add a
+  primary key to a function result, and `@orderBy` is deferred there. The routine arm needs its
+  own message, naming the routine and pointing at `fields:`.
+* **`@defaultOrder(primaryKey: true)` on a routine terminus.** This is literally what the field
+  report wrote, and on a PK-less result table `OrderByResolver.resolveOrderEntries` returns
+  `null` (the `findPkColumns` branch), so the caller lands `Rejected("could not resolve
+  @defaultOrder columns in table 'X'")`. That says neither why nor what to write instead. It
+  should say the result table has no primary key and that `fields:` is the surface, listing the
+  routine's exposed result columns as candidates.
 
 ## Tests
 
@@ -150,6 +208,11 @@ is deferred there. Give the routine arm its own message naming the routine and p
   `ClassifiedCorpus` per the classified-corpus loop, retiring whatever the routine block holds
   as pure verdict.
 
+Row order is behaviour, not shape, so the pipeline-tier slot assertion and the execution-tier
+row-order assertion are both load-bearing and neither substitutes for the other. The tempting
+shortcut here is asserting on the generated `.orderBy(...)` string; that is banned at every tier
+by `development-principles.adoc` and would prove nothing about the rows that come back.
+
 ## User documentation (first-client check)
 
 `docs/manual/reference/directives/routine.adoc` currently lists `@orderBy` and `@condition` as
@@ -166,15 +229,21 @@ sentence per terminus kind, the carving in the validator is wrong and should cha
 * **`@orderBy` (argument-driven) and `@condition` on routine-backed fields** stay deferred, and
   both already report. Ordering that the client picks at query time is a different capability
   from a schema-declared default, and the `Ordering.Helper` arm it would use is untouched here.
-* **The Mutation write path.** `MutationField.MutationRoutineWriteField` carries no ordering slot
-  at all, and its step-1 key capture in `TypeFetcherGenerator` fetches the routine result with no
-  `ORDER BY`. The payload data field's re-read is then exempted by `validateListRequiresOrdering`'s
-  `requiresReFetch()` clause on the stated grounds that the scatter re-keys rows to the upstream
-  source order, but for a routine write that upstream order is itself unordered, so the exemption
-  rests on a premise the write path does not supply. `Mutation.rentFilm` in the sakila example
-  schema is a live instance. Same defect class, different model seam (a write's key capture, not
-  a read's order surface), so it is filed separately as
-  `roadmap/routine-write-key-capture-unordered.md` (R660) rather than widening this item.
+* **The Mutation write path**, filed as `roadmap/routine-write-key-capture-unordered.md` (R660).
+  The gap there is not an exemption but non-membership: `MutationRoutineWriteField` implements
+  `MutationField` alone, not `SqlGeneratingField`, so it never reaches `validateListRequiresOrdering`
+  at all. Its step 2 is a genuine keyed `SELECT ... .fetch()` with no `ORDER BY` and it is the
+  field's visible result, so `Mutation.rentFilm` ships unordered list data today under exactly
+  the thesis this item asserts.
+
+  That reframing is what makes the split honest rather than convenient. "Never unsorted" is an
+  invariant whose sole enforcer only sees `SqlGeneratingField` members, so a list-shaped root
+  leaf outside that capability is a silent skip, which `development-principles.adoc` names as
+  candidate roadmap material for a membership meta-test. Shipping this item's enforcement for
+  Query chains while an equally unordered Mutation chain stays silent is the drift the axiom
+  warns about. The split is acceptable because R660 exists and is named here; if the reviewer
+  would rather close the class than the instance, the membership check belongs in this item
+  instead.
 * **LSP column resolution for the routine terminus.** `FieldClassification.lspColumnDispatch`
   places `RoutineBacked` in the `FallThrough` arm, so `@defaultOrder(fields: [{name: ...}])`
   resolves candidates and diagnostics against the enclosing type's `@table` rather than the
