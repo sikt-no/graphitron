@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R648` | Author-declared batch key for child @service on record-backed parents <sub>blocked on the precedence item's phase split; see the coordinate section</sub> <sub>blocked by: [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)</sub> | Ready (deferred) | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
-| `R646` | Enforce @externalField helper parameter assignability against the parent table | In Review | 2026-08-13 | [plan](externalfield-parent-table-assignability.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
@@ -416,7 +415,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture
-- `R646` [**Enforce @externalField helper parameter assignability against the parent table**](externalfield-parent-table-assignability.md) — In Review, architecture
 - `R521` [**Generated-output readability and hygiene sweep**](generated-output-hygiene-sweep.md) — Backlog, cleanup
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
