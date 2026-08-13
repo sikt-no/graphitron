@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a root field returning a discriminated table interface"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: interface-union
@@ -158,14 +158,19 @@ Two things the landed fact also buys, worth noting but not worth widening scope 
 multiply rows"), which becomes readable off the model; and the `LauncherCommand` backstop stays
 restatable, per below.
 
-**Reviewer decision to make:** whether the cross-table invariant lands inside this item or as its
-own. It is independently valuable (it fixes today's list-shape duplication and single-shape runtime
-failure) and it is a build-acceptance change: a schema carrying a reverse-orientation non-unique
-cross-table hop builds today and would newly fail. The recommendation is to keep it here, as its own
-commit, because without it this item is silently wrong and a dependency hop buys only latency.
-Splitting it out is a reasonable call to make instead. Note that landing the fact on `On.ColumnPairs`
-is a slightly wider blast radius than the earlier sketch's local catalog check, which is an argument
-for the split, not against the fact.
+**Reviewer decision, settled at sign-off: the cross-table invariant lands inside this item, as its
+own commit, ordered before the emission commit.** The question was whether to split it out. It is
+independently valuable (it fixes today's list-shape duplication and single-shape runtime failure)
+and it is a build-acceptance change: a schema carrying a reverse-orientation non-unique cross-table
+hop builds today and would newly fail, on every shape rather than only the paginated one. Landing
+the fact on `On.ColumnPairs` is also a wider blast radius than a local catalog check would be. Both
+are arguments for a separate item, and neither survives the decisive one: without the invariant this
+item ships something silently wrong, so a dependency hop buys only latency for the same acceptance
+change. The widened acceptance is a fix and not a regression, because the uniqueness form rejects
+exactly the schemas already broken today; the reactor's own fixtures stay green, as
+`referenceOnDetailOnlyColumn_staysValid` is the reachable reverse-orientation case and its FK columns
+are the detail's composite primary key. Land the invariant first so the emission commit rests on an
+enforced floor rather than assuming one.
 
 **Why not the two-stage shape.** `MultiTablePolymorphicEmitter.buildStage1ConnectionBlock` paginates
 over a `UNION ALL` derived table of `(typename, pk, sort)` because the multi-table interface has *no
