@@ -638,6 +638,57 @@ AS $$
     SELECT count(*)::int FROM rental WHERE customer_id = p_customer_id
 $$;
 
+-- Session-identity method-hook fixture: a composite claims payload, a composite session
+-- handle, and a connect/disconnect routine pair. jOOQ codegen turns each routine into a
+-- static executing method on the generated Routines class (Configuration first, typed UDT
+-- record parameters), which is exactly the signature contract the <sessionState>
+-- <mount>/<unmount> references resolve against: the executing method carries the one seam
+-- parameter, and the same-named Field-expression overloads jOOQ emits beside it carry none,
+-- so the seam rule picks the executing method with no overload grammar. The connect mounts
+-- app.user_id (session-scoped, so it survives later transaction settles and is overwritten
+-- wholesale by the next mount) and returns the handle a $session-bound service parameter
+-- reads back; the disconnect clears to the empty string, which the RLS policies below treat
+-- as no identity. A 'reject-me' principal raises, for the fail-closed eviction proof.
+CREATE TYPE public.session_claims AS (
+    sub    TEXT,
+    tenant TEXT
+);
+
+CREATE TYPE public.session_handle AS (
+    principal  TEXT,
+    session_no INTEGER
+);
+
+CREATE SEQUENCE public.session_handle_seq;
+
+CREATE OR REPLACE FUNCTION public.session_connect(
+    p_claims public.session_claims
+) RETURNS public.session_handle
+LANGUAGE plpgsql VOLATILE
+AS $$
+DECLARE
+    h public.session_handle;
+BEGIN
+    IF (p_claims).sub = 'reject-me' THEN
+        RAISE EXCEPTION 'unentitled principal: %', (p_claims).sub;
+    END IF;
+    PERFORM set_config('app.user_id', coalesce((p_claims).sub, ''), false);
+    h.principal  := (p_claims).sub;
+    h.session_no := nextval('public.session_handle_seq');
+    RETURN h;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.session_disconnect(
+    p_handle public.session_handle
+) RETURNS void
+LANGUAGE plpgsql VOLATILE
+AS $$
+BEGIN
+    PERFORM set_config('app.user_id', '', false);
+END;
+$$;
+
 -- Routine-carrier RLS fixture: a table whose read policy is keyed on the mounted
 -- app.user_id identity, written by a SECURITY DEFINER routine. The definer (this script's
 -- superuser owner) bypasses the policy, so the write always succeeds; a caller whose mounted

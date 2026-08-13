@@ -69,7 +69,7 @@ class FilmContextArgumentRoundTripTest {
 
     @Test
     void factory_threadsUserIdThroughToServiceMethod() {
-        ExecutionInput input = Graphitron.newExecutionInput(dsl, "alice")
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "{}", "alice")
             .query("{ greetingByUser }")
             .build();
         var result = graphql.execute(input);
@@ -85,7 +85,7 @@ class FilmContextArgumentRoundTripTest {
         // @condition(contextArguments: ["userId"]) with no field arguments at all, so the only
         // way MARY-rows can come back is the glue method reading userId off the request context
         // through its own graphitronContext helper.
-        ExecutionInput input = Graphitron.newExecutionInput(dsl, "MARY")
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "{}", "MARY")
             .query("{ customersSeenByUser { firstName } }")
             .build();
         var result = graphql.execute(input);
@@ -102,7 +102,7 @@ class FilmContextArgumentRoundTripTest {
     void conditionContextArgument_batchedChildCoordinate_narrowsByTheThreadedUserId() {
         // The fetcher-hosted twin: the same context-bound condition on Store.customersSeenByUser
         // (a @splitQuery child), threading userId into the batched rows method's glue call.
-        ExecutionInput input = Graphitron.newExecutionInput(dsl, "MARY")
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "{}", "MARY")
             .query("{ storeById(store_id: [1]) { customersSeenByUser { firstName } } }")
             .build();
         var result = graphql.execute(input);
@@ -124,7 +124,7 @@ class FilmContextArgumentRoundTripTest {
         // retired entity layer's fixed parameter list could not compile. Both predicates must
         // fire: Mary + Smith narrows to the one customer carrying both (the generated
         // predicates are case-sensitive equalities, matching the seed data's exact case).
-        ExecutionInput input = Graphitron.newExecutionInput(dsl, "test-user")
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "{}", "test-user")
             .query("{ customersByTwoNames(a: { name: \"Mary\" }, b: { name: \"Smith\" }) { firstName lastName } }")
             .build();
         var result = graphql.execute(input);

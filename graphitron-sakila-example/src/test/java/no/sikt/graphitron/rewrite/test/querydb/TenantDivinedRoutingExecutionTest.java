@@ -118,7 +118,7 @@ class TenantDivinedRoutingExecutionTest {
     private static ExecutionResult execute(String query) {
         // The fixture carries @tenantFanOut fields, so the factory requires the fan-out tenant
         // collection; these tests never touch the fanned fields, and the full hosted set is inert.
-        return graphql.execute(Graphitron.newOwnedExecutionInput("{\"sub\":\"test-user\"}", List.of(1, 2))
+        return graphql.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"test-user\"}")
             .query(query).build());
     }
 

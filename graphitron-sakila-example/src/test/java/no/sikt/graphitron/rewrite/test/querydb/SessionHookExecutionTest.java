@@ -1,14 +1,18 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
-import no.sikt.graphitron.generated.schema.GraphitronSessionHook;
+import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionClaimsRecord;
+import no.sikt.graphitron.rewrite.test.jooq.udt.records.SessionHandleRecord;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -16,22 +20,40 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Slice-3 execution-tier coverage of the generated session hook against real PostgreSQL with
- * row-level security. This module configures the Postgres {@code <variables>} sugar
- * ({@code <sessionState>} in the pom), so graphitron emits a {@code GraphitronSessionHook} whose
- * connect sets {@code app.user_id} from the JWT {@code sub} claim and whose disconnect clears it. The
- * test drives that real emitted hook, not a hand-written equivalent.
+ * Execution-tier proof of the {@code <sessionState>} method-hook form against real PostgreSQL
+ * with row-level security: the first end-to-end run the form has ever had. This module
+ * configures both shapes of the one contract, and this test drives both real emitted hook
+ * classes, never a hand-written equivalent:
  *
- * <p>RLS bypass note: PostgreSQL superusers (and the {@code postgres} role the pooled test DataSource
- * uses) bypass RLS, so these tests open connections as a dedicated non-superuser role against a probe
- * table with a policy keyed on {@code app.user_id}. The three assertions mirror the slice-3 spec: an
- * RLS-scoped read sees only permitted rows; a mutation's post-commit read-back still sees only
- * permitted rows; and identity is demonstrably absent (fail closed) after disconnect, with the next
- * acquisition of the same physical connection mounting a different identity.
+ * <ul>
+ *   <li>the hand-written facade shape ({@code SakilaSessionIdentity#mount}, one String claims
+ *       payload reshaped into the composite the routine takes), emitted into the main package's
+ *       {@code GraphitronSessionHook}; and</li>
+ *   <li>the direct jOOQ-{@code Routines} shape ({@code Routines#sessionConnect}, composite
+ *       payload, zero hand-written Java), emitted into the multischema-mutation package's
+ *       {@code GraphitronSessionHook} — same routines, same database, so "generated and
+ *       hand-written are indistinguishable to the resolver" is proven by both round-tripping.</li>
+ * </ul>
+ *
+ * <p>RLS bypass note: PostgreSQL superusers bypass RLS, so these tests open connections as a
+ * dedicated non-superuser role against a probe table with a policy keyed on {@code app.user_id}
+ * (which {@code session_connect} mounts, session-scoped, and {@code session_disconnect} clears
+ * to the empty string; the policy treats {@code NULL} and {@code ''} identically as no
+ * identity, the fail-closed pattern). The assertions mirror the spec's execution rows: an
+ * RLS-scoped read sees only permitted rows; a mutation's post-commit read-back on the same
+ * connection still does, with no hook having run in between (the autocommit mount is what
+ * carries identity across a transaction boundary), and the rollback complement holds too;
+ * identity is absent after unmount, and the next mount overwrites wholesale; and a throwing
+ * mount fails closed through the emitted {@code PinnedConnection.acquire}, evicting the
+ * connection. The acquire rows run against a {@code DataSource} handing out
+ * {@code autoCommit=false} connections, the fixture in which deleting the acquire-time
+ * assertion would show up as a failure instead of passing on the pool's default.
  */
 @ExecutionTier
 class SessionHookExecutionTest {
@@ -59,9 +81,10 @@ class SessionHookExecutionTest {
         }
         dsl = DSL.using(jdbcUrl, user, password);
 
-        // A probe table with an RLS policy keyed on app.user_id, and a non-superuser role to query it
-        // under (superusers bypass RLS). The policy treats both NULL and the empty string as no identity,
-        // the fail-closed pattern the <variables> sugar's disconnect (clear to empty string) relies on.
+        // A probe table with an RLS policy keyed on app.user_id, and a non-superuser role to
+        // query it under (superusers bypass RLS). The policy treats both NULL and the empty
+        // string as no identity: a touched placeholder GUC cannot be returned to unset, so the
+        // unmount's clear-to-empty-string and a never-mounted connection must read identically.
         exec("drop table if exists rls_probe");
         exec("drop role if exists " + PROBE_USER);
         exec("create role " + PROBE_USER + " login password '" + PROBE_PASSWORD + "'");
@@ -72,6 +95,7 @@ class SessionHookExecutionTest {
             + "using (owner_id = nullif(current_setting('app.user_id', true), '')) "
             + "with check (owner_id = nullif(current_setting('app.user_id', true), ''))");
         exec("grant select, insert, update, delete on rls_probe to " + PROBE_USER);
+        exec("grant usage on sequence session_handle_seq to " + PROBE_USER);
         exec("insert into rls_probe values (1,'alice','a1'),(2,'bob','b1'),(3,'alice','a2')");
     }
 
@@ -85,65 +109,154 @@ class SessionHookExecutionTest {
     }
 
     @Test
-    void rlsRead_afterConnect_seesOnlyPermittedRows() throws Exception {
-        var hook = new GraphitronSessionHook();
+    void facadeShape_mountsScopesReadsAndRoundTripsTheCompositeHandle() throws Exception {
         try (Connection conn = probeConnection()) {
             // Before any identity is mounted, RLS denies everything (fail closed).
             assertThat(notesVisible(conn)).as("no identity mounted").isEmpty();
 
-            String handle = hook.connect(conn, "{\"sub\":\"alice\"}");
-            assertThat(handle).as("the <variables> sugar carries no handle").isNull();
+            SessionHandleRecord handle = no.sikt.graphitron.generated.schema.GraphitronSessionHook
+                .mount(conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"alice\"}");
+            assertThat(handle.getPrincipal())
+                .as("the handle is the mount's own resolved identity, typed, never opaque")
+                .isEqualTo("alice");
+            assertThat(handle.getSessionNo()).isNotNull();
 
             assertThat(notesVisible(conn))
                 .as("the mounted identity scopes the read to alice's rows")
                 .contains("a1", "a2")
                 .doesNotContain("b1");
+
+            no.sikt.graphitron.generated.schema.GraphitronSessionHook
+                .unmount(conn, SQLDialect.POSTGRES, new Settings(), handle);
+            assertThat(notesVisible(conn))
+                .as("after unmount the identity is gone: RLS denies everything (fail closed)")
+                .isEmpty();
         }
     }
 
     @Test
-    void mutationReadBack_underMountedIdentity_seesOnlyPermittedRows() throws Exception {
-        var hook = new GraphitronSessionHook();
+    void directRoutinesShape_isIndistinguishableFromTheFacadeAtTheDatabase() throws Exception {
+        // The multischema-mutation package's hook names the jOOQ-generated executing method
+        // directly; the payload is the routine's own composite record. Same round trip.
         try (Connection conn = probeConnection()) {
-            hook.connect(conn, "{\"sub\":\"alice\"}");
-            // A mutation field's writable transaction commits, then its payload read-back runs under the
-            // still-mounted identity: the just-committed alice row is visible, bob's rows are not.
+            SessionHandleRecord handle = no.sikt.graphitron.generated.multischemamutation.schema
+                .GraphitronSessionHook.mount(conn, SQLDialect.POSTGRES, new Settings(),
+                    new SessionClaimsRecord("bob", null));
+            assertThat(handle.getPrincipal()).isEqualTo("bob");
+
+            assertThat(notesVisible(conn))
+                .as("the direct-Routines mount scopes exactly as the facade does")
+                .contains("b1")
+                .doesNotContain("a1", "a2");
+
+            no.sikt.graphitron.generated.multischemamutation.schema.GraphitronSessionHook
+                .unmount(conn, SQLDialect.POSTGRES, new Settings(), handle);
+            assertThat(notesVisible(conn)).isEmpty();
+        }
+    }
+
+    @Test
+    void identityCarriesAcrossTransactionBoundaries_withNoHookRunningInBetween() throws Exception {
+        try (Connection conn = probeConnection()) {
+            var handle = no.sikt.graphitron.generated.schema.GraphitronSessionHook
+                .mount(conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"alice\"}");
+
+            // A mutation field's transaction commits; the post-commit read-back on the same
+            // connection still sees RLS-scoped rows, with no hook having run in between: the
+            // mount ran in autocommit as its own committed transaction, so a later settle has
+            // nothing of the mount's to revert.
             conn.setAutoCommit(false);
             try (Statement st = conn.createStatement()) {
                 st.executeUpdate("insert into rls_probe values (100, 'alice', 'a-committed')");
             }
             conn.commit();
             conn.setAutoCommit(true);
-
             assertThat(notesVisible(conn))
                 .as("post-commit read-back sees the new alice row but not bob's")
                 .contains("a-committed")
                 .doesNotContain("b1");
+
+            // The rollback complement: a failing mutation field rolls its transaction back, and
+            // a later read is still RLS-scoped under the same mounted identity.
+            conn.setAutoCommit(false);
+            try (Statement st = conn.createStatement()) {
+                st.executeUpdate("insert into rls_probe values (101, 'alice', 'a-discarded')");
+            }
+            conn.rollback();
+            conn.setAutoCommit(true);
+            assertThat(notesVisible(conn))
+                .as("a rolled-back transaction cannot revert the mount: the read stays scoped")
+                .contains("a1", "a2")
+                .doesNotContain("a-discarded", "b1");
+
+            no.sikt.graphitron.generated.schema.GraphitronSessionHook
+                .unmount(conn, SQLDialect.POSTGRES, new Settings(), handle);
         } finally {
-            dsl.execute("delete from rls_probe where id = 100"); // superuser cleanup, bypasses RLS
+            dsl.execute("delete from rls_probe where id in (100, 101)"); // superuser cleanup
         }
     }
 
     @Test
-    void identityAbsentAfterDisconnect_andNextAcquisitionMountsFreshIdentity() throws Exception {
-        var hook = new GraphitronSessionHook();
+    void nextMountOverwritesWholesale_theMountOnlyContractsGround() throws Exception {
         try (Connection conn = probeConnection()) {
-            hook.connect(conn, "{\"sub\":\"alice\"}");
+            var hook = no.sikt.graphitron.generated.schema.GraphitronSessionHook.class;
+            var mount = hook.getMethod("mount",
+                Connection.class, SQLDialect.class, Settings.class, String.class);
+            mount.invoke(null, conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"alice\"}");
             assertThat(notesVisible(conn)).contains("a1");
 
-            hook.disconnect(conn, null);
-            assertThat(notesVisible(conn))
-                .as("after disconnect the identity is gone: RLS denies everything (fail closed)")
-                .isEmpty();
-
-            // The pool hands this same physical connection to the next borrower; a fresh connect mounts a
-            // different identity and sees only that identity's rows. Identity is acquisition-scoped.
-            hook.connect(conn, "{\"sub\":\"bob\"}");
+            // The same mount method runs on every acquisition, so the set of state it writes is
+            // constant and the overwrite is total: bob's mount leaves nothing of alice's behind.
+            mount.invoke(null, conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"bob\"}");
             assertThat(notesVisible(conn))
                 .as("the next acquisition sees bob's rows, never alice's leftover state")
                 .contains("b1")
                 .doesNotContain("a1", "a2");
         }
+    }
+
+    @Test
+    void throwingMount_failsClosedThroughTheEmittedAcquire_evictingTheConnection() throws Exception {
+        // Drives the emitted PinnedConnection.acquire against a DataSource that hands out
+        // autoCommit=false connections: the acquire-time autocommit assertion is load-bearing
+        // here, and session_connect raises for the 'reject-me' principal, so the acquire must
+        // evict (abort closes the physical connection) and propagate before any operation SQL.
+        Connection raw = probeConnection();
+        raw.setAutoCommit(false);
+        Executor sameThread = Runnable::run;
+        try {
+            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
+                    singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
+                    "{\"sub\":\"reject-me\"}"))
+                .as("the mount's own exception propagates, verbatim cause included")
+                .hasStackTraceContaining("unentitled principal");
+            assertThat(raw.isClosed())
+                .as("fail closed: the half-mounted connection is evicted, never pooled")
+                .isTrue();
+        } finally {
+            if (!raw.isClosed()) {
+                raw.close();
+            }
+        }
+    }
+
+    @Test
+    void successfulAcquire_assertsAutocommitBeforeTheMount() throws Exception {
+        // The companion positive case on the same autoCommit=false DataSource: the mount runs
+        // in autocommit (its set_config survives, scoping reads), and release unmounts.
+        Connection raw = probeConnection();
+        raw.setAutoCommit(false);
+        Executor sameThread = Runnable::run;
+        var pinned = no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
+            singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
+            "{\"sub\":\"alice\"}");
+        assertThat(raw.getAutoCommit())
+            .as("acquire asserts the resting state on the owned connection")
+            .isTrue();
+        assertThat(notesVisible(raw)).contains("a1").doesNotContain("b1");
+        assertThat(pinned.handle().getPrincipal()).isEqualTo("alice");
+        pinned.release();
+        assertThat(raw.isClosed()).as("release returns the connection (close) after unmount").isTrue();
     }
 
     // ===== helpers =====
@@ -165,5 +278,20 @@ class SessionHookExecutionTest {
 
     private static void exec(String sql) {
         dsl.execute(sql);
+    }
+
+    /** A one-connection DataSource, the shape the dev executor also uses. */
+    private static javax.sql.DataSource singleConnectionDataSource(Connection connection) {
+        return new javax.sql.DataSource() {
+            @Override public Connection getConnection() { return connection; }
+            @Override public Connection getConnection(String u, String p) { return connection; }
+            @Override public PrintWriter getLogWriter() { return null; }
+            @Override public void setLogWriter(PrintWriter out) { }
+            @Override public void setLoginTimeout(int seconds) { }
+            @Override public int getLoginTimeout() { return 0; }
+            @Override public java.util.logging.Logger getParentLogger() { return null; }
+            @Override public <T> T unwrap(Class<T> iface) throws SQLException { throw new SQLException("not a wrapper"); }
+            @Override public boolean isWrapperFor(Class<?> iface) { return false; }
+        };
     }
 }

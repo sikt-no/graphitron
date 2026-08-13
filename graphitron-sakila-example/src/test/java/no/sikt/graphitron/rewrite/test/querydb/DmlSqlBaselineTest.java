@@ -295,7 +295,7 @@ class DmlSqlBaselineTest {
     }
 
     private static void execute(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).as("mutation must execute cleanly; SQL pins compare "
             + "statements, not error paths").isEmpty();

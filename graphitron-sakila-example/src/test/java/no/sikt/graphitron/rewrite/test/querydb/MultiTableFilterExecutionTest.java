@@ -73,7 +73,7 @@ class MultiTableFilterExecutionTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
@@ -245,7 +245,7 @@ class MultiTableFilterExecutionTest {
         // An authored @nodeId filter decodes with throw-on-mismatch semantics: a well-formed id of
         // the wrong node type is a client error, not a silent empty narrowing.
         String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
-        var input = Graphitron.newExecutionInput(dsl, "test-user")
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user")
             .query("""
                 { occupantsByAddress(addressId: ["%s"]) { __typename } }
                 """.formatted(filmId))

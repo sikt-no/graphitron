@@ -311,7 +311,7 @@ class RoutineFieldExecutionTest {
     }
 
     private Map<String, Object> execute(String query) {
-        ExecutionInput input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        ExecutionInput input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();

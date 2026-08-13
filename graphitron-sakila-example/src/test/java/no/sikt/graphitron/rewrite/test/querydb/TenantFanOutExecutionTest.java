@@ -152,7 +152,7 @@ class TenantFanOutExecutionTest {
     }
 
     private static ExecutionResult execute(String query, Collection<Integer> fanOutTenants) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput("{}", fanOutTenants)
+        return graphql.execute(Graphitron.newOwnedExecutionInput(fanOutTenants, "{}")
             .query(query)
             .build());
     }
@@ -284,7 +284,7 @@ class TenantFanOutExecutionTest {
             4, java.time.Duration.ofMillis(500));
         var slowEngine = slowRuntime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput("{}", List.of(1, 2))
+        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{}")
             .query("{ filmsEverywhere { title } }")
             .build());
 

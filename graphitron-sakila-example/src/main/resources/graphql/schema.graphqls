@@ -138,6 +138,15 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
         method: "greet"
     }, contextArguments: ["userId"])
+    # The $session sigil's one example-schema site: binds the service's `identity` parameter to
+    # the session handle the <sessionState> mount returned, read per pinned connection off the
+    # resolved DSLContext's configuration. The parameter's declared type must be the mount's
+    # reflected return type (SessionHandleRecord), both the consumer's own declarations.
+    sessionPrincipal: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SessionIdentityService",
+        method: "sessionPrincipal",
+        argMapping: "identity: $session"
+    })
     # Producer for FilmDetailsCarrier: returns the film records as a list, binding the carrier to
     # FilmRecord (JooqTableRecordType) by reflection. Drives the record-sourced BatchedTableField /
     # Lookup-keyed batched-read multi-parent DataLoader-batching tests.

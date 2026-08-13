@@ -115,7 +115,7 @@ class RoutineCarrierRlsExecutionTest {
             }
             DSLContext probeDsl = DSL.using(conn, SQLDialect.POSTGRES);
 
-            var input = Graphitron.newExecutionInput(probeDsl, "alice")
+            var input = Graphitron.newExecutionInput(probeDsl, "{}", "alice")
                 .query("""
                     mutation {
                         createSecureNote(owner: "pending-grant", note: "invisible to alice") {
@@ -172,7 +172,7 @@ class RoutineCarrierRlsExecutionTest {
             }
             DSLContext probeDsl = DSL.using(conn, SQLDialect.POSTGRES);
 
-            var input = Graphitron.newExecutionInput(probeDsl, "alice")
+            var input = Graphitron.newExecutionInput(probeDsl, "{}", "alice")
                 .query("""
                     mutation {
                         createSecureNote(owner: "alice", note: "visible to alice") {

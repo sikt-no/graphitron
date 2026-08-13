@@ -88,7 +88,7 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
@@ -96,7 +96,7 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query, Map<String, Object> variables) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).variables(variables).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).variables(variables).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
@@ -107,7 +107,7 @@ class GraphQLQueryTest {
      * on errors — for tests that expect a failure path (e.g. Relay first+last validation).
      */
     private graphql.ExecutionResult executeRaw(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         return graphql.execute(input);
     }
 
@@ -1905,7 +1905,7 @@ class GraphQLQueryTest {
                     }
                 }
             })));
-        var input = Graphitron.newExecutionInput(failing, "test-user")
+        var input = Graphitron.newExecutionInput(failing, "{}", "test-user")
             .query("{ filmsFaceted { facets { rating { value count } } nodes { title } } }")
             .build();
         var result = graphql.execute(input);

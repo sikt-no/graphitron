@@ -324,13 +324,20 @@
                     </schemaInputs>
                     <jooqPackage>${jooqPackage}</jooqPackage>
                     <outputPackage>${outputPackage}</outputPackage>
+                    <!--
+                        Session identity as a config-named static method pair, inherited by every
+                        execution that does not override it. This is the hand-written facade
+                        shape: mount takes one String claims payload (which is also what keeps
+                        the dev goal's <claims> string constructible for `mvn graphitron:dev`),
+                        reshapes it into the composite the session_connect routine takes, and
+                        returns the routine's composite handle; unmount clears through the paired
+                        routine. Exercised end-to-end against RLS in SessionHookExecutionTest;
+                        the direct jOOQ-Routines shape is configured on the
+                        rewrite-generate-multischema-mutation execution below.
+                    -->
                     <sessionState>
-                        <variables>
-                            <variable>
-                                <name>app.user_id</name>
-                                <claim>sub</claim>
-                            </variable>
-                        </variables>
+                        <mount>no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount</mount>
+                        <unmount>no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount</unmount>
                     </sessionState>
                 </configuration>
                 <executions>
@@ -347,20 +354,7 @@
                             </schemaInputs>
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>${outputPackage}</outputPackage>
-                            <!--
-                                R429 slice 3: mount per-request identity on the pinned connection with the
-                                Postgres <variables> sugar. Generates a GraphitronSessionHook whose connect
-                                sets app.user_id from the JWT's sub claim and whose disconnect clears it;
-                                exercised end-to-end against RLS in SessionHookExecutionTest.
-                            -->
-                            <sessionState>
-                                <variables>
-                                    <variable>
-                                        <name>app.user_id</name>
-                                        <claim>sub</claim>
-                                    </variable>
-                                </variables>
-                            </sessionState>
+                            <!-- <sessionState> inherits the plugin-level facade pair. -->
                         </configuration>
                     </execution>
                     <!--
@@ -459,6 +453,22 @@
                             </schemaInputs>
                             <jooqPackage>no.sikt.graphitron.rewrite.multischemafixture</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.multischemamutation</outputPackage>
+                            <!--
+                                The direct jOOQ-Routines shape of the method-hook contract,
+                                overriding the plugin-level facade pair: <mount> names the
+                                generated executing method itself (the seam rule resolves it
+                                against the Field-expression overloads jOOQ emits beside it),
+                                the composite payload parameter (pClaims, a UDT record) becomes
+                                the factory contextArgument, and the composite return is the
+                                handle. Zero hand-written Java on this shape; compiling this
+                                output at -release 17 plus SessionHookExecutionTest's round trip
+                                is the proof that generated and hand-written hook methods are
+                                indistinguishable to the resolver.
+                            -->
+                            <sessionState>
+                                <mount>no.sikt.graphitron.rewrite.test.jooq.Routines#sessionConnect</mount>
+                                <unmount>no.sikt.graphitron.rewrite.test.jooq.Routines#sessionDisconnect</unmount>
+                            </sessionState>
                         </configuration>
                     </execution>
                 </executions>

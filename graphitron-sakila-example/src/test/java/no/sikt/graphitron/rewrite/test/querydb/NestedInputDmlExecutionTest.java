@@ -52,7 +52,7 @@ class NestedInputDmlExecutionTest {
     }
 
     private Map<String, Object> execute(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).as("graphql errors: " + result.getErrors()).isEmpty();
         return result.getData();
@@ -66,7 +66,7 @@ class NestedInputDmlExecutionTest {
      * list; callers additionally assert the target row is unchanged.
      */
     private void executeExpectingError(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).as("expected the runtime guard to surface a graphql error").isNotEmpty();
     }

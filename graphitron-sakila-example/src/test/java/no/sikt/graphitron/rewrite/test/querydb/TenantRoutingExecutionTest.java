@@ -85,7 +85,7 @@ class TenantRoutingExecutionTest {
             searchPathDataSource("public", null),
             Map.of(KEY_A, searchPathDataSource("tenant_a", null), KEY_B, searchPathDataSource("tenant_b", null)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, "{}", CommitPolicy.COMMIT);
+        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, "{}");
         try {
             DSLContext a = tenants.dslFor(KEY_A);
             DSLContext b = tenants.dslFor(KEY_B);
@@ -110,7 +110,7 @@ class TenantRoutingExecutionTest {
             searchPathDataSource("public", opened),
             Map.of(KEY_A, searchPathDataSource("tenant_a", opened), KEY_B, searchPathDataSource("tenant_b", opened)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, "{}", CommitPolicy.COMMIT);
+        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, "{}");
         try {
             tenants.dslFor(KEY_A);
             tenants.dslFor(KEY_B);

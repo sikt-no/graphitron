@@ -88,14 +88,14 @@ class BulkUpdateSetAgreementExecutionTest {
     }
 
     private Map<String, Object> execute(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).as("graphql errors: " + result.getErrors()).isEmpty();
         return result.getData();
     }
 
     private ExecutionResult executeRaw(String query) {
-        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         return graphql.execute(input);
     }
 
