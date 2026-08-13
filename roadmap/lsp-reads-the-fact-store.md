@@ -80,7 +80,8 @@ prose that rots.
 **Tree-sitter extracts intent**: buffer position to schema coordinate, over the live and possibly
 unparseable buffer, and the reverse when a store position must land in a buffer that has drifted
 since capture. Positions in, positions out; it produces no fact, judges nothing, and writes nothing
-to the store. That is its whole job, and it is the only part that must tolerate broken syntax.
+to the store. That is its whole job, it is the only part that must tolerate broken syntax, and it is
+the only part that sees unsaved content at all.
 
 **The store answers everything else**, for the whole workspace: completion lists, hover bodies,
 definition targets, hint values, diagnostic judgements. The incumbent already leans this way; a
@@ -93,12 +94,12 @@ re-runs full-tree validation per keystroke across every dependent open file.
 
 There is no gate between the two, because there is no state in which the store cannot answer. Two-
 stage capture writes on every outcome, so tree-sitter's job is the same whatever the buffer holds:
-positions in, positions out. What the store answers for a file is the facts of the content it last
-captured, and how far that can lag the buffer is the capture-cadence question below, not a currency
-variant a surface switches on. The first iteration keeps the shadow minimal, simple and correct over
-clever: the live tree supplies the coordinate under the cursor and re-anchors positions into text
-that has moved since capture, never facts. Widening it so live declarations feed answers before
-capture is a later iteration, taken only if the paired measurement shows the wait hurts.
+positions in, positions out. What the store answers for a file is the facts of its last saved
+content, which lags the buffer by exactly one save; that is a stated division of labour, not a
+currency variant a surface switches on. The first iteration keeps the shadow minimal, simple and
+correct over clever: the live tree supplies the coordinate under the cursor and re-anchors positions
+into text that has moved since capture, never facts. Widening it so live declarations feed answers
+before capture is a later iteration, taken only if the paired measurement shows the wait hurts.
 
 A graph is many schema files, so validity is per file, not per workspace. An author typing
 `extend type |` in a new file has one invalid buffer and a workspace of well-formed captured ones;
@@ -170,12 +171,21 @@ rows, so there is no moment at which the store declines to answer and nothing fo
 switch on. A multi-row result at an author-written coordinate surfaces as a diagnostic, never a
 silent first match.
 
-One question this item must settle, because it is what makes "never blind" true all the way down:
-does stage-one capture run on buffer change, or only on save? On change, the store tracks the buffer
-and `store_source.stamp` is internal bookkeeping no surface reads. On save, the store lags the
-buffer between keystroke and save, and something has to describe that gap, which is how the retired
-arm would come back. Stage one is one file parsed and its rows written, cheap enough to argue for
-capturing the buffer; the item should say so outright rather than leave the seam to be discovered.
+The store updates on save, and unsaved content is seen only by tree-sitter. That is where the
+division of labour sits, not a performance tradeoff to be tuned: the store's subject is the schema
+as it exists, and a buffer nobody has saved is not yet part of it. The line can move later if it
+proves to hurt, and the paired measurement is what would show that.
+
+Saving on save does not bring the retired arm back, and the distinction is worth being exact about,
+because it is easy to slide from one to the other. A store answering from the last saved content is
+not a store declining to answer; it answers a well-posed question definitely, and the question it
+answers is the right one. The lag has teeth in exactly one place: a diagnostic asserting absence,
+"no such type", "no such column", against a buffer where the author has just typed the thing that
+would satisfy it. The capture cadence already handles that, since diagnostics publish when capture
+swaps rather than on keystroke, so a file's diagnostics describe the content they were computed from
+and refresh at its next save, re-anchored through the live tree where the text has moved. The same
+cadence covers the cold case for free: before a graph's first capture nothing swaps, so nothing
+publishes, and no author is told their schema is undeclared by a store that has not read it yet.
 
 **Coordinate-keyed lookups.** The parse hands over a coordinate; the store answers it, and what
 comes back is rows. `DeclTarget`'s six variants are not a shape to preserve: they are the projection
