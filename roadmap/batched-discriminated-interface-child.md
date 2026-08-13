@@ -22,8 +22,10 @@ finishes `step.where(condition).orderBy(orderBy).fetch()`. No `DataLoader` is re
 statement is not spliced into the parent's, so the leaf is N+1 by construction.
 
 `@splitQuery`, the directive an author reaches for when a child costs a query per parent, does
-nothing here. `DeliveryFactVisitor` mints the `DeliveryFacts.Row` unconditionally so the marker
-reaches the fact base, and the `TableInterfaceType` arm of `FieldBuilder`'s
+nothing here. `DeliveryFactVisitor` mints a `DeliveryFacts.Row` for the coordinate the moment a
+marker is present (the canonical constructor rejects an all-false row: a markerless coordinate is
+the relation's absence, not a row), so the marker does reach the fact base. The
+`TableInterfaceType` arm of `FieldBuilder`'s
 `classifyObjectReturnChildField` never reads it: not through `forcesSplitDelivery`, not through
 `ctx.facts.delivery().splitQuery`. The sibling plain table-backed arm, a few lines earlier in the
 same method, opens with `forcesSplitDelivery(fieldDef)` and forks its whole delivery story on it. So
@@ -88,17 +90,32 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 ## Implementation
 
 * `FieldBuilder`, the `TableInterfaceType` arm of `classifyObjectReturnChildField`: fork on
-  cardinality the way the `InterfaceType` arm does. List and connection wrappers mint the batched
-  leaf with a `LoaderRegistration`; single cardinality keeps `TableInterfaceField`. The participant
-  precondition the sibling applies (at least one `TableBound` participant) has no analogue here: a
-  discriminated interface rejects non-table members at the parse boundary, so every participant is
-  table-bound by construction. State that as the reason the guard is absent rather than omitting it
-  silently.
+  cardinality the way the `InterfaceType` arm does. List cardinality mints the batched leaf with a
+  `LoaderRegistration`; single cardinality keeps `TableInterfaceField`. Mirroring the sibling's
+  `wrapper instanceof FieldWrapper.Connection || wrapper.isList()` clause is fine, but the
+  connection half is unreachable and must stay so: this arm rejects `FieldWrapper.Connection` at its
+  head with the `Rejection.deferred` that `roadmap/root-connection-over-discriminated-interface.md`
+  owns lifting. Do not touch that guard here. The participant precondition the sibling applies (at
+  least one `TableBound` participant) has no analogue here: a discriminated interface rejects
+  non-table members at the parse boundary (`TypeBuilder.buildParticipantList`, the
+  `interfaceTable != null` arm, errors on any classified non-table implementor), so every
+  participant is table-bound by construction. State that as the reason the guard is absent rather
+  than omitting it silently. `GraphitronType.TableInterfaceType`'s own javadoc currently claims the
+  opposite ("Unbound participants (e.g. `@error` types) are recorded as `ParticipantRef.Unbound`",
+  copied from the `InterfaceType` / `UnionType` siblings); correct it while stating the invariant,
+  since it is the first place a reader would check.
 * A batched sibling leaf for `ChildField.TableInterfaceField`. It carries what the unbatched leaf
   carries plus the parent `SourceKey`, the `KeyLift`, the parent table and result type, and the
-  `LoaderRegistration`, mirroring `BatchedInterfaceField`'s component list. Whether this is a new
-  record or a delivery slot on the existing one is the implementer's call; the sibling family uses
-  separate records, and matching that keeps the sealed switches reading uniformly.
+  `LoaderRegistration`, mirroring `BatchedInterfaceField`'s component list (including its
+  `BatchKeyField, ParentRowDemand` implements clause). Mirror the component list, not the key
+  derivation: `BatchedInterfaceField` keys on the parent's *primary key*, with a `pkCols.isEmpty()`
+  rejection, because each participant holds its own FK back to the parent. This arm's key is the
+  single FK hop's source side, the columns `TableInterfaceField.parentRowColumns()` already
+  reports, which is what `deriveSplitQuerySource` derives for the plain table child's
+  `BatchedTableField`. That is also why the sibling's empty-PK rejection has no analogue here.
+  Whether this is a new record or a delivery slot on the existing one is the implementer's call;
+  the sibling family uses separate records, and matching that keeps the sealed switches reading
+  uniformly.
 * The rows method. `buildTableInterfaceFieldFetcher`'s body is the starting point with the
   correlation re-keyed: today it equates the child's target side against one `parentRecord`, and
   batched it equates against the key set the loader hands in. `MultiTablePolymorphicEmitter`'s
@@ -107,7 +124,22 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 * `warnIfSplitQueryOnRecordParent`'s sibling for this arm, or a generalisation of it: the redundancy
   warning plus the delete fix. Needs its own `LintRule` constant if the existing
   `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` does not fit the wording.
-* `forcesSplitDelivery`'s javadoc: add this arm to the list of `@splitQuery`-half readers.
+* **`DeliveryFactRelation`, the second delivery-rule site.** Delivery is computed twice: the leaf
+  encoding (`DeliveryFact.leafDerivedOf`) and the materialized relation (`DeliveryFactRelation.mint`,
+  read through `GraphitronSchema.deliveryOf`), and `DeliveryFactPinTest` requires the two to agree.
+  The crosswalk side is compile-forced, its switch being total with no default, so adding the
+  batched leaf there cannot be missed; the relation side can. Today
+  `DeliveryFactRelation.singleTableBackedVerdict` hardcodes `TableInterfaceType -> false` (and
+  excludes it again from the `ConnectionType` arm) on the stated ground that the single-table
+  interface child's "only delivery is inline", which makes the relation answer `Inline` for the new
+  batched leaf. Update the case, the connection sub-clause and that javadoc rationale alongside the
+  classifier fork, and decide which `DeliveryFact.Trigger` the leaf declares: the sibling pair uses
+  `Trigger.PolymorphicFanIn` for the same cardinality-plus-participants rule, and both sides have to
+  name the same one.
+* The `DeliveryFacts` javadoc that lists the `@splitQuery`-half readers. It is the record's *class*
+  javadoc plus `Row#splitQuery` / `splitQuery(GraphQLFieldDefinition)`, which name the pivot and
+  nesting-deferral halves; `forcesSplitDelivery`'s own javadocs are one-liners about the union and
+  carry no list. Add this arm where the list actually lives.
 
 ## Open for the implementer
 
@@ -128,6 +160,13 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   `SPLIT_QUERY_ON_NESTING_DEFERRED` sibling uses; a pure-verdict row may instead belong in
   `ClassifiedCorpus` per the `classified-corpus` skill, which the implementer should check rather
   than defaulting to the enum.
+* **Delivery-fact agreement.** `DeliveryFactPinTest` is the gate on the two-site change above, but
+  only over coordinates its domain actually contains, and the domain has no list-cardinality
+  discriminated interface child today: `ClassifiedCorpus`'s `table-interface` example carries
+  `media: MediaItem` at single cardinality and `joined-table-interface` exercises a root, not a
+  child. Without a list-cardinality child in the corpus (or in the test's own marker fixture) the
+  relation can keep answering `Inline` while the leaf says `Batched` and the build stays green.
+  Adding that coordinate is what turns the pin into a gate, so it is not optional coverage.
 * **The redundancy warning.** Its own case asserting the `LintFinding`, the rule constant and the
   delete fix, modelled on whatever pins `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` today.
 * **Execution tier.** The statement-count claim is the whole point and is invisible to every other
@@ -139,9 +178,14 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 
 ## Retired vocabulary
 
-* Prose asserting that the discriminated interface child is N+1 by construction, or that it registers
-  no `DataLoader`. It appears in `roadmap/root-connection-over-discriminated-interface.md`'s child
-  section and in this item's own problem statement, and both go stale on landing.
+* Prose asserting that the discriminated interface child is N+1 by construction, that it registers
+  no `DataLoader`, or that its only delivery is inline. Four live sites:
+  `roadmap/root-connection-over-discriminated-interface.md`'s child section; this item's own problem
+  statement; `ClassifiedCorpus`'s polymorphic preamble comment, which calls the per-parent query "a
+  known defect" the corpus deliberately does not assert; and
+  `DeliveryFactRelation.singleTableBackedVerdict`'s javadoc, which names "the single-table interface
+  child, whose only delivery is inline" as the discriminating fact for its `false` case. The last
+  two sit in code the change touches anyway, so they are sweep targets rather than stragglers.
 * Nothing in main sources retires by name: `buildTableInterfaceFieldFetcher` survives for single
   cardinality unless the open question above moves it.
 
