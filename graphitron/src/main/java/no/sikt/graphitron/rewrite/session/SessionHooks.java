@@ -82,6 +82,20 @@ public sealed interface SessionHooks permits SessionHooks.NotConfigured, Session
             .orElse(List.of());
     }
 
+    /**
+     * The payload shape the dev tools can construct from one string: present exactly when the
+     * mount's payload is a single {@code java.lang.String} parameter, carrying that parameter's
+     * name (its contextArgument key). Resolved here, on the reflected facts, so the dev-goal and
+     * dev-executor sites read one predicate instead of re-deriving it.
+     */
+    default Optional<String> stringConstructiblePayload() {
+        var payload = payloadParams();
+        if (payload.size() == 1 && "java.lang.String".equals(payload.get(0).typeName())) {
+            return Optional.of(payload.get(0).name());
+        }
+        return Optional.empty();
+    }
+
     /** No method hooks configured (or a reflection failure already drained by the builder). */
     record NotConfigured() implements SessionHooks {
         public static final NotConfigured INSTANCE = new NotConfigured();

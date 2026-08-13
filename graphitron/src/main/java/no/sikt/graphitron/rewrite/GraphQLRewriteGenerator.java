@@ -485,7 +485,7 @@ public class GraphQLRewriteGenerator {
         // The plan is produced before the per-type generators run: the launcher relation's rows
         // are read by the fetcher generator (a root coordinate with a row gets the launcher
         // emission, one without falls through to its legacy builder).
-        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), ctx.sessionStateConfig(), outputPackage);
+        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage);
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers());
@@ -604,9 +604,9 @@ public class GraphQLRewriteGenerator {
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
             case GRAPHITRON_CONTEXT -> GraphitronContextInterfaceGenerator.generate();
-            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig(), tenantKeyType);
+            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType);
             case TRANSACTION_PROVIDER -> GraphitronTransactionProviderGenerator.generate(outputPackage);
-            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null);
+            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null, schema.sessionHooks());
             case CONSTRAINT_VIOLATIONS -> ConstraintViolationsClassGenerator.generate();
             case CLIENT_EXCEPTION -> GraphitronClientExceptionClassGenerator.generate();
             case ERROR_ROUTER -> ErrorRouterClassGenerator.generate(outputPackage);
@@ -615,7 +615,7 @@ public class GraphQLRewriteGenerator {
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink);
-            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, ctx.sessionStateConfig(), federationLink);
+            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, schema.sessionHooks(), federationLink);
         };
     }
 

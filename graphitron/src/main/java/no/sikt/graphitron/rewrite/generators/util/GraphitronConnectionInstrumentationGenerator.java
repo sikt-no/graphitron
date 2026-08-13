@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -18,24 +19,18 @@ import java.util.List;
  * <p>Emitted (not shipped as a graphitron artifact); bodies depend only on graphql-java, jOOQ, and
  * the JDK. Valid Java 17.
  *
- * <h2>The {@code DSLContext} key seam</h2>
- * On the escape-hatch path {@code Graphitron.newExecutionInput(dsl, ...)} publishes the per-request
- * {@code DSLContext} under the {@code DSLContext.class} {@code graphQLContext} key at factory time. On
- * the owned-connection path <em>this instrumentation is the producer of that key</em>: at operation
- * start it pins a connection, mounts identity, binds a {@code DSLContext} to it, and publishes it
- * under the very same key. Every consumer of the key ({@code getDslContext(env)}, every generated
- * fetcher) is identical across the two paths.
- *
  * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
- *   <li>Read the opaque claims payload from the {@code graphQLContext} under {@code CLAIMS_KEY} (the
- *       key the {@code Graphitron.newOwnedExecutionInput(claims, ...)} factory writes; shared as a
- *       named constant so read and write cannot drift).</li>
- *   <li>{@code runtime.acquire(claims)} pins one connection and runs the connect hook; a throwing
- *       connect fails closed here, before any SQL, surfaced as a request error.</li>
- *   <li>Bind a {@code DSLContext} to the pinned connection through
- *       {@link GraphitronTransactionProviderGenerator the custom TransactionProvider} and publish it
- *       under {@code DSLContext.class}.</li>
+ *   <li>Read each mount payload contextArgument off the {@code graphQLContext} (the name-keyed
+ *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
+ *       per-request extraction {@code @service} call sites use).</li>
+ *   <li>Publish the per-operation {@code TenantConnections} carrier under its own class key, on
+ *       both topologies. Acquisition is lazy on every path: fetchers resolve contexts through
+ *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault}), which
+ *       pins and mounts one connection per key on first demand, so an operation that touches no
+ *       database never pins and never mounts. Nothing is published under the typed
+ *       {@code DSLContext.class} key: that key belongs to the escape-hatch factory alone, so the
+ *       accessor distinguishes the modes structurally.</li>
  *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit, with no
  *       read-only enforcement. <b>Mutation operations</b> let each
  *       field's shipped {@code dsl.transactionResult(...)} be the per-field writable boundary through
@@ -43,12 +38,12 @@ import java.util.List;
  *       independently; under {@code ROLLBACK_ONLY} (the dev-execution mode) the provider's deferred
  *       observe-then-discard topology savepoint-scopes each field inside one operation transaction
  *       that release discards.</li>
- *   <li>On completion (success, error, cancellation) release the pinned connection (disconnect hook,
- *       then return-or-evict). Release is idempotent.</li>
+ *   <li>On completion (success, error, cancellation) release every pinned connection
+ *       ({@code releaseAll()}: unmount, then return-or-evict). Release is idempotent.</li>
  * </ol>
  *
  * <h2>Incremental delivery is rejected</h2>
- * Connection-per-operation release closes the pinned connection at completion; a deferred fetcher
+ * Connection-per-operation release closes the pinned connections at completion; a deferred fetcher
  * running afterwards would use a closed connection. The emitted class therefore rejects
  * {@code @defer}/{@code @stream} outright ({@code hasIncrementalSupport()} fails fast) rather than
  * let incremental delivery corrupt the connection lifetime.
@@ -56,9 +51,6 @@ import java.util.List;
 public final class GraphitronConnectionInstrumentationGenerator {
 
     public static final String CLASS_NAME = "GraphitronConnectionInstrumentation";
-    public static final String CLAIMS_KEY_FIELD = "CLAIMS_KEY";
-    /** The literal value of the emitted {@code CLAIMS_KEY} constant. */
-    public static final String CLAIMS_KEY_VALUE = "no.sikt.graphitron.request.claims";
 
     private static final ClassName INSTRUMENTATION = ClassName.get("graphql.execution.instrumentation", "Instrumentation");
     private static final ClassName INSTRUMENTATION_STATE = ClassName.get("graphql.execution.instrumentation", "InstrumentationState");
@@ -70,11 +62,6 @@ public final class GraphitronConnectionInstrumentationGenerator {
     private static final ClassName GRAPHQL_CONTEXT = ClassName.get("graphql", "GraphQLContext");
     private static final ClassName EXECUTION_CONTEXT = ClassName.get("graphql.execution", "ExecutionContext");
 
-    private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
-    private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
-    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
-    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
-
     private GraphitronConnectionInstrumentationGenerator() {}
 
     /**
@@ -82,41 +69,31 @@ public final class GraphitronConnectionInstrumentationGenerator {
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronRuntime})
      */
     public static List<TypeSpec> generate(String outputPackage) {
-        return generate(outputPackage, false);
+        return generate(outputPackage, false, SessionHooks.NotConfigured.INSTANCE);
     }
 
     /**
-     * Canonical form. {@code multiTenant} is true when {@code <tenantColumn>} is configured:
-     * the per-operation state becomes the tenant-keyed {@code TenantConnections} carrier
-     * (published under its own class key; fetchers route through {@code dslFor} /
-     * {@code dslDefault}) and acquisition turns lazy, since the tenant is divined per field
-     * and an operation touching no tenant-scoped table should pin nothing. Single-tenant
-     * output: one eager pinned connection whose {@code DSLContext} is published
-     * under {@code DSLContext.class}.
+     * Canonical form. {@code multiTenant} is true when {@code <tenantColumn>} is configured (the
+     * carrier then additionally carries the fan-out machinery); acquisition is lazy on both
+     * topologies, so this instrumentation publishes the per-operation carrier and pins nothing
+     * itself. {@code sessionHooks} supplies the mount's payload contextArguments, read here off
+     * the {@code graphQLContext} and retained by the carrier for the life of the request.
      */
-    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
+    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant, SessionHooks sessionHooks) {
         String schemaPackage = outputPackage + ".schema";
         var self = ClassName.get(schemaPackage, CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
-        var pinnedConnection = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
-        return List.of(instrumentation(self, runtime, pinnedConnection, tenantConnections, provider, commitPolicy, state, multiTenant));
+        return List.of(instrumentation(self, runtime, tenantConnections, commitPolicy, state, multiTenant,
+            sessionHooks));
     }
 
     private static TypeSpec instrumentation(
-            ClassName self, ClassName runtime, ClassName pinnedConnection, ClassName tenantConnections,
-            ClassName provider, ClassName commitPolicy, ClassName state, boolean multiTenant) {
-
-        var claimsKey = FieldSpec.builder(String.class, CLAIMS_KEY_FIELD, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .initializer("$S", CLAIMS_KEY_VALUE)
-            .addJavadoc("The {@code graphQLContext} key the opaque per-request claims payload is published\n"
-                + "under. Read here at acquisition; written by the\n"
-                + "{@code Graphitron.newOwnedExecutionInput(claims, ...)} factory. One constant so the two\n"
-                + "sites cannot drift on the key string.\n")
-            .build();
+            ClassName self, ClassName runtime, ClassName tenantConnections,
+            ClassName commitPolicy, ClassName state, boolean multiTenant, SessionHooks sessionHooks) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -137,7 +114,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("this.commitPolicy = commitPolicy")
             .addJavadoc("Builds the instrumentation over {@code runtime} with an explicit commit policy;\n"
                 + "{@code ROLLBACK_ONLY} is the rollback-everything dev mode (see its enum constant\n"
-                + "for the deferred observe-then-discard topology and its stated fidelity limits).\n")
+                + "for the deferred observe-then-discard topology).\n")
             .build();
 
         var createState = MethodSpec.methodBuilder("createState")
@@ -146,12 +123,13 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .returns(INSTRUMENTATION_STATE)
             .addParameter(CREATE_STATE_PARAMS, "parameters")
             .addStatement("return new $T()", state)
-            .addJavadoc("Per-request state carrier holding the pinned connection for\n"
+            .addJavadoc("Per-request state carrier holding the connection carrier for\n"
                 + "{@link #beginExecuteOperation} to release at completion.\n")
             .build();
 
         var resultContext = ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, EXECUTION_RESULT);
 
+        var payload = payloadParams(sessionHooks);
         var beginExecuteOperationBuilder = MethodSpec.methodBuilder("beginExecuteOperation")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
@@ -163,78 +141,52 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("$T graphQLContext = executionContext.getGraphQLContext()", GRAPHQL_CONTEXT)
             .addCode("\n")
             .beginControlFlow("if (executionContext.hasIncrementalSupport())")
-            .addComment("@defer/@stream would run fetchers after release closes the pinned connection.")
+            .addComment("@defer/@stream would run fetchers after release closes the pinned connections.")
             .addStatement("throw new $T($S)", IllegalStateException.class,
                 "Incremental delivery (@defer/@stream) is not supported on the Graphitron "
                 + "owned-connection path; it is a named follow-on")
             .endControlFlow()
-            .addCode("\n")
-            .addStatement("$T claims = graphQLContext.get($L)", String.class, CLAIMS_KEY_FIELD);
-
-        if (multiTenant) {
-            beginExecuteOperationBuilder = beginExecuteOperationBuilder
-                .addComment("Multi-tenant: acquisition is lazy and per divined tenant. Publish the per-operation")
-                .addComment("carrier; routed fetchers call dslFor(key), untenanted fetchers call dslDefault(),")
-                .addComment("and nothing is pinned until a fetcher actually asks.")
-                .addStatement("$T tenants = new $T(runtime, claims, commitPolicy)", tenantConnections, tenantConnections)
-                .addStatement("state.tenants = tenants")
-                .addStatement("graphQLContext.put($T.class, tenants)", tenantConnections)
-                .addCode("\n")
-                .addComment("Release every pinned connection on every completion path (success, error,")
-                .addComment("cancellation). releaseAll() is idempotent and one tenant's disconnect failure")
-                .addComment("never orphans another's connection.")
-                .addStatement("return $T.whenCompleted((result, throwable) -> state.tenants.releaseAll())",
-                    SIMPLE_INSTRUMENTATION_CONTEXT);
-        } else {
-            beginExecuteOperationBuilder = beginExecuteOperationBuilder
-                .addStatement("$T pinned", pinnedConnection)
-                .beginControlFlow("try")
-                .addStatement("pinned = runtime.acquire(claims)")
-                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
-                .addComment("A throwing connect hook (fail-closed) propagates as an unchecked cause already;")
-                .addComment("only the getConnection() SQLException is checked. Either way: request error, no SQL ran.")
-                .addStatement("throw new $T($S, e)", RuntimeException.class, "Could not acquire a database connection")
-                .endControlFlow()
-                .addStatement("state.pinned = pinned")
-                .addStatement("$T connection = pinned.connection()", CONNECTION)
-                .addCode("\n")
-                .addComment("Bind a DSLContext to the pinned connection, then swap in the transaction provider (the")
-                .addComment("one seam) on its live configuration, and publish it under the same key getDslContext(env)")
-                .addComment("reads. DSL.using(connection, dialect) wraps the connection in jOOQ's own single-connection")
-                .addComment("provider whose release is a no-op, so jOOQ never closes it; the runtime owns close/evict.")
-                .addComment("The settle callback re-fires unconfirmed session hooks after each per-field settle, so")
-                .addComment("post-commit read-back projections and later mutation fields see remounted identity.")
-                .addStatement("$T dsl = $T.using(connection, runtime.dialect())", DSL_CONTEXT, DSL)
-                .addStatement("dsl.configuration().set(new $T(connection, commitPolicy, pinned::afterSettle))", provider)
-                .addStatement("graphQLContext.put($T.class, dsl)", DSL_CONTEXT)
-                .addCode("\n")
-                .addComment("Release the pinned connection on every completion path (success, error, cancellation).")
-                .addComment("Queries run in autocommit (no outer transaction); each mutation field owns its own")
-                .addComment("per-field transaction through the provider on the published DSLContext. release() is")
-                .addComment("idempotent and evicts on disconnect failure.")
-                .addStatement("return $T.whenCompleted((result, throwable) -> state.pinned.release())",
-                    SIMPLE_INSTRUMENTATION_CONTEXT);
+            .addCode("\n");
+        if (!payload.isEmpty()) {
+            beginExecuteOperationBuilder.addComment(
+                "The mount's payload contextArguments, written name-keyed by newOwnedExecutionInput;");
+            beginExecuteOperationBuilder.addComment(
+                "the carrier retains them for the request, since any fetcher may trigger a mount.");
+            for (var p : payload) {
+                beginExecuteOperationBuilder.addStatement("$T $L = graphQLContext.get($S)",
+                    p.javaType(), p.name(), p.name());
+            }
+        }
+        var carrierArgs = new StringBuilder("runtime, commitPolicy");
+        for (var p : payload) {
+            carrierArgs.append(", ").append(p.name());
         }
         var beginExecuteOperation = beginExecuteOperationBuilder
-            .addJavadoc(multiTenant
-                ? "Publishes the per-operation tenant-keyed connection carrier for routed fetchers and\n"
-                    + "releases every pinned connection on completion; acquisition is lazy and per divined\n"
-                    + "tenant. See the class javadoc for the full sequence.\n"
-                : "Pins the connection, mounts identity, and publishes its {@code DSLContext} under the\n"
-                    + "key {@code getDslContext(env)} reads, then releases on completion. See the class javadoc\n"
-                    + "for the full sequence.\n")
+            .addComment("Publish the per-operation carrier; acquisition is lazy on every path. Fetchers")
+            .addComment("resolve contexts through the carrier (getDslContext / dslFor / dslDefault), which")
+            .addComment("pins and mounts one connection per key on first demand; an operation that touches")
+            .addComment("no database never pins. Nothing is published under DSLContext.class: the typed key")
+            .addComment("belongs to the escape-hatch factory alone.")
+            .addStatement("$T carrier = new $T($L)", tenantConnections, tenantConnections, carrierArgs.toString())
+            .addStatement("state.carrier = carrier")
+            .addStatement("graphQLContext.put($T.class, carrier)", tenantConnections)
+            .addCode("\n")
+            .addComment("Release every pinned connection on every completion path (success, error,")
+            .addComment("cancellation). releaseAll() is idempotent and one entry's unmount failure never")
+            .addComment("orphans another's connection.")
+            .addStatement("return $T.whenCompleted((result, throwable) -> state.carrier.releaseAll())",
+                SIMPLE_INSTRUMENTATION_CONTEXT)
+            .addJavadoc("Publishes the per-operation connection carrier for the owned-connection path and\n"
+                + "releases every pinned connection at completion; acquisition is lazy and per key, with\n"
+                + "single-tenant as the one-key case. See the class javadoc for the full sequence.\n")
             .build();
 
         var stateType = TypeSpec.classBuilder("State")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(INSTRUMENTATION_STATE)
-            .addField(multiTenant
-                ? FieldSpec.builder(tenantConnections, "tenants", Modifier.PRIVATE).build()
-                : FieldSpec.builder(pinnedConnection, "pinned", Modifier.PRIVATE).build())
-            .addJavadoc(multiTenant
-                ? "Per-request instrumentation state: the tenant-keyed connection carrier to release at\n"
-                    + "completion.\n"
-                : "Per-request instrumentation state: the pinned connection to release at completion.\n")
+            .addField(FieldSpec.builder(tenantConnections, "carrier", Modifier.PRIVATE).build())
+            .addJavadoc("Per-request instrumentation state: the connection carrier to release at\n"
+                + "completion.\n")
             .build();
 
         return TypeSpec.classBuilder(CLASS_NAME)
@@ -244,7 +196,6 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 + "Graphitron owned-connection path. Wired by {@code GraphitronRuntime.newGraphQL(schema)};\n"
                 + "consumers register nothing. See {@code GraphitronConnectionInstrumentationGenerator}.\n",
                 INSTRUMENTATION)
-            .addField(claimsKey)
             .addField(runtimeField)
             .addField(policyField)
             .addMethod(primaryConstructor)
@@ -253,5 +204,16 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addMethod(beginExecuteOperation)
             .addType(stateType)
             .build();
+    }
+
+    /** The mount's payload parameters as typed params, empty when nothing is configured. */
+    private static List<no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed> payloadParams(SessionHooks sessionHooks) {
+        return sessionHooks.mountRef()
+            .map(m -> m.params().stream()
+                .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed typed
+                    && typed.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
+                .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
+                .toList())
+            .orElse(List.of());
     }
 }

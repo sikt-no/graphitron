@@ -79,11 +79,6 @@ public final class GraphitronFacadeGenerator {
         // so both consumers see one producer.
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
 
-        var instrumentation = ClassName.get(schemaPackage,
-            no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
-        String claimsKeyField =
-            no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator.CLAIMS_KEY_FIELD;
-
         // When at least one field classifies FanOut, both factory forms gain a dedicated
         // Collection<tenantKey> parameter for the request's fan-out tenant set: a first-class
         // typed slot (a compile error when missing, never a runtime lookup), stashed under the
@@ -107,13 +102,11 @@ public final class GraphitronFacadeGenerator {
             dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
             escapeHatchJavadoc(contextArgs, fanOutTenantKey != null));
 
-        // The owned-connection factory: the caller brings only the opaque claims; the execution
-        // instrumentation pins the connection, mounts identity, and produces the DSLContext.
-        // Writes the claims under the instrumentation's own CLAIMS_KEY constant so the write and
-        // read sites cannot drift.
+        // The owned-connection factory: the caller brings only the declared contextArguments
+        // (the mount's payload parameters among them, ordinary name-keyed slots); the execution
+        // instrumentation publishes the connection carrier, and fetchers pin on first demand.
         var newOwnedExecutionInput = buildExecutionInputFactory(
-            "newOwnedExecutionInput", ClassName.get(String.class), "claims",
-            CodeBlock.of("b.put($T.$L, claims);", instrumentation, claimsKeyField),
+            "newOwnedExecutionInput", null, null, null,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
             ownedExecutionInputJavadoc(contextArgs, fanOutTenantKey != null));
@@ -204,11 +197,14 @@ public final class GraphitronFacadeGenerator {
 
     /**
      * Emits one {@code ExecutionInput.Builder} factory. The two factories, the escape-hatch
-     * {@code newExecutionInput(DSLContext, ...)} and the owned-path {@code newOwnedExecutionInput(String
-     * claims, ...)}, differ only in their leading parameter and the single {@code graphQLContext} entry
-     * it produces ({@code firstPut}); everything schema-shaped (the alphabetical contextArgument
-     * parameters, their null-checks, the {@code GraphitronContext} singleton, the empty
-     * {@code DataLoaderRegistry}) is identical and single-sourced here so the two cannot drift.
+     * {@code newExecutionInput(DSLContext, ...)} and the owned-path
+     * {@code newOwnedExecutionInput(...)}, differ only in the escape hatch's leading
+     * {@code DSLContext} parameter and the single {@code graphQLContext} entry it produces
+     * ({@code firstPut}; the owned form passes none, so the typed {@code DSLContext.class} key
+     * belongs to the escape hatch alone); everything schema-shaped (the alphabetical
+     * contextArgument parameters, their null-checks, the {@code GraphitronContext} singleton, the
+     * empty {@code DataLoaderRegistry}) is identical and single-sourced here so the two cannot
+     * drift.
      */
     private static MethodSpec buildExecutionInputFactory(
             String methodName, ClassName firstParamType, String firstParamName, CodeBlock firstPut,
@@ -219,8 +215,10 @@ public final class GraphitronFacadeGenerator {
             String javadoc) {
         var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(executionInputBuilder)
-            .addParameter(firstParamType, firstParamName);
+            .returns(executionInputBuilder);
+        if (firstParamType != null) {
+            method.addParameter(firstParamType, firstParamName);
+        }
         if (fanOutTenantKey != null) {
             method.addParameter(ParameterizedTypeName.get(
                 ClassName.get("java.util", "Collection"), fanOutTenantKey), "fanOutTenants");
@@ -228,7 +226,9 @@ public final class GraphitronFacadeGenerator {
         for (ResolvedContextArg arg : contextArgs) {
             method.addParameter(arg.javaType(), arg.name());
         }
-        method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
+        if (firstParamType != null) {
+            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
+        }
         if (fanOutTenantKey != null) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, "fanOutTenants", "fanOutTenants");
         }
@@ -241,7 +241,9 @@ public final class GraphitronFacadeGenerator {
         // reads inside the singleton's default methods.
         method.addCode("return $T.newExecutionInput()\n", executionInput);
         method.addCode("    .graphQLContext(b -> {\n");
-        method.addCode("        $L\n", firstPut);
+        if (firstPut != null) {
+            method.addCode("        $L\n", firstPut);
+        }
         if (fanOutTenantKey != null) {
             // The carrier's own key constant, so the write here and the fanOutDomain read cannot
             // drift, and no contextArgument name can collide with it.
@@ -355,20 +357,20 @@ public final class GraphitronFacadeGenerator {
     private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs, boolean fanOut) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
-        sb.append("pass only the opaque {@code claims} payload (typically the JWT) and any declared\n");
-        sb.append("{@code contextArguments}. Unlike {@link #newExecutionInput}, no {@code DSLContext} is\n");
-        sb.append("supplied here; the execution instrumentation wired by\n");
-        sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} pins one connection per operation,\n");
-        sb.append("mounts identity from the claims, produces the {@code DSLContext}, demarcates the\n");
-        sb.append("operation's transactions, and releases at completion. Pair this factory with that engine.\n");
+        sb.append("pass only the declared {@code contextArguments} (a configured {@code <mount>} method's\n");
+        sb.append("payload parameters are ordinary entries in that population, typed by the method's own\n");
+        sb.append("declaration). Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
+        sb.append("here; the execution instrumentation wired by\n");
+        sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} pins connections on first demand,\n");
+        sb.append("mounts identity through the mount method, produces every {@code DSLContext}, demarcates\n");
+        sb.append("the operation's transactions, and releases at completion. Pair this factory with that\n");
+        sb.append("engine.\n");
         sb.append("\n");
-        sb.append("<p>The {@code claims} are stashed under the instrumentation's own request-claims key and\n");
-        sb.append("are never parsed here; the connect hook interprets them in the database. An empty\n");
-        sb.append("{@link org.dataloader.DataLoaderRegistry} is attached (generated fetchers populate it\n");
-        sb.append("lazily). The contextArgument parameters, in alphabetical order, are null-checked and\n");
-        sb.append("read back the same way as on the escape-hatch path.\n");
-        sb.append("@param claims the opaque per-request claims payload (typically the JWT); must not be\n");
-        sb.append("{@code null}\n");
+        sb.append("<p>An empty {@link org.dataloader.DataLoaderRegistry} is attached (generated fetchers\n");
+        sb.append("populate it lazily). The contextArgument parameters, in alphabetical order, are\n");
+        sb.append("null-checked and read back the same way as on the escape-hatch path; a mount payload\n");
+        sb.append("value and a same-named {@code @service} contextArgument are the same fact, supplied\n");
+        sb.append("once in the one slot.\n");
         appendFanOutTenantsParam(sb, fanOut);
         appendContextArgParams(sb, contextArgs);
         sb.append("@return a builder ready for {@code .query(...).build()}\n");

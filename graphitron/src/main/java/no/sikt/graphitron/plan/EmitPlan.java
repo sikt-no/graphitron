@@ -5,7 +5,7 @@ import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,13 +63,13 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
 
     /**
      * Produces the plan for one run. {@code federationLink} and {@code usesOneOf} are the
-     * bundle's schema-level facts; {@code sessionStateConfig} decides the connection runtime's
-     * session-hook unit; {@code outputPackage} anchors every unit name.
+     * bundle's schema-level facts; the schema's resolved session-hook carrier
+     * ({@link GraphitronSchema#sessionHooks()}) decides the connection runtime's hook unit;
+     * {@code outputPackage} anchors every unit name.
      */
     public static EmitPlan produce(GraphitronSchema schema,
                                    boolean federationLink,
                                    boolean usesOneOf,
-                                   SessionStateConfig sessionStateConfig,
                                    String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var globals = new ArrayList<GlobalCommand>();
@@ -104,7 +104,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences")));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
         globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
-        globals.add(connectionRuntime(units, sessionStateConfig));
+        globals.add(connectionRuntime(units, schema.sessionHooks()));
         globals.add(one(GlobalUnitKind.TRANSACTION_PROVIDER,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider")));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
@@ -138,17 +138,18 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     }
 
     /**
-     * The connection runtime's unit set: the four fixed units, plus the generated session-hook
-     * implementation exactly when the configured session state form emits one
-     * ({@link SessionStateConfig#emitsHookImplementation()}, the same fact the generator gates on).
+     * The connection runtime's unit set: the three fixed units, plus the generated hook class
+     * exactly when the resolved session-hook carrier emits one
+     * ({@link SessionHooks#emitsHookImplementation()}, the same fact the generator gates on).
+     * The {@link SessionHooks.NotConfigured} arm plans no hook unit at all: nothing is emitted
+     * and nothing is held.
      */
-    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionStateConfig sessionStateConfig) {
+    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionHooks sessionHooks) {
         var refs = new ArrayList<UnitRef>();
-        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         refs.add(units.tenantConnections());
-        if (sessionStateConfig.emitsHookImplementation()) {
+        if (sessionHooks.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
         }
         return new GlobalCommand.Fixed(GlobalUnitKind.CONNECTION_RUNTIME, refs);
