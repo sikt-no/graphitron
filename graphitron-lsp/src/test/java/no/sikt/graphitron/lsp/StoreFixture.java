@@ -44,6 +44,13 @@ final class StoreFixture implements AutoCloseable {
     /** The generated jOOQ model the {@code sql_} arms are captured from. */
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
+    /**
+     * A generated model whose two schemas landed in packages of their own, which is where a catalog
+     * coordinate stops being unique: one constraint name declared in both schemas, and one declared
+     * twice inside a single schema on two tables.
+     */
+    private static final String MULTI_SCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
@@ -85,9 +92,23 @@ final class StoreFixture implements AutoCloseable {
     /** The catalog shape plus a classpath census, for a test whose arms span both. */
     static StoreFixture ofCatalog(Path directory, String sdl,
                                   List<CompletionData.ExternalReference> classpath) {
+        return ofJooqPackage(directory, sdl, classpath, JOOQ_PACKAGE);
+    }
+
+    /**
+     * The catalog shape over the multi-schema generated model, for the reads whose answer depends on
+     * a name being ambiguous across schemas rather than on any one table's contents.
+     */
+    static StoreFixture ofMultiSchemaCatalog(Path directory, String sdl) {
+        return ofJooqPackage(directory, sdl, List.of(), MULTI_SCHEMA_JOOQ_PACKAGE);
+    }
+
+    private static StoreFixture ofJooqPackage(Path directory, String sdl,
+                                              List<CompletionData.ExternalReference> classpath,
+                                              String jooqPackage) {
         Path file = write(directory, GRAPH, sdl);
         var store = GraphitronModelStore.open();
-        capture(store, file, directory, GRAPH, classpath, new JooqCatalog(JOOQ_PACKAGE));
+        capture(store, file, directory, GRAPH, classpath, new JooqCatalog(jooqPackage));
         return new StoreFixture(store, GRAPH, file);
     }
 

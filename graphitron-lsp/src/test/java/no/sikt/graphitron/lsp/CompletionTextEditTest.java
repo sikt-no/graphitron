@@ -14,7 +14,6 @@ import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.CompletionItem;
@@ -145,27 +144,25 @@ class CompletionTextEditTest {
     void referenceItem_textEditCoversFullValue() {
         String source = """
             type Foo @table(name: "film") {
-                bar: Int @reference(path: [{key: "FILM__"}])
+                bar: Int @reference(path: [{key: "film_lang"}])
             }
             """;
         int line = 1;
         var lines = source.split("\n");
-        int innerStart = lines[line].indexOf("\"FILM__\"") + 1;
+        int innerStart = lines[line].indexOf("\"film_lang\"") + 1;
         Point cursor = new Point(line, innerStart + 2);
-
-        var film = new CompletionData.Table("film", "", null, List.of(),
-            List.of(CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)));
-        var language = new CompletionData.Table("language", "", null, List.of(), List.of());
-        var data = new CompletionData(List.of(film, language), List.of(), List.of());
 
         var fooFilmSnapshot = new LspSchemaSnapshot.Built.Current(
             List.of(), Map.of(), Map.of(),
             Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> ReferenceCompletions.generate(VOCAB, data, fooFilmSnapshot, ctx, dir, bytes));
+            (ctx, dir, bytes) -> ReferenceCompletions.generate(
+                VOCAB, store.handle(), fooFilmSnapshot, ctx, dir, bytes));
 
-        assertTextEditRange(items, "FILM__FILM_LANGUAGE_ID_FKEY",
-            new Range(new Position(line, innerStart), new Position(line, innerStart + "FILM__".length())));
+        // The candidate is the SQL constraint name, the namespace key: resolves first and the manual
+        // teaches; the edit still covers the whole partial value the author typed.
+        assertTextEditRange(items, "film_language_id_fkey",
+            new Range(new Position(line, innerStart), new Position(line, innerStart + "film_lang".length())));
     }
 
     @Test

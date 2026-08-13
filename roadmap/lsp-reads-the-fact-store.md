@@ -431,7 +431,7 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `MethodNameBinding` | `ExternalFieldCompletions`, then `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
 | `CatalogTableBinding` | `TableCompletions` | `sql_table` |
 | `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; enclosing table via classification |
-| `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint` (needs `jooq_name`) |
+| `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; enclosing table via classification |
 | `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter` × `graphql_argument` |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
 | `NodeTypeBinding` | `NodeTypeCompletions` | `graphitron_node` |
@@ -816,6 +816,40 @@ fixture can no longer state a jOOQ field name the generator would not produce, a
 is now what the per-arm tests do. `StoreFixture.withJavaSource` parses a declaration into the
 `java_` family the way a dev session's watcher would, which is what lets a test pin the cross-cadence
 join without the fixture database growing comments it does not have.
+
+## Settled while building: the foreign-key completion arm
+
+`CatalogFkBinding` reads `sql_referential_constraint` now, joined to `sql_constraint` for the
+generated constant name. The table it reads around stays the snapshot's answer, same split as the
+column arm.
+
+* **The label switched namespace, from the generated constant to the SQL constraint name.** `key:`
+  resolves two namespaces, the SQL name first and the `Keys` constant only if that finds nothing. The
+  SQL name is what the manual teaches and every tutorial and directive-reference example spells, what
+  a `NotInCatalog` rejection's candidate hint echoes, and what every constraint has: `jooq_name` is
+  nullable by design, so the projection's `orElse(constraintName)` fallback meant the popup silently
+  changed vocabulary mid-list depending on whether a `Keys` class resolved. One vocabulary now, the
+  one the diagnostics already speak, with the constant in the item's documentation because it
+  resolves too and an author reading generated code will recognise it.
+* **Both directions come out of one query.** A self-referencing key satisfies both halves of the
+  predicate and is a single row of the relation, so a union would have offered it twice. The
+  projection needed an explicit skip of the table's own name in its inbound pass to get the same
+  answer; here it falls out of the relation being the subject.
+* **A colliding name is offered under a spelling that resolves.** A constraint name two schemas both
+  declare is offered once per schema, qualified, because the `schema.` qualifier is grammar `key:`
+  accepts and the resolver treats as stated intent; a name only one schema declares stays bare. Two
+  keys of one name inside one schema (legal, constraint names are table-scoped) share every spelling
+  an author has, so they collapse to one candidate whose detail names both joins. That is the same
+  discipline as the table arm's duplicated name: state what the census holds, leave the resolution to
+  the resolver, and never let census order decide silently.
+* **Ordering is stateable.** Declaring schema, then constraint name. The projection's order was
+  outbound-then-inbound within the generated `Tables` class's field order, which no reader could
+  predict and no test could pin without encoding codegen's field layout.
+
+`CompletionData.Reference` stays: hover, definition and diagnostics still read it, and each retires
+its own reader when it moves. `StoreFixture` gained `ofMultiSchemaCatalog`, the multi-schema generated
+model being the only fixture that can produce a name ambiguous across schemas and a name declared
+twice within one.
 
 ## Retired vocabulary
 
