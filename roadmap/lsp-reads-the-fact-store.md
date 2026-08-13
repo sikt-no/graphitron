@@ -597,6 +597,23 @@ One consequence for an existing relation: `graphql_duplicate_declaration`'s elem
 unreachable only because capture was conditional on the document assembling. They are reachable now,
 and the relation's comment says so instead of claiming emptiness it no longer has.
 
+A file that does not exist writes no `store_source` row, and that is settled as correct rather than as
+a gap the census owes. `store_source` is the read-set population, one row per source the store
+actually read, and a file nobody could open was not read and has nothing to hash, so a row for it
+would assert membership in the population that means "met". A configured-but-absent file belongs to
+the recipe instead, and `store_graph_schema_input` already carries it: its comment says outright that
+it records how to find the graph's schema files, "including ones that do not exist yet". The two
+populations differing is the fact, not a row missing from one of them.
+
+What that leaves is a reading-stage question rather than a census one, and it is the same contract the
+next paragraph defers. `openSource` throws a bare `RuntimeException` from inside the per-source loop,
+so a round meeting a missing or unreadable file still writes nothing at all, its readable siblings'
+facts included, and never reaches the recipe rows either, since capture runs after the read. For a
+wrong path in configuration that loudness is right. For a file deleted or briefly unreadable under a
+watch loop it is the failure this item exists to remove, one source blanking the workspace, so the
+stage that survives a refusal of content should eventually survive a refusal to open. Not a new hole
+and not this increment's: the throw contract migrates with the reader.
+
 Deliberately not in this increment: the LSP still throws out of `buildOutput` on a refused document.
 The facts landing is the prerequisite; migrating the reader is the capability work, and changing that
 contract before a store-reading consumer exists would be a half-migration with nothing on the other
