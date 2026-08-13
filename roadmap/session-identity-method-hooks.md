@@ -1,7 +1,7 @@
 ---
 id: R639
 title: "Session identity is a Java method resolved at build time, not generated SQL"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: runtime-connection
