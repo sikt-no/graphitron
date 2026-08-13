@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R639` | Session identity is a Java method resolved at build time, not generated SQL | Spec | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
-| `R648` | Author-declared batch key for child @service on record-backed parents <sub>blocked by: [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)</sub> | Spec | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
+| `R648` | Author-declared batch key for child @service on record-backed parents <sub>blocked on the precedence item's phase split; see the coordinate section</sub> <sub>blocked by: [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)</sub> | Ready (deferred) | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R646` | Enforce @externalField helper parameter assignability against the parent table | In Review | 2026-08-13 | [plan](externalfield-parent-table-assignability.md) |
@@ -330,7 +330,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R648` [**Author-declared batch key for child @service on record-backed parents**](service-batch-key-author-declared.md) — Spec, feature, blocked by [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)
+- `R648` [**Author-declared batch key for child @service on record-backed parents**](service-batch-key-author-declared.md) — Ready, feature, blocked by [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R555` [**Deprecate @externalField: fold the computed-field shape into @service**](deprecate-externalfield-fold-into-service.md) — Ready, cleanup
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
