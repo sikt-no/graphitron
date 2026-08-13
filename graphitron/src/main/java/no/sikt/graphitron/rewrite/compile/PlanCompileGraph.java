@@ -295,8 +295,10 @@ public final class PlanCompileGraph {
                     var facade = fixed.units().get(0);
                     precise(facade, require(GlobalUnitKind.SCHEMA_CLASS));
                     precise(facade, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
+                    // No instrumentation edge: the owned factory writes only name-keyed
+                    // contextArguments and the singleton, so the facade references the runtime
+                    // (Graphitron.runtime(...)) but never the instrumentation class.
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(facade, r));
-                    refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> precise(facade, i));
                 }
                 case DEV_EXECUTOR -> {
                     var devExecutor = fixed.units().get(0);
