@@ -55,14 +55,16 @@ The design question this spec settles is *what names the key*. The item's framin
 
 [cols="1,2"]
 |===
-| Parent shape | Key lift
+| Parent shape | Key source
 
 | `JooqTableRecordType` whose table is the declared element's table
-| `KeyLift.FkColumns` reading the key columns off the parent's own held record. No author declaration at all: the parent already *is* a typed record.
+| The key columns read off the record the parent already holds at `env.getSource()`. No author declaration at all: the parent already *is* a typed record.
 
 | `PojoResultType` / `JavaRecordType` exposing exactly one zero-arg accessor returning that record class
-| `KeyLift.Accessor`, the arm the table-child path already builds, reduced by element class instead of by field name.
+| The key columns read off the record that accessor returns.
 |===
+
+Neither producer is a `KeyLift`; both are wrap-driven reads off a bound source expression, for the reasons in "So the `@service` path stays wrap-driven and grows no `KeyLift`" below. The two rows are the `ServiceKeySource` arms that section's sibling declares, and the accessor row is *not* a reduction of the table-child path's accessor inference (see the Implementation bullet on `ClassAccessorResolver`).
 
 Anything else is the new rejection: the parent cannot produce the declared key, and the message says so and names both routes.
 
@@ -70,7 +72,7 @@ Anything else is the new rejection: the parent cannot produce the declared key, 
 
 **Grain.** "Can this parent produce an `AktivitetRecord`" reads like a per-parent-type fact, but the fact this item resolves is the pair: *this* field's declared key, against this parent. Two `@service` children of the same DTO can legitimately key on different tables (one on `aktivitet`, another on a translation table), and a parent able to produce both should serve both. Per-field resolution is therefore intended, not an accident of where the code sits. There is no cross-field agreement to enforce and no conflict view to add.
 
-This is why the item's framing of `validateTableRecordSourceParentTable` as "check the element type against the lift's table rather than the parent's" resolves further than stated. On the record-parent path the check dissolves: the element type is what *found* the lift, so there is nothing left to compare. The validation stays, unchanged, on the table-parent path where the element type is still a claim about the parent.
+This is why the item's framing of `validateTableRecordSourceParentTable` as "check the element type against the lift's table rather than the parent's" resolves further than stated. On the record-parent path the check dissolves: the element type is what *found* the key source, so there is nothing left to compare. The validation stays, unchanged, on the table-parent path where the element type is still a claim about the parent.
 
 ## The coordinate answer is a value, and R649 is what makes it one
 
@@ -98,7 +100,9 @@ So the ordering is a hard dependency, not a coordination note:
 * **R649 lands first and owns it.** Its fix is the phase split inside the service boundary: decode the method into a typed signature fact (per-parameter name, declared type, and the recognised `SourcesShape` where present), then classify the coordinate over that fact, then bind parameters. That is the same "boundaries decode and encode; the interior is typed" seam the rest of the codebase runs on, and it makes R649's precedence rule a reordering of pure steps rather than surgery inside a reflection loop. It also removes the "reflects before it classifies" defect R649 names, structurally, instead of working around it at one seat.
 * **R648 consumes it.** With the decoded signature fact in hand, the caller computes `ParentKeyResolution` as a value before the binding step, and this item carries no ordering of its own.
 
-The earlier draft of this section hedged that either item could land first. That hedge is exactly the branch that produces two instruments at one seat, so it is withdrawn. R649 is also currently ranked priority 4 beneath this item's priority 3, which inverts the dependency; that is corrected alongside this spec.
+The earlier draft of this section hedged that either item could land first. That hedge is exactly the branch that produces two instruments at one seat, so it is withdrawn. The precedence item was also ranked beneath this one, which inverted the dependency; both now sit at priority 3.
+
+**Consequence for this item's own readiness.** Because this item carries no ordering of its own, it cannot be started until the precedence item's phase split exists, and that item is still in Backlog: it needs its own Spec → Ready pass before anyone implements it, and its plan body defers the phase-split shape to the section above rather than restating it. So the sign-off on this spec is a sign-off on a design, not a green light to open an editor. Whoever flips this to Ready should carry `deferred: true` on the front-matter until the precedence item lands, and the first implementer of this item should re-read that item's status before starting rather than absorbing its scope.
 
 ## Keys stay sparse, and the emitter already does that
 
@@ -117,34 +121,52 @@ The accessor arm reads off a record the parent is already holding, which may be 
 
 The only fact the emitter is missing is **where to bind the record it reads from**. `buildKeyExtraction` reads `env.getSource()` unconditionally; `buildKeyExtractionWithNullCheck` already takes a `sourceExpr` for exactly this reason. Give `buildKeyExtraction` the same parameter and the accessor arm is one extra statement ahead of the existing body.
 
-## The key source is two arms, not a lift
+## The key source is three arms, not a lift
 
 ```java
 /** Where the jOOQ record carrying the batch key columns is bound at a @service leaf. */
 sealed interface ServiceKeySource {
-    /** Read off {@code env.getSource()}: a table parent's projected row, or a
-     *  JooqTableRecordType parent that holds the key record itself. */
-    record FromSource(TableRef keyOwner) implements ServiceKeySource {}
+    /** A @table parent's SQL-projected row, read off {@code env.getSource()}. */
+    record FromTableRow(TableRef keyOwner) implements ServiceKeySource {}
+    /** A JooqTableRecordType parent that holds the key record itself, read off
+     *  {@code env.getSource()}. */
+    record FromHeldRecord(TableRef keyOwner) implements ServiceKeySource {}
     /** Read off a zero-arg accessor's returned record on the parent's backing class. */
     record FromAccessor(TableRef keyOwner, AccessorRef accessor) implements ServiceKeySource {}
 }
 ```
 
-Both arms emit through `buildKeyExtraction(sourceKey, keyOwner, sourceExpr)`; only the source expression differs. `keyOwner` is the table whose `Tables.X.COL` constants the columns are read through, and the key columns derive from it (`keyOwner.primaryKeyColumns()`) rather than being stored beside it, so a future arm cannot set the two inconsistently. When the `@sourceRow` follow-up lands and makes columns the independent axis, that derivation widens deliberately at one place.
+All three arms emit through `buildKeyExtraction(sourceKey, keyOwner, sourceExpr)`; only the source expression differs, and the first two share `SOURCE_FROM_ENV`. `keyOwner` is the table whose `Tables.X.COL` constants the columns are read through, and the key columns derive from it (`keyOwner.primaryKeyColumns()`) rather than being stored beside it, so a future arm cannot set the two inconsistently. When the `@sourceRow` follow-up lands and makes columns the independent axis, that derivation widens deliberately at one place.
+
+**Why the two `env.getSource()` arms stay distinct despite emitting the same expression.** They differ on the one axis `ChildField.sourceShape()` reports: a `@table` parent is a `TableBackedType` and puts `SourceShape.Table` at the source; a `JooqTableRecordType` parent is a `ResultType` and puts `SourceShape.Record`. `SourceShapeProjectionTest` asserts, for every classified `ChildField` in `ClassifiedCorpus`, that `sourceShape()` equals the parent GraphQL type's independently-classified backing under exactly that rule, so the two cannot be collapsed into one arm and still answer it. A single `FromSource` arm spanning both would make the derivation below partial.
 
 This replaces `TypeFetcherGenerator.buildServiceDataFetcher`'s bare `TableRef prt` parameter, which is the parent table today and would be `null` on every record parent.
+
+## Source shape becomes a derivation, and that is the test this item has to satisfy
+
+`ChildField.sourceShape()` answers `SourceShape.Table` for `ServiceTableField` and `ServiceRecordField` today. Both leaves already span both parent kinds (`classifyChildFieldOnResultType`'s `TableBound` arm mints a `ServiceTableField` on a record parent right now), so the current answer is latent-wrong and only survives because no corpus example reaches it. Minting `ServiceRecordField` on a DTO parent makes it live: `SourceShapeProjectionTest` fails the moment a `Table` answer meets a `PojoResultType` parent.
+
+A leaf-identity split cannot fix it, because neither leaf is parent-kind-pure. The stored `ServiceKeySource` is what carries the fact, which is why its arms are cut on the source-shape seam:
+
+* `FromTableRow` → `SourceShape.Table`
+* `FromHeldRecord`, `FromAccessor` → `SourceShape.Record`
+
+Two obligations ride along, and both are build-enforced rather than optional:
+
+* The corpus must reach the new arms, or they must carry a typed exemption on `ExemptionRegistry.SOURCE_SHAPE_CORPUS`; `everyChildFieldLeafIsCoveredOrDocumented` fails otherwise. Reaching them is the right answer here, and the pipeline fixtures below are the vehicle.
+* The new component inherits `sourceKey`'s nullability: all four classify sites thread `sourced == null ? null : buildServiceSourceKey(sourced)`, so a `@service` field whose method declares no `Sources` parameter carries a null key and would carry a null key source, leaving `sourceShape()` nothing to derive from. Decide that case explicitly rather than letting the derivation NPE. The leaves' compact constructors are the seat for a `(sourceKey == null) == (keySource == null)` pin, and the validator additions below are what make the null pair unreachable past validation, which is the argument for an invariant throw rather than a guessed default.
 
 ## Implementation
 
 * `model/ServiceKeySource.java`, `model/ParentKeyResolution.java` (new). The two sealed facts above.
 * `ServiceCatalog.reflectServiceMethod`: swap `parentPkColumns` + `pkLessParent` for the resolved `ParentKeyResolution` value; carry `Available.source().keyOwner().primaryKeyColumns()` into `MethodRef.Param.Sourced`. Delete `ServiceCatalog.PkLessParent`. The `isRoot` derivation in `ServiceDirectiveResolver.resolve` reads the `Root` arm instead of inferring root from an empty list. Shape depends on R649's phase split, per the section above.
-* `ServiceCatalog`: a `Set<XRecord>` / `List<XRecord>` element whose class does not resolve through `resolveTableByRecordClass` keeps its existing diagnostic; `dtoSourcesRejectionReason`'s trailer, which currently points at `@sourceRow` as the analogous solution for record-backed parents, is repointed at the typed-record route this item creates.
+* `ServiceCatalog`: a `Set<XRecord>` / `List<XRecord>` element whose class does not resolve through `resolveTableByRecordClass` keeps its existing diagnostic; `dtoSourcesRejectionReason`'s trailer, which currently points at `@sourceRow` as the analogous solution for record-backed parents, is repointed at the typed-record route this item creates. Note that the DTO-sources diagnostic is gated on `!parentPkColumns.isEmpty()` today, so it does not fire on a record-backed parent at all; re-expressing that gate against `ParentKeyResolution` widens its reach to the coordinates this item admits, which is the intended reading and should be stated in the replacement rather than inherited by accident.
 * `FieldBuilder`: the record-parent key resolver, with the `JooqTableRecordType` arm reading `jtr.table()` and the accessor arm described below.
 * **Accessor discovery is new, not a reuse of `collectAccessorMatches`.** The earlier draft claimed the reduction step could key on element class instead of field name because "only the per-method match logic is shared". That is wrong: `collectAccessorMatches` enumerates through `ClassAccessorResolver.enumerate(parentClass, accessorBaseName, ...)`, and the name rules, the `is`-prefix gate, and the member filter are single-sourced *there*, ahead of the per-method match. Name matching therefore happens before anything this item could reduce differently. What is actually needed is a name-free candidate mode on `ClassAccessorResolver` (all public zero-arg non-bridge non-synthetic instance methods) plus this item's own reduction, "the parent class's sole zero-arg accessor returning `X`", with its own more-than-one rejection arm. Adding a mode to a deliberately single-sourced helper has blast radius across `resolve`, `probe`, and `derivePolymorphicHubSource`; budget for it rather than calling it reuse.
 * `FieldBuilder.classifyChildFieldOnResultType`'s `DIR_SERVICE` branch: the `Result` and `Scalar` arms stop returning the deferred rejection and build `ServiceRecordField` the way the `TableBound` arm already builds `ServiceTableField`. The `Polymorphic` arm keeps its deferral (doubly out of scope, unchanged).
 * `ServiceDirectiveResolver.validateTableRecordSourceParentTable`: gate on the table-parent arm. On the record-parent path the element type is the resolver's input and the check is vacuous.
-* `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`: add one `ServiceKeySource` component. No `KeyLift`, and no component named `sourceShape`: `ChildField.sourceShape()`'s default projection already answers `SourceShape.Table` for both leaves, and a same-named record component would silently override it and leave those arms dead. Update the two arms to derive from the new component instead.
-* `GeneratorUtils.buildKeyExtraction`: add the `CodeBlock sourceExpr` overload its `buildKeyExtractionWithNullCheck` sibling already has, defaulting to `SOURCE_FROM_ENV`.
+* `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`: add one `ServiceKeySource` component. No `KeyLift`, and no component named `sourceShape`: `ChildField.sourceShape()`'s default projection already answers `SourceShape.Table` for both leaves, and a same-named record component would silently override it and leave those arms dead. Update the two arms to derive from the new component, per the source-shape section above.
+* `GeneratorUtils.buildKeyExtraction`: add the `CodeBlock sourceExpr` overload its `buildKeyExtractionWithNullCheck` sibling already has, defaulting to `SOURCE_FROM_ENV`. All three wrap arms spell `env.getSource()` inline in their format strings today, so the parameter threads through all three even though only `TableRecord` is reachable from this path; a `Wrap.Row`-only assertion of the kind the null-check sibling carries is the alternative, and either is fine as long as the choice is deliberate rather than a half-threaded parameter.
 * `TypeFetcherGenerator.buildServiceDataFetcher`: take `ServiceKeySource` where it takes `TableRef prt`, and emit the accessor arm's source binding ahead of the shared extraction body. The record-parent preludes (null-source guard, `Outcome.Success` narrowing) are the ones `buildBatchedDataFetcher` already builds; `resultType` and `sourceIsOutcome` are in scope at both service cases of the emit switch.
 * `GraphitronSchemaValidator`: `validateServiceTableField` returns early for a non-table parent ("no DataLoader key needed"), and that early return is now wrong. More importantly, `validateServiceRecordField` carries *none* of the sibling's checks (no Sources-required, no parent-PK; it validates only the `@reference` path), and `ServiceRecordField` is the leaf the `Result` and `Scalar` arms mint, so it is the one this item most needs mirrored. State its post-change invariant outright ("a Sources parameter exists, and its columns are the key-owner table's primary key") and add it there in this change, rather than generalising a check that lives on the other leaf. The three new classify-time rejections (parent cannot produce the declared key, more than one matching accessor, list-cardinality accessor) each need a named validate-time counterpart.
 
@@ -201,7 +223,8 @@ Write the replacement contract line at the altitude the "Desired outcome" sectio
 ## Tests
 
 * **Unit** (`ServiceCatalogTest`): the three `ParentKeyResolution` arms through `reflectServiceMethod`, including that a `Root` resolution still reaches the batch-at-root diagnostic and a `Rejected` resolution surfaces its own rejection rather than the argument-name mismatch. The `Rejected` case is the pin that this item did not re-mask what R649 unmasks.
-* **Pipeline**, modelled on `PkLessParentServiceSourcesRejectionTest`: a DTO parent with a typed accessor classifies to `ServiceRecordField` carrying `KeyLift.Accessor` and a `SourceKey` over the element table's PK; a `JooqTableRecordType` parent classifies to `KeyLift.FkColumns`; a table parent is unchanged (the regression pin for the callback swap); and the rejection fixtures for no producer, more than one matching accessor, and a list-cardinality accessor.
+* **Pipeline**, modelled on `PkLessParentServiceSourcesRejectionTest`: a DTO parent with a typed accessor classifies to `ServiceRecordField` carrying `ServiceKeySource.FromAccessor` and a `SourceKey` whose columns are the element table's PK and whose wrap is `Wrap.TableRecord`; a `JooqTableRecordType` parent classifies to `FromHeldRecord`; a table parent is unchanged and still carries `FromTableRow` (the regression pin for the `ParentKeyResolution` swap); and the rejection fixtures for no producer, more than one matching accessor, and a list-cardinality accessor. No arm asserts a `KeyLift`: these leaves carry none, and asserting `KeyLift.Accessor` alongside the service `SourceKey` is not merely redundant but unsatisfiable, since `KeyLift.checkResidueAgreement` would compare `Accessor`'s derived `Wrap.Record` against the stored `Wrap.TableRecord` and throw.
+* **Pipeline**, `SourceShapeProjectionTest`: the DTO-parent and `JooqTableRecordType`-parent fixtures above land in `ClassifiedCorpus` so the mirror walk reaches the new `Record`-answering arms, discharging the `ExemptionRegistry.SOURCE_SHAPE_CORPUS` obligation by coverage rather than by exemption.
 * **Compilation**: a fixture schema whose emitted fetcher exercises the record-arm key extraction, so the fork in `buildServiceDataFetcher` is compiled rather than only asserted on.
 * **Execution**: one test asserting that N parents sharing a key invoke the service once with a deduplicated key set, and that the keys arrive sparse. Both are contract claims the docs make and neither is observable at the pipeline tier.
 
