@@ -1,7 +1,7 @@
 ---
 id: R649
 title: "Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: diagnostics
