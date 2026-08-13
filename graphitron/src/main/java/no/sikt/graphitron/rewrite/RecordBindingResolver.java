@@ -1146,7 +1146,7 @@ final class RecordBindingResolver {
      * salvaging them would mean keeping a second, error-tolerant parser.
      */
     private static Map<String, String> headSlotOverrides(String raw) {
-        if (!(ArgBindingMap.parseArgMapping(raw) instanceof ArgBindingMap.ParsedArgMapping.Ok parsed)) {
+        if (!(ArgBindingMap.parseArgMapping(raw, ArgMappingSigil.Site.RECORD) instanceof ArgBindingMap.ParsedArgMapping.Ok parsed)) {
             return Map.of();
         }
         Map<String, String> overrides = new LinkedHashMap<>();

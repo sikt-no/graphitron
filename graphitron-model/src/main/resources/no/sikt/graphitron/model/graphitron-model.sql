@@ -1336,6 +1336,25 @@ COMMENT ON COLUMN graphitron_service_arg_mapping_pair.position IS '0-based posit
 COMMENT ON COLUMN graphitron_service_arg_mapping_pair.param_name IS 'the Java or routine parameter (left side of the pair)';
 COMMENT ON COLUMN graphitron_service_arg_mapping_pair.argument_path IS 'the right side as written: a GraphQL argument name or dotted input path';
 
+CREATE TABLE graphitron_service_arg_mapping_sigil (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  position   INT     NOT NULL,
+  param_name VARCHAR NOT NULL,
+  sigil      VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, position),
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_service (graph_name, type_name, field_name),
+  CHECK (sigil IN ('$session'))
+);
+COMMENT ON TABLE graphitron_service_arg_mapping_sigil IS 'A sigil entry of a @service''s argMapping, the sibling of graphitron_service_arg_mapping_pair for entries whose right-hand side is a recognized sigil rather than an argument path. A recognized sigil is a decode decision carried as a fact, not a string left for readers to re-peek: it must not land in the pair relation (whose argument_path is a closed two-alternative statement feeding dangling-author-reference detection) and must not quarantine as graphitron_undecoded_argument (a valid literal is not malformed overflow). The lifting happens before tokenization, through the same sigil owner the build-side parse uses, so the two sides cannot drift on what a sigil is.';
+COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.type_name IS 'the GraphQL type this row is about';
+COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.position IS '0-based position among the argMapping''s sigil entries, document order';
+COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.param_name IS 'the Java parameter the sigil binds (left side of the entry)';
+COMMENT ON COLUMN graphitron_service_arg_mapping_sigil.sigil IS 'the recognized sigil literal, a closed taxonomy: $session binds the parameter to the session handle the <sessionState> mount returned';
+
 CREATE TABLE graphitron_external_field (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,

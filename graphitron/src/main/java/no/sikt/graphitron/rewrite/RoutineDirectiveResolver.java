@@ -169,7 +169,7 @@ final class RoutineDirectiveResolver {
         }
         String rawArgMapping = Optional.ofNullable(dir.getArgument(ARG_ARG_MAPPING))
             .map(a -> a.getValue()).map(Object::toString).orElse(null);
-        var parsedMapping = ArgBindingMap.parseArgMapping(rawArgMapping);
+        var parsedMapping = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.ROUTINE);
         if (parsedMapping instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new NodeResolved.Rejected(Rejection.structural("@routine " + pe.message()));
         }

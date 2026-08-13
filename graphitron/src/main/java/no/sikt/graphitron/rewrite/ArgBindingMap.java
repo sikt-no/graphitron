@@ -76,9 +76,18 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
      * <p>{@code overrides} keys are Java parameter names; values are dot-segment chains.
      * Single-name overrides arrive as one-element segment lists; dot-path expressions into
      * nested input fields arrive as multi-element lists with the head segment first.
+     *
+     * <p>{@code sigilBindings} are the recognized sigil entries lifted out by
+     * {@link ArgMappingSigil#scan} before tokenization (Java parameter name to sigil literal);
+     * empty for every site that admits none and for the sigil-unaware single-arg overload.
      */
     sealed interface ParsedArgMapping {
-        record Ok(Map<String, List<String>> overrides) implements ParsedArgMapping {}
+        record Ok(Map<String, List<String>> overrides, Map<String, String> sigilBindings)
+                implements ParsedArgMapping {
+            Ok(Map<String, List<String>> overrides) {
+                this(overrides, Map.of());
+            }
+        }
         record ParseError(String message) implements ParsedArgMapping {}
     }
 
@@ -242,6 +251,40 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
             overrides.put(entry.key(), entry.segments());
         }
         return new ParsedArgMapping.Ok(Collections.unmodifiableMap(overrides));
+    }
+
+    /**
+     * Sigil-aware overload: routes each entry's raw right-hand side through
+     * {@link ArgMappingSigil#scan} before delegating the residual to
+     * {@code GraphQLSelectionParser.parseEntries} (whose lexer rejects {@code $}-prefixed
+     * values, so the scan runs on the raw string; {@code parseEntries} itself is untouched).
+     * Every argMapping site routes through here with its {@link ArgMappingSigil.Site};
+     * columnMapping sites stay on the single-arg overload, since no sigil is admitted there.
+     * A recognized sigil at the admitted site lands in {@link ParsedArgMapping.Ok#sigilBindings};
+     * a duplicate Java parameter across the sigil and override maps is the same duplicate-entry
+     * rejection either way.
+     */
+    static ParsedArgMapping parseArgMapping(String raw, ArgMappingSigil.Site site) {
+        var scanned = ArgMappingSigil.scan(raw, site);
+        if (scanned instanceof ArgMappingSigil.ScanResult.Rejected rejected) {
+            return new ParsedArgMapping.ParseError(rejected.message());
+        }
+        var ok = (ArgMappingSigil.ScanResult.Ok) scanned;
+        String residual = ok.residual();
+        var parsed = residual == null || residual.isBlank()
+            ? new ParsedArgMapping.Ok(Map.of())
+            : parseArgMapping(residual);
+        if (!(parsed instanceof ParsedArgMapping.Ok parsedOk)) {
+            return parsed;
+        }
+        for (String javaName : ok.sigilBindings().keySet()) {
+            if (parsedOk.overrides().containsKey(javaName)) {
+                return new ParsedArgMapping.ParseError(
+                    "argMapping has duplicate entries for Java parameter '" + javaName
+                    + "' — each Java parameter may appear at most once");
+            }
+        }
+        return new ParsedArgMapping.Ok(parsedOk.overrides(), ok.sigilBindings());
     }
 
     /**

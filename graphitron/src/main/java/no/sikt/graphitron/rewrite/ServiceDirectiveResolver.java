@@ -222,7 +222,20 @@ final class ServiceDirectiveResolver {
             return new Resolved.Rejected(decoded.rejection().prefixedWith("service method could not be resolved — "));
         }
         var signature = decoded.signature();
-        var claims = svc.reduceClaims(signature, argBindings, ctxKeys, slotTypes);
+        // The $session-bound parameter names from the argMapping sigil scan. The typo guard
+        // mirrors the override guard: an explicit binding naming no Java parameter fails naming
+        // the available ones rather than falling through to a per-parameter mismatch.
+        var sessionBound = serviceRef.sigilBindings().keySet();
+        for (String name : sessionBound) {
+            if (!signature.namedParameters().contains(name)) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "service method could not be resolved — argMapping entry '" + name + ": "
+                        + ArgMappingSigil.SESSION_LITERAL + "' names no parameter of method '"
+                        + signature.methodName() + "' in class '" + signature.className()
+                        + "'; available parameter names are " + signature.namedParameters()));
+            }
+        }
+        var claims = svc.reduceClaims(signature, argBindings, ctxKeys, slotTypes, sessionBound);
 
         // The errors lift is pure over SDL, so the probe moves ahead of binding together with the
         // child-polymorphic deferral it guards; a lifting return proceeds to bind and projects as

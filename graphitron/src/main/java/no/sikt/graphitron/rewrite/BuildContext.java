@@ -2418,7 +2418,7 @@ class BuildContext {
             return new ConditionResolution.Unresolved();
         }
         String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
-        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ConditionResolution.Failed(
                 "path-step @condition: " + pe.message());
@@ -2489,7 +2489,7 @@ class BuildContext {
         boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
         List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
         String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
-        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), pe.message());
         }

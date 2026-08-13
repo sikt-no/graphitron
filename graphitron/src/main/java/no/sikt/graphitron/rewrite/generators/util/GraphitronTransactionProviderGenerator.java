@@ -144,7 +144,7 @@ public final class GraphitronTransactionProviderGenerator {
             .beginControlFlow("if (depth == 0 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
             .addComment("Deferred-rollback: the field settles by releasing its savepoint; the operation")
             .addComment("transaction stays open so later read-backs observe the writes, and nothing settles")
-            .addComment("until release, so afterSettle (the session-identity re-fire seam) stays unfired.")
+            .addComment("until release discards the whole transaction.")
             .addStatement("connection.releaseSavepoint(savepoints.pop())")
             .nextControlFlow("else if (depth == 0)")
             .addComment("Top-level: the commit policy decides persist-vs-discard.")

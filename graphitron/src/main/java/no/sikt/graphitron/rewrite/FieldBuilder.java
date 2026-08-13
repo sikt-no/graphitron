@@ -7731,12 +7731,19 @@ class FieldBuilder {
                 "argMapping is not supported on @" + directiveName
                 + " — this directive does not consume GraphQL-argument-bound parameters");
         }
-        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
+        // The sigil admission is per site: @service argMapping admits $session; the other
+        // ExternalCodeReference hosts reject it naming the admitted site.
+        var sigilSite = DIR_SERVICE.equals(directiveName)
+            ? ArgMappingSigil.Site.SERVICE
+            : (DIR_EXTERNAL_FIELD.equals(directiveName)
+                ? ArgMappingSigil.Site.EXTERNAL_FIELD
+                : ArgMappingSigil.Site.CONDITION);
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, sigilSite);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ExternalRef(className, methodName, Map.of(), pe.message());
         }
-        var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        return new ExternalRef(className, methodName, segmentChains, null);
+        var parsedOk = (ArgBindingMap.ParsedArgMapping.Ok) parsed;
+        return new ExternalRef(className, methodName, parsedOk.overrides(), parsedOk.sigilBindings(), null);
     }
 
     /**
@@ -8143,7 +8150,13 @@ class FieldBuilder {
      */
     record ExternalRef(String className, String methodName,
                        Map<String, java.util.List<String>> argMapping,
-                       String argMappingError) {}
+                       Map<String, String> sigilBindings,
+                       String argMappingError) {
+        ExternalRef(String className, String methodName,
+                    Map<String, java.util.List<String>> argMapping, String argMappingError) {
+            this(className, methodName, argMapping, Map.of(), argMappingError);
+        }
+    }
 
     /**
      * The names of the field-level chain-directive applications ({@code @routine} /

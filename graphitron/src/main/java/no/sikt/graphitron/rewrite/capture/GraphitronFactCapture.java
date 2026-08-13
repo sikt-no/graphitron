@@ -13,6 +13,7 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 
+import no.sikt.graphitron.rewrite.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.capture.SdlFactCapture.SiteRef;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser;
@@ -73,6 +74,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SOURCE_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
@@ -457,8 +459,27 @@ final class GraphitronFactCapture {
                     row.setName(name);
                     sink.add(row);
                 }
+                // The @service argMapping is the sigil-admitting site: sigil entries lift out
+                // through the shared owner (the same scan the build-side parse routes through)
+                // into the sibling sigil relation, and the residual keeps its full pair set, so
+                // a $session field writes no undecoded row.
+                var scanned = ArgMappingSigil.scan(reference.argMapping(), ArgMappingSigil.Site.SERVICE);
+                String residual = reference.argMapping();
+                if (scanned instanceof ArgMappingSigil.ScanResult.Ok scanOk) {
+                    residual = scanOk.residual();
+                    int sigilPosition = 0;
+                    for (var sigilEntry : scanOk.sigilBindings().entrySet()) {
+                        var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL);
+                        row.setTypeName(type);
+                        row.setFieldName(field);
+                        row.setPosition(sigilPosition++);
+                        row.setParamName(sigilEntry.getKey());
+                        row.setSigil(sigilEntry.getValue());
+                        sink.add(row);
+                    }
+                }
                 int pair = 0;
-                for (ParsedEntry entry : pairs(reference.argMapping(), directive, "service")) {
+                for (ParsedEntry entry : pairs(residual, directive, "service")) {
                     var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR);
                     row.setTypeName(type);
                     row.setFieldName(field);

@@ -206,6 +206,8 @@ class ServiceCatalog {
     sealed interface ParamRole {
         /** A {@code DSLContext} slot, resolved by type before any name is consulted. */
         record Dsl() implements ParamRole {}
+        /** Name-claimed by the {@code $session} argMapping sigil: bound to the session handle. */
+        record SessionBound() implements ParamRole {}
         /** Name-claimed by a GraphQL argument (possibly through an {@code argMapping} path). */
         record ArgBound(PathExpr path) implements ParamRole {}
         /** Name-claimed by a declared context key. */
@@ -295,11 +297,26 @@ class ServiceCatalog {
      */
     ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
             Map<String, GraphQLInputType> slotTypes) {
+        return reduceClaims(sig, argBindings, ctxKeys, slotTypes, Set.of());
+    }
+
+    /**
+     * Sigil-aware overload of {@link #reduceClaims}: {@code sessionBound} carries the Java
+     * parameter names an argMapping {@code $session} entry bound to the session handle. An
+     * explicit binding, so it claims right after the type-resolved {@code DSLContext} slot,
+     * ahead of every name claim.
+     */
+    ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
+            Map<String, GraphQLInputType> slotTypes, Set<String> sessionBound) {
         var argByJavaName = inferBindingsByType(sig, argBindings.byJavaName(), ctxKeys, slotTypes);
         var roles = new ArrayList<ParamRole>(sig.params().size());
         for (var p : sig.params()) {
             if (p.isDslContext()) {
                 roles.add(new ParamRole.Dsl());
+                continue;
+            }
+            if (p.name() != null && sessionBound.contains(p.name())) {
+                roles.add(new ParamRole.SessionBound());
                 continue;
             }
             PathExpr resolvedPath = p.name() != null ? argByJavaName.get(p.name()) : null;
@@ -354,6 +371,12 @@ class ServiceCatalog {
                 case ParamRole.Dsl ignored ->
                     params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
                         new ParamSource.DslContext()));
+                // The $session-bound slot: structural, supplied by the generator off the resolved
+                // DSLContext's Configuration data. Whether a handle exists (and matches the
+                // declared type) is the validator's session-hook pass, over the resolved carrier.
+                case ParamRole.SessionBound ignored ->
+                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
+                        new ParamSource.SessionHandle()));
                 case ParamRole.ArgBound bound -> {
                     ArgExtraction ext = argExtraction(p.typeName(),
                         resolvePathLeafType(bound.path(), slotTypes),
@@ -407,8 +430,11 @@ class ServiceCatalog {
         }
         MethodRef.CallShape callShape;
         if (sig.isStatic()) {
+            // A $session-bound slot forces the dsl local too: its extraction reads the handle
+            // off the resolved DSLContext's own Configuration data.
             boolean needsDslLocal = params.stream()
-                .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+                .anyMatch(p -> p.source() instanceof ParamSource.DslContext
+                    || p.source() instanceof ParamSource.SessionHandle);
             callShape = new MethodRef.CallShape.Static(needsDslLocal);
         } else {
             callShape = new MethodRef.CallShape.InstanceWithDslHolder(sig.ctorParams());

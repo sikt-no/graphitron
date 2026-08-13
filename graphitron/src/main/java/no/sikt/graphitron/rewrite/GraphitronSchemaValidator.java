@@ -44,6 +44,7 @@ public class GraphitronSchemaValidator {
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
+        validateSessionHandleBindings(schema, errors);
         validateTenantBindings(schema, errors);
         validateConditionEmitImplemented(schema, errors);
         validateProjectionUnitAddresses(schema, errors);
@@ -214,6 +215,75 @@ public class GraphitronSchemaValidator {
                 conflict,
                 graphql.language.SourceLocation.EMPTY
             ));
+        }
+    }
+
+    /**
+     * The {@code $session} sigil's located rejections, checked against the resolved session-hook
+     * carrier ({@link GraphitronSchema#sessionHooks()}): a binding with no method-hook
+     * {@code <sessionState>} configured, a binding against a handle-less mount (the mount
+     * returns {@code void}), and a bound parameter whose declared type is not the mount's
+     * reflected handle type, each naming the field coordinate, the sigil, and the config side.
+     * The classifier lowers the sigil structurally without judging the config, so this pass is
+     * the one home of the cross-artifact check.
+     */
+    private void validateSessionHandleBindings(GraphitronSchema schema, List<ValidationError> errors) {
+        var hooks = schema.sessionHooks();
+        for (var field : schema.fields().values()) {
+            String qualifiedName = field.parentTypeName() + "." + field.name();
+            var bindings = new java.util.LinkedHashMap<String, no.sikt.graphitron.javapoet.TypeName>();
+            if (field instanceof no.sikt.graphitron.rewrite.model.MethodBackedField mbf) {
+                for (var p : mbf.method().params()) {
+                    if (p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed typed
+                            && typed.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle) {
+                        bindings.put(typed.name(), typed.javaType());
+                    }
+                }
+            }
+            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+                var carrier = sf.serviceMethodCall();
+                var entries = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.MappingEntry>(carrier.methodArgs());
+                if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
+                    entries.addAll(inst.ctorArgs());
+                }
+                for (var entry : entries) {
+                    if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle handle) {
+                        bindings.put(handle.javaName(), handle.javaType());
+                    }
+                }
+            }
+            for (var binding : bindings.entrySet()) {
+                String paramName = binding.getKey();
+                var declared = binding.getValue();
+                switch (hooks) {
+                    case no.sikt.graphitron.rewrite.session.SessionHooks.NotConfigured ignored ->
+                        errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
+                            "argMapping binds parameter '" + paramName + "' to "
+                                + ArgMappingSigil.SESSION_LITERAL + ", but no method-hook <sessionState> is"
+                                + " configured; configure <sessionState><mount>fqcn#method</mount> whose"
+                                + " return value is the handle, or remove the binding"),
+                            graphql.language.SourceLocation.EMPTY));
+                    case no.sikt.graphitron.rewrite.session.SessionHooks.HandleLess handleLess ->
+                        errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
+                            "argMapping binds parameter '" + paramName + "' to "
+                                + ArgMappingSigil.SESSION_LITERAL + ", but the configured <mount> ("
+                                + handleLess.mount().className() + "#" + handleLess.mount().methodName()
+                                + ") returns void — there is no session handle to bind"),
+                            graphql.language.SourceLocation.EMPTY));
+                    case no.sikt.graphitron.rewrite.session.SessionHooks.Handled handled -> {
+                        if (!handled.handleType().equals(declared)) {
+                            errors.add(ValidationError.forField(qualifiedName, Rejection.structural(
+                                "argMapping binds parameter '" + paramName + "' to "
+                                    + ArgMappingSigil.SESSION_LITERAL + " with declared type '" + declared
+                                    + "', but the configured <mount> (" + handled.mount().className() + "#"
+                                    + handled.mount().methodName() + ") returns '" + handled.handleType()
+                                    + "' — both are your declarations; align the parameter type with the"
+                                    + " mount's return type"),
+                                graphql.language.SourceLocation.EMPTY));
+                        }
+                    }
+                }
+            }
         }
     }
 

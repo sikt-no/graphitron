@@ -30,9 +30,10 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>{@code newExecutionInput(DSLContext defaultDsl, ...)}, the low-opinion escape hatch, where
  *       the caller brings the {@code DSLContext} and owns transactions and identity; and</li>
- *   <li>{@code newOwnedExecutionInput(String claims, ...)}, the owned-connection path, where the
- *       caller brings only the opaque claims and the execution instrumentation pins the connection,
- *       mounts identity, and produces the {@code DSLContext}.</li>
+ *   <li>{@code newOwnedExecutionInput(...)}, the owned-connection path, where the caller brings
+ *       only the declared contextArguments (a configured mount's payload parameters among them)
+ *       and the execution instrumentation pins connections on first demand, mounts identity, and
+ *       produces every {@code DSLContext}.</li>
  * </ul>
  * They are distinct names, not overloads, so a caller cannot silently opt out of the owned-path
  * guarantees by passing a {@code DSLContext}; the escape-hatch name is frozen by additive-by-construction.
@@ -262,14 +263,17 @@ public final class GraphitronFacadeGenerator {
 
     private static String runtimeJavadoc() {
         return "Builds the application-scoped {@code GraphitronRuntime} that owns the connection\n"
-            + "lifecycle: it pins one connection per operation, mounts and unmounts per-request identity\n"
-            + "through the database session hooks, and demarcates operation-typed transactions. Built once\n"
-            + "at wiring time over a consumer-owned pooled {@code DataSource} and its jOOQ dialect:\n"
-            + "{@code var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);}.\n"
+            + "lifecycle: it pins connections on first demand, mounts and unmounts per-request identity\n"
+            + "through the configured {@code <sessionState>} methods, and demarcates operation-typed\n"
+            + "transactions. Built once at wiring time over a consumer-owned pooled {@code DataSource}\n"
+            + "and its jOOQ dialect:\n"
+            + "{@code var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);}. To carry jOOQ\n"
+            + "{@code Settings} (schema or render mapping), construct the runtime from its\n"
+            + "{@code Source}-form constructor instead.\n"
             + "\n"
             + "<p>This is the opinionated path: per request you call\n"
-            + "{@code Graphitron.newOwnedExecutionInput(claims, ...)} and graphitron acquires the\n"
-            + "connection, runs the connect hook, and releases at completion. The lower-opinion escape\n"
+            + "{@code Graphitron.newOwnedExecutionInput(...)} and graphitron acquires connections,\n"
+            + "runs the mount method, and releases at completion. The lower-opinion escape\n"
             + "hatch is the static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller\n"
             + "owns the {@code DSLContext}, transaction demarcation, and identity state.\n"
             + "@param dataSource the consumer's pooled {@code DataSource} (the consumer owns pool\n"
