@@ -1547,7 +1547,7 @@ class FactCaptureAgreementTest {
             var syntaxRow = syntaxRows.getFirst();
             var failure = read.failures().getFirst();
             assertThat(syntaxRow.getSourceName()).isEqualTo(failure.sourceName());
-            assertThat(syntaxRow.getMessage()).isEqualTo(failure.brief());
+            assertThat(syntaxRow.getMessage()).isEqualTo(failure.verbatimMessage());
             assertThat(syntaxRow.getSourceLine()).isEqualTo(failure.location().getLine());
             assertThat(syntaxRow.getSourceColumn()).isEqualTo(failure.location().getColumn());
 

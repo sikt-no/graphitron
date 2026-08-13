@@ -52,7 +52,7 @@ final class SdlVerdictCapture {
         }
         var row = sink.dsl().newRecord(GRAPHQL_SYNTAX_ERROR);
         row.setSourceName(failure.sourceName());
-        row.setMessage(failure.brief());
+        row.setMessage(failure.verbatimMessage());
         SourceLocation location = failure.location();
         if (location != null) {
             row.setSourceLine(location.getLine());

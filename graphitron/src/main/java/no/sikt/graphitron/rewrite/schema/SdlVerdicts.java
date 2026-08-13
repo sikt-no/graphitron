@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.schema;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Everything the SDL toolchain concluded about one pass's schema document: the sources the parser
@@ -51,6 +53,17 @@ public record SdlVerdicts(List<RewriteSchemaLoader.SyntaxFailure> syntaxFailures
         var schemaErrors = new ArrayList<>(read.registryErrors());
         schemaErrors.addAll(assembly.errors());
         return new SdlVerdicts(read.failures(), schemaErrors);
+    }
+
+    /**
+     * The sources the parser refused, by name. The source census reads this: a refused source is
+     * one the run read, so the store owes it a source row, and it is the one source the walk over
+     * the surviving declarations cannot find, having contributed none.
+     */
+    public Set<String> refusedSourceNames() {
+        return syntaxFailures.stream()
+            .map(RewriteSchemaLoader.SyntaxFailure::sourceName)
+            .collect(Collectors.toUnmodifiableSet());
     }
 
     /** Whether any stage refused anything, so a caller whose contract is to fail knows to. */

@@ -18,6 +18,8 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -77,6 +79,28 @@ class BrokenSourceStillCapturesPipelineTest {
                 .as("the surviving file's declarations, which the old loader-throw discarded")
                 .contains("Query", "Film")
                 .doesNotContain("Actor");
+
+            // The refused source is one this run read, so the store's own census owes it a row like
+            // any other input. The walk cannot find it, since it declared nothing, so without this
+            // the two families contradict each other: the verdict family recording that the read
+            // refused a source, the census recording that the graph has no such source. The stamp
+            // is what makes the currency check cover the file the author is most likely to edit
+            // next, which is the broken one.
+            var refusedSource = store.dsl().selectFrom(STORE_SOURCE)
+                .where(STORE_SOURCE.SOURCE_NAME.eq(broken.toString()))
+                .fetchOne();
+            assertThat(refusedSource)
+                .as("the refused source has a census row, not only a verdict row")
+                .isNotNull();
+            assertThat(refusedSource.getSourceKind()).isEqualTo("SCHEMA_FILE");
+            assertThat(refusedSource.getStamp())
+                .as("stamped like any other schema file the run read")
+                .isNotNull();
+            assertThat(store.dsl().select(STORE_GRAPH_SOURCE.SOURCE_NAME).from(STORE_GRAPH_SOURCE)
+                .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq("broken-source-fixture"))
+                .fetchSet(0, String.class))
+                .as("and it is this graph's source, so a per-graph join finds it")
+                .contains(broken.toString(), good.toString());
         }
     }
 

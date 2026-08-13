@@ -32,6 +32,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
+import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
@@ -287,6 +292,67 @@ class DiagnosticFactsTest {
             assertThat(row.getFile())
                 .as("the pilot arm's file goes through the alias, one spelling with the loaded arms")
                 .isEqualTo(ValidationReport.canonicalUri(file.toString()));
+        });
+    }
+
+    @Test
+    @DisplayName("the SDL-toolchain arms project their verdicts, and the parser arm's variant is a pinned spelling")
+    void sdlToolchainArmsProjectTheirVerdicts() throws java.io.IOException {
+        // One refusal per stage, and no cascade: the root operation stays in the file that parses,
+        // so assembly's only complaint is the dangling reference rather than a missing query root
+        // caused by the refused file.
+        Path broken = tmp.resolve("broken.graphqls");
+        Files.writeString(broken, "type Extra { id: ID! }\nstrayTokenHere\n");
+        Path dangling = tmp.resolve("dangling.graphqls");
+        Files.writeString(dangling, "type Query { gone: Nope }\n");
+
+        var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
+        var read = RewriteSchemaLoader.parsePerSource(sources);
+        var verdicts = SdlVerdicts.of(read, SchemaAssembly.of(read.registry()));
+        assertThat(verdicts.syntaxFailures()).hasSize(1);
+        assertThat(verdicts.schemaErrors()).isNotEmpty();
+
+        withStore(dsl -> {
+            FactCapture.capture(dsl, false, graph(), FactCapture.SubjectConfig.none(),
+                read.registry(), verdicts,
+                SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
+                null, List.of(), new NodeDeclaration(null));
+
+            var rows = dsl.selectFrom(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))
+                .orderBy(DIAGNOSTIC.VARIANT)
+                .fetch();
+            assertThat(rows).hasSize(2);
+
+            var assemblyRow = rows.stream()
+                .filter(row -> "MissingTypeError".equals(row.getVariant()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "the schema-error arm should render graphql-java's error class onto variant"));
+            assertThat(assemblyRow.getSeverity()).isEqualTo("error");
+            assertThat(assemblyRow.getActionable()).isTrue();
+            assertThat(assemblyRow.getKind()).as("the Rejection three-way fork does not apply").isNull();
+            assertThat(assemblyRow.getLintRule()).isNull();
+
+            // The parser stage has exactly one way to refuse, so the view states its variant as a
+            // literal. Nothing in SQL can resolve a Java class name, so the spelling is pinned here
+            // or it rots silently the first time the exception is renamed or replaced.
+            String parserVariant = graphql.parser.InvalidSyntaxException.class.getSimpleName();
+            var parserRow = rows.stream()
+                .filter(row -> parserVariant.equals(row.getVariant()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "the parser arm's variant should be the literal " + parserVariant));
+            assertThat(parserRow.getSeverity()).isEqualTo("error");
+            assertThat(parserRow.getActionable()).isTrue();
+            assertThat(parserRow.getFile())
+                .as("the parser arm's file goes through the alias, one spelling with every other arm")
+                .isEqualTo(ValidationReport.canonicalUri(broken.toString()));
+            assertThat(parserRow.getSourceLine()).isEqualTo(2);
+            assertThat(parserRow.getMessage())
+                .as("the row carries the parser's own words, explanatory clause included")
+                .isEqualTo(verdicts.syntaxFailures().getFirst().verbatimMessage())
+                .contains("not been consumed");
         });
     }
 

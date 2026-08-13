@@ -127,8 +127,17 @@ public final class SdlFactCapture {
      */
     private final Map<String, SchemaInput> attribution;
 
+    /**
+     * The sources this run read that contributed no declaration, so the walk cannot find them: the
+     * ones the parser refused. Kept apart from {@link #attribution} because that map is the run's
+     * configured inputs, while these are the subset the run actually opened and was refused, which
+     * is what the source census records.
+     */
+    private final Set<String> refusedSources;
+
     private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
-                           ClasspathSources sources, Map<String, SchemaInput> attribution) {
+                           ClasspathSources sources, Map<String, SchemaInput> attribution,
+                           Set<String> refusedSources) {
         this.sink = sink;
         this.registry = registry;
         this.decode = new GraphitronFactCapture(sink);
@@ -136,12 +145,24 @@ public final class SdlFactCapture {
         this.macros = new MacroCapture(sink, registry, nodes, this);
         this.sources = sources;
         this.attribution = attribution;
+        this.refusedSources = refusedSources;
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
     static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
                         ClasspathSources sources, Map<String, SchemaInput> attribution) {
-        new SdlFactCapture(sink, registry, nodes, sources, attribution).run();
+        capture(sink, registry, nodes, sources, attribution, Set.of());
+    }
+
+    /**
+     * {@link #capture(FactSink, TypeDefinitionRegistry, NodeDeclaration, ClasspathSources, Map)}
+     * plus the sources the parser refused, which the walk has no other way to learn about: a
+     * refused source contributes no declaration, so nothing in the registry points back at it.
+     */
+    static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
+                        ClasspathSources sources, Map<String, SchemaInput> attribution,
+                        Set<String> refusedSources) {
+        new SdlFactCapture(sink, registry, nodes, sources, attribution, refusedSources).run();
     }
 
     private void run() {
@@ -187,6 +208,12 @@ public final class SdlFactCapture {
         addExtensionSources(names, registry.enumTypeExtensions());
         addExtensionSources(names, registry.scalarTypeExtensions());
         addExtensionSources(names, registry.inputObjectTypeExtensions());
+        // A refused source is one this run read, so the census owes it a row even though it
+        // declared nothing for the walk to find it by. Without this the store contradicts itself
+        // on the rows the verdict families introduce: one family recording that the read refused a
+        // source, the other that the graph has no such source. It also decides whether the
+        // currency check covers the file the author is most likely to edit next.
+        names.addAll(refusedSources);
 
         for (String name : names) {
             GraphSourceMembership.note(sink, name);

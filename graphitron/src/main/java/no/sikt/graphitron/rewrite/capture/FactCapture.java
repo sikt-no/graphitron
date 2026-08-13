@@ -352,7 +352,8 @@ public final class FactCapture {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
             ConfigurationFactCapture.capture(sink, config);
-            SdlFactCapture.capture(sink, registry, nodes, sources, attribution);
+            SdlFactCapture.capture(sink, registry, nodes, sources, attribution,
+                verdicts.refusedSourceNames());
             SdlVerdictCapture.capture(sink, verdicts);
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
             sink.flush();

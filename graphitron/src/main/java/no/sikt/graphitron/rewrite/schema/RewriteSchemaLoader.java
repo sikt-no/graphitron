@@ -106,6 +106,16 @@ public final class RewriteSchemaLoader {
     public record SyntaxFailure(String sourceName, String brief, SourceLocation location,
                                 InvalidSyntaxException cause) {
 
+        /**
+         * The parser's message as it wrote it, which is what the store transcribes. {@link #brief}
+         * is a rendering built for the exception's one-liner and drops the explanatory clause on
+         * the parser's commonest message shape, so it is the wrong thing to persist: a row is a
+         * transcription, and a reader wanting less can render less.
+         */
+        public String verbatimMessage() {
+            return cause.getMessage();
+        }
+
         /** The file-attributed one-liner {@link SchemaParseException#getMessage()} carries. */
         public String attributedMessage() {
             if (location == null || location.getSourceName() == null) {
