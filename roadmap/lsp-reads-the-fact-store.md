@@ -344,6 +344,17 @@ family on the source cadence, joined by name. The SDL positions the store alread
 always the same rule's sanctioned side: SDL is what capture reads, so those positions were on the
 capture cadence from the start.
 
+The rewrite frames the doctrine around the loop this item ran four times, because it is the
+steady-state relationship between consumers and the store rather than a one-off event: a consumer
+discovers a fact it needs and the store does not carry; the fact is modeled at its own grain, never
+at the discovering consumer's convenience; every other consumer inherits it. The four instances are
+the record: the binding type hover wanted and `ColumnFacts` dropped, the `Keys` constant name
+completion wanted and `CatalogBuilder` guessed, the generated FQNs definition wanted and a
+projection hoarded, and the java-source family itself, whose first beneficiary beyond the LSP is
+the MCP Javadoc join that stops borrowing `workspace.sourceIndex()`. The grain clause is the guard
+that keeps the loop from unwinding the item: a store that accretes consumer-shaped columns is
+`CompletionData` with SQL syntax.
+
 The retirement also takes named exemplars out of the principle docs, and the sweep must repoint
 them, not just delete: `CatalogBuilder.projectFieldClassification` is the transitional exemplar
 under "One model, many views" in `docs/architecture/explanation/development-principles.adoc` and
