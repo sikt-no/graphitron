@@ -766,6 +766,96 @@ class FactCaptureAgreementTest {
     }
 
     /**
+     * A column carries two types and the store must hold both. The SQL type is what the database
+     * declares; the binding type is the Java class jOOQ maps it to, which only a live
+     * {@link org.jooq.Field} on the codegen classpath can answer. Nothing downstream can recover it
+     * from the SQL type, because the mapping is the generator's configured binding rather than a
+     * rule, so this pins it against the {@code Field} itself as the oracle.
+     */
+    @Test
+    @DisplayName("every captured column carries the Java type jOOQ binds it to")
+    void columnBindingTypesEqualTheCatalogs(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
+                new NodeDeclaration(null));
+
+            var expected = new LinkedHashMap<String, String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                String qualified = table.getSchema().getName() + "." + table.getName();
+                for (var field : table.fields()) {
+                    expected.put(qualified + "|" + field.getName(), field.getType().getName());
+                }
+            }
+            assertThat(expected).as("the catalog has columns, so this pins something").isNotEmpty();
+            assertThat(expected.values())
+                .as("a catalog whose every column bound to Object would make the assertion vacuous")
+                .contains("java.lang.String");
+
+            var captured = new LinkedHashMap<String, String>();
+            store.dsl()
+                .select(SQL_COLUMN.TABLE_SCHEMA, SQL_COLUMN.TABLE_NAME, SQL_COLUMN.COLUMN_NAME,
+                    SQL_COLUMN.BINDING_TYPE)
+                .from(SQL_COLUMN)
+                .fetch()
+                .forEach(row -> captured.put(
+                    row.value1() + "." + row.value2() + "|" + row.value3(), row.value4()));
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The {@code Keys}-class constant name is what an author types in {@code @reference(key:)}, and
+     * it is resolved by reference identity rather than by any formula over the constraint name. The
+     * oracle here is that same identity resolution, so what the test pins is that capture stored what
+     * the resolver answered for every constraint, including the nulls where a key has no constant.
+     * A formula-based oracle would agree with a formula-based capture and prove nothing.
+     */
+    @Test
+    @DisplayName("every captured constraint carries its resolved Keys constant, nulls included")
+    void constraintJooqNamesEqualTheResolvedKeysConstants(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
+                new NodeDeclaration(null));
+
+            var expected = new LinkedHashMap<String, String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                String qualified = table.getSchema().getName() + "." + table.getName();
+                var keys = new LinkedHashSet<org.jooq.Key<?>>(table.getKeys());
+                if (table.getPrimaryKey() != null) {
+                    keys.add(table.getPrimaryKey());
+                }
+                keys.addAll(table.getReferences());
+                for (var key : keys) {
+                    expected.put(qualified + "|" + key.getName(),
+                        jooq.keyJavaConstantName(key).orElse(null));
+                }
+            }
+            assertThat(expected).as("the catalog has constraints, so this pins something").isNotEmpty();
+            assertThat(expected.values())
+                .as("if nothing resolved, identity matching is broken and the comparison is vacuous")
+                .anyMatch(java.util.Objects::nonNull);
+
+            var captured = new LinkedHashMap<String, String>();
+            store.dsl()
+                .select(SQL_CONSTRAINT.TABLE_SCHEMA, SQL_CONSTRAINT.TABLE_NAME,
+                    SQL_CONSTRAINT.CONSTRAINT_NAME, SQL_CONSTRAINT.JOOQ_NAME)
+                .from(SQL_CONSTRAINT)
+                .fetch()
+                .forEach(row -> captured.put(
+                    row.value1() + "." + row.value2() + "|" + row.value3(), row.value4()));
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
      * The constraint census against the catalog itself rather than against {@code CatalogFacts}'
      * view of it. No fold: the old comparison had to reduce the store to the projection's
      * {@code uniqueKeys} shape, which excludes the primary key and drops a unique constraint the

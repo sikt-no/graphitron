@@ -524,7 +524,7 @@ class ColumnMatchClaimTest {
                                    String tableName, String columnName, int ordinal, String jooqName) {
         dsl.insertInto(SQL_COLUMN)
             .values(sourceName, tableSchema, tableName, columnName, ordinal, jooqName,
-                "character varying", true, null)
+                "character varying", "java.lang.String", true, null)
             .execute();
     }
 

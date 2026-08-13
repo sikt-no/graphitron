@@ -111,7 +111,7 @@ final class CatalogFactCapture {
             sink.add(record);
 
             captureColumns(sink, jooq, table, source, schema, name);
-            captureConstraints(sink, table, source, schema, name);
+            captureConstraints(sink, jooq, table, source, schema, name);
             captureForeignKeys(sink, jooq, table, source, schema, name, sourceByTable);
             captureIndexes(sink, jooq, table, source, schema, name);
         }
@@ -208,6 +208,7 @@ final class CatalogFactCapture {
             row.setOrdinal(ordinal);
             row.setJooqName(column.javaName());
             row.setSqlType(column.sqlType());
+            row.setBindingType(column.bindingType());
             row.setNullable(column.nullable());
             row.setDescription(nullIfBlank(column.comment()));
             sink.add(row);
@@ -221,8 +222,8 @@ final class CatalogFactCapture {
      * projection choice serving the UPDATE key match, and a foreign key referencing the dropped
      * constraint would have nothing to point at here.
      */
-    private static void captureConstraints(FactSink sink, Table<?> table, String source,
-                                           String schema, String name) {
+    private static void captureConstraints(FactSink sink, JooqCatalog jooq, Table<?> table,
+                                           String source, String schema, String name) {
         UniqueKey<?> primary = table.getPrimaryKey();
         var keys = new LinkedHashSet<UniqueKey<?>>(table.getKeys());
         if (primary != null) {
@@ -233,6 +234,7 @@ final class CatalogFactCapture {
         for (UniqueKey<?> key : keys) {
             writeConstraint(sink, source, schema, name, key.getName(),
                 key.equals(primary) ? PRIMARY_KEY : UNIQUE,
+                jooq.keyJavaConstantName(key).orElse(null),
                 key.getFields().stream().map(Field::getName).toList());
         }
         if (primary != null) {
@@ -260,7 +262,8 @@ final class CatalogFactCapture {
                                            String source, String schema, String name,
                                            Map<String, String> sourceByTable) {
         for (JooqCatalog.ForeignKeyFacts fk : jooq.foreignKeyFactsOf(table)) {
-            if (!writeConstraint(sink, source, schema, name, fk.constraintName(), FOREIGN_KEY, fk.columns())) {
+            if (!writeConstraint(sink, source, schema, name, fk.constraintName(), FOREIGN_KEY,
+                fk.jooqName(), fk.columns())) {
                 continue;
             }
             var referenced = split(fk.targetTable());
@@ -278,9 +281,16 @@ final class CatalogFactCapture {
         }
     }
 
-    /** The supertype row and its ordered columns, shared by all three constraint forms. */
+    /**
+     * The supertype row and its ordered columns, shared by all three constraint forms.
+     *
+     * <p>{@code jooqName} is the {@code Keys}-class constant, null when the key resolved to none.
+     * Threaded in rather than derived here: it comes from reference identity against the live key,
+     * which only the catalog walk holds.
+     */
     private static boolean writeConstraint(FactSink sink, String source, String schema, String name,
-                                           String constraintName, String type, List<String> columns) {
+                                           String constraintName, String type, String jooqName,
+                                           List<String> columns) {
         if (!sink.claim(SQL_CONSTRAINT, source, schema, name, constraintName)) {
             return false;
         }
@@ -290,6 +300,7 @@ final class CatalogFactCapture {
         record.setTableName(name);
         record.setConstraintName(constraintName);
         record.setConstraintType(type);
+        record.setJooqName(jooqName);
         sink.add(record);
         int position = 0;
         for (String column : columns) {

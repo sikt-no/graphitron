@@ -754,6 +754,33 @@ public class JooqCatalog {
             .map(JooqCatalog::localGetQualifier);
     }
 
+    /**
+     * The generated {@code Keys}-class constant name for any key, resolved the same way
+     * {@link #findForeignKeyRef} resolves a foreign key: by <em>reference identity</em> over the
+     * fields of the {@code Keys} class belonging to the key's own table's schema. Generalized from
+     * foreign keys to {@link org.jooq.Key} because {@code sql_constraint} holds unique and primary
+     * keys too, and each of those is a {@code Keys} constant an author can name.
+     *
+     * <p>Identity rather than name matching, for the reason the FK resolver gives: a constraint name
+     * that collides across schemas cannot mis-resolve, and jOOQ hands out the same singletons from
+     * {@code Table.getKeys()} and {@code Table.getReferences()} that the {@code Keys} class holds.
+     *
+     * <p>Empty when the key resolves to no constant, which is a real outcome rather than a failure:
+     * the generated model need not have a {@code Keys} class at all, and a key it did not emit a
+     * constant for is a key nobody can name. The caller stores the absence.
+     */
+    public Optional<String> keyJavaConstantName(org.jooq.Key<?> key) {
+        if (catalog == null || key == null || key.getTable() == null) return Optional.empty();
+        Schema schema = key.getTable().getSchema();
+        if (schema == null) return Optional.empty();
+        return keysClass(schema).stream()
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> org.jooq.Key.class.isAssignableFrom(f.getType()))
+            .filter(f -> fieldValue(f) == key)
+            .map(Field::getName)
+            .findFirst();
+    }
+
     private Optional<Class<?>> keysClass(Schema schema) {
         try {
             return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Keys", false, codegenLoader));
@@ -1035,10 +1062,16 @@ public class JooqCatalog {
 
     /**
      * Full column facts for the catalog-discovery projection: adds the SQL data-type name
-     * ({@code DataType.getTypeName()}) and the column comment ({@code Field.getComment()}) to the
-     * {@link ColumnEntry} shape. Reads the same reflective field set {@link #allColumnsOf(String)}
-     * does, so column order matches. The comment is empty when jOOQ codegen captured none. All
-     * values are resolved-immutable, safe to retain past the codegen loader's lifetime.
+     * ({@code DataType.getTypeName()}), the bound Java type ({@code Field.getType()}) and the column
+     * comment ({@code Field.getComment()}) to the {@link ColumnEntry} shape. Reads the same
+     * reflective field set {@link #allColumnsOf(String)} does, so column order matches. The comment
+     * is empty when jOOQ codegen captured none. All values are resolved-immutable, safe to retain
+     * past the codegen loader's lifetime.
+     *
+     * <p>The two types are read from the same {@link org.jooq.Field} and are both facts about the
+     * column: {@code getDataType().getTypeName()} is what the database declares,
+     * {@code getType().getName()} is what the generator binds it to. Only a live {@code Field} on
+     * the codegen classpath can answer the second, so it is captured here or not at all.
      */
     public java.util.List<ColumnFacts> columnFactsOf(Table<?> table) {
         return Arrays.stream(table.getClass().getFields())
@@ -1050,6 +1083,7 @@ public class JooqCatalog {
                     col.getName(),
                     f.getName(),
                     col.getDataType().getTypeName(),
+                    col.getType().getName(),
                     col.getDataType().nullable(),
                     comment == null ? "" : comment);
             })
@@ -1080,6 +1114,11 @@ public class JooqCatalog {
      * {@code catalog.describe} wire shape promises, pulled from the live {@link ForeignKey} during
      * the build pass and reduced to {@link String} immediately. The build pass groups these
      * catalog-wide to derive each table's incoming edges.
+     *
+     * <p>Carries the {@code Keys}-class constant name as well, resolved by
+     * {@link #keyJavaConstantName} while the live key is still in hand. It is what an author types in
+     * {@code @reference(key:)}, it is resolved by reference identity rather than by any formula over
+     * the constraint name, and nothing outside the codegen classpath can resolve it afterwards.
      */
     @SuppressWarnings("unchecked")
     public java.util.List<ForeignKeyFacts> foreignKeyFactsOf(Table<?> table) {
@@ -1089,6 +1128,7 @@ public class JooqCatalog {
                 qualifiedName(fk.getTable()),
                 qualifiedName(fk.getKey().getTable()),
                 fk.getKey().getName(),
+                keyJavaConstantName(fk).orElse(null),
                 fk.getFields().stream().map(org.jooq.Field::getName).toList(),
                 fk.getKey().getFields().stream().map(org.jooq.Field::getName).toList()))
             .toList();
@@ -1099,11 +1139,19 @@ public class JooqCatalog {
     }
 
     /**
-     * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name,
-     * nullability, and comment (empty when codegen captured none). The resolved-immutable superset
-     * of {@link ColumnEntry} the {@code CatalogFacts} projection needs; see {@link #columnFactsOf}.
+     * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name, the Java
+     * type jOOQ binds the column to, nullability, and comment (empty when codegen captured none).
+     * See {@link #columnFactsOf}.
+     *
+     * <p>Carries every fact {@link ColumnEntry} does. The one thing it does not carry is that
+     * record's {@code columnType}, which is the javapoet rendering of the same binding type rather
+     * than a further fact about the column: {@link #bindingType()} is that type's fully qualified
+     * name, and the javapoet form is a code-emission representation with no meaning in a relation.
+     * All values are resolved-immutable, safe to retain past the codegen loader's lifetime, which
+     * is what {@link ColumnEntry} is not.
      */
-    public record ColumnFacts(String sqlName, String javaName, String sqlType, boolean nullable, String comment) {}
+    public record ColumnFacts(String sqlName, String javaName, String sqlType, String bindingType,
+                              boolean nullable, String comment) {}
 
     /**
      * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.
@@ -1120,12 +1168,18 @@ public class JooqCatalog {
      * <p>{@code referencedConstraintName} is what SQL declares a foreign key against, and
      * {@code targetColumns} is that constraint's own column list; a consumer keying constraints
      * rather than tables needs the name, and one that already has the columns can ignore it.
+     *
+     * <p>{@code jooqName} is the {@code Keys}-class constant name, or null when the key resolves to
+     * no constant. Null is a fact rather than a failure: a generated model need not carry a
+     * {@code Keys} class, and a key with no constant is a key nobody can name in
+     * {@code @reference(key:)}.
      */
     public record ForeignKeyFacts(
         String constraintName,
         String sourceTable,
         String targetTable,
         String referencedConstraintName,
+        String jooqName,
         java.util.List<String> columns,
         java.util.List<String> targetColumns
     ) {

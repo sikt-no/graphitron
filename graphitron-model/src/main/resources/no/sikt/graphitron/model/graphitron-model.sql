@@ -2201,12 +2201,13 @@ CREATE TABLE sql_column (
   ordinal      INT     NOT NULL,
   jooq_name    VARCHAR NOT NULL,
   sql_type     VARCHAR NOT NULL,
+  binding_type VARCHAR NOT NULL,
   nullable     BOOLEAN NOT NULL,
   description  VARCHAR,
   PRIMARY KEY (source_name, table_schema, table_name, column_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
 );
-COMMENT ON TABLE sql_column IS 'A column exists on a table. The SQL name is the coordinate, which is what the schema''s directives spell; the jOOQ name rides along because the LSP surface is Java-name-centric.';
+COMMENT ON TABLE sql_column IS 'A column exists on a table. The SQL name is the coordinate, which is what the schema''s directives spell; the jOOQ name rides along because the LSP surface is Java-name-centric. A column carries two types, not one: the SQL type the database declares and the Java type jOOQ binds it to. Both are facts about the column and neither derives from the other by any rule the store could apply, since the mapping is the generator''s configured binding.';
 COMMENT ON COLUMN sql_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_column.table_name IS 'SQL table name';
@@ -2214,6 +2215,7 @@ COMMENT ON COLUMN sql_column.column_name IS 'SQL column name';
 COMMENT ON COLUMN sql_column.ordinal IS 'column position in the table definition, read from Table.fields() rather than from the reflective field walk, whose order is unspecified';
 COMMENT ON COLUMN sql_column.jooq_name IS 'the generated jOOQ Java field name; the one column here written in the reader''s vocabulary rather than SQL''s';
 COMMENT ON COLUMN sql_column.sql_type IS 'the column''s SQL type as jOOQ reports it';
+COMMENT ON COLUMN sql_column.binding_type IS 'the fully qualified Java type jOOQ binds the column to, as Field.getType() reports it; read off the live Field during the catalog walk and unrecoverable afterwards, since nothing outside the codegen classpath can resolve a configured binding. Hover renders it beside the SQL type, which is why a column needs both and why keeping only one of them capped what the editor could say about a column.';
 COMMENT ON COLUMN sql_column.nullable IS 'whether the column admits NULL';
 COMMENT ON COLUMN sql_column.description IS 'the database comment on the column, when present';
 
@@ -2223,11 +2225,13 @@ CREATE TABLE sql_constraint (
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
   constraint_type VARCHAR NOT NULL,
+  jooq_name       VARCHAR,
   PRIMARY KEY (source_name, table_schema, table_name, constraint_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name),
   CHECK (constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY'))
 );
 COMMENT ON TABLE sql_constraint IS 'A named constraint exists on a table. The supertype: one row per constraint whatever its form, discriminated by constraint_type as the standard''s TABLE_CONSTRAINTS is. Filtered to what jOOQ''s generated model carries: PRIMARY KEY, UNIQUE and FOREIGN KEY. CHECK, NOT NULL and deferrability are absent, and arrive as further type values rather than as new relations.';
+COMMENT ON COLUMN sql_constraint.jooq_name IS 'the generated Keys-class constant name for this constraint, which is what an author types in @reference(key:). Resolved by reference identity over the Keys class''s fields rather than by any formula over the constraint name, so a name colliding across schemas cannot mis-resolve; that resolution needs the live key on the codegen classpath and is unrecoverable afterwards. Null when the constraint resolves to no constant, which is a fact and not a failure: a generated model need not carry a Keys class, and a key with no constant is one nobody can name. Nullable where sql_table.jooq_name and sql_column.jooq_name are not, because a table and a column always have a generated Java name and a constraint need not.';
 COMMENT ON COLUMN sql_constraint.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_constraint.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_constraint.table_name IS 'SQL table name';
