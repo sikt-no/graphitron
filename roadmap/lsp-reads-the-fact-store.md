@@ -765,6 +765,58 @@ the two verdict relations, and the arms it unblocks (`CatalogTableBinding` and `
 in completion, every Javadoc-bearing hover row, and definition's positions) need the generated-class
 FQN widening beside it for the jOOQ half, whose classes `jvm_class` excludes by design.
 
+## Settled while building: the catalog-shaped completion arms
+
+`CatalogTableBinding` and `CatalogColumnBinding` now read the store, which makes them the first
+consumers of both the java-source family and the FQN capture. Each arm's query is its own: the table
+arm selects a name and a description, the column arm a jOOQ field name, a binding type, nullability
+and a description, and neither goes through a shared shape. That is the parity rule applied at the
+grain it was stated for. What they share is the relations, not the query.
+
+* **The Javadoc overlay is a join, and it is the join the FQN capture exists for.** `sql_table`'s
+  captured `class_fqn` meets a `java_class_declaration` row for the table arm and a
+  `java_field_declaration` row keyed by the generated field name for the column arm. Nothing else in
+  the store could have reached those declarations: the generated package is outside `jvm_class` by
+  design, which is exactly the argument the widening was landed on, now load-bearing rather than
+  anticipated.
+* **A correlated scalar select, not a left join.** `java_class_declaration` is keyed on
+  `(file, class_name)`, so one FQN declared in two files is two rows and a left join would multiply a
+  candidate into two popup entries. The subselect takes the file-order-first declaration: arbitrary,
+  but stated, deterministic, and a property of a malformed source tree rather than of a catalog.
+* **Description precedence is per relation and stays inverted between the two arms.** A table's
+  database comment beats its generated class Javadoc, because that Javadoc is boilerplate naming the
+  table back at the reader. A column's Javadoc beats its comment, because the generated field's
+  Javadoc carries the qualified column name and, where the database has a comment, the comment too.
+  The rule stayed in each provider rather than becoming a view: which text an editor renders is a
+  presentation choice, and hover may legitimately want a different one, so a view asserting one
+  precedence for both would have capped them at the same intersection the shared projection did.
+* **The column census now answers with two facts the projection dropped.** The detail line is the
+  type jOOQ binds the column to, which the projection carried under the name `graphqlType` and hover
+  could not get at, and a column's database comment reaches a reader at all, which under
+  `CompletionData` was always the empty string.
+* **An ambiguous unqualified table name is answered, not resolved.** The census records every table
+  every schema declares, and `sql_table`'s own comment says resolving an unqualified `@table(name:)`
+  is a derivation. So the table arm offers a duplicated name twice and the column arm returns both
+  tables' columns, where the projection answered from whichever table its list happened to hold
+  first: the generated `Tables` class's field order, which is an accident rather than a rule. The
+  candidate order is the census's own (name, then schema; definition ordinal within a table), which
+  the projection could not state.
+* **Which table a site's columns come from is still classification's answer.** The column arm reads
+  the snapshot for the enclosing type's backing and the field's own classification, and only the
+  column list is a store read. That split is the item's table, not a compromise: the resolution is a
+  classifier decision, and pretending it were a fact would be the keying-axis confusion.
+
+`CompletionRequest` lost its `sourceIndex` arm, which no provider reads any more. `Descriptions`
+survives for hover, which has not moved; the two methods these arms used stay until it does.
+
+The tests moved to the real generated model rather than keeping their hand-built column lists. Both
+arms are captured from the fixture module's jOOQ catalog through `StoreFixture.ofCatalog`, so a
+fixture can no longer state a jOOQ field name the generator would not produce, and
+`FixtureCatalogTest`'s two completion cases retire because the real-catalog coverage they existed for
+is now what the per-arm tests do. `StoreFixture.withJavaSource` parses a declaration into the
+`java_` family the way a dev session's watcher would, which is what lets a test pin the cross-cadence
+join without the fixture database growing comments it does not have.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,

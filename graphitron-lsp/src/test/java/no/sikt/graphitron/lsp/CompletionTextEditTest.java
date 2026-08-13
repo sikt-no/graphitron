@@ -54,12 +54,15 @@ class CompletionTextEditTest {
     @TempDir
     static Path tmp;
 
-    /** One capture for every store-backed arm below: a service class, a scalar holder, a @node type. */
+    /**
+     * One capture for every store-backed arm below: a service class, a scalar holder, a @node type,
+     * and the fixture module's catalog for the table and column arms.
+     */
     private static StoreFixture store;
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.of(tmp, StoreFixture.GRAPH, """
+        store = StoreFixture.ofCatalog(tmp, """
             type Query { x: Int }
             type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
             """,
@@ -105,11 +108,8 @@ class CompletionTextEditTest {
         int innerStart = source.indexOf("\"fi\"") + 1;
         Point cursor = new Point(0, innerStart + 1);
 
-        var data = new CompletionData(
-            List.of(new CompletionData.Table("film", "", null, List.of(), List.of())),
-            List.of(), List.of());
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, ctx));
+            (ctx, dir, bytes) -> TableCompletions.generate(VOCAB, store.handle(), ctx));
 
         assertTextEditRange(items, "film",
             new Range(new Position(0, innerStart), new Position(0, innerStart + "fi".length())));
@@ -127,20 +127,17 @@ class CompletionTextEditTest {
         int innerStart = lines[line].indexOf("\"ti\"") + 1;
         Point cursor = new Point(line, innerStart + 1);
 
-        var data = new CompletionData(
-            List.of(new CompletionData.Table("film", "", null,
-                List.of(CompletionData.Column.of("title", "String", false, "")),
-                List.of())),
-            List.of(), List.of());
         var snapshot = new no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current(
             List.of(),
             java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
             java.util.Map.of()
         );
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, snapshot, ctx, dir, bytes));
+            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, store.handle(), snapshot, ctx, dir, bytes));
 
-        assertTextEditRange(items, "title",
+        // The candidate is the generated Java field name, which is what the census carries and what
+        // an author types; the typed prefix it replaces is their own lowercase "ti".
+        assertTextEditRange(items, "TITLE",
             new Range(new Position(line, innerStart), new Position(line, innerStart + "ti".length())));
     }
 

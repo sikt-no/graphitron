@@ -46,8 +46,8 @@ public final class Completions {
                 var behaviorOpt = vocab.behaviorAt(context.coordinate());
                 if (behaviorOpt.isPresent()) {
                     var request = new CompletionRequest(
-                        vocab, store, workspace.catalog(), workspace.sourceIndex(),
-                        workspace.snapshot(), context, directive, pos, lspPos, source);
+                        vocab, store, workspace.catalog(), workspace.snapshot(), context,
+                        directive, pos, lspPos, source);
                     for (var provider : providersFor(behaviorOpt.get())) {
                         var items = provider.complete(request);
                         if (!items.isEmpty()) return items;
@@ -86,11 +86,10 @@ public final class Completions {
                 r -> r.fromStore(s -> MethodCompletions.generate(
                     r.vocabulary(), s, r.context(), r.directive(), r.pos(), r.source())));
             case Behavior.CatalogTableBinding ignored -> List.of(
-                r -> TableCompletions.generate(r.vocabulary(), r.data(), r.sourceIndex(), r.context()));
+                r -> r.fromStore(s -> TableCompletions.generate(r.vocabulary(), s, r.context())));
             case Behavior.CatalogColumnBinding ignored -> List.of(
-                r -> FieldCompletions.generate(
-                    r.vocabulary(), r.data(), r.sourceIndex(), r.snapshot(), r.context(),
-                    r.directive(), r.source()));
+                r -> r.fromStore(s -> FieldCompletions.generate(
+                    r.vocabulary(), s, r.snapshot(), r.context(), r.directive(), r.source())));
             case Behavior.CatalogFkBinding ignored -> List.of(
                 r -> ReferenceCompletions.generate(
                     r.vocabulary(), r.data(), r.snapshot(), r.context(), r.directive(), r.source()));

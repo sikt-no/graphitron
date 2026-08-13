@@ -1,36 +1,61 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
+import org.eclipse.lsp4j.CompletionItem;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
-import io.github.treesitter.jtreesitter.Language;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage for {@code @field(name: "...")} column autocomplete.
- * The interesting bit is the context resolution: the LSP must walk up
- * from the field's directive to the enclosing type's {@code @table} to
- * pick which table's columns to suggest.
+ * Coverage for {@code @field(name: "...")} column autocomplete. Two things meet at this arm: which
+ * table a site's columns come from, which is a classification question answered off the snapshot,
+ * and what columns that table has, which is a read of the graph's {@code sql_column} census.
+ *
+ * <p>The census is the fixture module's real generated jOOQ model, captured once for the class. A
+ * hand-built column list could state a table the catalog does not have, or state a jOOQ field name
+ * the generator would not have produced; the point of most cases here is the dispatch, so the
+ * candidate set they are checked against had better be the real one.
  */
 class FieldCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
+    @TempDir
+    static Path sharedDirectory;
+
+    private static StoreFixture STORE;
+
+    @BeforeAll
+    static void captureTheCatalog() {
+        STORE = StoreFixture.ofCatalog(sharedDirectory, "type Query { placeholder: Int }\n");
+    }
+
+    @AfterAll
+    static void closeTheStore() {
+        STORE.close();
+    }
+
     @Test
     void columnNameCompletionReturnsTableColumns() {
         String source = """
-            type Foo @table(name: "FILM") {
+            type Foo @table(name: "film") {
                 bar: Int @field(name: "")
             }
             """;
@@ -39,10 +64,11 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(filmCatalog(), tableSnapshot("Foo", "FILM"), source, cursor);
+        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("FILM_ID", "TITLE", "LANGUAGE_ID");
+            .startsWith("FILM_ID", "TITLE", "DESCRIPTION")
+            .contains("LANGUAGE_ID");
     }
 
     @Test
@@ -62,17 +88,16 @@ class FieldCompletionsTest {
             List.of(),
             Map.of("Foo", new TypeBackingShape.NoBacking.UnbackedResult()),
         Map.of());
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).isEmpty();
     }
 
     @Test
     void unknownTableReturnsEmpty() {
-        // Enclosing type points at a table the catalog does not know — but
-        // the classifier still projected TableBacking(MISSING). The
-        // completion arm consults CompletionData.getTable which returns
-        // empty; no candidates surface.
+        // Enclosing type points at a table the catalog does not know — but the classifier still
+        // projected TableBacking(MISSING). No census row matches the name, so no candidates
+        // surface; an empty answer here is the store agreeing there is nothing to say.
         String source = """
             type Foo @table(name: "MISSING") {
                 bar: Int @field(name: "")
@@ -82,7 +107,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(filmCatalog(), tableSnapshot("Foo", "MISSING"), source, cursor);
+        var items = run(STORE.handle(), tableSnapshot("Foo", "MISSING"), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -90,7 +115,7 @@ class FieldCompletionsTest {
     @Test
     void cursorOutsideNameArgReturnsEmpty() {
         String source = """
-            type Foo @table(name: "FILM") {
+            type Foo @table(name: "film") {
                 bar: Int @field(name: "title")
             }
             """;
@@ -99,7 +124,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("@field") + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(filmCatalog(), tableSnapshot("Foo", "FILM"), source, cursor);
+        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -109,7 +134,7 @@ class FieldCompletionsTest {
         // @table on an interface — TableInterfaceType projects to
         // TableBacking, same data path as TableType.
         String source = """
-            interface Movie @table(name: "FILM") {
+            interface Movie @table(name: "film") {
                 bar: Int @field(name: "")
             }
             """;
@@ -117,7 +142,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(filmCatalog(), tableSnapshot("Movie", "FILM"), source, cursor);
+        var items = run(STORE.handle(), tableSnapshot("Movie", "film"), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .contains("FILM_ID", "TITLE");
@@ -133,7 +158,7 @@ class FieldCompletionsTest {
     @Test
     void nodeKeyColumnsCompletionInsideListLiteralReturnsTableColumns() {
         String source = """
-            type Foo implements Node @table(name: "FILM") @node(keyColumns: [""]) {
+            type Foo implements Node @table(name: "film") @node(keyColumns: [""]) {
                 id: ID
             }
             """;
@@ -142,10 +167,11 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("[\"") + 2;
         Point cursor = new Point(line, col);
 
-        var items = run(filmCatalog(), tableSnapshot("Foo", "FILM"), source, cursor);
+        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("FILM_ID", "TITLE", "LANGUAGE_ID");
+            .startsWith("FILM_ID", "TITLE", "DESCRIPTION")
+            .contains("LANGUAGE_ID");
     }
 
     @Test
@@ -168,7 +194,7 @@ class FieldCompletionsTest {
                 new TypeBackingShape.MemberSlot("title", "String", "title")
             ))),
         Map.of());
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("filmId", "title");
@@ -192,7 +218,7 @@ class FieldCompletionsTest {
                 new TypeBackingShape.MemberSlot("title", "String", "getTitle")
             ))),
         Map.of());
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("filmId", "title");
@@ -203,7 +229,7 @@ class FieldCompletionsTest {
         // SDL declares the type but the snapshot has no entry — same as
         // mid-edit state. Silent rather than spamming candidates.
         String source = """
-            type Foo @table(name: "FILM") {
+            type Foo @table(name: "film") {
                 bar: Int @field(name: "")
             }
             """;
@@ -212,7 +238,7 @@ class FieldCompletionsTest {
         Point cursor = new Point(line, col);
 
         var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -221,7 +247,7 @@ class FieldCompletionsTest {
     void unavailableSnapshotReturnsEmpty() {
         // Pre-build state — no classifier output to consult yet.
         String source = """
-            type Foo @table(name: "FILM") {
+            type Foo @table(name: "film") {
                 bar: Int @field(name: "")
             }
             """;
@@ -229,7 +255,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(filmCatalog(), LspSchemaSnapshot.unavailable(), source, cursor);
+        var items = run(STORE.handle(), LspSchemaSnapshot.unavailable(), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -256,7 +282,7 @@ class FieldCompletionsTest {
             Map.of("FilmListPayload", new TypeBackingShape.NoBacking.UnbackedResult()),
             Map.of("FilmListPayload", "films")
         );
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
@@ -281,7 +307,7 @@ class FieldCompletionsTest {
             Map.of("FilmListPayload", new TypeBackingShape.NoBacking.UnbackedResult()),
             Map.of()
         );
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .doesNotContain(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
@@ -303,7 +329,7 @@ class FieldCompletionsTest {
         Point cursor = new Point(line, col);
 
         var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-        var items = run(filmCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -314,8 +340,8 @@ class FieldCompletionsTest {
     void outputTableWithReferencePathCompletesTerminalTableColumns() {
         // Output-side mirror — covers the ChildField.ColumnReferenceField projection.
         String source = """
-            type Film @table(name: "FILM") {
-                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            type Film @table(name: "film") {
+                languageName: String @field(name: "") @reference(path: [{table: "language"}])
             }
             """;
         int line = 1;
@@ -324,17 +350,17 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("Film", new TypeBackingShape.TableBacking("FILM")),
+            Map.of("Film", new TypeBackingShape.TableBacking("film")),
             Map.of(),
             Map.of("Film.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "LANGUAGE", "NAME", List.of())),
+                    "language", "NAME", List.of())),
             Map.of()
         );
-        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME")
+            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -344,8 +370,8 @@ class FieldCompletionsTest {
         // type backing would lead the user toward FILM columns rather than helping resolve the
         // @reference target. The LSP must emit an empty list rather than leak the wrong table.
         String source = """
-            type FilmType @table(name: "FILM") {
-                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            type FilmType @table(name: "film") {
+                languageName: String @field(name: "") @reference(path: [{table: "language"}])
             }
             """;
         int line = 1;
@@ -354,13 +380,13 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("FilmType", new TypeBackingShape.TableBacking("FILM")),
+            Map.of("FilmType", new TypeBackingShape.TableBacking("film")),
             Map.of(),
             Map.of("FilmType.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unresolvable("synthetic test reason")),
             Map.of()
         );
-        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -370,13 +396,13 @@ class FieldCompletionsTest {
 
     @Test
     void participantCrossTableReferenceCompletesTerminalTableColumns() {
-        // The enclosing @table is "FILM" (the participant table); the field reaches the terminal
-        // table "LANGUAGE" via a ParticipantCrossTable classification. Previously the dropdown
+        // The enclosing @table is "film" (the participant table); the field reaches the terminal
+        // table "language" via a ParticipantCrossTable classification. Previously the dropdown
         // listed FILM's columns; routing ParticipantCrossTable through lspColumnDispatch() emits
         // LANGUAGE's columns instead.
         String source = """
-            type DokumentMelding implements Melding @table(name: "FILM") @discriminator(value: "DOKUMENT") {
-                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
+                languageName: String @field(name: "") @reference(path: [{table: "language"}])
             }
             """;
         int line = 1;
@@ -385,17 +411,17 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("DokumentMelding", new TypeBackingShape.TableBacking("FILM")),
+            Map.of("DokumentMelding", new TypeBackingShape.TableBacking("film")),
             Map.of(),
             Map.of("DokumentMelding.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
-                    "LANGUAGE", "", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
+                    "language", "", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
             Map.of()
         );
-        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+        var items = run(STORE.handle(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME")
+            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -404,11 +430,11 @@ class FieldCompletionsTest {
 
     @Test
     void defaultOrderFieldsCompletesElementTableColumns() {
-        // The enclosing @table is "FILM"; the list field navigates to LANGUAGE. The ordering
+        // The enclosing @table is "film"; the list field navigates to LANGUAGE. The ordering
         // column named in @defaultOrder lives on LANGUAGE, so the dropdown must list LANGUAGE's
         // columns, never FILM's. TableTarget.lspColumnDispatch() Resolves the element table.
         String source = """
-            type Film @table(name: "FILM") {
+            type Film @table(name: "film") {
                 languages: [Language!]! @defaultOrder(fields: [{name: ""}])
             }
             """;
@@ -416,10 +442,10 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("{name: \"") + "{name: \"".length();
         Point cursor = new Point(line, col);
 
-        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME")
+            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -428,7 +454,7 @@ class FieldCompletionsTest {
         // @asConnection does not change the element table; the cursor walk still keys the
         // @defaultOrder(fields: [{name:}]) site to FieldSort.name through the stacked directives.
         String source = """
-            type Film @table(name: "FILM") {
+            type Film @table(name: "film") {
                 languages: [Language!]! @asConnection @defaultOrder(fields: [{name: ""}])
             }
             """;
@@ -436,10 +462,10 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("{name: \"") + "{name: \"".length();
         Point cursor = new Point(line, col);
 
-        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME")
+            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -449,8 +475,8 @@ class FieldCompletionsTest {
         // table-navigating TableTarget whose element table is LANGUAGE, so the same Resolve path
         // applies; the extra directives must not derail the cursor walk to FieldSort.name.
         String source = """
-            type Film @table(name: "FILM") {
-                languages: [Language!]! @reference(path: [{table: "LANGUAGE"}]) @splitQuery @defaultOrder(fields: [{name: ""}])
+            type Film @table(name: "film") {
+                languages: [Language!]! @reference(path: [{table: "language"}]) @splitQuery @defaultOrder(fields: [{name: ""}])
             }
             """;
         int line = 1;
@@ -458,10 +484,10 @@ class FieldCompletionsTest {
             + "@defaultOrder(fields: [{name: \"".length();
         Point cursor = new Point(line, col);
 
-        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
-            .containsExactly("LANGUAGE_ID", "NAME")
+            .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
             .doesNotContain("FILM_ID", "TITLE");
     }
 
@@ -470,7 +496,7 @@ class FieldCompletionsTest {
         // Negative: @defaultOrder(primaryKey: true) has no fields object and no name coordinate,
         // so FieldSort.name is never reached; the boolean-arg site must not leak column candidates.
         String source = """
-            type Film @table(name: "FILM") {
+            type Film @table(name: "film") {
                 languages: [Language!]! @defaultOrder(primaryKey: )
             }
             """;
@@ -478,9 +504,99 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("primaryKey: ") + "primaryKey: ".length();
         Point cursor = new Point(line, col);
 
-        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
 
         assertThat(items).isEmpty();
+    }
+
+    /**
+     * The name a directive spells and the name the database declares need not agree on case, so the
+     * census is matched case-insensitively, as the incumbent projection's lookup was.
+     */
+    @Test
+    void theTableNameMatchesCaseInsensitively() {
+        String source = """
+            type Foo @table(name: "FILM") {
+                bar: Int @field(name: "")
+            }
+            """;
+        int line = 1;
+        Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
+
+        var items = run(STORE.handle(), tableSnapshot("Foo", "FILM"), source, cursor);
+
+        assertThat(items).extracting(CompletionItem::getLabel).contains("FILM_ID", "TITLE");
+    }
+
+    /**
+     * The detail line is the Java type jOOQ binds the column to, which is the fact hover wanted and
+     * the projection dropped, plus the column's nullability. Both are read off the census rather
+     * than off any live handle, which is what makes them available at all outside a codegen scope.
+     */
+    @Test
+    void theDetailIsTheBindingTypeAndNullability() {
+        String source = """
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "")
+            }
+            """;
+        int line = 1;
+        Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
+
+        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
+
+        assertThat(detailOf(items, "FILM_ID")).isEqualTo("java.lang.Integer");
+        assertThat(detailOf(items, "DESCRIPTION")).isEqualTo("java.lang.String (nullable)");
+    }
+
+    /**
+     * The generated field's Javadoc documents the candidate, joined by the table class FQN the
+     * catalog walk captured. This is the arm the FQN capture exists for: the generated package is
+     * outside the class census by design, so nothing else in the store reaches these declarations.
+     *
+     * <p>Its own store, because it parses sources into the family the other cases leave empty.
+     */
+    @Test
+    void theGeneratedFieldJavadocDocumentsTheColumn(@TempDir Path tmp) {
+        String source = """
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "")
+            }
+            """;
+        int line = 1;
+        Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
+
+        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { placeholder: Int }\n")) {
+            assertThat(documentationOf(
+                run(fixture.handle(), tableSnapshot("Foo", "film"), source, cursor), "FILM_ID"))
+                .as("no source parsed yet, and the fixture database carries no column comments")
+                .isEmpty();
+
+            fixture.withJavaSource(tmp.resolve("generated"), fixture.tableClassFqn("film"), """
+                public class Film {
+                    /** The column <code>public.film.film_id</code>. */
+                    public final Object FILM_ID = null;
+                }
+                """);
+
+            assertThat(documentationOf(
+                run(fixture.handle(), tableSnapshot("Foo", "film"), source, cursor), "FILM_ID"))
+                .isEqualTo("The column <code>public.film.film_id</code>.");
+        }
+    }
+
+    private static String detailOf(List<CompletionItem> items, String label) {
+        return itemNamed(items, label).getDetail();
+    }
+
+    private static String documentationOf(List<CompletionItem> items, String label) {
+        var documentation = itemNamed(items, label).getDocumentation();
+        return documentation == null ? "" : documentation.getRight().getValue();
+    }
+
+    private static CompletionItem itemNamed(List<CompletionItem> items, String label) {
+        return items.stream().filter(i -> label.equals(i.getLabel())).findFirst()
+            .orElseThrow(() -> new AssertionError("no candidate labelled " + label));
     }
 
     private static LspSchemaSnapshot defaultOrderSnapshot() {
@@ -488,33 +604,13 @@ class FieldCompletionsTest {
         // LANGUAGE. The dispatch must prefer the classification's table over the enclosing backing.
         return new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("Film", new TypeBackingShape.TableBacking("FILM")),
+            Map.of("Film", new TypeBackingShape.TableBacking("film")),
             Map.of(),
             Map.of("Film.languages",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
-                    "LANGUAGE", List.of(), false, false)),
+                    "language", List.of(), false, false)),
             Map.of()
         );
-    }
-
-    private static CompletionData filmAndLanguageCatalog() {
-        var film = new CompletionData.Table(
-            "FILM", "Movies", null,
-            List.of(
-                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
-                CompletionData.Column.of("TITLE", "String", false, "")
-            ),
-            List.of()
-        );
-        var language = new CompletionData.Table(
-            "LANGUAGE", "Languages", null,
-            List.of(
-                CompletionData.Column.of("LANGUAGE_ID", "Integer", false, ""),
-                CompletionData.Column.of("NAME", "String", false, "")
-            ),
-            List.of()
-        );
-        return new CompletionData(List.of(film, language), List.of(), List.of());
     }
 
     private static LspSchemaSnapshot tableSnapshot(String typeName, String tableName) {
@@ -524,36 +620,19 @@ class FieldCompletionsTest {
         Map.of());
     }
 
-    private static List<org.eclipse.lsp4j.CompletionItem> run(
-        CompletionData data, LspSchemaSnapshot snapshot, String source, Point cursor
+    private static List<CompletionItem> run(
+        StoreHandle store, LspSchemaSnapshot snapshot, String source, Point cursor
     ) {
         var parser = new Parser();
-        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
+        parser.setLanguage(GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
-        var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, snapshot, context, directive, bytes);
+        var context = CompletionContext.from(locOpt.get(), bytes);
+        return FieldCompletions.generate(VOCAB, store, snapshot, context, directive, bytes);
     }
 
-    private static CompletionData filmCatalog() {
-        return new CompletionData(
-            List.of(new CompletionData.Table(
-                "FILM",
-                "Movies the rental store carries",
-                null,
-                List.of(
-                    CompletionData.Column.of("FILM_ID", "Integer", false, ""),
-                    CompletionData.Column.of("TITLE", "String", false, ""),
-                    CompletionData.Column.of("LANGUAGE_ID", "Integer", true, "")
-                ),
-                List.of()
-            )),
-            List.of(),
-            List.of()
-        );
-    }
 }

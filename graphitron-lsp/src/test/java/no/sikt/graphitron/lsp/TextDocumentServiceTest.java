@@ -1,9 +1,12 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.server.GraphitronLanguageServer;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -19,9 +22,11 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -58,79 +63,68 @@ class TextDocumentServiceTest {
     }
 
     @Test
-    void completionRequestRoundTripsThroughTableCompletions() throws Exception {
-        var catalog = new CompletionData(
-            List.of(
-                table("FILM"),
-                table("ACTOR")
-            ),
-            List.of(),
-            List.of()
-        );
-        var server = new GraphitronLanguageServer(new Workspace(catalog));
-        var proxy = startServer(server);
-
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
-
-        String uri = "file:///schema.graphqls";
+    void completionRequestRoundTripsThroughTableCompletions(@TempDir Path tmp) throws Exception {
         String source = """
             type Foo @table(name: "") {
               bar: Int
             }
             """;
-        var item = new TextDocumentItem(uri, "graphql", 1, source);
-        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(item));
-
         // Cursor inside the empty quoted argument value.
-        int quoteCol = source.indexOf("\"") + 1;
-        var params = new CompletionParams(
-            new TextDocumentIdentifier(uri),
-            new Position(0, quoteCol)
-        );
-        var result = proxy.getTextDocumentService().completion(params)
-            .get(5, TimeUnit.SECONDS);
+        var cursor = new Position(0, source.indexOf('"') + 1);
 
-        assertThat(result.isLeft()).isTrue();
-        var labels = result.getLeft().stream().map(c -> c.getLabel()).toList();
-        assertThat(labels).containsExactly("FILM", "ACTOR");
+        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
+             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+            assertThat(labelsAt(access, fixture, source, cursor)).contains("film", "actor");
+        }
     }
 
     @Test
-    void completionAfterMultiByteDescriptionResolvesCorrectDirective() throws Exception {
+    void completionAfterMultiByteDescriptionResolvesCorrectDirective(@TempDir Path tmp)
+        throws Exception {
         // Description on line 0 contains å (multi-byte UTF-8). The cursor
         // sits inside the @table empty-string argument on line 1; the
         // server must convert the LSP UTF-16 column to a UTF-8 byte
         // column before tree-sitter looks up the directive node.
-        var catalog = new CompletionData(
-            List.of(table("FILM"), table("ACTOR")),
-            List.of(),
-            List.of()
-        );
-        var server = new GraphitronLanguageServer(new Workspace(catalog));
-        var proxy = startServer(server);
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
-
-        String uri = "file:///norsk.graphqls";
         String source = """
             "Tabell for å håndtere åremål"
             type Foo @table(name: "") {
               bar: Int
             }
             """;
-        var item = new TextDocumentItem(uri, "graphql", 1, source);
-        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(item));
-
         // Line 1, column 23: just inside the empty @table(name: "") quotes.
-        var params = new CompletionParams(
-            new TextDocumentIdentifier(uri),
-            new Position(1, 23)
-        );
-        var result = proxy.getTextDocumentService().completion(params)
+        var cursor = new Position(1, 23);
+
+        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
+             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+            assertThat(labelsAt(access, fixture, source, cursor)).contains("film", "actor");
+        }
+    }
+
+    /**
+     * Opens {@code source} as the fixture's own schema file and asks for completions at
+     * {@code cursor} over the wire. The document is opened under the captured file's URI because
+     * that is how the request boundary resolves an open buffer to the graph whose census answers
+     * for it; the buffer's text is the test's own and need not be what was captured, which is the
+     * ordinary state of a document being edited.
+     */
+    private List<String> labelsAt(
+        StoreAccess access, StoreFixture fixture, String source, Position cursor
+    ) throws Exception {
+        var workspace = new Workspace();
+        workspace.setStore(access);
+        var proxy = startServer(new GraphitronLanguageServer(workspace));
+        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+
+        String uri = ValidationReport.canonicalUri(fixture.sourceName());
+        proxy.getTextDocumentService()
+            .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "graphql", 1, source)));
+
+        var result = proxy.getTextDocumentService()
+            .completion(new CompletionParams(new TextDocumentIdentifier(uri), cursor))
             .get(5, TimeUnit.SECONDS);
 
         assertThat(result.isLeft()).isTrue();
-        var labels = result.getLeft().stream().map(c -> c.getLabel()).toList();
-        assertThat(labels).containsExactly("FILM", "ACTOR");
+        return result.getLeft().stream().map(CompletionItem::getLabel).toList();
     }
 
     @Test

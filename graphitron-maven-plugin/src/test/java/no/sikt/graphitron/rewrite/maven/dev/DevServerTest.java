@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.maven.dev;
 
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -31,15 +30,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class DevServerTest {
 
+    /**
+     * The round trip is the subject, so the completion it asks for is the argument-name one: that
+     * arm answers off the directive vocabulary and reads no facts, which keeps this test about the
+     * socket, the launcher and the handler rather than about what any session happened to capture.
+     */
     @Test
     void bindsRandomPortAndServesCompletion() throws Exception {
-        var catalog = new CompletionData(
-            List.of(new CompletionData.Table(
-                "FILM", "", null, List.of(), List.of())),
-            List.of(),
-            List.of()
-        );
-        try (var server = new DevServer(loopback(0), new Workspace(catalog), uri -> {})) {
+        try (var server = new DevServer(loopback(0), new Workspace(), uri -> {})) {
             assertThat(server.port()).isGreaterThan(0);
 
             try (var socket = new Socket(InetAddress.getLoopbackAddress(), server.port())) {
@@ -47,20 +45,21 @@ class DevServerTest {
                 proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
                 String uri = "file:///schema.graphqls";
-                String source = "type Foo @table(name: \"\") { bar: Int }\n";
+                String source = "type Query { x: Int @service(service: {className: \"x\"}, ) }\n";
                 proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
                     new TextDocumentItem(uri, "graphql", 1, source)));
 
+                // Cursor on the space after the comma, where the next argument name would go.
                 var params = new CompletionParams(
                     new TextDocumentIdentifier(uri),
-                    new Position(0, source.indexOf('"') + 1)
+                    new Position(0, source.indexOf(", ") + 2)
                 );
                 var result = proxy.getTextDocumentService().completion(params)
                     .get(5, TimeUnit.SECONDS);
 
                 assertThat(result.isLeft()).isTrue();
                 var labels = result.getLeft().stream().map(c -> c.getLabel()).toList();
-                assertThat(labels).containsExactly("FILM");
+                assertThat(labels).contains("contextArguments");
             }
         }
     }

@@ -30,11 +30,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * LSP diagnostics and completions verified against the real fixture jOOQ catalog.
- * These tests complement the hand-crafted catalog tests in {@link DiagnosticsTest},
- * {@link FieldCompletionsTest}, and {@link TableCompletionsTest} by proving that
- * {@link CatalogBuilder} wires up correctly and that the catalog accurately reflects
- * the generated jOOQ metadata (column names, FK references, nullability).
+ * LSP diagnostics verified against the real fixture jOOQ catalog, complementing the hand-crafted
+ * catalogs in {@link DiagnosticsTest} by proving that {@link CatalogBuilder} wires up correctly and
+ * that the catalog reflects the generated jOOQ metadata (column names, FK references, nullability).
+ *
+ * <p>It used to drive the table and column completion arms too. Those read the fact store now, and
+ * {@link TableCompletionsTest} and {@link FieldCompletionsTest} capture the same generated model
+ * into it, so the real-catalog coverage moved with them rather than being dropped.
  */
 class FixtureCatalogTest {
 
@@ -71,35 +73,6 @@ class FixtureCatalogTest {
         assertThat(film.columns()).extracting(CompletionData.Column::name)
             .contains("FILM_ID", "TITLE", "LANGUAGE_ID");
         assertThat(film.columns()).extracting(CompletionData.Column::name)
-            .doesNotContain("film_id", "title");
-    }
-
-    // ---- Table completions ----
-
-    @Test
-    void tableCompletionsReturnSqlTableNames() {
-        String source = "type Foo @table(name: \"\") { x: Int }";
-        Point cursor = new Point(0, source.indexOf('"') + 1);
-        var items = tableCompletions(catalog(), source, cursor);
-        assertThat(items).extracting(CompletionItem::getLabel)
-            .contains("film", "actor", "language");
-    }
-
-    // ---- Field completions: Java field names ----
-
-    @Test
-    void fieldCompletionsReturnJavaFieldNames() {
-        String source = """
-            type Foo @table(name: "film") {
-                x: Int @field(name: "")
-            }
-            """;
-        int line = 1;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        var items = fieldCompletions(catalog(), fooFilmSnapshot(), source, new Point(line, col));
-        assertThat(items).extracting(CompletionItem::getLabel)
-            .contains("FILM_ID", "TITLE", "LANGUAGE_ID");
-        assertThat(items).extracting(CompletionItem::getLabel)
             .doesNotContain("film_id", "title");
     }
 
@@ -174,33 +147,4 @@ class FixtureCatalogTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
-    private static List<CompletionItem> tableCompletions(CompletionData data, String source, Point cursor) {
-        var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser().parse(source).orElseThrow();
-        var directive = Directives.findContaining(tree.getRootNode(), cursor)
-            .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
-        if (locOpt.isEmpty()) return List.of();
-        var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return TableCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, context);
-    }
-
-    private static List<CompletionItem> fieldCompletions(
-        CompletionData data, LspSchemaSnapshot snapshot, String source, Point cursor
-    ) {
-        var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser().parse(source).orElseThrow();
-        var directive = Directives.findContaining(tree.getRootNode(), cursor)
-            .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
-        if (locOpt.isEmpty()) return List.of();
-        var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, snapshot, context, directive, bytes);
-    }
-
-    private static Parser parser() {
-        var p = new Parser();
-        p.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
-        return p;
-    }
 }

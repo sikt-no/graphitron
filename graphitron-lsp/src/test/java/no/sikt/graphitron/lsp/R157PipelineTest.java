@@ -228,8 +228,14 @@ class R157PipelineTest {
         var locOpt = vocab.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(vocab, artefacts.catalog(), no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY,
-            artefacts.snapshot(), context, directive, bytes);
+        // The member arms answer off the snapshot's backing shape and read no facts, so an empty
+        // store is both the honest stand-in and a pin: a change that routed record components
+        // through the column census would answer nothing here.
+        try (var store = no.sikt.graphitron.model.boot.GraphitronModelStore.open()) {
+            return FieldCompletions.generate(vocab,
+                new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), "R157PipelineTest"),
+                artefacts.snapshot(), context, directive, bytes);
+        }
     }
 
     private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {

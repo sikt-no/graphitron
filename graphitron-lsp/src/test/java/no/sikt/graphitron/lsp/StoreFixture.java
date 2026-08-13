@@ -3,9 +3,12 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
@@ -17,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 
 /**
  * A booted fact store with one or more graphs captured into it, for the tests that read the store.
@@ -35,6 +40,9 @@ final class StoreFixture implements AutoCloseable {
 
     /** The graph every fixture captures under, unless a test needs to name a second one. */
     static final String GRAPH = "fixture";
+
+    /** The generated jOOQ model the {@code sql_} arms are captured from. */
+    private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
@@ -64,6 +72,25 @@ final class StoreFixture implements AutoCloseable {
         return of(directory, GRAPH, PLACEHOLDER_SDL, classpath);
     }
 
+    /**
+     * Captures {@code sdl} plus the fixture module's generated jOOQ catalog: the shape for the
+     * {@code sql_} arms. The catalog is the real generated model rather than a stand-in, which is
+     * what makes a table's class FQN, a column's jOOQ field name and its binding type the values a
+     * consumer's editor would actually be completing against.
+     */
+    static StoreFixture ofCatalog(Path directory, String sdl) {
+        return ofCatalog(directory, sdl, List.of());
+    }
+
+    /** The catalog shape plus a classpath census, for a test whose arms span both. */
+    static StoreFixture ofCatalog(Path directory, String sdl,
+                                  List<CompletionData.ExternalReference> classpath) {
+        Path file = write(directory, GRAPH, sdl);
+        var store = GraphitronModelStore.open();
+        capture(store, file, directory, GRAPH, classpath, new JooqCatalog(JOOQ_PACKAGE));
+        return new StoreFixture(store, GRAPH, file);
+    }
+
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<CompletionData.ExternalReference> classpath) {
         Path file = write(directory, graphName, sdl);
@@ -90,11 +117,50 @@ final class StoreFixture implements AutoCloseable {
 
     private static void capture(GraphitronModelStore store, Path file, Path directory, String graphName,
                                 List<CompletionData.ExternalReference> classpath) {
+        capture(store, file, directory, graphName, classpath, null);
+    }
+
+    private static void capture(GraphitronModelStore store, Path file, Path directory, String graphName,
+                                List<CompletionData.ExternalReference> classpath, JooqCatalog jooq) {
         var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(file)));
         var attribution = SchemaInputAttribution.build(List.of(SchemaInput.file(file)));
         FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, attribution, null, classpath,
+            FactCapture.SubjectConfig.none(), registry, attribution, jooq, classpath,
             new NodeDeclaration(null));
+    }
+
+    /**
+     * The FQN of the generated table class for {@code tableName}, read back out of the census rather
+     * than spelled out here, so a test joining the java-source family to it cannot hard-code a
+     * naming strategy the generator might not be using.
+     */
+    String tableClassFqn(String tableName) {
+        return store.dsl().select(SQL_TABLE.CLASS_FQN)
+            .from(SQL_TABLE)
+            .where(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
+            .fetchOptional(SQL_TABLE.CLASS_FQN)
+            .orElseThrow(() -> new AssertionError("no captured table named " + tableName));
+    }
+
+    /**
+     * Parses one Java source declaring {@code classFqn} into this store's {@code java_} family, the
+     * way a dev session's source watcher would. The declaration is a stand-in for the generated
+     * table class the catalog walk recorded the FQN of: the join between the two populations is by
+     * name across two cadences, so a source that agrees on the name is all it takes to exercise it,
+     * and the schema states outright that the two may otherwise disagree.
+     */
+    void withJavaSource(Path sourceRoot, String classFqn, String body) {
+        int lastDot = classFqn.lastIndexOf('.');
+        Path directory = sourceRoot.resolve(classFqn.substring(0, lastDot).replace('.', '/'));
+        try {
+            Files.createDirectories(directory);
+            Files.writeString(directory.resolve(classFqn.substring(lastDot + 1) + ".java"),
+                "package " + classFqn.substring(0, lastDot) + ";\n" + body);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        var roots = List.of(sourceRoot);
+        new JavaSourceFacts(store.dsl()).refresh(roots, new SourceWalker().walkFiles(roots));
     }
 
     private static Path write(Path directory, String graphName, String sdl) {
