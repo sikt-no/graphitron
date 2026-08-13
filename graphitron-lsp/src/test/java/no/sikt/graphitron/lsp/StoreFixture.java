@@ -180,6 +180,16 @@ final class StoreFixture implements AutoCloseable {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        refreshJavaSources(sourceRoot);
+    }
+
+    /**
+     * Re-reads the {@code .java} files under {@code sourceRoot} into this store's {@code java_}
+     * family, the way a dev session's source watcher does after an edit. Separate from
+     * {@link #withJavaSource} because the file on disk is the caller's there: a test that compares
+     * this family against another reader of the same file has to own where that file is.
+     */
+    void refreshJavaSources(Path sourceRoot) {
         var roots = List.of(sourceRoot);
         new JavaSourceFacts(store.dsl()).refresh(roots, new SourceWalker().walkFiles(roots));
     }

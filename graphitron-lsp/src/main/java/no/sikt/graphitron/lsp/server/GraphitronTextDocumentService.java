@@ -209,13 +209,18 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         return CompletableFuture.supplyAsync(() -> {
             try (var span = LspTrace.span("hover")) {
                 span.detail("uri", params.getTextDocument().getUri());
-                return workspace.withView(params.getTextDocument().getUri(), null, file -> {
+                String uri = params.getTextDocument().getUri();
+                return workspace.withView(uri, null, file -> {
                     var pos = Positions.resolve(file.source(),
                         params.getPosition().getLine(),
                         params.getPosition().getCharacter()).tsPoint();
-                    return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
-                        workspace.sourceIndex(), workspace.snapshot(), pos,
-                        workspace.inlayHintConfig().hoverClassification()).orElse(null);
+                    // One read transaction around the whole popup, as completion takes: a hover
+                    // assembled from two snapshots could name a class from before a capture and
+                    // describe it from after.
+                    return workspace.answering(uri, store ->
+                        Hovers.compute(workspace.vocabulary(), file, workspace.catalog(), store,
+                            workspace.sourceIndex(), workspace.snapshot(), pos,
+                            workspace.inlayHintConfig().hoverClassification())).orElse(null);
                 });
             }
         });

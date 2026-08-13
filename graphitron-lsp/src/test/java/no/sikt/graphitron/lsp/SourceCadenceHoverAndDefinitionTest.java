@@ -17,25 +17,24 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage of the source-cadence decoupling through the real pieces: a
- * real {@link SourceWalker} parses real {@code .java} files, a real
- * {@link Workspace} is handed the resulting index the way the dev session hands
- * it one, and the real {@link Hovers} and {@link Definitions} entry points
- * resolve against it. Nothing here is mocked: the positions and Javadoc come
- * from parsing actual source on disk. The same fact is pinned at the store layer
- * where the walk is driven, in the maven plugin's own cadence test; these
- * assertions are about the surfaces that still read the projection.
+ * End-to-end coverage of the source-cadence decoupling through the real pieces: real {@code .java}
+ * files on disk, a real {@link SourceWalker} parse behind the index a dev session hands a
+ * {@link Workspace}, a real capture of the same files into the store's {@code java_} family, and the
+ * real {@link Hovers} and {@link Definitions} entry points resolving against them. Nothing here is
+ * mocked: the positions and Javadoc come from parsing actual source on disk.
  *
- * <p>The catalog fixtures carry only the build-derivable structure ({@code FQN}s,
- * method signatures, empty descriptions), exactly as {@code CatalogBuilder} now
- * produces it; the Javadoc and positions the assertions check come solely from
- * the walked sources. The decisive property is that hover and goto-definition
- * read the <em>same</em> declaration from the <em>same</em> index, so a source
- * edit moves both together and they cannot disagree.
+ * <p>The two surfaces read two different things during the migration, and that is what these cases
+ * are for. Hover's method arm reads the store; goto-definition still reads the index. Both are
+ * refreshed from one file by one edit, so the property the earlier shared index gave for free now has
+ * to be asserted: a source edit moves the doc comment hover renders and the position definition jumps
+ * to, together, with no catalog rebuild in between. The catalog fixtures carry only the
+ * build-derivable structure ({@code FQN}s, method signatures, empty descriptions), so any Javadoc or
+ * position in an assertion came from a parse.
  */
 class SourceCadenceHoverAndDefinitionTest {
 
@@ -65,19 +64,19 @@ class SourceCadenceHoverAndDefinitionTest {
             """);
         var methodPos = pointAt(file, 1, "price\"");
 
-        // Hover surfaces the method Javadoc from the walked source (the catalog
-        // method carries an empty description), not from the catalog.
-        var hover = Hovers.compute(LspVocabulary.load(), file, workspace.catalog(),
-            workspace.sourceIndex(), workspace.snapshot(), methodPos, false).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue())
-            .contains("Looks up a price for a film.");
+        try (var store = priceServiceStore(srcRoot)) {
+            // Hover surfaces the method Javadoc the parse read into the store's java-source family;
+            // the classpath census it joins to carries none by design.
+            assertThat(hoverText(workspace, store, file, methodPos))
+                .contains("Looks up a price for a film.");
 
-        // Goto-definition jumps to the same method declaration in the same file.
-        var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-            workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow();
-        assertThat(loc.getUri()).endsWith("PriceService.java");
-        // The method is declared on the 6th line (0-based line 5) of the source above.
-        assertThat(loc.getRange().getStart().getLine()).isEqualTo(5);
+            // Goto-definition jumps to the same method declaration in the same file.
+            var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
+                workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow();
+            assertThat(loc.getUri()).endsWith("PriceService.java");
+            // The method is declared on the 6th line (0-based line 5) of the source above.
+            assertThat(loc.getRange().getStart().getLine()).isEqualTo(5);
+        }
     }
 
     @Test
@@ -96,8 +95,9 @@ class SourceCadenceHoverAndDefinitionTest {
         var tablePos = pointAt(file, 0, "film\"");
 
         // Hover falls back from the (empty) catalog description to the generated
-        // class Javadoc the walk recovered.
-        var hover = Hovers.compute(LspVocabulary.load(), file, workspace.catalog(),
+        // class Javadoc the walk recovered. Still the projection's index: the table arm has not
+        // migrated, so there is no store read on this path to give one.
+        var hover = Hovers.compute(LspVocabulary.load(), file, workspace.catalog(), Optional.empty(),
             workspace.sourceIndex(), workspace.snapshot(), tablePos, false).orElseThrow();
         assertThat(hover.getContents().getRight().getValue()).contains("The film table.");
 
@@ -128,43 +128,62 @@ class SourceCadenceHoverAndDefinitionTest {
             """);
         var methodPos = pointAt(file, 1, "price\"");
 
-        int lineBefore = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-            workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow()
-            .getRange().getStart().getLine();
-        assertThat(hoverText(workspace, file, methodPos)).contains("First doc.");
+        try (var store = priceServiceStore(srcRoot)) {
+            int lineBefore = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
+                workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow()
+                .getRange().getStart().getLine();
+            assertThat(hoverText(workspace, store, file, methodPos)).contains("First doc.");
 
-        // Edit the source: new Javadoc, and the method shifts down two lines.
-        Files.writeString(source, """
-            package com.example;
-            public class PriceService {
+            // Edit the source: new Javadoc, and the method shifts down two lines.
+            Files.writeString(source, """
+                package com.example;
+                public class PriceService {
 
 
-                /** Second doc, moved down. */
-                public Object price(Object table) { return null; }
-            }
-            """);
-        Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(
-            Files.getLastModifiedTime(source).toMillis() + 5000));
+                    /** Second doc, moved down. */
+                    public Object price(Object table) { return null; }
+                }
+                """);
+            Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(
+                Files.getLastModifiedTime(source).toMillis() + 5000));
 
-        // Only the source index is refreshed; the catalog is the same instance.
-        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
-        assertThat(workspace.catalog())
-            .as("source-cadence refresh must not rebuild the catalog")
-            .isSameAs(catalogBefore);
+            // Both readers of the edited file are refreshed, and nothing else is; the catalog is the
+            // same instance it was before.
+            workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
+            store.refreshJavaSources(srcRoot);
+            assertThat(workspace.catalog())
+                .as("source-cadence refresh must not rebuild the catalog")
+                .isSameAs(catalogBefore);
 
-        int lineAfter = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-            workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow()
-            .getRange().getStart().getLine();
+            int lineAfter = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
+                workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow()
+                .getRange().getStart().getLine();
 
-        // Hover and goto move together: the new Javadoc and the new line both come
-        // from the one refreshed index, so they cannot show two different snapshots.
-        assertThat(lineAfter).isGreaterThan(lineBefore);
-        assertThat(hoverText(workspace, file, methodPos)).contains("Second doc, moved down.");
+            // Hover and goto move together off one edit: the new doc comment comes from the store's
+            // parse of the file and the new line from the index's, and the two cannot disagree about
+            // a declaration they both just read.
+            assertThat(lineAfter).isGreaterThan(lineBefore);
+            assertThat(hoverText(workspace, store, file, methodPos)).contains("Second doc, moved down.");
+        }
     }
 
-    private static String hoverText(Workspace workspace, FileSnapshot file, Point pos) {
+    /**
+     * The census and the parse for {@code PriceService}, captured from the file the test wrote: the
+     * classpath side is what makes the method resolvable, the parse side is where its doc comment
+     * comes from, and hover needs both.
+     */
+    private static StoreFixture priceServiceStore(Path srcRoot) {
+        var store = StoreFixture.ofClasspath(srcRoot, List.of(StoreFixture.jarClass(SVC_FQN,
+            List.of(StoreFixture.method("price", "Object", StoreFixture.parameter("table", "Object"))))));
+        store.refreshJavaSources(srcRoot);
+        return store;
+    }
+
+    private static String hoverText(
+        Workspace workspace, StoreFixture store, FileSnapshot file, Point pos
+    ) {
         return Hovers.compute(LspVocabulary.load(), file, workspace.catalog(),
-            workspace.sourceIndex(), workspace.snapshot(), pos, false)
+            Optional.of(store.handle()), workspace.sourceIndex(), workspace.snapshot(), pos, false)
             .orElseThrow().getContents().getRight().getValue();
     }
 

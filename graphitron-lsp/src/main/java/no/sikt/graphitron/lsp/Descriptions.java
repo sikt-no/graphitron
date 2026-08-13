@@ -18,9 +18,13 @@ import no.sikt.graphitron.rewrite.catalog.SourceWalker;
  *
  * <p>Precedence differs per element because the build-derivable fallback differs:
  * a table's SQL comment is more authoritative than the generated class Javadoc
- * (which usually just echoes the table name), so it wins; for columns, classes,
- * and methods the catalog carries no Javadoc, so the source index is the only
- * source and wins whenever present.
+ * (which usually just echoes the table name), so it wins; for a column the catalog
+ * carries no Javadoc, so the source index is the only source and wins whenever present.
+ *
+ * <p>Shrinking as the surfaces move. The class and method overlays are gone: hover reads both from
+ * the store now, where the same overlay is a join to the {@code java_} family. What is left is the
+ * table and column pair, plus the class-Javadoc lookup the declaration-name hover still shares, and
+ * this class retires with them.
  */
 public final class Descriptions {
 
@@ -46,24 +50,6 @@ public final class Descriptions {
             }
         }
         return column.description();
-    }
-
-    /** Service / record class: the class Javadoc from the source index; else the catalog fallback. */
-    public static String ofClass(CompletionData.ExternalReference ref, SourceWalker.Index sourceIndex) {
-        String javadoc = classJavadoc(ref.className(), sourceIndex);
-        return javadoc.isEmpty() ? ref.description() : javadoc;
-    }
-
-    /** Method: the method Javadoc from the source index; else the catalog fallback. */
-    public static String ofMethod(
-        CompletionData.ExternalReference ref, CompletionData.Method method, SourceWalker.Index sourceIndex
-    ) {
-        var decl = sourceIndex.methods()
-            .get(new SourceWalker.MethodKey(ref.className(), method.name(), method.parameters().size()));
-        if (decl != null && !decl.javadoc().isEmpty()) {
-            return decl.javadoc();
-        }
-        return method.description();
     }
 
     /**

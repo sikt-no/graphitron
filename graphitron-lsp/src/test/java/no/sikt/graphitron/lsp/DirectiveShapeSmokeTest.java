@@ -8,10 +8,12 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import org.eclipse.lsp4j.Hover;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
@@ -20,6 +22,7 @@ import io.github.treesitter.jtreesitter.Point;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -152,7 +155,7 @@ class DirectiveShapeSmokeTest {
         var data = catalogWith("com.example.FooDto", null);
         Point cursor = pointInside(source, "com.example");
 
-        var hover = Hovers.compute(WorkspaceFileTestSupport.snapshot(source), data,
+        var hover = hoverWithoutStore(WorkspaceFileTestSupport.snapshot(source), data,
             LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
@@ -248,6 +251,17 @@ class DirectiveShapeSmokeTest {
         if (idx < 0) return fallback;
         int valueStart = idx + prefixSearch.indexOf('"') + 1;
         return lspPoint(source, valueStart + 1);
+    }
+
+    /**
+     * Hover with no store. The case here is the {@code @record} carve-out, whose whole subject is
+     * that the class arm declines before it reads anything, so the census it would have read is
+     * beside the point.
+     */
+    private static Optional<Hover> hoverWithoutStore(
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+    ) {
+        return Hovers.compute(file, catalog, Optional.empty(), snapshot, pos);
     }
 
     private static Directives.Directive directiveAt(String source, Point cursor) {

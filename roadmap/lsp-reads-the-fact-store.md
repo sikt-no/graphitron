@@ -444,7 +444,7 @@ around it.
 |---|---|---|
 | Directive name token | Directive description | `graphql_directive` |
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
-| `MethodNameBinding` | Signature + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family |
+| `MethodNameBinding` | A signature per overload + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family, joined on arity |
 | `CatalogTableBinding` | Comment, column and reference counts | `sql_table`, `sql_column`, `sql_constraint` |
 | `CatalogColumnBinding` | Column type, nullability, comment; member name and type when the backing is a record or POJO | `sql_column` (needs binding type); `jvm_record_component`, `jvm_method` for the member arms |
 | `CatalogFkBinding` | FK direction and endpoints | `sql_referential_constraint` |
@@ -888,6 +888,49 @@ snapshot, for the two arms whose table is a classifier decision.
   the arm that still renders the bundled docstring without reading facts. The bundled-shadows-snapshot
   precedence case retires from this arm: a redeclaration of a bundled directive loses at registry
   admission, where the loader's refusal is already covered, so there is nothing for the arm to decide.
+
+## Settled while building: hover's Java-side arms
+
+Hover's class-name and method arms read the store, which makes hover the first capability to be
+served by two sources at once: these two answer from facts and the other nine still answer from the
+projection. That is what the strangler window looks like inside one surface, and it is why the store
+arrived as a parameter on `Hovers.compute` beside the catalog rather than replacing it.
+
+* **The shared shape the completion tranche deferred is a reader, not a view.** That increment left
+  the question open until a second consumer could say what it needed, and the answer is that the two
+  consumers need the same *rows* and different everything else: completion offers every method a
+  class has, hover names one and overlays a doc comment on it. What they genuinely share is the join
+  between `jvm_method` and `jvm_method_parameter`, folding a one-to-many into a list, and spelling a
+  signature the way a Java author reads one. The first is relational and the other two are not, and
+  the third is presentation the store must never inherit, so the shape landed as an LSP-side reader
+  (`ClasspathMethods`) that both arms call. A view would have had to carry the rendered signature to
+  be worth anything to either of them.
+* **Hover shows every overload, where the projection showed the first one it held.** The same
+  recovery the arg-mapping arm made, for the same reason: SDL names a method by name alone, so which
+  overload an author meant is not a question a census can answer, and picking one silently was the
+  projection's list order rather than a rule. Each signature carries the doc comment of the
+  declaration with its arity.
+* **Arity is the only join the two populations admit.** `java_method_declaration` counts parameters
+  because an unattributed parse reads types as written, and `jvm_method` spells an erased descriptor,
+  so the count is their entire common ground; the family's own charter says as much. Two same-arity
+  overloads therefore share one comment, the first in file-then-declaration order. The projection's
+  index keyed the same way and had the same collapse, so this is parity rather than a new limit, but
+  it is now a stated tiebreak rather than a map that silently kept one entry.
+* **Presence and description are one query on the class arm.** A `jvm_class` row inside the graph's
+  read set is what makes the FQN resolvable, and the doc comment hangs off it as a correlated select
+  into `java_class_declaration`, which is the same subselect-not-join argument the table completion
+  arm landed on: one FQN declared in two files is two rows, and a join would multiply the answer.
+* **A class the graph never walked hovers as unknown, and that is now testable.** The census is
+  per-graph, so the fall-through to the coordinate's SDL docstring is what a sibling module's class
+  gets, not just an unresolvable one. The projection had one workspace-wide list and could not tell
+  the two apart.
+* **The source-cadence test asserts what it used to get for free.** Its property was that hover and
+  goto-definition read the *same* index, so they could not disagree. Hover reads the store now and
+  definition still reads the index, so the case writes one file, refreshes both readers, and asserts
+  the doc comment and the position move together off one edit. That is the property that actually
+  matters, and pinning it during the window is worth more than it was when one index made it trivial.
+* **`Descriptions` lost its class and method overlays**, having no caller left; the table and column
+  pair and the class-Javadoc lookup the declaration-name hover shares stay until those arms move.
 
 ## Retired vocabulary
 

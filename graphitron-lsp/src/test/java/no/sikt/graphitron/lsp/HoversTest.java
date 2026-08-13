@@ -9,12 +9,18 @@ import no.sikt.graphitron.rewrite.catalog.InputValueShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeShape;
+import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupKind;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Point;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,6 +30,48 @@ import static org.assertj.core.api.Assertions.assertThat;
  * or unknown arg values produce no hover so the editor falls through.
  */
 class HoversTest {
+
+    /** The class the Java-side arms hover on, present in the census and declared in a source file. */
+    private static final String SERVICE = "com.example.FilmService";
+
+    @TempDir
+    static Path tmp;
+
+    private static StoreFixture store;
+
+    /**
+     * One captured census for every case whose subject is a class or one of its methods, plus the
+     * source file that declares them. Both halves matter and they are two populations: the classpath
+     * scan is what makes a name resolvable at all, and the parse is where a doc comment comes from,
+     * joined by name across two cadences.
+     */
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.ofClasspath(tmp, List.of(
+            StoreFixture.jarClass(SERVICE, List.of(
+                StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
+                StoreFixture.method("raw", "List", StoreFixture.parameter(null, "int")),
+                StoreFixture.method("page", "Object", StoreFixture.parameter("film", "Object")),
+                StoreFixture.method("page", "Object",
+                    StoreFixture.parameter("film", "Object"), StoreFixture.parameter("limit", "int")))),
+            StoreFixture.jarClass("com.example.FooDto", List.of())));
+        store.withJavaSource(tmp.resolve("src"), SERVICE, """
+            /** Lists films from the catalog. */
+            public class FilmService {
+                /** Returns the first N films. */
+                public Object list(int limit) { return null; }
+                /** One page of films. */
+                public Object page(Object film) { return null; }
+                /** One page of films, capped. */
+                public Object page(Object film, int limit) { return null; }
+            }
+            """);
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
 
     @Test
     void tableHoverShowsTableMetadata() {
@@ -35,7 +83,7 @@ class HoversTest {
         // Cursor inside the "film" string value.
         var pos = pointAt(file, 0, "film");
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Table** `film`");
@@ -53,7 +101,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "GHOST");
 
-        assertThat(Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
@@ -65,7 +113,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var hover = Hovers.compute(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");
@@ -92,7 +140,7 @@ class HoversTest {
                 List.of(new TypeBackingShape.MemberSlot("title", "String", "title"))
             )),
         Map.of());
-        var hover = Hovers.compute(file, filmCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmCatalog(), snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**title**").contains("`String`");
     }
@@ -106,7 +154,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Foreign key** `FILM__FILM_LANGUAGE_ID_FKEY`");
@@ -122,7 +170,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Table** `language`");
@@ -144,7 +192,7 @@ class HoversTest {
         int col = "type Foo @t".length();
         var pos = new Point(line, col);
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
+        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
             .orElseThrow();
         assertThat(hover.getContents().getRight().getValue()).isNotBlank();
     }
@@ -158,7 +206,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "GHOST");
 
-        assertThat(Hovers.compute(file, filmCatalog(), fooFilmSnapshot(), pos)).isEmpty();
+        assertThat(hoverWithoutStore(file, filmCatalog(), fooFilmSnapshot(), pos)).isEmpty();
     }
 
     /** {@code Foo → TableBacking("film")}; matches every {@code type Foo @table(name: "film")} fixture in this file. */
@@ -187,12 +235,28 @@ class HoversTest {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
+
+        assertThat(markdownAt(file, pointAt(file, 1, "FilmService")))
+            .contains("**Class** `com.example.FilmService`");
+    }
+
+    @Test
+    void aClassNoGraphOfThisSessionsHasWalkedHoversAsUnknown() {
+        // The census is a graph's own. A second graph in the same store carries the class; hovering
+        // through this one falls through to the SDL docstring, the same answer an author gets before
+        // anything has been compiled.
+        var file = file("""
+            type Query {
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+            }
+            """);
         var pos = pointAt(file, 1, "FilmService");
 
-        var hover = Hovers.compute(file, classCatalog("com.example.FilmService"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-
-        var md = hover.getContents().getRight().getValue();
-        assertThat(md).contains("**Class** `com.example.FilmService`");
+        var md = Hovers.compute(file, emptyCatalog(), Optional.of(store.handleFor("elsewhere")),
+            LspSchemaSnapshot.unavailable(), pos).orElseThrow()
+            .getContents().getRight().getValue();
+        assertThat(md).doesNotContain("**Class**");
+        assertThat(md).isNotBlank();
     }
 
     @Test
@@ -206,11 +270,7 @@ class HoversTest {
                 bar: Int
             }
             """);
-        var pos = pointAt(file, 0, "FooDto");
-
-        var hover = Hovers.compute(file, classCatalog("com.example.FooDto"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-
-        var md = hover.getContents().getRight().getValue();
+        var md = markdownAt(file, pointAt(file, 0, "FooDto"));
         assertThat(md).doesNotContain("**Class**");
         assertThat(md).isNotBlank();
     }
@@ -227,55 +287,36 @@ class HoversTest {
                 x: Int @service(service: {className: "com.example.Missing", method: "list"})
             }
             """);
-        var pos = pointAt(file, 1, "Missing");
 
-        var hover = Hovers.compute(file, classCatalog("com.example.Other"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
         // The SDL docstring on ExternalCodeReference.className is non-empty
         // and references either "klassen" (Norwegian) or className itself.
-        assertThat(md).isNotBlank();
+        assertThat(markdownAt(file, pointAt(file, 1, "Missing"))).isNotBlank();
     }
 
     @Test
     void serviceClassHoverShowsJavadocWhenPresent() {
+        // The doc comment is a join to the java-source family by name: the classpath census carries
+        // no Javadoc by design, and the source parse is what a hover body renders.
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
-        var pos = pointAt(file, 1, "FilmService");
 
-        var catalog = new CompletionData(
-            List.of(), List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "Lists films from the catalog.",
-                List.of(), List.of())));
-
-        var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        var md = markdownAt(file, pointAt(file, 1, "FilmService"));
         assertThat(md).contains("**Class** `com.example.FilmService`");
         assertThat(md).contains("Lists films from the catalog.");
     }
 
     @Test
     void serviceMethodHoverShowsJavadocWhenPresent() {
-        var method = new CompletionData.Method(
-            "list", "List", "Returns the first N films.",
-            List.of(new CompletionData.Parameter("limit", "int", null, "")));
-        var catalog = new CompletionData(
-            List.of(), List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "",
-                List.of(method), List.of())));
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
-        var pos = pointAt(file, 1, "list");
 
-        var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        var md = markdownAt(file, pointAt(file, 1, "list"));
         assertThat(md).contains("**Method** `list`");
         assertThat(md).contains("Returns the first N films.");
         assertThat(md).contains("List list(int limit)");
@@ -288,41 +329,41 @@ class HoversTest {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
-        var pos = pointAt(file, 1, "list");
 
-        var hover = Hovers.compute(file, classWithMethodCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-
-        var md = hover.getContents().getRight().getValue();
+        var md = markdownAt(file, pointAt(file, 1, "list"));
         assertThat(md).contains("**Method** `list`");
         assertThat(md).contains("`com.example.FilmService`");
         assertThat(md).contains("List list(int limit)");
     }
 
     @Test
-    void methodHoverWithNullParameterNamesShowsArgPlaceholderAndWarning() {
-        var method = new CompletionData.Method(
-            "list", "List", "",
-            List.of(new CompletionData.Parameter(null, "int", null, ""))
-        );
-        var catalog = new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "",
-                List.of(method)
-            , List.of()))
-        );
+    void everyOverloadOfTheNamedMethodIsShownWithItsOwnDoc() {
+        // SDL names a method by name alone, so the hover cannot pick an overload without inventing
+        // a rule. Both signatures show, in descriptor order, and each carries the doc comment its
+        // own arity's declaration has: the arity is what the classfile and the source parse can be
+        // joined on at all.
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+                x: Int @service(service: {className: "com.example.FilmService", method: "page"})
             }
             """);
-        var pos = pointAt(file, 1, "list");
 
-        var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var md = markdownAt(file, pointAt(file, 1, "page"));
+        assertThat(md).contains("Object page(Object film)");
+        assertThat(md).contains("Object page(Object film, int limit)");
+        assertThat(md).containsSubsequence("One page of films.", "One page of films, capped.");
+    }
 
-        var md = hover.getContents().getRight().getValue();
-        assertThat(md).contains("List list(int arg0)");
+    @Test
+    void methodHoverWithNullParameterNamesShowsArgPlaceholderAndWarning() {
+        var file = file("""
+            type Query {
+                x: Int @service(service: {className: "com.example.FilmService", method: "raw"})
+            }
+            """);
+
+        var md = markdownAt(file, pointAt(file, 1, "raw"));
+        assertThat(md).contains("List raw(int arg0)");
         assertThat(md).contains("-parameters");
     }
 
@@ -336,10 +377,8 @@ class HoversTest {
                 x: Int @service(service: {className: "com.example.FilmService", method: "missing"})
             }
             """);
-        var pos = pointAt(file, 1, "missing");
 
-        var hover = Hovers.compute(file, classWithMethodCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue()).isNotBlank();
+        assertThat(markdownAt(file, pointAt(file, 1, "missing"))).isNotBlank();
     }
 
     // ---- user-declared directives via the snapshot. ----
@@ -359,7 +398,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@auth") + 2;
         var pos = new Point(line, col);
 
-        var hover = Hovers.compute(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, emptyCatalog(), snapshot, pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue())
             .contains("guards access");
     }
@@ -379,7 +418,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("role:") + 1;
         var pos = new Point(line, col);
 
-        var hover = Hovers.compute(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, emptyCatalog(), snapshot, pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue())
             .contains("required role name");
     }
@@ -397,7 +436,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@auth") + 2;
         var pos = new Point(line, col);
 
-        assertThat(Hovers.compute(file, emptyCatalog(), LspSchemaSnapshot.unavailable(), pos))
+        assertThat(hoverWithoutStore(file, emptyCatalog(), LspSchemaSnapshot.unavailable(), pos))
             .isEmpty();
     }
 
@@ -415,7 +454,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@auth") + 2;
         var pos = new Point(line, col);
 
-        var hover = Hovers.compute(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, emptyCatalog(), snapshot, pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue())
             .contains("guards access");
     }
@@ -445,7 +484,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("extraArg:") + 1;
         var pos = new Point(line, col);
 
-        assertThat(Hovers.compute(file, filmCatalog(),
+        assertThat(hoverWithoutStore(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(shadow), Map.of(), Map.of()), pos))
             .isEmpty();
     }
@@ -465,7 +504,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@table") + 2;
         var pos = new Point(line, col);
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
+        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
             .orElseThrow();
         var md = hover.getContents().getRight().getValue();
         assertThat(md).isNotBlank();
@@ -488,7 +527,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "title");
 
-        var hover = Hovers.compute(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");
@@ -504,7 +543,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "Film");
 
-        var hover = Hovers.compute(file, nodeCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = hoverWithoutStore(file, nodeCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Node** `Film`");
@@ -547,29 +586,6 @@ class HoversTest {
         return new CompletionData(List.of(), List.of(), List.of());
     }
 
-    private static CompletionData classWithMethodCatalog() {
-        var listMethod = new CompletionData.Method(
-            "list", "List", "",
-            List.of(new CompletionData.Parameter("limit", "int", null, ""))
-        );
-        return new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "",
-                List.of(listMethod)
-            , List.of()))
-        );
-    }
-
-    private static CompletionData classCatalog(String fqn) {
-        return new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(), List.of()))
-        );
-    }
-
     // ===== @field(name:) on @reference path field hovers on terminal-table column =====
 
     @Test
@@ -591,7 +607,7 @@ class HoversTest {
                     "language", "lang_name", List.of())),
             java.util.Map.of()
         );
-        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `lang_name`");
@@ -619,7 +635,7 @@ class HoversTest {
             java.util.Map.of()
         );
 
-        assertThat(Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos)).isEmpty();
+        assertThat(hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos)).isEmpty();
     }
 
     // ===== @field(name:) on a @table-interface participant cross-table reference =====
@@ -647,7 +663,7 @@ class HoversTest {
                     "language", "lang_name", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
             java.util.Map.of()
         );
-        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `lang_name`");
@@ -678,7 +694,7 @@ class HoversTest {
                     "language", List.of(), false, false)),
             java.util.Map.of()
         );
-        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `lang_name`");
@@ -710,6 +726,28 @@ class HoversTest {
 
     private static FileSnapshot file(String source) {
         return WorkspaceFileTestSupport.snapshot(source);
+    }
+
+    /**
+     * Hover with no store, which is the shape for every arm that still reads the projection. The two
+     * Java-side arms read facts and answer nothing here; the cases that exercise them go through
+     * {@link #hoverAt} and the captured census instead.
+     */
+    private static Optional<Hover> hoverWithoutStore(
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+    ) {
+        return Hovers.compute(file, catalog, Optional.empty(), snapshot, pos);
+    }
+
+    /** Hover against the captured census: the shape for the class-name and method arms. */
+    private static Optional<Hover> hoverAt(FileSnapshot file, Point pos) {
+        return Hovers.compute(file, emptyCatalog(), Optional.of(store.handle()),
+            LspSchemaSnapshot.unavailable(), pos);
+    }
+
+    /** The markdown of a hover that must exist. */
+    private static String markdownAt(FileSnapshot file, Point pos) {
+        return hoverAt(file, pos).orElseThrow().getContents().getRight().getValue();
     }
 
     private static CompletionData filmCatalog() {
