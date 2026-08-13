@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R639` | Session identity is a Java method resolved at build time, not generated SQL | Spec | 2026-08-12 | [plan](session-identity-method-hooks.md) |
+| `R639` | Session identity is a Java method resolved at build time, not generated SQL | Spec | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R638` | The LSP is a fact-store client | Spec | 2026-08-12 | [plan](lsp-reads-the-fact-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
