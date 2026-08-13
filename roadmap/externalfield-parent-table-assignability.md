@@ -1,7 +1,7 @@
 ---
 id: R646
 title: "Enforce @externalField helper parameter assignability against the parent table"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: codegen-correctness
