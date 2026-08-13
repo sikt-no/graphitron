@@ -89,6 +89,7 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
+import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -273,18 +274,23 @@ class FieldBuilder {
     // ===== Shared resolution helpers =====
 
     /**
-     * Extracts the first {@link MethodRef.Param.Sourced} parameter from the given method, or
-     * {@code null} when the method has no such parameter.
-     *
-     * <p>A {@code null} result means the service method lacks the required {@code Sources}
-     * parameter — the validator will surface this as an error before code generation runs.
+     * The first {@link MethodRef.Param.Sourced} parameter of a child {@code @service} method's
+     * resolved signature, which every child coordinate has:
+     * {@link ServiceDirectiveResolver}'s classify phase rejects a child whose method declares no
+     * {@code Sources} parameter, so the batch key is guaranteed here rather than deferred to the
+     * validator. The throw names the rejecting phase; reaching it means that rejection has gone
+     * missing, not that the author wrote something new.
      */
-    private static MethodRef.Param.Sourced extractSourced(MethodRef method) {
+    private static MethodRef.Param.Sourced requireSourced(MethodRef method, String parentTypeName,
+            String fieldName) {
         return method.params().stream()
-            .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> (MethodRef.Param.Sourced) p)
+            .filter(MethodRef.Param.Sourced.class::isInstance)
+            .map(MethodRef.Param.Sourced.class::cast)
             .findFirst()
-            .orElse(null);
+            .orElseThrow(() -> new IllegalStateException(
+                "child @service field '" + parentTypeName + "." + fieldName + "' resolved with no"
+                + " Sources parameter — ServiceDirectiveResolver's classify phase rejects that"
+                + " coordinate before it reaches a leaf"));
     }
 
     /**
@@ -6282,29 +6288,30 @@ class FieldBuilder {
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    var sourced = extractSourced(tb.method());
-                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
-                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, tb.returnType());
+                    var sourced = requireSourced(tb.method(), parentTypeName, name);
                     yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), sk, lr, ch));
+                            tb.method(), buildServiceSourceKey(sourced), tb.keySource(),
+                            buildServiceLoaderRegistration(sourced, tb.returnType()), ch));
                 }
-                // The resolver owns coordinate verdicts, so a record-backed parent hosting a
-                // Result / Scalar / Polymorphic @service never reaches a Success arm here: its
-                // classify phase rejects the pairing outright. These arms are unreachable by
-                // construction and say so rather than restating a rejection at a second seat.
-                case ServiceDirectiveResolver.Resolved.Result r ->
-                    throw new IllegalStateException(
-                        "@service on a record-backed parent classified to a Result return — "
-                        + "ServiceDirectiveResolver's record-parent classify arm rejects this coordinate: field '"
-                        + parentTypeName + "." + name + "'");
-                case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    throw new IllegalStateException(
-                        "@service on a record-backed parent classified to a Scalar return — "
-                        + "ServiceDirectiveResolver's record-parent classify arm rejects this coordinate: field '"
-                        + parentTypeName + "." + name + "'");
+                case ServiceDirectiveResolver.Resolved.Result r -> {
+                    var sourced = requireSourced(r.method(), parentTypeName, name);
+                    yield buildMethodBackedWithChannel(r.returnType(), r.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
+                            servicePath.elements(), r.method(), buildServiceSourceKey(sourced),
+                            r.keySource(), buildServiceLoaderRegistration(sourced, r.returnType()), ch));
+                }
+                case ServiceDirectiveResolver.Resolved.Scalar s -> {
+                    var sourced = requireSourced(s.method(), parentTypeName, name);
+                    yield buildMethodBackedWithChannel(s.returnType(), s.method(),
+                        parentTypeName, name, location, fieldDef,
+                        ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
+                            servicePath.elements(), s.method(), buildServiceSourceKey(sourced),
+                            s.keySource(), buildServiceLoaderRegistration(sourced, s.returnType()), ch));
+                }
                 case ServiceDirectiveResolver.Resolved.Polymorphic p ->
                     throw new IllegalStateException(
                         "child @service classified to a Polymorphic return — "
@@ -6936,6 +6943,141 @@ class FieldBuilder {
     }
 
     /**
+     * A class-backed parent's answer to the batch key a child {@code @service} field's
+     * {@code Sources} element type names. Called from {@link ServiceDirectiveResolver}'s classify
+     * phase, which owns the coordinate verdict; this helper owns the reflection the answer needs.
+     *
+     * <p>The element type is the input, not a claim to be checked: it resolves through the catalog
+     * to a real table whose primary key is a real column tuple, and the question put to the parent
+     * has a determinate answer, "can you produce a record of that table?". Two producers qualify,
+     * and they are the {@link ServiceKeySource} arms:
+     *
+     * <ul>
+     *   <li>the parent's backing <em>is</em> a record of the key owner's table
+     *       ({@link ServiceKeySource.FromHeldRecord}), or</li>
+     *   <li>the parent's backing class exposes exactly one zero-arg accessor returning one
+     *       ({@link ServiceKeySource.FromAccessor}).</li>
+     * </ul>
+     *
+     * <p>This is not a reduction of {@link #collectAccessorMatches}: that helper enumerates by the
+     * child field's name and filters by the field's {@code @table} return, and neither anchor exists
+     * here (the field is named after what the service returns, and the return is often a scalar).
+     * Matching by field name would let a coincidentally-named accessor become the batch key, so the
+     * enumeration is name-free ({@link ClassAccessorResolver#enumerateZeroArg}) and the reduction is
+     * this method's own.
+     *
+     * <p>Resolution is per field, not per parent type: two {@code @service} children of the same DTO
+     * may legitimately key on different tables, and a parent able to produce both serves both.
+     */
+    ServiceDirectiveResolver.ParentKeyResolution resolveServiceKeySource(
+            String parentTypeName, GraphitronType.ResultType parentType,
+            ServiceCatalog.ServiceSignature signature, ServiceCatalog.SourcesShape shape) {
+        String site = "method '" + signature.methodName() + "' in class '" + signature.className() + "'";
+        if (!(shape.wrap() instanceof SourceKey.Wrap.TableRecord tr)) {
+            return keySourceRejection(site + " takes a Row/Record batch parameter, but type '"
+                + parentTypeName + "' is backed by a Java class rather than a table, so there is no"
+                + " projected row to read anonymous key columns off. Declare the batch key as a jOOQ"
+                + " record class instead: the element type names the table the batch keys on. A"
+                + " parent carrying only scalar key columns has no route today");
+        }
+        TableRef keyOwner = svc.resolveTableByRecordClassName(tr.className()).orElse(null);
+        if (keyOwner == null) {
+            return keySourceRejection(site + " declares a batch key of '" + tr.className().simpleName()
+                + "', which is not a record class in the generated jOOQ catalog, so it names no table"
+                + " to key the batch on");
+        }
+        if (!keyOwner.hasPrimaryKey()) {
+            return keySourceRejection(site + " declares a batch key of '" + tr.className().simpleName()
+                + "', whose table '" + keyOwner.tableName() + "' has no primary key, so there is"
+                + " nothing to key the batch on. Name a record class whose table is keyed, or add a"
+                + " primary key to '" + keyOwner.tableName() + "'");
+        }
+        if (parentType instanceof GraphitronType.JooqTableRecordType jtr
+                && jtr.table() != null
+                && jtr.table().denotesSameTableAs(keyOwner)) {
+            return new ServiceDirectiveResolver.ParentKeyResolution.Available(
+                new ServiceKeySource.FromHeldRecord(keyOwner));
+        }
+        String parentFqClassName = switch (parentType) {
+            case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
+            case GraphitronType.PojoResultType prt -> prt.fqClassName();
+            // A generic jOOQ record carrier holds no typed class to read an accessor off, and a
+            // typed one that got here holds the wrong table.
+            case GraphitronType.JooqRecordCarrier _ -> null;
+        };
+        if (parentFqClassName == null) {
+            return cannotProduceKey(parentTypeName, site, tr, keyOwner, null);
+        }
+        Class<?> parentClass;
+        try {
+            parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
+        } catch (ClassNotFoundException e) {
+            return cannotProduceKey(parentTypeName, site, tr, keyOwner, parentFqClassName);
+        }
+        var singles = new ArrayList<java.lang.reflect.Method>();
+        var manys = new ArrayList<java.lang.reflect.Method>();
+        Class<?> elementClass = null;
+        for (var m : ClassAccessorResolver.enumerateZeroArg(parentClass)) {
+            ReturnAxis axis = classifyAccessorReturn(m.getGenericReturnType());
+            if (axis == null) continue;
+            var accessorTable = svc.resolveTableByRecordClass(axis.elementClass());
+            if (accessorTable.isEmpty() || !accessorTable.get().denotesSameTableAs(keyOwner)) continue;
+            if (axis.container() == ServiceCatalog.ContainerKind.SINGLE) {
+                singles.add(m);
+                elementClass = axis.elementClass();
+            } else {
+                manys.add(m);
+            }
+        }
+        if (singles.size() > 1) {
+            return keySourceRejection("type '" + parentTypeName + "' is backed by '"
+                + parentFqClassName + "', which exposes more than one zero-arg accessor returning a '"
+                + keyOwner.tableName() + "' record: ["
+                + singles.stream().map(java.lang.reflect.Method::getName).collect(Collectors.joining(", "))
+                + "]. " + site + " declares '" + tr.className().simpleName() + "' as its batch key, and"
+                + " which accessor produces it is ambiguous; leave exactly one, or key the batch on a"
+                + " different table");
+        }
+        if (singles.size() == 1) {
+            return new ServiceDirectiveResolver.ParentKeyResolution.Available(
+                new ServiceKeySource.FromAccessor(keyOwner, new AccessorRef(
+                    ClassName.get(parentClass), singles.get(0).getName(), ClassName.get(elementClass))));
+        }
+        if (!manys.isEmpty()) {
+            return keySourceRejection("type '" + parentTypeName + "' is backed by '"
+                + parentFqClassName + "', whose accessor '" + manys.get(0).getName()
+                + "' returns many '" + keyOwner.tableName() + "' records. A child @service batches one"
+                + " key per parent (its Map<Key, Value> return is keyed that way), so a list-valued"
+                + " accessor cannot supply the key; expose a single-record accessor, or key the batch"
+                + " on a table the parent produces one of");
+        }
+        return cannotProduceKey(parentTypeName, site, tr, keyOwner, parentFqClassName);
+    }
+
+    /**
+     * The no-producer rejection: the shape the author most often lands on, so it names both routes
+     * out rather than only the one that failed. {@code backingClassName} is {@code null} when the
+     * parent carries no typed backing class at all.
+     */
+    private static ServiceDirectiveResolver.ParentKeyResolution cannotProduceKey(
+            String parentTypeName, String site, SourceKey.Wrap.TableRecord tr, TableRef keyOwner,
+            String backingClassName) {
+        return keySourceRejection(site + " declares a batch key of '" + tr.className().simpleName()
+            + "' (table '" + keyOwner.tableName() + "'), but type '" + parentTypeName + "'"
+            + (backingClassName == null
+                ? " carries no backing class that can produce one"
+                : "'s backing class '" + backingClassName + "' cannot produce one")
+            + ". Either expose a zero-arg accessor returning '" + tr.className().simpleName()
+            + "' on that class, or change the Sources element type to a record class the parent can"
+            + " produce. A parent that carries only scalar key columns has no route today");
+    }
+
+    private static ServiceDirectiveResolver.ParentKeyResolution keySourceRejection(String message) {
+        return new ServiceDirectiveResolver.ParentKeyResolution.Rejected(
+            Rejection.structural("service method could not be resolved — " + message));
+    }
+
+    /**
      * Classifies an interface- or union-typed child field on a class-backed parent. The
      * sole producer of {@link InterfaceField} / {@link UnionField} on the class-backed-parent
      * branch (the table-backed branch produces them in {@link #classifyObjectReturnChildField};
@@ -7246,32 +7388,29 @@ class FieldBuilder {
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    var sourced = extractSourced(tb.method());
-                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
-                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, tb.returnType());
+                    var sourced = requireSourced(tb.method(), parentTypeName, name);
                     yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), sk, lr, ch));
+                            tb.method(), buildServiceSourceKey(sourced), tb.keySource(),
+                            buildServiceLoaderRegistration(sourced, tb.returnType()), ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Result r -> {
-                    var sourced = extractSourced(r.method());
-                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
-                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, r.returnType());
+                    var sourced = requireSourced(r.method(), parentTypeName, name);
                     yield buildMethodBackedWithChannel(r.returnType(), r.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
-                            servicePath.elements(), r.method(), sk, lr, ch));
+                            servicePath.elements(), r.method(), buildServiceSourceKey(sourced),
+                            r.keySource(), buildServiceLoaderRegistration(sourced, r.returnType()), ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s -> {
-                    var sourced = extractSourced(s.method());
-                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
-                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, s.returnType());
+                    var sourced = requireSourced(s.method(), parentTypeName, name);
                     yield buildMethodBackedWithChannel(s.returnType(), s.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
-                            servicePath.elements(), s.method(), sk, lr, ch));
+                            servicePath.elements(), s.method(), buildServiceSourceKey(sourced),
+                            s.keySource(), buildServiceLoaderRegistration(sourced, s.returnType()), ch));
                 }
                 // Polymorphic returns are supported on ROOT @service fields only, and the
                 // resolver's classify phase defers every child coordinate before binding, so this

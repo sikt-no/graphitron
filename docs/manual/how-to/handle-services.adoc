@@ -187,7 +187,7 @@ public static Map<Record1<Integer>, String> titleUppercase(Set<Record1<Integer>>
 
 The `Set<Record1<Integer>>` parameter is the framework's batch: one entry per distinct parent the request touched. The returned `Map`'s keys must be the same instances (or value-equal substitutes) the framework supplied; the framework reads each parent's value out of the map by lookup. Missing keys yield `null` for the field on that parent.
 
-The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. `ServiceCatalog.classifySourcesType` picks the matching batch shape from the parameter's reflected element type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you a typed record carrying the parent's primary key, which is often the most convenient key to write SQL against.
+The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. `ServiceCatalog.classifySourcesType` picks the matching batch shape from the parameter's reflected element type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you a typed record carrying the key columns, which is often the most convenient key to write SQL against, and is also what names the key on a class-backed parent.
 
 == `@service` on a child field: the `@splitQuery` contract
 
@@ -195,7 +195,7 @@ The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X exten
 
 Under `@splitQuery`, the runtime contract is:
 
-. The framework runs the parent query first. The parent's selection set is collected into a `Set<KeyType>` where `KeyType` is one of `Row<N>` / `Record<N>` / a typed `TableRecord`. Every shape carries the same thing: the parent's key columns, which for a `@table` parent are its primary key. The shapes differ in how you read them, not in what they contain.
+. The framework runs the parent query first. The parent's selection set is collected into a `Set<KeyType>` where `KeyType` is one of `Row<N>` / `Record<N>` / a typed `TableRecord`. Every shape carries the same thing: the batch key's columns. The shapes differ in how you read them, not in what they contain.
 . The framework dispatches the child `@service` once per request with that `Set`.
 . The service returns a `Map<KeyType, ChildValue>`. The framework reads each parent's value from the map and resolves the child for that parent.
 
@@ -221,11 +221,13 @@ The classifier picks the variant by inspecting the `Set<E>`'s element type:
 
 * `Row<N>`. Keys carry no value accessors; reconstruct keys with `DSL.row(value)` if you need to read or rebuild them. Use this when the SQL side composes against the row (`DSL.row(FILM_ID).in(filmIds)`).
 * `Record<N>`. Keys expose `.value1()`/`.value2()`/etc. Use this when the body needs to extract column values from each key.
-* `X extends TableRecord`. The framework supplies a typed record carrying the parent's primary key. Use this when a typed record is the shape your SQL wants to work with; read the key off it with the generated accessor (`film.getFilmId()`).
+* `X extends TableRecord`. The framework supplies a typed record carrying the key columns. Use this when a typed record is the shape your SQL wants to work with; read the key off it with the generated accessor (`film.getFilmId()`). This is also the shape that names the key on a class-backed parent, where the element type decides which table the batch keys on; see <<batching-class-backed>>.
 
 [IMPORTANT]
 ====
-*The keys carry the parent's primary key, and nothing else.* This is the contract in every shape, typed record included: a `FilmRecord` the framework hands you has `FILM_ID` populated and its other columns unset. If the body needs another column, fetch it, in one batched query, through the injected `DSLContext`.
+*The keys carry the key columns, and nothing else.* This is the contract in every shape, typed record included: a `FilmRecord` the framework hands you has `FILM_ID` populated and its other columns unset. If the body needs another column, fetch it, in one batched query, through the injected `DSLContext`.
+
+On a `@table` parent the key columns are that parent's primary key, which is the instance of the contract most schemas meet first. It is an instance and not the rule: on a class-backed parent the key columns are the primary key of whichever table the `Sources` element type names.
 
 That is what `titleTitlecase` does:
 
@@ -249,6 +251,46 @@ The contract holds identically under both parent kinds, so the same typed-record
 * *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The framework includes the parent's key columns in that SELECT whenever the `@service` field is selected (the field's own projection entry carries them, and the field's fetcher only runs when it is selected), and builds the key record from them.
 * *Service-returned parent* (the parent is itself a `@service` handing back a hand-rolled record, e.g. `selectFrom(FILM)` returning `Result<FilmRecord>`). A jOOQ-generated record always carries its own primary key, so the same read works with no framework SELECT involved.
 
+[#batching-class-backed]
+=== Batching a child `@service` on a class-backed parent
+
+A child `@service` batches against a key its parent can produce, and the `Sources` parameter's element type names that key. When the parent type carries `@table`, the element is the parent's own record and the key is its primary key, so there is nothing to think about. When the parent is class-backed (a DTO a service returned, or a Java type an accessor chain reached), the element names whichever table the batch keys on, and the parent has to be able to produce it.
+
+[source,graphql]
+----
+type Aktivitet {          # class-backed: produced by a @service returning Aktivitet
+    navn: String
+    beskrivelse: String @service(
+        service: {className: "no.example.TekstService", method: "hentBeskrivelser"}
+    )
+}
+----
+
+[source,java]
+----
+public static Map<AktivitetRecord, String> hentBeskrivelser(
+        Set<AktivitetRecord> keys, DSLContext ctx) { ... }
+----
+
+`AktivitetRecord` names the key: the framework resolves it to the `aktivitet` table and keys the batch on that table's primary key. For the parent to supply it, one of two things must hold:
+
+* the parent's backing class *is* an `AktivitetRecord`, or
+* the parent's backing class exposes exactly one zero-arg accessor returning `AktivitetRecord`.
+
+As everywhere else on the `@service` path, the records the framework hands you carry the key columns and nothing else, even when the accessor it read them from returned a fully populated record. Fetch the rest through the injected `DSLContext`, in one query for the batch.
+
+If neither holds, the build fails:
+
+....
+@service on 'Aktivitet.beskrivelse' declares a batch key of 'AktivitetRecord'
+(table 'aktivitet'), but the parent type's backing class 'no.example.Aktivitet'
+cannot produce one. Either expose a zero-arg accessor returning 'AktivitetRecord'
+on that class, or change the Sources element type to a record class the parent
+can produce. A parent that carries only scalar key columns has no route today.
+....
+
+Two shapes are rejected by name rather than guessed at: more than one accessor returning the declared record (which of them produces the key is not determined by the element type alone), and an accessor returning many of them (a child `@service` batches one key per parent, which is what its `Map<Key, Value>` return means).
+
 === One DataLoader per request, per field
 
 The dispatch is `DataLoader`-batched: one invocation of the service method per request per field, regardless of how many parents the request touches. The cache key is path-scoped, request-scoped, and tenant-prefixed (see xref:split-vs-inline.adoc[How-to: When to split queries] for the full key shape and the consequences for aliased uses).
@@ -264,7 +306,8 @@ The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output r
 * *Map keys must round-trip.* The returned `Map` is read by `framework-supplied Set` element. If your body constructs new keys (not `Row<N>` instances backed by the same value-equals semantics), the lookup misses and the field returns `null` for every parent. Prefer to rebuild keys from the framework's `Set` rather than constructing fresh ones.
 * *`Result<TableRecord>` returns skip framework projection.* The service is responsible for selecting every column the schema may eventually ask for. A schema field added later that reads a column the service didn't include returns `null` from records that lack it.
 * *A child `@service` body fetches its own non-key data.* No source shape, typed record included, carries parent columns beyond the key. Take the `DSLContext` and issue one batched query for what you need; the framework does not smuggle extra columns through the parent SELECT on your behalf.
-* *A `@table` parent with no primary key cannot host a batched child `@service`.* The batch key is the parent's primary key, so there is nothing to key on; the classifier rejects the coordinate at build time and names the table.
+* *A `@table` parent with no primary key cannot host a batched child `@service`.* On a `@table` parent the element type must be the parent's own record, so the batch key is that table's primary key and a table without one leaves nothing to key on; the classifier rejects the coordinate at build time and names the table.
+* *Every child `@service` batches.* There is no per-parent service call: a child `@service` whose method declares no `Sources` parameter is rejected at build time, whatever it returns. Take the keys and return them keyed (`Map<Key, Value>`) or positionally (`List<Value>`).
 * *Conditions on a `@service` field are ignored.* The reference is explicit: the generator does not splice generated SQL into a custom method's body. If the service needs filtering, take the filter as an argument or read it from the input type.
 * *`@service` and xref:../reference/directives/mutation.adoc[`@mutation`] are mutually exclusive.* One field can have one or the other, never both. Use `@mutation` when the framework should generate the INSERT/UPDATE/UPSERT; use `@service` when you need custom logic.
 

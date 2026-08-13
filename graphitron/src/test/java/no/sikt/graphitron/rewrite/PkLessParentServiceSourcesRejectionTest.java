@@ -18,6 +18,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * parameter, advice that cannot fix either one. The root arm has its own diagnostic; this pins
  * the other, and the control below pins that adding it did not swallow the root arm.
  *
+ * <p>The batch key is no longer the parent's primary key by definition (the {@code Sources} element
+ * type names the table to key on), but on a {@code @table} parent the element type must still be the
+ * parent's own record, so at this coordinate the two statements coincide and the diagnostic stands.
+ *
  * <p>{@code film_list} is the tree's PK-less table.
  */
 @PipelineTier
@@ -68,19 +72,15 @@ class PkLessParentServiceSourcesRejectionTest {
     }
 
     /**
-     * Over-fire guard. The rejection is keyed on the SOURCES <em>shape</em>, not on the parent
-     * being PK-less, so a PK-less parent hosting an ordinary no-SOURCES {@code @service} (a plain
-     * per-parent delegation, which needs no batch key) must still classify. Ordering the
-     * coordinate test before the shape recognition would reject every {@code @service} on such a
-     * parent and turn this red.
-     *
-     * <p>Disambiguating the coordinate also stops an empty parent-PK list from reading as "root"
-     * here, so this field now reaches the child validation arm rather than the root one. That
-     * flip is currently inert (the arms agree on every shape reachable without a SOURCES
-     * parameter, which the rejection above intercepts first), so this test does not pin it.
+     * Separation guard. The two rejections are about different things and must not collapse into
+     * one: a PK-less parent hosting a no-SOURCES {@code @service} is rejected for the missing batch
+     * parameter, not for the parent's missing primary key. A child {@code @service} always batches
+     * (the emitter has no per-parent service call), so the missing parameter is the author's first
+     * move; telling them to add a primary key to a table their signature never asked to key on would
+     * send them somewhere that does not end anywhere.
      */
     @Test
-    void noSourcesChildOnPkLessParent_stillClassifies() {
+    void noSourcesChildOnPkLessParent_isRejectedForTheMissingParameter() {
         var schema = TestSchemaHelper.buildSchema("""
             type FilmList @table(name: "film_list") {
                 title: String @field(name: "title")
@@ -91,9 +91,12 @@ class PkLessParentServiceSourcesRejectionTest {
             type Query { filmList: FilmList }
             """);
 
-        assertThat(schema.field("FilmList", "rank"))
-            .as("a PK-less parent's no-SOURCES child needs no batch key and classifies")
-            .isNotInstanceOf(UnclassifiedField.class);
+        var field = schema.field("FilmList", "rank");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .as("the missing batch parameter is the verdict, not the parent's missing primary key")
+            .contains("declares no Sources parameter")
+            .doesNotContain("no primary key");
     }
 
     @Test

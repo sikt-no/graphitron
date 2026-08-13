@@ -64,6 +64,22 @@ class ServiceCatalog {
             .map(e -> e.toTableRef(e.table().getName()));
     }
 
+    /**
+     * The catalog table a jOOQ record class names, keyed on the javapoet {@link ClassName} a decoded
+     * SOURCES shape carries rather than on a live {@link Class}. Empty when the class does not load
+     * or is not a catalog record. The classify phase asks this to turn an author-declared batch-key
+     * element type into a real table; the load stays inside this parse-boundary class so no raw
+     * reflection type has to travel to the caller.
+     */
+    Optional<TableRef> resolveTableByRecordClassName(ClassName recordClass) {
+        try {
+            return resolveTableByRecordClass(
+                Class.forName(recordClass.reflectionName(), false, ctx.codegenLoader()));
+        } catch (ClassNotFoundException e) {
+            return Optional.empty();
+        }
+    }
+
     Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {
         return ctx.catalog.findColumn(tableSqlName, colName)
             .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()));
@@ -306,9 +322,11 @@ class ServiceCatalog {
      * {@link ServiceDirectiveResolver}'s classify phase and cannot be masked by a parameter
      * declared before the one they concern.
      *
-     * <p>{@code parentPkColumns} is the batch key the coordinate supplies: the parent table's
-     * primary key at a {@code @table}-parent child site, empty everywhere else. A
-     * {@link ParamRole.SourcesCandidate} reaching bind with no key columns exists only where
+     * <p>{@code batchKeyColumns} is the batch key the classify phase resolved: the key owner's
+     * primary key at a child site, empty at the root. The key owner is the parent's own table at a
+     * {@code @table}-parent site and the table the {@code Sources} element type names at a
+     * class-backed one, which is why this is the resolved columns and not the parent's primary key.
+     * A {@link ParamRole.SourcesCandidate} reaching bind with no key columns exists only where
      * classify declined to claim it (a root {@code List<XRecord>} input bean), which is why the
      * fallback below is binding's own diagnostic rather than an invariant throw.
      *
@@ -317,7 +335,7 @@ class ServiceCatalog {
      * override target, and the available parameter names.
      */
     ServiceReflectionResult bindServiceMethod(ServiceSignature sig, ClaimedParams claims,
-            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> batchKeyColumns,
             Map<String, GraphQLInputType> slotTypes) {
         if (sig.unconstructible() != null) {
             return new ServiceReflectionResult(null, sig.unconstructible());
@@ -350,9 +368,9 @@ class ServiceCatalog {
                     params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
                         new ParamSource.Context()));
                 case ParamRole.SourcesCandidate candidate -> {
-                    if (!parentPkColumns.isEmpty()) {
+                    if (!batchKeyColumns.isEmpty()) {
                         params.add(new MethodRef.Param.Sourced(p.displayName(), candidate.shape().wrap(),
-                            parentPkColumns, candidate.shape().container()));
+                            batchKeyColumns, candidate.shape().container()));
                         break;
                     }
                     // No key columns, so classify declined to claim this candidate. Only the root
@@ -376,16 +394,11 @@ class ServiceCatalog {
                         return new ServiceReflectionResult(null,
                             new ReflectionError.ParameterNamesMissing(sig.className(), sig.methodName()));
                     }
-                    // DTO-shape parameters (List<DTO> / Set<DTO>) at keyed coordinates keep
-                    // precedence over the name-mismatch arm: the @sourceRow hint is actionable
-                    // there (DataLoader batching applies; the missing piece is a DTO-to-key
-                    // conversion). Without key columns, List<DTO> has no batching context, so the
-                    // arg-mismatch arm wins (pinned by dtoSources_onRootField_pointsAtArgCtxMismatch).
-                    if (!parentPkColumns.isEmpty() && p.dtoSourcesReason() != null) {
-                        return new ServiceReflectionResult(null,
-                            new ServiceMethodCallError.DtoSourcesUnsupported(
-                                p.displayName(), sig.methodName(), p.dtoSourcesReason()));
-                    }
+                    // A DTO-shape parameter (List<DTO> / Set<DTO>) at a batching coordinate is
+                    // answered by the classify phase, which owns the "this coordinate batches, and
+                    // your DTO parameter cannot be its key" verdict; the root's List<DTO> has no
+                    // batching context and lands here, on the arg-mismatch arm (pinned by
+                    // dtoSources_onRootField_pointsAtArgCtxMismatch).
                     return new ServiceReflectionResult(null,
                         argumentParameterMismatch(p, sig, argByJavaName, ctxKeys, slotTypes));
                 }
@@ -1039,7 +1052,13 @@ class ServiceCatalog {
      * Classification of a {@code @service} SOURCES parameter: the per-row shape
      * ({@link SourceKey.Wrap}) and the container axis ({@link LoaderRegistration.Container})
      * needed to construct {@link MethodRef.Param.Sourced}. The columns axis is the caller's
-     * {@code parentPkColumns} input and is not repeated here.
+     * batch-key input and is not repeated here.
+     *
+     * <p>The {@link SourceKey.Wrap.TableRecord} arm's class is what lets a class-backed parent host a
+     * batched child: {@link #resolveTableByRecordClassName} turns it into a real table whose primary
+     * key is a real column tuple, so the coordinate's question becomes "can this parent produce a
+     * record of that table?" rather than "what is this parent's own primary key?". That lookup is the
+     * classify phase's to make, not this record's to carry.
      */
     record SourcesShape(SourceKey.Wrap wrap, LoaderRegistration.Container container) {}
 
@@ -1047,11 +1066,14 @@ class ServiceCatalog {
      * Classifies the element type of a {@code List<?>} or {@code Set<?>} SOURCES parameter into
      * a {@link SourcesShape}, or returns {@link Optional#empty()} when the type is not recognised.
      *
-     * <p>Purely a type question. Whether a recognised shape can actually be honoured depends on the
-     * coordinate (a root type and a PK-less parent table both lack a batch key, for different
-     * reasons), and the caller decides that; keeping it out of here is what lets one recognition
-     * serve both the {@link MethodRef.Param.Sourced} construction and the
-     * {@link ServiceMethodCallError.SourcesOnPkLessParent} rejection.
+     * <p>Purely a type question, and deliberately no catalog lookup: whether a recognised shape can
+     * actually be honoured depends on the coordinate (a root type has no parent to batch against; a
+     * PK-less parent table and a class-backed parent that cannot produce the declared record each
+     * fail for their own reason), and the classify phase decides that. Keeping both out of here is
+     * what lets one recognition serve the {@link MethodRef.Param.Sourced} construction, the
+     * {@link ServiceMethodCallError.SourcesOnPkLessParent} rejection, and the class-backed parent's
+     * key resolution alike, and what keeps {@link #decodeServiceMethod} pure over the class, the
+     * method name and the context keys.
      */
     static Optional<SourcesShape> classifySourcesType(java.lang.reflect.Type paramType) {
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
@@ -1174,8 +1196,9 @@ class ServiceCatalog {
         }
         return "sources type '" + elementClass.getName() + "' is not backed by a jOOQ TableRecord"
             + " — free-form DTO sources on @service SOURCES parameters are not supported."
-            + " The @sourceRow directive solves the analogous case for child fields on record-backed"
-            + " parents (not @service SOURCES)";
+            + " Declare the batch key as a jOOQ record class instead: the element type names the"
+            + " table the batch keys on, and on a class-backed parent the parent must either be"
+            + " that record or expose exactly one zero-arg accessor returning it";
     }
 
     // ===== Suggestion-side path search =====

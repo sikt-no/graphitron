@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.LifterRef;
+import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -478,17 +479,34 @@ class GeneratorUtils {
      * table, so the extraction's projection target is the parent table itself.
      */
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
+        return buildKeyExtraction(sourceKey, parentTable, SOURCE_FROM_ENV);
+    }
+
+    /**
+     * Source-bound variant of {@link #buildKeyExtraction(SourceKey, TableRef)}, matching the
+     * {@link #buildKeyExtractionWithNullCheck(SourceKey, TableRef, CodeBlock)} sibling:
+     * {@code sourceExpr} is the Java expression the key columns are read off, and it is the whole of
+     * what varies. The {@code @service} path's class-backed-parent accessor arm binds a local ahead
+     * of this block and passes it here; every other caller reads {@code env.getSource()}.
+     *
+     * <p>{@code keyOwner} is the table whose {@code Tables.X.COL} constants the reads go through. It
+     * is the parent's own table on the {@code @splitQuery} and {@code @pivot} paths, where the key is
+     * the parent's primary key by construction; on the {@code @service} path it is the table the
+     * {@code Sources} element type names, which is the same table only when the parent carries
+     * {@code @table}.
+     */
+    static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef keyOwner, CodeBlock sourceExpr) {
         TypeName keyType = sourceKey.keyElementType();
-        var tablesClass = parentTable.constantsClass();
-        String tableField = parentTable.javaFieldName();
+        var tablesClass = keyOwner.constantsClass();
+        String tableField = keyOwner.javaFieldName();
         List<ColumnRef> pkCols = sourceKey.columns();
         return switch (sourceKey.wrap()) {
             case SourceKey.Wrap.Row r -> {
                 var rowArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) rowArgs.add(", ");
-                    rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
-                        RECORD, tablesClass, tableField, pkCols.get(i).javaName());
+                    rowArgs.add("(($T) $L).get($T.$L.$L)",
+                        RECORD, sourceExpr, tablesClass, tableField, pkCols.get(i).javaName());
                 }
                 yield CodeBlock.builder()
                     .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
@@ -501,12 +519,12 @@ class GeneratorUtils {
                     intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
                 }
                 yield CodeBlock.builder()
-                    .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
+                    .addStatement("$T key = (($T) $L).into($L)", keyType, RECORD, sourceExpr, intoArgs.build())
                     .build();
             }
             case SourceKey.Wrap.TableRecord tr -> {
                 var out = CodeBlock.builder();
-                out.addStatement("$T source = ($T) env.getSource()", RECORD, RECORD);
+                out.addStatement("$T source = ($T) $L", RECORD, RECORD, sourceExpr);
                 out.addStatement("$T key = new $T()", keyType, keyType);
                 // One unconditional read, because only the key columns are ever copied and they are
                 // present under their base names on both arrival paths that graphql-java fuses onto
@@ -524,6 +542,46 @@ class GeneratorUtils {
                 }
                 yield out.build();
             }
+        };
+    }
+
+    /**
+     * The batched child {@code @service} path's key read: one home for all three
+     * {@link ServiceKeySource} arms, each of which is the shared wrap-driven
+     * {@link #buildKeyExtraction} against a different source binding.
+     *
+     * <p>The two {@code env.getSource()} arms differ only in what the parent is (a projected table
+     * row versus a held typed record), which the emitted expression does not see: both read through
+     * the generic {@code Record} interface, and {@code Record.get(Tables.X.COL)} answers the same
+     * either way. They stay separate arms because {@code ChildField.sourceShape()} derives off the
+     * same seam.
+     *
+     * <p>The accessor arm binds the returned record into a local first and guards it. An accessor
+     * returning a record may legitimately return {@code null} (a nullable to-one that resolved to no
+     * row), and the extraction below it reads columns off that record unconditionally, so without the
+     * guard the emitted fetcher would NPE at request time rather than resolve the field to null. The
+     * short-circuit is {@code completedFuture(null)}, assignable to the fetcher's declared
+     * {@code CompletableFuture<DataFetcherResult<V>>} at every service seat. It sits inside the key
+     * extraction, not in the pre-registration prelude, so a throwing developer accessor routes
+     * through the same disposition as the rest of the synchronous key read instead of escaping
+     * {@code DataFetcher.get()} unrouted.
+     */
+    static CodeBlock buildServiceKeyExtraction(SourceKey sourceKey, ServiceKeySource keySource) {
+        return switch (keySource) {
+            case ServiceKeySource.FromTableRow row ->
+                buildKeyExtraction(sourceKey, row.keyOwner(), SOURCE_FROM_ENV);
+            case ServiceKeySource.FromHeldRecord held ->
+                buildKeyExtraction(sourceKey, held.keyOwner(), SOURCE_FROM_ENV);
+            case ServiceKeySource.FromAccessor acc -> CodeBlock.builder()
+                .addStatement("$T keyRecord = (($T) env.getSource()).$L()",
+                    acc.accessor().elementClass(), acc.accessor().parentBackingClass(),
+                    acc.accessor().methodName())
+                .beginControlFlow("if (keyRecord == null)")
+                .addStatement("return $T.completedFuture(null)",
+                    ClassName.get("java.util.concurrent", "CompletableFuture"))
+                .endControlFlow()
+                .add(buildKeyExtraction(sourceKey, acc.keyOwner(), CodeBlock.of("keyRecord")))
+                .build();
         };
     }
 }

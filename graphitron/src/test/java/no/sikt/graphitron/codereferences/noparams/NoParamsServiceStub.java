@@ -10,8 +10,13 @@ public final class NoParamsServiceStub {
 
     private NoParamsServiceStub() {}
 
-    /** Grounds an SDL payload type to {@link NamelessErrorsPayload}. */
-    public static NamelessErrorsPayload runNameless() {
+    /**
+     * Grounds an SDL payload type to {@link NamelessErrorsPayload}. Batch-shaped, like every child
+     * {@code @service} signature; the keys parameter is nameless here too, which is immaterial to it
+     * (a SOURCES parameter is claimed by its type's shape, never by its name).
+     */
+    public static java.util.Map<org.jooq.Row1<Integer>, NamelessErrorsPayload> runNameless(
+            java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 }

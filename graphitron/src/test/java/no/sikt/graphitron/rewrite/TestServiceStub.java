@@ -76,6 +76,22 @@ class TestServiceStub {
     /** No-arg, returns {@code String} — used for mutation parameter-classification tests. */
     public static String run() { throw new UnsupportedOperationException(); }
 
+    /**
+     * The batch-shaped child sibling of {@link #get}, with two context arguments beside the keys.
+     * A child {@code @service} resolves through a DataLoader, so the parameter-classification cases
+     * that sit on a child coordinate need the keys parameter as well as the slot under test.
+     */
+    public static java.util.Map<org.jooq.Row1<Integer>, String> getRatingBatchedWithContext(
+            java.util.Set<org.jooq.Row1<Integer>> keys, String tenantId, String userId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The batch-shaped child sibling of {@link #getWithDsl}. */
+    public static java.util.Map<org.jooq.Row1<Integer>, String> getRatingBatchedWithDsl(
+            java.util.Set<org.jooq.Row1<Integer>> keys, DSLContext dsl) {
+        throw new UnsupportedOperationException();
+    }
+
     /** {@link DSLContext} param, returns {@code String}. */
     public static String getWithDsl(DSLContext dsl) { throw new UnsupportedOperationException(); }
 
@@ -159,6 +175,17 @@ class TestServiceStub {
      * pointed at a method whose outer type matches but whose inner type does not.
      */
     public static Result<LanguageRecord> getLanguages() { throw new UnsupportedOperationException(); }
+
+    /**
+     * The batched form of {@link #getLanguage}: one {@code language} record per parent key, keyed on
+     * the parent's own primary key. A child {@code @service} resolves through a DataLoader, so a
+     * single-cardinality {@code @table}-returning child needs this {@code Map<K, XRecord>} shape
+     * rather than a bare record.
+     */
+    public static java.util.Map<org.jooq.Row1<Integer>, LanguageRecord> getLanguageByKey(
+            java.util.Set<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
 
     // ===== Methods that intentionally violate return-type strictness =====
 
@@ -449,25 +476,32 @@ class TestServiceStub {
      * returning this payload resolves an {@code ErrorChannel.PayloadClass} whose {@code payloadClass()}
      * must be the structural {@code AccessorPayloads.NestedErrorsPayload}, not the {@code $}-qualified
      * binary name. Pins {@code FieldBuilder.resolveErrorChannel}'s {@code ClassName.get} boundary.
+     *
+     * <p>Batch-shaped, like every child {@code @service} signature: the coordinate resolves through a
+     * DataLoader, so it takes the parent keys and returns the payload keyed by them.
      */
-    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload runNestedErrors() {
+    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload> runNestedErrors(
+            java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
     // ===== @field(name:) in payload construction fixtures =====
 
-    /** Mutable-bean payload with divergently-named setters (info / failures). */
-    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.DivergentBeanErrorsPayload runDivergentBeanErrors() {
+    /** Mutable-bean payload with divergently-named setters (info / failures), batch-shaped. */
+    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.DivergentBeanErrorsPayload> runDivergentBeanErrors(
+            java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
-    /** Mutable-bean payload with SDL-name setters (setData / setErrors). */
-    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.SetterErrorsPayload runSetterErrors() {
+    /** Mutable-bean payload with SDL-name setters (setData / setErrors), batch-shaped. */
+    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.SetterErrorsPayload> runSetterErrors(
+            java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 
-    /** Record whose components are reordered relative to SDL declaration order. */
-    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.ReorderedErrorsPayload runReorderedErrors() {
+    /** Record whose components are reordered relative to SDL declaration order, batch-shaped. */
+    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.ReorderedErrorsPayload> runReorderedErrors(
+            java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 

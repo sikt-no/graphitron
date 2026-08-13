@@ -28,12 +28,14 @@ class GraphitronFacadeGeneratorPipelineTest {
 
     @Test
     void factory_reflectsContextArgumentsAlphabeticallyWithReflectedJavaTypes() {
-        // Two @service sites with disjoint contextArguments (userId: String, fnr: Long). The
+        // Two root @service sites with disjoint contextArguments (userId: String, fnr: Long). The
         // classifier walks both MethodRefs, collects them by name, and produces a sorted
         // (alphabetical) ResolvedContextArg map. The factory emitter pastes one parameter slot
         // per entry, in TreeMap iteration order.
         String sdl = """
-            type Film @table(name: "film") {
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film
                 ratingByUser: String @service(service: {
                     className: "no.sikt.graphitron.rewrite.TestServiceStub",
                     method: "getRatingByUser"
@@ -43,7 +45,6 @@ class GraphitronFacadeGeneratorPipelineTest {
                     method: "getRatingByFnr"
                 }, contextArguments: ["fnr"])
             }
-            type Query { film: Film }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
@@ -67,7 +68,9 @@ class GraphitronFacadeGeneratorPipelineTest {
         // alphabetical contextArgument list. Distinct name from the escape-hatch newExecutionInput, so a
         // caller passing a DSLContext cannot silently reach the owned path.
         String sdl = """
-            type Film @table(name: "film") {
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film
                 ratingByUser: String @service(service: {
                     className: "no.sikt.graphitron.rewrite.TestServiceStub",
                     method: "getRatingByUser"
@@ -77,7 +80,6 @@ class GraphitronFacadeGeneratorPipelineTest {
                     method: "getRatingByFnr"
                 }, contextArguments: ["fnr"])
             }
-            type Query { film: Film }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);

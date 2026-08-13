@@ -161,6 +161,13 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService",
         method: "translatedTexts"
     })
+    # Batch-key accessor arm: producer for FilmKeySummary, a type aggregated in Java whose child @service
+    # batches on the film record it holds rather than on any identity of its own. Three rows over two
+    # distinct films, so the child's batch has a duplicate to collapse.
+    filmKeySummaries: [FilmKeySummary!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService",
+        method: "summaries"
+    })
     # R300: @routine table-valued read function. Binds the three TEXT IN parameters of
     # public.tilganger_for_feidebruker_med_fs_fiktivt_fnr from GraphQL arguments and reads the
     # RETURNS TABLE result through the existing selection-narrowing projection.
@@ -1502,11 +1509,33 @@ type FilmDetails {
 # type (the passthrough's parent row vs this service's FilmRecord).
 type FilmDetailsCarrier {
     filmId:   Int          @field(name: "film_id")
+    # Batch-key held-record arm: a batched child @service on a class-backed parent whose backing class IS
+    # the record the Sources element type names, so the key is read straight off env.getSource() with
+    # no author declaration beyond the signature. Same service method the Film.titleTitlecase child
+    # uses, which is the point: the signature is a property of the service contract, not of the
+    # coordinate, so one method serves a @table parent and a class-backed one alike.
+    titleTitlecase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "titleTitlecase"
+    })
     language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
     actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+}
+
+# Batch-key accessor arm: a class-backed parent (a Java record) that hosts a batched child @service by
+# producing the key the child's Sources element type names. The producer is Query.filmKeySummaries; the
+# key comes off the sole zero-arg accessor returning a FilmRecord, which is deliberately not named
+# after the SDL field the @service sits on. keyCensus reports the batch it was handed, so one query
+# pins the single dispatch, the deduplication, and the sparse keys at once.
+type FilmKeySummary {
+    label: String
+    keyCensus: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService",
+        method: "keyCensus"
+    })
 }
 
 type Film implements Node & Searchable @table(name: "film") @node {

@@ -117,8 +117,13 @@ class ClassifiedDslTest {
     /**
      * The launcher production sweep's failure roster, bound by equality in both directions: a
      * landed validator rejection (or emission) for a recorded gap shows up as a roster
-     * mismatch, and a third example acquiring a gap is loud. Each entry's reason is grounded on
+     * mismatch, and a second example acquiring a gap is loud. The entry's reason is grounded on
      * the recorded validator-mirror gap it rides.
+     *
+     * <p>The roster shrank by one when the classifier started rejecting a child {@code @service}
+     * declaring no {@code Sources} parameter: the {@code service} example's no-key coordinates now
+     * carry real batch parameters and produce their rows, so the guard they rode is unreachable by
+     * construction rather than merely unexercised.
      */
     @Test
     void launcherProductionFailureRosterIsExact() {
@@ -128,18 +133,14 @@ class ClassifiedDslTest {
             .map(Map.Entry::getKey)
             .collect(Collectors.toSet());
         assertThat(failed)
-            .as("exactly the two recorded validator-mirror-gap examples fail launcher production;"
+            .as("exactly the one recorded validator-mirror-gap example fails launcher production;"
                 + " an entry leaving means its gap closed (celebrate and shrink the roster), an"
                 + " entry joining means a new example rides an unrecorded gap")
-            .containsExactlyInAnyOrder("record-method", "service");
+            .containsExactly("record-method");
         assertThat(((ClassifiedHarness.LauncherProduction.Failed) productions.get("record-method")).reason())
             .as("record-method rides the batched-lookup single-record-per-key guard: the"
                 + " validator accepts the shape, no batched-lookup emission exists for the cell")
             .contains("batched lookup child");
-        assertThat(((ClassifiedHarness.LauncherProduction.Failed) productions.get("service")).reason())
-            .as("service rides the service-record no-Sources guard: a record child without a"
-                + " Sources parameter classifies with null key facts, the validator accepts it")
-            .contains("no Sources parameter");
     }
 
     /**

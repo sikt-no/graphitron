@@ -2895,6 +2895,44 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void classBackedParent_serviceChild_batchesDeduplicatedSparseKeysInOneCall() {
+        // The author-declared batch key on a class-backed parent, end to end. FilmKeySummary is a Java
+        // record aggregated by Query.filmKeySummaries; its keyCensus child takes Set<FilmRecord>, so the
+        // batch keys on the `film` table, and the key comes off the sole zero-arg accessor returning a
+        // film record. The service answers with facts about the batch it was handed rather than with
+        // data, which is what makes all three contract claims observable from one query and without a
+        // static counter in the fixture:
+        //
+        //   "2|null" on all three rows means one dispatch (a per-parent call would report 1), a
+        //   deduplicated key set (three rows over two distinct films report 2, not 3), and sparse keys
+        //   (the title read off the key is null even though the accessor returned a fully populated
+        //   record — a pass-through would report a real title).
+        //
+        // Neither claim is observable at the pipeline tier: both are runtime properties of the
+        // DataLoader dispatch and of the key records the emitted fetcher builds.
+        Map<String, Object> data = execute("{ filmKeySummaries { label keyCensus } }");
+        assertThat(data).extractingByKey("filmKeySummaries", as(list(Map.class)))
+            .hasSize(3)
+            .allSatisfy(row -> assertThat(row.get("keyCensus"))
+                .as("row '%s' sees the whole deduplicated batch, and its key carries no title",
+                    row.get("label"))
+                .isEqualTo("2|null"));
+    }
+
+    @Test
+    void classBackedRecordParent_serviceChild_readsTheKeyOffTheHeldRecord() {
+        // The held-record arm: FilmDetailsCarrier's backing class IS a FilmRecord, so the same
+        // Set<FilmRecord> service the @table-parent Film.titleTitlecase child uses works here with no
+        // change to its Java signature and no accessor in between. The parent hands the fetcher a fully
+        // populated record; the key the framework builds off it still carries FILM_ID only, which is why
+        // the service's own batched fetch is what supplies the title.
+        Map<String, Object> data = execute("{ filmDetailsBatch(ids: [1, 2]) { titleTitlecase } }");
+        assertThat(data).extractingByKey("filmDetailsBatch", as(list(Map.class)))
+            .extracting(f -> f.get("titleTitlecase"))
+            .containsExactly("Academy Dinosaur", "Ace Goldfinger");
+    }
+
+    @Test
     void recordTableField_multipleParents_batchesIntoOneSqlRoundTrip() {
         // FilmDetailsCarrier is record-backed (Query.filmDetailsBatch returns List<FilmRecord>), so
         // language is a record-sourced BatchedTableField. 5 films all have language_id=1; the DataLoader should

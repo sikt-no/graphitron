@@ -170,9 +170,9 @@ class OperationMemberMintPinTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
               rating: String
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"})
               language: Language
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
             }
             input FilmInput { title: String }
             type Query {

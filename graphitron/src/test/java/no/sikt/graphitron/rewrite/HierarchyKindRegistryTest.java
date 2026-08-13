@@ -246,6 +246,12 @@ class HierarchyKindRegistryTest {
         Map.entry(CallSiteCompaction.class, HierarchyKind.COMMAND),
         Map.entry(OrderBySpec.class, HierarchyKind.COMMAND),
         Map.entry(KeyLift.class, HierarchyKind.COMMAND),
+        // The batched child @service key source: its arms name the expression the emitted fetcher
+        // binds the key record from, which is what the extraction emitter switches on. Sibling of
+        // KeyLift in role (both are the emit-grain answer to "where does the key come from"), and it
+        // takes the same kind; the coordinate question it answers is resolver-internal and does not
+        // travel.
+        Map.entry(no.sikt.graphitron.rewrite.model.ServiceKeySource.class, HierarchyKind.COMMAND),
         Map.entry(PayloadConstructionShape.class, HierarchyKind.COMMAND),
         Map.entry(LookupMapping.class, HierarchyKind.COMMAND),
         Map.entry(ServiceMethodCall.class, HierarchyKind.COMMAND),

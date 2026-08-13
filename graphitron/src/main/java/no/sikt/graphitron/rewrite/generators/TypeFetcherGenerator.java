@@ -55,6 +55,7 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
@@ -525,7 +526,7 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (service table child dispatch): coordinate '"
                             + stf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.returnType(), parentTable, RECORD, outputPackage, stf.errorChannel(), liftRow.unit().methodName()));
+                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.returnType(), stf.keySource(), RECORD, outputPackage, stf.errorChannel(), liftRow.unit().methodName()));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(liftRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, stf, outputPackage).declaration(),
@@ -542,7 +543,7 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (service record child dispatch): coordinate '"
                             + srf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.returnType(), parentTable, srf.elementType(), outputPackage, srf.errorChannel(), delegateRow.unit().methodName()));
+                    builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.returnType(), srf.keySource(), srf.elementType(), outputPackage, srf.errorChannel(), delegateRow.unit().methodName()));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(delegateRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, srf, outputPackage).declaration(),
@@ -5496,6 +5497,12 @@ public class TypeFetcherGenerator {
      * through: {@code tb.table().recordClass()} for {@code ServiceTableField} and
      * {@code srf.elementType()} for {@code ServiceRecordField}.
      *
+     * <p>{@code keySource} is the leaf's stored key source, and it replaces the parent table this
+     * builder used to take: the batch key is the key owner's primary key rather than the parent's, so
+     * a class-backed parent hosting a batched child has a table to read column constants through
+     * where it had none. The three arms differ only in the source expression the read binds to; see
+     * {@link GeneratorUtils#buildServiceKeyExtraction}.
+     *
      * <p>Container axis ({@link LoaderRegistration#container()}):
      * <ul>
      *   <li>{@link LoaderRegistration.Container#POSITIONAL_LIST} → {@code newDataLoader(...)}
@@ -5511,7 +5518,7 @@ public class TypeFetcherGenerator {
             String fieldName,
             BatchKeyField bkf,
             ReturnTypeRef returnType,
-            TableRef prt,
+            ServiceKeySource keySource,
             TypeName perKeyType,
             String outputPackage,
             Optional<ErrorChannel.RouterDispatched> errorChannel,
@@ -5530,7 +5537,7 @@ public class TypeFetcherGenerator {
             registration,
             RowsMethodCall.batchLoaderLambda(rowsMethodName, keyType, registration),
             CodeBlock.of(""),
-            GeneratorUtils.buildKeyExtraction(sourceKey, prt),
+            GeneratorUtils.buildServiceKeyExtraction(sourceKey, keySource),
             asyncWrapTail(valueType, outputPackage, errorChannel),
             dataLoaderSyncCatchBody(valueType, outputPackage, errorChannel),
             TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));

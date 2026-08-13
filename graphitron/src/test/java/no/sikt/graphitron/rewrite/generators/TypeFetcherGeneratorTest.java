@@ -350,6 +350,7 @@ class TypeFetcherGeneratorTest {
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
             TestFixtures.serviceSourceKey(wrap, keyCols),
+            new no.sikt.graphitron.rewrite.model.ServiceKeySource.FromTableRow(LANGUAGE_TABLE),
             TestFixtures.loaderRegistration(returnType, false, false),
             java.util.Optional.empty());
     }
@@ -413,6 +414,7 @@ class TypeFetcherGeneratorTest {
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
             TestFixtures.serviceSourceKey(shape.wrap(), shape.columns()),
+            new no.sikt.graphitron.rewrite.model.ServiceKeySource.FromTableRow(LANGUAGE_TABLE),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
@@ -1491,6 +1493,7 @@ class TypeFetcherGeneratorTest {
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
             sourceKey,
+            new no.sikt.graphitron.rewrite.model.ServiceKeySource.FromTableRow(LANGUAGE_TABLE),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }

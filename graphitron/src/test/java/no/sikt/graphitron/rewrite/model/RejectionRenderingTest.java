@@ -64,8 +64,8 @@ class RejectionRenderingTest {
     void deferredMessageIsSummaryAndRendersNoRoadmapPath() {
         // message() is a pure function of summary, so it structurally cannot compose a roadmap
         // path suffix onto the author log surface; a deferred rejection states the fact and stands alone.
-        var r = Rejection.deferred("@service on a record-backed parent is not yet supported");
-        assertThat(r.message()).isEqualTo("@service on a record-backed parent is not yet supported");
+        var r = Rejection.deferred("child @service returning a polymorphic type is not yet supported");
+        assertThat(r.message()).isEqualTo("child @service returning a polymorphic type is not yet supported");
         assertThat(r.message()).doesNotContain("roadmap/");
     }
 

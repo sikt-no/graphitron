@@ -195,7 +195,12 @@ public final class ClassifiedCorpus {
             """,
             "{ film { language { name } details { language { name } } } }"),
 
-        /* Service side: a terminal record, a service re-query into a @table, and a pojo field. */
+        /*
+         * Service side: a terminal record, a service re-query into a @table, and a pojo field. Both
+         * child @service methods take the batch keys and return them keyed: a child @service resolves
+         * through a DataLoader, so the signature is the batched one and a per-parent call has no
+         * emission (nor a classification: the coordinate is rejected without a Sources parameter).
+         */
         new Example("service", """
             type Language @table(name: "language") { name: String }
 
@@ -206,11 +211,13 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") {
               details: FilmDetails
               rating: String
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"})
                 @classified(source: Child, operations: [ServiceCall], target: Single, targetShape: Record)
+                @commits(source: ServiceCall, result: LoaderDelegated)
               language: Language
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
                 @classified(source: Child, operations: [Reentry, ServiceCall], target: Single, targetShape: Table)
+                @commits(source: ServiceTableLift, result: LoaderDelegated)
             }
 
             type Query {
@@ -278,6 +285,35 @@ public final class ClassifiedCorpus {
                 @commits(source: ServiceCall, result: LoaderDelegated)
             }
             type Query { language: Language @commits(source: AnchorTable, result: SingleRecord) }
+            """),
+
+        /*
+         * A batched child @service on a class-backed parent. The Sources element type names the table
+         * the batch keys on, and the parent produces a record of it through the sole zero-arg accessor
+         * on its backing class, so a type aggregated in Java hosts a batched child without becoming a
+         * database view. The lesson is the source shape: both service leaves are minted on both parent
+         * kinds, so neither leaf's identity answers what arrives at env.getSource(), and the stored key
+         * source is what does. This example is the corpus arm that makes the derivation load-bearing:
+         * without a service leaf on a class-backed parent, the source-shape mirror never sees the
+         * Record answer on either service leaf.
+         */
+        new Example("service-child-class-backed-parent", """
+            type Film @table(name: "film") { title: String }
+            type Aggregated {
+              rank: Int
+                @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedByRecord"})
+                @classified(source: OnlyChild, operations: [ServiceCall], target: Single, targetShape: Record, sourceShape: Record)
+                @commits(source: ServiceCall, result: LoaderDelegated)
+              filmsViaService: [Film!]!
+                @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMappedByRecord"})
+                @classified(source: OnlyChild, operations: [Reentry, ServiceCall], target: List, targetShape: Table, sourceShape: Record)
+                @commits(source: ServiceTableLift, result: LoaderDelegated)
+            }
+            type Query {
+              aggregated: Aggregated
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeLanguageKeyed"})
+                @classified(source: Query, operations: [ServiceCall], target: Single, targetShape: Record)
+            }
             """),
 
         /*

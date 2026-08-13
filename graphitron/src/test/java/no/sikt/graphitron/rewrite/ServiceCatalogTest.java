@@ -67,26 +67,26 @@ class ServiceCatalogTest {
      * decided between reduce and bind, where the catalog cannot see it. What this helper drives is
      * therefore exactly decode-and-bind, which is what these cases are about.
      *
-     * <p>{@code parentPkColumns} is the batch key the coordinate supplies (a parent table's
-     * primary key, or empty).
+     * <p>{@code batchKeyColumns} is the batch key the classify phase resolved (the key owner's
+     * primary key at a child coordinate, empty at the root).
      */
     private static ServiceCatalog.ServiceReflectionResult reflect(ServiceCatalog catalog,
             String className, String methodName, ArgBindingMap argBindings, Set<String> ctxKeys,
-            List<ColumnRef> parentPkColumns) {
-        return reflect(catalog, className, methodName, argBindings, ctxKeys, parentPkColumns, Map.of());
+            List<ColumnRef> batchKeyColumns) {
+        return reflect(catalog, className, methodName, argBindings, ctxKeys, batchKeyColumns, Map.of());
     }
 
     /** Slot-types-aware form of {@link #reflect(ServiceCatalog, String, String, ArgBindingMap, Set, List)}. */
     private static ServiceCatalog.ServiceReflectionResult reflect(ServiceCatalog catalog,
             String className, String methodName, ArgBindingMap argBindings, Set<String> ctxKeys,
-            List<ColumnRef> parentPkColumns, Map<String, graphql.schema.GraphQLInputType> slotTypes) {
+            List<ColumnRef> batchKeyColumns, Map<String, graphql.schema.GraphQLInputType> slotTypes) {
         var decoded = catalog.decodeServiceMethod(className, methodName, ctxKeys);
         if (decoded.failed()) {
             return new ServiceCatalog.ServiceReflectionResult(null, decoded.rejection());
         }
         var claims = catalog.reduceClaims(decoded.signature(), argBindings, ctxKeys, slotTypes);
         return catalog.bindServiceMethod(decoded.signature(), claims, argBindings, ctxKeys,
-            parentPkColumns, slotTypes);
+            batchKeyColumns, slotTypes);
     }
 
     /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */
@@ -136,7 +136,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_unrecognisedParam_onChildField_pointsAtArgCtxMismatch() {
-        // Non-empty parentPkColumns: child of a table-backed parent. The discriminator
+        // Non-empty batchKeyColumns: a child coordinate. The discriminator
         // is the parameter type axis, not the coordinate: a clearly non-SOURCES-adjacent type
         // (here, {@code Object}) under a non-empty parent PK still gets the arg-mismatch
         // diagnostic, matching the root-coordinate behaviour. SOURCES batching could in principle
@@ -177,7 +177,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_unrecognisedParam_onRootField_pointsAtArgCtxMismatch() {
-        // Empty parentPkColumns: root operation field or record-backed-parent child. SOURCES batching
+        // Empty batchKeyColumns: a root operation field. SOURCES batching
         // cannot apply, so the rejection points at the actual problem (parameter name doesn't
         // match any GraphQL argument or context key) rather than mentioning sources at all.
         var result = reflect(newCatalog(),
@@ -209,24 +209,14 @@ class ServiceCatalogTest {
         assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
     }
 
-    @Test
-    void reflectServiceMethod_dtoSources_onChildField_rejectedWithLifterDirectiveHint() {
-        // Non-empty parentPkColumns: child of a table-backed parent. This is the only context
-        // where the lifter-directive hint is genuinely actionable — DataLoader batching applies
-        // and the missing piece is a DTO-to-key conversion, the feature the @sourceRow directive provides.
-        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
-        var result = reflect(newCatalog(),
-            STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of()), Set.of(), filmPk);
-
-        assertThat(result.failed()).isTrue();
-        assertThat(result.rejection().message())
-            .contains("not backed by a jOOQ TableRecord")
-            .contains("@sourceRow");
-    }
+    // The DTO-shaped batch parameter at a child coordinate is answered by
+    // ServiceDirectiveResolver's classify phase, which owns the "this coordinate batches, and your
+    // DTO parameter cannot be its key" verdict; ServiceCoordinatePrecedenceTest pins both container
+    // shapes at the pipeline tier. The root arm below stays here: it is binding's own fallback.
 
     @Test
     void reflectServiceMethod_dtoSources_onRootField_pointsAtArgCtxMismatch() {
-        // Empty parentPkColumns: root operation field. List<DTO> would have been classified as
+        // Empty batchKeyColumns: root operation field. List<DTO> would have been classified as
         // SOURCES, but root fields can't batch — the lifter-directive hint would mislead users
         // who really just have a Java-param-name vs. GraphQL-argument-name mismatch (the most
         // common cause). Surface the name mismatch directly.
@@ -482,21 +472,6 @@ class ServiceCatalogTest {
         assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.Record());
         assertThat(sourced.columns()).isEqualTo(filmPk);
         assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
-    }
-
-    @Test
-    void reflectServiceMethod_setOfDtoSources_onChildField_rejectedWithDtoMessage() {
-        // Non-empty parentPkColumns: child of a table-backed parent. The Set<DTO> rejection
-        // takes the same DTO-message path as List<DTO>, not the generic unrecognized-sources
-        // fallback.
-        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
-        var result = reflect(newCatalog(),
-            STUB_CLASS, "getFilmsWithSetOfDtoSources", bindings(Map.of()), Set.of(), filmPk);
-
-        assertThat(result.failed()).isTrue();
-        assertThat(result.rejection().message())
-            .contains("not backed by a jOOQ TableRecord")
-            .doesNotContain("unrecognized sources type");
     }
 
     // ===== Decoded return type =====

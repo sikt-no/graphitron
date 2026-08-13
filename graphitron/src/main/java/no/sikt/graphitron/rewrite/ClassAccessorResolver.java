@@ -35,6 +35,9 @@ import java.util.Set;
  * The record-source reduction ({@code FieldBuilder.collectAccessorMatches}) consumes
  * {@link #enumerate} directly, requesting zero-arg methods only.
  *
+ * <p>{@link #enumerateZeroArg} sits beside all three: the {@code @service} batch-key reduction has
+ * no SDL field name to match against, so it shares the member filter and none of the name rules.
+ *
  * <p>Part of the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
  * payload-errors path, {@code SourceRowDirectiveResolver}); see
  * {@code docs/architecture/explanation/development-principles.adoc} ("The parse boundary is a
@@ -227,6 +230,30 @@ public final class ClassAccessorResolver {
                 }
             }
         }
+        return out;
+    }
+
+    /**
+     * The name-free enumeration: every public, non-static, non-bridge, non-synthetic instance method
+     * on {@code backingClass} that takes no arguments and is not declared by {@link Object}, sorted
+     * by method name so a reduction's diagnostics are stable across JVM runs.
+     *
+     * <p>Deliberately separate from {@link #enumerate} rather than a mode on it. Everything
+     * {@code enumerate} single-sources is about <em>names</em>: the candidate-name set, the
+     * {@code is}-prefix gate, the candidate order. A reduction that has no SDL field name to match
+     * against (the {@code @service} batch key is named by the {@code Sources} element type, not by
+     * the field) has no use for any of that, and asking for it through a name-based entry point
+     * would mean inventing a base name to discard. What the two do share is the member filter, and
+     * that is what this method borrows.
+     */
+    public static List<Method> enumerateZeroArg(Class<?> backingClass) {
+        var out = new ArrayList<Method>();
+        for (Method m : backingClass.getMethods()) {
+            if (!passesMemberFilter(m)) continue;
+            if (m.getParameterCount() != 0) continue;
+            out.add(m);
+        }
+        out.sort(java.util.Comparator.comparing(Method::getName));
         return out;
     }
 

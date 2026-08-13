@@ -31,7 +31,9 @@ class GraphitronDevExecutorGeneratorPipelineTest {
         // corpus GraphitronFacadeGeneratorPipelineTest uses. The facade's factory grows typed
         // parameters; the executor's signature must not (the host reflects one fixed shape).
         String sdl = """
-            type Film @table(name: "film") {
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film
                 ratingByUser: String @service(service: {
                     className: "no.sikt.graphitron.rewrite.TestServiceStub",
                     method: "getRatingByUser"
@@ -41,7 +43,6 @@ class GraphitronDevExecutorGeneratorPipelineTest {
                     method: "getRatingByFnr"
                 }, contextArguments: ["fnr"])
             }
-            type Query { film: Film }
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         var result = GraphitronDevExecutorGenerator.generate(

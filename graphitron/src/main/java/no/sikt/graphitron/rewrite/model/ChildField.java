@@ -61,8 +61,11 @@ public sealed interface ChildField extends OutputField
             case TableField ignored -> SourceShape.Table;
 
             case TableInterfaceField ignored -> SourceShape.Table;
-            case ServiceTableField ignored -> SourceShape.Table;
-            case ServiceRecordField ignored -> SourceShape.Table;
+            // Neither service leaf is parent-kind-pure: both are minted on a @table parent and on a
+            // class-backed one, so the stored key source is what carries the projection. Its arms
+            // are cut on exactly this seam, which makes the derivation total.
+            case ServiceTableField f -> f.keySource().sourceShape();
+            case ServiceRecordField f -> f.keySource().sourceShape();
             case ComputedField ignored -> SourceShape.Table;
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
@@ -993,8 +996,12 @@ public sealed interface ChildField extends OutputField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * @param sourceKey derived from the service method's {@link MethodRef.Param.Sourced}
-     *     parameter; {@code null} when the method has no such parameter, which fails validation
-     *     (generation runs only post-validation, so it never observes {@code null}).
+     *     parameter, non-null: a child {@code @service} whose method declares no such parameter is
+     *     rejected at classify time, so the leaf is never constructed without a key.
+     * @param keySource where the emitted fetcher binds the record the key columns are read off. The
+     *     component {@link ChildField#sourceShape()} derives this leaf's answer from: the leaf is
+     *     minted on both a {@code @table} and a class-backed parent, so leaf identity cannot carry
+     *     that fact.
      * @param loaderRegistration paired with {@code sourceKey}; carries the DataLoader container
      *     (positional list vs mapped set) and dispatch (load vs loadMany) axes the service
      *     return type projects onto.
@@ -1010,9 +1017,14 @@ public sealed interface ChildField extends OutputField
         PaginationSpec pagination,
         MethodRef method,
         SourceKey sourceKey,
+        ServiceKeySource keySource,
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
+        public ServiceTableField {
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
+            java.util.Objects.requireNonNull(keySource, "keySource");
+        }
         /** Structurally none: the classifier routes {@code @lookupKey} only onto table-read leaves. */
         @Override public LookupResolution lookup() {
             return LookupResolution.None.INSTANCE;
@@ -1040,8 +1052,11 @@ public sealed interface ChildField extends OutputField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * @param sourceKey derived from the service method's {@link MethodRef.Param.Sourced}
-     *     parameter; {@code null} when the method has no such parameter, which fails validation
-     *     (generation runs only post-validation, so it never observes {@code null}).
+     *     parameter, non-null: a child {@code @service} whose method declares no such parameter is
+     *     rejected at classify time, so the leaf is never constructed without a key.
+     * @param keySource where the emitted fetcher binds the record the key columns are read off. The
+     *     component {@link ChildField#sourceShape()} derives this leaf's answer from; see the
+     *     sibling {@link ServiceTableField}.
      * @param loaderRegistration paired with {@code sourceKey}; carries the DataLoader container
      *     (positional list vs mapped set) and dispatch (load vs loadMany) axes the service
      *     return type projects onto.
@@ -1054,9 +1069,14 @@ public sealed interface ChildField extends OutputField
         List<JoinStep> joinPath,
         MethodRef method,
         SourceKey sourceKey,
+        ServiceKeySource keySource,
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
+        public ServiceRecordField {
+            java.util.Objects.requireNonNull(sourceKey, "sourceKey");
+            java.util.Objects.requireNonNull(keySource, "keySource");
+        }
 
         /**
          * The per-key Java element type this field's loader resolves to (the {@code V} before

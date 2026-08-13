@@ -214,11 +214,9 @@ public final class ProjectionCommands {
             // carry those columns exactly when the field is selected. The column list is read
             // from the same accessors the extraction emitters consume
             // (BatchKeyField.sourceKey(), ParentRowDemand.parentRowColumns()), so supply and
-            // demand are one read, not two derivations to cross-check. A null sourceKey is a
-            // no-Sources service method: plain per-parent delegation, nothing to project. The
+            // demand are one read, not two derivations to cross-check. The
             // table-target family's correlation-key arms live in the merged arm above.
-            case ChildField.ServiceRecordField sr -> correlationKeyArm(sr, sr.sourceKey() == null
-                ? List.of() : sr.sourceKey().columns());
+            case ChildField.ServiceRecordField sr -> correlationKeyArm(sr, sr.sourceKey().columns());
             case ChildField.InterfaceField pif -> correlationKeyArm(pif, pif.parentRowColumns());
             case ChildField.UnionField uf -> correlationKeyArm(uf, uf.parentRowColumns());
             case ChildField.BatchedInterfaceField bif -> correlationKeyArm(bif, bif.parentRowColumns());

@@ -47,7 +47,8 @@ public final class RowsMethodShape {
      *   <li>{@link ReturnTypeRef.TableBoundReturnType} → {@code tb.table().recordClass()}
      *       (the jOOQ-generated {@code XRecord} class for the field's bound table).</li>
      *   <li>{@link ReturnTypeRef.ResultReturnType} with non-null {@code fqClassName} → the
-     *       backing class.</li>
+     *       backing class, resolved through {@link #fromBinaryName} so a nested one keeps its
+     *       enclosing structure.</li>
      *   <li>{@link ReturnTypeRef.ScalarReturnType} for one of the five standard GraphQL
      *       scalars ({@code String} / {@code Boolean} / {@code Int} / {@code Float} /
      *       {@code ID}) → the corresponding Java class.</li>
@@ -59,11 +60,28 @@ public final class RowsMethodShape {
         return switch (returnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> tb.table().recordClass();
             case ReturnTypeRef.ResultReturnType r -> r.fqClassName() != null
-                ? ClassName.bestGuess(r.fqClassName())
+                ? fromBinaryName(r.fqClassName())
                 : null;
             case ReturnTypeRef.ScalarReturnType s -> standardScalarJavaType(s.returnTypeName());
             case ReturnTypeRef.PolymorphicReturnType ignored -> null;
         };
+    }
+
+    /**
+     * A {@link ClassName} for a binary class name, splitting nested classes on {@code $} so a nested
+     * backing class resolves to the JLS-legal {@code Outer.Nested} rather than to one simple name that
+     * contains a {@code $}. {@code ClassName.bestGuess} splits only on {@code .}, so it keeps the
+     * binary form, and both consumers of this type reject that: the validator's strict comparison
+     * compares it against a reflected {@code TypeName} (which is structural) and fails on a payload
+     * that is in fact correct, and the emitter writes it into the loader's declared value type, where
+     * javac rejects the {@code $}.
+     */
+    private static ClassName fromBinaryName(String binaryName) {
+        int lastDot = binaryName.lastIndexOf('.');
+        String packageName = lastDot < 0 ? "" : binaryName.substring(0, lastDot);
+        String[] names = binaryName.substring(lastDot + 1).split("\\$");
+        return ClassName.get(packageName, names[0],
+            java.util.Arrays.copyOfRange(names, 1, names.length));
     }
 
     /**

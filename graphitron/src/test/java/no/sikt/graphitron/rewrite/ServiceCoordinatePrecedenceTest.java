@@ -26,6 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ServiceCoordinatePrecedenceTest {
 
     private static final String SVC = "no.sikt.graphitron.rewrite.generators.TestFilmService";
+    /** The DTO-shaped batch-parameter fixtures live on the other service stub. */
+    private static final String STUB = "no.sikt.graphitron.rewrite.TestServiceStub";
     /** Gives the record-backed parent type a backing class, so it resolves to a {@code ResultType}. */
     private static final String DUMMY = "no.sikt.graphitron.codereferences.dummyreferences.DummyService";
 
@@ -55,9 +57,11 @@ class ServiceCoordinatePrecedenceTest {
     // ===== Record-backed parent: the coordinate outranks everything below it =====
 
     /**
-     * The headline case. A batch-shaped signature on a record-backed parent has no batch key by
-     * construction, and the surviving diagnostic used to be an argument-name mismatch telling the
-     * author their parameter matched no GraphQL argument, on a field that declares none.
+     * The headline case. A batch-shaped signature whose declared key the parent cannot produce is
+     * answered about the coordinate; the surviving diagnostic used to be an argument-name mismatch
+     * telling the author their parameter matched no GraphQL argument, on a field that declares none.
+     * {@code DummyRecord} exposes no accessor returning a {@code film} record, so this parent has no
+     * route to the key the signature names.
      */
     @Test
     void recordParent_batchShapedSignature_isAnsweredAboutTheCoordinate() {
@@ -67,7 +71,7 @@ class ServiceCoordinatePrecedenceTest {
 
         assertThat(reasonOf(schema, "FilmDetails", "rating"))
             .as("the coordinate is the problem, not the author's parameter name")
-            .contains("record-backed parent", "lifted through the parent chain")
+            .contains("FilmRecord", "cannot produce one")
             .doesNotContain("available GraphQL arguments");
     }
 
@@ -79,7 +83,7 @@ class ServiceCoordinatePrecedenceTest {
             """.formatted(SVC)));
 
         assertThat(reasonOf(schema, "FilmDetails", "rating"))
-            .contains("record-backed parent")
+            .contains("cannot produce one")
             .doesNotContain("available GraphQL arguments");
     }
 
@@ -94,66 +98,59 @@ class ServiceCoordinatePrecedenceTest {
             """.formatted(SVC)));
 
         assertThat(reasonOf(schema, "FilmDetails", "language"))
-            .contains("record-backed parent")
+            .contains("cannot produce one")
             .doesNotContain("must return");
     }
 
     /**
-     * Over-fire guard for the arm's second trigger. A record-parent {@code @service} with no
-     * batch-shaped parameter at all still cannot be honoured when the field's return type is a
-     * record or a scalar; gating the rejection on the batch shape alone would silently make this
-     * legal, which is the feature the follow-up item owns, not this one.
+     * A record-parent {@code @service} with no batch-shaped parameter is rejected for the parameter it
+     * does not declare rather than for the coordinate, whatever the field returns. Every child
+     * {@code @service} batches, so the verdict no longer forks on the return type here; the fixtures
+     * for both return shapes live in
+     * {@code ServiceRecordParentBatchKeyTest.sourcesLessChildOnClassBackedParent_isRejectedNamingTheMissingParameter}
+     * and its table-bound sibling. This case keeps the precedence pin: the missing parameter outranks
+     * the argument-name mismatch its unbound {@code filter} would otherwise produce.
      */
     @Test
-    void recordParent_noBatchParameterWithRecordReturn_isStillRejected() {
+    void recordParent_noBatchParameter_reportsTheMissingParameterNotTheArgumentName() {
         var schema = TestSchemaHelper.buildSchema(recordParentSchema("""
                 title: String
                 nested(filter: String): FilmDetails @service(service: {className: "%s", method: "getConstantRank"})
             """.formatted(SVC)));
 
         assertThat(reasonOf(schema, "FilmDetails", "nested"))
-            .contains("record-backed parent");
+            .contains("declares no Sources parameter")
+            .doesNotContain("available GraphQL arguments");
     }
 
-    /**
-     * The sibling that must keep classifying: a record-parent {@code @service} with no batch
-     * parameter and a {@code @table}-bound return needs no batch key, so the coordinate has no
-     * verdict to give. Mirrors {@code PkLessParentServiceSourcesRejectionTest}'s over-fire guard
-     * on the other coordinate.
-     */
-    @Test
-    void recordParent_noBatchParameterWithTableBoundReturn_stillClassifies() {
-        var schema = TestSchemaHelper.buildSchema(recordParentSchema("""
-                language(filter: String): Language @service(service: {className: "%s", method: "getLanguageByFilter"})
-            """.formatted(SVC)));
-
-        assertThat(schema.field("FilmDetails", "language"))
-            .as("no batch key is needed, so the coordinate has nothing to reject")
-            .isNotInstanceOf(UnclassifiedField.class);
-    }
-
-    // ===== Regime pins: what record-backed parents still inherit from the root regime =====
+    // ===== Regime pins: what record-backed parents no longer inherit from the root regime =====
 
     /**
-     * Record-backed parents currently share the root return-type regime. A {@code @service}
-     * child with no batch parameter therefore still gets the strict return-type comparison. This
-     * is the "before" side of the flip the record-parent key feature will take.
+     * Record-backed parents used to share the root return-type regime, so a {@code @service} child
+     * with no batch parameter got the strict return-type comparison. They are batched children now,
+     * and the residue that flip would have stranded (a coordinate with no return-type validation at
+     * all) is closed by the missing-parameter rejection, which is what this pins: the "after" side of
+     * the flip is a rejection, not a laxer acceptance.
      */
     @Test
-    void recordParent_noBatchParameter_keepsTheStrictReturnTypeComparison() {
+    void recordParent_noBatchParameter_noLongerReachesTheStrictReturnTypeComparison() {
         var schema = TestSchemaHelper.buildSchema(recordParentSchema("""
                 language(filter: String): Language @service(service: {className: "%s", method: "getConstantRank"})
             """.formatted(SVC)));
 
         assertThat(reasonOf(schema, "FilmDetails", "language"))
-            .as("the strict comparison still applies at a record-backed parent")
-            .contains("must return", "LanguageRecord");
+            .as("the coordinate is a batched child now, so the missing key is the verdict")
+            .contains("declares no Sources parameter")
+            .doesNotContain("must return");
     }
 
-    // The Connection half of the same regime is exercised by the root arm below, which shares the
-    // STRICT_ROOT switch case. It has no record-parent fixture: a Connection-shaped type returned
-    // from a record-backed parent's field classifies both as a ConnectionType and as a record
-    // carrier, so the type itself rejects before any field on it reaches the resolver.
+    // The Connection half of the root regime is exercised by the root arm below, which owns the
+    // STRICT_ROOT switch case outright now. It has no record-parent counterpart, and none is owed:
+    // a record-backed parent is a batched child, so its Connection returns are governed by the same
+    // rules as a @table parent's rather than by the root's rejection. No fixture could have pinned
+    // the flip either way, because a Connection-shaped type returned from a record-backed parent's
+    // field classifies both as a ConnectionType and as a record carrier, so the type itself rejects
+    // before any field on it reaches the resolver.
 
     // ===== Field shape outranks the coordinate; the coordinate outranks signature fit =====
 
@@ -309,10 +306,12 @@ class ServiceCoordinatePrecedenceTest {
     }
 
     /**
-     * Name-claim precedence, unchanged: a batch-shaped parameter whose name matches a GraphQL
-     * argument is claimed by the argument, so it never reaches the SOURCES candidate role and the
-     * coordinate has no verdict to give. The field must not silently mint a batch key over an
-     * argument the author meant to pass.
+     * Name-claim precedence, unchanged in its mechanism and visible in its consequence: a batch-shaped
+     * parameter whose name matches a GraphQL argument is claimed by the argument, so it never reaches
+     * the SOURCES candidate role. The field must not silently mint a batch key over an argument the
+     * author meant to pass, and it does not: the coordinate is left with no batch parameter at all and
+     * is rejected for that, which is the honest reading of a signature whose only key-shaped slot the
+     * author spent on an argument.
      */
     @Test
     void tableParent_batchShapedParameterNamedAfterAnArgument_isClaimedByTheArgument() {
@@ -324,13 +323,49 @@ class ServiceCoordinatePrecedenceTest {
             type Query { language: Language }
             """.formatted(SVC));
 
-        var field = schema.field("Language", "rank");
-        assertThat(field)
-            .as("the argument claim wins, so the coordinate never sees a batch candidate")
-            .isInstanceOf(ChildField.ServiceRecordField.class);
-        assertThat(((ChildField.ServiceRecordField) field).method().params())
-            .as("no batch key is minted over an argument the author meant to pass")
-            .noneMatch(MethodRef.Param.Sourced.class::isInstance);
+        assertThat(reasonOf(schema, "Language", "rank"))
+            .as("the argument claim wins, so the coordinate is left with no batch key")
+            .contains("declares no Sources parameter");
+    }
+
+    /**
+     * A DTO-shaped batch parameter at a child coordinate: the coordinate batches, and a
+     * {@code List<DTO>} cannot be its key. The verdict moved to the classify phase with the
+     * missing-{@code Sources} rejection it sits beside, so it can no longer be masked by a parameter
+     * declared ahead of it; the root arm keeps its own answer (an argument-name mismatch, since a root
+     * {@code List<DTO>} is the canonical input-bean shape) and is pinned by {@code ServiceCatalogTest}.
+     */
+    @Test
+    void tableParent_dtoShapedBatchParameter_reportsTheDtoVerdict() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Language @table(name: "language") {
+                name: String @field(name: "name")
+                films: [Film!]! @service(service: {className: "%s", method: "getFilmsWithDtoSources"})
+            }
+            type Query { language: Language }
+            """.formatted(STUB));
+
+        assertThat(reasonOf(schema, "Language", "films"))
+            .contains("not backed by a jOOQ TableRecord")
+            .doesNotContain("available GraphQL arguments");
+    }
+
+    /** The {@code Set<DTO>} container takes the same answer as {@code List<DTO>}. */
+    @Test
+    void tableParent_dtoShapedSetParameter_reportsTheSameDtoVerdict() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Language @table(name: "language") {
+                name: String @field(name: "name")
+                films: [Film!]! @service(service: {className: "%s", method: "getFilmsWithSetOfDtoSources"})
+            }
+            type Query { language: Language }
+            """.formatted(STUB));
+
+        assertThat(reasonOf(schema, "Language", "films"))
+            .contains("not backed by a jOOQ TableRecord")
+            .doesNotContain("unrecognized sources type");
     }
 
     // ===== Child polymorphic returns =====

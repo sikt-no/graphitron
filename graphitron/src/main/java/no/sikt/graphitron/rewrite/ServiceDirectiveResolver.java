@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.ReflectionError;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RowsMethodShape;
+import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -43,7 +44,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *       parameter into a {@link ServiceCatalog.ParamRole}. Neither reads the coordinate.</li>
  *   <li><b>Classify</b> ({@link #classify}) decides every rejection expressible from the
  *       signature fact, the {@link ParentContext} and the field's SDL shape, before any
- *       parameter binds.</li>
+ *       parameter binds, and resolves the coordinate's batch key into a
+ *       {@link ParentKeyResolution} that both the binder and the leaf read.</li>
  *   <li><b>Bind</b> ({@link ServiceCatalog#bindServiceMethod}) extracts and mints, raising only
  *       binding-level rejections.</li>
  * </ul>
@@ -96,25 +98,34 @@ final class ServiceDirectiveResolver {
     }
 
     /**
-     * The regime a coordinate is under. Record-backed parents currently share the root
-     * return-type regime: their children are not yet batched, so the strict comparison and the
-     * Connection rejection still apply to them.
+     * The regime a coordinate is under. Both child coordinates are batched: a class-backed parent's
+     * batch key is the table its {@code Sources} element type names, resolved by
+     * {@link #classifySourcesCoordinate}, so a record-backed parent no longer inherits the root's
+     * strict return-type comparison or its Connection rejection.
      */
     private static Regime regimeOf(ParentContext parent) {
         return switch (parent) {
             case ParentContext.Root ignored -> Regime.STRICT_ROOT;
-            case ParentContext.RecordParent ignored -> Regime.STRICT_ROOT;
+            case ParentContext.RecordParent ignored -> Regime.BATCHED_CHILD;
             case ParentContext.TableParent ignored -> Regime.BATCHED_CHILD;
         };
     }
 
-    /** The batch key the coordinate supplies: the parent table's primary key, or nothing. */
-    private static List<ColumnRef> parentPkColumnsOf(ParentContext parent) {
-        return switch (parent) {
-            case ParentContext.Root ignored -> List.of();
-            case ParentContext.RecordParent ignored -> List.of();
-            case ParentContext.TableParent tp -> tp.table().primaryKeyColumns();
-        };
+    /**
+     * The coordinate's answer to the batch key the {@code Sources} parameter declares. The question
+     * {@link ParentContext} poses, resolved: three named arms rather than a key-columns list whose
+     * emptiness had to stand in for two of them.
+     *
+     * <p>Resolver-internal gathering scaffolding, which the {@link Rejected} arm is the tell for:
+     * only {@link ServiceKeySource} travels onward, as a leaf component.
+     */
+    sealed interface ParentKeyResolution {
+        /** Root operation type: no parent, so no batch key and no key source. */
+        record Root() implements ParentKeyResolution {}
+        /** The parent can produce this key, and here is where the emitter binds it. */
+        record Available(ServiceKeySource source) implements ParentKeyResolution {}
+        /** The parent cannot produce this key; the rejection names why. */
+        record Rejected(Rejection rejection) implements ParentKeyResolution {}
     }
 
     /**
@@ -124,13 +135,26 @@ final class ServiceDirectiveResolver {
      * caller surfaces directly.
      */
     sealed interface Resolved {
-        /** Successful resolution; arms differ by return-type shape. */
+        /**
+         * Successful resolution; arms differ by return-type shape.
+         *
+         * <p>{@link #keySource()} is where the emitted fetcher binds the record carrying the batch
+         * key columns. It is non-null at every child coordinate, because the classify phase rejects
+         * a child whose method declares no {@code Sources} parameter, and {@code null} at the root,
+         * which has no parent to batch against and whose leaves carry no key at all. The child
+         * classify sites feed it straight into their leaf, whose compact constructor pins it
+         * non-null; the root sites do not read it.
+         */
         sealed interface Success extends Resolved {
             MethodRef method();
+            ServiceKeySource keySource();
         }
-        record TableBound(ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) implements Success {}
-        record Result(ReturnTypeRef.ResultReturnType returnType, MethodRef method) implements Success {}
-        record Scalar(ReturnTypeRef.ScalarReturnType returnType, MethodRef method) implements Success {}
+        record TableBound(ReturnTypeRef.TableBoundReturnType returnType, MethodRef method,
+                          ServiceKeySource keySource) implements Success {}
+        record Result(ReturnTypeRef.ResultReturnType returnType, MethodRef method,
+                      ServiceKeySource keySource) implements Success {}
+        record Scalar(ReturnTypeRef.ScalarReturnType returnType, MethodRef method,
+                      ServiceKeySource keySource) implements Success {}
         /**
          * A multitable polymorphic return. The service hands back a PK-populated
          * {@code TableRecord} per branch; the fetcher dispatches on each returned record's runtime
@@ -138,7 +162,10 @@ final class ServiceDirectiveResolver {
          * site narrows this to a distinct-table multitable <em>interface</em>: a union return is
          * rejected and a single-table discriminated interface is deferred.
          */
-        record Polymorphic(ReturnTypeRef.PolymorphicReturnType returnType, MethodRef method) implements Success {}
+        record Polymorphic(ReturnTypeRef.PolymorphicReturnType returnType, MethodRef method) implements Success {
+            /** Root-only by the child-polymorphic deferral above: no coordinate here holds a key. */
+            @Override public ServiceKeySource keySource() { return null; }
+        }
         /** Polymorphic return type lifted to an {@code ErrorsField} (or rejected by lift rules). */
         record ErrorsLifted(GraphitronField field) implements Resolved {}
         /** Any failed resolution path; caller surfaces as {@code UnclassifiedField}. */
@@ -204,13 +231,17 @@ final class ServiceDirectiveResolver {
             ? fb.liftToErrorsField(fieldDef, parentTypeName, p)
             : null;
 
-        Rejection coordinateVerdict = classify(parentTypeName, parent, returnType, signature, claims, lifted);
-        if (coordinateVerdict != null) {
-            return new Resolved.Rejected(coordinateVerdict);
+        ParentKeyResolution keyResolution =
+            classify(parentTypeName, parent, returnType, signature, claims, lifted);
+        if (keyResolution instanceof ParentKeyResolution.Rejected rejected) {
+            return new Resolved.Rejected(rejected.rejection());
         }
+        ServiceKeySource keySource = keyResolution instanceof ParentKeyResolution.Available available
+            ? available.source()
+            : null;
 
         var result = svc.bindServiceMethod(signature, claims, argBindings, ctxKeys,
-            parentPkColumnsOf(parent), slotTypes);
+            keySource == null ? List.<ColumnRef>of() : keySource.keyColumns(), slotTypes);
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
@@ -227,21 +258,21 @@ final class ServiceDirectiveResolver {
             }
         }
 
-        return projectReturnType(returnType, method, lifted);
+        return projectReturnType(returnType, method, lifted, keySource);
     }
 
     /**
      * The classify phase: every rejection expressible from the decoded signature, the coordinate
-     * and the field's SDL shape, decided before a single parameter binds. Returns the winning
-     * rejection, or {@code null} when the coordinate can host the signature.
+     * and the field's SDL shape, decided before a single parameter binds. Returns the coordinate's
+     * resolved batch key, or a {@link ParentKeyResolution.Rejected} carrying the winning rejection.
      *
      * <p>The arms are ordered by what they are about, not by what is cheap to compute: field
      * shape, then coordinate, then signature fit. Everything below this method's return is
      * binding.
      */
-    private Rejection classify(String parentTypeName, ParentContext parent, ReturnTypeRef returnType,
-            ServiceCatalog.ServiceSignature signature, ServiceCatalog.ClaimedParams claims,
-            GraphitronField lifted) {
+    private ParentKeyResolution classify(String parentTypeName, ParentContext parent,
+            ReturnTypeRef returnType, ServiceCatalog.ServiceSignature signature,
+            ServiceCatalog.ClaimedParams claims, GraphitronField lifted) {
         Regime regime = regimeOf(parent);
 
         // A polymorphic return that does not lift to an errors channel is supported on root
@@ -250,21 +281,22 @@ final class ServiceDirectiveResolver {
         if (returnType instanceof ReturnTypeRef.PolymorphicReturnType
                 && lifted == null
                 && !(parent instanceof ParentContext.Root)) {
-            return Rejection.deferred(
+            return new ParentKeyResolution.Rejected(Rejection.deferred(
                 "child @service returning a polymorphic type (interface/union) is not yet supported"
-                + " — route (a) restores it on root @service fields only");
+                + " — route (a) restores it on root @service fields only"));
         }
 
         // Field shape outranks everything below: a Connection return is rejected even when a
         // parameter is also misnamed and even when the signature also declares a batch-shaped one.
         if (regime == Regime.STRICT_ROOT && returnType.wrapper() instanceof FieldWrapper.Connection) {
-            return Rejection.invalidSchema(
-                "@service at the root does not support Connection return types — use [T] or T instead");
+            return new ParentKeyResolution.Rejected(Rejection.invalidSchema(
+                "@service at the root does not support Connection return types — use [T] or T instead"));
         }
 
         // The coordinate's answer to a SOURCES-shaped parameter.
-        Rejection sourcesVerdict = classifySourcesCoordinate(parentTypeName, parent, returnType, signature, claims);
-        if (sourcesVerdict != null) return sourcesVerdict;
+        ParentKeyResolution keyResolution =
+            classifySourcesCoordinate(parentTypeName, parent, signature, claims);
+        if (keyResolution instanceof ParentKeyResolution.Rejected) return keyResolution;
 
         // Signature fit, last before binding: the two halves of one fact, reunited. Single
         // cardinality compares the whole return type; the List-cardinality TableBound arm accepts
@@ -272,16 +304,18 @@ final class ServiceDirectiveResolver {
         if (regime == Regime.STRICT_ROOT) {
             TypeName expected = computeExpectedServiceReturnType(returnType);
             if (expected != null && !signature.returnType().equals(expected)) {
-                return new ReflectionError.ReturnTypeMismatch(signature.className(), signature.methodName(),
-                    TypeNames.simple(expected), TypeNames.simple(signature.returnType()))
-                    .prefixedWith("service method could not be resolved — ");
+                return new ParentKeyResolution.Rejected(
+                    new ReflectionError.ReturnTypeMismatch(signature.className(), signature.methodName(),
+                        TypeNames.simple(expected), TypeNames.simple(signature.returnType()))
+                        .prefixedWith("service method could not be resolved — "));
             }
             String pairMismatch = validateRootListTableBoundReturnPair(returnType, signature);
             if (pairMismatch != null) {
-                return Rejection.structural("service method could not be resolved — " + pairMismatch);
+                return new ParentKeyResolution.Rejected(
+                    Rejection.structural("service method could not be resolved — " + pairMismatch));
             }
         }
-        return null;
+        return keyResolution;
     }
 
     /**
@@ -289,60 +323,110 @@ final class ServiceDirectiveResolver {
      * claim reduction carried. One arm per coordinate; the answer never depends on where the
      * candidate sits in the declaration order, which is the declaration-order dependence this
      * phase split removes.
+     *
+     * <p>The two child arms share {@link #childSourcesVerdict}: both batch, so both owe the author
+     * the same three verdicts (the coordinate cannot produce the declared key, a DTO parameter
+     * cannot be a key, no {@code Sources} parameter was declared at all) and differ only in how the
+     * key itself resolves.
      */
-    private Rejection classifySourcesCoordinate(String parentTypeName, ParentContext parent,
-            ReturnTypeRef returnType, ServiceCatalog.ServiceSignature signature,
-            ServiceCatalog.ClaimedParams claims) {
+    private ParentKeyResolution classifySourcesCoordinate(String parentTypeName, ParentContext parent,
+            ServiceCatalog.ServiceSignature signature, ServiceCatalog.ClaimedParams claims) {
         ServiceCatalog.DecodedParam firstCandidate = null;
         ServiceCatalog.SourcesShape firstShape = null;
+        ServiceCatalog.DecodedParam dtoParam = null;
         for (int i = 0; i < signature.params().size(); i++) {
-            if (claims.roleOf(i) instanceof ServiceCatalog.ParamRole.SourcesCandidate c) {
-                firstCandidate = signature.params().get(i);
+            var role = claims.roleOf(i);
+            var param = signature.params().get(i);
+            if (firstShape == null && role instanceof ServiceCatalog.ParamRole.SourcesCandidate c) {
+                firstCandidate = param;
                 firstShape = c.shape();
-                break;
+            }
+            // A DTO-shaped parameter only reads as an attempted batch key while it is unclaimed; a
+            // List<DTO> the author bound to a GraphQL argument is an ordinary argument.
+            if (dtoParam == null && role instanceof ServiceCatalog.ParamRole.Unclaimed
+                    && param.dtoSourcesReason() != null) {
+                dtoParam = param;
             }
         }
-        switch (parent) {
-            case ParentContext.Root ignored -> {
-                if (firstShape == null) return null;
-                // List<XRecord> at root is the canonical InputBeanResolver input-bean shape, not a
-                // coordinate claim; binding owns it and its arg-mismatch fallback. Only the
-                // anonymous-key wraps are answered here.
-                if (firstShape.wrap() instanceof SourceKey.Wrap.TableRecord) return null;
-                return Rejection.structural("@service at the root does not support "
-                    + "List<Row>/List<Record> batch parameters — the root "
-                    + "has no parent context to batch against")
-                    .prefixedWith("service method could not be resolved — ");
-            }
-            case ParentContext.TableParent tp -> {
-                if (firstShape == null) return null;
-                if (tp.table().primaryKeyColumns().isEmpty()) {
-                    return new ServiceMethodCallError.SourcesOnPkLessParent(
-                        firstCandidate.displayName(), signature.methodName(),
-                        parentTypeName, tp.table().tableName())
-                        .prefixedWith("service method could not be resolved — ");
-                }
-                String elementMismatch = validateTableRecordSourceParentTable(
-                    parentTypeName, signature, firstShape);
-                return elementMismatch == null ? null : Rejection.structural(elementMismatch);
-            }
-            case ParentContext.RecordParent ignored -> {
-                // Two triggers, and the second is not redundant. A batch-shaped signature is the
-                // case this arm exists for, but a Result or Scalar resolved return type has to
-                // reject here with no candidate in sight: that pairing is unsupported at this
-                // coordinate whatever the signature says, and gating on candidacy alone would
-                // silently make a Sources-less record-parent @service legal. A TableBound return
-                // with no candidate keeps classifying.
-                if (firstShape == null
-                        && !(returnType instanceof ReturnTypeRef.ResultReturnType)
-                        && !(returnType instanceof ReturnTypeRef.ScalarReturnType)) {
-                    return null;
-                }
-                return Rejection.deferred(
-                    "@service on a record-backed parent is not yet supported; the batch key "
-                    + "must be lifted through the parent chain to the rooted @table");
-            }
+        final ServiceCatalog.DecodedParam candidate = firstCandidate;
+        final ServiceCatalog.SourcesShape shape = firstShape;
+        return switch (parent) {
+            case ParentContext.Root ignored -> rootSourcesVerdict(shape, signature);
+            case ParentContext.TableParent tp -> childSourcesVerdict(
+                shape == null ? null : tableParentKey(parentTypeName, tp, signature, candidate, shape),
+                dtoParam, signature);
+            case ParentContext.RecordParent rp -> childSourcesVerdict(
+                shape == null ? null : fb.resolveServiceKeySource(parentTypeName, rp.parentType(), signature, shape),
+                dtoParam, signature);
+        };
+    }
+
+    /**
+     * The root's answer. {@code List<XRecord>} at root is the canonical {@code InputBeanResolver}
+     * input-bean shape, not a coordinate claim; binding owns it and its arg-mismatch fallback. Only
+     * the anonymous-key wraps are answered here, and a DTO parameter at root falls through to
+     * binding's arg-mismatch arm for the same reason.
+     */
+    private static ParentKeyResolution rootSourcesVerdict(ServiceCatalog.SourcesShape shape,
+            ServiceCatalog.ServiceSignature signature) {
+        if (shape == null || shape.wrap() instanceof SourceKey.Wrap.TableRecord) {
+            return new ParentKeyResolution.Root();
         }
+        return new ParentKeyResolution.Rejected(Rejection.structural(
+            "@service at the root does not support List<Row>/List<Record> batch parameters — the"
+            + " root has no parent context to batch against")
+            .prefixedWith("service method could not be resolved — "));
+    }
+
+    /**
+     * The verdict shared by both child coordinates. {@code resolvedKey} is the coordinate's own
+     * answer, or {@code null} when the signature declared no {@code Sources} parameter for a key to
+     * be resolved from.
+     *
+     * <p>Order: the coordinate outranks the DTO hint, which outranks the missing-{@code Sources}
+     * rejection. The DTO arm fires whether or not a real batch parameter is also present, because
+     * an unclaimed {@code List<DTO>} beside a valid key is still a parameter the emitter has no way
+     * to fill; it lives here rather than in binding so it cannot be masked by a parameter declared
+     * ahead of it.
+     */
+    private static ParentKeyResolution childSourcesVerdict(ParentKeyResolution resolvedKey,
+            ServiceCatalog.DecodedParam dtoParam, ServiceCatalog.ServiceSignature signature) {
+        if (resolvedKey instanceof ParentKeyResolution.Rejected) return resolvedKey;
+        if (dtoParam != null) {
+            return new ParentKeyResolution.Rejected(new ServiceMethodCallError.DtoSourcesUnsupported(
+                dtoParam.displayName(), signature.methodName(), dtoParam.dtoSourcesReason()));
+        }
+        if (resolvedKey == null) {
+            return new ParentKeyResolution.Rejected(Rejection.structural(
+                "service method could not be resolved — method '" + signature.methodName()
+                + "' in class '" + signature.className() + "' declares no Sources parameter, but a"
+                + " child @service field resolves through a DataLoader and needs one: add a"
+                + " Set<XRecord> keys parameter naming the table to batch on, and return"
+                + " Map<XRecord, V>. A per-parent service call is not emitted"));
+        }
+        return resolvedKey;
+    }
+
+    /**
+     * A {@code @table} parent's key: its own primary key, read off the SQL-projected row the parent
+     * already holds. The element-class check stays here because on this coordinate the element type
+     * is still a claim about the parent, unlike the class-backed arm where the element type is what
+     * finds the key owner in the first place.
+     */
+    private ParentKeyResolution tableParentKey(String parentTypeName, ParentContext.TableParent tp,
+            ServiceCatalog.ServiceSignature signature, ServiceCatalog.DecodedParam candidate,
+            ServiceCatalog.SourcesShape shape) {
+        if (!tp.table().hasPrimaryKey()) {
+            return new ParentKeyResolution.Rejected(
+                new ServiceMethodCallError.SourcesOnPkLessParent(
+                    candidate.displayName(), signature.methodName(),
+                    parentTypeName, tp.table().tableName())
+                    .prefixedWith("service method could not be resolved — "));
+        }
+        String elementMismatch = validateTableRecordSourceParentTable(parentTypeName, signature, shape);
+        return elementMismatch == null
+            ? new ParentKeyResolution.Available(new ServiceKeySource.FromTableRow(tp.table()))
+            : new ParentKeyResolution.Rejected(Rejection.structural(elementMismatch));
     }
 
     /**
@@ -369,11 +453,11 @@ final class ServiceDirectiveResolver {
     }
 
     private Resolved projectReturnType(ReturnTypeRef returnType, MethodRef method,
-                                       GraphitronField lifted) {
+                                       GraphitronField lifted, ServiceKeySource keySource) {
         return switch (returnType) {
-            case ReturnTypeRef.TableBoundReturnType tb -> new Resolved.TableBound(tb, method);
-            case ReturnTypeRef.ResultReturnType r -> new Resolved.Result(r, method);
-            case ReturnTypeRef.ScalarReturnType s -> new Resolved.Scalar(s, method);
+            case ReturnTypeRef.TableBoundReturnType tb -> new Resolved.TableBound(tb, method, keySource);
+            case ReturnTypeRef.ResultReturnType r -> new Resolved.Result(r, method, keySource);
+            case ReturnTypeRef.ScalarReturnType s -> new Resolved.Scalar(s, method, keySource);
             case ReturnTypeRef.PolymorphicReturnType p -> lifted != null
                 ? new Resolved.ErrorsLifted(lifted)
                 : new Resolved.Polymorphic(p, method);

@@ -1789,7 +1789,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
             }
             type Query { film: Film }
             """,
@@ -1807,7 +1807,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
                     @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
@@ -1848,29 +1848,29 @@ class GraphitronSchemaBuilderTest {
         // existing ServiceFieldCase.SCALAR_RETURN.
         var s1 = buildSnapshot("""
             type Film @table(name: "film") {
-                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"})
             }
             type Query { film: Film }
             """);
         var recordBound = (FieldClassification.ServiceBacked) s1.fieldClassificationsByCoord().get("Film.rating");
         assertThat(recordBound.tableBound()).isFalse();
         assertThat(recordBound.tableName()).isNull();
-        assertThat(recordBound.methodName()).isEqualTo("get");
-        assertThat(recordBound.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
+        assertThat(recordBound.methodName()).isEqualTo("getRatingMapped");
+        assertThat(recordBound.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.generators.TestFilmService");
 
         // ServiceTableField — tableBound = true, tableName = target table's name. Fixture
         // mirrors ServiceFieldCase.TABLE_TYPE_RETURN.
         var s2 = buildSnapshot("""
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguageByKey"})
             }
             type Query { film: Film }
             """);
         var tableBound = (FieldClassification.ServiceBacked) s2.fieldClassificationsByCoord().get("Film.language");
         assertThat(tableBound.tableBound()).isTrue();
         assertThat(tableBound.tableName()).isEqualToIgnoringCase("language");
-        assertThat(tableBound.methodName()).isEqualTo("getLanguage");
+        assertThat(tableBound.methodName()).isEqualTo("getLanguageByKey");
     }
 
     @Test
@@ -2435,9 +2435,13 @@ class GraphitronSchemaBuilderTest {
             }),
 
         SERVICE_FIELD_ON_RESULT_TYPE(
-            "record-backed parent + @service + scalar return → DEFERRED until batch-key lift through parent chain ships",
+            "class-backed parent + @service whose declared batch key the parent cannot produce → AUTHOR_ERROR",
+            // The supported half of this coordinate (a parent that can produce the key) is taught by
+            // the `service-child-class-backed-parent` ClassifiedCorpus example; this row keeps the
+            // surviving rejection, which is about the parent's inability to produce the record the
+            // Sources element type names rather than about the coordinate being unsupported.
             """
-            type FilmDetails { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
+            type FilmDetails { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingByFilmRecord"}) }
             type Film @table(name: "film") { details: FilmDetails }
             type Query {
                 film: Film
@@ -2448,8 +2452,8 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("FilmDetails", "rating");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
-                assertThat(unc.reason()).contains("record-backed parent", "lifted through the parent chain");
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("FilmRecord", "cannot produce one");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
         },
@@ -3767,21 +3771,21 @@ class GraphitronSchemaBuilderTest {
             "@service field is classified as ServiceRecordField — method reference resolved",
             """
             type Film @table(name: "film") {
-                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}, contextArguments: ["tenantId", "userId"])
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingBatchedWithContext"}, contextArguments: ["tenantId", "userId"])
             }
             type Query { film: Film }
             """,
             schema -> {
                 var f = (no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField) schema.field("Film", "rating");
                 assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
-                assertThat(f.method().methodName()).isEqualTo("get");
+                assertThat(f.method().methodName()).isEqualTo("getRatingBatchedWithContext");
             }),
 
         SERVICE_FIELD_DSL_CONTEXT_PARAM(
             "@service method with DSLContext parameter — reflected as ParamSource.DslContext, field not UnclassifiedField",
             """
             type Film @table(name: "film") {
-                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getWithDsl"})
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingBatchedWithDsl"})
             }
             type Query { film: Film }
             """,

@@ -752,22 +752,16 @@ public final class LauncherCommands {
     /**
      * The {@code @service} record child's row: pure delegation, so the source arm carries only
      * the method ref, whose declared return type IS the rows method's return type (the
-     * classifier acceptance enforces the equality). Two loud production guards for the
-     * validator's recorded skip holes: a record child without a Sources parameter classifies
-     * with null key facts today (nothing rejects it; the legacy emission raised a bare NPE),
-     * and a backing-less result return skips the return-shape equality check entirely (the
-     * legacy emission wrapped the whole reflected type once more, which does not compile).
-     * Both fail here with the cause until a validator rejection lands.
+     * classifier acceptance enforces the equality). One loud production guard remains, for the
+     * validator's last recorded skip hole here: a backing-less result return skips the return-shape
+     * equality check entirely (the legacy emission wrapped the whole reflected type once more, which
+     * does not compile), so it fails here with the cause until a validator rejection lands. The
+     * companion guard on a null key is gone: the leaf's compact constructor pins both key components
+     * non-null, and the classifier rejects a child {@code @service} declaring no {@code Sources}
+     * parameter before a leaf exists.
      */
     private static LauncherCommand serviceRecordRow(
             no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField srf, GeneratedUnits units) {
-        if (srf.sourceKey() == null || srf.loaderRegistration() == null) {
-            throw new IllegalStateException(
-                "Graphitron generator bug (service record child): coordinate '"
-                + srf.qualifiedName() + "' has no Sources parameter, so no DataLoader key"
-                + " exists; the validator accepts this shape today (a recorded mirror gap;"
-                + " the table-bound sibling is rejected) and no emission exists for it.");
-        }
         if (no.sikt.graphitron.rewrite.model.RowsMethodShape.strictPerKeyType(srf.returnType()) == null
                 && !(srf.returnType() instanceof no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType)) {
             throw new IllegalStateException(

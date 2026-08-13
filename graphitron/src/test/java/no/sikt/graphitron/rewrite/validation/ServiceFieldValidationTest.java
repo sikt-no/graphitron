@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -34,27 +35,45 @@ class ServiceFieldValidationTest {
 
     // ===== ServiceRecordField — non-table return type =====
 
-    private static final MethodRef RESOLVED_METHOD = TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of());
+    private static final MethodRef RESOLVED_METHOD = TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID,
+        List.of(TestFixtures.sourcedRow("filmKeys", List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer")))));
+    /** The same method minus its batch parameter: the shape the classifier now rejects outright. */
+    private static final MethodRef NO_SOURCES_METHOD = TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of());
     private static final List<ColumnRef> RESOLVED_KEY_COLUMNS =
         List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer"));
     private static final ReturnTypeRef.ResultReturnType RECORD_RT_SINGLE =
         new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null);
     private static final SourceKey RECORD_SOURCE_KEY =
         TestFixtures.serviceSourceKey(new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS);
+    /** A {@code @table} parent's key source: the parent's own table owns the key columns. */
+    private static final ServiceKeySource RECORD_KEY_SOURCE = new ServiceKeySource.FromTableRow(
+        TestFixtures.tableRef("film", "FILM", "Film", RESOLVED_KEY_COLUMNS));
     private static final LoaderRegistration RECORD_LR =
         TestFixtures.loaderRegistration(RECORD_RT_SINGLE, false, false);
 
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — passes validation now that ServiceRecordField is implemented (Phase A)",
-            new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(), RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
+            new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(), RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_KEY_SOURCE, RECORD_LR, Optional.empty()),
             List.of()),
+
+        NO_SOURCES_PARAM("no Sources param — the sibling's batching requirement, mirrored onto this leaf",
+            new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(), NO_SOURCES_METHOD, RECORD_SOURCE_KEY, RECORD_KEY_SOURCE, RECORD_LR, Optional.empty()),
+            List.of("Field 'Film.externalChild': a child @service field requires a Sources parameter "
+                + "for DataLoader batching")),
+
+        KEY_OWNER_WITHOUT_PK("key owner has no primary key — nothing to key the batch on",
+            new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(), RESOLVED_METHOD, RECORD_SOURCE_KEY,
+                new ServiceKeySource.FromTableRow(TestFixtures.tableRef("film", "FILM", "Film", List.of())),
+                RECORD_LR, Optional.empty()),
+            List.of("Field 'Film.externalChild': @service batches on table 'film', which has no "
+                + "primary key, so there is nothing to key the batch on")),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
             new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(
                 TestFixtures.conditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), TestFixtures.filmTable(), "")),
-                RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
+                RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_KEY_SOURCE, RECORD_LR, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
                 + "(condition-join lift form) is not yet supported"));
 
@@ -92,7 +111,9 @@ class ServiceFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 new SourceKey.Wrap.Row(),
                 List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
-                false),
+                false,
+                TestFixtures.tableRef("film", "FILM", "Film",
+                    List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
             List.of()),
 
         NO_SOURCES_PARAM("no Sources param — missing DataLoader batch key error",
@@ -102,7 +123,7 @@ class ServiceFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
-                null, null,
+                RECORD_SOURCE_KEY, RECORD_KEY_SOURCE, null,
                 Optional.empty()),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
 
@@ -137,9 +158,9 @@ class ServiceFieldValidationTest {
      * rather than the {@code validate(field)} shortcut, which would wrap the field in a
      * {@link GraphitronType.RootType} and skip all PK checks.
      *
-     * <p>Key columns are guaranteed to match the parent PK by construction (they are passed in
-     * from {@code parentPkColumns} during reflection). The validator only needs to check that
-     * {@code Sources}-typed parameters have a parent with a primary key.
+     * <p>Key columns are guaranteed to match the key owner's primary key by construction (the
+     * classify phase resolves them from it and hands them to binding). What the validator mirrors is
+     * that the key owner has a primary key at all.
      */
     interface TablePkCase {
         GraphitronType parentType();
@@ -168,12 +189,19 @@ class ServiceFieldValidationTest {
         new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE_SINGLE_PK, new FieldWrapper.Single(true));
 
     private static ServiceTableField serviceField(SourceKey.Wrap wrap, List<ColumnRef> keyColumns, boolean mapped) {
-        return buildServiceTableField(FILM_RETURN, wrap, keyColumns, mapped);
+        return buildServiceTableField(FILM_RETURN, wrap, keyColumns, mapped,
+            TestFixtures.tableRef("film", "FILM", "Film", keyColumns));
     }
 
+    /**
+     * {@code keyOwner} is the table the batch key columns are read through, which on a {@code @table}
+     * parent is the parent's own table. Passed explicitly rather than derived from the return type:
+     * the two are the same table only by coincidence in these fixtures, and the PK-less-key-owner case
+     * below needs to vary it independently.
+     */
     private static ServiceTableField buildServiceTableField(
             ReturnTypeRef.TableBoundReturnType returnType,
-            SourceKey.Wrap wrap, List<ColumnRef> keyColumns, boolean mapped) {
+            SourceKey.Wrap wrap, List<ColumnRef> keyColumns, boolean mapped, TableRef keyOwner) {
         LoaderRegistration.Container container = mapped
             ? LoaderRegistration.Container.MAPPED_SET
             : LoaderRegistration.Container.POSITIONAL_LIST;
@@ -182,6 +210,7 @@ class ServiceFieldValidationTest {
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(TestFixtures.sourced("filmKeys", wrap, keyColumns, container))),
             TestFixtures.serviceSourceKey(wrap, keyColumns),
+            new ServiceKeySource.FromTableRow(keyOwner),
             TestFixtures.loaderRegistration(returnType, mapped, false),
             Optional.empty());
     }
@@ -215,6 +244,7 @@ class ServiceFieldValidationTest {
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(TestFixtures.sourced("filmKeys", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),
             TestFixtures.serviceSourceKey(wrap, keyCols),
+            new ServiceKeySource.FromTableRow(FILM_TABLE_SINGLE_PK),
             TestFixtures.loaderRegistration(FILM_RETURN, false, false),
             Optional.of(channel));
 
@@ -235,6 +265,7 @@ class ServiceFieldValidationTest {
                     TestFixtures.sourced("filmKeys1", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST),
                     TestFixtures.sourced("filmKeys2", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),
             TestFixtures.serviceSourceKey(wrap, keyCols),
+            new ServiceKeySource.FromTableRow(FILM_TABLE_SINGLE_PK),
             TestFixtures.loaderRegistration(FILM_RETURN, false, false),
             Optional.empty());
     }
@@ -247,16 +278,18 @@ class ServiceFieldValidationTest {
             serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
             List.of()),
 
-        ROW_KEYED_PARENT_NO_PK(
-            "RowKeyed — parent table has no PK — missing PK error",
+        ROW_KEYED_KEY_OWNER_NO_PK(
+            "RowKeyed — the table the key is read through has no PK — missing PK error",
+            // The check reads the leaf's key owner, not the parent type: under the relaxed contract
+            // those are the same table only when the parent carries @table, and the invariant the
+            // emitter relies on is about the table whose column constants the extraction uses.
+            // SourceKey's canonical-constructor non-empty invariant prevents an empty column list, so
+            // the fixture keeps real columns and varies the owner.
             filmTableType(FILM_TABLE_NO_PK),
-            // Source columns are irrelevant here — the validator inspects the parent table's
-            // own primaryKeyColumns(); the source-key is just present to make the field
-            // structurally valid. SourceKey's canonical-constructor non-empty invariant
-            // prevents an empty list at this site.
-            serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
-            List.of("Field 'Film.externalChild': @service on a table-bound return type requires the " +
-                "parent table 'film' to have a primary key")),
+            buildServiceTableField(FILM_RETURN, new SourceKey.Wrap.Row(),
+                FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false, FILM_TABLE_NO_PK),
+            List.of("Field 'Film.externalChild': @service batches on table 'film', which has no " +
+                "primary key, so there is nothing to key the batch on")),
 
         ROW_KEYED_COMPOSITE_PK(
             "RowKeyed — parent table has composite PK — no errors",
@@ -302,7 +335,8 @@ class ServiceFieldValidationTest {
             filmTableType(FILM_TABLE_SINGLE_PK),
             buildServiceTableField(
                 new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE_NO_PK, new FieldWrapper.Single(true)),
-                new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
+                new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false,
+                FILM_TABLE_SINGLE_PK),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires the " +
                 "returned table 'film' to have a primary key for identity re-projection"));
 

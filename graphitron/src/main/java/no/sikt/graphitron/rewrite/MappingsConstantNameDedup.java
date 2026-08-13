@@ -200,10 +200,10 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.filters(),
-                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case ChildField.ServiceRecordField f -> new ChildField.ServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
                 f.errorChannel().map(c -> renameRouted(c, newName)));

@@ -1370,7 +1370,9 @@ public class GraphitronSchemaValidator {
 
         var smr = field.method();
 
-        // A table-bound service field requires at least one Sources parameter for DataLoader batching.
+        // A table-bound service field requires at least one Sources parameter for DataLoader
+        // batching. Classifier-guaranteed since the child @service coordinate rejects a Sources-less
+        // signature outright; this is the mirror, not the primary diagnostic.
         boolean hasSources = smr.params().stream().anyMatch(p -> p instanceof MethodRef.Param.Sourced);
         if (!hasSources) {
             errors.add(new ValidationError(
@@ -1383,8 +1385,8 @@ public class GraphitronSchemaValidator {
 
         // The lift re-projects the service result by joining the returned table on its own primary
         // key (identity re-projection); a PK-less returned table gives the emitter no key to extract.
-        // Mirrors the parent-PK invariant below: a classifier guarantee the lifted emitter relies on,
-        // not a transient stopgap.
+        // Mirrors the key-owner-PK invariant below: a classifier guarantee the lifted emitter relies
+        // on, not a transient stopgap.
         TableRef returnTable = field.returnType().table();
         if (!returnTable.hasPrimaryKey()) {
             errors.add(new ValidationError(
@@ -1394,19 +1396,9 @@ public class GraphitronSchemaValidator {
             ));
         }
 
-        var parentType = types.get(field.parentTypeName());
-        if (!(parentType instanceof TableBackedType tbt)) {
-            return; // non-table parent; no DataLoader key needed
-        }
-        TableRef parentTable = tbt.table();
-        if (!parentTable.hasPrimaryKey()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.structural("Field '" + field.qualifiedName() + "': @service on a table-bound return type requires the parent table '" + parentTable.tableName() + "' to have a primary key"),
-                field.location()
-            ));
-        }
+        validateServiceBatchKey(field, field.keySource(), field.sourceKey(), errors);
     }
+
     private void validateServiceRecordField(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (!field.joinPath().isEmpty()) {
             errors.add(new ValidationError(
@@ -1417,6 +1409,52 @@ public class GraphitronSchemaValidator {
             return;
         }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+
+        // The sibling's Sources-required check, which this leaf never carried. It is the leaf the
+        // Result and Scalar classify arms mint on both parent kinds, so it is the one that most needs
+        // the mirror; classifier-guaranteed, like the table-bound copy.
+        if (field.method().params().stream().noneMatch(p -> p instanceof MethodRef.Param.Sourced)) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': a child @service field "
+                    + "requires a Sources parameter for DataLoader batching"),
+                field.location()));
+            return;
+        }
+        validateServiceBatchKey(field, field.keySource(), field.sourceKey(), errors);
+    }
+
+    /**
+     * The batched child {@code @service} invariant, stated once for both service leaves: a
+     * {@code Sources} parameter exists, and its columns are the key owner's primary key.
+     *
+     * <p>Every clause mirrors a {@link ServiceDirectiveResolver} classify-time rejection rather than
+     * being the primary diagnostic (the house pattern: the validator mirrors classifier invariants).
+     * The key owner is the parent's own table only when the parent carries {@code @table}; on a
+     * class-backed parent it is the table the {@code Sources} element type names, which is why this
+     * reads the leaf's stored key source rather than looking the parent type up.
+     */
+    private void validateServiceBatchKey(GraphitronField field,
+            no.sikt.graphitron.rewrite.model.ServiceKeySource keySource,
+            no.sikt.graphitron.rewrite.model.SourceKey sourceKey, List<ValidationError> errors) {
+        TableRef keyOwner = keySource.keyOwner();
+        if (!keyOwner.hasPrimaryKey()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': @service batches on table '"
+                    + keyOwner.tableName() + "', which has no primary key, so there is nothing to key "
+                    + "the batch on"),
+                field.location()));
+            return;
+        }
+        if (!sourceKey.columns().equals(keyOwner.primaryKeyColumns())) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': @service batch key columns "
+                    + "do not match the primary key of the table they are read through ('"
+                    + keyOwner.tableName() + "')"),
+                field.location()));
+        }
     }
     /**
      * The record-read leaf's cross-axis gating rule: each {@link ValueLocator} arm is only

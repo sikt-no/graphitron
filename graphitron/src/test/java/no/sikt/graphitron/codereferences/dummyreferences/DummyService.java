@@ -64,6 +64,13 @@ public final class DummyService {
     public static AccessorPayloads.AmbiguousListPayload makeAccessorAmbiguousListPayload() { return unused(); }
     public static AccessorPayloads.SingleAccessorOnListField makeAccessorSingleAccessorOnListField() { return unused(); }
 
+    // ===== ServiceKeyPayloads.* (author-declared @service batch key on a class-backed parent) =====
+    public static ServiceKeyPayloads.LanguageKeyed makeLanguageKeyed() { return unused(); }
+    public static ServiceKeyPayloads.TwoLanguageAccessors makeTwoLanguageAccessors() { return unused(); }
+    public static ServiceKeyPayloads.ManyLanguages makeManyLanguages() { return unused(); }
+    public static ServiceKeyPayloads.FilmListKeyed makeFilmListKeyed() { return unused(); }
+    public static ServiceKeyPayloads.NoRecordAccessor makeNoRecordAccessor() { return unused(); }
+
     // ===== R441EventAccessorPayloads.* (multischema typed-accessor / qualified @table match) =====
     public static R441EventAccessorPayloads.SchemaAEventsPayload makeR441SchemaAEventsPayload() { return unused(); }
     public static R441EventAccessorPayloads.SchemaBEventsPayload makeR441SchemaBEventsPayload() { return unused(); }
