@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 3
 theme: interface-union
-depends-on: [split-query-on-discriminated-interface-child]
+depends-on: [batched-discriminated-interface-child]
 created: 2026-08-13
 last-updated: 2026-08-13
 ---
@@ -21,8 +21,9 @@ unsettled delivery story. Once the root's route is the same split-query question
 already blocked on, they are one design with two coordinates, and specifying them separately would
 answer that question twice.
 
-Depends on `roadmap/split-query-on-discriminated-interface-child.md`, which wires the delivery
-marker this route needs. That item is a bug on its own terms and is not absorbed here.
+Depends on `roadmap/batched-discriminated-interface-child.md`, which gives this arm the batched
+delivery the child half's pagination rides on. That item is a defect on its own terms, the child
+being N+1 with no way to opt out, and is not absorbed here.
 
 ## Reopened: the plan below answers the fan-out question the wrong way round
 
@@ -393,9 +394,10 @@ which is the route now rejected, so the seam is an open question rather than a s
 
 ## Out of scope
 
-* **Wiring the delivery marker.** `roadmap/split-query-on-discriminated-interface-child.md` owns it.
-  This item depends on it rather than absorbing it: the silent swallow is worth fixing whether or not
-  the connection work proceeds.
+* **Batched delivery for the child arm.** `roadmap/batched-discriminated-interface-child.md` owns it.
+  This item depends on it rather than absorbing it: the child's N+1 is worth fixing whether or not
+  the connection work proceeds, and that item's spec resolves the `@splitQuery` question this one
+  does not need to reopen.
 * **Facets on these coordinates.** Already rejected with a message naming it a follow-up; lifting
   that is a separate item if a consumer asks.
 * **Multi-table interface and union ordering.** `R382`'s axis, unrelated.
