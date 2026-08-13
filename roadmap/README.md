@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R639` | Session identity is a Java method resolved at build time, not generated SQL | Spec | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
-| `R649` | Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service | Spec | 2026-08-13 | [plan](service-coordinate-rejection-precedence.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R648` | Author-declared batch key for child @service on record-backed parents <sub>blocked on the precedence item's phase split; see the coordinate section</sub> <sub>blocked by: [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)</sub> | Ready (deferred) | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
+| `R649` | Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service | Ready | 2026-08-13 | [plan](service-coordinate-rejection-precedence.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -282,7 +282,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### diagnostics
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
-- `R649` [**Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service**](service-coordinate-rejection-precedence.md) — Spec, bug
+- `R649` [**Coordinate-level rejections outrank parameter-binding rejections on record-backed-parent @service**](service-coordinate-rejection-precedence.md) — Ready, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
