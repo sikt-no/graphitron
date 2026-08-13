@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite.schema;
 
+import graphql.language.Definition;
+import graphql.language.Document;
+import graphql.language.SourceLocation;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.MultiSourceReader;
 import graphql.parser.Parser;
@@ -16,7 +19,9 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Builds a {@link TypeDefinitionRegistry} from a set of user-supplied schema file paths,
@@ -36,7 +41,7 @@ public final class RewriteSchemaLoader {
 
     /**
      * The {@link MultiSourceReader} source-name under which the bundled
-     * {@code directives.graphqls} is registered (see {@link #addDirectivesSource}).
+     * {@code directives.graphqls} is registered (see {@link #parseDirectives}).
      * graphql-java stamps this string onto the {@code SourceLocation} of every
      * definition the bundled source contributes (the directive definitions plus the
      * inputs/enums they reference). Consumers that walk the
@@ -75,119 +80,155 @@ public final class RewriteSchemaLoader {
     }
 
     /**
-     * Parses the bundled directives plus every source in {@code userSchemaSources}. The parameter
-     * is the file arm rather than a string collection because a label has nothing to open: a
-     * caller holding one has to decide what that means at its own boundary instead of discovering
-     * it as a parse-time surprise here.
+     * One source the parser rejected: which file, why, and where. Carries the offending exception
+     * so a caller that still wants to fail keeps the original cause, and derives the file-attributed
+     * message rather than storing a second copy of what {@link #location} and {@link #brief} already
+     * say.
+     *
+     * @param sourceName the source the loader was parsing, always known even when the parser
+     *                   reported no location
+     * @param brief      the first-sentence reason, stripped of the redundant offending-token tail
+     * @param location   the offending site, or {@code null} where the parser reported none
+     */
+    public record SyntaxFailure(String sourceName, String brief, SourceLocation location,
+                                InvalidSyntaxException cause) {
+
+        /** The file-attributed one-liner {@link SchemaParseException#getMessage()} carries. */
+        public String attributedMessage() {
+            if (location == null || location.getSourceName() == null) {
+                return "Schema parse failed: " + brief;
+            }
+            return "Schema parse failed in " + location.getSourceName()
+                + " at line " + location.getLine() + " column " + location.getColumn()
+                + ": " + brief;
+        }
+    }
+
+    /**
+     * The outcome of parsing a source set file by file: the registry the sources that parsed
+     * produced, and one {@link SyntaxFailure} per source that did not.
+     *
+     * <p>A failure never subtracts from what its siblings contribute. That is the whole point of
+     * parsing per file: an author editing one schema file in a workspace of well-formed ones has a
+     * single invalid buffer, and the facts the other files declare are exactly what a question
+     * about that buffer needs answered.
+     *
+     * @param registry the definitions every source that parsed contributed, the bundled directives
+     *                 included; never null and never partial with respect to those sources
+     * @param failures the rejected sources, in the order they were parsed
+     */
+    public record PerSourceParse(TypeDefinitionRegistry registry, List<SyntaxFailure> failures) {}
+
+    /**
+     * Parses the bundled directives plus every source in {@code userSchemaSources}, one parse per
+     * source, and reports the rejected sources instead of failing on them.
+     *
+     * <p>Each source is parsed alone and the surviving definitions are handed to a single
+     * {@link SchemaParser#buildRegistry} call, so the registry is assembled from exactly the
+     * definition set a whole-document parse would have assembled it from, less the sources that
+     * did not parse. Registry-level problems (a type two sources both declare) therefore still
+     * surface where they always did, from that one call: they are the combining stage's business,
+     * not a property of any single file.
+     *
+     * <p>Splitting the parse widens one incidental limit. The parser's token budget applied to the
+     * concatenation before and applies per source now, so a source set that tripped it as a
+     * concatenation may parse.
+     */
+    // Raw Definition is graphql-java's own declaration on both ends of this accumulation
+    // (Document.getDefinitions and Document.Builder.definitions); parameterising it here would
+    // need a cast through a wildcard list, which buys no checking the API can honour.
+    @SuppressWarnings("rawtypes")
+    public static PerSourceParse parsePerSource(Collection<SchemaSource.File> userSchemaSources) {
+        var definitions = new ArrayList<Definition>();
+        var failures = new ArrayList<SyntaxFailure>();
+        definitions.addAll(parseDirectives().getDefinitions());
+        for (SchemaSource.File source : userSchemaSources) {
+            Reader reader = openSource(source.path());
+            try {
+                definitions.addAll(parseSource(source.sourceName(), reader).getDefinitions());
+            } catch (InvalidSyntaxException e) {
+                failures.add(new SyntaxFailure(
+                    source.sourceName(), firstSentence(e.getMessage()), e.getLocation(), e));
+            }
+        }
+        var document = Document.newDocument().definitions(definitions).build();
+        return new PerSourceParse(new SchemaParser().buildRegistry(document), failures);
+    }
+
+    /**
+     * Parses the bundled directives plus every source in {@code userSchemaSources}, failing on the
+     * first source the parser rejected. The parameter is the file arm rather than a string
+     * collection because a label has nothing to open: a caller holding one has to decide what that
+     * means at its own boundary instead of discovering it as a parse-time surprise here.
+     *
+     * <p>Callers that want the rejected sources as data rather than as a thrown exception, so the
+     * sources that did parse are still available, read {@link #parsePerSource} directly.
      */
     public static TypeDefinitionRegistry load(Collection<SchemaSource.File> userSchemaSources) {
-        var builder = MultiSourceReader.newMultiSourceReader();
-        addDirectivesSource(builder);
-        userSchemaSources.forEach(source ->
-            builder.reader(terminated(openSource(source.path())), source.sourceName()));
-        try (var multi = builder.trackData(true).build()) {
-            var document = new Parser().parseDocument(
+        var parse = parsePerSource(userSchemaSources);
+        if (!parse.failures().isEmpty()) {
+            SyntaxFailure first = parse.failures().getFirst();
+            throw new SchemaParseException(
+                first.attributedMessage(), first.brief(), first.location(), first.cause());
+        }
+        return parse.registry();
+    }
+
+    /**
+     * Parses one source alone, through a single-reader {@link MultiSourceReader} so the parser
+     * stamps {@code sourceName} and source-relative line/column onto every definition and onto a
+     * syntax error's location. The reader is closed whether the parse succeeded or threw.
+     *
+     * <p>One reader per parse is what makes that attribution structural. The tag and
+     * description-note appliers match {@code SourceLocation.getSourceName()} against the
+     * {@code SchemaInput}'s key and capture derives each row's source from the same field, so a
+     * definition attributed to the wrong file is a correctness failure, not a cosmetic one. With a
+     * single reader there is no adjacent source to attribute a line to.
+     */
+    private static Document parseSource(String sourceName, Reader reader) {
+        try (var multi = MultiSourceReader.newMultiSourceReader()
+                .reader(reader, sourceName)
+                .trackData(true)
+                .build()) {
+            return new Parser().parseDocument(
                 ParserEnvironment.newParserEnvironment()
                     .parserOptions(ParserOptions.getDefaultSdlParserOptions())
                     .document(multi)
                     .build());
-            return new SchemaParser().buildRegistry(document);
-        } catch (InvalidSyntaxException e) {
-            throw new SchemaParseException(attributedMessage(e), firstSentence(e.getMessage()), e.getLocation(), e);
         } catch (IOException e) {
             throw new RuntimeException("Schema parse failed", e);
         }
     }
 
     /**
-     * Rewrites a graphql-java parser exception's message so it names the offending
-     * schema file. The upstream message reports only line/column; with
-     * {@link MultiSourceReader#trackData(boolean) trackData(true)} the parser
-     * populates {@link graphql.language.SourceLocation#getSourceName() sourceName}
-     * and source-relative line/column on the exception's location, but does not
-     * include them in {@code getMessage()}. Surfacing the source path turns
-     * "extra tokens ... at line 15 column 5" into a message that points at the
-     * actual file.
-     *
-     * <p>The upstream message format is
-     * {@code "Invalid syntax encountered. <subclass-detail>. Offending token '<X>' at line N column M"}
-     * (see graphql-java's {@code InvalidSyntaxException.toMessage}). We take only
-     * the first sentence: the subclass-detail and trailing offending-token line/column
-     * are redundant once we have the file path and source-relative coordinates.
+     * Parses the bundled {@code directives.graphqls}. Its failure is this module shipping a broken
+     * resource, not an author's mistake, so it throws rather than joining the reported failures:
+     * a run that recorded it as one would carry a whole directive vocabulary's absence as data.
      */
-    private static String attributedMessage(InvalidSyntaxException e) {
-        var location = e.getLocation();
-        var brief = firstSentence(e.getMessage());
-        if (location == null || location.getSourceName() == null) {
-            return "Schema parse failed: " + brief;
-        }
-        return "Schema parse failed in " + location.getSourceName()
-            + " at line " + location.getLine() + " column " + location.getColumn()
-            + ": " + brief;
-    }
-
-    private static String firstSentence(String message) {
-        if (message == null) return "";
-        int cut = message.indexOf(". ");
-        return cut > 0 ? message.substring(0, cut + 1) : message;
-    }
-
-    private static void addDirectivesSource(MultiSourceReader.Builder builder) {
+    private static Document parseDirectives() {
         var stream = RewriteSchemaLoader.class.getResourceAsStream(DIRECTIVES_RESOURCE);
         if (stream == null) {
             throw new IllegalStateException(DIRECTIVES_RESOURCE + " not found on classpath");
         }
-        builder.reader(terminated(new InputStreamReader(stream, StandardCharsets.UTF_8)), DIRECTIVES_RESOURCE);
+        try {
+            return parseSource(DIRECTIVES_SOURCE_NAME,
+                new InputStreamReader(stream, StandardCharsets.UTF_8));
+        } catch (InvalidSyntaxException e) {
+            throw new IllegalStateException("bundled " + DIRECTIVES_RESOURCE + " does not parse", e);
+        }
     }
 
     /**
-     * Wraps {@code inner} so that after it reports EOF the stream emits one final
-     * newline character, unless the inner stream already ended with one. Without this,
-     * {@link MultiSourceReader} would attribute the first line of each subsequent
-     * source to the previous source's name when the previous source does not end with
-     * a newline: source-name tracking is line-terminator-based, and an unterminated
-     * last line bleeds into the next reader. Rewrite's tag / description-note
-     * appliers rely on {@code SourceLocation.getSourceName()} matching the
-     * {@code SchemaInput}'s key, so accurate attribution is a correctness
-     * requirement, not a cosmetic concern.
-     *
-     * <p>The last-char check avoids doubling-up the newline for sources that are
-     * already terminated (the common case: editors default to a trailing newline).
-     * Without it, {@code SourceLocation.line} numbers in parse-error diagnostics
-     * would shift by one on the synthetic trailing blank for every non-terminal
-     * source in the pipeline.
+     * Takes the first sentence of a graphql-java parser message. The upstream format is
+     * {@code "Invalid syntax encountered. <subclass-detail>. Offending token '<X>' at line N column M"}
+     * (see graphql-java's {@code InvalidSyntaxException.toMessage}); the subclass-detail and the
+     * trailing offending-token line/column are redundant once the file path and source-relative
+     * coordinates are in the message prefix.
      */
-    private static Reader terminated(Reader inner) {
-        return new Reader() {
-            private boolean upstreamExhausted = false;
-            private boolean done = false;
-            private char lastChar;
-            private boolean hasLastChar = false;
-
-            @Override
-            public int read(char[] buf, int off, int len) throws IOException {
-                if (!upstreamExhausted) {
-                    int n = inner.read(buf, off, len);
-                    if (n > 0) {
-                        lastChar = buf[off + n - 1];
-                        hasLastChar = true;
-                        return n;
-                    }
-                    if (n == 0) return 0;  // caller passed len==0; pass through
-                    upstreamExhausted = true;
-                }
-                if (done || len <= 0) return -1;
-                done = true;
-                if (hasLastChar && lastChar == '\n') return -1;  // already terminated
-                buf[off] = '\n';
-                return 1;
-            }
-
-            @Override
-            public void close() throws IOException {
-                inner.close();
-            }
-        };
+    private static String firstSentence(String message) {
+        if (message == null) return "";
+        int cut = message.indexOf(". ");
+        return cut > 0 ? message.substring(0, cut + 1) : message;
     }
 
     private static Reader openSource(Path filePath) {

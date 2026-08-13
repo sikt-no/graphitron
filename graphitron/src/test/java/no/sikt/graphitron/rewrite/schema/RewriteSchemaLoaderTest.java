@@ -21,10 +21,79 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 /**
  * Unit coverage for {@link RewriteSchemaLoader}. Exercises the build-time schema parse
  * path: auto-injection of {@code directives.graphqls}, multi-source aggregation from
- * filesystem paths, missing-source error surface, and that the reader cascade closes.
+ * filesystem paths, missing-source error surface, that the reader cascade closes, and the
+ * per-source parse's own contract, that a rejected source subtracts nothing from its siblings.
  */
 @UnitTier
 class RewriteSchemaLoaderTest {
+
+    @Test
+    void aRejectedSourceDoesNotSubtractFromItsSiblings(@TempDir Path tmp) throws IOException {
+        // The property the per-source split exists for. One file will not parse; the facts the
+        // other files declare are still the answer to any question about the broken one, so the
+        // registry must carry them, and the bundled directive vocabulary with them.
+        Path good = tmp.resolve("good.graphqls");
+        Files.writeString(good, """
+            type Foo @table(name: "foo_tbl") {
+              id: ID!
+            }
+            """);
+        Path broken = tmp.resolve("broken.graphqls");
+        Files.writeString(broken, """
+            type Bar {
+              id: ID!
+            }
+            strayTokenHere
+            """);
+        Path alsoGood = tmp.resolve("also-good.graphqls");
+        Files.writeString(alsoGood, "type Baz { id: ID! }\n");
+
+        var parse = RewriteSchemaLoader.parsePerSource(List.of(
+            SchemaSource.file(good), SchemaSource.file(broken), SchemaSource.file(alsoGood)));
+
+        // The sibling on each side of the broken file landed, not just the one parsed before it.
+        assertThat(parse.registry().getTypeOrNull("Foo")).isNotNull();
+        assertThat(parse.registry().getTypeOrNull("Baz")).isNotNull();
+        assertThat(parse.registry().getDirectiveDefinition("table")).isPresent();
+        // Nothing from the rejected source leaks in: its Bar parsed fine as text, but the source
+        // it belongs to did not, and a half-read file is not a fact.
+        assertThat(parse.registry().getTypeOrNull("Bar")).isNull();
+
+        assertThat(parse.failures()).hasSize(1);
+        var failure = parse.failures().getFirst();
+        assertThat(failure.sourceName()).isEqualTo(broken.toString());
+        assertThat(failure.brief()).isNotBlank();
+        assertThat(failure.location()).isNotNull();
+        assertThat(failure.location().getSourceName()).isEqualTo(broken.toString());
+        assertThat(failure.location().getLine()).isEqualTo(4);
+        // The attributed message is what load() throws, derived here rather than stored twice.
+        assertThat(failure.attributedMessage())
+            .isEqualTo("Schema parse failed in " + broken + " at line 4 column "
+                + failure.location().getColumn() + ": " + failure.brief());
+    }
+
+    @Test
+    void everyRejectedSourceIsReportedNotJustTheFirst(@TempDir Path tmp) throws IOException {
+        // A whole-document parse could only ever name the first syntax error in the
+        // concatenation. Per source, each rejection is its own fact, which is what lets a
+        // consumer answer "does this file have a syntax error" for a file that is not the first
+        // broken one.
+        Path brokenA = tmp.resolve("a.graphqls");
+        Files.writeString(brokenA, "type Foo { id: ID! } strayA\n");
+        Path brokenB = tmp.resolve("b.graphqls");
+        Files.writeString(brokenB, "type Bar { id: ID! } strayB\n");
+
+        var parse = RewriteSchemaLoader.parsePerSource(
+            List.of(SchemaSource.file(brokenA), SchemaSource.file(brokenB)));
+
+        assertThat(parse.failures()).extracting(RewriteSchemaLoader.SyntaxFailure::sourceName)
+            .containsExactly(brokenA.toString(), brokenB.toString());
+        // load() collapses the set to the first in parse order; the set itself is the wider fact.
+        assertThatThrownBy(() -> RewriteSchemaLoader.load(
+                List.of(SchemaSource.file(brokenA), SchemaSource.file(brokenB))))
+            .isInstanceOf(SchemaParseException.class)
+            .hasMessageContaining(brokenA.toString());
+    }
 
     @Test
     void loadsMultipleFilesAndAutoInjectsDirectives(@TempDir Path tmp) throws IOException {
@@ -52,13 +121,16 @@ class RewriteSchemaLoaderTest {
 
     @Test
     void unterminatedFirstSourceDoesNotBleedSourceNameIntoSecond(@TempDir Path tmp) throws IOException {
-        // Regression ratchet for the terminated() Reader wrapper in RewriteSchemaLoader.
-        // MultiSourceReader attributes source names line-by-line; without the wrapper,
-        // an input whose final line is not newline-terminated bleeds into the next
-        // source and the second source's first definition carries the wrong source-name.
-        // This test writes a first file WITHOUT a trailing newline (intentionally a raw
-        // string, not a text block) and asserts the second source's node still reports
-        // its own file as the source. Deleting the terminated() wrapper would fail here.
+        // Every definition must carry its own file as its source name: the tag and
+        // description-note appliers key on SourceLocation.getSourceName() matching the
+        // SchemaInput, and capture derives each row's source from the same field, so a
+        // misattributed definition is a correctness failure. An unterminated final line is
+        // the shape that historically broke it, because MultiSourceReader attributes source
+        // names line-by-line and an unterminated line used to run into the next reader.
+        // Parsing one source per reader is what makes the attribution structural rather than
+        // defended, and this test is the ratchet on the property, not on the mechanism: the
+        // first file is written WITHOUT a trailing newline (intentionally a raw string, not a
+        // text block) and the second source's node must still report its own file.
         Path first = tmp.resolve("first.graphqls");
         Files.writeString(first, "type Foo { id: ID! }", StandardCharsets.UTF_8);
         assertThat(Files.readString(first)).doesNotEndWith("\n");  // pin the fixture shape
@@ -75,6 +147,12 @@ class RewriteSchemaLoaderTest {
         var location = bar.getSourceLocation();
         assertThat(location).isNotNull();
         assertThat(location.getSourceName()).isEqualTo(second.toString());
+
+        // Both sides, so the assertion pins attribution rather than one file's name being
+        // the one every definition happens to get.
+        var foo = registry.getTypeOrNull("Foo");
+        assertThat(foo).isNotNull();
+        assertThat(foo.getSourceLocation().getSourceName()).isEqualTo(first.toString());
     }
 
     @Test
