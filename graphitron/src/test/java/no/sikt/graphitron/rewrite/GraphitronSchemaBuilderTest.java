@@ -1730,6 +1730,44 @@ class GraphitronSchemaBuilderTest {
             .noneMatch(m -> m.contains("not yet supported across multiple parents"));
     }
 
+    // A nesting type carrying the two projected leaves admitted at nested depth: a scalar
+    // @field + @reference projection (ColumnBackedReferenceField) and an @externalField
+    // expression (ComputedField). Both reach nested depth through the per-anchor projection unit
+    // and are read back off the source record by result-key alias, so neither needs a parent-aware
+    // emit arm; what they do need is their own per-variant validation there, which the nested walk
+    // runs. Classifies as those two leaves and validates clean.
+    @Test
+    void nestedProjectedLeaves_referenceAndExternalField_classifyAndValidateClean() {
+        var schema = build("""
+            type FilmProjectedLeaves {
+              languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+              isEnglish: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub"})
+            }
+            type Film @table(name: "film") { projected: FilmProjectedLeaves }
+            type Query { film: Film }
+            """);
+
+        var nf = (NestingField) schema.field("Film", "projected");
+        assertThat(nf.nestedFields()).hasSize(2);
+        assertThat(nf.nestedFields().get(0))
+            .isInstanceOfSatisfying(ColumnBackedReferenceField.class, ref -> {
+                assertThat(ref.name()).isEqualTo("languageName");
+                assertThat(ref.joinPath()).hasSize(1);
+                assertThat(ref.compaction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct.class);
+            });
+        assertThat(nf.nestedFields().get(1))
+            .isInstanceOfSatisfying(ComputedField.class, cf -> {
+                assertThat(cf.name()).isEqualTo("isEnglish");
+                assertThat(cf.joinPath()).isEmpty();
+                assertThat(cf.method().methodName()).isEqualTo("isEnglish");
+            });
+
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .extracting(ValidationError::message)
+            .isEmpty();
+    }
+
     private static TableField nestedTableField(GraphitronSchema schema, String parent, String nesting, String leaf) {
         var nf = (NestingField) schema.field(parent, nesting);
         var field = nf.nestedFields().stream()

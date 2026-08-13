@@ -1654,6 +1654,10 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # NestingField multi-level fixture: FilmInfo carries a further NestingField (meta)
     # whose own scalars resolve against the same outer Film table.
     info:        FilmInfo
+    # NestingField + projected-leaf fixture: a scalar @field + @reference projection and an
+    # @externalField expression at nested depth, mirroring the flat languageName / isEnglish
+    # above so an execution test can assert the two agree.
+    projected:   FilmProjectedLeaves
     # NestingField + inline table/lookup-keyed child fixture: exercises the sfName
     # parameter threaded into the inline emitters. Nested field arms resolve against the
     # outer Film table alias via $project recursion at depth 1, so they reference sf1
@@ -1930,6 +1934,31 @@ type FilmInfo {
 type FilmMeta {
     title:  String @field(name: "TITLE")
     length: Int    @field(name: "LENGTH")
+}
+
+# Projected leaves at nested depth: a scalar @field + @reference projection and an
+# @externalField expression, both declared flat on Film as well (Film.languageName /
+# Film.isEnglish) so an execution test can assert the nested and flat values agree. Each
+# leaf's contribution is minted into the per-anchor projection unit and correlates on the
+# anchor's own table local, and its value is read back off the source record by result-key
+# alias, so neither needs a parent-aware fetcher.
+type FilmProjectedLeaves {
+    languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
+    isEnglish:    Boolean @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
+        method: "isEnglish"
+    })
+    # The same two leaves one level deeper: the inner unit is minted against the inner
+    # anchor, so a correlation that leaked the outer table would surface here.
+    inner: FilmProjectedLeavesInner
+}
+
+type FilmProjectedLeavesInner {
+    languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
+    isEnglish:    Boolean @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
+        method: "isEnglish"
+    })
 }
 
 # NestingField parent for inline table children, plain and lookup-keyed. Resolves against the

@@ -242,6 +242,49 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateField(GraphitronField field, GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateVariantSpecific(field, schema, types, null, errors);
+    }
+
+    /**
+     * The per-variant validation pass: the two cross-variant guards, the variant dispatch switch,
+     * and the cross-cutting checks that close it. Every site that reaches a classified field runs
+     * this, so no site can validate a leaf less than another does.
+     *
+     * <p>Three sites call it: the top-level field walk ({@link #validateField}), the nested walk
+     * under a {@link ChildField.NestingField} ({@link #walkNestedVariants}), and the
+     * {@code @pivot} slot walk ({@link #validatePivotSpec}). The nested walk used to run only
+     * {@link #validateVariantIsImplemented} and {@link #validateVariantIsSupportedAtNestedDepth},
+     * so every per-variant check was shadowed at nested depth by the blanket nested-depth
+     * deferral; a leaf admitted there would have reached the emitter unchecked.
+     *
+     * <p>{@code nestedAnchor} is the enclosing {@link ChildField.NestingField}'s table-bound
+     * return type when the field sits at nested depth, and {@code null} at ordinary depth. A
+     * plain-object nesting type carries no {@code @table} of its own and inherits the anchor's
+     * table context, so an arm that asks "is there a table behind this field" cannot read the
+     * immediate parent type and must read the anchor; see {@link #validateColumnBackedField}.
+     *
+     * <p>The two guards ahead of the switch and the two cross-cutting checks after it belong at
+     * every depth, so they moved in here whole rather than staying behind at the top level:
+     *
+     * <ul>
+     *   <li>The array-typed DataLoader-key guard is live at nested depth. {@code BatchedTableField}
+     *       implements {@link no.sikt.graphitron.rewrite.model.BatchKeyField} and its Table-sourced
+     *       arm is already admitted under a nesting field, so a nested batched leaf keyed on an
+     *       array column mis-batched silently while the guard ran only at the top level.</li>
+     *   <li>The reentry implementedness guard fires on no current leaf at any depth (the sealed
+     *       hierarchy admits no such combination); running it uniformly is what keeps that true
+     *       as new arms land, which is the guard's whole job.</li>
+     *   <li>{@link #validatePaginationRequiresOrdering} and {@link #validateListRequiresOrdering}
+     *       read {@link SqlGeneratingField#pagination()} / {@link SqlGeneratingField#orderBy()},
+     *       which nested {@code TableField} and {@code BatchedTableField} leaves genuinely carry:
+     *       a paginated nested leaf with no ordering encodes a cursor over nothing exactly as at
+     *       ordinary depth. The authoring surface exists at nested depth, so the check does.</li>
+     * </ul>
+     */
+    private void validateVariantSpecific(GraphitronField field, GraphitronSchema schema,
+            Map<String, GraphitronType> types,
+            ReturnTypeRef.TableBoundReturnType nestedAnchor,
+            List<ValidationError> errors) {
         // Reentry implementedness guard: a leaf that derives site-level reentry
         // (emitsKeyedReQuery) without being one of the shapes the reentry emit handles
         // (the DataLoader-backed BatchKeyField leaves and the projected/discriminated
@@ -305,7 +348,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField f -> validateMutationServiceTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField f       -> {} // Narrow ResultReturnType + the write arm's typed payloads pin the structural shape; admission-time checks (table-equality, PK-or-UK partition) live in the @mutation classifier and the walkers
             case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // Same structural pinning as MutationDmlRecordField plus the list-input + Upsert-rejecting invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the walkers
-            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField f       -> validateColumnBackedField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField f       -> validateColumnBackedField(f, types, nestedAnchor, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField f -> validateColumnBackedReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's LEFT JOIN materialises and aliases the value
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
@@ -315,8 +358,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField f   -> validateBatchedInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField f       -> validateBatchedUnionField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField f          -> validatePivotSpec(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, schema, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField f          -> validatePivotSpec(f, schema, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField f          -> {} // readName-only leaf; every pivot admission check fires at classify time (PivotError via UnclassifiedField), and the consuming leaf's validatePivotSpec walks the slots
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
@@ -825,8 +868,21 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
-    private void validateColumnBackedField(no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        if (!(types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType)) {
+    /**
+     * {@code nestedAnchor} non-null means the leaf sits under a {@link ChildField.NestingField},
+     * where the immediate parent type is the plain-object nesting type. That type classifies as
+     * {@link GraphitronType.NestingType} and carries no {@code @table} of its own: it inherits
+     * the anchor's table context, and the leaf's columns resolved against that table. So the
+     * parent-type read below answers the wrong question at nested depth, and reading the anchor
+     * instead answers the right one, {@link ReturnTypeRef.TableBoundReturnType} being table-bound
+     * by construction (its {@code table} is always fully resolved, or the containing field would
+     * have classified as {@code UnclassifiedField}).
+     */
+    private void validateColumnBackedField(no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField field,
+            Map<String, GraphitronType> types,
+            ReturnTypeRef.TableBoundReturnType nestedAnchor,
+            List<ValidationError> errors) {
+        if (nestedAnchor == null && !(types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType)) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
             Rejection.invalidSchema("Field '" + field.qualifiedName() + "': @column is not valid on a non-table-backed type"),
@@ -968,7 +1024,25 @@ public class GraphitronSchemaValidator {
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
             field.parentTypeName(), field.sourceKey(), errors);
     }
-    private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
+    private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field,
+            GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        validateNestingFieldShape(field, errors);
+        // Leaves at nested depth escape the top-level field walk entirely (they're inside
+        // NestingField.nestedFields(), not in schema.fields()). Walk them here — this is the
+        // integration point the emitter's projection helper relies on for unreachability of its
+        // fallthrough arm.
+        walkNestedVariants(field.nestedFields(), schema, types, field.returnType(), errors);
+    }
+
+    /**
+     * The nesting field's own checks, everything {@link #validateNestingField} does apart from
+     * descending into {@link ChildField.NestingField#nestedFields()}. Split out so the nested walk
+     * can apply it at every level: a nesting type nested inside another nesting type never reaches
+     * the dispatch switch, so before the split the list-cardinality rejection fired only at the
+     * top level and a list-shaped inner nesting type went unchecked.
+     */
+    private void validateNestingFieldShape(no.sikt.graphitron.rewrite.model.ChildField.NestingField field,
+            List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.
         if (field.returnType().wrapper() instanceof FieldWrapper.List) {
             errors.add(new ValidationError(
@@ -977,11 +1051,6 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        // Stubbed leaves at nested depth escape the top-level validateVariantIsImplemented pass
-        // (they're inside NestingField.nestedFields(), not in schema.fields()). Walk them here —
-        // this is the integration point the emitter's projection helper relies on for unreachability
-        // of its fallthrough arm.
-        walkNestedVariantsForImplementation(field.nestedFields(), errors);
     }
 
     /**
@@ -991,11 +1060,13 @@ public class GraphitronSchemaValidator {
      * at classify time as typed {@link no.sikt.graphitron.rewrite.model.PivotError} arms via
      * {@code UnclassifiedField}; what remains checkable on the classified leaf is the
      * distinct-token invariant (the emitter would otherwise project two identical aggregates
-     * under different aliases) plus the slot leaves' implementedness, the same walk
-     * {@link #validateNestingField} runs over its nested fields.
+     * under different aliases) plus the slot leaves' own validation, routed through the same
+     * {@link #validateVariantSpecific} the top-level walk and the nested walk use. A slot sits at
+     * ordinary depth (its parent is the {@code @pivot} coordinate's own type, table-backed), so it
+     * passes no nesting anchor.
      */
     private void validatePivotSpec(no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField field,
-            List<ValidationError> errors) {
+            GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
         var slotsByToken = new java.util.LinkedHashMap<String, List<String>>();
         field.pivot().tokenBySlot().forEach((slot, token) ->
             slotsByToken.computeIfAbsent(token, k -> new java.util.ArrayList<>()).add(slot));
@@ -1009,16 +1080,30 @@ public class GraphitronSchemaValidator {
             }
         });
         for (var slot : field.spec().slots()) {
-            validateVariantIsImplemented(slot, errors);
+            validateVariantSpecific(slot, schema, types, null, errors);
         }
     }
 
-    private void walkNestedVariantsForImplementation(List<ChildField> fields, List<ValidationError> errors) {
+    /**
+     * Validates the leaves of a {@link ChildField.NestingField}, recursively. Each non-nesting leaf
+     * runs the full {@link #validateVariantSpecific} pass plus the nested-depth wireability gate;
+     * each nested nesting field runs its own {@link #validateNestingFieldShape} and hands its
+     * return type down as the anchor for its own leaves.
+     *
+     * <p>Nesting fields are not routed through {@link #validateVariantSpecific}: its
+     * {@code NestingField} arm walks the subtree, which would re-enter this walk and double-report
+     * everything below.
+     */
+    private void walkNestedVariants(List<ChildField> fields, GraphitronSchema schema,
+            Map<String, GraphitronType> types,
+            ReturnTypeRef.TableBoundReturnType anchor,
+            List<ValidationError> errors) {
         for (var f : fields) {
             if (f instanceof ChildField.NestingField nf) {
-                walkNestedVariantsForImplementation(nf.nestedFields(), errors);
+                validateNestingFieldShape(nf, errors);
+                walkNestedVariants(nf.nestedFields(), schema, types, nf.returnType(), errors);
             } else {
-                validateVariantIsImplemented(f, errors);
+                validateVariantSpecific(f, schema, types, anchor, errors);
                 validateVariantIsSupportedAtNestedDepth(f, errors);
             }
         }
@@ -1033,8 +1118,19 @@ public class GraphitronSchemaValidator {
      * not) carry their heavy methods there. {@code TypeFetcherGenerator} emits that class for any nested type owning
      * a fetcher (the {@code FetcherEmitter.nestedTypeOwnsFetchers} gate shared with
      * {@code FetcherRegistrationsEmitter.nestedBody}, via a separate walk over
-     * {@code NestingField.nestedFields()}). Expanding this predicate requires the corresponding
-     * generator-side change.
+     * {@code NestingField.nestedFields()}).
+     *
+     * <p>Admitting a projected leaf here is a validator question, not an emitter one. The projected
+     * leaves ({@code ColumnBackedField}, {@code ColumnBackedReferenceField}, {@code ComputedField})
+     * reach nested depth through a projection unit minted per anchor
+     * ({@code ProjectionCommands.mintNestedUnit}), whose {@code $project} takes the anchor's own
+     * {@code table} local, so their contributions correlate on the parent table by construction;
+     * and {@code FetcherEmitter.bind} reads their values back off the source record by
+     * {@code __rk_<resultKey>} alias without consulting the parent table, so one shared
+     * {@code <Type>Fetchers} class serves every parent. What such a leaf does need is its own
+     * per-variant validation at nested depth, which {@link #walkNestedVariants} runs. The leaves
+     * that would need real emit work are the class-backed and record-sourced ones, whose key lift
+     * and result mapping do read the parent's identity.
      *
      * <p>A predicate rather than a class set: {@code BatchedTableField} is wireable at nested
      * depth only on its Table-sourced arm; a nested plain-object type shares the parent's table
@@ -1044,6 +1140,12 @@ public class GraphitronSchemaValidator {
     private static boolean isNestedWireableLeaf(GraphitronField field) {
         return switch (field) {
             case ChildField.ColumnBackedField ignored -> true;
+            // Not gated on CallSiteCompaction.Direct: validateColumnBackedReferenceField now runs
+            // at nested depth and rejects the NodeIdEncodeKeys carrier on its own account, naming
+            // the missing capability (JOIN-with-projection emission). A compaction gate here would
+            // re-shadow that with the vaguer nested-depth deferral below.
+            case ChildField.ColumnBackedReferenceField ignored -> true;
+            case ChildField.ComputedField ignored -> true;
             case ChildField.TableField ignored -> true;
             case ChildField.NestingField ignored -> true;
             case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;

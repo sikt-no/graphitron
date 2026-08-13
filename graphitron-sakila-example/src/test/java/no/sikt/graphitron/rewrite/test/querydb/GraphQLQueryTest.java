@@ -3066,6 +3066,51 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void nestingField_projectedLeaves_agreeWithTheirFlatSiblings() {
+        // The two projected leaves admitted at nested depth, each also declared flat on Film:
+        // a scalar @field + @reference projection (languageName) and an @externalField expression
+        // (isEnglish). Nested and flat must agree, which is the parent-correlation assertion —
+        // the nested unit's $project receives the anchor's own table local, so a correlation that
+        // lost the parent would diverge from the flat sibling rather than fail loudly.
+        //
+        // Also pins two things the nested path could get wrong on its own: the aliased duplicate
+        // selection (a: languageName) resolves through the "__rk_" + resultKey read rather than
+        // colliding on a field-named SQL alias, and the second level of nesting projects against
+        // the inner anchor.
+        Map<String, Object> data = execute("""
+            { films {
+                languageName
+                isEnglish
+                projected {
+                    languageName
+                    a: languageName
+                    isEnglish
+                    inner { languageName isEnglish }
+                }
+            } }
+            """);
+        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        films.allSatisfy(f -> {
+            // language.name is char(20) in Sakila, so PostgreSQL pads — strip before compare.
+            var flatLanguageName = ((String) f.get("languageName")).strip();
+            assertThat(flatLanguageName).isEqualTo("English");
+            assertThat(f.get("isEnglish")).isEqualTo(Boolean.TRUE);
+
+            var projected = assertThat(f.get("projected")).asInstanceOf(MAP);
+            projected.extractingByKey("languageName", as(STRING))
+                .satisfies(v -> assertThat(v.strip()).isEqualTo(flatLanguageName));
+            projected.extractingByKey("a", as(STRING))
+                .satisfies(v -> assertThat(v.strip()).isEqualTo(flatLanguageName));
+            projected.containsEntry("isEnglish", f.get("isEnglish"));
+
+            var inner = projected.extractingByKey("inner", as(MAP));
+            inner.extractingByKey("languageName", as(STRING))
+                .satisfies(v -> assertThat(v.strip()).isEqualTo(flatLanguageName));
+            inner.containsEntry("isEnglish", f.get("isEnglish"));
+        });
+    }
+
+    @Test
     void nestingField_outerListOfFilms_nestedResolvesPerRow() {
         // Requesting summary across the films root list: each row carries its own
         // FilmSummary projection, including the per-row release_year.
