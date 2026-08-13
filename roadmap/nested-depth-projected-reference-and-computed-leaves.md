@@ -1,7 +1,7 @@
 ---
 id: R645
 title: "Admit projected @reference and @externalField leaves at nested depth under NestingField"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: classification-model
