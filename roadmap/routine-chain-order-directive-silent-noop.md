@@ -164,7 +164,7 @@ The real cost of this item is not which column is named but that an `ORDER BY` n
 none did. That is the price of the contract being true, and it is worth paying.
 
 Note the pin should *not* be keyed on terminus kind instead, which was considered and rejected.
-A routine terminus is perfectly orderable: `Actor.films` and `Query.castFilms` in the sakila
+A routine terminus is perfectly orderable: `Actor.films` and `Film.castFilms` in the sakila
 schema both terminate on a routine result, both carry `@defaultOrder(fields: [{name:
 "film_id"}])`, and both work today. What a routine terminus lacks is a primary key, so terminus
 kind governs only whether the PK fallback can fire. Pinning the `orderBy` slot on it would forbid
@@ -218,17 +218,19 @@ do something impossible is worse than the silent no-op it replaces.
 ## Tests
 
 * **Classification**: around 27 test methods in `GraphitronSchemaBuilderTest` declare a
-  list-returning root `@routine` field with no `@defaultOrder`, but most are rejection fixtures
-  whose field lands `UnclassifiedField` before validation runs and are therefore untouched. The
-  ones that need the directive added are the ones that classify clean on a *routine* terminus:
-  `queryRoutineProjectionCarriesRoutineCoordinates`,
+  list-returning root `@routine` field with no `@defaultOrder`, and none of them break. The class
+  builds through `TestSchemaHelper.buildSchema` (and `CatalogBuilder.buildSnapshot`), both of
+  which classify without running `GraphitronSchemaValidator`; the validator runs only where a
+  test calls it explicitly, and no routine fixture does. So the routine-terminus fixtures that
+  classify clean, `queryRoutineProjectionCarriesRoutineCoordinates`,
   `rootSingleNodeRoutineDesugarsToRoutineSourcedTableFieldWithEmptyHops` and
-  `routineDotPathArgMappingLandsPathExprChain` are the ones to check first. Catalog-terminus
-  fixtures such as `rootRoutineThenHopsChainClassifiesWithNameMatchedHop` keep compiling and
+  `routineDotPathArgMappingLandsPathExprChain`, keep landing `OrderBySpec.None` and keep passing;
+  leave them alone rather than sprinkling `@defaultOrder` over fixtures that assert something
+  else. Catalog-terminus fixtures such as `rootRoutineThenHopsChainClassifiesWithNameMatchedHop`
   silently gain the primary-key order; give that one an explicit slot assertion so the fallback
   is pinned rather than assumed. Add a case per terminus kind asserting the resulting
-  `OrderBySpec.Fixed`, and a rejection case for the list-shaped routine terminus with no
-  directive.
+  `OrderBySpec.Fixed`. The rejection case for the list-shaped routine terminus with no directive
+  belongs in the validation tier below, since the validator is what rejects it.
 * **Validation**: a `ValidateListRequiresOrderingPipelineTest` case for the routine-terminus
   root, asserting the routine-specific message rather than the generic one.
 * **Execution**: the reported bug is a wrong-order result, so it only closes at the execution
@@ -239,7 +241,10 @@ do something impossible is worse than the silent no-op it replaces.
   deliberately here.
 * **Corpus**: the two terminus kinds are classification verdicts worth an entry in
   `ClassifiedCorpus` per the classified-corpus loop, retiring whatever the routine block holds
-  as pure verdict.
+  as pure verdict. The existing `routine-table-valued-read` example is the routine-terminus root
+  `Query.tilganger` with no `@defaultOrder`, and `ClassifiedHarness` classifies without
+  validating, so it will not fail; it would quietly render an SDL shape the real build rejects
+  into the code-generation-triggers documentation. Give it the directive in the same commit.
 
 Row order is behaviour, not shape, so the pipeline-tier slot assertion and the execution-tier
 row-order assertion are both load-bearing and neither substitutes for the other. The tempting
