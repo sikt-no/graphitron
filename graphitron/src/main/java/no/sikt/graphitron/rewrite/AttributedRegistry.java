@@ -3,8 +3,10 @@ package no.sikt.graphitron.rewrite;
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import graphql.language.NamedNode;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -29,14 +31,23 @@ import java.util.Set;
  * names with a {@code null} source. Tests that construct a registry ad-hoc (without running
  * the full attribution pipeline) use {@link #from(TypeDefinitionRegistry)} to derive the set from
  * the registry's contents.
+ *
+ * <p>{@code read} is the outcome of the two stages that produced the registry: which sources the
+ * parser refused, and which declarations the registry refused to admit. It rides along because the
+ * registry alone cannot say what is missing from it. A type absent here has two very different
+ * explanations, that nobody declared it and that the file declaring it did not parse, and only the
+ * refusal list tells them apart; any consumer that would otherwise read the absence as the author's
+ * intent needs it.
  */
 public record AttributedRegistry(TypeDefinitionRegistry registry,
                                  TypeDefinitionRegistry preSynthesisRegistry,
-                                 Set<String> injectedNames) {
+                                 Set<String> injectedNames,
+                                 RewriteSchemaLoader.PerSourceParse read) {
 
     public AttributedRegistry {
         Objects.requireNonNull(registry, "registry");
         Objects.requireNonNull(preSynthesisRegistry, "preSynthesisRegistry");
+        Objects.requireNonNull(read, "read");
         injectedNames = Set.copyOf(injectedNames);
     }
 
@@ -47,6 +58,17 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
      */
     public AttributedRegistry(TypeDefinitionRegistry registry, Set<String> injectedNames) {
         this(registry, registry, injectedNames);
+    }
+
+    /**
+     * A registry whose stages refused nothing, which is what a caller that built one itself should
+     * get: no stage of the loader ran on the way here, so nothing was refused on the way here.
+     */
+    public AttributedRegistry(TypeDefinitionRegistry registry,
+                              TypeDefinitionRegistry preSynthesisRegistry,
+                              Set<String> injectedNames) {
+        this(registry, preSynthesisRegistry, injectedNames,
+            new RewriteSchemaLoader.PerSourceParse(registry, List.of(), List.of()));
     }
 
     /** True when the federation {@code @link} injector contributed any definitions. */

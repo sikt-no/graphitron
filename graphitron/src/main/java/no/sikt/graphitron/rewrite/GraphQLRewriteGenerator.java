@@ -20,6 +20,8 @@ import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
+import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
 import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
@@ -215,12 +217,14 @@ public class GraphQLRewriteGenerator {
      */
     public BuildOutput buildOutput() {
         var attributed = loadAttributedRegistry();
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
+        var read = assembleAndCaptureVerdicts(attributed);
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         // Capture-and-detect runs ahead of the snapshot: the detection's field conflicts feed
         // the snapshot's Conflicted projection overlay, sourced from the claim relations.
-        var detection = captureFactsAndDetect(attributed, bundle.model(), jooq, catalog.externalReferences());
+        var detection = captureFactsAndDetect(attributed, read.verdicts(), bundle.model(), jooq,
+            catalog.externalReferences());
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog,
             detection.fieldConflicts());
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
@@ -275,10 +279,12 @@ public class GraphQLRewriteGenerator {
      */
     public void validate() {
         var attributed = loadAttributedRegistry();
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
+        var read = assembleAndCaptureVerdicts(attributed);
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var schema = bundle.model();
         logWarnings(withLintFindings(schema, attributed));
-        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema).violations());
+        var errors = validateAndLogErrors(schema,
+            captureFactsAndDetect(attributed, read.verdicts(), schema).violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -297,7 +303,13 @@ public class GraphQLRewriteGenerator {
      */
     AttributedRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
-        var registry = RewriteSchemaLoader.load(loadableSources(ctx.schemaInputs()));
+        // Read every source, refusing none of them on another's behalf, and carry the refusals
+        // rather than throwing on them. A source that will not parse costs its own declarations and
+        // nothing else, and a declaration the registry will not admit costs itself; the run's
+        // verdict on those refusals is pronounced downstream, after they have been recorded, so a
+        // freshly broken file cannot blank the facts about every file beside it.
+        var read = RewriteSchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
+        var registry = read.registry();
         TagLinkSynthesiser.apply(registry, bySource);
         var injectedNames = FederationLinkApplier.apply(registry);
         TagApplier.apply(registry, bySource);
@@ -314,8 +326,43 @@ public class GraphQLRewriteGenerator {
             KeyNodeSynthesiser.apply(registry,
                 new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader())));
         }
-        return new AttributedRegistry(registry, preSynthesis, injectedNames);
+        return new AttributedRegistry(registry, preSynthesis, injectedNames, read);
     }
+
+    /**
+     * Runs the assembly stage and records every stage's verdict, then pronounces the run's own
+     * verdict on them.
+     *
+     * <p>Assembly is where the GraphQL specification's structural rules are checked at all, so it
+     * runs on every pass whether or not this pass has any use for the assembled schema, and its
+     * outcome is written down either way. The order is the point: capture first, fail second. The
+     * three read stages are a pipeline in that each consumes what the last produced, never in the
+     * sense that an earlier refusal cancels a later stage, and the recording is what would be lost
+     * by failing at the first refusal instead of the last.
+     *
+     * <p>Returns the assembled schema paired with the stage verdicts, having thrown if any stage
+     * refused: a refusal is still fatal to a build, and each stage still throws exactly the
+     * exception it always threw, so the mojo's catch arms and the dev loop's one-line parse report
+     * are unchanged. The verdicts ride along so the pass that goes on to classify records the same
+     * emptiness this method would have recorded, derived from the stages rather than assumed.
+     */
+    private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed) {
+        var assembly = SchemaAssembly.of(attributed.registry());
+        var verdicts = SdlVerdicts.of(attributed.read(), assembly);
+        if (verdicts.anyRefusal()) {
+            captureFacts(attributed, verdicts);
+            RewriteSchemaLoader.throwIfRejected(attributed.read());
+        }
+        return new ReadSchema(GraphitronSchemaBuilder.assembleOrFail(assembly), verdicts);
+    }
+
+    /**
+     * A successfully read schema: what assembly produced, and what the three stages said about the
+     * document on the way. The verdicts are empty by construction here, every refusal having been
+     * fatal upstream, but they are carried rather than re-synthesised so the capture downstream
+     * writes a fact about this read instead of a constant.
+     */
+    private record ReadSchema(GraphQLSchema assembled, SdlVerdicts verdicts) {}
 
     /**
      * The run's inputs projected onto what the loader can open. The switch is checked for coverage
@@ -350,9 +397,11 @@ public class GraphQLRewriteGenerator {
      * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
      * hands back), the jOOQ catalog projection, and the classpath scan.
      */
-    private AuthoredClaimConflicts.Detection captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema) {
+    private AuthoredClaimConflicts.Detection captureFactsAndDetect(
+            AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        return captureFactsAndDetect(attributed, schema, jooq, CatalogBuilder.buildExternalReferences(ctx));
+        return captureFactsAndDetect(attributed, verdicts, schema, jooq,
+            CatalogBuilder.buildExternalReferences(ctx));
     }
 
     /**
@@ -360,18 +409,39 @@ public class GraphQLRewriteGenerator {
      * its already-built catalog and external references so the classpath is scanned once per
      * pass, the build paths use the convenience overload above.
      */
-    private AuthoredClaimConflicts.Detection captureFactsAndDetect(AttributedRegistry attributed, GraphitronSchema schema,
-                                                        JooqCatalog jooq,
-                                                        List<CompletionData.ExternalReference> extensions) {
+    private AuthoredClaimConflicts.Detection captureFactsAndDetect(
+            AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema,
+            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
+        var jooqNodes = new NodeDeclaration(jooq);
         return FactCapture.runWithDetections(ctx.storeDirectory(),
             graphIdentity(),
             subjectConfig(),
             attributed.preSynthesisRegistry(),
+            verdicts,
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
-            new NodeDeclaration(jooq),
+            jooqNodes,
             ClaimDomain.of(schema));
+    }
+
+    /**
+     * The capture with no classified model to gate detections on: the arm the failure paths take,
+     * where a stage refused the document and there is no walk to derive a claim domain from. It
+     * writes everything the surviving declarations support plus the stages' verdicts, which is the
+     * whole point of running it here rather than giving up.
+     */
+    private void captureFacts(AttributedRegistry attributed, SdlVerdicts verdicts) {
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        FactCapture.run(ctx.storeDirectory(),
+            graphIdentity(),
+            subjectConfig(),
+            attributed.preSynthesisRegistry(),
+            verdicts,
+            SchemaInputAttribution.build(ctx.schemaInputs()),
+            jooq,
+            CatalogBuilder.buildExternalReferences(ctx),
+            new NodeDeclaration(jooq));
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */
@@ -394,7 +464,8 @@ public class GraphQLRewriteGenerator {
     }
 
     private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {
-        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
+        var read = assembleAndCaptureVerdicts(attributed);
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();
@@ -403,7 +474,8 @@ public class GraphQLRewriteGenerator {
 
         // Capture runs ahead of validation: the store-backed detections feed the error stream,
         // so the store has to be filled before the verdict is pronounced.
-        var errors = validateAndLogErrors(schema, captureFactsAndDetect(attributed, schema).violations());
+        var errors = validateAndLogErrors(schema,
+            captureFactsAndDetect(attributed, read.verdicts(), schema).violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }

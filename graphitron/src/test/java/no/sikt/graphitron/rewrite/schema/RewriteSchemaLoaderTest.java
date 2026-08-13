@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.schema;
 
 import graphql.language.SourceLocation;
+import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,8 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * Unit coverage for {@link RewriteSchemaLoader}. Exercises the build-time schema parse
  * path: auto-injection of {@code directives.graphqls}, multi-source aggregation from
  * filesystem paths, missing-source error surface, that the reader cascade closes, and the
- * per-source parse's own contract, that a rejected source subtracts nothing from its siblings.
+ * contract both reading stages here share, that a refusal subtracts nothing from what survived
+ * it, at the grain of a source and at the grain of a declaration.
  */
 @UnitTier
 class RewriteSchemaLoaderTest {
@@ -93,6 +95,67 @@ class RewriteSchemaLoaderTest {
                 List.of(SchemaSource.file(brokenA), SchemaSource.file(brokenB))))
             .isInstanceOf(SchemaParseException.class)
             .hasMessageContaining(brokenA.toString());
+    }
+
+    @Test
+    void aRefusedDeclarationDoesNotSubtractFromTheRestOfItsFile(@TempDir Path tmp) throws IOException {
+        // The parse split's property one level down. Two files declare Dup, so the registry can
+        // admit only one; admitting definitions one at a time rather than through buildRegistry's
+        // all-or-nothing throw is what keeps the loser's file-mates. Without it a single duplicated
+        // type name would leave the whole source set with no registry at all, which is the same
+        // cliff the whole-document parse had one stage earlier.
+        Path first = tmp.resolve("first.graphqls");
+        Files.writeString(first, """
+            type Dup { a: String }
+            type OnlyInFirst { id: ID! }
+            """);
+        Path second = tmp.resolve("second.graphqls");
+        Files.writeString(second, """
+            type Dup { b: String }
+            type OnlyInSecond { id: ID! }
+            """);
+
+        var parse = RewriteSchemaLoader.parsePerSource(
+            List.of(SchemaSource.file(first), SchemaSource.file(second)));
+
+        assertThat(parse.failures()).isEmpty();
+        assertThat(parse.registryErrors()).hasSize(1);
+        var refusal = parse.registryErrors().getFirst();
+        assertThat(refusal.stage()).isEqualTo(SchemaError.Stage.REGISTRY);
+        assertThat(refusal.errorClass()).isEqualTo("TypeRedefinitionError");
+        // Both files keep everything the collision did not touch, and the surviving Dup is the
+        // first declaration in merge order.
+        assertThat(parse.registry().getTypeOrNull("OnlyInFirst")).isNotNull();
+        assertThat(parse.registry().getTypeOrNull("OnlyInSecond")).isNotNull();
+        assertThat(parse.registry().getTypeOrNull("Dup").getSourceLocation().getSourceName())
+            .isEqualTo(first.toString());
+
+        // load()'s contract is unchanged: a registry refusal is still the SchemaProblem
+        // graphql-java's own buildRegistry raised, carrying the same error.
+        assertThatThrownBy(() -> RewriteSchemaLoader.load(
+                List.of(SchemaSource.file(first), SchemaSource.file(second))))
+            .isInstanceOf(SchemaProblem.class);
+    }
+
+    @Test
+    void aSyntaxErrorIsReportedAheadOfTheRegistryRefusalsItCauses(@TempDir Path tmp) throws IOException {
+        // Both stages refuse, and load() names the parse failure: the syntax error is the edit that
+        // fixes both, and a registry refusal downstream of a file that never parsed is a
+        // consequence rather than a cause.
+        Path broken = tmp.resolve("broken.graphqls");
+        Files.writeString(broken, "type Dup { a: String }\nstrayTokenHere\n");
+        Path alsoDeclaresDup = tmp.resolve("other.graphqls");
+        Files.writeString(alsoDeclaresDup, "type Dup { b: String }\ntype Dup { c: String }\n");
+
+        var sources = List.of(SchemaSource.file(broken), SchemaSource.file(alsoDeclaresDup));
+        var parse = RewriteSchemaLoader.parsePerSource(sources);
+
+        assertThat(parse.failures()).hasSize(1);
+        assertThat(parse.registryErrors()).isNotEmpty();
+        assertThat(parse.rejectedAnything()).isTrue();
+        assertThatThrownBy(() -> RewriteSchemaLoader.load(sources))
+            .isInstanceOf(SchemaParseException.class)
+            .hasMessageContaining(broken.toString());
     }
 
     @Test

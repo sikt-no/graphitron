@@ -546,6 +546,51 @@ fact model; the reviewer confirms rather than decides.
   its last reader's migration, and both consumers read one shared store-side catalog view, never a
   narrowing made for one of them.
 
+## Settled while building: the reading stages
+
+The spec called the capture two-stage, "parse each schema file alone" then "combine and assemble".
+Reading a schema is three stages, and the middle one was folded invisibly into the first. Settled in
+implementation, recorded here because the DDL now depends on it:
+
+* **The stages are parse, combine, assemble**, and each judges the document at its own grain. The
+  parser judges one file at a time. The registry judges the combined declarations and refuses
+  duplicate base declarations (`TypeRedefinitionError`, `DirectiveRedefinitionError`,
+  `SchemaRedefinitionError`), which in a multi-file workspace is precisely the class of error no
+  single file's parse can see. Assembly judges the registry against the GraphQL specification's
+  structural rules, and is the only place they are checked at all.
+* **Only parsing produces facts.** The two later stages contribute nothing to the store but their
+  verdicts, which is why one relation holds both and why the store's `stage` column, not two
+  relations, carries the difference. Their real product is the registry that parsing's facts flow
+  through.
+* **No stage's refusal aborts the next.** Parse keeps the sources that parsed; the registry admits
+  definitions one at a time (`TypeDefinitionRegistry.add` reports rather than throws, so this is
+  `buildRegistry`'s own loop without its terminal throw) and keeps what it admitted; assembly runs
+  over whatever survived both. This is what stops one freshly broken file from blanking every fact
+  about every file beside it. The build's own verdict is unchanged and still fatal, each stage still
+  throwing exactly the exception it always threw; what changed is what is true of the store by the
+  time it does.
+* **Assembly runs unconditionally**, whether or not the pass has any use for the assembled schema,
+  because its verdict is a fact about the consumer's schema worth as much as the declarations it
+  judges.
+* **Two relations, in `graphql_`.** `graphql_syntax_error` is keyed on the source it refused, since
+  parsing stops at a file's first error, which makes "does this file parse" a primary-key lookup and
+  satisfies the header's source-partitionability requirement. `graphql_schema_error` is keyed on an
+  emit-order ordinal like the stratum's other arms, because a whole-document stage reports as many
+  verdicts as it found. They are siblings rather than one relation because they refresh at different
+  grains: a syntax refusal belongs to one source, a document-wide verdict to no source at all. The
+  family is `graphql_` rather than a new one named for the SDL toolchain, which would have aliased
+  this family's subject; the cost, accepted and written into the family's charter, is that
+  `graphql_` now holds both a transcription and a judgement of the same artifact.
+
+One consequence for an existing relation: `graphql_duplicate_declaration`'s element-level kinds were
+unreachable only because capture was conditional on the document assembling. They are reachable now,
+and the relation's comment says so instead of claiming emptiness it no longer has.
+
+Deliberately not in this increment: the LSP still throws out of `buildOutput` on a refused document.
+The facts landing is the prerequisite; migrating the reader is the capability work, and changing that
+contract before a store-reading consumer exists would be a half-migration with nothing on the other
+side.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,

@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.schema;
 
+import graphql.GraphQLError;
 import graphql.language.Definition;
 import graphql.language.Document;
+import graphql.language.SDLDefinition;
 import graphql.language.SourceLocation;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.MultiSourceReader;
@@ -10,6 +12,8 @@ import graphql.parser.ParserEnvironment;
 import graphql.parser.ParserOptions;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import graphql.schema.idl.errors.NonSDLDefinitionError;
+import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
@@ -22,6 +26,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Builds a {@link TypeDefinitionRegistry} from a set of user-supplied schema file paths,
@@ -34,6 +39,14 @@ import java.util.List;
  * require a consumer pom to list it. Callers must not include a {@code directives.graphqls}
  * entry in their user-schema list; doing so would re-declare every directive and fail
  * schema parse.
+ *
+ * <p>Two of the three stages that judge a schema live here, and both keep what survived them
+ * rather than refusing wholesale: sources are parsed one at a time, and the surviving definitions
+ * are admitted to the registry one at a time. A source that will not parse costs its own
+ * declarations and no others; a declaration the registry will not admit costs itself. The refusals
+ * come back as data from {@link #parsePerSource}, which is what lets a caller record them and then
+ * decide, and {@link #load} is the arm for a caller whose only decision is to fail. The third
+ * stage, assembly, is {@link SchemaAssembly}, and it reads what this class produced.
  */
 public final class RewriteSchemaLoader {
 
@@ -105,30 +118,41 @@ public final class RewriteSchemaLoader {
     }
 
     /**
-     * The outcome of parsing a source set file by file: the registry the sources that parsed
-     * produced, and one {@link SyntaxFailure} per source that did not.
+     * The outcome of reading a source set: the registry that came of it, one {@link SyntaxFailure}
+     * per source the parser rejected, and one {@link SchemaError} per declaration the registry
+     * refused to admit.
      *
-     * <p>A failure never subtracts from what its siblings contribute. That is the whole point of
-     * parsing per file: an author editing one schema file in a workspace of well-formed ones has a
-     * single invalid buffer, and the facts the other files declare are exactly what a question
-     * about that buffer needs answered.
+     * <p>Neither kind of failure subtracts from what its siblings contribute, which is the whole
+     * point of reading this way. An author editing one file in a workspace of well-formed ones has
+     * a single invalid buffer, and the facts the other files declare are exactly what a question
+     * about that buffer needs answered; the same holds one level down, where a declaration that
+     * loses a name collision leaves every other declaration in its file standing.
      *
-     * @param registry the definitions every source that parsed contributed, the bundled directives
-     *                 included; never null and never partial with respect to those sources
-     * @param failures the rejected sources, in the order they were parsed
+     * @param registry       every definition that parsed and was admitted, the bundled directives
+     *                       included; never null, and complete with respect to exactly those
+     * @param failures       the rejected sources, in the order they were parsed
+     * @param registryErrors the refused declarations, in the order they were offered
      */
-    public record PerSourceParse(TypeDefinitionRegistry registry, List<SyntaxFailure> failures) {}
+    public record PerSourceParse(TypeDefinitionRegistry registry, List<SyntaxFailure> failures,
+                                 List<SchemaError> registryErrors) {
+
+        /** Whether either stage refused anything, so a caller that must fail knows to. */
+        public boolean rejectedAnything() {
+            return !failures.isEmpty() || !registryErrors.isEmpty();
+        }
+    }
 
     /**
      * Parses the bundled directives plus every source in {@code userSchemaSources}, one parse per
      * source, and reports the rejected sources instead of failing on them.
      *
-     * <p>Each source is parsed alone and the surviving definitions are handed to a single
-     * {@link SchemaParser#buildRegistry} call, so the registry is assembled from exactly the
-     * definition set a whole-document parse would have assembled it from, less the sources that
-     * did not parse. Registry-level problems (a type two sources both declare) therefore still
-     * surface where they always did, from that one call: they are the combining stage's business,
-     * not a property of any single file.
+     * <p>Each source is parsed alone, and the surviving definitions are then admitted to one
+     * registry one at a time, so a refusal at either stage costs exactly what refused it. The
+     * definition set is the one a whole-document parse would have produced, less the sources that
+     * did not parse; the registry over it is the one {@link SchemaParser#buildRegistry} would have
+     * produced, less the declarations it refused. Cross-source problems are still the combining
+     * stage's business rather than any single file's: a type two sources both declare is refused
+     * here, not there.
      *
      * <p>Splitting the parse widens one incidental limit. The parser's token budget applied to the
      * concatenation before and applies per source now, so a source set that tripped it as a
@@ -151,8 +175,32 @@ public final class RewriteSchemaLoader {
                     source.sourceName(), firstSentence(e.getMessage()), e.getLocation(), e));
             }
         }
-        var document = Document.newDocument().definitions(definitions).build();
-        return new PerSourceParse(new SchemaParser().buildRegistry(document), failures);
+        var registry = new TypeDefinitionRegistry();
+        var registryErrors = new ArrayList<SchemaError>();
+        for (Definition definition : definitions) {
+            admit(registry, definition)
+                .ifPresent(e -> registryErrors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e)));
+        }
+        return new PerSourceParse(registry, failures, List.copyOf(registryErrors));
+    }
+
+    /**
+     * Offers one definition to the registry, reporting a refusal instead of throwing.
+     *
+     * <p>This is {@link SchemaParser#buildRegistry}'s own loop with its terminal throw left out:
+     * {@link TypeDefinitionRegistry#add} already reports a refusal as a returned error rather than
+     * an exception, and {@code buildRegistry} collects those and throws if any landed. Admitting
+     * one at a time keeps the definitions that were admitted, which is the whole difference. The
+     * non-SDL guard mirrors the same method's, since a {@code Document} can in principle carry an
+     * executable definition (a query operation in a file pointed at the schema loader) that the
+     * registry has no slot for.
+     */
+    @SuppressWarnings("rawtypes")
+    private static Optional<GraphQLError> admit(TypeDefinitionRegistry registry, Definition definition) {
+        if (definition instanceof SDLDefinition<?> sdl) {
+            return registry.add(sdl);
+        }
+        return Optional.of(new NonSDLDefinitionError(definition));
     }
 
     /**
@@ -161,17 +209,36 @@ public final class RewriteSchemaLoader {
      * collection because a label has nothing to open: a caller holding one has to decide what that
      * means at its own boundary instead of discovering it as a parse-time surprise here.
      *
-     * <p>Callers that want the rejected sources as data rather than as a thrown exception, so the
-     * sources that did parse are still available, read {@link #parsePerSource} directly.
+     * <p>Callers that want the refusals as data rather than as a thrown exception, so what was
+     * admitted is still available, read {@link #parsePerSource} directly.
      */
     public static TypeDefinitionRegistry load(Collection<SchemaSource.File> userSchemaSources) {
         var parse = parsePerSource(userSchemaSources);
+        throwIfRejected(parse);
+        return parse.registry();
+    }
+
+    /**
+     * Throws whichever exception the stages' refusals earn, in stage order, or returns having
+     * thrown nothing. Each stage keeps the exception it always threw, so a caller that reads the
+     * failure surface (the mojo's two catch arms, the dev loop's one-line parse report) is
+     * unaffected by refusals having become data on the way here: a parse refusal is the first
+     * source's {@link SchemaParseException}, and a registry refusal is the {@code SchemaProblem}
+     * graphql-java's own {@code buildRegistry} would have thrown over the same error list.
+     *
+     * <p>Parse before registry because that is the order they happened in, and because a registry
+     * refusal downstream of a file that never parsed is a consequence rather than a cause: naming
+     * the syntax error first points at the edit that will fix both.
+     */
+    public static void throwIfRejected(PerSourceParse parse) {
         if (!parse.failures().isEmpty()) {
             SyntaxFailure first = parse.failures().getFirst();
             throw new SchemaParseException(
                 first.attributedMessage(), first.brief(), first.location(), first.cause());
         }
-        return parse.registry();
+        if (!parse.registryErrors().isEmpty()) {
+            throw new SchemaProblem(parse.registryErrors().stream().map(SchemaError::cause).toList());
+        }
     }
 
     /**

@@ -205,6 +205,19 @@ public record RewriteContext(
     }
 
     /**
+     * Returns a copy with {@code storeDirectory} replaced, so a convenience-constructor caller can
+     * layer the fact store's home on afterwards. The convenience constructors leave it null, which
+     * gives a private in-memory store that dies with the run; a caller that wants the run's rows to
+     * outlive it names a home here.
+     */
+    public RewriteContext withStoreDirectory(Path storeDirectory) {
+        return new RewriteContext(schemaInputs, basedir, graphName, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+    }
+
+    /**
      * Returns a copy with {@code sessionStateConfig} replaced, so a convenience-constructor caller
      * can layer the {@code <sessionState>} configuration on afterwards.
      */

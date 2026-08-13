@@ -476,7 +476,7 @@ CREATE TABLE graphql_duplicate_declaration (
                           'UNION_MEMBER', 'IMPLEMENTS', 'DIRECTIVE_APPLICATION',
                           'DIRECTIVE_LOCATION', 'DIRECTIVE_ARGUMENT'))
 );
-COMMENT ON TABLE graphql_duplicate_declaration IS 'The duplicate-declaration overflow, sibling of the semantic stratum''s undecoded-argument relation. The registry retains element-level duplicates without error (a field declared twice in one body or re-declared by an extension, a repeated argument, enum value, union member, or implements entry, a second application of a single-application graphitron directive, a repeated location or formal argument in a directive definition), so every element-level natural key in this schema is author-reachable. Capture is first-wins in merge order; the losing occurrence records here, rendered and located, so no authored text is lost and the duplicate-declaration detection has its row. Empty while assembly runs upstream (assembly rejects these schemas first). A second base definition, of a type or of a directive, is the duplication family the registry itself rejects at parse, so the TYPE kind is reachable only through the LSP''s per-file fragment path.';
+COMMENT ON TABLE graphql_duplicate_declaration IS 'The duplicate-declaration overflow, sibling of the semantic stratum''s undecoded-argument relation. The registry retains element-level duplicates without error (a field declared twice in one body or re-declared by an extension, a repeated argument, enum value, union member, or implements entry, a second application of a single-application graphitron directive, a repeated location or formal argument in a directive definition), so every element-level natural key in this schema is author-reachable. Capture is first-wins in merge order; the losing occurrence records here, rendered and located, so no authored text is lost and the duplicate-declaration detection has its row. The element-level kinds became reachable when capture stopped being conditional on the document assembling: assembly does reject these schemas (a twice-declared field is a NonUniqueNameError), but its refusal is now a row in graphql_schema_error rather than an abort, so the same pass captures both the verdict and the retained duplicate this relation holds. A second base definition, of a type or of a directive, is refused one stage earlier, by the registry, whose first-wins admission keeps the winner and reports the loser as a verdict without offering its declaration to capture; the TYPE kind is therefore still reachable only through the LSP''s per-file fragment path, now because the losing declaration never reaches the walk rather than because the registry throws.';
 COMMENT ON COLUMN graphql_duplicate_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_duplicate_declaration.source_name IS 'the losing occurrence''s own position identifies the row';
 COMMENT ON COLUMN graphql_duplicate_declaration.source_line IS 'line of the losing occurrence';
@@ -3190,25 +3190,33 @@ COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witne
 COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';
 
 -- ==== Diagnostics stratum =========================================================
--- Violations as facts: five arms behind one prefix-less union view (diagnostic, at the
+-- Violations as facts: seven arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this stratum directly. The arms, and
 -- the many-to-one arm-to-source mapping stated so it is reviewed: the store-native pilot
 -- (intent_authored_claim_conflict, a derivation with no writer), the rejection_ residue, the
--- lint_ arm and the build_warning_ advisory arm all carry source = 'schema'; only
+-- lint_ arm, the build_warning_ advisory arm and the two SDL-toolchain arms
+-- (graphql_syntax_error, graphql_schema_error) all carry source = 'schema'; only
 -- javac_diagnostic carries 'compile'. A new arm grows neither the closed source taxonomy nor
 -- the wire vocabulary. The per-vocabulary split keeps severity honest: for rejection rows it
 -- is a function of the rejection's kind, for lint rows of the rule, for advisory rows warning
--- by construction, for compile rows javac's independent verdict, and one relation holding any
--- two would give one column two meanings. The three loaded relations here write at the dev
--- session's cadence through the session's live store handle (their loaders sit beside the
--- report's producer), every statement graph-scoped, and a batch run's loaded partitions stay
--- empty: honest emptiness in the compile arm's shipped posture, since the only reader is the
--- dev session's MCP server. Absence discipline: schema-side absence is SQL NULL outside the
--- key; the compile arm keeps javac's own sentinels in its base relation and the union view
--- normalises them to the same NULL bucket by comparing against the sentinels, never IS NULL.
+-- by construction, for the SDL-toolchain rows error by construction (a document that will not
+-- parse or will not assemble is not a schema), for compile rows javac's independent verdict,
+-- and one relation holding any two would give one column two meanings. The loaded relations
+-- here write at the dev session's cadence through the session's live store handle (their
+-- loaders sit beside the report's producer), every statement graph-scoped, and a batch run's
+-- loaded partitions stay empty: honest emptiness in the compile arm's shipped posture, since
+-- the only reader is the dev session's MCP server. The two SDL-toolchain arms are the
+-- exception to that cadence and write from capture itself, on every pass, which is what makes
+-- their emptiness mean "the document was read clean" rather than "nobody has loaded them yet".
+-- Absence discipline: schema-side absence is SQL NULL outside the key; the compile arm keeps
+-- javac's own sentinels in its base relation and the union view normalises them to the same
+-- NULL bucket by comparing against the sentinels, never IS NULL. The SDL-toolchain arms take
+-- the schema-side rule instead of the compile arm's, normalising graphql-java's own (-1, -1)
+-- unlocated sentinel to NULL at their writer, so one family does not carry two conventions.
 -- Location-less rows (whole-build lint findings, coordinate-less rejections) take the
 -- javac_diagnostic key convention: an emit-order ordinal under the graph partition, which is
--- also each loaded relation's one key throughout.
+-- also each loaded relation's one key throughout. graphql_syntax_error is the one arm keyed
+-- otherwise, on the source it refused, and its own comment argues why.
 
 CREATE TABLE rejection_validation_error (
   graph_name    VARCHAR NOT NULL,
@@ -3296,6 +3304,44 @@ COMMENT ON COLUMN build_warning_no_rule.file IS 'canonical file URI of the advis
 COMMENT ON COLUMN build_warning_no_rule.source_line IS 'source line of the advisory''s location, 1-based; NULL where unlocated';
 COMMENT ON COLUMN build_warning_no_rule.source_column IS 'source column of the advisory''s location, 1-based; NULL where unlocated';
 
+CREATE TABLE graphql_syntax_error (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  message       VARCHAR NOT NULL,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, source_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphql_syntax_error IS 'One source the parser refused, per row: the first stage of reading a schema, judged one file at a time. Keyed on the source rather than on an emit-order ordinal, alone among this stratum''s arms, because parsing stops at a source''s first syntax error, so at most one row per source is structural rather than incidental, and the key is then the question a reader actually asks ("does this file parse, and where does it fail") answered as a primary-key lookup. The key also satisfies the store header''s requirement that every base relation be partitionable by the source that produced it, which no ordinal-keyed arm of this stratum can claim; that is a property of the key, not a refresh this store performs, since the SDL families are re-walked wholesale per graph from a parse the pipeline pays for anyway and no schema file reaches the source-partitioned refresh path. A row here is what explains a declaration''s absence from the transcription families without implying the author deleted it, which is the difference between an editor reporting a syntax error and an editor reporting every type in the file as unknown. Rows are written by capture on every pass, so emptiness means every source parsed.';
+COMMENT ON COLUMN graphql_syntax_error.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_syntax_error.source_name IS 'the refused source, as the reader spelled it (the store_source spelling, not the canonical URI the union view renders); the key''s second dimension, and always known, because the loader is parsing one named source when the parser refuses it';
+COMMENT ON COLUMN graphql_syntax_error.message IS 'the refusal''s reason, the parser''s first sentence with its redundant offending-token tail stripped; display material, never a dimension. Deliberately not the file-attributed one-liner the build throws: the file is a column here, so prefixing it into the message would store it twice and fork the spelling';
+COMMENT ON COLUMN graphql_syntax_error.source_line IS 'line the parser refused at, 1-based; NULL where it reported no position, which is the rare case of a source whose very first token is unreadable';
+COMMENT ON COLUMN graphql_syntax_error.source_column IS 'column the parser refused at, on the same terms as source_line';
+
+CREATE TABLE graphql_schema_error (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  stage         VARCHAR NOT NULL CHECK (stage IN ('REGISTRY', 'ASSEMBLY')),
+  error_class   VARCHAR NOT NULL,
+  message       VARCHAR NOT NULL,
+  source_name   VARCHAR,
+  source_line   INT,
+  source_column INT,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphql_schema_error IS 'One verdict per row from the two stages that judge the SDL document as a whole, in graphql-java''s own vocabulary. These are the specification''s structural rules, and assembly is the only place they are checked at all: that every named type resolves, that an object satisfies the interfaces it claims, that a directive sits where its definition permits, that the schema has a query root. The stages share this relation because they share a vocabulary, a column set and a grain; splitting them would shatter one ordinal spine to record a difference the stage column already carries. Sibling of graphql_syntax_error rather than one relation with it, because the two refresh at different grains: a syntax refusal belongs to one source and refreshes with it, while a verdict here is a fact about the whole file set that no single source owns and that any change must discard wholesale. Rows are written by capture on every pass, assembly running whether or not the assembled schema is then used for anything, so emptiness means the document was read clean rather than unexamined.';
+COMMENT ON COLUMN graphql_schema_error.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_schema_error.ordinal IS 'emit order in the stage''s own error list, 0-based, continuing across both stages; the key''s tie-breaker on the javac_diagnostic convention, which this relation needs because a stage reports as many verdicts as it found and several may share a location';
+COMMENT ON COLUMN graphql_schema_error.stage IS 'which stage refused, a closed CHECK because the toolchain has exactly these two document-wide stages: REGISTRY for combining every parsed source''s definitions into one registry, ASSEMBLY for assembling that registry. Both populations are live and disjoint by construction: the registry stage refuses the duplicate base declarations (a second type of one name, a second definition of one directive, a second schema block), which in a multi-file workspace are precisely the refusals no single source''s parse could see, and the assembly stage refuses everything else. Deliberately not projected onto the union view: a consumer''s fix does not depend on which stage objected, so putting it on the wire would grow the read vocabulary for no reader. It is kept here because it is the provenance the store''s own reasoning needs, and because it is what makes the duplicate-declaration relation''s claim about assembly running upstream checkable from rows instead of asserted in prose';
+COMMENT ON COLUMN graphql_schema_error.error_class IS 'the refusing error''s class name, graphql-java''s own word for what went wrong (MissingTypeError, NonUniqueNameError, DirectiveIllegalLocationError). The only dimension the toolchain publishes: its getErrorType() is uniformly ValidationError across the whole SDL error set and so discriminates nothing. An open column, for the same reason the rejection residue''s variant is open, and rendered onto the union view''s variant column, whose two namespaces cannot collide (a rejection leaf keeps its enclosing classes and is dotted, these are bare)';
+COMMENT ON COLUMN graphql_schema_error.message IS 'the verdict''s rendered message; display material, never a dimension. It is also the only place the offending coordinate appears: graphql-java names types and fields in prose rather than in structured fields, and lifting them out by parsing the message would mint a dimension from display material, which is why the coordinate columns this stratum''s other arms carry are absent here';
+COMMENT ON COLUMN graphql_schema_error.source_name IS 'the source the verdict points into, as the reader spelled it; NULL where the verdict points nowhere, which is the schema-wide case (a document with no query root names no position). Note the coarseness: graphql-java locates at the enclosing declaration rather than at the offending element, so a field whose type does not resolve is located at its type''s declaration';
+COMMENT ON COLUMN graphql_schema_error.source_line IS 'line of the verdict''s location, 1-based; NULL where unlocated, graphql-java''s own (-1, -1) sentinel having been normalised away at the writer';
+COMMENT ON COLUMN graphql_schema_error.source_column IS 'column of the verdict''s location, on the same terms as source_line';
+
 -- The canonical file URI spelling, as SQL. The Java site (ValidationReport.canonicalUri) is
 -- the declared single home; this alias is its verbatim restatement for the one arm that needs
 -- the spelling computed in a view (the pilot arm below reads capture's raw source names, which
@@ -3357,6 +3403,26 @@ SELECT w.graph_name, 'schema', 'warning', TRUE,
        w.source_line, w.source_column, w.message
   FROM build_warning_no_rule w
 UNION ALL
+SELECT x.graph_name, 'schema', 'error', TRUE,
+       CAST(NULL AS VARCHAR), 'InvalidSyntaxException', CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       canonical_uri(x.source_name),
+       REGEXP_REPLACE(canonical_uri(x.source_name), '/[^/]*$', ''),
+       x.source_line, x.source_column, x.message
+  FROM graphql_syntax_error x
+UNION ALL
+SELECT s.graph_name, 'schema', 'error', TRUE,
+       CAST(NULL AS VARCHAR), s.error_class, CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       canonical_uri(s.source_name),
+       REGEXP_REPLACE(canonical_uri(s.source_name), '/[^/]*$', ''),
+       s.source_line, s.source_column, s.message
+  FROM graphql_schema_error s
+UNION ALL
 SELECT j.graph_name, 'compile',
        CASE WHEN j.kind = 'ERROR' THEN 'error' ELSE 'warning' END,
        TRUE,
@@ -3371,13 +3437,13 @@ SELECT j.graph_name, 'compile',
        CASE WHEN j.column_number = -1 THEN NULL ELSE CAST(j.column_number AS INT) END,
        j.message
   FROM javac_diagnostic j;
-COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all five arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate and directory are renderings of the stored pair and the canonical file; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count; directives renders the canonical sorted spelling in every arm that carries it.';
+COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the parser and the SDL toolchain''s two document-wide stages, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate and directory are renderings of the stored pair and the canonical file; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count; directives renders the canonical sorted spelling in every arm that carries it.';
 COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the four validator-side arms, compile for the javac arm';
 COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
 COMMENT ON COLUMN diagnostic.actionable IS 'the triage headline: FALSE exactly on DEFERRED rows (recognised but not yet generator-supported, a workaround rather than a schema fix), TRUE everywhere else including warnings and compile rows';
 COMMENT ON COLUMN diagnostic.kind IS 'RejectionKind.name() on rejection-bearing rows (residue and pilot); NULL on lint, advisory and compile rows, where the three-way fork does not apply';
-COMMENT ON COLUMN diagnostic.variant IS 'the rejection leaf''s package-stripped class name on rejection-bearing rows (rejection_validation_error.variant''s spelling rule); NULL elsewhere';
+COMMENT ON COLUMN diagnostic.variant IS 'the producing oracle''s error-class dimension, in whichever of two namespaces minted the row: the rejection leaf''s package-stripped class name on rejection-bearing rows (rejection_validation_error.variant''s spelling rule), and graphql-java''s own error class name on the SDL toolchain''s arms (the constant InvalidSyntaxException on parser rows, since that stage has exactly one way to refuse; graphql_schema_error.error_class on the document-wide arms). The namespaces cannot collide, a rejection leaf keeping its enclosing classes and so always dotted where graphql-java''s are bare, which is the same argument lsp_code makes for carrying two code namespaces in one column. NULL on the lint, advisory and compile arms';
 COMMENT ON COLUMN diagnostic.lsp_code IS 'the stable machine code of the row''s producing oracle: the rejection sub-seals'' lspCode() on schema rows that declare one, javac''s Diagnostic.getCode() on compile rows; NULL where neither publishes a code';
 COMMENT ON COLUMN diagnostic.attempt_kind IS 'which lookup space a name resolution failed in (AttemptKind.name()), on UnknownName rows only';
 COMMENT ON COLUMN diagnostic.attempt IS 'the name the author wrote, on UnknownName rows only';
@@ -3405,7 +3471,7 @@ COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever 
 
 CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
   ('store_', 'The store''s own record', 0, 'The store''s own record: what it read, what it was built from, and which graphs it holds. Its rows are never a reading of the consumer''s schema, database or classpath, which is what the transcription families are named for; the graph recipe rows are configuration the run held in hand, which is what keeps them in this family rather than making them a family of their own.'),
-  ('graphql_', 'Generic SDL transcription', 1, 'Generic GraphQL: a row any SDL reader could produce from the document without knowing graphitron exists, which is every declaration, every directive definition, and every directive application including graphitron''s own. The family is a total transcription, with no hole where graphitron''s namespace was: whether an application survives into the emitted schema is a namespace query over graphql_directive at emission time, not something capture decides by choosing a table, and a directive that is both re-emitted and decoded (federation''s @key) is simply a row in each family rather than a special case.'),
+  ('graphql_', 'Generic SDL transcription', 1, 'Generic GraphQL: a row any SDL reader could produce from the document without knowing graphitron exists, which is every declaration, every directive definition, and every directive application including graphitron''s own. The family is a total transcription, with no hole where graphitron''s namespace was: whether an application survives into the emitted schema is a namespace query over graphql_directive at emission time, not something capture decides by choosing a table, and a directive that is both re-emitted and decoded (federation''s @key) is simply a row in each family rather than a special case. Two residents are verdicts rather than declarations (graphql_syntax_error, graphql_schema_error: what the SDL toolchain concluded about whether the document is a schema at all), which makes this the one family holding both a transcription and a judgement of the same artifact. They are here on the reader-neutrality test that names the family, since a syntax error and a specification violation are as much things any SDL reader produces from the document as a declaration is, and the alternative was a second family aliasing this one''s subject.'),
   ('graphitron_', 'The decoded graphitron reading', 2, 'What graphitron makes of the SDL document: the decoded directives, and the provenance of the rows macro expansion mints. A row here is still a transcription, not a conclusion: it says what a directive application spelled, in graphitron''s vocabulary instead of the document''s.'),
   ('sql_', 'The consumer database catalog', 3, 'What the consumer''s database declares, read through jOOQ''s generated model. Not jooq_: naming a family for its reader is what this name replaces, because jOOQ defines neither table nor column nor foreign key.'),
   ('jvm_', 'The compile classpath census', 4, 'What the classfiles on the compile classpath declare. Not extension_: naming a family for a presumed role is what this name replaces, because an ObjectMapper on the classpath extends nothing yet still earns a row.'),

@@ -20,14 +20,12 @@ import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
-import graphql.schema.idl.EchoingWiringFactory;
-import graphql.schema.idl.ScalarInfo;
-import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
+import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
@@ -149,25 +147,41 @@ public class GraphitronSchemaBuilder {
      * assembled {@link GraphQLSchema}. See {@link Bundle}.
      */
     public static Bundle buildBundle(AttributedRegistry attributed, RewriteContext ctx) {
+        return buildBundle(attributed, assembleOrFail(SchemaAssembly.of(attributed.registry())), ctx);
+    }
+
+    /**
+     * The assembly refusal a caller with nothing to record about it wants: the federation-recipe
+     * translation where it applies, and otherwise the {@code SchemaProblem} graphql-java raised.
+     *
+     * <p>Split out from {@link #buildBundle(AttributedRegistry, RewriteContext)} because the
+     * pipeline assembles ahead of classification (so the refusal is captured as facts before
+     * anything throws) and then needs this same translation at its own failure arm. One home for
+     * it, so the two paths cannot disagree about which exception an unassemblable schema earns.
+     */
+    public static GraphQLSchema assembleOrFail(SchemaAssembly assembly) {
+        return switch (assembly) {
+            case SchemaAssembly.Assembled a -> a.schema();
+            case SchemaAssembly.Rejected r -> {
+                var recipeErrors = buildRecipeErrors(r.cause());
+                if (recipeErrors != null) {
+                    throw new ValidationFailedException(recipeErrors);
+                }
+                throw r.cause();
+            }
+        };
+    }
+
+    /**
+     * Classifies the registry against an already-assembled schema. The pipeline's entry point: it
+     * assembles up front, unconditionally, so the stage's verdict is captured whichever way it
+     * went, and hands the schema here rather than having it assembled a second time. Assembling
+     * twice would be both wasted work and two sources of truth, with the captured verdict coming
+     * from a different call than the one the build actually classified.
+     */
+    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RewriteContext ctx) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
-        var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
-            registry.scalars().forEach((name, v) -> {
-                if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
-                    wiring.scalar(EchoingWiringFactory.fakeScalar(name));
-                }
-            })
-        );
-        GraphQLSchema assembled;
-        try {
-            assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
-        } catch (SchemaProblem e) {
-            var recipeErrors = buildRecipeErrors(e);
-            if (recipeErrors != null) {
-                throw new ValidationFailedException(recipeErrors);
-            }
-            throw e;
-        }
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
         recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
@@ -224,14 +238,7 @@ public class GraphitronSchemaBuilder {
      */
     static BuildContext buildContextForTests(AttributedRegistry attributed, RewriteContext ctx) {
         var registry = attributed.registry();
-        var runtimeWiring = EchoingWiringFactory.newEchoingWiring(wiring ->
-            registry.scalars().forEach((name, v) -> {
-                if (!ScalarInfo.isGraphqlSpecifiedScalar(name)) {
-                    wiring.scalar(EchoingWiringFactory.fakeScalar(name));
-                }
-            })
-        );
-        GraphQLSchema assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
+        GraphQLSchema assembled = SchemaAssembly.of(registry).orThrow();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
         recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
