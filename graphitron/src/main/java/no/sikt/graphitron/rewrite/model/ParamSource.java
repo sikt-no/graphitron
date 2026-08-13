@@ -18,7 +18,8 @@ import java.util.Objects;
  */
 public sealed interface ParamSource
     permits ParamSource.RoutineParamSource, ParamSource.Context, ParamSource.Sources,
-            ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable {
+            ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable,
+            ParamSource.SessionSeam, ParamSource.SessionHandle {
 
     /**
      * The two arms a {@link RoutineRef.ArgBinding} may carry, named as a type so the routine
@@ -102,4 +103,39 @@ public sealed interface ParamSource
             Objects.requireNonNull(column, "column");
         }
     }
+
+    /**
+     * A session hook's seam parameter: the one parameter of a {@code <mount>}/{@code <unmount>}
+     * method typed {@code org.jooq.Configuration} or {@code java.sql.Connection}, supplied by the
+     * generated hook class (never extracted from the request). The {@link Kind} is decided once
+     * in {@code ServiceCatalog} at reflection time, so no emitter re-derives the fork from a
+     * type-name string; the emit-side switch breaks at compile until the arm is covered.
+     * Filtered out of {@link MethodRef#callParams()}, so the seam never contributes to
+     * call-parameter arity.
+     */
+    record SessionSeam(Kind kind) implements ParamSource {
+        public SessionSeam {
+            Objects.requireNonNull(kind, "kind");
+        }
+
+        /** Which seam type the consumer declared; the generated hook builds or passes accordingly. */
+        public enum Kind {
+            /** jOOQ {@code org.jooq.Configuration}: the hook builds a provider-free
+             *  {@code DSL.using(connection, dialect, settings).configuration()}. */
+            CONFIGURATION,
+            /** Raw JDBC {@code java.sql.Connection}: the hook passes the pinned connection. */
+            CONNECTION
+        }
+    }
+
+    /**
+     * A parameter bound to the session handle. Two producers: the {@code <unmount>} hook's
+     * handle parameter (the generated hook passes the pinned carrier's stored handle), and a
+     * service parameter bound via the {@code $session} argMapping sigil, whose call-site
+     * extraction reads the handle off the resolved {@code DSLContext}'s own
+     * {@code configuration().data(...)} slot (per-key-carrier scoped, so a tenant-routed call
+     * reads that tenant's handle), never off {@code graphQLContext}. Supplied by the generator,
+     * filtered out of {@link MethodRef#callParams()}.
+     */
+    record SessionHandle() implements ParamSource {}
 }

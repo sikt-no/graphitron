@@ -21,6 +21,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.session.SessionHooks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -243,10 +244,10 @@ class ServiceCatalog {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
-            if (pick.rejection() != null) {
-                return new DecodeResult(null, pick.rejection());
+            if (pick instanceof MethodPick.Rejected rejected) {
+                return new DecodeResult(null, rejected.rejection());
             }
-            var javaMethod = pick.method();
+            var javaMethod = ((MethodPick.Picked) pick).method();
             boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
             List<MethodRef.Param> ctorParams = List.of();
             Rejection unconstructible = null;
@@ -465,11 +466,44 @@ class ServiceCatalog {
     }
 
     /**
-     * Outcome of {@link #pickMethod}: either the single resolved method or a typed rejection
-     * (method-not-found {@link Rejection.AuthorError.UnknownName}, or
-     * {@link ReflectionError.AmbiguousMethod} when more than one declaration shares the name).
+     * Outcome of {@link #pickMethod}: sealed ok-or-rejected, so the resolution arms arrive as
+     * variants rather than as a null combination every caller re-tests. {@link Rejected} carries
+     * the typed rejection (method-not-found {@link Rejection.AuthorError.UnknownName},
+     * {@link ReflectionError.AmbiguousMethod} when more than one declaration shares the name, or
+     * the seam-filter arms {@link ReflectionError.SeamParameterMissing} /
+     * {@link ReflectionError.SeamCandidateAmbiguous} when a {@link SeamFilter} was supplied).
      */
-    private record MethodPick(java.lang.reflect.Method method, Rejection rejection) {}
+    private sealed interface MethodPick {
+        record Picked(java.lang.reflect.Method method) implements MethodPick {}
+        record Rejected(Rejection rejection) implements MethodPick {}
+    }
+
+    /**
+     * The session-hook overload selector, passed to {@link #pickMethod} as an explicit input:
+     * among same-named declarations, exactly one must carry exactly one seam parameter
+     * ({@code org.jooq.Configuration} or {@code java.sql.Connection}). jOOQ emits same-named
+     * {@code Field}-expression overloads beside every executing method, so overloading is the
+     * normal case on the {@code Routines} path and the seam rule resolves it without a grammar
+     * for naming an overload.
+     */
+    enum SeamFilter { SESSION_HOOK }
+
+    /** True when the parameter is seam-typed; exact types, so the selector is predictable. */
+    private static boolean isSeamParameter(java.lang.reflect.Parameter p) {
+        return p.getType() == org.jooq.Configuration.class || p.getType() == java.sql.Connection.class;
+    }
+
+    /** True when the method carries exactly one seam parameter, anywhere in its list. */
+    private static boolean carriesOneSeam(java.lang.reflect.Method m) {
+        return Arrays.stream(m.getParameters()).filter(ServiceCatalog::isSeamParameter).count() == 1;
+    }
+
+    /** A candidate's rendered parameter list for the seam-filter rejection messages. */
+    private static String renderSignature(java.lang.reflect.Method m) {
+        return m.getName() + Arrays.stream(m.getParameters())
+            .map(p -> p.getParameterizedType().getTypeName())
+            .collect(Collectors.joining(", ", "(", ")"));
+    }
 
     /**
      * Resolves the single declared method named {@code methodName} on {@code cls}. Shared by all
@@ -478,6 +512,20 @@ class ServiceCatalog {
      * {@link ReflectionError.AmbiguousMethod} carrying every candidate's parameter arity.
      */
     private static MethodPick pickMethod(Class<?> cls, String className, String methodName) {
+        return pickMethod(cls, className, methodName, null);
+    }
+
+    /**
+     * The single method-resolution point, with the seam filter as an explicit input: a non-null
+     * {@code seamFilter} narrows same-named declarations to those carrying exactly one seam
+     * parameter before ambiguity is judged, so zero qualifying candidates produce
+     * {@link ReflectionError.SeamParameterMissing} (naming every same-named declaration) and
+     * several produce {@link ReflectionError.SeamCandidateAmbiguous} (naming the qualifying
+     * ones). A null filter keeps the exact-name behaviour the three directive reflect helpers
+     * rely on.
+     */
+    private static MethodPick pickMethod(Class<?> cls, String className, String methodName,
+            SeamFilter seamFilter) {
         var methods = Arrays.stream(cls.getDeclaredMethods())
             .filter(m -> m.getName().equals(methodName))
             .toList();
@@ -486,18 +534,32 @@ class ServiceCatalog {
                 .map(java.lang.reflect.Method::getName)
                 .distinct()
                 .toList();
-            return new MethodPick(null,
+            return new MethodPick.Rejected(
                 Rejection.unknownServiceMethod(
                     "method '" + methodName + "' not found in class '" + className + "'",
                     methodName, declaredMethodNames));
+        }
+        if (seamFilter != null) {
+            var qualifying = methods.stream().filter(ServiceCatalog::carriesOneSeam).toList();
+            if (qualifying.isEmpty()) {
+                return new MethodPick.Rejected(new ReflectionError.SeamParameterMissing(
+                    className, methodName,
+                    methods.stream().map(ServiceCatalog::renderSignature).toList()));
+            }
+            if (qualifying.size() > 1) {
+                return new MethodPick.Rejected(new ReflectionError.SeamCandidateAmbiguous(
+                    className, methodName,
+                    qualifying.stream().map(ServiceCatalog::renderSignature).toList()));
+            }
+            return new MethodPick.Picked(qualifying.get(0));
         }
         if (methods.size() > 1) {
             var arities = methods.stream()
                 .map(java.lang.reflect.Method::getParameterCount)
                 .toList();
-            return new MethodPick(null, new ReflectionError.AmbiguousMethod(className, methodName, arities));
+            return new MethodPick.Rejected(new ReflectionError.AmbiguousMethod(className, methodName, arities));
         }
-        return new MethodPick(methods.get(0), null);
+        return new MethodPick.Picked(methods.get(0));
     }
 
     /**
@@ -662,10 +724,10 @@ class ServiceCatalog {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
-            if (pick.rejection() != null) {
-                return new ServiceReflectionResult(null, pick.rejection());
+            if (pick instanceof MethodPick.Rejected rejected) {
+                return new ServiceReflectionResult(null, rejected.rejection());
             }
-            var javaMethod = pick.method();
+            var javaMethod = ((MethodPick.Picked) pick).method();
             if (!java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers())) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
@@ -774,10 +836,10 @@ class ServiceCatalog {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
-            if (pick.rejection() != null) {
-                return new ServiceReflectionResult(null, pick.rejection());
+            if (pick instanceof MethodPick.Rejected rejected) {
+                return new ServiceReflectionResult(null, rejected.rejection());
             }
-            var javaMethod = pick.method();
+            var javaMethod = ((MethodPick.Picked) pick).method();
             int mods = javaMethod.getModifiers();
             if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
                 return new ServiceReflectionResult(null,
@@ -1558,6 +1620,135 @@ class ServiceCatalog {
             result = "java.util.List<" + result + ">";
         }
         return result;
+    }
+
+    // ===== Session-hook resolution =====
+
+    /**
+     * Outcome of {@link #resolveSessionHooks}: the total resolved carrier plus the typed
+     * rejections that forced a {@link SessionHooks.NotConfigured} fallback (empty on success).
+     * The builder drains the rejections as schema-wide, coordinate-less
+     * {@link ValidationError}s; the carrier stays total so every emit-side reader keeps its
+     * one exhaustive fork.
+     */
+    record SessionHookResolution(SessionHooks hooks, List<Rejection> rejections) {}
+
+    /**
+     * Reflects the authored {@code <mount>}/{@code <unmount>} strings into the resolved
+     * {@link SessionHooks} carrier. A session hook is a user-provided Java method, so this is
+     * {@link MethodRef.StaticOnly}'s population through the same reflection path the directive
+     * helpers use: {@link #pickMethod} with the seam filter as the overload selector, the
+     * seam parameter decided once here into {@link ParamSource.SessionSeam}, mount payload
+     * parameters as {@link ParamSource.Context} (feeding the contextArgument classifier as an
+     * additional root), and the unmount's optional handle parameter as
+     * {@link ParamSource.SessionHandle}, type-checked against the mount's reflected return.
+     */
+    SessionHookResolution resolveSessionHooks(no.sikt.graphitron.rewrite.session.SessionStateConfig config) {
+        if (!(config instanceof no.sikt.graphitron.rewrite.session.SessionStateConfig.MethodHooks methodHooks)) {
+            return new SessionHookResolution(SessionHooks.NotConfigured.INSTANCE, List.of());
+        }
+        var rejections = new ArrayList<Rejection>();
+        MethodRef.StaticOnly mount = reflectSessionHook(methodHooks.mount(), true, rejections);
+        MethodRef.StaticOnly unmount = methodHooks.unmount()
+            .map(u -> reflectSessionHook(u, false, rejections))
+            .orElse(null);
+        if (mount == null || (methodHooks.unmount().isPresent() && unmount == null)) {
+            return new SessionHookResolution(SessionHooks.NotConfigured.INSTANCE, List.copyOf(rejections));
+        }
+        boolean handleLess = TypeName.VOID.equals(mount.returnType());
+        if (unmount != null) {
+            var handleParams = unmount.params().stream()
+                .filter(p -> p.source() instanceof ParamSource.SessionHandle)
+                .toList();
+            if (!handleParams.isEmpty()) {
+                String unmountParamTypes = handleParams.stream()
+                    .map(MethodRef.Param::typeName)
+                    .collect(Collectors.joining(", "));
+                boolean typeAgrees = handleParams.size() == 1 && !handleLess
+                    && ((MethodRef.Param.Typed) handleParams.get(0)).javaType().equals(mount.returnType());
+                if (!typeAgrees) {
+                    rejections.add(new ReflectionError.HandleTypeMismatch(
+                        mount.className(), mount.methodName(),
+                        handleLess ? "void" : mount.returnType().toString(),
+                        unmount.className(), unmount.methodName(),
+                        unmountParamTypes));
+                    return new SessionHookResolution(SessionHooks.NotConfigured.INSTANCE, List.copyOf(rejections));
+                }
+            }
+        }
+        SessionHooks hooks = handleLess
+            ? new SessionHooks.HandleLess(mount, Optional.ofNullable(unmount))
+            : new SessionHooks.Handled(mount, mount.returnType(), Optional.ofNullable(unmount));
+        return new SessionHookResolution(hooks, List.of());
+    }
+
+    /**
+     * Reflects one hook reference into a {@link MethodRef.StaticOnly}, or registers the typed
+     * rejection and returns {@code null}. {@code isMount} decides how non-seam parameters
+     * classify: payload ({@link ParamSource.Context}, name required) on the mount, handle
+     * ({@link ParamSource.SessionHandle}, structural, no name needed) on the unmount.
+     */
+    private MethodRef.StaticOnly reflectSessionHook(
+            no.sikt.graphitron.rewrite.session.SessionStateConfig.HookRef ref,
+            boolean isMount, List<Rejection> rejections) {
+        String className = ref.className();
+        String methodName = ref.methodName();
+        Class<?> cls;
+        try {
+            cls = Class.forName(className, false, ctx.codegenLoader());
+        } catch (ClassNotFoundException e) {
+            rejections.add(new ReflectionError.ClassNotLoaded(className));
+            return null;
+        }
+        MethodPick pick = pickMethod(cls, className, methodName, SeamFilter.SESSION_HOOK);
+        if (pick instanceof MethodPick.Rejected rejected) {
+            rejections.add(rejected.rejection());
+            return null;
+        }
+        var javaMethod = ((MethodPick.Picked) pick).method();
+        int mods = javaMethod.getModifiers();
+        if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
+            rejections.add(new ReflectionError.HookNotStatic(className, methodName));
+            return null;
+        }
+        var checked = declaredExceptionFqns(javaMethod);
+        if (!checked.isEmpty()) {
+            rejections.add(new ReflectionError.HookThrowsChecked(className, methodName, checked));
+            return null;
+        }
+        var params = new ArrayList<MethodRef.Param>();
+        for (var p : javaMethod.getParameters()) {
+            String typeName = p.getParameterizedType().getTypeName();
+            TypeName javaType = TypeName.get(p.getParameterizedType());
+            if (isSeamParameter(p)) {
+                var kind = p.getType() == org.jooq.Configuration.class
+                    ? ParamSource.SessionSeam.Kind.CONFIGURATION
+                    : ParamSource.SessionSeam.Kind.CONNECTION;
+                String name = p.isNamePresent() ? p.getName()
+                    : (kind == ParamSource.SessionSeam.Kind.CONFIGURATION ? "cfg" : "connection");
+                params.add(new MethodRef.Param.Typed(name, typeName, javaType,
+                    new ParamSource.SessionSeam(kind)));
+                continue;
+            }
+            if (isMount) {
+                // A payload parameter's name is the public factory-slot identity, so a
+                // synthesized fallback is exactly the throwaway identifier consumer-facing
+                // generated code must not carry: fail through the existing -parameters gate.
+                if (!p.isNamePresent()) {
+                    emitParametersWarning();
+                    rejections.add(new ReflectionError.ParameterNamesMissing(className, methodName));
+                    return null;
+                }
+                params.add(new MethodRef.Param.Typed(p.getName(), typeName, javaType,
+                    new ParamSource.Context()));
+            } else {
+                String name = p.isNamePresent() ? p.getName() : "handle";
+                params.add(new MethodRef.Param.Typed(name, typeName, javaType,
+                    new ParamSource.SessionHandle()));
+            }
+        }
+        return new MethodRef.StaticOnly(className, methodName,
+            TypeName.get(javaMethod.getGenericReturnType()), List.copyOf(params), List.of());
     }
 
     // ===== Result container =====

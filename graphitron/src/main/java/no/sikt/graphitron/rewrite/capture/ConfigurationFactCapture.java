@@ -6,10 +6,8 @@ import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_DISCONNECT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HOOK;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_STATE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_VARIABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 
@@ -25,10 +23,6 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
  * with the run it describes.
  */
 final class ConfigurationFactCapture {
-
-    /** {@code store_graph_session_state.arm}, closed by the relation's CHECK. */
-    static final String ARM_FUNCTION_HOOKS = "function_hooks";
-    static final String ARM_VARIABLES = "variables";
 
     private ConfigurationFactCapture() {}
 
@@ -89,49 +83,26 @@ final class ConfigurationFactCapture {
     }
 
     /**
-     * The {@code <sessionState>} alternation, arm first. The switch is exhaustive over the seal, so
-     * a new form is a compile error here rather than a silently untranscribed configuration, and the
-     * relations follow the seal so no reader can spell the both-forms state
-     * {@link SessionStateConfig#from} throws on.
+     * The {@code <sessionState>} method references, verbatim: only the authored
+     * {@code fqcn#method} strings land here, per this family's authored-facts-only rule (the
+     * reflected signatures are model facts, never stored back). Row presence is the fact on
+     * both relations: no mount row means no identity is mounted, and no unmount row beside a
+     * mount is the supported mount-only configuration. The switch is exhaustive over the seal,
+     * so a new form is a compile error here rather than a silently untranscribed configuration.
      */
     private static void writeSessionState(FactSink sink, SessionStateConfig sessionState) {
         switch (sessionState) {
             case SessionStateConfig.None ignored -> { }
-            case SessionStateConfig.Variables variables -> {
-                writeArm(sink, ARM_VARIABLES);
-                int ordinal = 0;
-                for (SessionStateConfig.Variable variable : variables.variables()) {
-                    var row = sink.dsl().newRecord(STORE_GRAPH_SESSION_VARIABLE);
-                    row.setOrdinal(ordinal++);
-                    row.setVariableName(variable.name());
-                    row.setClaim(variable.claim());
+            case SessionStateConfig.MethodHooks hooks -> {
+                var mountRow = sink.dsl().newRecord(STORE_GRAPH_SESSION_MOUNT);
+                mountRow.setMountMethod(hooks.mount().raw());
+                sink.add(mountRow);
+                hooks.unmount().ifPresent(unmount -> {
+                    var row = sink.dsl().newRecord(STORE_GRAPH_SESSION_UNMOUNT);
+                    row.setUnmountMethod(unmount.raw());
                     sink.add(row);
-                }
-            }
-            case SessionStateConfig.FunctionHooks hooks -> {
-                writeArm(sink, ARM_FUNCTION_HOOKS);
-                var hookRow = sink.dsl().newRecord(STORE_GRAPH_SESSION_HOOK);
-                hookRow.setConnectCall(hooks.connectCall());
-                sink.add(hookRow);
-                switch (hooks.unmount()) {
-                    // No row is the declared unmount-free opt-out. The unmount arm is total on the
-                    // value type, so absence here carries the arm with nothing left ambiguous.
-                    case SessionStateConfig.Unmount.UnmountFree ignored -> { }
-                    case SessionStateConfig.Unmount.PairedDisconnect paired -> {
-                        var row = sink.dsl().newRecord(STORE_GRAPH_SESSION_DISCONNECT);
-                        row.setDisconnectCall(paired.call());
-                        row.setOutHandle(paired.handle());
-                        row.setStateSurvivesTransactions(paired.survivesTransactions());
-                        sink.add(row);
-                    }
-                }
+                });
             }
         }
-    }
-
-    private static void writeArm(FactSink sink, String arm) {
-        var row = sink.dsl().newRecord(STORE_GRAPH_SESSION_STATE);
-        row.setArm(arm);
-        sink.add(row);
     }
 }

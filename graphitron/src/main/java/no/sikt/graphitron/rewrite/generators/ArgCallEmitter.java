@@ -133,6 +133,18 @@ public final class ArgCallEmitter {
                     "ParamSource.SourceColumn reached buildMethodBackedCallArgs — SourceColumn is a "
                     + "routine-binding concept (@routine columnMapping), never a MethodRef param source: param '"
                     + param.name() + "'");
+            case ParamSource.SessionSeam ignored ->
+                throw new IllegalStateException(
+                    "ParamSource.SessionSeam reached buildMethodBackedCallArgs — the seam parameter exists "
+                    + "only on <mount>/<unmount> hook methods, which the generated hook class calls directly: param '"
+                    + param.name() + "'");
+            // The $session sigil: the handle rides the resolved DSLContext's own per-Configuration
+            // data() map, written once at mount by the connection runtime. Reading it off the dsl
+            // local (never graphQLContext) is what scopes the read per pinned connection, so a
+            // tenant-routed call sees that tenant's handle.
+            case ParamSource.SessionHandle ignored ->
+                CodeBlock.of("($T) dsl.configuration().data($S)",
+                    rawTypeOf(param), no.sikt.graphitron.rewrite.session.SessionHooks.HANDLE_DATA_KEY);
         };
     }
 

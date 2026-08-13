@@ -28,7 +28,12 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
     ReflectionError.ClassNotLoaded,
     ReflectionError.ReturnTypeMismatch,
     ReflectionError.ParameterNamesMissing,
-    ReflectionError.AmbiguousMethod
+    ReflectionError.AmbiguousMethod,
+    ReflectionError.SeamParameterMissing,
+    ReflectionError.SeamCandidateAmbiguous,
+    ReflectionError.HookNotStatic,
+    ReflectionError.HookThrowsChecked,
+    ReflectionError.HandleTypeMismatch
 {
     /** LSP wire code under the {@code graphitron.reflect.} namespace. */
     String lspCode();
@@ -103,5 +108,111 @@ public sealed interface ReflectionError extends Rejection.AuthorError permits
                 + " named '" + methodName + "' exists";
         }
         @Override public String lspCode() { return "graphitron.reflect.ambiguous-method"; }
+    }
+
+    /**
+     * No declaration of the referenced session-hook method carries exactly one seam parameter
+     * ({@code org.jooq.Configuration} or {@code java.sql.Connection}). The seam rule is also the
+     * overload selector, so this covers both a single method with zero (or several) seam-typed
+     * parameters and an overload set where no candidate qualifies. Carries every same-named
+     * candidate's rendered parameter list so the author can see what was inspected.
+     */
+    record SeamParameterMissing(
+        String className,
+        String methodName,
+        List<String> candidateSignatures
+    ) implements ReflectionError {
+        public SeamParameterMissing { candidateSignatures = List.copyOf(candidateSignatures); }
+        @Override public String message() {
+            return "method '" + methodName + "' in class '" + className + "' has no declaration with"
+                + " exactly one seam parameter (org.jooq.Configuration or java.sql.Connection) —"
+                + " a session hook declares exactly one seam parameter anywhere in its parameter list;"
+                + " candidates inspected: "
+                + candidateSignatures.stream().collect(Collectors.joining("; ", "[", "]"));
+        }
+        @Override public String lspCode() { return "graphitron.reflect.seam-parameter-missing"; }
+    }
+
+    /**
+     * More than one same-named declaration of the referenced session-hook method carries a seam
+     * parameter, so the seam rule cannot select an overload. Carries each qualifying candidate's
+     * rendered parameter list.
+     */
+    record SeamCandidateAmbiguous(
+        String className,
+        String methodName,
+        List<String> candidateSignatures
+    ) implements ReflectionError {
+        public SeamCandidateAmbiguous { candidateSignatures = List.copyOf(candidateSignatures); }
+        @Override public String message() {
+            return "method '" + methodName + "' in class '" + className + "' has "
+                + candidateSignatures.size() + " declarations carrying a seam parameter"
+                + " (org.jooq.Configuration or java.sql.Connection) — graphitron cannot pick one;"
+                + " qualifying candidates: "
+                + candidateSignatures.stream().collect(Collectors.joining("; ", "[", "]"))
+                + ". Rename or remove overloads so exactly one seam-carrying method named '"
+                + methodName + "' exists";
+        }
+        @Override public String lspCode() { return "graphitron.reflect.seam-candidate-ambiguous"; }
+    }
+
+    /**
+     * The referenced session-hook method is not {@code public static}. The generated hook class
+     * emits a direct {@code ClassName.method(...)} call, so instance (or non-public) hook methods
+     * are unsupported by construction.
+     */
+    record HookNotStatic(String className, String methodName) implements ReflectionError {
+        @Override public String message() {
+            return "session-hook method '" + methodName + "' in class '" + className
+                + "' must be public static — the generated hook calls 'ClassName.method(...)' directly";
+        }
+        @Override public String lspCode() { return "graphitron.reflect.hook-not-static"; }
+    }
+
+    /**
+     * The referenced session-hook method declares a checked exception. A session hook has no
+     * field coordinate and no {@code @error} channel to route through, so a declared checked
+     * exception has nowhere to land; unchecked exceptions propagate into the fail-closed
+     * connection eviction instead.
+     */
+    record HookThrowsChecked(
+        String className,
+        String methodName,
+        List<String> declaredExceptions
+    ) implements ReflectionError {
+        public HookThrowsChecked { declaredExceptions = List.copyOf(declaredExceptions); }
+        @Override public String message() {
+            return "session-hook method '" + methodName + "' in class '" + className
+                + "' declares checked exception(s) "
+                + declaredExceptions.stream().collect(Collectors.joining(", ", "[", "]"))
+                + " — a session hook cannot declare checked exceptions (there is no error channel"
+                + " to route them through); catch and wrap in an unchecked exception, which fails"
+                + " the request and evicts the connection";
+        }
+        @Override public String lspCode() { return "graphitron.reflect.hook-throws-checked"; }
+    }
+
+    /**
+     * The {@code <unmount>} method's non-seam parameter does not accept the {@code <mount>}
+     * method's return type. Both are the consumer's own declarations, so the message names both
+     * real signatures; an unmount with no non-seam parameter is always legal (the handle is
+     * simply not passed) and never reaches this arm.
+     */
+    record HandleTypeMismatch(
+        String mountClassName,
+        String mountMethodName,
+        String handleTypeSimple,
+        String unmountClassName,
+        String unmountMethodName,
+        String unmountParamTypeSimple
+    ) implements ReflectionError {
+        @Override public String message() {
+            return "<unmount> method '" + unmountMethodName + "' in class '" + unmountClassName
+                + "' takes '" + unmountParamTypeSimple + "', but <mount> method '" + mountMethodName
+                + "' in class '" + mountClassName + "' returns '" + handleTypeSimple
+                + "' — the unmount's non-seam parameter must be exactly the mount's handle type"
+                + " (or the unmount takes only the seam parameter, discarding the handle)";
+        }
+        @Override public String lspCode() { return "graphitron.reflect.handle-type-mismatch"; }
     }
 }

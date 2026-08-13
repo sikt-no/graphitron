@@ -12,7 +12,8 @@ import no.sikt.graphitron.javapoet.TypeName;
  * the emitter uses it both as the var-decl local name and as the identifier in the call's
  * actual-arg list.
  */
-public sealed interface MappingEntry permits MappingEntry.FromArg, MappingEntry.FromContext, MappingEntry.FromDsl {
+public sealed interface MappingEntry permits MappingEntry.FromArg, MappingEntry.FromContext, MappingEntry.FromDsl,
+        MappingEntry.FromSessionHandle {
 
     /** GraphQL-argument-sourced slot. {@code shape}'s {@code javaType} is the slot's Java type. */
     record FromArg(String javaName, ValueShape shape) implements MappingEntry {}
@@ -30,4 +31,12 @@ public sealed interface MappingEntry permits MappingEntry.FromArg, MappingEntry.
      * carries no fields.
      */
     record FromDsl() implements MappingEntry {}
+
+    /**
+     * Session-handle-sourced slot: the parameter the {@code $session} argMapping sigil bound.
+     * {@code javaType} is the parameter's declared type (build-checked against the mount's
+     * reflected return type); the emitter reads the handle off the resolved {@code DSLContext}'s
+     * {@code configuration().data(...)} slot, never off {@code graphQLContext}.
+     */
+    record FromSessionHandle(String javaName, TypeName javaType) implements MappingEntry {}
 }

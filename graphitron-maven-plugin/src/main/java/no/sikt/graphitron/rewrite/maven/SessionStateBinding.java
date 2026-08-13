@@ -1,72 +1,38 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import java.util.List;
-
 /**
  * POM XML binding for the {@code <sessionState>} block. Collapses into a
  * {@link no.sikt.graphitron.rewrite.session.SessionStateConfig} on
- * {@link no.sikt.graphitron.rewrite.RewriteContext}, from which
- * {@link no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator} emits the
- * concrete {@code SessionHook}.
+ * {@link no.sikt.graphitron.rewrite.RewriteContext}; the schema build reflects the named
+ * methods into the resolved carrier the connection-runtime emitters read.
  *
- * <p>Two mutually-exclusive forms; configure one, not both:
- *
- * <p><b>Function-hook form</b> names consumer-authored database callables:
+ * <p>{@code <mount>} names a public static method as {@code fqcn#method}; graphitron calls it
+ * on each connection it acquires, before any SQL on it, and the optional {@code <unmount>}
+ * runs when the connection goes back to the pool. jOOQ's generated {@code Routines} executing
+ * methods satisfy the signature contract as-is, so the common case names them directly:
  * <pre>{@code
  * <sessionState>
- *   <connect><call>Pk_Ras.Connect</call><handle>true</handle></connect>       <!-- (p_claims IN, p_handle OUT) -->
- *   <disconnect><call>Pk_Ras.Disconnect</call><handle>true</handle></disconnect> <!-- (p_handle IN) -->
+ *   <mount>com.example.db.Routines#connect</mount>
+ *   <unmount>com.example.db.Routines#disconnect</unmount>
  * </sessionState>
  * }</pre>
- * A {@code <handle>true</handle>} on both sides means connect produces an OUT handle that disconnect
- * binds; it must be declared on both or neither. An empty {@code <disconnect/>} (no {@code <call>}) is
- * the explicit unmount-free opt-out. An optional
- * {@code <stateSurvivesTransactions>true</stateSurvivesTransactions>} sibling declares the mounted
- * state survives transaction settles, keeping acquisition-scoped mounting; undeclared pairs are
- * re-fired after each top-level settle (the safe default).
+ * The method's signature is the contract, read at build time: exactly one seam parameter
+ * ({@code org.jooq.Configuration} or {@code java.sql.Connection}) anywhere in the list, the
+ * remaining mount parameters are the payload (each becomes a contextArgument on the generated
+ * factory), and the mount's return type is the handle later passed to {@code unmount} (or
+ * bound in a service's {@code argMapping} via the {@code $session} sigil). Omitting
+ * {@code <unmount>} is a supported mount-only configuration: the next request's mount
+ * overwrites wholesale.
  *
- * <p><b>Postgres {@code <variables>} sugar</b> generates both hook halves from one variable set, so a
- * consumer writes no SQL:
- * <pre>{@code
- * <sessionState>
- *   <variables>
- *     <variable><name>app.user_id</name><claim>sub</claim></variable>
- *   </variables>
- * </sessionState>
- * }</pre>
- * The pairing, handle-consistency, and one-form-only rejections are enforced by
- * {@code SessionStateConfig.from(...)} at config build; a defective block fails the build.
+ * <p>The shape rejections ({@code <unmount>} without {@code <mount>}, a malformed
+ * {@code fqcn#method}) are enforced by {@code SessionStateConfig.from(...)} at config build; a
+ * defective block fails the build. Failures of the referenced methods themselves (class not
+ * loadable, no seam parameter, handle-type mismatch) are typed rejections raised by the schema
+ * build, where the reflection runs.
  */
 public class SessionStateBinding {
-    /** The {@code <connect>} callable (function-hook form). */
-    HookBinding connect;
-    /** The {@code <disconnect>} callable (function-hook form); an empty element is the unmount-free opt-out. */
-    HookBinding disconnect;
-    /** The {@code <variables>} sugar entries (Postgres form). */
-    List<VariableBinding> variables;
-    /**
-     * The declared survival opt-in (function-hook form only): {@code true} confirms the connect
-     * callable's mounted state survives transaction commit and rollback, so acquisition-scoped
-     * mounting suffices. Absent or {@code false}, graphitron re-fires the hook pair after each
-     * top-level transaction settle (the safe default; queries never settle, so the read path is
-     * untaxed). Declaring it with the {@code <variables>} sugar fails the build: the sugar's
-     * survival is structural.
-     */
-    Boolean stateSurvivesTransactions;
-
-    /** One {@code <connect>} / {@code <disconnect>} callable: a database call name and optional handle flag. */
-    public static class HookBinding {
-        /** The database callable name, e.g. {@code Pk_Ras.Connect}. Absent on the empty-{@code <disconnect/>} opt-out. */
-        String call;
-        /** True when this callable produces (connect) or binds (disconnect) the opaque OUT handle. */
-        boolean handle;
-    }
-
-    /** One {@code <variable><name>app.user_id</name><claim>sub</claim></variable>}: a session GUC name and the claim it reads. */
-    public static class VariableBinding {
-        /** The session variable (Postgres GUC) name to set, e.g. {@code app.user_id}. */
-        String name;
-        /** The claim key read from the payload JSON, e.g. {@code sub}. */
-        String claim;
-    }
+    /** The {@code <mount>} method reference ({@code fqcn#method}). */
+    String mount;
+    /** The optional {@code <unmount>} method reference ({@code fqcn#method}). */
+    String unmount;
 }

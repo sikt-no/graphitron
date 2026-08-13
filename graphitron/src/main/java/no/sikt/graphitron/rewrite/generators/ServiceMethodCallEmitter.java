@@ -92,7 +92,7 @@ public final class ServiceMethodCallEmitter {
             FetchersHelperNames helperNames, CodeBlock dslExpression) {
         List<CodeBlock> out = new ArrayList<>();
 
-        boolean needsDsl = anyFromDsl(allEntries(call));
+        boolean needsDsl = needsDslLocal(allEntries(call));
         if (needsDsl) {
             out.add(CodeBlock.of("$T dsl = $L", DSL_CONTEXT, dslExpression));
         }
@@ -117,7 +117,7 @@ public final class ServiceMethodCallEmitter {
      * which auto-fetches by PK) consults this to avoid double-declaring it.
      */
     public static boolean declaresDslLocal(ServiceMethodCall call) {
-        return anyFromDsl(allEntries(call));
+        return needsDslLocal(allEntries(call));
     }
 
     private static List<MappingEntry> allEntries(ServiceMethodCall call) {
@@ -130,9 +130,14 @@ public final class ServiceMethodCallEmitter {
         return call.methodArgs();
     }
 
-    private static boolean anyFromDsl(List<MappingEntry> entries) {
+    /**
+     * Whether the call needs the {@code dsl} local declared: a {@code DSLContext}-typed slot
+     * shares it directly, and a {@code $session}-bound slot reads the handle off its
+     * {@code configuration().data(...)} map, so both force the declaration.
+     */
+    private static boolean needsDslLocal(List<MappingEntry> entries) {
         for (MappingEntry e : entries) {
-            if (e instanceof MappingEntry.FromDsl) return true;
+            if (e instanceof MappingEntry.FromDsl || e instanceof MappingEntry.FromSessionHandle) return true;
         }
         return false;
     }
@@ -144,6 +149,13 @@ public final class ServiceMethodCallEmitter {
             case MappingEntry.FromContext ctx ->
                 out.add(CodeBlock.of("$T $L = ($T) graphitronContext(env).getContextArgument(env, $S)",
                     ctx.javaType(), ctx.javaName(), ctx.javaType(), ctx.contextKey()));
+            // The handle rides the resolved DSLContext's own per-Configuration data() map,
+            // written once at mount; reading it off the dsl local is what scopes the read per
+            // pinned connection (a tenant-routed call sees that tenant's handle).
+            case MappingEntry.FromSessionHandle handle ->
+                out.add(CodeBlock.of("$T $L = ($T) dsl.configuration().data($S)",
+                    handle.javaType(), handle.javaName(), handle.javaType(),
+                    no.sikt.graphitron.rewrite.session.SessionHooks.HANDLE_DATA_KEY));
             case MappingEntry.FromArg arg -> {
                 CodeBlock expr = valueShapeExpression(arg.shape(), helperNames);
                 // A nested-input arg of generic type extracts as `(List<X>) map.get(key)`, where the
@@ -422,6 +434,7 @@ public final class ServiceMethodCallEmitter {
                 case MappingEntry.FromDsl ignored -> "dsl";
                 case MappingEntry.FromContext c -> c.javaName();
                 case MappingEntry.FromArg a -> a.javaName();
+                case MappingEntry.FromSessionHandle h -> h.javaName();
             };
             b.add("$L", name);
         }

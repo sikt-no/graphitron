@@ -152,14 +152,13 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     LintBinding lint;
 
     /**
-     * Session identity. A {@code <sessionState>} block naming how per-request identity
-     * is mounted on the pinned connection: either consumer-authored database callables
-     * ({@code <connect call>} / {@code <disconnect call>}, with an optional OUT {@code handle}) or the
-     * Postgres {@code <variables>} sugar ({@code <variable name claim>}) that generates both hook
-     * halves. Threaded through {@link RewriteContext};
-     * {@link no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator} emits the
-     * concrete hook from it. An unpaired or handle-inconsistent block fails the build. Omit to mount no
-     * identity ({@code SessionHook.NONE}).
+     * Session identity. A {@code <sessionState>} block naming the consumer's static Java
+     * methods graphitron calls at the connection boundary: {@code <mount>} (as
+     * {@code fqcn#method}) runs on each acquired connection before any SQL, the optional
+     * {@code <unmount>} at release. Threaded through {@link RewriteContext} as authored
+     * strings; the schema build reflects them and the connection-runtime emitters call them
+     * directly. A malformed reference or an {@code <unmount>} without a {@code <mount>} fails
+     * the build here; omit the block to mount no identity.
      */
     @Parameter
     SessionStateBinding sessionState;
@@ -545,40 +544,20 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The pairing, handle-consistency, and one-form-only rejections live in
-     * {@link SessionStateConfig}, not here (a {@code pom.xml} defect has no SDL coordinate);
-     * this only maps the POM binding to the raw shape and wraps the rejection as a build
-     * failure.
+     * The shape rejections ({@code <unmount>} without {@code <mount>}, a malformed
+     * {@code fqcn#method}) live in {@link SessionStateConfig}, not here (a {@code pom.xml}
+     * defect has no SDL coordinate); this only hands the authored strings over and wraps the
+     * rejection as a build failure. No reflection runs at this seam: the schema build owns it.
      */
     private SessionStateConfig buildSessionStateConfig() throws MojoExecutionException {
         if (sessionState == null) {
             return SessionStateConfig.none();
         }
-        var connect = toRawHook(sessionState.connect);
-        var disconnect = toRawHook(sessionState.disconnect);
         try {
-            var variables = new ArrayList<SessionStateConfig.Variable>();
-            if (sessionState.variables != null) {
-                for (var v : sessionState.variables) {
-                    if (v == null) continue;
-                    variables.add(new SessionStateConfig.Variable(trimOrNull(v.name), trimOrNull(v.claim)));
-                }
-            }
-            return SessionStateConfig.from(connect, disconnect, variables, sessionState.stateSurvivesTransactions);
+            return SessionStateConfig.from(sessionState.mount, sessionState.unmount);
         } catch (IllegalArgumentException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
-    }
-
-    /**
-     * {@code null} when the POM element is absent; a {@link SessionStateConfig.RawHook} with a
-     * {@code null} call when it is present but empty (the unmount-free marker).
-     */
-    private static SessionStateConfig.RawHook toRawHook(SessionStateBinding.HookBinding hook) {
-        if (hook == null) {
-            return null;
-        }
-        return new SessionStateConfig.RawHook(trimOrNull(hook.call), hook.handle);
     }
 
     private static String trimOrNull(String raw) {

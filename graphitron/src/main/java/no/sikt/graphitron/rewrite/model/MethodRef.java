@@ -106,6 +106,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
             case ParamSource.Table ignored        -> throw nonExtractedSource(p);
             case ParamSource.SourceTable ignored  -> throw nonExtractedSource(p);
             case ParamSource.SourceColumn ignored -> throw nonExtractedSource(p);
+            case ParamSource.SessionSeam ignored   -> throw nonExtractedSource(p);
+            case ParamSource.SessionHandle ignored -> throw nonExtractedSource(p);
         };
     }
 
@@ -125,6 +127,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
             case ParamSource.Table ignored        -> throw nonExtractedSource(p);
             case ParamSource.SourceTable ignored  -> throw nonExtractedSource(p);
             case ParamSource.SourceColumn ignored -> throw nonExtractedSource(p);
+            case ParamSource.SessionSeam ignored   -> throw nonExtractedSource(p);
+            case ParamSource.SessionHandle ignored -> throw nonExtractedSource(p);
         };
     }
 

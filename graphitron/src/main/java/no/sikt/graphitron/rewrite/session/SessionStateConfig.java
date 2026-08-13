@@ -1,135 +1,84 @@
 package no.sikt.graphitron.rewrite.session;
 
-import java.util.List;
+import java.util.Optional;
 
 /**
- * The resolved, validated session-identity configuration built once from the Maven
- * {@code <sessionState>} block and threaded through {@link no.sikt.graphitron.rewrite.RewriteContext}
- * to {@code ConnectionRuntimeClassGenerator}, which emits a concrete {@code SessionHook} from it (or
- * keeps {@code SessionHook.NONE} for {@link None}).
+ * The validated authored {@code <sessionState>} configuration built once from the Maven block
+ * and threaded through {@link no.sikt.graphitron.rewrite.RewriteContext} into the schema build.
  *
- * <p>The three forms are a sealed hierarchy so the emitter forks on an exhaustive {@code switch} (a
- * fourth form becomes a compile error at the emission seam) rather than on predicates over a wider
- * tuple. The shape is chosen so illegal states are unrepresentable: a handle lives inside
- * {@link Unmount.PairedDisconnect}, so "a handle produced by connect that no disconnect binds" cannot
- * be constructed, it collapses into {@link #from} rather than surviving as a field the emitter must
- * re-check.
+ * <p>This carrier is <em>strings only</em>, deliberately: fact capture transcribes the config
+ * object verbatim into the authored-facts provenance family
+ * ({@code ConfigurationFactCapture}), so a resolved method reference on this arm would leak
+ * reflected facts into relations that store only what the author wrote. The reflected
+ * signatures live on the model's resolved carrier ({@link SessionHooks}), minted by
+ * {@code GraphitronSchemaBuilder} from these strings. The authored config has exactly two
+ * readers, {@link SessionStateWarnings#forConfig} and fact capture's transcription; every
+ * emit-side decision reads the resolved carrier instead.
  *
- * <p>All cross-form and pairing rejections live in {@link #from}, which throws
+ * <p>Config-shape defects (a malformed {@code fqcn#method}, {@code <unmount>} without
+ * {@code <mount>}) are validated in {@link #from}, which throws
  * {@link IllegalArgumentException} naming the offending configuration; the Maven seam
- * ({@code AbstractRewriteMojo.buildSessionStateConfig}) turns that into a build failure, mirroring the
- * {@code LintConfig.validated} precedent. Config-shape defects are a {@code pom.xml} concern with no
- * SDL coordinate, so they are validated here rather than routed through {@code GraphitronSchemaValidator}.
+ * ({@code AbstractRewriteMojo.buildSessionStateConfig}) turns that into a build failure,
+ * mirroring the {@code LintConfig.validated} precedent. A {@code pom.xml} defect has no SDL
+ * coordinate, so it is validated here rather than routed through
+ * {@code GraphitronSchemaValidator}; failures of the <em>referenced methods</em> (unresolvable
+ * class, no seam parameter, ...) are reflection facts and drain as typed rejections in the
+ * builder instead.
  */
-public sealed interface SessionStateConfig permits SessionStateConfig.None, SessionStateConfig.FunctionHooks, SessionStateConfig.Variables {
+public sealed interface SessionStateConfig permits SessionStateConfig.None, SessionStateConfig.MethodHooks {
 
-    /**
-     * True when the configured form emits a generated {@code GraphitronSessionHook} implementation
-     * (the function-hook and variables forms); the none form keeps the runtime on the no-op hook.
-     * The one fact both the emit plan (naming the connection runtime's committed units) and
-     * {@code ConnectionRuntimeClassGenerator} (attaching the implementation) read, so the two
-     * cannot disagree about whether the unit exists.
-     */
-    default boolean emitsHookImplementation() {
-        return switch (this) {
-            case None ignored -> false;
-            case FunctionHooks ignored -> true;
-            case Variables ignored -> true;
-        };
-    }
-
-    /** No {@code <sessionState>} configured: the runtime keeps the no-op {@code SessionHook.NONE}. */
+    /** No {@code <sessionState>} configured: the generated runtime mounts no identity. */
     record None() implements SessionStateConfig {
         public static final None INSTANCE = new None();
     }
 
     /**
-     * The function-hook form: consumer-authored database callables named by {@code <connect call>} /
-     * {@code <disconnect call>}. {@code connectCall} mounts identity from the claims payload; the
-     * {@link Unmount} says how (and whether) identity is unmounted, and carries the declared survival
-     * opt-in where a balanced pair exists (see {@link Unmount.PairedDisconnect#survivesTransactions}).
+     * The method-hook form: {@code <mount>} names a public static method graphitron calls on
+     * each connection it acquires, before any SQL on it; the optional {@code <unmount>} runs
+     * when the connection goes back to the pool. Both are authored {@code fqcn#method} strings;
+     * omitting {@code <unmount>} means mount-only (the next request's mount overwrites
+     * wholesale), with no opt-out ceremony.
      */
-    record FunctionHooks(String connectCall, Unmount unmount) implements SessionStateConfig {
-        public FunctionHooks {
-            if (connectCall == null || connectCall.isBlank()) {
-                throw new IllegalArgumentException("<connect> requires a non-blank <call>");
+    record MethodHooks(HookRef mount, Optional<HookRef> unmount) implements SessionStateConfig {
+        public MethodHooks {
+            if (mount == null) {
+                throw new IllegalArgumentException("<sessionState> requires a <mount>");
             }
             if (unmount == null) {
-                throw new IllegalArgumentException("FunctionHooks requires an Unmount");
+                throw new IllegalArgumentException("MethodHooks requires a non-null unmount Optional");
             }
         }
     }
 
     /**
-     * The Postgres {@code <variables>} sugar: graphitron generates both hook halves from this one
-     * resolved variable set, so "disconnect clears exactly what connect set" is structural, not a
-     * prose agreement between two emitters.
+     * One authored {@code fqcn#method} reference, split at the {@code #} but otherwise verbatim.
+     * {@link #raw()} reproduces the authored string for fact capture and messages.
      */
-    record Variables(List<Variable> variables) implements SessionStateConfig {
-        public Variables {
-            if (variables == null || variables.isEmpty()) {
-                throw new IllegalArgumentException("<variables> requires at least one <variable>");
-            }
-            variables = List.copyOf(variables);
-        }
-    }
-
-    /** One {@code <variable><name>app.user_id</name><claim>sub</claim></variable>}: a session GUC name and the claim it reads. */
-    record Variable(String name, String claim) {
-        public Variable {
-            if (name == null || name.isBlank()) {
-                throw new IllegalArgumentException("<variable> requires a non-blank <name>");
-            }
-            if (claim == null || claim.isBlank()) {
-                throw new IllegalArgumentException("<variable> with <name>" + name + "</name> requires a non-blank <claim>");
+    record HookRef(String className, String methodName) {
+        public HookRef {
+            if (className == null || className.isBlank() || methodName == null || methodName.isBlank()) {
+                throw new IllegalArgumentException("a hook reference requires both a class and a method name");
             }
         }
-    }
 
-    /**
-     * How the function-hook form unmounts identity. Sealed so "handle produced but not bound" is
-     * unrepresentable: the handle boolean lives on {@link PairedDisconnect}, and {@link UnmountFree}
-     * carries none. The survival opt-in lives here too, for the same reason: "this mount/unmount pair
-     * can be re-fired around a transaction settle" is a fact about a balanced pair, so only
-     * {@link PairedDisconnect} can assert or decline it; an {@link UnmountFree} hook has no pair to
-     * re-fire and never does.
-     */
-    sealed interface Unmount permits Unmount.PairedDisconnect, Unmount.UnmountFree {
-        /**
-         * A disconnect callable unmounts identity; {@code handle} is true iff connect produces an OUT
-         * handle it binds.
-         *
-         * <p>{@code survivesTransactions} is the declared survival opt-in
-         * ({@code <stateSurvivesTransactions>true</stateSurvivesTransactions>}): the consumer confirms
-         * the connect callable's mounted state survives transaction commit and rollback, so
-         * acquisition-scoped mounting suffices. Unconfirmed (the default), graphitron cannot assume
-         * survival and re-fires the pair (disconnect with the old handle, connect capturing a new one)
-         * after each top-level transaction settle, so a settle can never leave stale or reverted
-         * identity. Queries run in autocommit and never settle, so the re-fire never taxes the read
-         * path. The {@code <variables>} sugar needs no flag: its {@code set_config} mounts run in
-         * autocommit (enforced at acquisition) and session-scoped GUCs survive settles, so it opts in
-         * structurally.
-         */
-        record PairedDisconnect(String call, boolean handle, boolean survivesTransactions) implements Unmount {
-            public PairedDisconnect {
-                if (call == null || call.isBlank()) {
-                    throw new IllegalArgumentException("<disconnect> requires a non-blank <call>");
-                }
-            }
-
-            /** Convenience constructor for the unconfirmed default (re-fire after each settle). */
-            public PairedDisconnect(String call, boolean handle) {
-                this(call, handle, false);
-            }
+        /** The authored form: {@code com.example.KernelIdentity#mount}. */
+        public String raw() {
+            return className + "#" + methodName;
         }
 
         /**
-         * The explicit unmount-free opt-out ({@code <disconnect/>} with no call): connect mounts state
-         * that provably never unmounts. The generation-time warning in {@link SessionStateWarnings}
-         * names this exposure.
+         * Parses an authored {@code fqcn#method} string, throwing {@link IllegalArgumentException}
+         * naming {@code element} (the POM element, e.g. {@code <mount>}) when the shape is wrong.
          */
-        record UnmountFree() implements Unmount {
-            public static final UnmountFree INSTANCE = new UnmountFree();
+        static HookRef parse(String raw, String element) {
+            String trimmed = raw.trim();
+            int hash = trimmed.indexOf('#');
+            if (hash <= 0 || hash != trimmed.lastIndexOf('#') || hash == trimmed.length() - 1) {
+                throw new IllegalArgumentException(
+                    element + " must name a method as fqcn#method (e.g. com.example.db.Routines#connect) — got '"
+                        + trimmed + "'");
+            }
+            return new HookRef(trimmed.substring(0, hash), trimmed.substring(hash + 1));
         }
     }
 
@@ -139,97 +88,34 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
     }
 
     /**
-     * Convenience overload of {@link #from(RawHook, RawHook, List, Boolean)} with no declared
-     * survival opt-in (the safe default: unconfirmed function hooks re-fire after each settle).
-     */
-    static SessionStateConfig from(RawHook connect, RawHook disconnect, List<Variable> variables) {
-        return from(connect, disconnect, variables, null);
-    }
-
-    /**
-     * Reconciles the raw {@code <sessionState>} shape into a validated config, or throws
-     * {@link IllegalArgumentException} naming the offending combination. A {@code null} hook means the
-     * element was absent; a {@link RawHook} with a {@code null} call means the element was present but
-     * empty ({@code <disconnect/>}), the explicit unmount-free marker.
+     * Reconciles the raw {@code <sessionState>} strings into a validated config, or throws
+     * {@link IllegalArgumentException} naming the offending combination. {@code null} means the
+     * element was absent; a present-but-blank element is a defect, never silently absent.
      *
-     * @param connect   the {@code <connect>} element, or {@code null} if absent
-     * @param disconnect the {@code <disconnect>} element, or {@code null} if absent
-     * @param variables  the {@code <variables>} entries, empty if the block is absent
-     * @param stateSurvivesTransactions the {@code <stateSurvivesTransactions>} element, or {@code null}
-     *                                  if absent; only meaningful on the function-hook form
+     * @param mount   the {@code <mount>} element's text, or {@code null} if absent
+     * @param unmount the {@code <unmount>} element's text, or {@code null} if absent
      */
-    static SessionStateConfig from(RawHook connect, RawHook disconnect, List<Variable> variables,
-                                   Boolean stateSurvivesTransactions) {
-        boolean hasFunction = connect != null || disconnect != null;
-        boolean hasVariables = variables != null && !variables.isEmpty();
-
-        if (hasVariables && hasFunction) {
+    static SessionStateConfig from(String mount, String unmount) {
+        if (mount != null && mount.isBlank()) {
             throw new IllegalArgumentException(
-                "<sessionState> configures both <variables> and <connect>/<disconnect>; choose one form "
-                    + "(the <variables> sugar or the function-hook callables), not both");
+                "<mount> must name a method as fqcn#method (e.g. com.example.db.Routines#connect); "
+                    + "remove the element if no identity is mounted");
         }
-        if (stateSurvivesTransactions != null && !hasFunction) {
-            // The flag answers a question only consumer-authored hooks raise: the <variables> sugar's
-            // survival is structural (autocommit mounts of session-scoped GUCs), and with no hooks there
-            // is no state to survive. A declaration that can mean nothing fails loud, like the pairing rules.
+        if (unmount != null && unmount.isBlank()) {
             throw new IllegalArgumentException(
-                "<stateSurvivesTransactions> applies only to the function-hook form (<connect>/<disconnect>); "
-                    + (hasVariables
-                        ? "the <variables> sugar survives transaction settles structurally and needs no declaration"
-                        : "there are no hooks whose state it could describe"));
+                "<unmount> must name a method as fqcn#method; remove the element for a mount-only configuration");
         }
-        if (hasVariables) {
-            return new Variables(variables);
-        }
-        if (!hasFunction) {
-            return none();
-        }
-        // Function-hook form: a connect and a disconnect must be paired; a connect that mounts identity
-        // with no disconnect is a configuration whose identity provably never unmounts, a security hole,
-        // so it is rejected unless the empty-<disconnect/> opt-out is present.
-        if (connect == null) {
+        if (mount == null && unmount != null) {
+            // Unmounting what nothing mounted is a defect in either direction of reading it.
             throw new IllegalArgumentException(
-                "<sessionState> has a <disconnect> but no <connect>; identity cannot be unmounted without "
+                "<sessionState> has an <unmount> but no <mount>; identity cannot be unmounted without "
                     + "first being mounted");
         }
-        if (connect.call() == null || connect.call().isBlank()) {
-            throw new IllegalArgumentException("<connect> requires a non-blank <call>");
+        if (mount == null) {
+            return none();
         }
-        if (disconnect == null) {
-            throw new IllegalArgumentException(
-                "<sessionState> has a <connect> but no <disconnect>; identity that mounts must unmount. "
-                    + "Add <disconnect><call>...</call></disconnect>, or an explicit empty <disconnect/> to opt "
-                    + "out of unmounting (a genuinely unmount-free design)");
-        }
-        boolean unmountFree = disconnect.call() == null || disconnect.call().isBlank();
-        if (unmountFree) {
-            if (connect.handle()) {
-                throw new IllegalArgumentException(
-                    "<connect handle=\"true\"> produces a handle, but the empty <disconnect/> opt-out binds "
-                        + "none; a produced handle must be bound by a <disconnect call=\"...\">");
-            }
-            if (stateSurvivesTransactions != null) {
-                // Survival is a fact about a balanced mount/unmount pair; the unmount-free opt-out has no
-                // pair to re-fire, so there is no fallback the declaration could opt out of.
-                throw new IllegalArgumentException(
-                    "<stateSurvivesTransactions> requires a paired <disconnect call=\"...\">; the empty "
-                        + "<disconnect/> opt-out has no mount/unmount pair to re-fire around a transaction "
-                        + "settle, so the declaration describes nothing");
-            }
-            return new FunctionHooks(connect.call(), Unmount.UnmountFree.INSTANCE);
-        }
-        if (connect.handle() != disconnect.handle()) {
-            throw new IllegalArgumentException(
-                "handle must be declared on both <connect> and <disconnect> or neither; a handle produced "
-                    + "by connect and not bound by disconnect (or bound but never produced) is a mismatch");
-        }
-        return new FunctionHooks(connect.call(), new Unmount.PairedDisconnect(
-            disconnect.call(), disconnect.handle(), Boolean.TRUE.equals(stateSurvivesTransactions)));
+        return new MethodHooks(
+            HookRef.parse(mount, "<mount>"),
+            Optional.ofNullable(unmount).map(u -> HookRef.parse(u, "<unmount>")));
     }
-
-    /**
-     * The raw shape of one {@code <connect>} / {@code <disconnect>} element as read from the POM, before
-     * reconciliation. A {@code null} {@code call} with the element present is the empty-element marker.
-     */
-    record RawHook(String call, boolean handle) {}
 }

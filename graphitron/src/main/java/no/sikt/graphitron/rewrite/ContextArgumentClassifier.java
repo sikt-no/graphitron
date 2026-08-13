@@ -59,7 +59,7 @@ public final class ContextArgumentClassifier {
     }
 
     public static Classification classify(GraphitronSchema schema) {
-        return classify(schema.fields().values());
+        return classify(schema.fields().values(), schema.sessionHooks());
     }
 
     /**
@@ -67,10 +67,32 @@ public final class ContextArgumentClassifier {
      * {@link GraphitronSchema}'s constructor can classify before the schema record is assembled.
      */
     public static Classification classify(Collection<GraphitronField> fields) {
+        return classify(fields, no.sikt.graphitron.rewrite.session.SessionHooks.NotConfigured.INSTANCE);
+    }
+
+    /**
+     * The full population: every classified field's directive sites, plus the session mount's
+     * payload parameters as an additional root. A mount payload parameter is an ordinary
+     * name-keyed contextArgument, so a same-named {@code @service}/{@code @condition}
+     * declaration unifies into the one slot both consumers read, guarded by the same
+     * type-agreement fold; the mount site is a {@link ConflictSite.Site.SessionMount}, so a
+     * disagreement names {@code <mount>} rather than only the routine class.
+     */
+    public static Classification classify(Collection<GraphitronField> fields,
+            no.sikt.graphitron.rewrite.session.SessionHooks sessionHooks) {
         var byName = new LinkedHashMap<String, List<ConflictSite>>();
         for (var field : fields) {
             collectFromField(field, byName);
         }
+        sessionHooks.mountRef().ifPresent(mount -> {
+            var site = new ConflictSite.Site.SessionMount(mount);
+            for (var p : mount.params()) {
+                if (p instanceof MethodRef.Param.Typed typed && typed.source() instanceof ParamSource.Context) {
+                    byName.computeIfAbsent(typed.name(), k -> new ArrayList<>())
+                        .add(new ConflictSite(site, typed.javaType()));
+                }
+            }
+        });
         // Input-field-level @condition filters also reach the field walk via
         // SqlGeneratingField.filters() (the projection appends them there); visiting input
         // fields' condition() directly keeps this walk correct independently of that projection.

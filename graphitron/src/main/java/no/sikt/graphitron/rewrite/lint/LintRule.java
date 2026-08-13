@@ -42,7 +42,6 @@ public enum LintRule {
     // classifier-tagged advisory. Emitted from GraphQLRewriteGenerator via SessionStateWarnings (the
     // <sessionState> identity posture) and DependencyVersionWarnings (the resolved dependency graph).
     NO_SESSION_STATE("no-session-state", Source.CODEGEN),
-    SESSION_STATE_CONVENTION_FENCE("session-state-convention-fence", Source.CODEGEN),
     GRAPHQL_JAVA_VERSION_LAG("graphql-java-version-lag", Source.CODEGEN),
     JOOQ_VERSION_LAG("jooq-version-lag", Source.CODEGEN);
 

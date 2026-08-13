@@ -22,7 +22,7 @@ public record ConflictSite(Site site, TypeName declared) {
      * class + method names the conflict-rejection renderer reads, projected from the wrapped
      * model value so the renderer need not switch on the arm.
      */
-    public sealed interface Site permits Site.Method, Site.Carrier {
+    public sealed interface Site permits Site.Method, Site.Carrier, Site.SessionMount {
         String className();
         String methodName();
 
@@ -36,6 +36,16 @@ public record ConflictSite(Site site, TypeName declared) {
         record Carrier(ServiceMethodCall call) implements Site {
             @Override public String className() { return call.fqClassName(); }
             @Override public String methodName() { return call.methodName(); }
+        }
+
+        /**
+         * The {@code <sessionState>} {@code <mount>} method's payload-parameter population, so a
+         * mount-versus-{@code @service} type conflict names the {@code <mount>} element rather
+         * than only the routine class the reference happens to resolve to.
+         */
+        record SessionMount(MethodRef ref) implements Site {
+            @Override public String className() { return "<mount> " + ref.className(); }
+            @Override public String methodName() { return ref.methodName(); }
         }
     }
 

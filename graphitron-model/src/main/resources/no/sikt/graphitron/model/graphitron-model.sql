@@ -156,54 +156,25 @@ COMMENT ON COLUMN store_graph_lint_excluded_type.graph_name IS 'the owning graph
 COMMENT ON COLUMN store_graph_lint_excluded_type.ordinal IS 'position in the configured list, document order';
 COMMENT ON COLUMN store_graph_lint_excluded_type.type_pattern IS 'the type-name glob as configured';
 
-CREATE TABLE store_graph_session_state (
-  graph_name VARCHAR NOT NULL,
-  arm        VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (arm IN ('function_hooks', 'variables'))
-);
-COMMENT ON TABLE store_graph_session_state IS 'Which form of <sessionState> the run configured. The parameter looks like a block of optional sub-elements and is not one: SessionStateConfig is a sealed alternation whose reconciler throws when both forms are configured at once, so a relation laying hook columns beside variable rows would admit a state the value type rejects. The arm is carried as a discriminator instead, and the primary key on graph_name alone is what makes "at most one form per graph" structural rather than a convention the writer keeps. The no-configuration arm is the missing row, which is where the family''s general absence rule does apply.';
-COMMENT ON COLUMN store_graph_session_state.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN store_graph_session_state.arm IS 'a closed taxonomy over the configured form: consumer-authored database callables, or the Postgres session-variable sugar that generates both hook halves from one resolved variable set';
-
-CREATE TABLE store_graph_session_variable (
-  graph_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  variable_name VARCHAR NOT NULL,
-  claim         VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, ordinal),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_session_state (graph_name)
-);
-COMMENT ON TABLE store_graph_session_variable IS 'The <variables> arm''s payload, one row per <variable>. Ordinal-keyed, the configured value being an ordered list. Rows exist only under the variables arm, which the foreign key to store_graph_session_state anchors.';
-COMMENT ON COLUMN store_graph_session_variable.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_state';
-COMMENT ON COLUMN store_graph_session_variable.ordinal IS 'position in the configured list, document order';
-COMMENT ON COLUMN store_graph_session_variable.variable_name IS 'the session variable''s name, as configured';
-COMMENT ON COLUMN store_graph_session_variable.claim IS 'the claim whose value the variable is mounted from, as configured';
-
-CREATE TABLE store_graph_session_hook (
+CREATE TABLE store_graph_session_mount (
   graph_name   VARCHAR NOT NULL,
-  connect_call VARCHAR NOT NULL,
+  mount_method VARCHAR NOT NULL,
   PRIMARY KEY (graph_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_session_state (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE store_graph_session_hook IS 'The function-hook arm''s payload: the consumer-authored callable that mounts identity. Rows exist only under the function-hook arm, which the foreign key to store_graph_session_state anchors.';
-COMMENT ON COLUMN store_graph_session_hook.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_state';
-COMMENT ON COLUMN store_graph_session_hook.connect_call IS 'the mounting callable, from <connect><call>';
+COMMENT ON TABLE store_graph_session_mount IS 'The <sessionState> <mount> reference: the consumer''s static Java method that mounts identity on each acquired connection, as authored. Row presence is the fact, per the family''s absence rule: no row means no identity is mounted. The primary key on graph_name alone makes "at most one mount per graph" structural. Only the authored string lands here; the reflected signature is a build-time model fact, never stored back into this provenance family.';
+COMMENT ON COLUMN store_graph_session_mount.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_session_mount.mount_method IS 'the mounting method as authored, fqcn#method, from <mount>';
 
-CREATE TABLE store_graph_session_disconnect (
-  graph_name                  VARCHAR NOT NULL,
-  disconnect_call             VARCHAR NOT NULL,
-  out_handle                  BOOLEAN NOT NULL,
-  state_survives_transactions BOOLEAN NOT NULL,
+CREATE TABLE store_graph_session_unmount (
+  graph_name     VARCHAR NOT NULL,
+  unmount_method VARCHAR NOT NULL,
   PRIMARY KEY (graph_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_session_hook (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_mount (graph_name)
 );
-COMMENT ON TABLE store_graph_session_disconnect IS 'The paired-disconnect arm of the function-hook form''s own nested alternation, which gets the same treatment as its parent rather than a nullable call column beside it. A row means a balanced mount/unmount pair; no row means the declared unmount-free opt-out, the author saying mounted identity provably never unmounts. That last distinction is why "absent versus empty" cannot dispose of this one as a missing row on the parent: an empty <disconnect/> element is a declared opt-out and a different fact from a <disconnect> nobody wrote, and the value type admits no third state, so the unmount arm is total and the row''s presence carries it without ambiguity.';
-COMMENT ON COLUMN store_graph_session_disconnect.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_hook';
-COMMENT ON COLUMN store_graph_session_disconnect.disconnect_call IS 'the unmounting callable, from <disconnect><call>';
-COMMENT ON COLUMN store_graph_session_disconnect.out_handle IS 'whether the mounting callable produces an OUT handle this unmount binds. Lives on this relation rather than beside connect_call because "handle produced but not bound" is unrepresentable in the value type, and a column on the parent would represent it';
-COMMENT ON COLUMN store_graph_session_disconnect.state_survives_transactions IS 'the declared survival opt-in, from <stateSurvivesTransactions>: the consumer confirming that mounted state survives transaction commit and rollback, so acquisition-scoped mounting suffices. Its home is this relation and no other, since only a balanced pair can assert or decline it, which is exactly what the reconciler enforces by throwing when the element is set without hooks';
+COMMENT ON TABLE store_graph_session_unmount IS 'The optional <unmount> reference beside the mount. Row presence is the fact: no row means the supported mount-only configuration (the next request''s mount overwrites wholesale), which the reconciler admits without ceremony, and the foreign key to store_graph_session_mount is the "unmount without mount is a defect" rule made structural.';
+COMMENT ON COLUMN store_graph_session_unmount.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_mount';
+COMMENT ON COLUMN store_graph_session_unmount.unmount_method IS 'the unmounting method as authored, fqcn#method, from <unmount>';
 
 CREATE TABLE store_source (
   source_name VARCHAR NOT NULL,

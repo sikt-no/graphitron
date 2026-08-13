@@ -337,10 +337,22 @@ public class GraphitronSchemaBuilder {
         // one consumer (the input-record emit membership today, the compile graph's inputRecord
         // nodes at the graph's migration), computed once here so no emit-side site re-derives it.
         var argumentReachableInputs = ArgumentReachableInputs.compute(ctx.types, rebuiltAssembled);
+        // The session-hook resolution: the authored <sessionState> strings arrive on
+        // RewriteContext and are reflected here, the stage that owns ServiceCatalog, into the
+        // total resolved carrier the emit-side readers switch on. A reflection failure drains
+        // as a schema-wide, coordinate-less ValidationError (the same channel the reductions
+        // above use) and the carrier stays NotConfigured, so no hook unit is planned for a
+        // build that already failed.
+        var sessionHookResolution = ctx.svc.resolveSessionHooks(ctx.ctx().sessionStateConfig());
+        for (var rejection : sessionHookResolution.rejections()) {
+            ctx.addDiagnostic(new ValidationError("<schema>",
+                rejection.prefixedWith("<sessionState>: "), SourceLocation.EMPTY));
+        }
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
-            argumentReachableInputs, connectionSynthesis, operationMembers, deliveryFacts);
+            argumentReachableInputs, connectionSynthesis, operationMembers, deliveryFacts,
+            sessionHookResolution.hooks());
         return new BuildResult(model, rebuiltAssembled);
     }
 
