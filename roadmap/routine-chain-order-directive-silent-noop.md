@@ -45,8 +45,8 @@ The two chain classifiers then diverge on what they do with it:
   parse and model with no diagnostic.
 
 `GraphitronSchemaValidator.validateListRequiresOrdering` cannot catch the fallout either: it
-exempts the `Chain` arm outright, so the list-shaped-plus-`None` signal that protects every
-other list field is switched off precisely where the drop happens.
+exempts the `Chain` arm outright, so the list-shaped-plus-`None` signal that guards ordinary list
+fields is switched off precisely where the drop happens.
 
 Prose asserting the absent-ordering contract is spread across six sites, all of which the fix
 falsifies. `ResultShape.RecordList`'s javadoc is the load-bearing one, because it is the stated
@@ -71,10 +71,18 @@ the moment the fix lands.
 Deferring the directive is not the outcome. An unsorted list result is a defect regardless of
 which directive the author wrote, so this item makes `@defaultOrder` work at the root position
 and turns the residual hole into a build error. The deterministic-order rule that already
-guards every other list field is the enforcement; the routine arm simply stops being exempt
-from it.
+guards ordinary list fields is the enforcement; the routine arm simply stops being exempt
+from it. What that rule does and does not reach elsewhere is sized under "Out of scope".
 
-This discharges R448's "root ordering reconciliation" bullet.
+This discharges R448's "root ordering reconciliation" bullet, and bullet (1) of
+`roadmap/root-family-validator-mirror-gaps.md` (R558), which asks for a validate-time twin for
+exactly this skip. R558 states the skip as capability non-membership ("the root `@routine`-chain
+leaf does not implement `SqlGeneratingField`"), which the source-axis fold has since overtaken:
+`QueryField.QueryTableField` implements `SqlGeneratingField` today and the skip is now the
+explicit `Chain` exemption this item removes. The remedy R558 offers for its bullet ("re-source
+the rule off the launcher relation, or widen the capability") is therefore already satisfied by
+the narrower change here, and that bullet should be struck when this item lands rather than
+implemented twice.
 
 ## Implementation
 
@@ -85,8 +93,11 @@ arms: `ResultShape.RecordList` carries a nullable `Ordering`, `Ordering.Columns`
 new is minted; five sites stop hardcoding "unordered".
 
 * **`FieldBuilder.classifyRootRoutineChain`** calls `orderByResolver.resolve(List.of(),
-  fieldDef, <terminus table>)` and carries the resulting spec, exactly as
-  `classifyChildRoutineChain` already does. Drop the literal `new OrderBySpec.None()` and the
+  fieldDef, walk.tb().returnType().table().tableName())` and carries the resulting spec, the same
+  expression `classifyChildRoutineChain` already passes. Note it names the *return type's* table
+  rather than reading `walk.terminusTable()`; the two are the same table by
+  `routineChainVerdict`, and using the same expression at both call sites keeps the two chain
+  classifiers textually comparable. Drop the literal `new OrderBySpec.None()` and the
   javadoc's "the chain root carries no ordering surface" paragraph. A `Resolved.Rejected` lands
   `UnclassifiedField`, matching the child arm.
 * **`QueryField.QueryTableField`** relaxes the `RoutineResolution.Chain` compact-constructor pin
@@ -126,9 +137,22 @@ away, and the next read-surface directive falls through both again.
 The stronger shape is one gate and one message per axis, with the pin asserting each slot
 against the axis that owns it, so "fixed ordering supported, argument ordering deferred,
 filtering deferred" reads as three axes each carrying its own verdict rather than an exception
-carved out of a blob. Whether that lands here or as a follow-up is the reviewer's call: it is
-strictly larger than the reported bug and touches arms this item otherwise leaves alone, but it
-is also the difference between fixing an instance and fixing the class.
+carved out of a blob.
+
+The Spec review's call is that this stays a follow-up, and the reason is worth recording because
+it is not "too big". The section above frames the axis restructure as the difference between
+fixing an instance and fixing the class, and that framing does not survive the census in
+`roadmap/split-query-child-list-drops-default-order.md` (R663). A resolved `@defaultOrder` is also
+dropped on `@splitQuery` child lists, and that drop happens at the model-to-command boundary
+(`LauncherCommands.batchedResultOf` hands `ResultShape.RecordList(null)` for the non-connection
+list arm, discarding a populated `OrderBySpec.Fixed`), nowhere near the classify-time gates this
+item's restructure would rework. The class is "an ordering the model resolved does not reach the
+emitted SQL, and no check compares the two ends"; the classify-time predicate/pin/literal triple
+is one of its two homes, and the `RecordList(null)` literals are the other. Restructuring the
+gates here would still leave the class open while enlarging this item, so the honest sequencing is
+to ship the reported fix, let R663 close the other home, and take the shared enforcement question
+(re-source the deterministic-order rule off the launcher relation's ordering slot, where both
+homes are visible in one place) as its own item rather than as a rider on either.
 
 ### Ordering target: measured, not assumed
 
@@ -282,6 +306,25 @@ sentence per terminus kind, the carving in the validator is wrong and should cha
   warns about. The split is acceptable because R660 exists and is named here; if the reviewer
   would rather close the class than the instance, the membership check belongs in this item
   instead.
+
+* **The `@splitQuery` child list's dropped ordering**, filed at Spec review as
+  `roadmap/split-query-child-list-drops-default-order.md` (R663). Same reported symptom, one
+  coordinate over: a batched child list resolves `@defaultOrder` into an `OrderBySpec.Fixed` and
+  the emitted batch query carries no `ORDER BY`, verified against the generated
+  `ConverterOrgFetchers.rowsCampuses` and `SplitParentFetchers.rowsTags` in the example module.
+  It stays out of scope because the drop is at a different seam (the command projection, not the
+  classifier or the validator) and closing it needs no part of this item, but it bears on how
+  this item states its own thesis, so the correction belongs here rather than only there.
+
+  This item cannot claim to make "a list result is never unsorted" true, and should not be read
+  as doing so. Its enforcer keys on `OrderBySpec.None`, and of the four leak sites now known,
+  three (R660's write path, R663's batched child, R567's lookup child) never produce that signal:
+  they are outside the capability, or they carry a populated spec that a later layer discards.
+  What this item does make true is narrower and still worth having: a root `@routine` chain
+  honours the ordering its schema declares, and a list-shaped one that cannot resolve an order
+  fails the build instead of shipping hash order. The invariant-level fix is the shared question
+  R663 raises, re-sourcing the deterministic-order rule off the launcher relation's ordering slot
+  where every leak site is visible in one place, and it is nobody's rider.
 * **LSP column resolution for the routine terminus.** `FieldClassification.lspColumnDispatch`
   places `RoutineBacked` in the `FallThrough` arm, so `@defaultOrder(fields: [{name: ...}])`
   resolves candidates and diagnostics against the enclosing type's `@table` rather than the
