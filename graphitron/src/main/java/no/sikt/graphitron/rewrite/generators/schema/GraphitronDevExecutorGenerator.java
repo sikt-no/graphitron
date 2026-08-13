@@ -346,7 +346,8 @@ public final class GraphitronDevExecutorGenerator {
             sb.append("<p>This schema configures {@code <sessionState>}: the mount method receives\n");
             sb.append("{@code claims} as its single String payload exactly as a production caller would\n");
             sb.append("supply it, and a missing or blank payload fails loudly rather than running\n");
-            sb.append("unsecured. Mount failures propagate as exceptions with the method's own message.\n");
+            sb.append("unsecured. The mount runs lazily at the first acquisition inside execution, so a\n");
+            sb.append("mount failure surfaces in the payload's errors channel with the method's own message.\n");
         }
         if (payloadUnconstructible) {
             sb.append("\n");

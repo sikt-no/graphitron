@@ -78,6 +78,7 @@ class TenantDivinedRoutingExecutionTest {
                     + " film_id int not null, store_id int not null)");
                 tenant.execute("create table film_actor (actor_id int not null, film_id int not null,"
                     + " primary key (actor_id, film_id))");
+                TenantSessionFixture.installSessionObjects(tenant);
             }
         }
         try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {

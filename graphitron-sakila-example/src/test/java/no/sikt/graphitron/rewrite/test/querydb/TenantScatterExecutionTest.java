@@ -64,6 +64,7 @@ class TenantScatterExecutionTest {
             dsl.execute("create database " + db);
             try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
                 tenant.execute("create table film (film_id int primary key, title text not null)");
+                TenantSessionFixture.installSessionObjects(tenant);
             }
         }
         try (var t1 = DSL.using(tenantUrl("scatter_t1"), jdbcUser, jdbcPassword)) {

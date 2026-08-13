@@ -182,16 +182,20 @@ class DevExecuteExecutionTest {
     }
 
     @Test
-    void malformedClaims_surfaceTheHooksOwnError() throws Exception {
-        // The hook is the validator: the <variables> sugar's connect hook casts the payload to
-        // jsonb in the database, so a malformed payload produces Postgres's own parse error,
-        // proof the claims string travelled untouched all the way to the real hook.
+    void rejectedClaims_surfaceTheHooksOwnError() throws Exception {
+        // The hook is the validator: the mount routine raises on an unentitled principal, so a
+        // rejected claims payload produces the routine's own error verbatim, proof the claims
+        // string travelled untouched through the executor all the way to the real hook. The
+        // mount runs lazily inside the first fetcher's acquisition, so the failure lands in the
+        // payload's errors channel unredacted (the dev engine installs no redaction handler),
+        // not as a thrown exception.
+        String result;
         try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
-            assertThatThrownBy(() -> GraphitronDevExecutor.execute(
-                    connection, "POSTGRES", "{ films { filmId } }", null, "not-json",
-                    Map.of("userId", USER_ID)))
-                .hasMessageContaining("json");
+            result = GraphitronDevExecutor.execute(
+                connection, "POSTGRES", "{ films { filmId } }", null,
+                "{\"sub\": \"reject-me\"}", Map.of("userId", USER_ID));
         }
+        assertThat(result).contains("unentitled principal: reject-me");
     }
 
     /** A DataSource over plain DriverManager connections, for the in-app comparison engine. */

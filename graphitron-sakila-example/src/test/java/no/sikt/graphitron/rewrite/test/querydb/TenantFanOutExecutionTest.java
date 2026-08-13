@@ -86,6 +86,7 @@ class TenantFanOutExecutionTest {
                     + " film_id int not null, store_id int not null)");
                 tenant.execute("create table film_actor (actor_id int not null, film_id int not null,"
                     + " primary key (actor_id, film_id))");
+                TenantSessionFixture.installSessionObjects(tenant);
             }
         }
         try (var t1 = DSL.using(tenantUrl("fanout_t1"), jdbcUser, jdbcPassword)) {
@@ -138,17 +139,19 @@ class TenantFanOutExecutionTest {
         // held byte-identical through the fanned root's launcher cutover.
         var result = execute("{ filmsEverywhere { title } }", List.of(1, 2));
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
-        // The JDBC boundary sees the whole per-tenant frame: the session hook's claims
-        // propagation around the one fanned statement. Three statements per tenant, identical
-        // across tenants.
-        String hookSet = "select set_config('app.user_id', c ->> 'sub', false) "
-            + "from (select cast(? as jsonb) as c) claims";
+        // The JDBC boundary sees the whole per-tenant frame: the session mount at pin time,
+        // the one fanned statement, and the unmount at release. Three statements per tenant,
+        // identical across tenants; the mount and unmount are the configured hook methods'
+        // own jOOQ routine calls, not generator-authored SQL.
+        String mount = "select row(t.*) from \"public\".\"session_connect\""
+            + "(\"p_claims\" := cast(row(?, ?) as \"public\".\"session_claims\")) as t";
         String statement = "select \"public\".\"film\".\"title\" "
             + "from \"public\".\"film\" "
             + "order by \"public\".\"film\".\"film_id\" asc";
-        String hookClear = "select set_config('app.user_id', '', false)";
-        assertThat(TENANT_1_SQL).containsExactly(hookSet, statement, hookClear);
-        assertThat(TENANT_2_SQL).containsExactly(hookSet, statement, hookClear);
+        String unmount = "select * from \"public\".\"session_disconnect\""
+            + "(\"p_handle\" := cast(row(?, ?) as \"public\".\"session_handle\"))";
+        assertThat(TENANT_1_SQL).containsExactly(mount, statement, unmount);
+        assertThat(TENANT_2_SQL).containsExactly(mount, statement, unmount);
     }
 
     private static ExecutionResult execute(String query, Collection<Integer> fanOutTenants) {

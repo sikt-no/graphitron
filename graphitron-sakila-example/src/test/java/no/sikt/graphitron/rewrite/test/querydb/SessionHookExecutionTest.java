@@ -86,7 +86,7 @@ class SessionHookExecutionTest {
         // string as no identity: a touched placeholder GUC cannot be returned to unset, so the
         // unmount's clear-to-empty-string and a never-mounted connection must read identically.
         exec("drop table if exists rls_probe");
-        exec("drop role if exists " + PROBE_USER);
+        dropProbeRole();
         exec("create role " + PROBE_USER + " login password '" + PROBE_PASSWORD + "'");
         exec("create table rls_probe (id int primary key, owner_id text not null, note text not null)");
         exec("alter table rls_probe enable row level security");
@@ -103,9 +103,20 @@ class SessionHookExecutionTest {
     static void stopDatabase() {
         if (dsl != null) {
             exec("drop table if exists rls_probe");
-            exec("drop role if exists " + PROBE_USER);
+            dropProbeRole();
         }
         if (postgres != null) postgres.stop();
+    }
+
+    /**
+     * Drops the probe role, first shedding any privileges it holds (the sequence usage grant
+     * above blocks a bare {@code drop role}). The role may not exist on a fresh database, so
+     * the shed is conditional.
+     */
+    private static void dropProbeRole() {
+        exec("do $$ begin if exists (select from pg_roles where rolname = '" + PROBE_USER + "')"
+            + " then execute 'drop owned by " + PROBE_USER + "'; end if; end $$");
+        exec("drop role if exists " + PROBE_USER);
     }
 
     @Test

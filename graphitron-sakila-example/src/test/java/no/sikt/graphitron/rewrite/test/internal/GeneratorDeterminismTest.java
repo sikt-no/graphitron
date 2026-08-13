@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.test.internal;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
@@ -85,13 +86,17 @@ class GeneratorDeterminismTest {
     }
 
     private static RewriteContext contextFor(Path outputDir) {
+        // The fixture schema binds a $session service parameter, so the context needs the same
+        // <sessionState> pair the example pom configures for the default execution.
         return new RewriteContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
             outputDir,
             OUTPUT_PACKAGE,
             JOOQ_PACKAGE
-        );
+        ).withSessionStateConfig(SessionStateConfig.from(
+            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount",
+            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount"));
     }
 
     private static Map<String, String> readAll(Path root) throws IOException {
