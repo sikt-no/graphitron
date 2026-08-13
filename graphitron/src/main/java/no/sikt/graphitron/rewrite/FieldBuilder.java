@@ -4727,7 +4727,8 @@ class FieldBuilder {
         // classifier. One detector site per position; no call here.
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            return switch (serviceResolver.resolve(parentTypeName, fieldDef, List.of())) {
+            return switch (serviceResolver.resolve(parentTypeName, fieldDef,
+                    new ServiceDirectiveResolver.ParentContext.Root())) {
                 case ServiceDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
@@ -4906,7 +4907,8 @@ class FieldBuilder {
         // the store's authored claim views, whose grouping rule reports the conflict while this
         // method classifies the field by arm order (@service first).
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            return switch (serviceResolver.resolve(parentTypeName, fieldDef, List.of())) {
+            return switch (serviceResolver.resolve(parentTypeName, fieldDef,
+                    new ServiceDirectiveResolver.ParentContext.Root())) {
                 case ServiceDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
@@ -6266,7 +6268,8 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            var resolved = serviceResolver.resolve(parentTypeName, fieldDef, List.of());
+            var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
+                new ServiceDirectiveResolver.ParentContext.RecordParent(parentResultType));
             if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
                 return new UnclassifiedField(parentTypeName, name, location, r.rejection());
             }
@@ -6288,28 +6291,25 @@ class FieldBuilder {
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
                             tb.method(), sk, lr, ch));
                 }
-                // @service on a class-backed parent returning scalar/record is DEFERRED:
-                // deriving the batch key would require lifting through the parent chain to the
-                // rooted @table whose PK provides the key columns, which is its own design
-                // problem (parallel to interface-union dispatch).
+                // The resolver owns coordinate verdicts, so a record-backed parent hosting a
+                // Result / Scalar / Polymorphic @service never reaches a Success arm here: its
+                // classify phase rejects the pairing outright. These arms are unreachable by
+                // construction and say so rather than restating a rejection at a second seat.
                 case ServiceDirectiveResolver.Resolved.Result r ->
-                    new UnclassifiedField(parentTypeName, name, location,
-                        Rejection.deferred(
-                            "@service on a record-backed parent is not yet supported; the batch key "
-                            + "must be lifted through the parent chain to the rooted @table"));
+                    throw new IllegalStateException(
+                        "@service on a record-backed parent classified to a Result return — "
+                        + "ServiceDirectiveResolver's record-parent classify arm rejects this coordinate: field '"
+                        + parentTypeName + "." + name + "'");
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    new UnclassifiedField(parentTypeName, name, location,
-                        Rejection.deferred(
-                            "@service on a record-backed parent is not yet supported; the batch key "
-                            + "must be lifted through the parent chain to the rooted @table"));
-                // Polymorphic returns are supported on root @service fields only; a
-                // child @service on a class-backed parent returning an interface/union is doubly
-                // out of scope (record-backed-parent batch key + polymorphic dispatch).
+                    throw new IllegalStateException(
+                        "@service on a record-backed parent classified to a Scalar return — "
+                        + "ServiceDirectiveResolver's record-parent classify arm rejects this coordinate: field '"
+                        + parentTypeName + "." + name + "'");
                 case ServiceDirectiveResolver.Resolved.Polymorphic p ->
-                    new UnclassifiedField(parentTypeName, name, location,
-                        Rejection.deferred(
-                            "child @service returning a polymorphic type (interface/union) is not yet supported"
-                            + " — route (a) restores it on root @service fields only"));
+                    throw new IllegalStateException(
+                        "child @service classified to a Polymorphic return — "
+                        + "ServiceDirectiveResolver's child-polymorphic classify arm defers this coordinate: field '"
+                        + parentTypeName + "." + name + "'");
             };
         }
 
@@ -7232,10 +7232,7 @@ class FieldBuilder {
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             var parentTable = tableType.table();
             var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
-                parentTable.primaryKeyColumns(),
-                parentTable.primaryKeyColumns().isEmpty()
-                    ? new ServiceCatalog.PkLessParent(parentTypeName, parentTable.tableName())
-                    : null);
+                new ServiceDirectiveResolver.ParentContext.TableParent(parentTable));
             if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
                 return new UnclassifiedField(parentTypeName, name, location, r.rejection());
             }
@@ -7276,14 +7273,14 @@ class FieldBuilder {
                         ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
                             servicePath.elements(), s.method(), sk, lr, ch));
                 }
-                // Polymorphic returns are supported on ROOT @service fields only.
-                // Child @service on a @table parent returning an interface/union stays out of
-                // scope (no DataLoader-batched record-class-dispatch path exists); reject at build
-                // time rather than emit a stub, per "Validator mirrors classifier invariants".
+                // Polymorphic returns are supported on ROOT @service fields only, and the
+                // resolver's classify phase defers every child coordinate before binding, so this
+                // arm is unreachable by construction.
                 case ServiceDirectiveResolver.Resolved.Polymorphic p ->
-                    new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
-                        "child @service returning a polymorphic type (interface/union) is not yet supported"
-                        + " — route (a) restores it on root @service fields only"));
+                    throw new IllegalStateException(
+                        "child @service classified to a Polymorphic return — "
+                        + "ServiceDirectiveResolver's child-polymorphic classify arm defers this coordinate: field '"
+                        + parentTypeName + "." + name + "'");
             };
         }
 

@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.Record1;
 import org.jooq.Row1;
+import org.jooq.Row2;
 
 import java.util.List;
 import java.util.Map;
@@ -126,6 +127,69 @@ public class TestFilmService {
      * the parameter shape rather than on the parent lacking a primary key.
      */
     public static Integer getConstantRank(String filter) {
+        throw new UnsupportedOperationException();
+    }
+
+    // ===== Coordinate-precedence fixtures =====
+    //
+    // Each of these pairs a coordinate-level defect with a second defect that used to win the
+    // race, so the pipeline pins in ServiceCoordinatePrecedenceTest assert which diagnostic
+    // surfaces rather than merely that something was rejected.
+
+    /**
+     * Fixture: a batch-shaped signature whose only defect is the coordinate. Paired with a
+     * record-backed parent the batch key is unavailable by construction, and the binding is
+     * otherwise clean, so nothing but the coordinate can be reported.
+     */
+    public static Map<FilmRecord, String> getRatingByFilmRecord(Set<FilmRecord> filmKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: {@link #getRatingByFilmRecord} plus a parameter that binds to nothing. The
+     * coordinate verdict must outrank the name-mismatch the second parameter raises.
+     */
+    public static Map<FilmRecord, String> getRatingByFilmRecordWithExtra(
+            Set<FilmRecord> filmKeys, String unmatched) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Fixture: a clean per-parent delegation returning a table record, needing no batch key. */
+    public static LanguageRecord getLanguageByFilter(String filter) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Fixture: a List-cardinality root return-pair mismatch plus a parameter that binds to nothing. */
+    public static List<LanguageRecord> getLanguagesWithUnmatched(String unmatched) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: an anonymous-key batch parameter declared <em>after</em> a parameter that binds to
+     * nothing. The declaration order is the point: the coordinate's answer must not depend on it.
+     */
+    public static List<FilmRecord> getFilmsRootBatch(String unmatched, List<Row2<Integer, Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Fixture: an anonymous-key batch parameter on a method whose return type also mismatches. */
+    public static Map<Row2<Integer, Integer>, FilmRecord> getFilmRootBatchWrongReturn(
+            List<Row2<Integer, Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Fixture: the PK-less-parent batch shape with the unbindable parameter declared first. */
+    public static Map<FilmListRecord, Integer> getFilmListRankMisordered(
+            String unmatched, Set<FilmListRecord> listKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: a typed-{@code TableRecord} batch parameter whose name matches a GraphQL argument.
+     * Name binding outranks SOURCES recognition, so this must reach binding rather than silently
+     * minting a {@code Sourced} parameter over an argument the author meant to pass.
+     */
+    public static Map<LanguageRecord, Integer> getRankNamedSources(Set<LanguageRecord> languageKeys) {
         throw new UnsupportedOperationException();
     }
 }

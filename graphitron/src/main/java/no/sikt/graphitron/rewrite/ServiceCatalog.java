@@ -21,7 +21,6 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.rewrite.model.TypeNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -125,240 +124,331 @@ class ServiceCatalog {
     // ===== Service method reflection =====
 
     /**
-     * Loads the service class and method via reflection and classifies each parameter: binding-map
-     * keys become {@link ParamSource.Arg}, context keys become {@link ParamSource.Context}, the
-     * rest classify via {@link #classifySourcesType}.
+     * A {@code @service} method reduced to the facts the classifier and the binder need, with no
+     * {@link java.lang.reflect.Method} left in it: the decode phase's product. Everything a
+     * downstream phase would otherwise re-derive from live reflection is precomputed here, which
+     * is what keeps raw reflection types inside this parse-boundary class structurally rather
+     * than by convention (see {@code development-principles.adoc}).
      *
-     * <p>{@code argBindings} is built by the caller via {@link ArgBindingMap#of}. An explicit
-     * override entry ({@code key != value}) whose target is not among the resolved method's
-     * parameter names fails with a typo-guard message naming the directive site, the override
-     * target, and the available parameter names.
+     * @param returnType     the method's generic return type, parameterised so emitters can
+     *                       declare matching fetcher return types without parsing a string
+     * @param ctorParams     the instance-holder constructor's parameters, empty for a static
+     *                       method and {@code null} when the holder is unconstructible
+     * @param unconstructible the holder rejection decode captured, surfaced by
+     *                       {@link #bindServiceMethod}; {@code null} when the holder resolved
+     */
+    record ServiceSignature(
+        String className,
+        String methodName,
+        TypeName returnType,
+        boolean isStatic,
+        List<String> declaredExceptions,
+        List<MethodRef.Param> ctorParams,
+        Rejection unconstructible,
+        List<DecodedParam> params
+    ) {
+        /** Declared parameter names, in declaration order, skipping nameless parameters. */
+        java.util.LinkedHashSet<String> namedParameters() {
+            return params.stream().map(DecodedParam::name).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        }
+    }
+
+    /**
+     * One decoded parameter. {@code name} is {@code null} when the class was compiled without
+     * {@code -parameters}; {@code displayName} falls back to the declared type's simple name so
+     * diagnostics still have something to print.
      *
-     * <p>{@code parentPkColumns} is the primary-key column list of the parent type's table.
-     * Pass {@link List#of()} when the parent is a root operation type or has no backing table.
+     * @param sourcesShape the shape {@link #classifySourcesType} recognises, or {@code null}.
+     *                     Recognition is a type question and is answered once here; whether it
+     *                     can be honoured is the coordinate's question and belongs to classify.
+     * @param dtoSourcesReason the {@code List<DTO>} / {@code Set<DTO>} rejection prose, or
+     *                     {@code null} when the parameter is not DTO-shaped
+     */
+    record DecodedParam(
+        String name,
+        String displayName,
+        String typeName,
+        TypeName javaType,
+        boolean isDslContext,
+        SourcesShape sourcesShape,
+        String dtoSourcesReason
+    ) {}
+
+    /** Outcome of {@link #decodeServiceMethod}: the signature fact, or a decode-level rejection. */
+    record DecodeResult(ServiceSignature signature, Rejection rejection) {
+        boolean failed() { return rejection != null; }
+    }
+
+    /**
+     * The role a parameter plays once membership in the binding map, the context-key set and the
+     * SOURCES shape recogniser have all been consulted. Deciding candidacy once, as a carried
+     * value, is what lets classify and bind switch on the same answer instead of re-evaluating
+     * three predicates they would have to agree to spell the same way.
+     */
+    sealed interface ParamRole {
+        /** A {@code DSLContext} slot, resolved by type before any name is consulted. */
+        record Dsl() implements ParamRole {}
+        /** Name-claimed by a GraphQL argument (possibly through an {@code argMapping} path). */
+        record ArgBound(PathExpr path) implements ParamRole {}
+        /** Name-claimed by a declared context key. */
+        record ContextBound() implements ParamRole {}
+        /** Unclaimed by name and SOURCES-shaped; the coordinate decides whether it can be honoured. */
+        record SourcesCandidate(SourcesShape shape) implements ParamRole {}
+        /** Unclaimed by name and not SOURCES-shaped. */
+        record Unclaimed() implements ParamRole {}
+    }
+
+    /**
+     * Product of the claim-reduction step: one {@link ParamRole} per decoded parameter, in
+     * declaration order, plus the binding map the roles were reduced against (augmented by
+     * {@link #inferBindingsByType}), which the binder's diagnostics name.
+     */
+    record ClaimedParams(List<ParamRole> roles, Map<String, PathExpr> argByJavaName) {
+        ParamRole roleOf(int index) { return roles.get(index); }
+    }
+
+    /**
+     * Decode: loads the service class, resolves the single method of that name, and reduces it to
+     * a {@link ServiceSignature}. Pure over the class, the method name and the declared context
+     * keys; no binding inputs, no coordinate inputs, so nothing decided here can depend on either.
+     *
+     * <p>Instance-holder resolution runs here too. It reads only the class and {@code ctxKeys}, so
+     * it is decode by that definition even though its rejection is a binding-level concern; the
+     * outcome rides on the signature and {@link #bindServiceMethod} surfaces it.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected.
-     *
-     * <p>{@code expectedReturnType} (when non-null) is the structured javapoet {@link TypeName}
-     * the method's generic return type must equal exactly; a mismatch fails classification with
-     * a message naming expected vs actual. Pass {@code null} where strict validation isn't
-     * applicable. Comparison is {@link TypeName#equals(Object)}: whitespace-tolerant and
-     * structurally exact (a wildcard {@code ? extends Foo} is not equal to {@code Foo}). The
-     * captured return type on the resulting {@link MethodRef.Service} is always the
-     * parameterised form so emitters can declare matching fetcher return types directly without
-     * parsing a string.
      */
-    ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
-            TypeName expectedReturnType) {
-        return reflectServiceMethod(className, methodName, argBindings, ctxKeys,
-            parentPkColumns, expectedReturnType, Map.of(), null);
-    }
-
-    /** @see #reflectServiceMethod(String, String, ArgBindingMap, Set, List, TypeName, Map, PkLessParent) */
-    ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
-            TypeName expectedReturnType, Map<String, GraphQLInputType> slotTypes) {
-        return reflectServiceMethod(className, methodName, argBindings, ctxKeys,
-            parentPkColumns, expectedReturnType, slotTypes, null);
-    }
-
-    /**
-     * The one coordinate shape an empty {@code parentPkColumns} does <em>not</em> describe: a child
-     * whose parent type maps a real table that happens to declare no primary key. Root coordinates
-     * pass {@code null} here, which is what keeps the root diagnostics reachable.
-     *
-     * @param typeName  the parent GraphQL type
-     * @param tableName the table it maps, named in the rejection so the author can find it
-     */
-    record PkLessParent(String typeName, String tableName) {}
-
-    /**
-     * Suggestion-aware overload: {@code slotTypes} lets a parameter-mismatch rejection pre-fill
-     * an unambiguous reachable path in its argMapping suggestion. The production caller
-     * ({@link ServiceDirectiveResolver}) threads the real slot types from
-     * {@link FieldBuilder#argSlotTypes(graphql.schema.GraphQLFieldDefinition)}.
-     *
-     * <p>{@code pkLessParent} disambiguates the two coordinates that both arrive with an empty
-     * {@code parentPkColumns}: pass the parent's type and table when it maps a table with no
-     * primary key, {@code null} at a root operation type. Only the former can raise
-     * {@link ServiceMethodCallError.SourcesOnPkLessParent}.
-     */
-    ServiceReflectionResult reflectServiceMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
-            TypeName expectedReturnType, Map<String, GraphQLInputType> slotTypes,
-            PkLessParent pkLessParent) {
-        var argByJavaName = argBindings.byJavaName();
+    DecodeResult decodeServiceMethod(String className, String methodName, Set<String> ctxKeys) {
         if (className == null || methodName == null) {
-            return new ServiceReflectionResult(null, Rejection.structural("service reference is incomplete"));
+            return new DecodeResult(null, Rejection.structural("service reference is incomplete"));
         }
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             MethodPick pick = pickMethod(cls, className, methodName);
             if (pick.rejection() != null) {
-                return new ServiceReflectionResult(null, pick.rejection());
+                return new DecodeResult(null, pick.rejection());
             }
             var javaMethod = pick.method();
-            TypeName actualReturnType = TypeName.get(javaMethod.getGenericReturnType());
-            if (expectedReturnType != null
-                    && !actualReturnType.equals(expectedReturnType)) {
-                return new ServiceReflectionResult(null,
-                    new ReflectionError.ReturnTypeMismatch(className, methodName,
-                        TypeNames.simple(expectedReturnType), TypeNames.simple(actualReturnType)));
-            }
             boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
             List<MethodRef.Param> ctorParams = List.of();
+            Rejection unconstructible = null;
             if (!isStatic) {
                 InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className, ctxKeys);
                 if (holder.rejection() != null) {
-                    return new ServiceReflectionResult(null, holder.rejection());
+                    unconstructible = holder.rejection();
+                    ctorParams = null;
+                } else {
+                    ctorParams = holder.ctorParams();
                 }
-                ctorParams = holder.ctorParams();
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
-            String typoGuard = checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
-            if (typoGuard != null) {
-                return new ServiceReflectionResult(null, Rejection.structural(typoGuard));
-            }
-            argByJavaName = inferBindingsByType(javaMethod, argByJavaName, ctxKeys, slotTypes);
-            var params = new ArrayList<MethodRef.Param>();
+            var decoded = new ArrayList<DecodedParam>();
             for (var p : javaMethod.getParameters()) {
-                if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
-                    String paramName = p.isNamePresent() ? p.getName() : "dsl";
-                    params.add(new MethodRef.Param.Typed(paramName,
-                        p.getParameterizedType().getTypeName(),
-                        TypeName.get(p.getParameterizedType()),
-                        new ParamSource.DslContext()));
-                    continue;
-                }
+                boolean isDsl = org.jooq.DSLContext.class.isAssignableFrom(p.getType());
                 String pName = p.isNamePresent() ? p.getName() : null;
-                String displayName = pName != null ? pName : p.getType().getSimpleName();
-                String typeName = p.getParameterizedType().getTypeName();
-                TypeName javaType = TypeName.get(p.getParameterizedType());
-                PathExpr resolvedPath = pName != null ? argByJavaName.get(pName) : null;
-                if (resolvedPath != null) {
-                    ArgExtraction ext = argExtraction(typeName, resolvePathLeafType(resolvedPath, slotTypes),
-                        "parameter '" + displayName + "' of method '" + methodName + "' in class '" + className + "'");
+                String displayName = pName != null
+                    ? pName
+                    : (isDsl ? "dsl" : p.getType().getSimpleName());
+                decoded.add(new DecodedParam(pName, displayName,
+                    p.getParameterizedType().getTypeName(),
+                    TypeName.get(p.getParameterizedType()),
+                    isDsl,
+                    isDsl ? null : classifySourcesType(p.getParameterizedType()).orElse(null),
+                    isDsl ? null : dtoSourcesRejectionReason(p.getParameterizedType())));
+            }
+            return new DecodeResult(new ServiceSignature(className, methodName,
+                TypeName.get(javaMethod.getGenericReturnType()), isStatic,
+                declaredExceptionFqns(javaMethod), ctorParams, unconstructible,
+                List.copyOf(decoded)), null);
+        } catch (ClassNotFoundException e) {
+            return new DecodeResult(null, new ReflectionError.ClassNotLoaded(className));
+        }
+    }
+
+    /**
+     * Claim reduction: folds {@link ArgBindingMap#byJavaName}, {@link #inferBindingsByType} and
+     * the context-key set into one {@link ParamRole} per decoded parameter. Membership only; no
+     * extraction runs here, and no rejection is raised. The role order mirrors the binding
+     * precedence the loop used to apply inline: type-resolved {@code DSLContext} first, then the
+     * name claims, then SOURCES shape recognition, then nothing.
+     */
+    ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
+            Map<String, GraphQLInputType> slotTypes) {
+        var argByJavaName = inferBindingsByType(sig, argBindings.byJavaName(), ctxKeys, slotTypes);
+        var roles = new ArrayList<ParamRole>(sig.params().size());
+        for (var p : sig.params()) {
+            if (p.isDslContext()) {
+                roles.add(new ParamRole.Dsl());
+                continue;
+            }
+            PathExpr resolvedPath = p.name() != null ? argByJavaName.get(p.name()) : null;
+            if (resolvedPath != null) {
+                roles.add(new ParamRole.ArgBound(resolvedPath));
+            } else if (p.name() != null && ctxKeys.contains(p.name())) {
+                roles.add(new ParamRole.ContextBound());
+            } else if (p.sourcesShape() != null) {
+                roles.add(new ParamRole.SourcesCandidate(p.sourcesShape()));
+            } else {
+                roles.add(new ParamRole.Unclaimed());
+            }
+        }
+        return new ClaimedParams(List.copyOf(roles), argByJavaName);
+    }
+
+    /**
+     * Bind: the argMapping override typo guard, then extraction and {@link MethodRef.Param}
+     * minting over the carried roles. Every rejection raised here is binding-level by
+     * construction; coordinate-level and signature-fit verdicts have already been decided by
+     * {@link ServiceDirectiveResolver}'s classify phase and cannot be masked by a parameter
+     * declared before the one they concern.
+     *
+     * <p>{@code parentPkColumns} is the batch key the coordinate supplies: the parent table's
+     * primary key at a {@code @table}-parent child site, empty everywhere else. A
+     * {@link ParamRole.SourcesCandidate} reaching bind with no key columns exists only where
+     * classify declined to claim it (a root {@code List<XRecord>} input bean), which is why the
+     * fallback below is binding's own diagnostic rather than an invariant throw.
+     *
+     * <p>An explicit override entry ({@code key != value}) whose target is not among the resolved
+     * method's parameter names fails with a typo-guard message naming the directive site, the
+     * override target, and the available parameter names.
+     */
+    ServiceReflectionResult bindServiceMethod(ServiceSignature sig, ClaimedParams claims,
+            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            Map<String, GraphQLInputType> slotTypes) {
+        if (sig.unconstructible() != null) {
+            return new ServiceReflectionResult(null, sig.unconstructible());
+        }
+        String typoGuard = checkOverrideTargets(argBindings.byJavaName(), sig.namedParameters(),
+            sig.methodName(), sig.className());
+        if (typoGuard != null) {
+            return new ServiceReflectionResult(null, Rejection.structural(typoGuard));
+        }
+        var argByJavaName = claims.argByJavaName();
+        var params = new ArrayList<MethodRef.Param>();
+        for (int i = 0; i < sig.params().size(); i++) {
+            var p = sig.params().get(i);
+            switch (claims.roleOf(i)) {
+                case ParamRole.Dsl ignored ->
+                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
+                        new ParamSource.DslContext()));
+                case ParamRole.ArgBound bound -> {
+                    ArgExtraction ext = argExtraction(p.typeName(),
+                        resolvePathLeafType(bound.path(), slotTypes),
+                        "parameter '" + p.displayName() + "' of method '" + sig.methodName()
+                            + "' in class '" + sig.className() + "'");
                     if (ext instanceof ArgExtraction.Rejected rej) {
                         return new ServiceReflectionResult(null, rej.rejection());
                     }
-                    params.add(new MethodRef.Param.Typed(displayName, typeName, javaType,
-                        new ParamSource.Arg(((ArgExtraction.Resolved) ext).extraction(), resolvedPath)));
-                } else if (pName != null && ctxKeys.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(displayName, typeName, javaType, new ParamSource.Context()));
-                } else {
-                    // One recognition, two readings. The shape says "this parameter is a SOURCES
-                    // batch"; whether it can be honoured is the coordinate's question, and the two
-                    // empty-PK coordinates answer it differently. A PK-less parent table is
-                    // rejected by name here rather than at the arg-mismatch arm below, which would
-                    // describe a problem the author does not have.
-                    Optional<SourcesShape> recognisedShape = classifySourcesType(p.getParameterizedType());
-                    if (recognisedShape.isPresent() && parentPkColumns.isEmpty() && pkLessParent != null) {
-                        return new ServiceReflectionResult(null,
-                            new ServiceMethodCallError.SourcesOnPkLessParent(
-                                displayName, methodName, pkLessParent.typeName(), pkLessParent.tableName()));
+                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
+                        new ParamSource.Arg(((ArgExtraction.Resolved) ext).extraction(), bound.path())));
+                }
+                case ParamRole.ContextBound ignored ->
+                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
+                        new ParamSource.Context()));
+                case ParamRole.SourcesCandidate candidate -> {
+                    if (!parentPkColumns.isEmpty()) {
+                        params.add(new MethodRef.Param.Sourced(p.displayName(), candidate.shape().wrap(),
+                            parentPkColumns, candidate.shape().container()));
+                        break;
                     }
-                    Optional<SourcesShape> sourcesShape =
-                        parentPkColumns.isEmpty() ? Optional.empty() : recognisedShape;
-                    if (sourcesShape.isEmpty()) {
-                        if (pName == null) {
-                            return new ServiceReflectionResult(null,
-                                new ReflectionError.ParameterNamesMissing(className, methodName));
-                        }
-                        // The discriminator is the parameter type axis, not the coordinate:
-                        // parentPkColumns only gates which SOURCES outcomes are reachable, not
-                        // the name-mismatch diagnostic. Anonymous-key SOURCES shapes (List<RowN>
-                        // / List<RecordN>) at root get the dedicated batch-at-root diagnostic;
-                        // List<TableRecord> at root is the canonical InputBeanResolver shape and
-                        // falls through to the arg-mismatch arm when the name doesn't bind
-                        // (looksLikeSourcesShape excludes TableRecord). The recognised shape is
-                        // discarded for empty parentPkColumns above, so detection happens here on
-                        // the parameter type directly.
-                        if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
-                            return new ServiceReflectionResult(null,
-                                Rejection.structural("@service at the root does not support "
-                                + "List<Row>/List<Record> batch parameters — the root "
-                                + "has no parent context to batch against"));
-                        }
-                        // DTO-shape parameters (List<DTO> / Set<DTO>) at child coordinates keep
-                        // precedence over the name-mismatch arm: the @sourceRow hint is
-                        // actionable there (DataLoader batching applies; the missing piece is a
-                        // DTO-to-key conversion). At root, List<DTO> has no batching context, so
-                        // the arg-mismatch arm wins (pinned by
-                        // dtoSources_onRootField_pointsAtArgCtxMismatch).
-                        if (!parentPkColumns.isEmpty()) {
-                            String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
-                            if (dtoReason != null) {
-                                return new ServiceReflectionResult(null,
-                                    new ServiceMethodCallError.DtoSourcesUnsupported(displayName, methodName, dtoReason));
-                            }
-                        }
-                        // Non-SOURCES-adjacent parameter that matched no argument or context key:
-                        // the only plausible diagnosis is a name mismatch or missing context key.
-                        if (!looksLikeSourcesShape(p.getParameterizedType())) {
-                            String suggestion;
-                            if (argByJavaName.isEmpty()) {
-                                suggestion = " — this field declares no GraphQL arguments;"
-                                    + " remove the Java parameter, add a matching GraphQL argument to the field,"
-                                    + " or register a context key that supplies it";
-                            } else {
-                                String soleArg = argByJavaName.size() == 1
-                                    ? argByJavaName.keySet().iterator().next()
-                                    : "<argName>";
-                                String reachablePath = unambiguousReachablePath(typeName, slotTypes);
-                                String pathExample;
-                                String pathTrailer;
-                                if (reachablePath != null) {
-                                    pathExample = "argMapping: \"" + displayName + ": " + reachablePath + "\"";
-                                    pathTrailer = " — that path is the only field reachable from the available"
-                                        + " arguments whose type matches '" + typeName + "', so the suggestion"
-                                        + " is concrete";
-                                } else {
-                                    pathExample = "argMapping: \"" + displayName + ": " + soleArg + ".<fieldName>\"";
-                                    pathTrailer = " when the parameter pulls one field out of a wrapper input"
-                                        + " type";
-                                }
-                                suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
-                                    + " (e.g. argMapping: \"" + displayName + ": " + soleArg + "\""
-                                    + ", which reads as \"the Java parameter named '" + displayName
-                                    + "' binds to the GraphQL argument named '" + soleArg + "'\")."
-                                    + " The right-hand side may also be a dot-path into a nested"
-                                    + " input field (e.g. " + pathExample + ")"
-                                    + pathTrailer;
-                            }
-                            return new ServiceReflectionResult(null,
-                                new ServiceMethodCallError.ArgumentParameterMismatch(
-                                    displayName, methodName,
-                                    List.copyOf(argByJavaName.keySet()),
-                                    List.copyOf(ctxKeys),
-                                    suggestion));
-                        }
+                    // No key columns, so classify declined to claim this candidate. Only the root
+                    // List<XRecord> input bean gets here (every anonymous-key shape is answered by
+                    // the classify phase at every coordinate); it is the canonical
+                    // InputBeanResolver shape and falls through to the arg-mismatch arm.
+                    if (p.name() == null) {
                         return new ServiceReflectionResult(null,
-                            new ServiceMethodCallError.UnrecognizedSourcesType(displayName, methodName, typeName));
+                            new ReflectionError.ParameterNamesMissing(sig.className(), sig.methodName()));
                     }
-                    SourcesShape shape = sourcesShape.get();
-                    params.add(new MethodRef.Param.Sourced(
-                        displayName, shape.wrap(), parentPkColumns, shape.container()));
+                    if (!(candidate.shape().wrap() instanceof SourceKey.Wrap.TableRecord)) {
+                        return new ServiceReflectionResult(null,
+                            new ServiceMethodCallError.UnrecognizedSourcesType(
+                                p.displayName(), sig.methodName(), p.typeName()));
+                    }
+                    return new ServiceReflectionResult(null,
+                        argumentParameterMismatch(p, sig, argByJavaName, ctxKeys, slotTypes));
+                }
+                case ParamRole.Unclaimed ignored -> {
+                    if (p.name() == null) {
+                        return new ServiceReflectionResult(null,
+                            new ReflectionError.ParameterNamesMissing(sig.className(), sig.methodName()));
+                    }
+                    // DTO-shape parameters (List<DTO> / Set<DTO>) at keyed coordinates keep
+                    // precedence over the name-mismatch arm: the @sourceRow hint is actionable
+                    // there (DataLoader batching applies; the missing piece is a DTO-to-key
+                    // conversion). Without key columns, List<DTO> has no batching context, so the
+                    // arg-mismatch arm wins (pinned by dtoSources_onRootField_pointsAtArgCtxMismatch).
+                    if (!parentPkColumns.isEmpty() && p.dtoSourcesReason() != null) {
+                        return new ServiceReflectionResult(null,
+                            new ServiceMethodCallError.DtoSourcesUnsupported(
+                                p.displayName(), sig.methodName(), p.dtoSourcesReason()));
+                    }
+                    return new ServiceReflectionResult(null,
+                        argumentParameterMismatch(p, sig, argByJavaName, ctxKeys, slotTypes));
                 }
             }
-            MethodRef.CallShape callShape;
-            if (isStatic) {
-                boolean needsDslLocal = params.stream()
-                    .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-                callShape = new MethodRef.CallShape.Static(needsDslLocal);
-            } else {
-                callShape = new MethodRef.CallShape.InstanceWithDslHolder(ctorParams);
-            }
-            return new ServiceReflectionResult(
-                new MethodRef.Service(className, methodName, actualReturnType, List.copyOf(params),
-                    declaredExceptionFqns(javaMethod), callShape),
-                null);
-        } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
         }
+        MethodRef.CallShape callShape;
+        if (sig.isStatic()) {
+            boolean needsDslLocal = params.stream()
+                .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+            callShape = new MethodRef.CallShape.Static(needsDslLocal);
+        } else {
+            callShape = new MethodRef.CallShape.InstanceWithDslHolder(sig.ctorParams());
+        }
+        return new ServiceReflectionResult(
+            new MethodRef.Service(sig.className(), sig.methodName(), sig.returnType(),
+                List.copyOf(params), sig.declaredExceptions(), callShape),
+            null);
+    }
+
+    /**
+     * The name-mismatch rejection for a parameter that matched no GraphQL argument and no context
+     * key, with its {@code argMapping} suggestion. The suggestion pre-fills a concrete dot-path
+     * when exactly one reachable slot field has the parameter's Java type, and falls back to a
+     * {@code <fieldName>} placeholder otherwise.
+     */
+    private Rejection argumentParameterMismatch(DecodedParam p, ServiceSignature sig,
+            Map<String, PathExpr> argByJavaName, Set<String> ctxKeys,
+            Map<String, GraphQLInputType> slotTypes) {
+        String suggestion;
+        if (argByJavaName.isEmpty()) {
+            suggestion = " — this field declares no GraphQL arguments;"
+                + " remove the Java parameter, add a matching GraphQL argument to the field,"
+                + " or register a context key that supplies it";
+        } else {
+            String soleArg = argByJavaName.size() == 1
+                ? argByJavaName.keySet().iterator().next()
+                : "<argName>";
+            String reachablePath = unambiguousReachablePath(p.typeName(), slotTypes);
+            String pathExample;
+            String pathTrailer;
+            if (reachablePath != null) {
+                pathExample = "argMapping: \"" + p.displayName() + ": " + reachablePath + "\"";
+                pathTrailer = " — that path is the only field reachable from the available"
+                    + " arguments whose type matches '" + p.typeName() + "', so the suggestion"
+                    + " is concrete";
+            } else {
+                pathExample = "argMapping: \"" + p.displayName() + ": " + soleArg + ".<fieldName>\"";
+                pathTrailer = " when the parameter pulls one field out of a wrapper input"
+                    + " type";
+            }
+            suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
+                + " (e.g. argMapping: \"" + p.displayName() + ": " + soleArg + "\""
+                + ", which reads as \"the Java parameter named '" + p.displayName()
+                + "' binds to the GraphQL argument named '" + soleArg + "'\")."
+                + " The right-hand side may also be a dot-path into a nested"
+                + " input field (e.g. " + pathExample + ")"
+                + pathTrailer;
+        }
+        return new ServiceMethodCallError.ArgumentParameterMismatch(
+            p.displayName(), sig.methodName(),
+            List.copyOf(argByJavaName.keySet()),
+            List.copyOf(ctxKeys),
+            suggestion);
     }
 
     /**
@@ -500,6 +590,13 @@ class ServiceCatalog {
             .filter(java.lang.reflect.Parameter::isNamePresent)
             .map(java.lang.reflect.Parameter::getName)
             .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        return checkOverrideTargets(argByJavaName, paramNames, methodName, className);
+    }
+
+    /** Reflection-free form of {@link #checkOverrideTargets}, over a decoded parameter-name set. */
+    private static String checkOverrideTargets(Map<String, PathExpr> argByJavaName,
+                                               Set<String> paramNames,
+                                               String methodName, String className) {
         for (var entry : argByJavaName.entrySet()) {
             String javaTarget = entry.getKey();
             PathExpr path = entry.getValue();
@@ -523,7 +620,7 @@ class ServiceCatalog {
      * {@code Table<?>} parameter at all.
      *
      * <p>{@code argBindings} carries the Java-target to GraphQL-arg-name mapping per
-     * {@link #reflectServiceMethod}, with the same override typo guard; an override entry
+     * {@link #bindServiceMethod}, with the same override typo guard; an override entry
      * targeting the reserved Table slot is additionally rejected by
      * {@link #checkConditionOverrideTargets}.
      *
@@ -939,30 +1036,6 @@ class ServiceCatalog {
     }
 
     /**
-     * True when the parameter type is a {@code List} / {@code Set} of {@code RowN} or
-     * {@code RecordN}. Used by the root-op diagnostic to detect anonymous-key SOURCES-shape
-     * parameters that {@link #classifySourcesType} cannot classify because the parent has no PK
-     * to populate the source key. Concrete {@code TableRecord} subclasses are intentionally
-     * excluded: at root, {@code List<XRecord>} is the canonical {@code InputBeanResolver} shape,
-     * so it must fall through to the arg-mismatch diagnostic when the parameter name doesn't
-     * bind to a GraphQL argument.
-     */
-    private static boolean looksLikeSourcesShape(java.lang.reflect.Type paramType) {
-        var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
-        if (split.isEmpty()) return false;
-        java.lang.reflect.Type elementType = split.get().elementType();
-        if (elementType instanceof java.lang.reflect.ParameterizedType ept
-                && ept.getRawType() instanceof Class<?> rawClass) {
-            String rawName = rawClass.getName();
-            if (rawName.startsWith("org.jooq.Row")
-                    && rawName.substring("org.jooq.Row".length()).matches("\\d+")) return true;
-            if (rawName.startsWith("org.jooq.Record")
-                    && rawName.substring("org.jooq.Record".length()).matches("\\d+")) return true;
-        }
-        return false;
-    }
-
-    /**
      * Classification of a {@code @service} SOURCES parameter: the per-row shape
      * ({@link SourceKey.Wrap}) and the container axis ({@link LoaderRegistration.Container})
      * needed to construct {@link MethodRef.Param.Sourced}. The columns axis is the caller's
@@ -1201,9 +1274,8 @@ class ServiceCatalog {
      * <p>{@code Table<?>} and {@code DSLContext} parameters are skipped (resolved by type
      * elsewhere); parameters whose name matches a declared context key are skipped (name-based
      * binding wins); nameless parameters are skipped (the {@code -parameters} diagnostic still
-     * fires from the per-parameter loop); SOURCES-shape parameters
-     * ({@link #couldBeSourcesShape}) are skipped so the SOURCES classifier downstream retains
-     * precedence at child coordinates.
+     * fires from the binder); SOURCES-shape parameters are skipped so the SOURCES candidate role
+     * downstream retains precedence at child coordinates.
      */
     private Map<String, PathExpr> inferBindingsByType(
             java.lang.reflect.Method javaMethod,
@@ -1211,12 +1283,49 @@ class ServiceCatalog {
             Set<String> ctxKeys,
             Map<String, GraphQLInputType> slotTypes) {
         if (slotTypes == null || slotTypes.isEmpty()) return existing;
-
         var paramNames = Arrays.stream(javaMethod.getParameters())
             .filter(java.lang.reflect.Parameter::isNamePresent)
             .map(java.lang.reflect.Parameter::getName)
             .collect(Collectors.toCollection(HashSet::new));
+        var eligible = new ArrayList<InferParam>();
+        for (var p : javaMethod.getParameters()) {
+            if (org.jooq.Table.class.isAssignableFrom(p.getType())) continue;
+            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
+            if (!p.isNamePresent()) continue;
+            if (classifySourcesType(p.getParameterizedType()).isPresent()) continue;
+            eligible.add(new InferParam(p.getName(), p.getParameterizedType().getTypeName()));
+        }
+        return inferBindingsByType(paramNames, eligible, existing, ctxKeys, slotTypes);
+    }
 
+    /**
+     * Decoded-signature form of {@link #inferBindingsByType}: the eligibility filter reads the
+     * precomputed {@link DecodedParam#sourcesShape()} rather than re-running shape recognition.
+     */
+    private Map<String, PathExpr> inferBindingsByType(
+            ServiceSignature sig,
+            Map<String, PathExpr> existing,
+            Set<String> ctxKeys,
+            Map<String, GraphQLInputType> slotTypes) {
+        if (slotTypes == null || slotTypes.isEmpty()) return existing;
+        var paramNames = new HashSet<>(sig.namedParameters());
+        var eligible = new ArrayList<InferParam>();
+        for (var p : sig.params()) {
+            if (p.isDslContext() || p.name() == null || p.sourcesShape() != null) continue;
+            eligible.add(new InferParam(p.name(), p.typeName()));
+        }
+        return inferBindingsByType(paramNames, eligible, existing, ctxKeys, slotTypes);
+    }
+
+    /** A named parameter and its declared Java type, the only two facts inference reads. */
+    private record InferParam(String name, String typeName) {}
+
+    private Map<String, PathExpr> inferBindingsByType(
+            Set<String> paramNames,
+            List<InferParam> eligible,
+            Map<String, PathExpr> existing,
+            Set<String> ctxKeys,
+            Map<String, GraphQLInputType> slotTypes) {
         // A slot only counts as claimed when some Java parameter actually targets it. An
         // identity binding for a slot whose name doesn't match any parameter is a no-op
         // (left over from {@link ArgBindingMap#of} populating identity entries for every
@@ -1237,15 +1346,10 @@ class ServiceCatalog {
         }
         if (unclaimedSlotNames.isEmpty()) return existing;
 
-        var unboundParams = new ArrayList<java.lang.reflect.Parameter>();
-        for (var p : javaMethod.getParameters()) {
-            if (org.jooq.Table.class.isAssignableFrom(p.getType())) continue;
-            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
-            if (!p.isNamePresent()) continue;
-            String pName = p.getName();
-            if (existing.containsKey(pName)) continue;
-            if (ctxKeys.contains(pName)) continue;
-            if (couldBeSourcesShape(p.getParameterizedType())) continue;
+        var unboundParams = new ArrayList<InferParam>();
+        for (var p : eligible) {
+            if (existing.containsKey(p.name())) continue;
+            if (ctxKeys.contains(p.name())) continue;
             unboundParams.add(p);
         }
         if (unboundParams.isEmpty()) return existing;
@@ -1262,13 +1366,13 @@ class ServiceCatalog {
         if (unboundParams.size() == 1 && unclaimedSlotNames.size() == 1) {
             String slotName = unclaimedSlotNames.get(0);
             String slotJavaType = mapToJavaTypeName(slotTypes.get(slotName));
-            String paramType = unboundParams.get(0).getParameterizedType().getTypeName();
+            String paramType = unboundParams.get(0).typeName();
             boolean slotIsNamedInputOrEnum = slotJavaType == null;
             boolean paramIsScalarJavaType = isClassifiedScalarJavaTypeName(paramType);
             if (slotIsNamedInputOrEnum
                     && !paramIsScalarJavaType
                     && !anyReachableNestedMatch(paramType, unclaimedSlotNames, slotTypes)) {
-                augmented.put(unboundParams.get(0).getName(), PathExpr.head(slotName));
+                augmented.put(unboundParams.get(0).name(), PathExpr.head(slotName));
                 return augmented;
             }
         }
@@ -1283,8 +1387,7 @@ class ServiceCatalog {
         }
         var paramsByType = new LinkedHashMap<String, List<String>>();
         for (var p : unboundParams) {
-            String pType = p.getParameterizedType().getTypeName();
-            paramsByType.computeIfAbsent(pType, k -> new ArrayList<>()).add(p.getName());
+            paramsByType.computeIfAbsent(p.typeName(), k -> new ArrayList<>()).add(p.name());
         }
         for (var paramEntry : paramsByType.entrySet()) {
             if (paramEntry.getValue().size() != 1) continue;
@@ -1308,11 +1411,11 @@ class ServiceCatalog {
         // parameter unbound, so the per-parameter rejection (with its unambiguousReachablePath
         // argMapping suggestion) still fires.
         for (var p : unboundParams) {
-            if (augmented.containsKey(p.getName())) continue;
+            if (augmented.containsKey(p.name())) continue;
             PathExpr nested = inferNestedFieldByName(
-                p.getName(), p.getParameterizedType().getTypeName(), unclaimedSlotNames, slotTypes);
+                p.name(), p.typeName(), unclaimedSlotNames, slotTypes);
             if (nested != null) {
-                augmented.put(p.getName(), nested);
+                augmented.put(p.name(), nested);
             }
         }
         return augmented;
@@ -1382,32 +1485,6 @@ class ServiceCatalog {
     }
 
     /**
-     * True when the parameter's Java type matches a recognised SOURCES shape: {@code List} /
-     * {@code Set} of {@code RowN}, {@code RecordN}, or {@code TableRecord}.
-     * {@link #inferBindingsByType} consults this to keep SOURCES-shape parameters out of the
-     * inferred-binding candidate set, so the per-parameter loop's SOURCES classifier still wins
-     * at child coordinates. The narrower {@link #looksLikeSourcesShape} only covers
-     * {@code RowN} / {@code RecordN}; the TableRecord arm here matches the third element-type
-     * arm of {@link #classifySourcesType}.
-     */
-    private static boolean couldBeSourcesShape(java.lang.reflect.Type paramType) {
-        var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
-        if (split.isEmpty()) return false;
-        java.lang.reflect.Type elementType = split.get().elementType();
-        if (elementType instanceof java.lang.reflect.ParameterizedType ept
-                && ept.getRawType() instanceof Class<?> rawClass) {
-            String rawName = rawClass.getName();
-            if (rawName.startsWith("org.jooq.Row")
-                    && rawName.substring("org.jooq.Row".length()).matches("\\d+")) return true;
-            if (rawName.startsWith("org.jooq.Record")
-                    && rawName.substring("org.jooq.Record".length()).matches("\\d+")) return true;
-        }
-        if (elementType instanceof Class<?> ec
-                && org.jooq.TableRecord.class.isAssignableFrom(ec)) return true;
-        return false;
-    }
-
-    /**
      * Maps a {@link GraphQLInputType} to the canonical Java type name a graphql-java argument
      * extraction would produce for it, suitable for literal comparison against
      * {@link java.lang.reflect.Parameter#getParameterizedType()}'s name. Returns {@code null}
@@ -1463,7 +1540,7 @@ class ServiceCatalog {
     // ===== Result container =====
 
     /**
-     * Carries the result of {@link #reflectServiceMethod}: either a successfully resolved
+     * Carries the result of {@link #bindServiceMethod}: either a successfully resolved
      * {@link MethodRef} or a typed {@link Rejection} carrying the failure shape (so consumers
      * that wrap with caller-specific prose can preserve {@link Rejection.AuthorError.UnknownName}
      * fields rather than collapsing back to {@link Rejection.AuthorError.Structural}).
