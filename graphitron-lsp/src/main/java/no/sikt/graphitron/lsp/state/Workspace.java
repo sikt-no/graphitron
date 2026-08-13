@@ -52,11 +52,10 @@ public final class Workspace {
     // catalog and snapshot in setBuildOutput, so a single set of volatile reads observes one
     // consistent build state. Defaults to empty until the first build.
     private volatile CatalogFacts catalogFacts = CatalogFacts.empty();
-    // The LSP is the sole source walker: the walker (and its per-file
-    // cache) lives here, alongside the index it produces, so "who refreshes this,
-    // on what cadence" is answerable from the index's owner. There is no
-    // process-wide static cache shared with the generator build cadence.
-    private final SourceWalker sourceWalker = new SourceWalker();
+    // The source-position index, handed in rather than walked here: the language server's inputs
+    // are the live buffer and the store, and the walk belongs to the dev session that owns both the
+    // watcher triggering it and the store it writes. What survives here is the projection the
+    // surfaces that have not migrated still read.
     private volatile SourceWalker.Index sourceIndex = SourceWalker.Index.EMPTY;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
@@ -251,7 +250,7 @@ public final class Workspace {
     }
 
     /**
-     * The LSP-owned source-position index goto-definition joins service-half
+     * The source-position index goto-definition joins service-half
      * class / method references against. Distinct from {@link #catalog()}: it
      * refreshes on the {@code .java} (source) cadence through
      * {@link #setSourceIndex}, driven by the dev goal's source-root watcher,
@@ -275,18 +274,6 @@ public final class Workspace {
      */
     public void setSourceIndex(SourceWalker.Index index) {
         this.sourceIndex = index == null ? SourceWalker.Index.EMPTY : index;
-    }
-
-    /**
-     * Walks {@code sourceRoots} with the workspace-owned {@link SourceWalker}
-     * (warm per-file cache) and atomically swaps in the resulting index. This is
-     * the only walk the LSP performs: the dev goal's source-root watcher calls it
-     * at startup and on every {@code .java} change, on the source cadence,
-     * independent of the catalog / {@code .class} build cadence. Re-parses only
-     * the files whose modification time changed since the previous refresh.
-     */
-    public void refreshSourceIndex(List<Path> sourceRoots) {
-        setSourceIndex(sourceWalker.walk(sourceRoots));
     }
 
     /**

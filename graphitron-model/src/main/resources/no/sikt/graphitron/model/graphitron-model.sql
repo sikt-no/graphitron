@@ -2343,9 +2343,10 @@ COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 -- methods and their parameters, record components, scalar-type fields. The rows are read by a
 -- bytecode-only scan, so nothing here is a class graphitron owns or a role it assigns; a jar
 -- class an author may name in @record / @service / @enum / @scalarType earns a row on the same
--- terms as a reactor one. Javadoc and source positions deliberately stay out; those live on the
--- LSP's SourceWalker cadence and are joined at request time, so a .java edit is seen without a
--- generator rebuild.
+-- terms as a reactor one. Javadoc and source positions deliberately stay out: what a classfile
+-- declares lives here, and where a declaration is written and what its doc comment says lives in
+-- the java_ family on the source's own cadence, joined by name. That division is why a .java edit
+-- moves a position without a generator round, and why the two populations can disagree.
 CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -2425,6 +2426,91 @@ COMMENT ON TABLE jvm_scalar_type_field IS 'A public static field whose declared 
 COMMENT ON COLUMN jvm_scalar_type_field.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_scalar_type_field.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_scalar_type_field.field_name IS 'the field name, matched on the exact GraphQLScalarType descriptor';
+
+-- ==== Java source declaration facts ===============================================
+-- What the consumer's .java sources declare, in the source language's vocabulary: where each
+-- class, method and field is written, and what its doc comment says. Its own population beside
+-- the jvm_ census rather than columns on it, joined to it by name and never keyed by it. Three
+-- facts force that separation. A source parse yields arity where a classfile yields a
+-- descriptor, so the two cannot share a method key. The jvm_ census excludes the generated jOOQ
+-- package, which is exactly where a jump from @table or @field(name:) has to land, so a family
+-- hanging off jvm_class could not answer for the half that matters most. And a .java edit
+-- refreshes here without a generator round, so the two populations may legitimately disagree
+-- between cadences; no view here asserts they agree, because the skew is real and visible skew
+-- beats ambient skew.
+-- The family is file-keyed, and its files are deliberately not store_source rows: store_source
+-- is a capture round's read set, and a .java file is read by neither the SDL walk nor the
+-- classpath scan. java_file carries this family's own freshness bookkeeping instead, which keeps
+-- store_source's kind taxonomy closed and its currency scan proportional to what capture reads.
+-- Graph scoping, for a query that needs it, happens on the jvm_ or sql_ side of the name join
+-- through store_graph_source; this family answers for a file, and a file belongs to whoever
+-- compiles it.
+CREATE TABLE java_file (
+  file        VARCHAR NOT NULL,
+  source_root VARCHAR NOT NULL,
+  stamp       VARCHAR NOT NULL,
+  PRIMARY KEY (file)
+);
+COMMENT ON TABLE java_file IS 'A .java file whose declarations this store holds, and the stamp they were read at. The family''s refresh unit: one transaction per file, retained when the file still hashes to its stamp and rewritten whole when it does not, so an edit costs one parse rather than a workspace walk. A row exists exactly while the last walk covering the file''s root saw it, so a file deleted under a walked root loses its row and its declarations with it.';
+COMMENT ON COLUMN java_file.file IS 'absolute normalised path of the source file; the family''s partition dimension and the grain its refresh runs at. Path form, as store_source spells a schema file, but never a store_source row (see this family''s charter) and never joined to jvm_class.source_name, which names a classpath entry rather than a source file';
+COMMENT ON COLUMN java_file.source_root IS 'the walked root the file was reached under, on jvm_class.source_name''s terms: where the row came from, and so the scope whoever put it there owns. A walk prunes the files that left its own roots and leaves a sibling module''s alone. A file reachable under two nested roots is attributed to whichever root reached it first in the walk''s own order, one row either way';
+COMMENT ON COLUMN java_file.stamp IS 'content hash of the file as parsed, on ClasspathSources'' terms and for its reasons: modification time is a heuristic that a checkout, a rebase or a container layer defeats. NOT NULL because a file that cannot be read cannot be parsed either, so there is no partially-written partition to record';
+
+CREATE TABLE java_class_declaration (
+  file          VARCHAR NOT NULL,
+  class_name    VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  javadoc       VARCHAR,
+  PRIMARY KEY (file, class_name),
+  FOREIGN KEY (file) REFERENCES java_file (file)
+);
+COMMENT ON TABLE java_class_declaration IS 'A class, interface, enum, record or annotation declaration written in a source file, at the position the parse read it. Keyed by file and name rather than by name alone: two files declaring one fully-qualified name is malformed Java that a parse still reads, and a relation keyed on the name would have to pick one of them. A nested class earns its own row under the dotted name its declaration chain spells; anonymous and local classes have no name to key on and are absent.';
+COMMENT ON COLUMN java_class_declaration.file IS 'the source file the declaration is written in; the family''s partition dimension and the key''s leading column';
+COMMENT ON COLUMN java_class_declaration.class_name IS 'the dotted name the declaration spells: the file''s package, then the chain of enclosing class simple names. The join key to jvm_class.class_name, matched by name and by nothing else, the generated jOOQ package being absent there and present here';
+COMMENT ON COLUMN java_class_declaration.source_line IS 'line of the declaration, 1-based per the Compiler Tree API''s LineMap; the store holds the parse''s own convention and an editor surface converts to its own. A parse positions every declaration it reads, so -1, that API''s own no-position sentinel, is defensive: it is carried through rather than dropped, because a declaration whose position is missing still has a doc comment worth holding';
+COMMENT ON COLUMN java_class_declaration.source_column IS 'column of the declaration, 1-based on the same terms as source_line';
+COMMENT ON COLUMN java_class_declaration.javadoc IS 'the declaration''s doc comment as the parse retained it, stripped; NULL where the declaration carries none, absence being a fact rather than an empty string. Display material, never a dimension';
+
+CREATE TABLE java_method_declaration (
+  file            VARCHAR NOT NULL,
+  class_name      VARCHAR NOT NULL,
+  method_name     VARCHAR NOT NULL,
+  ordinal         INT     NOT NULL,
+  parameter_count INT     NOT NULL,
+  source_line     INT     NOT NULL,
+  source_column   INT     NOT NULL,
+  javadoc         VARCHAR,
+  PRIMARY KEY (file, class_name, method_name, ordinal),
+  FOREIGN KEY (file, class_name) REFERENCES java_class_declaration (file, class_name)
+);
+COMMENT ON TABLE java_method_declaration IS 'A method declaration on a declared class: one row per declaration, not one per resolvable name. Overloads are separate rows, so a consumer asking for a name gets as many rows as the class declares and the count is the resolution outcome; that is what replaces an index which dropped colliding keys into a side set of ambiguous ones and kept a first-declaration-wins view beside it. A constructor is a declaration and earns a row under the parse''s own name for it, where jvm_method excludes constructors: the two populations are not required to agree, and this is one of the places they do not.';
+COMMENT ON COLUMN java_method_declaration.file IS 'the source file the declaration is written in; the family''s partition dimension and the key''s leading column';
+COMMENT ON COLUMN java_method_declaration.class_name IS 'the declaring class, as java_class_declaration spells it';
+COMMENT ON COLUMN java_method_declaration.method_name IS 'the declared method name; not a key on its own, overloads sharing it';
+COMMENT ON COLUMN java_method_declaration.ordinal IS 'declaration order within one file, class and method name, 0-based: the overload discriminator that keeps this key natural where the classfile side uses a descriptor. It follows the parse''s source order, so it is stable across re-parses of unchanged text and says nothing about which overload a call would bind to';
+COMMENT ON COLUMN java_method_declaration.parameter_count IS 'the declared arity, which is what an unattributed parse can know: parameter types resolve to unqualified names as written rather than to the erased types jvm_method_parameter carries, so arity is the part that is a fact and the types are deliberately absent';
+COMMENT ON COLUMN java_method_declaration.source_line IS 'line of the declaration, 1-based per the Compiler Tree API''s LineMap; the store holds the parse''s own convention and an editor surface converts to its own. A parse positions every declaration it reads, so -1, that API''s own no-position sentinel, is defensive: it is carried through rather than dropped, because a declaration whose position is missing still has a doc comment worth holding';
+COMMENT ON COLUMN java_method_declaration.source_column IS 'column of the declaration, 1-based on the same terms as source_line';
+COMMENT ON COLUMN java_method_declaration.javadoc IS 'the declaration''s doc comment as the parse retained it, stripped; NULL where the declaration carries none. Display material, never a dimension';
+
+CREATE TABLE java_field_declaration (
+  file          VARCHAR NOT NULL,
+  class_name    VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  javadoc       VARCHAR,
+  PRIMARY KEY (file, class_name, field_name),
+  FOREIGN KEY (file, class_name) REFERENCES java_class_declaration (file, class_name)
+);
+COMMENT ON TABLE java_field_declaration IS 'A field declaration on a declared class: the position and doc comment of a variable whose immediate encloser is a class, so parameters and locals are absent. Enum constants are fields at this grain, and so are the generated jOOQ table classes'' column constants, which is what makes a column''s declaration reachable here at all. A field name is unique within a class, so no ordinal is needed beside it.';
+COMMENT ON COLUMN java_field_declaration.file IS 'the source file the declaration is written in; the family''s partition dimension and the key''s leading column';
+COMMENT ON COLUMN java_field_declaration.class_name IS 'the declaring class, as java_class_declaration spells it';
+COMMENT ON COLUMN java_field_declaration.field_name IS 'the declared field name as written; the Java name, which is what joins to a generated table class''s column constant, never the SQL column name';
+COMMENT ON COLUMN java_field_declaration.source_line IS 'line of the declaration, 1-based per the Compiler Tree API''s LineMap; the store holds the parse''s own convention and an editor surface converts to its own. A parse positions every declaration it reads, so -1, that API''s own no-position sentinel, is defensive: it is carried through rather than dropped, because a declaration whose position is missing still has a doc comment worth holding';
+COMMENT ON COLUMN java_field_declaration.source_column IS 'column of the declaration, 1-based on the same terms as source_line';
+COMMENT ON COLUMN java_field_declaration.javadoc IS 'the declaration''s doc comment as the parse retained it, stripped; NULL where the declaration carries none. Display material, never a dimension';
 
 -- ==== Compile oracle facts ========================================================
 -- What the JDK compiler reported about a compile round over the emitted sources, in
@@ -3465,13 +3551,14 @@ CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
   ('graphitron_', 'The decoded graphitron reading', 2, 'What graphitron makes of the SDL document: the decoded directives, and the provenance of the rows macro expansion mints. A row here is still a transcription, not a conclusion: it says what a directive application spelled, in graphitron''s vocabulary instead of the document''s.'),
   ('sql_', 'The consumer database catalog', 3, 'What the consumer''s database declares, read through jOOQ''s generated model. Not jooq_: naming a family for its reader is what this name replaces, because jOOQ defines neither table nor column nor foreign key.'),
   ('jvm_', 'The compile classpath census', 4, 'What the classfiles on the compile classpath declare. Not extension_: naming a family for a presumed role is what this name replaces, because an ObjectMapper on the classpath extends nothing yet still earns a row.'),
-  ('javac_', 'The compile oracle''s verdicts', 5, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
-  ('walk_', 'The legacy walk''s reach', 6, 'What the legacy classification walk registered, transcribed as membership rows in the walk''s own vocabulary (its registries'' reach). Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent.'),
-  ('intent_', 'Derived intent', 7, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
-  ('rejection_', 'The legacy walk''s verdicts', 8, 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
-  ('lint_', 'The linter''s findings', 9, 'The linter''s vocabulary (lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
-  ('build_warning_', 'The advisory arm', 10, 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the jvm_scalar_type_field precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not walk_, because a family may not be named for its producer and both of the arm''s producers outlive the walk.'),
-  ('meta_', 'The schema describing itself', 11, 'The schema''s own description: the family roster, the placement of relations no prefix covers, and the census that closes both against the observed schema. Authored as constant rows stated as views, so the description is versioned with the DDL it describes and can never be refreshed apart from it; not store_, because these rows are a statement of what this file declares, never a record of what a run read.');
+  ('java_', 'The consumer''s Java sources', 5, 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
+  ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
+  ('walk_', 'The legacy walk''s reach', 7, 'What the legacy classification walk registered, transcribed as membership rows in the walk''s own vocabulary (its registries'' reach). Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent.'),
+  ('intent_', 'Derived intent', 8, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
+  ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
+  ('lint_', 'The linter''s findings', 10, 'The linter''s vocabulary (lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
+  ('build_warning_', 'The advisory arm', 11, 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the jvm_scalar_type_field precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not walk_, because a family may not be named for its producer and both of the arm''s producers outlive the walk.'),
+  ('meta_', 'The schema describing itself', 12, 'The schema''s own description: the family roster, the placement of relations no prefix covers, and the census that closes both against the observed schema. Authored as constant rows stated as views, so the description is versioned with the DDL it describes and can never be refreshed apart from it; not store_, because these rows are a statement of what this file declares, never a record of what a run read.');
 COMMENT ON VIEW meta_family IS 'The family roster: one row per relation-name prefix, keyed by the prefix under the schema''s naming discipline (a family is named for whose vocabulary its rows are written in, never for its reader or its role). The definition column carries each family''s charter, migrated out of this file''s header so the roster has one home; the generated schema reference renders one page per row, ordered by ordinal, and the schema gates close the roster against the observed relations in both directions.';
 COMMENT ON COLUMN meta_family.prefix IS 'the family''s relation-name prefix, trailing underscore included; the roster''s key, unique by gate since a view carries no PRIMARY KEY, and no prefix may be a prefix of another (gated), which is what lets the census match exactly';
 COMMENT ON COLUMN meta_family.title IS 'the family''s rendered page title in the generated schema reference; plain prose, display material only';

@@ -127,7 +127,12 @@ final class ClasspathSources {
         return stamps.computeIfAbsent(entry.toString(), ignored -> hash(entry));
     }
 
-    private static String hash(Path entry) {
+    /**
+     * The content hash of one file, unmemoised. Shared with {@link JavaSourceFacts}, which asks the
+     * same question of a source file on a cadence where memoising the answer would be wrong: a
+     * jar within one run is immutable, a {@code .java} under an editor is the opposite.
+     */
+    static String hash(Path entry) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] buffer = new byte[1 << 16];

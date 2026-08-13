@@ -7,6 +7,7 @@ import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,11 +22,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end coverage of the source-cadence decoupling through the real pieces: a
- * real {@link Workspace} owns and walks real {@code .java} files with the real
- * {@code SourceWalker} ({@link Workspace#refreshSourceIndex}), and the real
- * {@link Hovers} and {@link Definitions} entry points resolve against the
- * resulting index. Nothing here is mocked: the positions and Javadoc come from
- * parsing actual source on disk.
+ * real {@link SourceWalker} parses real {@code .java} files, a real
+ * {@link Workspace} is handed the resulting index the way the dev session hands
+ * it one, and the real {@link Hovers} and {@link Definitions} entry points
+ * resolve against it. Nothing here is mocked: the positions and Javadoc come
+ * from parsing actual source on disk. The same fact is pinned at the store layer
+ * where the walk is driven, in the maven plugin's own cadence test; these
+ * assertions are about the surfaces that still read the projection.
  *
  * <p>The catalog fixtures carry only the build-derivable structure ({@code FQN}s,
  * method signatures, empty descriptions), exactly as {@code CatalogBuilder} now
@@ -53,7 +56,7 @@ class SourceCadenceHoverAndDefinitionTest {
             }
             """);
         var workspace = workspaceWithServiceCatalog();
-        workspace.refreshSourceIndex(List.of(srcRoot));
+        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
         var file = file("""
             type Query {
@@ -87,7 +90,7 @@ class SourceCadenceHoverAndDefinitionTest {
             }
             """);
         var workspace = workspaceWithTableCatalog();
-        workspace.refreshSourceIndex(List.of(srcRoot));
+        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var tablePos = pointAt(file, 0, "film\"");
@@ -116,7 +119,7 @@ class SourceCadenceHoverAndDefinitionTest {
             """);
         var workspace = workspaceWithServiceCatalog();
         var catalogBefore = workspace.catalog();
-        workspace.refreshSourceIndex(List.of(srcRoot));
+        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
         var file = file("""
             type Query {
@@ -144,7 +147,7 @@ class SourceCadenceHoverAndDefinitionTest {
             Files.getLastModifiedTime(source).toMillis() + 5000));
 
         // Only the source index is refreshed; the catalog is the same instance.
-        workspace.refreshSourceIndex(List.of(srcRoot));
+        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
         assertThat(workspace.catalog())
             .as("source-cadence refresh must not rebuild the catalog")
             .isSameAs(catalogBefore);

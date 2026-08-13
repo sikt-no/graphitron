@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite.maven.dev;
 
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -22,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -109,11 +113,11 @@ class CatalogRefreshTest {
     }
 
     @Test
-    void javaSourceWriteRefreshesSourceIndexWithoutCatalogRebuild(@TempDir Path srcDir) throws Exception {
-        // Source cadence: a .java edit refreshes the LSP-owned source
-        // position index, decoupled from the .class catalog rebuild. The
-        // workspace's catalog must stay untouched (no buildOutput swap), proving
-        // positions ride the source cadence rather than the generator build.
+    void javaSourceWriteMovesTheStoreRowWithoutCatalogRebuild(@TempDir Path srcDir) throws Exception {
+        // Source cadence, at the store layer: a .java edit writes the java_ family and the index
+        // projection beside it, with no generator round in between. The workspace's catalog must
+        // stay untouched (no buildOutput swap), which is what makes the pin about the cadence
+        // rather than about a build having happened to run.
         var workspace = new Workspace(CompletionData.empty());
         assertThat(workspace.sourceIndex().isEmpty()).isTrue();
 
@@ -126,28 +130,36 @@ class CatalogRefreshTest {
             }
             """);
 
-        var fired = new CountDownLatch(1);
-        Runnable refresher = () -> {
-            // Real production path: the workspace owns the walker and the index.
-            workspace.refreshSourceIndex(List.of(srcDir));
-            fired.countDown();
-        };
+        try (var store = GraphitronModelStore.open()) {
+            var facts = new JavaSourceFacts(store.dsl());
+            var walker = new SourceWalker();
+            var fired = new CountDownLatch(1);
+            Runnable refresher = () -> {
+                // The production path: one walk, the store and the index off it.
+                var walk = walker.walkFiles(List.of(srcDir));
+                facts.refresh(List.of(srcDir), walk);
+                workspace.setSourceIndex(SourceWalker.indexOf(walk));
+                fired.countDown();
+            };
 
-        debounce = new DebounceExecutor(DEBOUNCE_MS);
-        watcher = new SchemaWatcher(Set.of(srcDir), debounce, refresher, ".java");
+            debounce = new DebounceExecutor(DEBOUNCE_MS);
+            watcher = new SchemaWatcher(Set.of(srcDir), debounce, refresher, ".java");
 
-        DispatchTestSupport.dispatch(watcher, javaFile.getParent(),
-            entryModifyEvent(Path.of("PriceService.java")));
+            DispatchTestSupport.dispatch(watcher, javaFile.getParent(),
+                entryModifyEvent(Path.of("PriceService.java")));
 
-        assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
-            .as("source refresher must fire on .java write")
-            .isTrue();
+            assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
+                .as("source refresher must fire on .java write")
+                .isTrue();
 
-        // Position is observable through the workspace's volatile source index,
-        // without any catalog rebuild having run.
-        assertThat(workspace.sourceIndex().classes())
-            .containsKey("com.example.PriceService");
-        assertThat(workspace.catalog().tables()).isEmpty();
+            assertThat(store.dsl().select(JAVA_CLASS_DECLARATION.CLASS_NAME)
+                .from(JAVA_CLASS_DECLARATION).fetch(0, String.class))
+                .as("the declaration is a store row on the source cadence")
+                .containsExactly("com.example.PriceService");
+            assertThat(workspace.sourceIndex().classes())
+                .containsKey("com.example.PriceService");
+            assertThat(workspace.catalog().tables()).isEmpty();
+        }
     }
 
     private static WatchEvent<?> entryCreateEvent(Path relative) {

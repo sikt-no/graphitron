@@ -17,6 +17,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
+import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
+import static no.sikt.graphitron.model.Tables.JAVA_FILE;
+import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
@@ -67,14 +71,21 @@ final class StoreRefresh {
     /**
      * The source-partitioned families: relations whose rows survive by source rather than being
      * cleared wholesale or by graph. Listed rather than derived: a relation added here without a
-     * matching delete (in {@link #clear} for {@code jvm_}, in the catalog walk for {@code sql_})
-     * would keep rows whose partition went away, which is what the "an empty refresh empties
-     * every relation" anchor exists to catch.
+     * matching delete (in {@link #clear} for {@code jvm_}, in the catalog walk for {@code sql_},
+     * in {@link JavaSourceFacts} for {@code java_}) would keep rows whose partition went away,
+     * which is what the "an empty refresh empties every relation" anchor exists to catch.
+     *
+     * <p>The {@code java_} family is here for a reason the other two do not share: capture never
+     * writes it at all. Its writer runs on the {@code .java} cadence and owns both halves of its
+     * own lifecycle, so a generator round has nothing to retain or rewrite there, and a round that
+     * cleared it would blank every module's Javadoc and positions on a cadence that has nothing to
+     * do with sources changing.
      */
     private static final Set<Table<?>> PARTITIONED = Set.of(
         JVM_CLASS, JVM_METHOD, JVM_METHOD_PARAMETER, JVM_RECORD_COMPONENT, JVM_SCALAR_TYPE_FIELD,
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
-        SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN);
+        SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN,
+        JAVA_FILE, JAVA_CLASS_DECLARATION, JAVA_METHOD_DECLARATION, JAVA_FIELD_DECLARATION);
 
     private StoreRefresh() {}
 

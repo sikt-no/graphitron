@@ -393,6 +393,10 @@ class FactSchemaGateTest {
      * by graph (a jar or a generated package is shared between graphs, and which sources make up
      * a graph is a membership question deferred with its first consumer), so the same gate holds
      * them to leading with {@code source_name} instead: the exemption is not key-freedom.
+     * {@code java_} partitions by source too, at the grain its refresh runs at, and its dimension
+     * is spelled {@code file} rather than {@code source_name} on purpose: a source file is not a
+     * {@code store_source} row, and two columns with one name that never join would read as though
+     * they did.
      * {@code store_} is the store's own bookkeeping and answers the question per relation rather
      * than per prefix: {@code store_graph} is keyed on {@code graph_name} and its two recipe
      * children lead with it, while {@code store_source} and {@code store_stamp} carry neither
@@ -410,6 +414,8 @@ class FactSchemaGateTest {
                 String expected;
                 if (table.startsWith("sql_") || table.startsWith("jvm_")) {
                     expected = "source_name";
+                } else if (table.startsWith("java_")) {
+                    expected = "file";
                 } else if (table.startsWith("store_")) {
                     expected = switch (table) {
                         case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"

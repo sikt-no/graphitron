@@ -99,7 +99,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@link Arm#CONTAINMENT} for the SDL side. Capture is total and {@code GraphitronSchema} is
  *       reachability-pruned, so the honest relation is that the store contains the model.</li>
  *   <li>{@link Arm#EQUALITY} for the catalog and scanner censuses, which are the same walk reduced
- *       two ways.</li>
+ *       two ways. The {@code java_} family joins them with its anchors elsewhere, in
+ *       {@code JavaSourceFactsTest}: it is written by neither capture nor a graph, so its
+ *       lifecycle anchor is partitioned by source file where the oracle families' are partitioned
+ *       by graph, and there is no fixture here that would fill it.</li>
  *   <li>{@link Arm#DERIVED} for shipped derivations: views, and the materialized capture-cadence
  *       derivation {@code intent_type_domain}, which a writer re-derives inside every capture
  *       (materialized only because H2 has no safe recursive view form for a cyclic type graph;
@@ -192,7 +195,13 @@ class FactCaptureAgreementTest {
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
             "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
             "store_graph_session_mount", "store_graph_session_unmount",
-            "store_graph_source")) {
+            "store_graph_source",
+            // The java_ family: the store's rows and the walker's declarations are one parse
+            // reduced two ways, pinned in JavaSourceFactsTest beside the source-partitioned
+            // lifecycle anchor. Nothing in this class's fixtures reaches them, capture never
+            // writing a .java file's declarations.
+            "java_file", "java_class_declaration", "java_method_declaration",
+            "java_field_declaration")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);

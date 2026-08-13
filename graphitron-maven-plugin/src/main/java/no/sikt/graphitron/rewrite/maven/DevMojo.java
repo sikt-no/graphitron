@@ -14,6 +14,8 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
@@ -182,6 +184,13 @@ public class DevMojo extends AbstractRewriteMojo {
     // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
     // the unit tier); reportCompile writes through it beside the console and workspace sinks.
     CompileFacts compileFacts;
+    // The java_ family's writer over the same handle. The dev session owns the source walk because
+    // it owns the watcher that triggers it: the walk's product goes to the store, and its
+    // projection to the workspace, from one parse per changed file.
+    JavaSourceFacts javaSourceFacts;
+    // The walk itself, held across refreshes so its per-file cache stays warm. One instance per
+    // session, which is what keeps the .java cadence from sharing state with anything else.
+    private final SourceWalker sourceWalker = new SourceWalker();
     // The diagnostics stratum's schema-side writers over the same handle, constructed beside
     // compileFacts and fed the pre-fuse lists wherever the build output is published: the
     // rejection residue off the walk's error stream, the warning arms off the
@@ -235,6 +244,9 @@ public class DevMojo extends AbstractRewriteMojo {
             new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.warningFacts = new BuildWarningFacts(sessionStore.dsl(),
             new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+        // No graph identity: a .java file's declarations are facts about the file, and a file
+        // belongs to whoever compiles it rather than to a graph.
+        this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl());
 
         var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
         // The editor's read access to the store, a connection of its own rather than a share of the
@@ -258,11 +270,10 @@ public class DevMojo extends AbstractRewriteMojo {
         bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
             buildExecuteToolConfig(initialCtx),
             new StoreHandle(sessionStore.dsl(), initialCtx.graphName()));
-        // Seed the source-position index so goto-definition / hover work before
-        // the first .java edit; the source watcher refreshes it on the source
-        // cadence thereafter. The walk (and its cache) is owned by the workspace.
-        // Path-only read on initialCtx (no loader).
-        workspace.refreshSourceIndex(initialCtx.compileSourceRoots());
+        // Seed the source facts so goto-definition / hover work before the first .java edit; the
+        // source watcher refreshes them on the source cadence thereafter. Path-only read on
+        // initialCtx (no loader).
+        refreshSourceFacts(initialCtx, workspace, false);
         // Diagnostic so a "completion works but goto-definition returns nothing"
         // report can be traced to a module whose classes are scanned but whose
         // source root is not walked: the two counts should track each other.
@@ -532,7 +543,7 @@ public class DevMojo extends AbstractRewriteMojo {
         this.sourceDebounce = new DebounceExecutor(debounceMs);
         try {
             this.sourceWatcher = new SchemaWatcher(
-                roots, sourceDebounce, () -> refreshSourceIndex(ctx, workspace), ".java");
+                roots, sourceDebounce, () -> refreshSourceFacts(ctx, workspace, true), ".java");
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
@@ -543,10 +554,27 @@ public class DevMojo extends AbstractRewriteMojo {
         sourceThread.start();
     }
 
-    private void refreshSourceIndex(RewriteContext ctx, Workspace workspace) {
+    /**
+     * One parse of the changed sources, two sinks. The store's {@code java_} family is the standing
+     * record, refreshed file by file; the workspace index is the projection the language-server
+     * surfaces that have not moved to the store yet still read. Walking twice would parse twice and
+     * let the two answer from different reads of the same file, which is the tear this session owns
+     * the walk to avoid.
+     *
+     * @param announce whether to say so on the console; the watcher's refresh is news, the startup
+     *                 seed is not, the line after it already reporting how many roots were walked
+     */
+    private void refreshSourceFacts(RewriteContext ctx, Workspace workspace, boolean announce) {
         try {
-            workspace.refreshSourceIndex(ctx.compileSourceRoots());
-            getLog().info("graphitron:dev: source change detected; refreshed goto-definition positions");
+            var walk = sourceWalker.walkFiles(ctx.compileSourceRoots());
+            if (javaSourceFacts != null) {
+                javaSourceFacts.refresh(ctx.compileSourceRoots(), walk);
+            }
+            workspace.setSourceIndex(SourceWalker.indexOf(walk));
+            if (announce) {
+                getLog().info(
+                    "graphitron:dev: source change detected; refreshed goto-definition positions");
+            }
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: source-position refresh failed; keeping previous: "
                 + e.getMessage());

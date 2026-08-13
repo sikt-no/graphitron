@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.catalog;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.LineMap;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
@@ -24,7 +23,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -37,9 +35,16 @@ import java.util.stream.Stream;
 
 /**
  * Recovers Java declaration positions and Javadoc from the consumer's
- * {@code .java} sources so the LSP can offer goto-definition and Javadoc
- * hover for the directives that name a consumer class or method, plus
- * per-line refinement of jOOQ-generated table / column positions.
+ * {@code .java} sources: where each class, method and field is written, and
+ * what its doc comment says.
+ *
+ * <p>The parse's own product is {@link #walkFiles}, one {@link ParsedFile} per
+ * source in walk order carrying its {@link Declaration}s as the parse read
+ * them. That is what the store's {@code java_} family is written from, and it
+ * is the shape the facts have: every overload is its own declaration, and
+ * nothing is dropped for being hard to key. {@link #walk} reduces the same
+ * product to the {@link Index} the language server still reads, which is a
+ * projection with a resolution policy baked in and retires with its readers.
  *
  * <p>The parse uses the JDK's own Compiler Tree API
  * ({@link com.sun.source.util}); there is no external dependency. The walk is
@@ -50,16 +55,17 @@ import java.util.stream.Stream;
  * file from yielding declaration positions).
  *
  * <p><b>Hot-path caching contract.</b> The walk is driven on the {@code .java}
- * (source) cadence by the dev goal's source-root watcher, which refreshes the
- * LSP-owned index on every source change. Source positions change only when a
- * {@code .java} changes, so the index is cached per source file (keyed by
- * absolute path, invalidated by last-modified time) and only changed files are
- * re-parsed; a refresh that touches no parsed file re-parses nothing. The cache
- * is an <em>instance</em> field, owned by the same party that owns the index
- * (the LSP {@code Workspace}): there is no process-wide static cache to
- * couple distinct cadences or distinct workspaces. Construct one
- * {@code SourceWalker} per long-lived index owner and reuse it across refreshes
- * so the cache stays warm.
+ * (source) cadence by the dev goal's source-root watcher. Source positions
+ * change only when a {@code .java} changes, so declarations are cached per
+ * source file (keyed by absolute path, invalidated by last-modified time) and
+ * only changed files are re-parsed; a refresh that touches no parsed file
+ * re-parses nothing. The cache is an <em>instance</em> field, owned by whoever
+ * drives the walk: there is no process-wide static cache to couple distinct
+ * cadences or distinct workspaces. Construct one {@code SourceWalker} per
+ * long-lived driver and reuse it across refreshes so the cache stays warm.
+ * The mtime check is the walk's own cheap gate and is independent of the
+ * store's content-hash stamp, which decides the same question across process
+ * lifetimes where a timestamp cannot be trusted.
  *
  * <p><b>Doc-comment retention.</b> {@link Trees#getDocComment(TreePath)}
  * returns the Javadoc only when the parse keeps doc comments. The
@@ -69,15 +75,74 @@ import java.util.stream.Stream;
  */
 public final class SourceWalker {
 
-    /** Per-instance per-file cache: absolute path -> (mtime, parsed file index). */
+    /** Per-instance per-file cache: absolute path -> (mtime, declarations in source order). */
     private final Map<Path, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    private record CacheEntry(long mtime, FileIndex index) {}
+    private record CacheEntry(long mtime, List<Declaration> declarations) {}
 
     /**
-     * Declaration position plus Javadoc for a class, method, or field.
-     * {@code javadoc} is the empty string when the declaration carries no
-     * doc comment.
+     * One declaration the parse read, in the source language's terms. Sealed on
+     * the three shapes the walk records, because they carry different things: a
+     * class is named by its own dotted name, a method adds a name and an arity,
+     * a field adds a name. A flat record with unused components for the arms
+     * that lack them would leave every reader asking which fields mean anything
+     * for the row in hand.
+     *
+     * <p>Positions are 1-based, the Compiler Tree API's own convention, and
+     * {@code -1} where the parse reported none. An editor surface converts;
+     * this is what the parse said.
+     */
+    public sealed interface Declaration {
+
+        /** The declaring class's dotted name; for a class declaration, its own. */
+        String className();
+
+        /** 1-based declaration line, or -1 where the parse reported no position. */
+        int line();
+
+        /** 1-based declaration column, on the same terms as {@link #line}. */
+        int column();
+
+        /** The stripped doc comment, or the empty string when the declaration carries none. */
+        String javadoc();
+
+        /** A class, interface, enum, record or annotation declaration. */
+        record ClassDecl(String className, int line, int column, String javadoc)
+            implements Declaration {}
+
+        /**
+         * A method declaration, arity-bearing. Every overload is its own
+         * declaration: the parse has no descriptor to key on and inventing a
+         * resolution policy here is what {@link Index} does and the store does
+         * not.
+         */
+        record MethodDecl(
+            String className, String methodName, int parameterCount,
+            int line, int column, String javadoc
+        ) implements Declaration {}
+
+        /** A field declaration whose immediate encloser is a class. */
+        record FieldDecl(String className, String fieldName, int line, int column, String javadoc)
+            implements Declaration {}
+    }
+
+    /**
+     * One source file's parse product: the root it was reached under, the file,
+     * and its declarations in source order. The root is carried because it is the
+     * scope a walk owns, so a consumer pruning what left the walk can tell its
+     * own files from a sibling module's.
+     */
+    public record ParsedFile(Path sourceRoot, Path file, List<Declaration> declarations) {
+
+        public ParsedFile {
+            declarations = List.copyOf(declarations);
+        }
+    }
+
+    /**
+     * Declaration position plus Javadoc for a class, method, or field, as the
+     * {@link Index} projection holds it. {@code javadoc} is the empty string
+     * when the declaration carries no doc comment.
      */
     public record Decl(CompletionData.SourceLocation location, String javadoc) {}
 
@@ -100,6 +165,12 @@ public final class SourceWalker {
      * The merged index over every source root: classes keyed by FQN, methods
      * keyed by {@link MethodKey} (overload-ambiguous keys removed from
      * {@code methods}), fields keyed by {@link FieldKey}.
+     *
+     * <p>A projection over {@link #walkFiles}'s declarations, not the parse's own
+     * product: the keys it can form decide what it can hold, so a same-arity
+     * overload pair becomes an entry in {@code ambiguousMethods} rather than two
+     * rows. It exists for the language-server readers that have not moved to the
+     * store's {@code java_} family yet, and retires with them.
      *
      * <p>{@code ambiguousMethods} lets a consumer tell "method genuinely not
      * indexed" (key absent everywhere) from "method present but the
@@ -125,7 +196,7 @@ public final class SourceWalker {
         /**
          * Convenience constructor for collision-free fixtures: derives
          * {@code methodsByName} from {@code methods}. The production index is built
-         * by {@link SourceWalker#merge} through the canonical constructor, which
+         * by {@link SourceWalker#indexOf} through the canonical constructor, which
          * keeps overload-collided names that {@code methods} dropped; a derived
          * view cannot recover those.
          */
@@ -172,61 +243,60 @@ public final class SourceWalker {
         }
     }
 
-    /** Per-file parse result before merge; carries its own overload-ambiguity set. */
-    private record FileIndex(
-        Map<String, Decl> classes,
-        Map<MethodKey, Decl> methods,
-        Map<FieldKey, Decl> fields,
-        Set<MethodKey> ambiguousMethods,
-        Map<MethodNameKey, Decl> methodsByName
-    ) {
-        static final FileIndex EMPTY =
-            new FileIndex(Map.of(), Map.of(), Map.of(), Set.of(), Map.of());
-    }
-
     /**
-     * Walks every {@code .java} under {@code sourceRoots}, parsing only files
-     * whose last-modified time changed since the previous walk, and returns the
-     * merged {@link Index}. Returns {@link Index#EMPTY} when there are no roots
-     * or no system Java compiler (e.g. running on a JRE).
+     * Parses every {@code .java} under {@code sourceRoots} and returns one
+     * {@link ParsedFile} per source, roots in the given order and files in walk
+     * order within each. Only files whose last-modified time changed since the
+     * previous walk are re-parsed; the rest come from the cache.
+     *
+     * <p>A file reachable under two roots is attributed to the first root that
+     * reached it and appears once. Returns an empty list when there are no roots
+     * or no system Java compiler (running on a JRE, say), which is the same
+     * answer as a workspace with no sources: absence, not a failure.
      */
-    public Index walk(List<Path> sourceRoots) {
-        if (sourceRoots == null || sourceRoots.isEmpty()) return Index.EMPTY;
+    public List<ParsedFile> walkFiles(List<Path> sourceRoots) {
+        if (sourceRoots == null || sourceRoots.isEmpty()) return List.of();
 
-        var files = new ArrayList<Path>();
+        var roots = new LinkedHashMap<Path, Path>();
         for (Path root : sourceRoots) {
             if (root == null || !Files.isDirectory(root)) continue;
+            Path normalised = root.toAbsolutePath().normalize();
             try (Stream<Path> w = Files.walk(root)) {
                 w.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".java"))
                     .map(p -> p.toAbsolutePath().normalize())
-                    .forEach(files::add);
+                    .forEach(p -> roots.putIfAbsent(p, normalised));
             } catch (IOException e) {
                 throw new UncheckedIOException("source walk failed at " + root, e);
             }
         }
-        if (files.isEmpty()) return Index.EMPTY;
+        if (roots.isEmpty()) return List.of();
 
-        var perFile = new LinkedHashMap<Path, FileIndex>();
         var toParse = new ArrayList<Path>();
-        for (Path f : files) {
+        for (Path f : roots.keySet()) {
             CacheEntry ce = cache.get(f);
-            long mtime = mtimeOf(f);
-            if (ce != null && ce.mtime() == mtime) {
-                perFile.put(f, ce.index());
-            } else {
+            if (ce == null || ce.mtime() != mtimeOf(f)) {
                 toParse.add(f);
             }
         }
         if (!toParse.isEmpty()) {
             var parsed = parse(toParse);
             for (Path f : toParse) {
-                FileIndex idx = parsed.getOrDefault(f, FileIndex.EMPTY);
-                cache.put(f, new CacheEntry(mtimeOf(f), idx));
-                perFile.put(f, idx);
+                cache.put(f, new CacheEntry(mtimeOf(f), parsed.getOrDefault(f, List.of())));
             }
         }
-        return merge(perFile.values());
+        var out = new ArrayList<ParsedFile>(roots.size());
+        roots.forEach((file, root) ->
+            out.add(new ParsedFile(root, file, cache.get(file).declarations())));
+        return List.copyOf(out);
+    }
+
+    /**
+     * The {@link Index} projection over {@link #walkFiles}, for the readers that
+     * still take one. Empty when the walk found nothing.
+     */
+    public Index walk(List<Path> sourceRoots) {
+        return indexOf(walkFiles(sourceRoots));
     }
 
     private static long mtimeOf(Path f) {
@@ -237,28 +307,39 @@ public final class SourceWalker {
         }
     }
 
-    private static Index merge(Collection<FileIndex> parts) {
+    /**
+     * Reduces the parse's declarations to the keyed projection. First declaration
+     * wins for a class or field key, within a file and across the walk (a
+     * duplicate top-level class is malformed Java; either copy is a fine jump
+     * target). A method key that repeats is ambiguous and is dropped from
+     * {@code methods}, whether the repeat came from one file's overload pair or
+     * from two files; the name-level view keeps the first either way, so a
+     * dropped key still has a floor.
+     */
+    public static Index indexOf(List<ParsedFile> parsed) {
         var classes = new HashMap<String, Decl>();
         var methods = new HashMap<MethodKey, Decl>();
         var fields = new HashMap<FieldKey, Decl>();
         var ambiguousMethods = new HashSet<MethodKey>();
         var methodsByName = new LinkedHashMap<MethodNameKey, Decl>();
-        for (FileIndex part : parts) {
-            // First class / field wins on a cross-file FQN collision (a
-            // duplicate top-level class is malformed; either copy is a fine
-            // jump target).
-            part.classes().forEach(classes::putIfAbsent);
-            part.fields().forEach(fields::putIfAbsent);
-            ambiguousMethods.addAll(part.ambiguousMethods());
-            part.methods().forEach((k, v) -> {
-                if (methods.putIfAbsent(k, v) != null) {
-                    // Same key from two files: ambiguous, drop later.
-                    ambiguousMethods.add(k);
+        for (ParsedFile file : parsed) {
+            String uri = file.file().toUri().toString();
+            for (Declaration declaration : file.declarations()) {
+                var decl = new Decl(locationIn(uri, declaration), declaration.javadoc());
+                switch (declaration) {
+                    case Declaration.ClassDecl c -> classes.putIfAbsent(c.className(), decl);
+                    case Declaration.FieldDecl f ->
+                        fields.putIfAbsent(new FieldKey(f.className(), f.fieldName()), decl);
+                    case Declaration.MethodDecl m -> {
+                        var key = new MethodKey(m.className(), m.methodName(), m.parameterCount());
+                        if (methods.putIfAbsent(key, decl) != null) {
+                            ambiguousMethods.add(key);
+                        }
+                        methodsByName.putIfAbsent(
+                            new MethodNameKey(m.className(), m.methodName()), decl);
+                    }
                 }
-            });
-            // First declaration wins across the merge, matching the class / field
-            // policy above; the name-level view is never dropped on a collision.
-            part.methodsByName().forEach(methodsByName::putIfAbsent);
+            }
         }
         for (MethodKey k : ambiguousMethods) {
             methods.remove(k);
@@ -269,19 +350,33 @@ public final class SourceWalker {
     }
 
     /**
-     * Parses {@code files} with a single {@link JavacTask} and indexes each
-     * resulting compilation unit. A single broken file does not poison the
-     * batch: if the batch parse throws, every file is retried individually and
-     * the offenders are skipped (their declarations simply do not appear in the
-     * index, so their symbols resolve to {@code UNKNOWN}).
+     * The projection's own position form: the file's URI plus 0-based line and
+     * column, converted from the parse's 1-based pair. A declaration the parse
+     * could not position keeps its Javadoc under the projection's unknown
+     * location, matching what the readers already handle.
      */
-    private static Map<Path, FileIndex> parse(List<Path> files) {
+    private static CompletionData.SourceLocation locationIn(String uri, Declaration declaration) {
+        if (declaration.line() < 0 || declaration.column() < 0) {
+            return CompletionData.SourceLocation.UNKNOWN;
+        }
+        return new CompletionData.SourceLocation(
+            uri, Math.max(declaration.line() - 1, 0), Math.max(declaration.column() - 1, 0));
+    }
+
+    /**
+     * Parses {@code files} with a single {@link JavacTask} and reads the
+     * declarations off each resulting compilation unit. A single broken file does
+     * not poison the batch: if the batch parse throws, every file is retried
+     * individually and the offenders are skipped, so their declarations simply do
+     * not appear and every consumer reads that as absence.
+     */
+    private static Map<Path, List<Declaration>> parse(List<Path> files) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) return Map.of();
         try {
             return parseBatch(compiler, files);
         } catch (RuntimeException batchFailure) {
-            var out = new HashMap<Path, FileIndex>();
+            var out = new HashMap<Path, List<Declaration>>();
             for (Path f : files) {
                 try {
                     out.putAll(parseBatch(compiler, List.of(f)));
@@ -293,8 +388,8 @@ public final class SourceWalker {
         }
     }
 
-    private static Map<Path, FileIndex> parseBatch(JavaCompiler compiler, List<Path> files) {
-        var result = new HashMap<Path, FileIndex>();
+    private static Map<Path, List<Declaration>> parseBatch(JavaCompiler compiler, List<Path> files) {
+        var result = new HashMap<Path, List<Declaration>>();
         try (StandardJavaFileManager fm =
                  compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8)) {
             Iterable<? extends JavaFileObject> units = fm.getJavaFileObjectsFromPaths(files);
@@ -305,9 +400,9 @@ public final class SourceWalker {
             for (CompilationUnitTree cu : task.parse()) {
                 Path path = pathOf(cu);
                 if (path == null) continue;
-                var builder = new FileIndexBuilder(trees, positions, cu);
-                builder.scan(cu, null);
-                result.put(path, builder.build());
+                var scanner = new DeclarationScanner(trees, positions, cu);
+                scanner.scan(cu, null);
+                result.put(path, scanner.declarations());
             }
         } catch (IOException e) {
             throw new UncheckedIOException("source parse failed", e);
@@ -324,40 +419,41 @@ public final class SourceWalker {
     }
 
     /**
-     * {@link TreePathScanner} that records the position + Javadoc of every
-     * class and method and the position + Javadoc of every field (a
-     * {@link VariableTree} whose immediate encloser is a class, never a
-     * parameter or local).
+     * {@link TreePathScanner} that records every class and method declaration and
+     * every field declaration (a {@link VariableTree} whose immediate encloser is
+     * a class, never a parameter or local), in source order.
+     *
+     * <p>Nothing is deduplicated or dropped here: two same-arity overloads are two
+     * declarations, because that is what the file says. What to do about a name
+     * that resolves to more than one declaration is a reader's question, answered
+     * by {@link Index} for the readers that need one answer and by a row count for
+     * the store.
      */
-    private static final class FileIndexBuilder extends TreePathScanner<Void, Void> {
+    private static final class DeclarationScanner extends TreePathScanner<Void, Void> {
         private final Trees trees;
         private final SourcePositions positions;
         private final CompilationUnitTree cu;
         private final String packageName;
-        private final Map<String, Decl> classes = new HashMap<>();
-        private final Map<MethodKey, Decl> methods = new HashMap<>();
-        private final Map<FieldKey, Decl> fields = new HashMap<>();
-        private final Set<MethodKey> ambiguousMethods = new HashSet<>();
-        private final Map<MethodNameKey, Decl> methodsByName = new LinkedHashMap<>();
+        private final List<Declaration> declarations = new ArrayList<>();
 
-        FileIndexBuilder(Trees trees, SourcePositions positions, CompilationUnitTree cu) {
+        DeclarationScanner(Trees trees, SourcePositions positions, CompilationUnitTree cu) {
             this.trees = trees;
             this.positions = positions;
             this.cu = cu;
             this.packageName = cu.getPackageName() == null ? "" : cu.getPackageName().toString();
         }
 
-        FileIndex build() {
-            return new FileIndex(
-                Map.copyOf(classes), Map.copyOf(methods),
-                Map.copyOf(fields), Set.copyOf(ambiguousMethods), Map.copyOf(methodsByName));
+        List<Declaration> declarations() {
+            return List.copyOf(declarations);
         }
 
         @Override
         public Void visitClass(ClassTree node, Void unused) {
             String fqn = classFqn(getCurrentPath());
             if (fqn != null && !fqn.isEmpty()) {
-                classes.putIfAbsent(fqn, declOf(node));
+                long start = startOf(node);
+                declarations.add(new Declaration.ClassDecl(
+                    fqn, lineOf(start), columnOf(start), docOf()));
             }
             return super.visitClass(node, unused);
         }
@@ -366,15 +462,10 @@ public final class SourceWalker {
         public Void visitMethod(MethodTree node, Void unused) {
             String fqn = classFqn(getCurrentPath().getParentPath());
             if (fqn != null && !fqn.isEmpty()) {
-                String name = node.getName().toString();
-                var decl = declOf(node);
-                var key = new MethodKey(fqn, name, node.getParameters().size());
-                if (methods.putIfAbsent(key, decl) != null) {
-                    ambiguousMethods.add(key);
-                }
-                // Name-level view: first declaration in source order wins, never
-                // dropped, so a same-arity overload collision still has a floor.
-                methodsByName.putIfAbsent(new MethodNameKey(fqn, name), decl);
+                long start = startOf(node);
+                declarations.add(new Declaration.MethodDecl(
+                    fqn, node.getName().toString(), node.getParameters().size(),
+                    lineOf(start), columnOf(start), docOf()));
             }
             return super.visitMethod(node, unused);
         }
@@ -386,14 +477,12 @@ public final class SourceWalker {
             if (enclosing instanceof ClassTree) {
                 String fqn = classFqn(getCurrentPath().getParentPath());
                 if (fqn != null && !fqn.isEmpty()) {
-                    fields.putIfAbsent(new FieldKey(fqn, node.getName().toString()), declOf(node));
+                    long start = startOf(node);
+                    declarations.add(new Declaration.FieldDecl(
+                        fqn, node.getName().toString(), lineOf(start), columnOf(start), docOf()));
                 }
             }
             return super.visitVariable(node, unused);
-        }
-
-        private Decl declOf(Tree node) {
-            return new Decl(locationOf(node), docOf());
         }
 
         private String docOf() {
@@ -401,14 +490,18 @@ public final class SourceWalker {
             return doc == null ? "" : doc.strip();
         }
 
-        private CompletionData.SourceLocation locationOf(Tree node) {
-            long start = positions.getStartPosition(cu, node);
-            if (start < 0) return CompletionData.SourceLocation.UNKNOWN;
-            LineMap lineMap = cu.getLineMap();
-            int line = (int) lineMap.getLineNumber(start) - 1;
-            int column = (int) lineMap.getColumnNumber(start) - 1;
-            String uri = cu.getSourceFile().toUri().toString();
-            return new CompletionData.SourceLocation(uri, Math.max(line, 0), Math.max(column, 0));
+        private long startOf(Tree node) {
+            return positions.getStartPosition(cu, node);
+        }
+
+        /** 1-based line, or -1 where the parse positioned nothing. */
+        private int lineOf(long start) {
+            return start < 0 ? -1 : (int) cu.getLineMap().getLineNumber(start);
+        }
+
+        /** 1-based column, or -1 where the parse positioned nothing. */
+        private int columnOf(long start) {
+            return start < 0 ? -1 : (int) cu.getLineMap().getColumnNumber(start);
         }
 
         /**

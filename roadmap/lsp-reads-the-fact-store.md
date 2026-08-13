@@ -701,6 +701,70 @@ ever matters is what the surface offers, not how the store is shaped. The catalo
 (`sql_table`, `sql_column`, `sql_constraint`) are unmeasured because they have not migrated; they get
 their own numbers when they do, which is also when a Sakila-scaled catalog is the right fixture.
 
+## Settled while building: the java-source family
+
+Four relations, keyed on the file: `java_file` carries the content stamp and the walked root, and
+`java_class_declaration`, `java_method_declaration` and `java_field_declaration` hang off it. The
+prefix sits beside `javac_` without either prefixing the other, so the census's exact match still
+resolves; the roster's charter says which is which, since "what a parse read from authored sources"
+and "what the compiler concluded about generated ones" are close enough in name to be worth
+separating in prose.
+
+* **The dimension is spelled `file`, not `source_name`.** Every other source-partitioned family
+  leads with `source_name` and means a `store_source` row. A `.java` file is not one: `store_source`
+  is a capture round's read set, and this file was read by neither the SDL walk nor the classpath
+  scan. Giving the column the same name would have invited a join that can never match, `jvm_class`'s
+  `source_name` being a classpath entry. The family's own file relation is also what keeps
+  `store_source`'s kind taxonomy closed and its currency scan proportional to what capture reads.
+* **`source_root` is the ownership scope, and that is the only reason it is a column.** A walk owns
+  the files under the roots it walked: rows under those roots that the walk did not see are deletions
+  and are pruned, rows under any other root belong to a walk this one knows nothing about. Without
+  the column the prune would have been a path-prefix predicate, which is the same rule expressed as
+  string manipulation.
+* **Every overload is a row, and the tri-state is gone.** The declaration ordinal keys the overload
+  where the classfile side uses a descriptor, so a consumer asking for a name gets as many rows as
+  the class declares and the count is the resolution outcome. `SourceWalker.Index` needed
+  `ambiguousMethods` as a side-set plus a never-dropped name-level view precisely because its keys
+  could not hold the pair; the rows need neither. What the parse cannot know it does not claim:
+  parameter types are unresolved names in an unattributed parse, so arity is the column and the types
+  are `jvm_method_parameter`'s.
+* **The two populations are allowed to disagree, and one place they do is constructors.** A
+  constructor is a declaration and earns a row; `jvm_method` excludes them. The join is by name and
+  outer on both sides, and no view asserts agreement, which is the same skew that exists today
+  between the LSP index and the catalog, made visible instead of ambient.
+* **Capture does not write this family, so `StoreRefresh` had to be told.** The writer runs on the
+  source cadence and owns both halves of its own lifecycle, so a generator round has nothing to
+  retain or rewrite here; the exemption is argued in beside the two source-partitioned families, and
+  the reason is not symmetry with them but that a round which cleared it would blank every module's
+  positions and Javadoc on a cadence that has nothing to do with sources changing.
+
+What moved and what did not is worth being exact about, because the item calls for the walker to
+relocate. The **walk's ownership** moved: `Workspace.refreshSourceIndex` is retired, the dev session
+holds the walker, and the language server walks nothing. The **class** did not move packages, and
+its `Index` did not retire, because the surfaces reading that projection have not migrated yet;
+relocating the file while the LSP still reads what it returns would be a rename dressed as a
+boundary. What did change inside it is the shape of its product: the parse's own output is now one
+`ParsedFile` per source carrying a sealed `Declaration` per class, method and field, and `Index` is a
+projection over that, which is why the walker no longer needs the projection type it was carrying
+(`SourceWalker.Decl` still holds a `CompletionData.SourceLocation`, but only on the `Index` side of
+that line, and it dies with it).
+
+One walk feeds both sinks, deliberately. Walking twice would parse twice and, worse, let the store
+and the index answer from two different reads of one file mid-edit, which is the tear the session owns
+the walk to prevent. Positions are stored 1-based, the parse's own convention, and the editor-facing
+0-based pair is the projection's conversion.
+
+The doctrine rewrote as the item said it would, in the direction the item said: the location paragraph
+now says the rule is cadence rather than storage, so a position may be stored as long as it is stored
+on its own cadence, and the co-sourced-description sentence lost Javadoc as an example and gained it as
+the counter-case, since Javadoc and the classfile census are two walks on two cadences. The
+`jvm_class` header restates the division instead of pointing at a walker.
+
+Deliberately not in this increment: nothing reads the family. It is substrate, on the same terms as
+the two verdict relations, and the arms it unblocks (`CatalogTableBinding` and `CatalogColumnBinding`
+in completion, every Javadoc-bearing hover row, and definition's positions) need the generated-class
+FQN widening beside it for the jOOQ half, whose classes `jvm_class` excludes by design.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
