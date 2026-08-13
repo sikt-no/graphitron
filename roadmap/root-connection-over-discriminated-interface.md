@@ -1,16 +1,28 @@
 ---
 id: R650
-title: "Support @asConnection on a root field returning a discriminated table interface"
+title: "Support @asConnection on a field returning a discriminated table interface"
 status: Spec
 bucket: feature
 priority: 3
 theme: interface-union
-depends-on: []
+depends-on: [split-query-on-discriminated-interface-child]
 created: 2026-08-13
 last-updated: 2026-08-13
 ---
 
-# Support @asConnection on a root field returning a discriminated table interface
+# Support @asConnection on a field returning a discriminated table interface
+
+## Scope: both coordinates, one route
+
+Covers the root field and the child field. The child half was
+`child-connection-over-discriminated-interface` (R651), discarded into this item: keeping them
+apart only made sense while the root was a contained emission fix and the child was the one with an
+unsettled delivery story. Once the root's route is the same split-query question the child was
+already blocked on, they are one design with two coordinates, and specifying them separately would
+answer that question twice.
+
+Depends on `roadmap/split-query-on-discriminated-interface-child.md`, which wires the delivery
+marker this route needs. That item is a bug on its own terms and is not absorbed here.
 
 ## Reopened: the plan below answers the fan-out question the wrong way round
 
@@ -31,12 +43,11 @@ cardinality as an invariant to enforce, rather than as a join that does not belo
 make the discriminated root strictly more permissive than the plain child on the same authoring
 surface, which the child sibling already names as unprincipled.
 
-This item and `roadmap/child-connection-over-discriminated-interface.md` are to be merged and
-respecified together over the split-query route, on top of
-`roadmap/split-query-on-discriminated-interface-child.md` (the arm reads no delivery marker today).
 The body below is retained as verified research, not as a plan: the mechanism descriptions, the
 `DiscriminatedTableFragments` seam analysis, the `pageRequest` contract and the "what needs no work"
 evidence all survive a change of route. The fan-out resolution and the implementation list do not.
+Everything below this note was written when the item covered the root alone, so read "this item"
+there as "the root half"; the child material is under "The child half" near the end.
 
 ## Problem
 
@@ -73,9 +84,9 @@ must change:
   Connection)` pair. Its sibling assertion pins "runs single-tenant" and survives unchanged; the
   paginating assertion is replaced rather than dropped, per the restated backstop below.
 
-The unpinned message is the *child* one (the `TableInterfaceType` arm of
-`classifyObjectReturnChildField`, no "root" in the text). That belongs to
-`roadmap/child-connection-over-discriminated-interface.md`, which states it correctly.
+The *child* deferral (the `TableInterfaceType` arm of `classifyObjectReturnChildField`, no "root" in
+the text) is unpinned: no test asserts that message. It lifts here too, and its lift needs no test
+change.
 
 ## Why the emission is missing
 
@@ -337,11 +348,40 @@ Checked, so the implementer does not re-derive it:
   a page boundary landing mid-participant-group. Prefer seeding; a backward (`before`) page and a
   boundary inside a participant group are the two cases most likely to expose a cursor bug.
 
+## The child half
+
+Absorbed from the discarded child item. Verified at that item's filing, not re-verified in this
+pass, so re-read before leaning on it.
+
+`ChildField.TableInterfaceField` is emitted by `TypeFetcherGenerator.buildTableInterfaceFieldFetcher`,
+an unbatched per-parent SELECT correlated off `env.getSource()`. It is not on the launcher seam and
+registers no `DataLoader`, so it is N+1 by construction today. That is why the child was the harder
+half under the old framing, and why it is the *same* half under the new one: both coordinates now
+turn on whether the paginating statement is a split query.
+
+Two routes were open for the child, and the reopen settles the choice by settling it for the root
+too:
+
+* **Per-parent paginated fetch.** Cheap, mirrors what the leaf already does, keeps the N+1. Rejected:
+  the plain table child rejects inline `@asConnection` outright, so this would make the discriminated
+  child strictly more permissive than the plain child on the same authoring surface, for no
+  principled reason. This is the argument that came back to bite the root plan.
+* **Batched.** Consistent with the plain child and with
+  `MultiTablePolymorphicEmitter.buildBatchedConnectionRowsMethod`, the windowed-CTE shape the
+  multi-table polymorphic child already uses. Needs the dependency item first.
+
+Open for the respec: whether the child arm shares whatever select-list seam the root takes in
+`DiscriminatedTableFragments`, or whether the batched shape needs its own assembly. The old plan's
+`projection` / `joinedStep` split was designed for a per-parent paginated child to consume directly,
+which is the route now rejected, so the seam is an open question rather than a settled one.
+
 ## Retired vocabulary
 
 * The root deferral message "@asConnection on a root field returning a single-table discriminated
-  interface ... is not yet supported; return the list shape instead" (the child twin's near-identical
-  message survives and is R651's).
+  interface ... is not yet supported; return the list shape instead".
+* The child deferral message "@asConnection on a field returning a single-table discriminated
+  interface ... is not yet supported; return the list shape instead". Unpinned, so nothing asserts
+  it; it still needs the sweep.
 * The `LauncherCommand` backstop message "a discriminated-interface launcher never paginates" and its
   "the classifier defers @asConnection on the single-table-interface root" comment. The backstop
   itself survives in restated form, so what retires is this wording, not the check.
@@ -353,15 +393,16 @@ Checked, so the implementer does not re-derive it:
 
 ## Out of scope
 
-* **The child field.** `roadmap/child-connection-over-discriminated-interface.md` owns it, along
-  with the `@splitQuery` design question it depends on. It can consume this item's `projection` /
-  `joinedStep` seam directly.
-* **Facets on this coordinate.** Already rejected with a message naming it a follow-up; lifting that
-  is a separate item if a consumer asks.
+* **Wiring the delivery marker.** `roadmap/split-query-on-discriminated-interface-child.md` owns it.
+  This item depends on it rather than absorbing it: the silent swallow is worth fixing whether or not
+  the connection work proceeds.
+* **Facets on these coordinates.** Already rejected with a message naming it a follow-up; lifting
+  that is a separate item if a consumer asks.
 * **Multi-table interface and union ordering.** `R382`'s axis, unrelated.
 
 ## Provenance
 
 Both `R405` (root `@service` return) and `R406` (DML return) recorded `@asConnection` as out of scope
-for this interface family; this item picks up the root read half. Sibling to
-`roadmap/child-connection-over-discriminated-interface.md`. Distinct axis from `R382`.
+for this interface family; this item picks up the read half at both coordinates. Distinct axis from
+`R382`. The child half arrives from the discarded `child-connection-over-discriminated-interface`;
+the split-query framing that merged the two came out of this item's Spec review.

@@ -61,6 +61,6 @@ of the connection work, not a side quest beside it.
 ## Provenance
 
 Surfaced during the Spec review of `roadmap/root-connection-over-discriminated-interface.md`, whose
-sign-off was reopened over exactly this question. Noted as splittable in the open questions of
-`roadmap/child-connection-over-discriminated-interface.md`; filed separately because both connection
-items now rest on it.
+sign-off was reopened over exactly this question. That item now covers both the root and the child
+coordinate and depends on this one; the child item that first noted the silent swallow, as a
+splittable open question, was discarded into it.
