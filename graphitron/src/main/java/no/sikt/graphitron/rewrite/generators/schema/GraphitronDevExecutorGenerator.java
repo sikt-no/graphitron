@@ -151,10 +151,11 @@ public final class GraphitronDevExecutorGenerator {
                 .addStatement("$T devDialect = $T.valueOf(dialect)", sqlDialect, sqlDialect)
                 .addStatement("$T devSettings = new $T()", settings, settings);
             String payloadArg = stringPayloadName == null ? "" : ", claimsPayload";
-            if (sessionHooks instanceof SessionHooks.Handled && sessionHooks.unmountRef().isPresent()) {
+            if (sessionHooks instanceof SessionHooks.Handled handled
+                    && sessionHooks.unmountRef().isPresent()) {
                 execute.addStatement(
-                    "var preflightHandle = $T.mount(connection, devDialect, devSettings$L)",
-                    hookImpl, payloadArg);
+                    "$T preflightHandle = $T.mount(connection, devDialect, devSettings$L)",
+                    handled.handleType(), hookImpl, payloadArg);
                 execute.addStatement(
                     "$T.unmount(connection, devDialect, devSettings, preflightHandle)", hookImpl);
             } else {
