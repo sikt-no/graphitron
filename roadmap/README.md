@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R639` | Session identity is a Java method resolved at build time, not generated SQL | Spec | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
-| `R645` | Admit projected @reference and @externalField leaves at nested depth under NestingField | Spec | 2026-08-13 | [plan](nested-depth-projected-reference-and-computed-leaves.md) |
 | `R648` | Author-declared batch key for child @service on record-backed parents <sub>blocked by: [service-coordinate-rejection-precedence](service-coordinate-rejection-precedence.md)</sub> | Spec | 2026-08-13 | [plan](service-batch-key-author-declared.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
+| `R645` | Admit projected @reference and @externalField leaves at nested depth under NestingField | Ready | 2026-08-13 | [plan](nested-depth-projected-reference-and-computed-leaves.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R612` | The Maven and pom configuration fact family | In Review | 2026-08-13 <sub>created 2026-08-08</sub> | [plan](maven-config-fact-family.md) |
 | `R646` | Enforce @externalField helper parameter assignability against the parent table | Spec | 2026-08-13 | [plan](externalfield-parent-table-assignability.md) |
@@ -246,7 +246,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
-- `R645` [**Admit projected @reference and @externalField leaves at nested depth under NestingField**](nested-depth-projected-reference-and-computed-leaves.md) — Spec, architecture
+- `R645` [**Admit projected @reference and @externalField leaves at nested depth under NestingField**](nested-depth-projected-reference-and-computed-leaves.md) — Ready, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R612` [**The Maven and pom configuration fact family**](maven-config-fact-family.md) — In Review, architecture
