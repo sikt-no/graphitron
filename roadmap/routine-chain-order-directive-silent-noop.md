@@ -130,6 +130,32 @@ carved out of a blob. Whether that lands here or as a follow-up is the reviewer'
 strictly larger than the reported bug and touches arms this item otherwise leaves alone, but it
 is also the difference between fixing an instance and fixing the class.
 
+### Ordering target: measured, not assumed
+
+Resolving against the terminus already means that for a `@routine` + `@reference` chain the
+`ORDER BY` targets the joined catalog table, not the routine result. The question of whether
+naming the catalog column is *faster* than naming the routine's column was raised and measured
+rather than argued, on PostgreSQL 16 over a 500k-row synthetic pair, since the sakila seed is too
+small to give the planner a choice.
+
+The plans are byte-identical either way, both for an inlinable `LANGUAGE sql` function and for an
+opaque `LANGUAGE plpgsql` one, and both with and without a `LIMIT` (the case where the sort node
+actually disappears in favour of a merge join over the PK index). The reason is that the hop out
+of a routine result is an equi-join on the ordering column, so the two columns sit in one
+equivalence class and the planner picks from it freely: in the `LIMIT` case it sorts the function
+output and merge-joins *even when the query names the catalog column*. Which side the generator
+names is not a performance lever, and no ordering-target optimisation should be built on the
+assumption that it is.
+
+What the equivalence does not cover is a column outside the join key. `@defaultOrder(fields:)`
+naming a terminus-only column (`film.title`) is expressible only against the terminus, and a
+routine-result-only column only against the routine result. Terminus resolution is therefore the
+correct target on expressiveness grounds, which is a stronger reason than performance and does
+not depend on a planner detail.
+
+The real cost of this item is not which column is named but that an `ORDER BY` now exists where
+none did. That is the price of the contract being true, and it is worth paying.
+
 Note the pin should *not* be keyed on terminus kind instead, which was considered and rejected.
 A routine terminus is perfectly orderable: `Actor.films` and `Query.castFilms` in the sakila
 schema both terminate on a routine result, both carry `@defaultOrder(fields: [{name:
