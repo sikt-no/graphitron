@@ -1,7 +1,7 @@
 ---
 id: R645
 title: "Admit projected @reference and @externalField leaves at nested depth under NestingField"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -18,9 +18,13 @@ last-updated: 2026-08-13
 `validateVariantIsSupportedAtNestedDepth` with
 `Rejection.deferred("Field '<coord>': <VariantClass> is not yet supported under NestingField")`.
 This item is about admitting two more: `ChildField.ColumnBackedReferenceField` (a scalar `@field` +
-`@reference` projection) and `ChildField.ComputedField` (an `@externalField` expression leaf). Both
-are already *projected* leaves rather than dispatched ones, which is why the gate may be mostly a
-validator gate. That is the hypothesis, not the conclusion; see below.
+`@reference` projection) and `ChildField.ComputedField` (an `@externalField` expression leaf).
+
+A spike settled the filing hypothesis, and it landed between the two answers on offer. The emitter
+*is* already total for both leaves at nested depth, so no emit arm has to be written. But the gate
+is not merely conservative either: it has been standing in for per-variant validation that never
+runs at nested depth, so widening it on its own opens a silent-wrong-SQL path. Both halves ship
+here, validator fix first. Details under "What the spike found".
 
 ## Why it matters: the downstream evidence
 
@@ -59,87 +63,187 @@ instead of N identical ones). That workaround is not a reason to skip this item:
 inside an unbound wrapper is not a supported shape at all. The supported lift puts `@externalField`
 on the *parent* field returning `Field<Record>`, which means reworking consumer Java, not just SDL.
 
-## The hypothesis to verify first: this may be mostly a validator gate
+## What the spike found
 
-Both target variants already sit on no-op arms in `TypeFetcherGenerator.generateForType`, whose
-comments say the value is projected rather than dispatched:
+Verified on a throwaway working state, not by analogy to R23: predicate widened, a fixture nesting
+type added under `Film` in `graphitron-sakila-example`'s `schema.graphqls`, full reactor build, and
+an execution test against a live PostgreSQL. Reverted afterwards; nothing from the spike is in the
+tree.
 
-- `ChildField.ColumnBackedReferenceField`: "inline projection via the type's `$project` unit
-  (Direct compaction); the read of that aliased projection is reified by `FetcherEmitter.bind` and
-  collected below."
-- `ChildField.ComputedField`: "alias-pickup read reified by `FetcherEmitter.bind`; projected via the
-  type's `$project` unit."
+### The emitter is already total for both leaves
 
-`ChildField.TableField` sits on the immediately following arm with the *same* disposition, and it is
-already admitted at nested depth.
+Widening `isNestedWireableLeaf` alone produced correct generated code, a compiling
+`graphitron-sakila-example` (which compiles emitted sources at `<release>17</release>`), and a
+green execution test covering both leaves, an aliased duplicate selection (`a: languageName`), and
+a second level of nesting. No emitter, wiring or registration change was needed. The mechanism, so
+the implementer restates it rather than rediscovers it:
 
-That matters because R23 lifted the multi-parent shared-shape gate for `TableField` on exactly this
-argument, with no emitter or wiring change. From `roadmap/changelog.md` (R23, `c38779e`):
-"`TableField` is a `PROJECTED_LEAF` whose reified read (`FetcherEmitter.bind`, wrapped in
-`LightFetcher`) pulls by field name from the source `Record` without consulting the outer parent
-table, so first-parent-wins nested-type registration has no runtime effect for this leaf."
+- `ProjectionCommands.mintNestedUnit` mints a unit **per anchor** (`GeneratedUnits.nestingUnit`,
+  addressed `<Anchor><Nested>`), and `ProjectionUnitRenderer`'s `CallWrap.Splice` arm passes the
+  anchor's own `table` local straight into the nested unit's `$project(grouped, table, env)`. So
+  the `ColumnBackedReferenceField`'s `SelectTerm.ScalarSubselect` correlates on the parent's table
+  (`correlationWhere` renders against the `"table"` local) and the `ComputedField`'s
+  `SelectTerm.HelperCall` hands that same table to the developer's method. Both are per-parent by
+  construction, which is why the shared-parent question below is a separate one.
+- `ProjectionCommands.contributionFor`'s arms for both leaves ignore the `nested` flag entirely;
+  only `ChildField.TableTargetField` forks on it.
+- `FetcherEmitter.bind` routes both through `columnByAlias`, which reads `__rk_<resultKey>` off
+  `env.getSource()` without consulting the parent table. That is the same parent-independence R23
+  relied on for `TableField`, and it is why one shared `<Type>Fetchers` class serves every parent.
+- `NestingReach.ownsFetchers` ("any classified field") and `FetcherRegistrationsEmitter.nestedBody`'s
+  per-field walk are variant-agnostic, and `TypeFetcherGenerator` reaches the nested class through
+  the same `generateTypeSpec` switch where both leaves already sit on no-op arms.
 
-So the spec's first job is to determine whether `isNestedWireableLeaf` tracks a **real emitter hole**
-or is merely **conservative**. Do not assume conservative. The predicate's own javadoc explicitly
-claims that expanding it "requires the corresponding generator-side change", and names the three
-seams that would have to agree: `FetcherEmitter.bind`, `FetcherEmitter.nestedTypeOwnsFetchers`
-(delegating to `NestingReach.ownsFetchers`), and `FetcherRegistrationsEmitter.nestedBody`, with
-`TypeFetcherGenerator` emitting the nested `<Type>Fetchers` class. Repeat R23's emitter-safe
-verification rather than reasoning by analogy.
+The emitted nested unit, for reference:
 
-The concrete question for `ColumnBackedReferenceField`: a nested plain-object type shares the
-*parent's* table context, and the leaf's value needs its `joinPath` hop applied. Establish whether
-the nested type's `$project` unit actually carries that join, or whether the join is emitted only
-when the leaf hangs off a table-backed parent. `FetcherEmitter.bind`'s Direct-compaction
-`ColumnBackedReferenceField` branch (which reads the value back out of the parent `Record` by alias)
-is one place to look; `JoinedTableReprojection` is an adjacent precedent worth reading, since it
-already projects a participant type's `ColumnBackedReferenceField` into a *borrowed* projection root
-and defers the non-`Direct` compactions there.
+```java
+public class FilmFilmProjectedLeaves {
+    public static List<Field<?>> $project(Map<String, List<SelectedField>> grouped, Film table,
+            DataFetchingEnvironment env) {
+        // ...
+            case "languageName" -> {
+                Language l0 = Tables.LANGUAGE.as(table.getName() + "_l0");
+                fields.add(DSL.field(DSL.select(l0.NAME).from(l0)
+                    .where(l0.LANGUAGE_ID.eq(table.LANGUAGE_ID)).limit(1)).as("__rk_" + entry.getKey()));
+            }
+            case "isEnglish" ->
+                fields.add(FilmExtensions.isEnglish(table).as("__rk_" + entry.getKey()));
+```
 
-`GraphitronSchemaValidator.validateColumnBackedReferenceField` already rejects the `NodeIdEncodeKeys`
-compaction and the malformed reference-path shapes ahead of generation, so those need not be handled
-here, but confirm those pre-gates still fire at nested depth once the blanket gate stops shadowing
-them.
+So the predicate's javadoc claim that expanding it "requires the corresponding generator-side
+change" does not hold for these two leaves, and that claim is why this item was filed as a
+suspected emitter hole. Correcting it is part of the work.
 
-For `ComputedField`, weigh the note in `FetcherEmitter.resolvesViaPropertyDataFetcher`'s javadoc: a
-`ComputedField` "needs a SELECT-projected parent". Decide whether a nesting parent satisfies that.
+### But the gate stands in for validation that never runs
 
-## Scoping decisions the spec must make
+`validateNestingField` descends through `walkNestedVariantsForImplementation`, which runs exactly
+two checks per nested leaf: `validateVariantIsImplemented` and
+`validateVariantIsSupportedAtNestedDepth`. The per-variant dispatch switch inside `validateField`
+never runs at nested depth at all. So `validateColumnBackedReferenceField` (the `NodeIdEncodeKeys`
+deferral, `validateReferencePath`, the 22-column `RecordN` cap) and `validateComputedField` (the
+`@externalField`-carrying-a-`@reference`-path deferral) do not fire on a nested leaf. The blanket
+nested-depth gate is the only thing keeping these leaves away from the emitter, and it is a
+coarser instrument than the checks it shadows.
 
-1. **One item or two?** `ColumnBackedReferenceField` and `ComputedField` may have materially
-   different verification burdens: the former is a join-carrying column projection, the latter a
-   user-supplied `Field<T>` expression. Split if the evidence diverges.
-2. **Overlap with R323** (`nestingfield-multiparent-batchkey-leaves`). The 4 multi-parent
-   `ComputedField` errors come from a *different* gate, `compareNestedFieldsShape`'s catch-all
-   ("not yet supported across multiple parents"), reached via `validateNestingParentCompat`, not from
-   `isNestedWireableLeaf`. R323 covers that gate but scopes itself to BatchKey leaves. Decide whether
-   the multi-parent `ComputedField` arm belongs here, in R323, or in its own item; either way
-   cross-link. Admitting a variant at nested depth does *not* by itself admit it across shared
-   parents.
-3. **`LookupTableField`** is the open re-scoping question R323 carries. It looks answered by
-   attrition rather than by analysis: the leaf no longer exists in the model (R432 folded the lookup
-   pair onto the source-gated `BatchedTableField`, and the inline `LookupTableField` folded onto
-   `TableField` with a `lookup()` facet), and both survivors are already admitted at nested depth
-   ("lookup-keyed or not", per the predicate's javadoc). Confirm that reading and say so explicitly
-   in R323 rather than letting the question sit; do not absorb it silently.
-4. **Coverage shape.** Follow R23's pattern: a pipeline test in `GraphitronSchemaBuilderTest`
-   (classifies, then validates clean) plus an execution test in `GraphQLQueryTest` pinning the
-   projected value against a direct navigation of the same row.
-5. **The existing rejection tests do not simply invert.** `NestingFieldValidationTest`'s two
-   `ColumnBackedReferenceField` cases (`DEFERRED_NESTED_COMPOSITE_REFERENCE` and
-   `DEFERRED_NESTED_COMPOSITE_INSIDE_NESTED_NESTING`) both build a *composite NodeId*
-   reference, so their compaction is `NodeIdEncodeKeys`, which
-   `validateColumnBackedReferenceField` rejects on its own account. Lifting the nested-depth gate
-   should move those cases onto the `NodeIdEncodeKeys` deferral message, not onto "no error"; the
-   clean-admit case needs a new `Direct`-compaction fixture alongside them. Call this out in the
-   diff so it is visible in review.
-6. **Census bookkeeping.** `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`
-   enforces an exhaustive disjoint partition over `TypeFetcherGenerator.IMPLEMENTED_LEAVES`,
-   `STUBBED_VARIANTS.keySet()`, `NOT_DISPATCHED_LEAVES`, and the derived projected bucket. A reading
-   taken while filing this item: `ColumnBackedReferenceField` is in
-   `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` and absent from `IMPLEMENTED_LEAVES`, so it lands
-   in the derived projected bucket, exactly where the already-admitted `TableField` sits;
-   `ComputedField` is in both sets, so it is one of the dual-arm kinds the census pins explicitly.
-   Neither set is keyed on nested-depth wireability, so admitting these leaves under `NestingField`
-   should move no census entry. Verify that rather than trusting it.
+The spike demonstrated both failure modes:
 
+- A nested `@externalField` carrying `@reference(path: [{key: "film_language_id_fkey"}])`, which is
+  a clean `Rejection.deferred` at ordinary depth, **built green and emitted
+  `FilmExtensions.isEnglish(table)` with the join path silently dropped**. Wrong SQL, no
+  diagnostic, no failing build.
+- A nested `ColumnBackedReferenceField` with `NodeIdEncodeKeys` compaction has no validator to stop
+  it and reaches `ProjectionCommands.contributionFor`, whose arm throws
+  `IllegalStateException("inline ColumnBackedReferenceField '...' with NodeIdEncodeKeys compaction
+  must be rejected by the validator before production")`. A generator crash where a located
+  rejection belongs.
+
+That fixes the order of the work: the nested walk becomes variant-aware **before** the predicate
+widens. The two are separable commits but not separable items, because the validator fix has no
+independent motivation until a leaf with real per-variant checks is admitted at nested depth, and
+the widening is unsafe without it.
+
+## Implementation
+
+### 1. Run per-variant validation at nested depth
+
+In `GraphitronSchemaValidator`, `walkNestedVariantsForImplementation` should route each
+non-`NestingField` leaf through the same per-variant arm that `validateField`'s switch selects,
+not just the two implementedness checks. Preferred shape: extract the switch body into a
+`validateVariantSpecific(field, types, errors)` helper that both the top-level walk and the nested
+walk call, so the two sites cannot drift again. A two-case special form for just the newly admitted
+leaves would reintroduce exactly the shadowing this item exists to remove.
+
+Two things to settle with measurement rather than in the spec:
+
+- **The cross-cutting checks.** `validateField` also runs `validatePaginationRequiresOrdering`,
+  `validateListRequiresOrdering` and `validateVariantIsImplemented` around the switch.
+  `validateVariantIsImplemented` already runs in the nested walk, so do not double-report it.
+  Decide explicitly whether the two ordering checks belong at nested depth (they read
+  `SqlGeneratingField.pagination()` / `orderBy()`, which nested `TableField` leaves do carry) and
+  record the decision in the diff rather than letting the answer be whatever the refactor happens
+  to produce.
+- **Fallout on the already-admitted leaves.** `ColumnBackedField`, `TableField` and the Table-arm
+  `BatchedTableField` have been unvalidated at nested depth for the same reason, so their arms
+  firing for the first time may surface errors in the sakila fixture corpus. Measure that first:
+  build the corpus with the walk widened and the predicate untouched. If the fallout is empty, ship
+  it here. If it is not, fix what is genuinely broken, and split anything that turns into real
+  design work into its own item rather than growing this one. Say which happened in the diff either
+  way, because "no new errors" is itself a result worth recording.
+
+### 2. Widen `isNestedWireableLeaf`
+
+Add `ChildField.ColumnBackedReferenceField` and `ChildField.ComputedField` arms returning `true`.
+
+Do **not** gate the `ColumnBackedReferenceField` arm on `CallSiteCompaction.Direct`. Step 1 makes
+`validateColumnBackedReferenceField` fire at nested depth, and it rejects `NodeIdEncodeKeys` on its
+own account with a message that names the actual missing capability ("requires JOIN-with-projection
+emission"). A compaction gate in the predicate would re-shadow that with the vaguer "is not yet
+supported under NestingField", which is the shape of mistake this item is unwinding.
+
+### 3. Repair the predicate's javadoc
+
+Replace the "Expanding this predicate requires the corresponding generator-side change" sentence
+with what the spike established: the projected leaves reach nested depth through a per-anchor
+projection unit and a parent-independent alias read, so admitting one is a validator question,
+while the class-backed and record-sourced leaves are the ones that need emit arms. Keep the
+`BatchedTableField` source-shape paragraph, which is still exactly right and is the reason the
+predicate is a predicate rather than a class set.
+
+## Tests
+
+**Pipeline tier** (`GraphitronSchemaBuilderTest`, following R23's pattern): a fixture that
+classifies a nesting type carrying both leaves and validates clean.
+
+**Unit tier** (`NestingFieldValidationTest`). The two existing cases do not invert, and that is the
+point. `DEFERRED_NESTED_COMPOSITE_REFERENCE` and `DEFERRED_NESTED_COMPOSITE_INSIDE_NESTED_NESTING`
+both build a `NodeIdEncodeKeys` carrier, so their expected message moves from
+"ColumnBackedReferenceField is not yet supported under NestingField" to the
+`validateColumnBackedReferenceField` deferral, not to "no error". Those two assertions are the
+canary for step 1: had only step 2 landed they would have gone green with no error and the
+generator would then crash on the same fixture. Call that out in the diff so a reviewer reads the
+change as a shadowing fix rather than a message tweak. Add alongside them:
+
+- a `Direct`-compaction `ColumnBackedReferenceField` under a nesting type, expecting no error;
+- a `ComputedField` under a nesting type, expecting no error;
+- a `ComputedField` with a non-empty `joinPath` under a nesting type, expecting the
+  `validateComputedField` lift-form deferral. This is the case the spike watched emit silently
+  wrong SQL, so it is the highest-value regression guard in the file.
+
+**Execution tier** (`graphitron-sakila-example`): a nesting type on `Film` carrying a `@field` +
+`@reference` scalar and an `@externalField` leaf, queried alongside the same two leaves declared
+flat on `Film`, asserting the nested and flat values agree. Include an aliased duplicate selection
+(`a: languageName`) to pin the `__rk_<resultKey>` read, and one level of nesting inside nesting.
+All three passed in the spike, so this tier pins verified behaviour rather than exploring.
+
+**Census.** `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` should need no
+edit. `ColumnBackedReferenceField` sits in `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` and
+outside `TypeFetcherGenerator.IMPLEMENTED_LEAVES`, landing in the derived projected bucket where
+the already-admitted `TableField` sits; `ComputedField` is in both sets, one of the dual-arm kinds
+the census pins explicitly (its `generateTypeSpec` arm is a no-op, since `IMPLEMENTED_LEAVES`
+membership means "no `stub(f)` call", not "emits a method"). Neither set keys on nested-depth
+wireability. This reading was taken from source and the spike build ran `-Pquick`, which skips
+tests, so confirm it with a real run rather than inheriting the claim.
+
+## Scoping decisions, resolved
+
+**One item, not two.** The evidence converged rather than diverging: both leaves need zero emitter
+work, and both are blocked by the same shadowed validation. Splitting would either duplicate the
+validator fix or serialise two halves of one diff.
+
+**Multi-parent stays out.** The four multi-parent `ComputedField` errors measured downstream come
+from `compareNestedFieldsShape`'s catch-all via `validateNestingParentCompat`, a genuinely separate
+gate that needs its own argument. My reading is that R23's argument does carry for both leaves
+(per-anchor projection units, parent-independent alias read), but it is not this item's to make.
+R323 holds the cross-link; it now also carries the closure of its `LookupTableField` question,
+which was answered by attrition (R432 folded the leaf away, both survivors are already admitted at
+nested depth).
+
+**A gap found on the way, filed separately.** `ServiceCatalog.reflectExternalField` documents "one
+parameter assignable from the parent's jOOQ `Table<?>` class" and then only checks
+`Table.class.isAssignableFrom(p.getType())`; the `parentTableClass` argument is passed and never
+read. Two parents on different tables sharing one `@externalField` declaration classify clean and
+emit a helper call with the wrong table type, breaking compilation of generated code. Pre-existing
+and reachable at ordinary depth today, so it does not block this item, but a shared nesting type
+turns it into one SDL declaration served by two parents. Filed as R646
+(`roadmap/externalfield-parent-table-assignability.md`); it should be closed before multi-parent
+`ComputedField` is admitted anywhere.

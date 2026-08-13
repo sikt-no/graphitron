@@ -42,7 +42,18 @@ is why the multi-parent `ComputedField` shape R645 measured downstream lands on 
 catch-all rather than on R645's. R645 also carries a reading of the `LookupTableField` question
 below (the leaf no longer exists in the model), which should be resolved here rather than left open.
 
-Open re-scoping question carried over from R23: `LookupTableField` moved into
+Closed (2026-08-13, while specifying R645): the `LookupTableField` re-scoping question carried over
+from R23 needs no decision, because the leaf it asks about no longer exists. R432 folded the
+record-sourced lookup pair onto the source-gated `BatchedTableField` and the inline
+`LookupTableField` onto `TableField` with a `lookup()` facet; `RecordLookupTableField` is now a
+registry entry in `RetiredVocabularyGuardTest`, and `LeafRatchetTest` records the 24-to-22 fold.
+Both survivors are already admitted at nested depth, "lookup-keyed or not" per
+`GraphitronSchemaValidator.isNestedWireableLeaf`'s javadoc, and the inline survivor is exactly the
+`TableField` arm R23 already verified and admitted across parents. Nothing to add to
+`compareNestedFieldsShape` on this account. What remains open here is the BatchKey scope in this
+item's title, unchanged.
+
+Original question, kept for provenance: `LookupTableField` moved into
 `TypeFetcherGenerator.PROJECTED_LEAVES` alongside `TableField`, so it may be emitter-safe across
 parents by the same argument R23 used for `TableField` (each parent's `$fields` emits its own
 inline arm; the reified read pulls by field name). It was left out of R23's titled scope. Decide
