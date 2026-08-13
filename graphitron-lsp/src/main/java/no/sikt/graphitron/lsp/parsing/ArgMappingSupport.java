@@ -9,8 +9,11 @@ import java.util.Optional;
 /**
  * Resolution shared by the {@code argMapping} completion and diagnostic
  * consumers: deriving the sibling {@code className} / {@code method}
- * coordinates that scope an {@code argMapping} slot, and resolving the
- * referenced {@link CompletionData.Method} from the catalog.
+ * coordinates that scope an {@code argMapping} slot, and resolving what they name.
+ *
+ * <p>Two resolutions, mid-migration. {@link #siblingMethodTarget} stops at the pair of names, for
+ * the consumer that asks the store what they refer to; the {@link CompletionData} form below answers
+ * with a resolved method off the projection, and retires with the last surface reading it.
  *
  * <p>An {@code argMapping} slot is always one field of a class/method group:
  * the nested {@code ExternalCodeReference.{className, method, argMapping}} (on
@@ -34,16 +37,24 @@ public final class ArgMappingSupport {
         };
     }
 
-    /** Cursor-anchored method resolution (completion path). */
-    public static Optional<CompletionData.Method> resolveMethod(
+    /**
+     * The class and method the slot's siblings name, which is as far as the syntax goes: what that
+     * pair refers to is a census question, and a consumer reading facts asks it of the store rather
+     * than through a resolved Java object.
+     */
+    public record MethodTarget(String className, String methodName) {}
+
+    /** Cursor-anchored sibling read (completion path). Empty unless both siblings carry a value. */
+    public static Optional<MethodTarget> siblingMethodTarget(
         LspVocabulary vocabulary, Directives.Directive directive, Point anchor,
-        SchemaCoordinate argMappingCoord, CompletionData catalog, byte[] source
+        SchemaCoordinate argMappingCoord, byte[] source
     ) {
         String className = siblingCoord(argMappingCoord, "className")
             .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)).orElse(null);
         String methodName = siblingCoord(argMappingCoord, "method")
             .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)).orElse(null);
-        return lookup(catalog, className, methodName);
+        if (className == null || methodName == null) return Optional.empty();
+        return Optional.of(new MethodTarget(className, methodName));
     }
 
     /** Node-anchored method resolution (diagnostics path). */

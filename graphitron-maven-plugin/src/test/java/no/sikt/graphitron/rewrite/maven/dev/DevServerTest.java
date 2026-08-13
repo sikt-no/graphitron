@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.maven.dev;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -31,12 +32,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class DevServerTest {
 
     /**
-     * The round trip is the subject, so the completion it asks for is the argument-name one: that
-     * arm answers off the directive vocabulary and reads no facts, which keeps this test about the
-     * socket, the launcher and the handler rather than about what any session happened to capture.
+     * The round trip is the subject, so the request it makes is a hover on a directive's name token:
+     * that arm renders the bundled definition's own docstring and reads no facts, which keeps this
+     * test about the socket, the launcher and the handler rather than about what any session happened
+     * to capture. Every completion arm reads the store now, this workspace has none, and an empty
+     * popup would prove nothing about the wire.
      */
     @Test
-    void bindsRandomPortAndServesCompletion() throws Exception {
+    void bindsRandomPortAndServesRequests() throws Exception {
         try (var server = new DevServer(loopback(0), new Workspace(), uri -> {})) {
             assertThat(server.port()).isGreaterThan(0);
 
@@ -45,21 +48,21 @@ class DevServerTest {
                 proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
                 String uri = "file:///schema.graphqls";
-                String source = "type Query { x: Int @service(service: {className: \"x\"}, ) }\n";
+                String source = "type Query { x: Int @service(service: {className: \"x\"}) }\n";
                 proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
                     new TextDocumentItem(uri, "graphql", 1, source)));
 
-                // Cursor on the space after the comma, where the next argument name would go.
-                var params = new CompletionParams(
+                // Cursor inside the @service name token.
+                var params = new HoverParams(
                     new TextDocumentIdentifier(uri),
-                    new Position(0, source.indexOf(", ") + 2)
+                    new Position(0, source.indexOf("@service") + 2)
                 );
-                var result = proxy.getTextDocumentService().completion(params)
-                    .get(5, TimeUnit.SECONDS);
+                var hover = proxy.getTextDocumentService().hover(params).get(5, TimeUnit.SECONDS);
 
-                assertThat(result.isLeft()).isTrue();
-                var labels = result.getLeft().stream().map(c -> c.getLabel()).toList();
-                assertThat(labels).contains("contextArguments");
+                assertThat(hover).isNotNull();
+                assertThat(hover.getContents().getRight().getValue())
+                    .as("the bundled @service definition carries a docstring, rendered over the wire")
+                    .isNotEmpty();
             }
         }
     }

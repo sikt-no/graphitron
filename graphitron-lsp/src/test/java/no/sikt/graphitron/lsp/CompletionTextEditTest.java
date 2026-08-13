@@ -210,7 +210,7 @@ class CompletionTextEditTest {
         Point cursor = new Point(0, nameStart + 2);
         Position lspPos = new Position(0, nameStart + 2);
 
-        var items = runArgName(source, cursor, lspPos, LspSchemaSnapshot.unavailable());
+        var items = runArgName(source, cursor, lspPos);
 
         assertTextEditRange(items, "name",
             new Range(new Position(0, nameStart), new Position(0, nameStart + "name".length())));
@@ -225,7 +225,7 @@ class CompletionTextEditTest {
         Point cursor = new Point(0, col);
         Position lspPos = new Position(0, col);
 
-        var items = runArgName(source, cursor, lspPos, LspSchemaSnapshot.unavailable());
+        var items = runArgName(source, cursor, lspPos);
 
         assertThat(items).isNotEmpty();
         for (var item : items) {
@@ -303,16 +303,14 @@ class CompletionTextEditTest {
             (ctx, dir, bytes) -> MethodCompletions.generate(VOCAB, store.handle(), ctx, dir, cursor, bytes));
     }
 
-    private static List<CompletionItem> runArgName(
-        String source, Point cursor, Position lspPos, LspSchemaSnapshot snapshot
-    ) {
+    private static List<CompletionItem> runArgName(String source, Point cursor, Position lspPos) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
         byte[] bytes = source.getBytes(StandardCharsets.UTF_8);
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at " + cursor));
-        return ArgNameCompletions.generate(VOCAB, snapshot, directive, cursor, lspPos, bytes);
+        return ArgNameCompletions.generate(VOCAB, store.handle(), directive, cursor, lspPos, bytes);
     }
 
     private static void assertTextEditRange(List<CompletionItem> items, String label, Range expected) {

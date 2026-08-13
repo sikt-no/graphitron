@@ -428,11 +428,11 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | Behavior arm | Provider | Fact source |
 |---|---|---|
 | `ClassNameBinding` | `ClassNameCompletions` | `jvm_class` |
-| `MethodNameBinding` | `ExternalFieldCompletions`, then `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
+| `MethodNameBinding` | `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
 | `CatalogTableBinding` | `TableCompletions` | `sql_table` |
 | `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; enclosing table via classification |
 | `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; enclosing table via classification |
-| `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter` × `graphql_argument` |
+| `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter`; the GraphQL side off the buffer's own field definition, whose arguments are the ones being edited |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
 | `NodeTypeBinding` | `NodeTypeCompletions` | `graphitron_node` |
 | no coordinate, or no value match | `ArgNameCompletions` (fallback) | `graphql_directive_argument` |
@@ -850,6 +850,44 @@ column arm.
 its own reader when it moves. `StoreFixture` gained `ofMultiSchemaCatalog`, the multi-schema generated
 model being the only fixture that can produce a name ambiguous across schemas and a name declared
 twice within one.
+
+## Settled while building: completion is done
+
+The last two arms moved together, and with them `CompletionRequest` lost its `CompletionData` field:
+every completion provider reads facts now. What is left beside the store on that record is the
+snapshot, for the two arms whose table is a classifier decision.
+
+* **`argMapping`'s left side offers every overload's parameter names.** A method is named by name
+  alone in SDL, so which overload an author meant is not a question the census can answer; the
+  projection resolved to whichever `CompletionData.Method` came first, which silently hid the other
+  one's names. The union, deduplicated and in descriptor-then-position order, is the honest answer, and
+  the shape is the same one `MethodCompletions` reads.
+* **The class/method pair stopped being a resolved object.** `ArgMappingSupport` keeps the sibling
+  coordinate derivation, which is syntax and shared, and now hands back the pair of names; what they
+  refer to is the consumer's query. Diagnostics keeps the projection-resolving form until it moves,
+  which is the strangler shape rather than a duplicated resolver.
+* **The bundled-versus-user split in the argument-name fallback collapsed.** Capture parses
+  graphitron's bundled `directives.graphqls` like any schema file, so one query over
+  `graphql_directive_argument` answers for both, and `DirectiveResolution`'s three arms leave this
+  surface (hover and diagnostics still use it). An asymmetry went with it: only the bundled arm
+  descended into nested object literals, because the user-directive projection carried argument names
+  and no input-object shapes. Nesting is now the same descent from `graphql_directive_argument`'s
+  `named_type` down `graphql_field`, so an author's own input type nests exactly like
+  `ReferenceElement` does. The kind join is what keeps the descent inside input objects, since
+  `graphql_field` holds output fields in the same shape.
+* **A session with no facts now completes nothing at all, the fallback included.** This is the one
+  place the migration costs behaviour rather than recovering it: arg-name completion used to work
+  before any capture, because it read the definitions the language server ships. Making the bundled
+  vocabulary rows is the item's own rule, and the alternative is a second reader of one question, so
+  the read went to the store. If pre-capture arg-name completion turns out to matter, the fix is to
+  give the bundled vocabulary rows that no graph's capture owns, which is a modelling question for a
+  sibling item and not a fallback inside this arm.
+* **Two tests changed vehicle rather than subject.** `CompletionStoreWiringTest`'s
+  "the absence costs exactly the arms whose subject is the store" case becomes "the absence costs
+  every arm", and the dev server's round trip moved from a completion to a hover on a directive name,
+  the arm that still renders the bundled docstring without reading facts. The bundled-shadows-snapshot
+  precedence case retires from this arm: a redeclaration of a bundled directive loses at registry
+  admission, where the loader's refusal is already covered, so there is nothing for the arm to decide.
 
 ## Retired vocabulary
 

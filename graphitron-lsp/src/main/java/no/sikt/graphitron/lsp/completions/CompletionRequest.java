@@ -4,7 +4,6 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
@@ -21,12 +20,12 @@ import java.util.function.Function;
  * method takes; the record is the union of those bespoke tuples, so the seam is
  * one type rather than ten positional signatures.
  *
- * <p>{@link #store} is the arm the projections are being replaced by, and the union above is
- * mid-migration: an arm reading it takes no {@link CompletionData}, and the remaining projection
- * fields shrink out of this record as the remaining arms move. The source index has already gone
- * that way: no arm reads it any more, because the Javadoc it carried is a join in the store now.
- * Empty means this session has no facts for this document, for any of three reasons
- * {@code Workspace.answering} deliberately does not distinguish.
+ * <p>{@link #store} is what the projections were replaced by, and every completion provider now
+ * reads it. What is left beside it is {@link #snapshot}, for the two arms whose table comes from a
+ * classifier decision rather than from a census; the {@code CompletionData} arm and the source index
+ * are both gone, the latter because the Javadoc it carried is a join in the store now. Empty means
+ * this session has no facts for this document, for any of three reasons {@code Workspace.answering}
+ * deliberately does not distinguish.
  *
  * <p>The one non-participant is {@link ArgNameCompletions}: it fires on the
  * arg-name side where {@link LspVocabulary#locateAt} yields no coordinate (hence
@@ -36,7 +35,6 @@ import java.util.function.Function;
 public record CompletionRequest(
     LspVocabulary vocabulary,
     Optional<StoreHandle> store,
-    CompletionData data,
     LspSchemaSnapshot snapshot,
     CompletionContext context,
     Directives.Directive directive,

@@ -1,18 +1,12 @@
 package no.sikt.graphitron.lsp.completions;
 
-import graphql.language.DirectiveDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InputValueDefinition;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
-import no.sikt.graphitron.lsp.state.DirectiveResolution;
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
-import no.sikt.graphitron.rewrite.catalog.InputValueShape;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.Position;
@@ -25,40 +19,54 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 
 /**
- * Argument-name completion driven off the parsed registry rather than a
- * hand-coded directive list. Two cursor cases:
+ * Argument-name completion off the SDL census. Two cursor cases:
  *
  * <ul>
  *   <li><b>Top-level.</b> Cursor inside a directive's argument list but
  *       outside any specific argument value (between args, on whitespace
- *       inside the parens). Completes the directive's argument names.</li>
+ *       inside the parens), or on the key side of an argument already
+ *       written. Completes the directive's formal argument names, one row
+ *       of {@code graphql_directive_argument} each.</li>
  *   <li><b>Nested.</b> Cursor inside a nested {@code object_value} (the
  *       value side of an input-type-typed directive arg) but outside any
  *       specific {@code object_field}. Completes the input type's field
- *       names; descends through the registry's input-type field tree to
- *       resolve the right input type for the current nesting depth.</li>
+ *       names, descending the {@code graphql_field} tree from the
+ *       argument's named type to resolve the type at the current nesting
+ *       depth.</li>
  * </ul>
  *
- * <p>Either case requires the directive name to resolve in the registry;
- * unknown directives produce no completions (the unknown-directive
+ * <p>Either case requires the directive to be one this graph's capture read;
+ * a name with no rows produces no completions (the unknown-directive
  * diagnostic surfaces the typo elsewhere).
+ *
+ * <p>One relation for graphitron's bundled directives and an author's own alike, because capture
+ * parses the bundled definitions like any other schema file. That collapses the incumbent's
+ * bundled-versus-user split, and with it an asymmetry the split had carried: only the bundled arm
+ * descended into nested object literals, since the projection of user directives held argument names
+ * and no input-object shapes. Nesting is the same descent for both here, which is not a feature added
+ * so much as a distinction the census cannot express.
  */
 public final class ArgNameCompletions {
+
+    /** The {@code graphql_type.kind} value a nested arg-name slot descends through. */
+    private static final String INPUT_OBJECT_KIND = "INPUT_OBJECT";
 
     private ArgNameCompletions() {}
 
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
-        LspSchemaSnapshot snapshot,
+        StoreHandle store,
         Directives.Directive directive,
         Point pos,
         Position lspPos,
         byte[] source
     ) {
         String directiveName = Nodes.text(directive.nameNode(), source);
-        var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
 
         Directives.Argument enclosing = null;
         for (var arg : directive.arguments()) {
@@ -70,13 +78,104 @@ public final class ArgNameCompletions {
 
         Range range = replaceRangeFor(directive, pos, lspPos, source);
 
-        return switch (resolution) {
-            case DirectiveResolution.Bundled bundled ->
-                bundledGenerate(bundled.def(), vocabulary, enclosing, pos, source, range);
-            case DirectiveResolution.User user ->
-                userGenerate(user.shape(), enclosing, range);
-            case DirectiveResolution.Unknown ignored -> List.of();
-        };
+        if (enclosing == null) {
+            // Cursor inside the directive's parens but not on any argument: top-level arg names.
+            return items(directiveArgumentNames(store, directiveName), range);
+        }
+        // Cursor on the arg-key side of an existing arg ("partial arg-name identifier"): still
+        // top-level territory, the author is editing the key rather than the value.
+        if (Nodes.contains(enclosing.key(), pos) && !Nodes.contains(enclosing.value(), pos)) {
+            return items(directiveArgumentNames(store, directiveName), range);
+        }
+        return nestedGenerate(store, directiveName, enclosing, pos, source, range);
+    }
+
+    /**
+     * Cursor inside an argument value. Completes only at a nested-arg-name slot: inside an
+     * {@code object_value} and outside every {@code object_field} of it. The chain of enclosing
+     * {@code object_field} names is what says how deep the cursor is, and each step is a lookup of
+     * that field's named type, so a nesting the store cannot follow (a step that is not an input
+     * object's field) answers with nothing rather than with the wrong level's names.
+     */
+    private static List<CompletionItem> nestedGenerate(
+        StoreHandle store, String directiveName, Directives.Argument enclosing,
+        Point pos, byte[] source, Range range
+    ) {
+        Node objectValue = innermostObjectValueAt(enclosing.value(), pos);
+        if (objectValue == null) return List.of();
+        if (cursorInsideAnyObjectField(objectValue, pos)) return List.of();
+
+        String argName = Nodes.text(enclosing.key(), source);
+        String currentType = argumentNamedType(store, directiveName, argName);
+        for (String fieldName : collectEnclosingFieldChain(enclosing.value(), objectValue, source)) {
+            if (currentType == null) return List.of();
+            currentType = inputFieldNamedType(store, currentType, fieldName);
+        }
+        if (currentType == null) return List.of();
+        return items(inputFieldNames(store, currentType), range);
+    }
+
+    /** The directive definition's formal arguments, in declaration order. */
+    private static List<String> directiveArgumentNames(StoreHandle store, String directiveName) {
+        return store.dsl()
+            .select(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME)
+            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
+            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(directiveName))
+            .orderBy(GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL)
+            .fetch(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME);
+    }
+
+    /** The type an argument's expression bottoms out in, whatever wrapping it carries. */
+    private static String argumentNamedType(StoreHandle store, String directiveName, String argName) {
+        return store.dsl()
+            .select(GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE)
+            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
+            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(directiveName))
+            .and(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME.eq(argName))
+            .fetchOne(GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE);
+    }
+
+    /**
+     * The named type of one field of an input object, or null when the type is not an input object or
+     * declares no such field. The kind check is the guard the incumbent got from graphql-java refusing
+     * to hand back an {@code InputObjectTypeDefinition} for anything else: {@code graphql_field} holds
+     * output fields under the same shape, and only the join to {@code graphql_type} tells them apart.
+     */
+    private static String inputFieldNamedType(StoreHandle store, String typeName, String fieldName) {
+        return store.dsl()
+            .select(GRAPHQL_FIELD.NAMED_TYPE)
+            .from(GRAPHQL_FIELD)
+            .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
+                .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME)))
+            .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_FIELD.TYPE_NAME.eq(typeName))
+            .and(GRAPHQL_FIELD.FIELD_NAME.eq(fieldName))
+            .and(GRAPHQL_TYPE.KIND.eq(INPUT_OBJECT_KIND))
+            .fetchOne(GRAPHQL_FIELD.NAMED_TYPE);
+    }
+
+    /** An input object's field names, in the effective type's declaration order. */
+    private static List<String> inputFieldNames(StoreHandle store, String typeName) {
+        return store.dsl()
+            .select(GRAPHQL_FIELD.FIELD_NAME)
+            .from(GRAPHQL_FIELD)
+            .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
+                .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME)))
+            .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_FIELD.TYPE_NAME.eq(typeName))
+            .and(GRAPHQL_TYPE.KIND.eq(INPUT_OBJECT_KIND))
+            .orderBy(GRAPHQL_FIELD.ORDINAL)
+            .fetch(GRAPHQL_FIELD.FIELD_NAME);
+    }
+
+    private static List<CompletionItem> items(List<String> names, Range range) {
+        var items = new ArrayList<CompletionItem>(names.size());
+        for (String name : names) {
+            items.add(toCompletionItem(name, range));
+        }
+        return items;
     }
 
     /**
@@ -112,100 +211,6 @@ public final class ArgNameCompletions {
             if (descendant != null) best = descendant;
         }
         return best;
-    }
-
-    /**
-     * Top-level arg-name completion for a user-declared directive. This arm
-     * does not descend into nested object literals (the snapshot does not
-     * carry input-object shapes yet); when the cursor sits inside an
-     * argument value, return empty. Completion is freshness-agnostic:
-     * stale suggestions beat silence for an editor surface.
-     *
-     * <p>Asymmetric with {@link #bundledGenerate}: the bundled arm fires
-     * on the arg-key side of an already-filled arg (partial-identifier
-     * editing), the user arm does not. The asymmetry is incidental to
-     * the wire-format scope and would warrant its own roadmap item if
-     * a user-directive partial-identifier completion gap surfaces.
-     */
-    private static List<CompletionItem> userGenerate(
-        DirectiveShape shape, Directives.Argument enclosing, Range range
-    ) {
-        if (enclosing != null) return List.of();
-        return userToCompletionItems(shape.args(), range);
-    }
-
-    private static List<CompletionItem> userToCompletionItems(List<InputValueShape> args, Range range) {
-        var items = new ArrayList<CompletionItem>();
-        for (var arg : args) {
-            items.add(toCompletionItem(arg.name(), range));
-        }
-        return items;
-    }
-
-    private static List<CompletionItem> bundledGenerate(
-        DirectiveDefinition dirDef,
-        LspVocabulary vocabulary,
-        Directives.Argument enclosing,
-        Point pos,
-        byte[] source,
-        Range range
-    ) {
-        if (enclosing == null) {
-            // Cursor inside the directive's parens but not on any argument:
-            // top-level arg-name completion.
-            return toCompletionItems(dirDef.getInputValueDefinitions(), range);
-        }
-
-        // Cursor on the arg-key side of an existing arg ("partial arg-name
-        // identifier"): still top-level arg-name territory; the user is
-        // editing the key, not the value.
-        if (Nodes.contains(enclosing.key(), pos) && !Nodes.contains(enclosing.value(), pos)) {
-            return toCompletionItems(dirDef.getInputValueDefinitions(), range);
-        }
-
-        // Cursor is inside an argument value. If it's inside a nested
-        // object_value but outside every object_field of that object_value,
-        // we're at a nested-arg-name slot; otherwise no arg-name
-        // completion applies.
-        String argName = Nodes.text(enclosing.key(), source);
-        var argDef = LspVocabulary.findInputValue(dirDef.getInputValueDefinitions(), argName);
-        if (argDef.isEmpty()) return List.of();
-        String currentType = LspVocabulary.unwrapToInputTypeName(argDef.get().getType());
-        if (currentType == null) return List.of();
-
-        Node objectValue = innermostObjectValueAt(enclosing.value(), pos);
-        if (objectValue == null) return List.of();
-        if (cursorInsideAnyObjectField(objectValue, pos)) return List.of();
-
-        // Walk down through the input-type field tree following the chain
-        // of object_field ancestors that contain pos. The innermost
-        // object_value we landed on belongs to whatever input type is
-        // referenced by the enclosing object_field's name (or the arg
-        // itself, if no enclosing object_field).
-        var ancestorChain = collectEnclosingFieldChain(enclosing.value(), objectValue, source);
-        for (String fieldName : ancestorChain) {
-            var inputType = vocabulary.registry()
-                .getTypeOrNull(currentType, InputObjectTypeDefinition.class);
-            if (inputType == null) return List.of();
-            var fieldDef = LspVocabulary.findInputValue(inputType.getInputValueDefinitions(), fieldName);
-            if (fieldDef.isEmpty()) return List.of();
-            String next = LspVocabulary.unwrapToInputTypeName(fieldDef.get().getType());
-            if (next == null) return List.of();
-            currentType = next;
-        }
-
-        var inputType = vocabulary.registry()
-            .getTypeOrNull(currentType, InputObjectTypeDefinition.class);
-        if (inputType == null) return List.of();
-        return toCompletionItems(inputType.getInputValueDefinitions(), range);
-    }
-
-    private static List<CompletionItem> toCompletionItems(List<InputValueDefinition> defs, Range range) {
-        var items = new ArrayList<CompletionItem>();
-        for (var def : defs) {
-            items.add(toCompletionItem(def.getName(), range));
-        }
-        return items;
     }
 
     private static CompletionItem toCompletionItem(String label, Range range) {

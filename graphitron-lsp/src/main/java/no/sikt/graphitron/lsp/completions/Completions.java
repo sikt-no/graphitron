@@ -46,7 +46,7 @@ public final class Completions {
                 var behaviorOpt = vocab.behaviorAt(context.coordinate());
                 if (behaviorOpt.isPresent()) {
                     var request = new CompletionRequest(
-                        vocab, store, workspace.catalog(), workspace.snapshot(), context,
+                        vocab, store, workspace.snapshot(), context,
                         directive, pos, lspPos, source);
                     for (var provider : providersFor(behaviorOpt.get())) {
                         var items = provider.complete(request);
@@ -57,10 +57,8 @@ public final class Completions {
             // Arg-name fallback: fires both when locateAt is empty (cursor on the
             // arg-name side or whitespace) and when locateAt produced no value
             // matches above. Computes its own range independent of any coordinate.
-            var argNameItems = ArgNameCompletions.generate(
-                vocab, workspace.snapshot(), directive, pos, lspPos, source);
-            if (!argNameItems.isEmpty()) return argNameItems;
-            return List.of();
+            return store.map(s -> ArgNameCompletions.generate(vocab, s, directive, pos, lspPos, source))
+                .orElseGet(List::of);
         });
     }
 
@@ -94,8 +92,8 @@ public final class Completions {
                 r -> r.fromStore(s -> ReferenceCompletions.generate(
                     r.vocabulary(), s, r.snapshot(), r.context(), r.directive(), r.source())));
             case Behavior.ArgMappingBinding ignored -> List.of(
-                r -> ArgMappingCompletions.generate(
-                    r.vocabulary(), r.data(), r.context(), r.directive(), r.pos(), r.lspPos(), r.source()));
+                r -> r.fromStore(s -> ArgMappingCompletions.generate(
+                    r.vocabulary(), s, r.context(), r.directive(), r.pos(), r.lspPos(), r.source())));
             case Behavior.ScalarTypeBinding ignored -> List.of(
                 r -> r.fromStore(s -> ScalarTypeCompletions.generate(
                     r.vocabulary(), s, r.context(), r.directive(), r.source())));

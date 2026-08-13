@@ -8,7 +8,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.read.StoreHandle;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import org.eclipse.lsp4j.CompletionItem;
@@ -19,6 +19,7 @@ import org.eclipse.lsp4j.Range;
 import java.util.List;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 
 /**
  * Completion inside an {@code argMapping} string literal
@@ -27,10 +28,10 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
  * candidates then depend on the side:
  *
  * <ul>
- *   <li><b>Left</b> (Java parameter): the resolved method's parameter names,
- *       read off the catalog. Suppressed when the names are {@code null} (the
- *       consumer compiled without {@code -parameters}); an existing
- *       diagnostic nudges toward the fix.</li>
+ *   <li><b>Left</b> (Java parameter): the parameter names of the method the sibling
+ *       {@code className} / {@code method} values name, from {@code jvm_method_parameter}.
+ *       Suppressed when the names are absent (the consumer compiled without
+ *       {@code -parameters}); an existing diagnostic nudges toward the fix.</li>
  *   <li><b>Right</b> (GraphQL argument): the enclosing field's GraphQL argument
  *       names, read syntactically from the {@code field_definition}. Dot-path
  *       expansion into nested input fields is deferred (the LSP carries
@@ -50,7 +51,7 @@ public final class ArgMappingCompletions {
 
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
-        CompletionData data,
+        StoreHandle store,
         CompletionContext context,
         Directives.Directive directive,
         Point pos,
@@ -83,20 +84,35 @@ public final class ArgMappingCompletions {
         Range replaceRange = rangeFor(source, contentStartByte, cursor.token());
 
         return switch (cursor.side()) {
-            case LEFT -> leftCandidates(vocabulary, data, directive, context.coordinate(), pos, source, replaceRange);
+            case LEFT -> leftCandidates(vocabulary, store, directive, context.coordinate(), pos, source, replaceRange);
             case RIGHT -> rightCandidates(directive, cursor.token().text(), source, replaceRange);
         };
     }
 
+    /**
+     * The parameter names of the named method, across every overload of it. The schema names a method
+     * by name alone, so which overload an author meant is not something the census can answer and the
+     * projection's first-match pick was a silent choice; the union, deduplicated by name and ordered
+     * by descriptor then position, offers every name that could be right. A method the walk never met
+     * has no rows and completes nothing.
+     */
     private static List<CompletionItem> leftCandidates(
-        LspVocabulary vocabulary, CompletionData data, Directives.Directive directive,
+        LspVocabulary vocabulary, StoreHandle store, Directives.Directive directive,
         no.sikt.graphitron.lsp.parsing.SchemaCoordinate coord, Point pos, byte[] source, Range replaceRange
     ) {
-        var method = ArgMappingSupport.resolveMethod(vocabulary, directive, pos, coord, data, source);
-        if (method.isEmpty()) return List.of();
-        return method.get().parameters().stream()
-            .map(CompletionData.Parameter::name)
-            .filter(name -> name != null && !name.isEmpty())
+        var target = ArgMappingSupport.siblingMethodTarget(vocabulary, directive, pos, coord, source);
+        if (target.isEmpty()) return List.of();
+        var names = store.dsl()
+            .select(JVM_METHOD_PARAMETER.PARAMETER_NAME)
+            .from(JVM_METHOD_PARAMETER)
+            .where(store.reads(JVM_METHOD_PARAMETER.SOURCE_NAME))
+            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(target.get().className()))
+            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(target.get().methodName()))
+            .and(JVM_METHOD_PARAMETER.PARAMETER_NAME.isNotNull())
+            .orderBy(JVM_METHOD_PARAMETER.DESCRIPTOR, JVM_METHOD_PARAMETER.POSITION)
+            .fetch(JVM_METHOD_PARAMETER.PARAMETER_NAME);
+        return names.stream().distinct()
+            .filter(name -> !name.isEmpty())
             .map(name -> CompletionItems.replacing(name, CompletionItemKind.Variable, replaceRange))
             .toList();
     }

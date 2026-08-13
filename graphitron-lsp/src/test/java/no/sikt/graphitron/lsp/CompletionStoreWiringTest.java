@@ -29,9 +29,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two properties a per-arm test cannot reach. That a store shared by a whole workspace does not
  * leak one module's classes into another module's popup, which is the failure the scoping predicate
- * exists to prevent and which no projection could even have. And that a session with no store answers
- * a store-backed arm with nothing while the arm that reads no facts keeps working, so the absence
- * costs exactly the arms whose subject is missing.
+ * exists to prevent and which no projection could even have. And that a session with no store
+ * completes nothing at all, the argument-name fallback included: every arm reads facts now, and the
+ * directive vocabulary is rows a capture writes rather than a second source read off the bundled
+ * definitions. The pre-capture state is what that costs.
  */
 class CompletionStoreWiringTest {
 
@@ -84,10 +85,15 @@ class CompletionStoreWiringTest {
             .isEmpty();
     }
 
+    /**
+     * The argument-name fallback goes dark with the rest of them. It used to answer off the bundled
+     * directive definitions the language server ships, which made it the one arm a session with no
+     * facts could still serve; reading {@code graphql_directive_argument} instead means graphitron's
+     * own vocabulary is rows a capture wrote, and a graph nobody has captured has none of them. The
+     * trade is a second reader of one question against arg-name completion before the first capture.
+     */
     @Test
-    void aSessionWithNoStoreStillCompletesArgumentNames(@TempDir Path tmp) {
-        // The fallback arm reads the directive vocabulary rather than the store, so it is unaffected:
-        // the absence costs exactly the arms whose subject is the store.
+    void aSessionWithNoStoreDoesNotCompleteArgumentNamesEither(@TempDir Path tmp) {
         var workspace = new Workspace();
         String uri = tmp.resolve("unstored.graphqls").toUri().toString();
         String source = "type Query { x: Int @service(service: {className: \"x\"}, ) }\n";
@@ -95,8 +101,7 @@ class CompletionStoreWiringTest {
 
         // Cursor on the space after the comma, where the next argument name would go.
         assertThat(completionAt(workspace, uri, source, new Point(0, source.indexOf(", ") + 2)))
-            .extracting(CompletionItem::getLabel)
-            .contains("contextArguments");
+            .isEmpty();
     }
 
     private static List<String> classNames(StoreHandle handle) {
