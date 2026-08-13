@@ -9,6 +9,7 @@ import org.jooq.UniqueKey;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
@@ -94,6 +96,7 @@ final class CatalogFactCapture {
             GraphSourceMembership.note(sink, source);
         }
         clearSchemaSources(sink, new LinkedHashSet<>(sourceByTable.values()));
+        captureSchemas(sink, jooq);
         for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
             Table<?> table = entry.table();
             String schema = table.getSchema() == null ? "" : table.getSchema().getName();
@@ -107,6 +110,7 @@ final class CatalogFactCapture {
             record.setTableSchema(schema);
             record.setTableName(name);
             record.setJooqName(entry.javaFieldName());
+            record.setClassFqn(table.getClass().getName());
             record.setDescription(nullIfBlank(table.getComment()));
             sink.add(record);
 
@@ -164,9 +168,47 @@ final class CatalogFactCapture {
             dsl.deleteFrom(SQL_CONSTRAINT).where(SQL_CONSTRAINT.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_COLUMN).where(SQL_COLUMN.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_TABLE).where(SQL_TABLE.SOURCE_NAME.eq(source)).execute();
+            // After sql_table, which references it.
+            dsl.deleteFrom(SQL_SCHEMA).where(SQL_SCHEMA.SOURCE_NAME.eq(source)).execute();
             ClasspathSources.upsert(dsl, source, JOOQ_SCHEMA);
         }
     }
+
+    /**
+     * One row per schema the census touches, carrying the schema-grain generated artifact: the
+     * {@code Keys} class name. Runs before the table walk because {@code sql_table} references this
+     * relation, and both draw their {@code (source, schema)} pairs from the same census, so the
+     * referenced row is present by construction rather than by detection.
+     *
+     * <p>The pairs deduplicate on the way in, which is the whole reason this is its own relation. One
+     * {@code Keys} class serves every table in its schema, so hanging its name off {@code sql_table}
+     * would repeat one value across every row; and the multi-schema layout that gives each schema its
+     * own package is exactly where concatenating a configured package with {@code ".Keys"} gets the
+     * name wrong.
+     */
+    private static void captureSchemas(FactSink sink, JooqCatalog jooq) {
+        var schemas = new LinkedHashMap<SchemaKey, Schema>();
+        for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
+            Table<?> table = entry.table();
+            Schema schema = table.getSchema();
+            schemas.putIfAbsent(
+                new SchemaKey(packageOf(table), schema == null ? "" : schema.getName()), schema);
+        }
+        for (var entry : schemas.entrySet()) {
+            SchemaKey key = entry.getKey();
+            if (!sink.claim(SQL_SCHEMA, key.source(), key.schemaName())) {
+                continue;
+            }
+            var row = sink.dsl().newRecord(SQL_SCHEMA);
+            row.setSourceName(key.source());
+            row.setTableSchema(key.schemaName());
+            row.setKeysClassFqn(jooq.keysClassFqn(entry.getValue()).orElse(null));
+            sink.add(row);
+        }
+    }
+
+    /** A schema's identity in the store: the generated package it lives in, plus its SQL name. */
+    private record SchemaKey(String source, String schemaName) {}
 
     /** The generated package the table's schema lives in; the sql_ family's partition source. */
     private static String packageOf(Table<?> table) {

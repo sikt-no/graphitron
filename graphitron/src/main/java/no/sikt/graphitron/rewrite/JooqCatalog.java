@@ -781,6 +781,21 @@ public class JooqCatalog {
             .findFirst();
     }
 
+    /**
+     * The fully qualified name of the generated {@code Keys} class holding a schema's key constants,
+     * resolved by loading the class off the codegen classpath. Empty when the generated model carries
+     * none for the schema.
+     *
+     * <p>Deliberately not the configured package concatenated with {@code ".Keys"}. The two diverge
+     * under multi-schema layouts, where each schema's {@code Keys} sits in that schema's own package,
+     * and only the classpath can say which. Resolving it needs the codegen loader, so it is captured
+     * or it is guessed later.
+     */
+    public Optional<String> keysClassFqn(Schema schema) {
+        if (schema == null) return Optional.empty();
+        return keysClass(schema).map(Class::getName);
+    }
+
     private Optional<Class<?>> keysClass(Schema schema) {
         try {
             return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Keys", false, codegenLoader));

@@ -2177,19 +2177,34 @@ COMMENT ON COLUMN graphitron_type_directive_synthesis.macro IS 'which expansion 
 -- reader, not the owner: reading INFORMATION_SCHEMA directly instead would leave every relation
 -- name here correct. "Catalog" stays the prose word for what the family is about; only the
 -- prefix carries the rule.
+CREATE TABLE sql_schema (
+  source_name    VARCHAR NOT NULL,
+  table_schema   VARCHAR NOT NULL,
+  keys_class_fqn VARCHAR,
+  PRIMARY KEY (source_name, table_schema),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE sql_schema IS 'A schema exists in the consumer''s catalog, and carries the generated artifacts that belong to the schema rather than to any one of its tables. It exists because the Keys class is per schema: hanging its name off sql_table would repeat one value across every table in the schema, which is the repeating group the projection era shipped. Written for every schema the catalog census touches, so a table''s schema is always present.';
+COMMENT ON COLUMN sql_schema.source_name IS 'the generated package the schema lives in; the partition this row belongs to and the key''s leading dimension, as on sql_table';
+COMMENT ON COLUMN sql_schema.table_schema IS 'SQL schema name; empty string when the generated model declares no schema for its tables, which is the same fallback sql_table applies';
+COMMENT ON COLUMN sql_schema.keys_class_fqn IS 'the fully qualified name of the generated Keys class holding this schema''s key constants, resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Keys". The guess and the fact diverge under multi-schema layouts, where each schema gets its own Keys class in its own package. Null when the generated model carries no Keys class for the schema, which is a fact: a schema with no keys has no constants to name. Goto-definition on @reference(key:) lands in this class, so it is a join key rather than a completion nicety.';
+
 CREATE TABLE sql_table (
   source_name  VARCHAR NOT NULL,
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   jooq_name    VARCHAR NOT NULL,
+  class_fqn    VARCHAR NOT NULL,
   description  VARCHAR,
   PRIMARY KEY (source_name, table_schema, table_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
+  FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
 );
 COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog. Every table jOOQ''s generated model declares, across every schema it declares; ambiguity of an unqualified @table(name:) is a resolution question and therefore derivation, so capture just records them all.';
 COMMENT ON COLUMN sql_table.source_name IS 'the generated package the table''s schema lives in; the partition this row belongs to and the key''s leading dimension, so two modules'' catalogs carrying one (schema, table) coordinate coexist instead of the second build clobbering the first. The package rather than the classpath entry it was loaded from, because one jar carries every schema a codegen run produced and invalidating the jar would discard them all, while the package is the granularity codegen actually rewrites. Schemas flattened into one package (jOOQ''s outputSchemaToDefault) share a source, which is correct: they are regenerated together';
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_table.class_fqn IS 'the fully qualified name of the generated jOOQ table class, read off the live Table during the catalog walk. Per table, unlike the Keys class name, which is per schema and lives on sql_schema. Goto-definition on @table(name:) and @field(name:) lands in this class, and jvm_class cannot supply it because that family deliberately excludes the generated jOOQ package, so this is the join key that reaches generated sources at all.';
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
 COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 

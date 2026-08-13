@@ -39,6 +39,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -287,7 +288,10 @@ class ColumnMatchClaimTest {
             seedTable(dsl, "g", "Actor", "other.actor", "pkg.a", "other", "actor");
             seedColumn(dsl, "pkg.a", "other", "actor", "name", 1, "NAME");
             // The same table name in another schema must not shadow the qualified pick.
-            dsl.insertInto(SQL_TABLE).values("pkg.a", "public", "actor", "ACTOR", null).execute();
+            seedSchema(dsl, "pkg.a", "public");
+            dsl.insertInto(SQL_TABLE)
+                .values("pkg.a", "public", "actor", "ACTOR", "pkg.a.tables.actor", null)
+                .execute();
             var rows = dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
                 .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g")).fetch();
             assertThat(rows).hasSize(1);
@@ -307,7 +311,10 @@ class ColumnMatchClaimTest {
             seedColumn(dsl, "pkg.a", "public", "dup", "title", 1, "TITLE");
             seedSource(dsl, "pkg.b");
             dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg.b").execute();
-            dsl.insertInto(SQL_TABLE).values("pkg.b", "legacy", "dup", "DUP", null).execute();
+            seedSchema(dsl, "pkg.b", "legacy");
+            dsl.insertInto(SQL_TABLE)
+                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup", null)
+                .execute();
             assertThat(dsl.fetchCount(INTENT_COLUMN_MATCH_CLAIM,
                 INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g"))).isZero();
         });
@@ -515,9 +522,24 @@ class ColumnMatchClaimTest {
             .execute();
         seedSource(dsl, sourceName);
         dsl.insertInto(STORE_GRAPH_SOURCE).values(graphName, sourceName).execute();
+        seedSchema(dsl, sourceName, tableSchema);
         dsl.insertInto(SQL_TABLE)
-            .values(sourceName, tableSchema, tableName, tableName.toUpperCase(Locale.ROOT), null)
+            .values(sourceName, tableSchema, tableName, tableName.toUpperCase(Locale.ROOT),
+                sourceName + ".tables." + tableName, null)
             .execute();
+    }
+
+    /**
+     * The schema row {@code sql_table} references. Idempotent, because several seeded tables share a
+     * schema and a seed helper is called once per table.
+     */
+    private static void seedSchema(DSLContext dsl, String sourceName, String tableSchema) {
+        if (dsl.fetchCount(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME.eq(sourceName)
+                .and(SQL_SCHEMA.TABLE_SCHEMA.eq(tableSchema))) == 0) {
+            dsl.insertInto(SQL_SCHEMA)
+                .values(sourceName, tableSchema, sourceName + ".Keys")
+                .execute();
+        }
     }
 
     private static void seedColumn(DSLContext dsl, String sourceName, String tableSchema,

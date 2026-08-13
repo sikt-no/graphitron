@@ -29,6 +29,7 @@ import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -72,7 +73,7 @@ final class StoreRefresh {
      */
     private static final Set<Table<?>> PARTITIONED = Set.of(
         JVM_CLASS, JVM_METHOD, JVM_METHOD_PARAMETER, JVM_RECORD_COMPONENT, JVM_SCALAR_TYPE_FIELD,
-        SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
+        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN);
 
     private StoreRefresh() {}

@@ -68,6 +68,7 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
@@ -177,7 +178,7 @@ class FactCaptureAgreementTest {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
-            "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
+            "sql_schema", "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "jvm_class", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
@@ -804,6 +805,55 @@ class FactCaptureAgreementTest {
                 .forEach(row -> captured.put(
                     row.value1() + "." + row.value2() + "|" + row.value3(), row.value4()));
             assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The generated class names, each at its own grain. The table class is per table; the
+     * {@code Keys} class is per schema, which is why it sits on {@code sql_schema} instead of
+     * repeating down every table row. Both are the join keys goto-definition needs to land in
+     * generated sources, and {@code jvm_class} cannot supply either, since that family excludes the
+     * generated jOOQ package by design.
+     */
+    @Test
+    @DisplayName("generated class names are captured at the grain the concept has")
+    void generatedClassNamesAreCapturedAtTheirOwnGrain(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
+                new NodeDeclaration(null));
+
+            var expectedTables = new LinkedHashMap<String, String>();
+            var expectedSchemas = new LinkedHashMap<String, String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                var schema = table.getSchema();
+                String schemaName = schema == null ? "" : schema.getName();
+                expectedTables.put(schemaName + "." + table.getName(), table.getClass().getName());
+                expectedSchemas.putIfAbsent(schemaName, jooq.keysClassFqn(schema).orElse(null));
+            }
+            assertThat(expectedTables).as("the catalog has tables, so this pins something").isNotEmpty();
+            assertThat(expectedSchemas.values())
+                .as("if no Keys class resolved, the classpath lookup is broken and this is vacuous")
+                .anyMatch(java.util.Objects::nonNull);
+
+            var capturedTables = store.dsl()
+                .select(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME, SQL_TABLE.CLASS_FQN)
+                .from(SQL_TABLE)
+                .fetch()
+                .intoMap(r -> r.value1() + "." + r.value2(), r -> r.value3());
+            assertThat(capturedTables).isEqualTo(expectedTables);
+
+            var capturedSchemas = store.dsl()
+                .select(SQL_SCHEMA.TABLE_SCHEMA, SQL_SCHEMA.KEYS_CLASS_FQN)
+                .from(SQL_SCHEMA)
+                .fetch()
+                .intoMap(r -> r.value1(), r -> r.value2());
+            assertThat(capturedSchemas)
+                .as("one row per schema, not one per table")
+                .isEqualTo(expectedSchemas);
         }
     }
 
