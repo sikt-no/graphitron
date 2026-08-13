@@ -701,11 +701,9 @@ public class GraphQLRewriteGenerator {
         all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
             .run(attributed.registry(), attributed.injectedNames()));
         // Codegen-config advisories about the owned-connection runtime's identity posture, derived
-        // from the <sessionState> config and whether the schema uses @service. Folded in here so they ride
-        // the same suppression, LSP replay, and MCP projection as every other warning.
-        boolean hasService = schema.fields().values().stream()
-            .anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.ServiceField);
-        all.addAll(no.sikt.graphitron.rewrite.session.SessionStateWarnings.forConfig(ctx.sessionStateConfig(), hasService));
+        // from the <sessionState> config. Folded in here so they ride the same suppression, LSP
+        // replay, and MCP projection as every other warning.
+        all.addAll(no.sikt.graphitron.rewrite.session.SessionStateWarnings.forConfig(ctx.sessionStateConfig()));
         // The dependency-currency nudge, derived from the resolved graphql-java / jOOQ versions the
         // mojo decoded off both dependency graphs. Same channel and same reason: a whole-build fact
         // with no SDL coordinate, suppressible by rule id like every other finding.

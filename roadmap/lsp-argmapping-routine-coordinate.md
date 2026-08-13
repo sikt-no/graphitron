@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-11
-last-updated: 2026-08-11
+last-updated: 2026-08-13
 ---
 
 # LSP argMapping completions and diagnostics at the @routine coordinate
@@ -22,3 +22,5 @@ The design was worked out and reviewed as part of `roadmap/unify-argmapping-reso
 * `Diagnostics.validateArgMappingGraphqlArg` already validates the head segment only and already flags just the head span. It becomes reachable at `@routine` for free once the overlay coordinate exists.
 
 Tests: `ArgMappingCompletionsTest` and `ArgMappingDiagnosticsTest` gain `@routine` cases, mirroring the `@service` behaviour those files already pin: left-hand completions offer the routine's IN parameter names, and a typo'd head segment underlines the head span only.
+
+A small adjacent follow-up rides the same completions surface: `ArgMappingSigil` admits `$session` as an argMapping RHS at the `@service` site (binding the parameter to the `<sessionState>` mount's returned handle), but right-hand completions never offer it. Offering the admitted sigil literal alongside the field argument names, at admitted sites only, is one more entry in an existing list rather than a new mechanism; the sigil owner (`ArgMappingSigil`) is where the admitted-site predicate already lives, so the completions arm should consult it rather than re-declare it. Named here because the session-identity spec that deferred it deletes at Done.

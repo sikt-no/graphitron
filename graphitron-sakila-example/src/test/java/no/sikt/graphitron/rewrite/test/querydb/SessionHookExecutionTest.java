@@ -313,6 +313,42 @@ class SessionHookExecutionTest {
         assertThat(data.get("claimsEcho")).isEqualTo(claims);
     }
 
+    @Test
+    void sessionBoundParameterOnAnEscapeHatchOperation_failsLoudlyInsteadOfBindingNull() throws Exception {
+        // The one $session failure that is runtime rather than build-time, because the build
+        // cannot see which factory the caller used: a caller-supplied DSLContext (the
+        // escape-hatch factory) carries no mounted handle, so the emitted guarded read must
+        // throw located rather than hand the service parameter a null.
+        try (Connection conn = probeConnection()) {
+            DSLContext supplied = DSL.using(conn, SQLDialect.POSTGRES);
+
+            // The emitted guard itself, driven directly: the message names the field
+            // coordinate, the sigil, and the owned entry points.
+            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.TenantConnections
+                    .sessionHandle(supplied, "Query.sessionPrincipal"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Query.sessionPrincipal")
+                .hasMessageContaining("$session")
+                .hasMessageContaining("Graphitron.newOwnedExecutionInput")
+                .hasMessageContaining("GraphitronRuntime.newGraphQL(schema)");
+
+            // And through the escape-hatch engine end to end: the operation surfaces an error
+            // (the fetcher's channel redacts the located throw like any other fault), never
+            // data fabricated from a null handle.
+            var engine = no.sikt.graphitron.generated.Graphitron.newGraphQL().build();
+            var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+                .newExecutionInput(supplied, "{\"sub\":\"alice\"}", "alice")
+                .query("{ sessionPrincipal }")
+                .build());
+
+            assertThat(result.getErrors())
+                .as("an escape-hatch $session read is an error, not a silent null")
+                .isNotEmpty();
+            java.util.Map<String, Object> data = result.getData();
+            assertThat(data == null ? null : data.get("sessionPrincipal")).isNull();
+        }
+    }
+
     // ===== helpers =====
 
     private static Connection probeConnection() throws SQLException {

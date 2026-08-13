@@ -288,6 +288,8 @@ access: [Entitlement] @service(
 
 Under tenant fan-out each call sees its own tenant's handle. The parameter's type must match your `mount`'s return type; both are your declarations, checked at build time.
 
+One check has to wait until runtime, because the build cannot see which factory an operation was built with: a `$session` field executed through the escape hatch (`Graphitron.newExecutionInput(dsl, ...)` with `Graphitron.newGraphQL()`) runs on a connection graphitron never mounted, so the read fails the request with an error naming the field and the owned entry points rather than handing your service a `null` where identity belongs.
+
 === The seam parameter
 
 The `Configuration` you are handed is bound to the connection your `mount` is mounting and carries the jOOQ `Settings` you gave the runtime, so a schema mapping you configured applies to your routine call as it does to graphitron's own SQL. It carries no transaction provider, because both methods run outside any transaction, on a connection graphitron holds in autocommit. Declare a `Connection` parameter instead if you want raw JDBC. A throwing `mount` evicts the connection rather than returning it to the pool, and fails the request before any of your query's SQL runs.

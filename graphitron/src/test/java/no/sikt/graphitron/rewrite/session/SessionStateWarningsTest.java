@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit-tier coverage of the one codegen-config advisory about the owned-connection runtime's
  * identity posture. The decision is a pure function of the authored {@link SessionStateConfig},
  * so it is asserted directly here rather than through a pipeline run;
- * {@code GraphQLRewriteGenerator} only supplies the inputs.
+ * {@code GraphQLRewriteGenerator} only supplies the input.
  *
  * <p>Exactly one rule survives: {@code no-session-state}. The retired
  * {@code session-state-convention-fence} graded a fence level graphitron could see only while it
@@ -26,18 +26,14 @@ class SessionStateWarningsTest {
         SessionStateConfig.from("com.example.db.Routines#connect", "com.example.db.Routines#disconnect");
 
     @Test
-    void noSessionState_warnsUnsecured_regardlessOfService() {
-        assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none(), false))
+    void noSessionState_warnsUnsecured() {
+        assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none()))
             .singleElement()
             .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> {
                 assertThat(lf.rule()).isEqualTo(LintRule.NO_SESSION_STATE);
                 assertThat(lf.message()).contains("No <sessionState>").contains("mounts no database identity");
                 assertThat(lf.location()).as("a whole-build posture has no SDL coordinate").isNull();
             });
-        // The no-session-state exposure is independent of @service: still fires with services present.
-        assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none(), true))
-            .singleElement()
-            .satisfies(w -> assertThat(((BuildWarning.LintFinding) w).rule()).isEqualTo(LintRule.NO_SESSION_STATE));
     }
 
     @Test
@@ -45,7 +41,7 @@ class SessionStateWarningsTest {
         // Being the single build-time signal about identity, the message names the three mount
         // shapes a consumer chooses between and points at the security guide, instead of only
         // saying to configure something.
-        assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none(), false))
+        assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none()))
             .singleElement()
             .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> assertThat(lf.message())
                 .contains("<mount>")
@@ -56,11 +52,9 @@ class SessionStateWarningsTest {
     }
 
     @Test
-    void configuredMethodHooks_raiseNothing_evenWithServiceFields() {
-        // Graphitron cannot see the fence level of a reflected mount, so a schema with @service
-        // fields and a configured mount raises nothing rather than asserting an exposure it
-        // cannot ground.
-        assertThat(SessionStateWarnings.forConfig(METHOD_HOOKS, true)).isEmpty();
-        assertThat(SessionStateWarnings.forConfig(METHOD_HOOKS, false)).isEmpty();
+    void configuredMethodHooks_raiseNothing() {
+        // Graphitron cannot see the fence level of a reflected mount, so a schema with a
+        // configured mount raises nothing rather than asserting an exposure it cannot ground.
+        assertThat(SessionStateWarnings.forConfig(METHOD_HOOKS)).isEmpty();
     }
 }

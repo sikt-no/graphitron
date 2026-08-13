@@ -140,6 +140,22 @@ public final class TypeSpecAssertions {
         return arm.contains(".requireConsistentArguments(");
     }
 
+    /**
+     * True when some method body in {@code type} reads the mounted session handle through the
+     * carrier's guarded accessor with {@code fieldCoordinate} baked in
+     * ({@code TenantConnections.sessionHandle(dsl, "Type.field")}) and no method body in the
+     * class reads it through a bare {@code configuration().data(...)} cast, which would bind
+     * null on an escape-hatch operation instead of throwing located.
+     */
+    public static boolean readsSessionHandleThroughGuard(TypeSpec type, String fieldCoordinate) {
+        boolean guarded = type.methodSpecs().stream()
+            .anyMatch(m -> m.code().toString()
+                .contains("sessionHandle(dsl, \"" + fieldCoordinate + "\")"));
+        boolean bareRead = type.methodSpecs().stream()
+            .anyMatch(m -> m.code().toString().contains("configuration().data("));
+        return guarded && !bareRead;
+    }
+
     private static Optional<String> methodBody(TypeSpec type, String methodName) {
         return type.methodSpecs().stream()
             .filter(m -> m.name().equals(methodName))

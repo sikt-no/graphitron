@@ -45,13 +45,15 @@ public final class ServiceMethodCallEmitter {
     /**
      * Emit the body statements for a {@link ServiceMethodCall}. The {@code result} local is
      * declared with the carrier's {@link ServiceMethodCall#javaReturnType()}.
-     * {@code outputPackage} is unused: the emitter generates unqualified same-class calls into
-     * the {@code graphitronContext(env)} private static helper that
+     * {@code outputPackage} locates the generated {@code TenantConnections} carrier for the
+     * {@code $session} guard; everything else emits unqualified same-class calls into the
+     * {@code graphitronContext(env)} private static helper that
      * {@code TypeFetcherGenerator.buildGraphitronContextHelper} emits on every {@code *Fetchers}
      * class. The caller is responsible for registering
      * {@link TypeFetcherEmissionContext.HelperKind#GRAPHITRON_CONTEXT} so the helper is actually
      * emitted (the existing {@link TypeFetcherEmissionContext#graphitronContextCall()} accessor
-     * records the dependency on the way out).
+     * records the dependency on the way out). This overload carries no field coordinate, so it
+     * serves only calls without a {@code $session} binding.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage) {
         return emit(call, outputPackage, call.javaReturnType(), FetchersHelperNames.bare());
@@ -79,17 +81,20 @@ public final class ServiceMethodCallEmitter {
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType,
             FetchersHelperNames helperNames) {
         return emit(call, resultLocalType, helperNames,
-            CodeBlock.of("graphitronContext(env).getDslContext(env)"));
+            CodeBlock.of("graphitronContext(env).getDslContext(env)"), outputPackage, null);
     }
 
     /**
      * Canonical form carrying the {@code dsl} local's source expression, resolved per the
      * field's tenant binding by {@code TenantDslEmitter.dslExpression} (which yields the
      * {@code graphitronContext(env).getDslContext(env)} form in single-tenant builds, the shape
-     * every other overload defaults to).
+     * every other overload defaults to), plus the emitting field's coordinate
+     * ({@code Type.field}), which the {@code $session} guard bakes into its failure message; a
+     * call without a {@code $session} binding may pass {@code null}.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, TypeName resultLocalType,
-            FetchersHelperNames helperNames, CodeBlock dslExpression) {
+            FetchersHelperNames helperNames, CodeBlock dslExpression, String outputPackage,
+            String fieldCoordinate) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = needsDslLocal(allEntries(call));
@@ -99,11 +104,11 @@ public final class ServiceMethodCallEmitter {
 
         if (call instanceof ServiceMethodCall.Instance inst) {
             for (MappingEntry e : inst.ctorArgs()) {
-                addVarDecl(out, e, helperNames);
+                addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate);
             }
         }
         for (MappingEntry e : call.methodArgs()) {
-            addVarDecl(out, e, helperNames);
+            addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate);
         }
 
         out.add(finalAssignment(call, resultLocalType));
@@ -143,19 +148,29 @@ public final class ServiceMethodCallEmitter {
     }
 
     private static void addVarDecl(List<CodeBlock> out, MappingEntry entry,
-            FetchersHelperNames helperNames) {
+            FetchersHelperNames helperNames, String outputPackage, String fieldCoordinate) {
         switch (entry) {
             case MappingEntry.FromDsl ignored -> { /* shares the prelude's dsl local */ }
             case MappingEntry.FromContext ctx ->
                 out.add(CodeBlock.of("$T $L = ($T) graphitronContext(env).getContextArgument(env, $S)",
                     ctx.javaType(), ctx.javaName(), ctx.javaType(), ctx.contextKey()));
             // The handle rides the resolved DSLContext's own per-Configuration data() map,
-            // written once at mount; reading it off the dsl local is what scopes the read per
-            // pinned connection (a tenant-routed call sees that tenant's handle).
-            case MappingEntry.FromSessionHandle handle ->
-                out.add(CodeBlock.of("$T $L = ($T) dsl.configuration().data($S)",
-                    handle.javaType(), handle.javaName(), handle.javaType(),
-                    no.sikt.graphitron.rewrite.session.SessionHooks.HANDLE_DATA_KEY));
+            // written once at mount; reading it through the carrier's guarded accessor off the
+            // dsl local is what scopes the read per pinned connection (a tenant-routed call sees
+            // that tenant's handle) and what makes an unmounted connection (the escape-hatch
+            // factory) a located throw instead of a silently bound null.
+            case MappingEntry.FromSessionHandle handle -> {
+                if (fieldCoordinate == null) {
+                    throw new IllegalStateException(
+                        "MappingEntry.FromSessionHandle reached ServiceMethodCallEmitter without a"
+                        + " fieldCoordinate — a $session-binding call must route through the canonical"
+                        + " emit overload, which carries the coordinate for the guard's message:"
+                        + " parameter '" + handle.javaName() + "'");
+                }
+                out.add(CodeBlock.of("$T $L = $T.sessionHandle(dsl, $S)",
+                    handle.javaType(), handle.javaName(),
+                    TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate));
+            }
             case MappingEntry.FromArg arg -> {
                 CodeBlock expr = valueShapeExpression(arg.shape(), helperNames);
                 // A nested-input arg of generic type extracts as `(List<X>) map.get(key)`, where the

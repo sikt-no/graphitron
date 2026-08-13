@@ -232,7 +232,8 @@ public final class MultiTablePolymorphicEmitter {
         // `dsl` local iff the method binds a DSLContext / is instance-shaped. Stage 2's by-PK
         // auto-fetch needs a `dsl` local, so declare one here when the service call did not.
         ServiceMethodCallEmitter.emit(serviceCall, serviceCall.javaReturnType(), ctx.fetchersHelperNames(),
-            TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage)).forEach(builder::addStatement);
+            TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
+            outputPackage, ctx.parentTypeName() + "." + fieldName).forEach(builder::addStatement);
         if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
             builder.addStatement("$T dsl = $L", DSL_CONTEXT,
                 TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
@@ -399,7 +400,8 @@ public final class MultiTablePolymorphicEmitter {
         // Service call: declares `result` and a `dsl` local iff the method binds a DSLContext /
         // is instance-shaped. The by-PK re-fetch needs `dsl`, so declare one here when it did not.
         ServiceMethodCallEmitter.emit(serviceCall, serviceCall.javaReturnType(), ctx.fetchersHelperNames(),
-            TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage)).forEach(builder::addStatement);
+            TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
+            outputPackage, ctx.parentTypeName() + "." + fieldName).forEach(builder::addStatement);
         if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
             builder.addStatement("$T dsl = $L", DSL_CONTEXT,
                 TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));

@@ -30,11 +30,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Unit-tier coverage of the runtime's tenant-keyed acquisition primitive
  * ({@code GraphitronRuntime.acquireForTenant}) and the per-operation {@code TenantConnections} carrier.
  * Because these are emitted, the honest way to assert their behaviour is to compile the real emitted
- * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the Postgres
- * {@code <variables>} sugar so a real {@code GraphitronSessionHook} runs at acquisition/release, letting
- * a fake {@code Connection} observe mount/unmount as the {@code prepareStatement} calls the fixture hook
- * makes; the fake tenant {@code DataSource}s are keyed so "the right source per key" and "one connection
- * per distinct key" read straight off the call log.
+ * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the
+ * {@link RecordingHookFixture} method pair so the real mount/unmount runs at acquisition/release,
+ * letting a fake {@code Connection} observe both phases as the {@code prepareStatement} calls the
+ * fixture makes; the fake tenant {@code DataSource}s are keyed so "the right source per key" and
+ * "one connection per distinct key" read straight off the call log.
  */
 @UnitTier
 class TenantConnectionsGeneratorTest {
@@ -150,6 +150,34 @@ class TenantConnectionsGeneratorTest {
         assertThat(events.indexOf("disconnect:B")).isLessThan(events.indexOf("abort:B"));
     }
 
+    @Test
+    void sessionHandle_onAMountedConnection_returnsTheHandleWrittenAtMint() throws Throwable {
+        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
+        Object tc = newTenantConnections(runtime, "{}");
+
+        Object dsl = dslForReturning(tc, "A");
+
+        assertThat(sessionHandle(dsl, "Film.mountedPrincipal"))
+            .as("the guarded accessor reads back exactly what the mount returned and the mint wrote")
+            .isEqualTo("handle:{}");
+    }
+
+    @Test
+    void sessionHandle_onAConnectionGraphitronNeverMounted_throwsLocatedInsteadOfBindingNull() {
+        // The escape-hatch shape: a caller-supplied DSLContext whose Configuration graphitron
+        // never mounted, so the handle slot is empty. The read must fail loudly, naming the field
+        // coordinate, the sigil, and the owned entry points, never hand a service parameter null.
+        org.jooq.DSLContext supplied = org.jooq.impl.DSL.using(SQLDialect.POSTGRES);
+
+        assertThatThrownBy(() -> sessionHandle(supplied, "Query.sessionPrincipal"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Query.sessionPrincipal")
+            .hasMessageContaining("$session")
+            .hasMessageContaining("Graphitron.newOwnedExecutionInput")
+            .hasMessageContaining("GraphitronRuntime.newGraphQL(schema)")
+            .hasMessageContaining("Graphitron.newExecutionInput(dsl, ...)");
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
 
     private Object newRuntime(Map<String, DataSource> tenantSources) throws Throwable {
@@ -168,7 +196,24 @@ class TenantConnectionsGeneratorTest {
     }
 
     private void dslFor(Object tc, Object key) throws Throwable {
-        invoke(() -> tenantConnectionsClass.getMethod("dslFor", Object.class).invoke(tc, key));
+        dslForReturning(tc, key);
+    }
+
+    private Object dslForReturning(Object tc, Object key) throws Throwable {
+        try {
+            return tenantConnectionsClass.getMethod("dslFor", Object.class).invoke(tc, key);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+
+    private Object sessionHandle(Object dsl, String fieldCoordinate) throws Throwable {
+        try {
+            return tenantConnectionsClass.getMethod("sessionHandle", org.jooq.DSLContext.class, String.class)
+                .invoke(null, dsl, fieldCoordinate);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
     }
 
     private void releaseAll(Object tc) throws Throwable {

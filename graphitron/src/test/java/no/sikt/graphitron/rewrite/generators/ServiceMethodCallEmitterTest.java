@@ -78,6 +78,41 @@ class ServiceMethodCallEmitterTest {
     }
 
     @Test
+    void emit_fromSessionHandle_routesThroughTheCarriersGuardedAccessor() {
+        var handleType = ClassName.get(String.class);
+        var entry = new MappingEntry.FromSessionHandle("identity", handleType);
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "principalOf", List.of(entry), handleType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, handleType, FetchersHelperNames.bare(),
+            no.sikt.graphitron.javapoet.CodeBlock.of("graphitronContext(env).getDslContext(env)"),
+            OUTPUT_PACKAGE, "Query.sessionPrincipal");
+
+        assertThat(stmts.get(0).toString())
+            .as("a $session binding forces the dsl local; the handle read is scoped per pinned connection")
+            .contains("DSLContext dsl");
+        assertThat(stmts.get(1).toString())
+            .as("the extraction is the carrier's guarded accessor carrying the field coordinate, "
+                + "never a bare configuration().data() cast that would bind null on the escape hatch")
+            .contains("TenantConnections.sessionHandle(dsl, \"Query.sessionPrincipal\")")
+            .doesNotContain("configuration().data");
+    }
+
+    @Test
+    void emit_fromSessionHandle_throughACoordinateLessOverload_isAnEmitterBug() {
+        var handleType = ClassName.get(String.class);
+        var entry = new MappingEntry.FromSessionHandle("identity", handleType);
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "principalOf", List.of(entry), handleType);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE))
+            .as("the guard's message needs the coordinate, so a coordinate-less emission cannot proceed silently")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("fieldCoordinate");
+    }
+
+    @Test
     void emit_instance_emitsDslPreludeAndNewServiceCtor() {
         var entry = new MappingEntry.FromArg("title",
             new ValueShape.Scalar(ClassName.get(String.class),

@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
@@ -985,7 +986,8 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionHooks sessionHooks) {
         var payload = payloadParams(sessionHooks);
-        boolean handled = sessionHooks instanceof SessionHooks.Handled;
+        TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
+        boolean handled = handleType != null;
         var optionalKey = ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), tenantKey);
         var entryType = self.nestedClass("Entry");
         var entryMapType = ParameterizedTypeName.get(MAP, optionalKey, entryType);
@@ -1273,6 +1275,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
             .addMethod(staticDslDefault(self));
+        if (handled) {
+            carrier.addMethod(sessionHandleAccessor(handleType));
+        }
         carrier.addType(entryClass);
         if (multiTenant) {
             carrier.addField(FieldSpec.builder(String.class, FAN_OUT_TENANTS_KEY_FIELD,
@@ -1905,6 +1910,44 @@ public final class ConnectionRuntimeClassGenerator {
                 + "context. Fails loudly when the operation did not run through graphitron-owned\n"
                 + "acquisition; owned fetch paths never fall back to an unrouted connection.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
+     * {@code static <handleType> sessionHandle(DSLContext dsl, String fieldCoordinate)}: the
+     * guarded handle read every {@code $session}-bound call site routes through. The handle is
+     * written into the pinned connection's per-{@code Configuration} data map at mint, so a
+     * missing entry means graphitron never mounted this connection: the operation ran on a
+     * caller-supplied {@code DSLContext} (the escape-hatch factory), whose pooled provider makes
+     * identity not merely unmounted but unmountable. The build cannot see which factory the
+     * caller used, so this is the one {@code $session} failure that is runtime rather than
+     * build-time, and it fails loudly in {@link #ofEnvironment of(env)}'s idiom instead of
+     * binding a null into a service parameter meant to carry mounted identity.
+     */
+    private static MethodSpec sessionHandleAccessor(TypeName handleType) {
+        return MethodSpec.methodBuilder("sessionHandle")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(handleType)
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addParameter(String.class, "fieldCoordinate")
+            .addStatement("Object handle = dsl.configuration().data($S)", SessionHooks.HANDLE_DATA_KEY)
+            .beginControlFlow("if (handle == null)")
+            .addStatement("throw new $T($S + fieldCoordinate + $S)", IllegalStateException.class,
+                "Field '",
+                "' binds a parameter to " + ArgMappingSigil.SESSION_LITERAL + ", but this DSLContext"
+                    + " carries no mounted session handle: graphitron never mounted this connection."
+                    + " Only owned acquisition mounts, so the operation must be built with"
+                    + " Graphitron.newOwnedExecutionInput(...) and executed through"
+                    + " GraphitronRuntime.newGraphQL(schema); a caller-supplied DSLContext"
+                    + " (Graphitron.newExecutionInput(dsl, ...)) cannot carry mounted identity.")
+            .endControlFlow()
+            .addStatement("return ($T) handle", handleType)
+            .addJavadoc("The mounted session handle riding {@code dsl}'s per-{@code Configuration} data map,\n"
+                + "written at mint by the owned acquisition path. Fails loudly when absent: only owned\n"
+                + "acquisition mounts, so a missing handle means the operation ran on a caller-supplied\n"
+                + "DSLContext (the escape hatch), which cannot carry mounted identity.\n"
+                + "@param dsl the call site's resolved per-connection context\n"
+                + "@param fieldCoordinate the {@code $$session}-binding field, for the failure message\n")
             .build();
     }
 

@@ -50,15 +50,19 @@ public final class ArgCallEmitter {
      *                          {@code null} arm rejects a Sources param outright and is
      *                          caller-unreachable today, retained as a guard for a future
      *                          caller with no batch to supply.
+     * @param outputPackage     the run's output package, locating the generated
+     *                          {@code TenantConnections} carrier for the {@code $session} guard.
+     * @param fieldCoordinate   the emitting field ({@code Type.field}), baked into the
+     *                          {@code $session} guard's failure message.
      */
     public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression,
-            CodeBlock sourcesExpression) {
+            CodeBlock sourcesExpression, String outputPackage, String fieldCoordinate) {
         var args = CodeBlock.builder();
         boolean first = true;
         for (var param : method.params()) {
             if (!first) args.add(", ");
             first = false;
-            args.add(emitForParam(ctx, param, tableExpression, sourcesExpression));
+            args.add(emitForParam(ctx, param, tableExpression, sourcesExpression, outputPackage, fieldCoordinate));
         }
         return args.build();
     }
@@ -97,7 +101,7 @@ public final class ArgCallEmitter {
     }
 
     private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
-            CodeBlock sourcesExpression) {
+            CodeBlock sourcesExpression, String outputPackage, String fieldCoordinate) {
         var source = param.source();
         return switch (source) {
             case ParamSource.Arg arg -> emitArgExpression(ctx, arg, param);
@@ -139,12 +143,21 @@ public final class ArgCallEmitter {
                     + "only on <mount>/<unmount> hook methods, which the generated hook class calls directly: param '"
                     + param.name() + "'");
             // The $session sigil: the handle rides the resolved DSLContext's own per-Configuration
-            // data() map, written once at mount by the connection runtime. Reading it off the dsl
-            // local (never graphQLContext) is what scopes the read per pinned connection, so a
-            // tenant-routed call sees that tenant's handle.
-            case ParamSource.SessionHandle ignored ->
-                CodeBlock.of("($T) dsl.configuration().data($S)",
-                    rawTypeOf(param), no.sikt.graphitron.rewrite.session.SessionHooks.HANDLE_DATA_KEY);
+            // data() map, written once at mount by the connection runtime. Reading it through the
+            // carrier's guarded accessor off the dsl local (never graphQLContext) is what scopes
+            // the read per pinned connection (a tenant-routed call sees that tenant's handle) and
+            // what makes an unmounted connection (the escape-hatch factory) a located throw
+            // instead of a silently bound null.
+            case ParamSource.SessionHandle ignored -> {
+                if (fieldCoordinate == null) {
+                    throw new IllegalStateException(
+                        "ParamSource.SessionHandle reached buildMethodBackedCallArgs without a"
+                        + " fieldCoordinate — the $session guard bakes the coordinate into its failure"
+                        + " message, so every caller must supply it: param '" + param.name() + "'");
+                }
+                yield CodeBlock.of("$T.sessionHandle(dsl, $S)",
+                    TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate);
+            }
         };
     }
 

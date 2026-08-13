@@ -437,6 +437,14 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `NodeTypeBinding` | `NodeTypeCompletions` | `graphitron_node` |
 | no coordinate, or no value match | `ArgNameCompletions` (fallback) | `graphql_directive_argument` |
 
+A named debt rides `jvm_method_parameter`: its relation comment has the per-application
+`ParamSource` decision landing as a derived relation with its first consumer, and the
+`<sessionState>` mount's payload parameters are a candidate first consumer. If that relation
+lands, the census follow-up is admitting the named mount and unmount classes (today excluded
+with the rest of the consumer's jOOQ output package) so their signatures are visible to the
+same readers. Named here because the session-identity spec that first recorded the debt
+deletes at Done.
+
 **Hover.** `Hovers` dispatches on the same `Behavior` taxonomy, with three non-coordinate arms
 around it.
 

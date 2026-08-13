@@ -520,7 +520,8 @@ public class TypeFetcherGenerator {
                     CodeBlock stfServiceCall = CodeBlock.of("$L.$L($L)",
                         serviceCallTarget(stfService, ClassName.bestGuess(stf.method().className())),
                         stf.method().methodName(),
-                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, stf.method(), null, CodeBlock.of("keys")));
+                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, stf.method(), null, CodeBlock.of("keys"),
+                            outputPackage, stf.qualifiedName()));
                     var liftRow = launchers.rowFor(stf.parentTypeName(), stf.name())
                         .orElseThrow(() -> new IllegalStateException(
                             "Graphitron generator bug (service table child dispatch): coordinate '"
@@ -537,7 +538,8 @@ public class TypeFetcherGenerator {
                     CodeBlock srfServiceCall = CodeBlock.of("$L.$L($L)",
                         serviceCallTarget(srfService, ClassName.bestGuess(srf.method().className())),
                         srf.method().methodName(),
-                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, srf.method(), null, CodeBlock.of("keys")));
+                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, srf.method(), null, CodeBlock.of("keys"),
+                            outputPackage, srf.qualifiedName()));
                     var delegateRow = launchers.rowFor(srf.parentTypeName(), srf.name())
                         .orElseThrow(() -> new IllegalStateException(
                             "Graphitron generator bug (service record child dispatch): coordinate '"
@@ -1637,7 +1639,8 @@ public class TypeFetcherGenerator {
         // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
         ctx.graphitronContextCall();
         ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(),
-                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage))
+                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage),
+                outputPackage, parentTypeName + "." + fieldName)
             .forEach(builder::addStatement);
         if (wrap) {
             builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, "result"));

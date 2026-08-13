@@ -33,12 +33,9 @@ public final class SessionStateWarnings {
      * mount identity, so the generated API is unsecured at the database); a configured
      * {@link SessionStateConfig.MethodHooks} yields none.
      *
-     * @param config     the authored session-state configuration
-     * @param hasService whether the schema classifies any {@code @service} field (kept as an
-     *                   input so the decision stays pure and callers need not special-case;
-     *                   currently no rule reads it)
+     * @param config the authored session-state configuration
      */
-    public static List<BuildWarning> forConfig(SessionStateConfig config, boolean hasService) {
+    public static List<BuildWarning> forConfig(SessionStateConfig config) {
         return switch (config) {
             case SessionStateConfig.None ignored -> List.of(BuildWarning.LintFinding.of(
                 "No <sessionState> is configured: the owned-connection runtime mounts no database identity "
