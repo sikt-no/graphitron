@@ -39,7 +39,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SourceCadenceHoverAndDefinitionTest {
 
     private static final String SVC_FQN = "com.example.PriceService";
-    private static final String FILM_FQN = "fake.jooq.tables.Film";
+
+    /** The graph is beside the point in every case here; the subject is the {@code .java} files. */
+    private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
     @Test
     void serviceMethodHoverAndGotoBothReadTheWalkedSource(@TempDir Path srcRoot) throws IOException {
@@ -81,31 +83,33 @@ class SourceCadenceHoverAndDefinitionTest {
 
     @Test
     void tableHoverAndGotoBothReadTheWalkedGeneratedSource(@TempDir Path srcRoot) throws IOException {
-        writeJava(srcRoot, "fake/jooq/tables/Film.java", """
-            package fake.jooq.tables;
-            /** The film table. */
-            public class Film {
-                public final Object FILM_ID = null;
-            }
-            """);
-        var workspace = workspaceWithTableCatalog();
-        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
-
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var tablePos = pointAt(file, 0, "film\"");
 
-        // Hover falls back from the (empty) catalog description to the generated
-        // class Javadoc the walk recovered. Still the projection's index: the table arm has not
-        // migrated, so there is no store read on this path to give one.
-        var hover = Hovers.compute(LspVocabulary.load(), file, workspace.catalog(), Optional.empty(),
-            workspace.sourceIndex(), workspace.snapshot(), tablePos, false).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue()).contains("The film table.");
+        try (var store = StoreFixture.ofCatalog(srcRoot, PLACEHOLDER_SDL)) {
+            // The generated table class, written under the FQN the catalog walk actually captured
+            // rather than a spelled-out one, so the join both readers make is a real one.
+            String filmFqn = store.tableClassFqn("film");
+            store.withJavaSource(srcRoot, filmFqn, """
+                /** The film table. */
+                public class Film {
+                    public final Object FILM_ID = null;
+                }
+                """);
+            var workspace = workspaceWithTableCatalog(filmFqn);
+            workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
-        var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-            workspace.sourceIndex(), workspace.snapshot(), tablePos).orElseThrow();
-        assertThat(loc.getUri()).endsWith("Film.java");
-        // The class is declared on line 3 (0-based line 2).
-        assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
+            // Hover's description is the generated class's Javadoc, reached from the store's
+            // catalog census through the FQN into its java-source family; the fixture database
+            // carries no comment, so a parse is the only thing that can have supplied it.
+            assertThat(hoverText(workspace, store, file, tablePos)).contains("The film table.");
+
+            var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
+                workspace.sourceIndex(), workspace.snapshot(), tablePos).orElseThrow();
+            assertThat(loc.getUri()).endsWith("Film.java");
+            // The class is declared on line 3 (0-based line 2).
+            assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
+        }
     }
 
     @Test
@@ -195,9 +199,10 @@ class SourceCadenceHoverAndDefinitionTest {
         return new Workspace(new CompletionData(List.of(), List.of(), List.of(ref)));
     }
 
-    private static Workspace workspaceWithTableCatalog() {
+    /** The projection goto-definition still reads: a table and the FQN it was captured under. */
+    private static Workspace workspaceWithTableCatalog(String filmFqn) {
         var film = new CompletionData.Table(
-            "film", "", FILM_FQN,
+            "film", "", filmFqn,
             List.of(new CompletionData.Column("FILM_ID", "Integer", false, "")),
             List.of());
         return new Workspace(new CompletionData(List.of(film), List.of(), List.of()));

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -14,16 +15,9 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.jooq.Field;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.select;
 
 /**
  * Catalog-aware completions for any coordinate the {@link LspVocabulary}
@@ -46,7 +40,8 @@ import static org.jooq.impl.DSL.select;
  *
  * <p>Which table a site's columns come from stays a classification question, so the enclosing
  * type's backing and the field's own classification are read from the snapshot; only the column
- * census itself is a store read.
+ * census itself is a store read, and that read is {@link CatalogColumns}, shared with hover's
+ * column arm.
  */
 public final class FieldCompletions {
 
@@ -147,9 +142,7 @@ public final class FieldCompletions {
 
     /**
      * The columns of every table this graph's census holds under {@code tableName}, in table-
-     * definition order. Matched case-insensitively, as the incumbent projection's lookup was: the
-     * name comes from a directive an author typed and the database's own casing is not what they
-     * necessarily typed.
+     * definition order. The read itself is {@link CatalogColumns}, shared with hover's column arm.
      *
      * <p>A name two schemas both declare contributes both column lists. The projection answered
      * with whichever table its list happened to hold first, which was the generated {@code Tables}
@@ -158,30 +151,10 @@ public final class FieldCompletions {
     private static List<CompletionItem> tableColumnItems(
         StoreHandle store, String tableName, CompletionContext context
     ) {
-        // The generated field's Javadoc, on the .java cadence, keyed by the table class FQN the
-        // catalog walk captured. A correlated scalar select rather than a left join, so a duplicate
-        // declaration of one FQN cannot multiply a column into two popup entries.
-        Field<String> javadoc = field(select(JAVA_FIELD_DECLARATION.JAVADOC)
-            .from(JAVA_FIELD_DECLARATION)
-            .where(JAVA_FIELD_DECLARATION.CLASS_NAME.eq(SQL_TABLE.CLASS_FQN))
-            .and(JAVA_FIELD_DECLARATION.FIELD_NAME.eq(SQL_COLUMN.JOOQ_NAME))
-            .orderBy(JAVA_FIELD_DECLARATION.FILE)
-            .limit(1));
-        var rows = store.dsl()
-            .select(SQL_COLUMN.JOOQ_NAME, SQL_COLUMN.BINDING_TYPE, SQL_COLUMN.NULLABLE,
-                SQL_COLUMN.DESCRIPTION, javadoc)
-            .from(SQL_COLUMN)
-            .join(SQL_TABLE).on(SQL_TABLE.SOURCE_NAME.eq(SQL_COLUMN.SOURCE_NAME)
-                .and(SQL_TABLE.TABLE_SCHEMA.eq(SQL_COLUMN.TABLE_SCHEMA))
-                .and(SQL_TABLE.TABLE_NAME.eq(SQL_COLUMN.TABLE_NAME)))
-            .where(store.reads(SQL_COLUMN.SOURCE_NAME))
-            .and(SQL_COLUMN.TABLE_NAME.equalIgnoreCase(tableName))
-            .orderBy(SQL_COLUMN.TABLE_SCHEMA, SQL_COLUMN.ORDINAL)
-            .fetch();
-        var items = new ArrayList<CompletionItem>(rows.size());
-        for (var row : rows) {
-            items.add(toColumnItem(row.value1(), row.value2(), row.value3(), row.value4(),
-                row.value5(), context));
+        var columns = CatalogColumns.of(store, tableName);
+        var items = new ArrayList<CompletionItem>(columns.size());
+        for (var column : columns) {
+            items.add(toColumnItem(column, context));
         }
         return items;
     }
@@ -200,15 +173,12 @@ public final class FieldCompletions {
      * comment, the comment too, so it is the richer of the two rather than boilerplate.
      */
     private static CompletionItem toColumnItem(
-        String jooqName, String bindingType, boolean nullable, String comment, String javadoc,
-        CompletionContext context
+        CatalogColumns.Column column, CompletionContext context
     ) {
         var item = CompletionItems.replacing(
-            jooqName, CompletionItemKind.Field, context.replaceRange(),
-            bindingType + (nullable ? " (nullable)" : ""));
-        String description = javadoc != null && !javadoc.isEmpty()
-            ? javadoc
-            : (comment == null ? "" : comment);
+            column.jooqName(), CompletionItemKind.Field, context.replaceRange(),
+            column.bindingType() + (column.nullable() ? " (nullable)" : ""));
+        String description = !column.javadoc().isEmpty() ? column.javadoc() : column.comment();
         if (!description.isEmpty()) {
             item.setDocumentation(Either.forRight(
                 new MarkupContent(MarkupKind.PLAINTEXT, description)

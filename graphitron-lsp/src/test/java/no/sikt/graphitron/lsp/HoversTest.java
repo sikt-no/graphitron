@@ -3,7 +3,6 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.InputValueShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -34,20 +33,27 @@ class HoversTest {
     /** The class the Java-side arms hover on, present in the census and declared in a source file. */
     private static final String SERVICE = "com.example.FilmService";
 
+    /** The graph's own SDL: a {@code @node} type, which is the one arm whose subject is the graph. */
+    private static final String SDL = """
+        type Query { placeholder: Int }
+        type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
+        """;
+
     @TempDir
     static Path tmp;
 
     private static StoreFixture store;
 
     /**
-     * One captured census for every case whose subject is a class or one of its methods, plus the
-     * source file that declares them. Both halves matter and they are two populations: the classpath
-     * scan is what makes a name resolvable at all, and the parse is where a doc comment comes from,
-     * joined by name across two cadences.
+     * One capture for the whole class, over all three populations a hover reads: the fixture
+     * module's real generated jOOQ catalog, a classpath census, and the parsed sources that carry
+     * the doc comments. The catalog is the real generated model rather than a stand-in, so a table
+     * name, a column's jOOQ name and its binding type are the values a consumer's editor would
+     * actually be hovering.
      */
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofClasspath(tmp, List.of(
+        store = StoreFixture.ofCatalog(tmp, SDL, List.of(
             StoreFixture.jarClass(SERVICE, List.of(
                 StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
                 StoreFixture.method("raw", "List", StoreFixture.parameter(null, "int")),
@@ -64,6 +70,13 @@ class HoversTest {
                 public Object page(Object film) { return null; }
                 /** One page of films, capped. */
                 public Object page(Object film, int limit) { return null; }
+            }
+            """);
+        // The generated table class, whose Javadoc is the only description the fixture database can
+        // supply: it carries no comments, so the .java cadence is where a table's text comes from.
+        store.withJavaSource(tmp.resolve("src"), store.tableClassFqn("film"), """
+            /** Movies the rental store carries. */
+            public class Film {
             }
             """);
     }
@@ -83,12 +96,15 @@ class HoversTest {
         // Cursor inside the "film" string value.
         var pos = pointAt(file, 0, "film");
 
-        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = hoverAt(file, pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Table** `film`");
-        assertThat(md).contains("Movies the rental store carries");
-        assertThat(md).contains("2 columns");
+        // The generated class's Javadoc, joined by the FQN the catalog walk captured: the fixture
+        // database carries no comments, so this is the only text a table has.
+        assertThat(md).contains("Movies the rental store carries.");
+        // Both counts are correlated subselects on the table's own row rather than a fetched list.
+        assertThat(md).containsPattern("\\d+ columns, \\d+ references\\.");
         assertThat(hover.getContents().getRight().getKind()).isEqualTo(MarkupKind.MARKDOWN);
     }
 
@@ -101,7 +117,30 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "GHOST");
 
-        assertThat(hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(hoverAt(file, pos)).isEmpty();
+    }
+
+    /**
+     * A table name two schemas both declare is answered for both. {@code sql_table} records every
+     * table every schema declares and calls resolving an unqualified name a derivation, so the arm
+     * reports rather than picks; the projection answered from whichever table its list held first.
+     */
+    @Test
+    void aTableNameTwoSchemasDeclareHoversAsBoth(@TempDir Path directory) {
+        var file = file("""
+            type Foo @table(name: "event") {
+                bar: Int
+            }
+            """);
+        var pos = pointAt(file, 0, "event");
+
+        try (var multiSchema = StoreFixture.ofMultiSchemaCatalog(directory, SDL)) {
+            var md = markdownOf(multiSchema, file, pos);
+
+            assertThat(md).contains("**Table** `event`")
+                .contains("In schema `multischema_a`:")
+                .contains("In schema `multischema_b`:");
+        }
     }
 
     @Test
@@ -113,13 +152,35 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var hover = hoverWithoutStore(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        var md = markdownAt(file, fooFilmSnapshot(), pos);
 
         assertThat(md).contains("**Column** `title`");
         assertThat(md).contains("on `film`");
-        assertThat(md).contains("`String`");
+        // Both of the column's types, because the census carries both and neither derives from the
+        // other. The projection carried only the second, under a name calling it a GraphQL type.
+        assertThat(md).contains("SQL type: `varchar`");
+        assertThat(md).contains("Java type: `java.lang.String`");
         assertThat(md).contains("not null");
+    }
+
+    /**
+     * Either of the column's two names resolves it. The census carries the SQL name and the
+     * generated jOOQ name, and a directive may be written either way; the projection held only the
+     * jOOQ name, so it answered a SQL spelling at all only where the two agree up to case.
+     */
+    @Test
+    void columnHoverAnswersTheGeneratedNameToo() {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "TITLE")
+            }
+            """);
+        var pos = pointAt(file, 1, "TITLE");
+
+        assertThat(markdownAt(file, fooFilmSnapshot(), pos))
+            // The heading is the SQL name whichever spelling was typed: it is the column's
+            // coordinate, and the generated name is a fact about generated code.
+            .contains("**Column** `title` on `film`");
     }
 
     @Test
@@ -140,7 +201,9 @@ class HoversTest {
                 List.of(new TypeBackingShape.MemberSlot("title", "String", "title"))
             )),
         Map.of());
-        var hover = hoverWithoutStore(file, filmCatalog(), snapshot, pos).orElseThrow();
+        // No store: a record-backed member is the classification snapshot's own answer, and the
+        // arm must not fall silent for want of a census it does not read.
+        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**title**").contains("`String`");
     }
@@ -149,16 +212,66 @@ class HoversTest {
     void referenceKeyHoverShowsForeignKeyDirection() {
         var file = file("""
             type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "film_language_id_fkey");
+
+        var md = markdownAt(file, pos);
+
+        assertThat(md).contains("**Foreign key** `film_language_id_fkey`");
+        assertThat(md).contains("`film` → `language`");
+        // The other namespace the value resolves in, named rather than assumed known.
+        assertThat(md).contains("Also resolves under the generated constant `FILM__FILM_LANGUAGE_ID_FKEY`.");
+    }
+
+    /**
+     * The generated constant is the other spelling {@code key:} resolves, and the one the projection
+     * matched exclusively and case-sensitively. Both namespaces answer here, as they do in the
+     * generator's own resolver.
+     */
+    @Test
+    void referenceKeyHoverAnswersTheGeneratedConstantToo() {
+        var file = file("""
+            type Foo @table(name: "film") {
                 bar: Int @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
             }
             """);
         var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
 
-        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        assertThat(markdownAt(file, pos)).contains("`film` → `language`");
+    }
 
-        assertThat(md).contains("**Foreign key** `FILM__FILM_LANGUAGE_ID_FKEY`");
-        assertThat(md).contains("`film` → `language`");
+    /**
+     * A constraint name two schemas both declare is answered for both, each with the schema that
+     * tells them apart. A qualified spelling binds hard, as it does in the resolver: it is scoped to
+     * the declaring table's schema rather than widening the set.
+     */
+    @Test
+    void aKeyNameTwoSchemasDeclareHoversAsBoth(@TempDir Path directory) {
+        var file = file("""
+            type Foo @table(name: "note") {
+                bar: Int @reference(path: [{key: "note_event_fk"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "note_event_fk");
+
+        try (var multiSchema = StoreFixture.ofMultiSchemaCatalog(directory, SDL)) {
+            var md = markdownOf(multiSchema, file, pos);
+
+            assertThat(md).contains("**Foreign key** `note_event_fk`")
+                .contains("(schema `multischema_a`)")
+                .contains("(schema `multischema_b`)");
+
+            var qualified = file("""
+                type Foo @table(name: "note") {
+                    bar: Int @reference(path: [{key: "multischema_b.note_event_fk"}])
+                }
+                """);
+            assertThat(markdownOf(multiSchema, qualified,
+                pointAt(qualified, 1, "multischema_b.note_event_fk")))
+                .doesNotContain("multischema_a");
+        }
     }
 
     @Test
@@ -170,10 +283,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
-
-        assertThat(md).contains("**Table** `language`");
+        assertThat(markdownAt(file, pos)).contains("**Table** `language`");
     }
 
     @Test
@@ -192,8 +302,8 @@ class HoversTest {
         int col = "type Foo @t".length();
         var pos = new Point(line, col);
 
-        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
-            .orElseThrow();
+        // The docstring arms read the bundled SDL, so they answer with no store behind them.
+        var hover = hoverWithoutStore(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue()).isNotBlank();
     }
 
@@ -206,7 +316,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "GHOST");
 
-        assertThat(hoverWithoutStore(file, filmCatalog(), fooFilmSnapshot(), pos)).isEmpty();
+        assertThat(hoverAt(file, fooFilmSnapshot(), pos)).isEmpty();
     }
 
     /** {@code Foo → TableBacking("film")}; matches every {@code type Foo @table(name: "film")} fixture in this file. */
@@ -252,7 +362,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "FilmService");
 
-        var md = Hovers.compute(file, emptyCatalog(), Optional.of(store.handleFor("elsewhere")),
+        var md = Hovers.compute(file, Optional.of(store.handleFor("elsewhere")),
             LspSchemaSnapshot.unavailable(), pos).orElseThrow()
             .getContents().getRight().getValue();
         assertThat(md).doesNotContain("**Class**");
@@ -398,7 +508,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@auth") + 2;
         var pos = new Point(line, col);
 
-        var hover = hoverWithoutStore(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue())
             .contains("guards access");
     }
@@ -418,7 +528,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("role:") + 1;
         var pos = new Point(line, col);
 
-        var hover = hoverWithoutStore(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue())
             .contains("required role name");
     }
@@ -436,7 +546,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@auth") + 2;
         var pos = new Point(line, col);
 
-        assertThat(hoverWithoutStore(file, emptyCatalog(), LspSchemaSnapshot.unavailable(), pos))
+        assertThat(hoverWithoutStore(file, LspSchemaSnapshot.unavailable(), pos))
             .isEmpty();
     }
 
@@ -454,7 +564,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@auth") + 2;
         var pos = new Point(line, col);
 
-        var hover = hoverWithoutStore(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue())
             .contains("guards access");
     }
@@ -484,7 +594,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("extraArg:") + 1;
         var pos = new Point(line, col);
 
-        assertThat(hoverWithoutStore(file, filmCatalog(),
+        assertThat(hoverWithoutStore(file,
             new LspSchemaSnapshot.Built.Current(List.of(shadow), Map.of(), Map.of()), pos))
             .isEmpty();
     }
@@ -504,8 +614,7 @@ class HoversTest {
         int col = lineSource(file, line).indexOf("@table") + 2;
         var pos = new Point(line, col);
 
-        var hover = hoverWithoutStore(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
-            .orElseThrow();
+        var hover = hoverAt(file, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
         assertThat(md).isNotBlank();
         // The bundled description, not the catalog-table renderer's output.
@@ -527,7 +636,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "title");
 
-        var hover = hoverWithoutStore(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
+        var hover = hoverAt(file, fooFilmSnapshot(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");
@@ -543,27 +652,31 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "Film");
 
-        var hover = hoverWithoutStore(file, nodeCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = hoverAt(file, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Node** `Film`");
         assertThat(md).contains("TypeId: `Film`");
-        assertThat(md).contains("`film_id`");
+        // The key column, typed from the node type's own table. The projection looked a key column
+        // up across every table in the catalog and took the first hit, which on a name as common as
+        // "id" answered from whichever table came first.
+        assertThat(md).contains("- `film_id` (`java.lang.Integer`)");
     }
 
-    private static CompletionData nodeCatalog() {
-        var film = new CompletionData.Table(
-            "film", "Movies",
-            null,
-            List.of(CompletionData.Column.of("film_id", "Integer", false, "")),
-            List.of()
-        );
-        return new CompletionData(
-            List.of(film),
-            List.of(),
-            List.of(),
-            java.util.Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("film_id")))
-        );
+    /**
+     * A type no {@code @node} declaration names has nothing to say about node identity, and the
+     * fall-through leaves the SDL docstring to answer for the coordinate.
+     */
+    @Test
+    void nodeIdTypeNameHover_forATypeThatIsNotANode_fallsBackToTheDocstring() {
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Actor")): Int
+            }
+            """);
+        var pos = pointAt(file, 1, "Actor");
+
+        assertThat(markdownAt(file, pos)).doesNotContain("**Node**").isNotBlank();
     }
 
     private static String lineSource(FileSnapshot file, int line) {
@@ -582,9 +695,6 @@ class HoversTest {
         );
     }
 
-    private static CompletionData emptyCatalog() {
-        return new CompletionData(List.of(), List.of(), List.of());
-    }
 
     // ===== @field(name:) on @reference path field hovers on terminal-table column =====
 
@@ -593,10 +703,10 @@ class HoversTest {
         // Output-side mirror.
         var file = file("""
             type Film @table(name: "film") {
-                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
             }
             """);
-        var pos = pointAt(file, 1, "lang_name");
+        var pos = pointAt(file, 1, "last_update");
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
@@ -604,13 +714,13 @@ class HoversTest {
             java.util.Map.of(),
             java.util.Map.of("Film.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "language", "lang_name", List.of())),
+                    "language", "last_update", List.of())),
             java.util.Map.of()
         );
-        var hover = hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var hover = hoverAt(file, snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
-        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("**Column** `last_update`");
         assertThat(md).contains("on `language`");
     }
 
@@ -621,10 +731,10 @@ class HoversTest {
         // from the wrong table.
         var file = file("""
             type FilmType @table(name: "film") {
-                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
             }
             """);
-        var pos = pointAt(file, 1, "lang_name");
+        var pos = pointAt(file, 1, "last_update");
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
@@ -635,7 +745,7 @@ class HoversTest {
             java.util.Map.of()
         );
 
-        assertThat(hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos)).isEmpty();
+        assertThat(hoverAt(file, snapshot, pos)).isEmpty();
     }
 
     // ===== @field(name:) on a @table-interface participant cross-table reference =====
@@ -643,16 +753,16 @@ class HoversTest {
 
     @Test
     void participantCrossTableReferenceHoversOnTerminalTableColumn() {
-        // The enclosing @table is "film" (the participant table); the field reaches "lang_name"
+        // The enclosing @table is "film" (the participant table); the field reaches "last_update"
         // on the terminal table "language" via a ParticipantCrossTable classification. Previously
         // the hover dispatched on the enclosing backing and rendered the wrong table; routing
         // ParticipantCrossTable through lspColumnDispatch() hovers the terminal-table column.
         var file = file("""
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
-                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
             }
             """);
-        var pos = pointAt(file, 1, "lang_name");
+        var pos = pointAt(file, 1, "last_update");
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
@@ -660,13 +770,13 @@ class HoversTest {
             java.util.Map.of(),
             java.util.Map.of("DokumentMelding.languageName",
                 new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
-                    "language", "lang_name", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
+                    "language", "last_update", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
             java.util.Map.of()
         );
-        var hover = hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var hover = hoverAt(file, snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
-        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("**Column** `last_update`");
         assertThat(md).contains("on `language`");
         assertThat(md).doesNotContain("on `film`");
     }
@@ -676,14 +786,14 @@ class HoversTest {
     @Test
     void defaultOrderFieldNameHoversOnElementTableColumn() {
         // The enclosing @table is "film"; the list field navigates to "language". The ordering
-        // column "lang_name" lives on the element table, so the hover must render it on "language",
+        // column "last_update" lives on the element table, so the hover must render it on "language",
         // not "film". TableTarget.lspColumnDispatch() Resolves the element table for the hover too.
         var file = file("""
             type Film @table(name: "film") {
-                languages: [Language!]! @defaultOrder(fields: [{name: "lang_name"}])
+                languages: [Language!]! @defaultOrder(fields: [{name: "last_update"}])
             }
             """);
-        var pos = pointAt(file, 1, "lang_name");
+        var pos = pointAt(file, 1, "last_update");
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
@@ -694,34 +804,12 @@ class HoversTest {
                     "language", List.of(), false, false)),
             java.util.Map.of()
         );
-        var hover = hoverWithoutStore(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var hover = hoverAt(file, snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
-        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("**Column** `last_update`");
         assertThat(md).contains("on `language`");
         assertThat(md).doesNotContain("on `film`");
-    }
-
-    private static CompletionData filmAndLanguageCatalogWithLanguageName() {
-        var film = new CompletionData.Table(
-            "film", "Movies",
-            null,
-            List.of(
-                CompletionData.Column.of("film_id", "Integer", false, ""),
-                CompletionData.Column.of("title", "String", false, "")
-            ),
-            List.of(CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false))
-        );
-        var language = new CompletionData.Table(
-            "language", "Languages",
-            null,
-            List.of(
-                CompletionData.Column.of("language_id", "Integer", false, ""),
-                CompletionData.Column.of("lang_name", "String", false, "")
-            ),
-            List.of()
-        );
-        return new CompletionData(List.of(film, language), List.of(), List.of());
     }
 
     private static FileSnapshot file(String source) {
@@ -729,46 +817,40 @@ class HoversTest {
     }
 
     /**
-     * Hover with no store, which is the shape for every arm that still reads the projection. The two
-     * Java-side arms read facts and answer nothing here; the cases that exercise them go through
-     * {@link #hoverAt} and the captured census instead.
+     * Hover with no store at all, which is what a document whose graph was never captured gets. The
+     * arms that read facts answer nothing here; only the docstring arms can still speak.
      */
     private static Optional<Hover> hoverWithoutStore(
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
     ) {
-        return Hovers.compute(file, catalog, Optional.empty(), snapshot, pos);
+        return Hovers.compute(file, Optional.empty(), snapshot, pos);
     }
 
-    /** Hover against the captured census: the shape for the class-name and method arms. */
+    /** Hover against the captured facts, with no classification snapshot behind it. */
     private static Optional<Hover> hoverAt(FileSnapshot file, Point pos) {
-        return Hovers.compute(file, emptyCatalog(), Optional.of(store.handle()),
-            LspSchemaSnapshot.unavailable(), pos);
+        return hoverAt(file, LspSchemaSnapshot.unavailable(), pos);
+    }
+
+    /** Hover against the captured facts and a classification snapshot: the column arms need both. */
+    private static Optional<Hover> hoverAt(FileSnapshot file, LspSchemaSnapshot snapshot, Point pos) {
+        return Hovers.compute(file, Optional.of(store.handle()), snapshot, pos);
     }
 
     /** The markdown of a hover that must exist. */
     private static String markdownAt(FileSnapshot file, Point pos) {
-        return hoverAt(file, pos).orElseThrow().getContents().getRight().getValue();
+        return hoverAt(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow()
+            .getContents().getRight().getValue();
     }
 
-    private static CompletionData filmCatalog() {
-        var film = new CompletionData.Table(
-            "film",
-            "Movies the rental store carries",
-            null,
-            List.of(
-                CompletionData.Column.of("film_id", "Integer", false, ""),
-                CompletionData.Column.of("title", "String", false, "")
-            ),
-            List.of(
-                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
-            )
-        );
-        var language = new CompletionData.Table(
-            "language", "Spoken languages",
-            null,
-            List.of(CompletionData.Column.of("language_id", "Integer", false, "")),
-            List.of()
-        );
-        return new CompletionData(List.of(film, language), List.of(), List.of());
+    /** The markdown of a hover that must exist, against a classification snapshot. */
+    private static String markdownAt(FileSnapshot file, LspSchemaSnapshot snapshot, Point pos) {
+        return hoverAt(file, snapshot, pos).orElseThrow().getContents().getRight().getValue();
+    }
+
+    /** The markdown of a hover that must exist, against a fixture other than the shared one. */
+    private static String markdownOf(StoreFixture fixture, FileSnapshot file, Point pos) {
+        return Hovers.compute(file, Optional.of(fixture.handle()),
+            LspSchemaSnapshot.unavailable(), pos).orElseThrow()
+            .getContents().getRight().getValue();
     }
 }

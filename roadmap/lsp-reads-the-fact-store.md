@@ -453,10 +453,10 @@ around it.
 | Directive name token | Directive description | `graphql_directive` |
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
 | `MethodNameBinding` | A signature per overload + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family, joined on arity |
-| `CatalogTableBinding` | Comment, column and reference counts | `sql_table`, `sql_column`, `sql_constraint` |
-| `CatalogColumnBinding` | Column type, nullability, comment; member name and type when the backing is a record or POJO | `sql_column` (needs binding type); `jvm_record_component`, `jvm_method` for the member arms |
-| `CatalogFkBinding` | FK direction and endpoints | `sql_referential_constraint` |
-| `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column` |
+| `CatalogTableBinding` | Description, column and key counts | `sql_table`, `sql_column`, `sql_referential_constraint`; Javadoc via the `java_` source family |
+| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The member arms still read the classification snapshot's slots |
+| `CatalogFkBinding` | FK direction and endpoints, under any spelling the resolver accepts | `sql_referential_constraint`, `sql_constraint` |
+| `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column`, `graphitron_table` + `sql_column` for the types |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
 | Any coordinate, no richer arm | SDL docstring | `graphql_directive`, `graphql_directive_argument` |
 | User-declared directive arg | Arg docstring | `graphql_directive_argument` |
@@ -779,7 +779,9 @@ FQN widening beside it for the jOOQ half, whose classes `jvm_class` excludes by 
 consumers of both the java-source family and the FQN capture. Each arm's query is its own: the table
 arm selects a name and a description, the column arm a jOOQ field name, a binding type, nullability
 and a description, and neither goes through a shared shape. That is the parity rule applied at the
-grain it was stated for. What they share is the relations, not the query.
+grain it was stated for. What they share is the relations, not the query. (The column arm later
+joined hover's on a shared reader, once a second consumer could say what it wanted from the same
+rows; the table arms stayed apart, because hover's asks a different question of them.)
 
 * **The Javadoc overlay is a join, and it is the join the FQN capture exists for.** `sql_table`'s
   captured `class_fqn` meets a `java_class_declaration` row for the table arm and a
@@ -939,6 +941,51 @@ arrived as a parameter on `Hovers.compute` beside the catalog rather than replac
   matters, and pinning it during the window is worth more than it was when one index made it trivial.
 * **`Descriptions` lost its class and method overlays**, having no caller left; the table and column
   pair and the class-Javadoc lookup the declaration-name hover shares stay until those arms move.
+
+## Settled while building: hover's catalog arms
+
+The table, column, key and node arms read the store, which finishes hover's coordinate dispatch:
+every arm keyed on a `Behavior` now answers from facts. What is left on the projection is the
+classification snapshot, which answers *which* table a column site belongs to, and the
+declaration-name arm around the dispatch.
+
+* **Two more shared readers, on the same argument the method reader landed on.** `CatalogColumns`
+  and `CatalogKeys` are the relations plus the order rows come back in, and nothing else: each
+  surface keeps its own filter, its own description precedence, and its own rendering. The key
+  reader is the clearest case for a reader over a view, because the two surfaces come at the same
+  rows from opposite ends: completion has a table and no name, hover has a name and no table.
+* **Hover answers the spellings the resolver answers.** A key's SQL constraint name, that name
+  qualified by its schema, and the generated `Keys` constant all resolve in the build, and the
+  qualifier binds hard rather than widening the set. The projection matched the constant alone and
+  case-sensitively, so hovering the spelling the manual teaches and the completion arm offers
+  produced nothing. A column is the same story with two names instead of three: the census carries
+  the SQL name and the jOOQ name, and either one now resolves it.
+* **A column renders both its types.** The census carries the SQL type the database declares and the
+  Java type jOOQ binds it to, and the DDL says outright that hover is why a column needs both. The
+  projection carried only the second, under a name that called it a GraphQL type.
+* **An ambiguous name is answered, not resolved, on every arm that can hit one.** A table name two
+  schemas declare hovers as both, a constraint name two schemas declare hovers as both with the
+  schema that tells them apart, and a column of an ambiguous table does the same. Consistent with
+  the completion arms and with `sql_table`'s own charter, which calls resolving an unqualified name
+  a derivation.
+* **A node's key columns are typed from the node's own table.** The projection looked a key column up
+  across every table in the catalog and took the first hit, which for a name as common as `id`
+  answered from whichever table came first. The table is `@table`'s argument as written, with the
+  type-name fallback the generator applies, and a key column is a column of that table or of nothing.
+* **The counts are correlated subselects, not fetched lists.** A table hover says how many columns
+  and how many keys touch it, which is a count and not a listing, so the query counts. The key count
+  is not scoped to the table's own generated package: a key declared in another package against this
+  table is still one that touches it.
+* **The column arm takes the store as an option, not behind a `flatMap`.** Its record- and POJO-backed
+  sites answer from the classification snapshot's member slots, so putting the whole arm behind a
+  store would have silenced an arm that reads no census. What each arm requires is now visible in how
+  it takes the handle.
+* **Noted, not fixed: the FK diagnostic accepts a narrower set than the build.**
+  `Diagnostics.validateCatalogFk` checks the value against `CompletionData.Reference.keyName()`,
+  which holds the generated constant whenever a `Keys` class resolves, so a plain SQL constraint name
+  is flagged even though the generator resolves it first and the completion arm offers it. It is the
+  diagnostics capability's to fix when that arm reads `CatalogKeys`, and the fix falls out of the
+  migration rather than needing a separate decision.
 
 ## Retired vocabulary
 

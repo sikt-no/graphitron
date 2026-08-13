@@ -1,6 +1,8 @@
 package no.sikt.graphitron.lsp.hover;
 
 import graphql.language.Description;
+import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
@@ -11,7 +13,6 @@ import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.lsp.Descriptions;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -26,21 +27,30 @@ import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Range;
 import org.jooq.Field;
+import org.jooq.Record2;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectCount;
 
 /**
  * Hover content keyed on schema-coordinate behaviors. Cursor on a known
@@ -48,9 +58,11 @@ import static org.jooq.impl.DSL.select;
  * {@code ReferenceElement.key}, ...) reveals catalog metadata: class FQNs,
  * method signatures, table descriptions, FK direction, and so on.
  *
- * <p>The two arms that answer about Java, a class name and a method name, read the fact store: the
- * classpath census for what exists, and the java-source family for what its declaration says about
- * itself. The rest of the arms still read the projection and move one at a time.
+ * <p>Every coordinate arm reads the fact store: the classpath census and the java-source family for
+ * the two arms that answer about Java, the catalog census for the three that answer about the
+ * database, and the graph's own {@code @node} declarations for the fourth. What still comes from the
+ * projection is the classification snapshot, which answers which table a column site belongs to, and
+ * the declaration-name arm around the coordinate dispatch.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
  * the SDL-docstring hover: every {@code DirectiveDefinition} and
@@ -63,24 +75,26 @@ public final class Hovers {
 
     private Hovers() {}
 
+    /**
+     * Every arm this entry point can reach, which is every arm but the declaration-name one, reads
+     * either the store or the classification snapshot, so it takes no projection and no source
+     * index. The bundled vocabulary is the only one in scope today; the workspace's vocabulary is
+     * wired through {@code GraphitronTextDocumentService}.
+     */
     public static Optional<Hover> compute(
-        FileSnapshot file, CompletionData catalog, Optional<StoreHandle> store,
-        LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, Optional<StoreHandle> store, LspSchemaSnapshot snapshot, Point pos
     ) {
-        // The bundled vocabulary is the only one in scope today; the
-        // workspace's vocabulary is wired through GraphitronTextDocumentService.
-        // An empty source index means the arms still on the projection fall back to the catalog's
-        // build-derivable text (the production path passes the live index).
-        return compute(LspVocabulary.load(), file, catalog, store,
+        return compute(LspVocabulary.load(), file, CompletionData.empty(), store,
             SourceWalker.Index.EMPTY, snapshot, pos, false);
     }
 
     /**
      * Canonical hover entry point. {@code store} is this document's graph, scoped and inside the
-     * caller's read transaction, and the arms that have migrated read everything through it: the
-     * class census and its methods, and the Javadoc beneath both, which is a join to the
-     * {@code java_} family on the source's own cadence. {@code sourceIndex} is what the arms still
-     * on the projection read the same Javadoc from, and retires with the last of them.
+     * caller's read transaction, and every coordinate arm reads through it: the class census and its
+     * methods, the catalog census behind the table, column and key arms, the graph's {@code @node}
+     * declarations, and the Javadoc beneath several of them, which is a join to the {@code java_}
+     * family on the source's own cadence. {@code catalog} and {@code sourceIndex} are what the
+     * declaration-name arm still reads, and retire with it.
      *
      * <p>{@code classificationHoverEnabled} gates the parallel {@link DeclarationHovers} dispatch on
      * SDL declaration coordinates. Default false preserves the no-behaviour-change-by-default
@@ -123,7 +137,7 @@ public final class Hovers {
         if (coordOpt.isPresent() && rangeNode != null) {
             var coord = coordOpt.get();
             var richer = richerHover(
-                vocabulary, coord, directive, file, catalog, store, sourceIndex, snapshot, pos, rangeNode);
+                vocabulary, coord, directive, file, store, snapshot, pos, rangeNode);
             if (richer.isPresent()) return richer;
             // SDL docstring on the coordinate. Empty if the parsed
             // definition has no description (rare in directives.graphqls).
@@ -187,10 +201,15 @@ public final class Hovers {
         return Optional.empty();
     }
 
+    /**
+     * Every coordinate arm reads the store; what is left on the projection is the classification
+     * snapshot, which answers which table a site's columns belong to rather than what the database
+     * holds.
+     */
     private static Optional<Hover> richerHover(
         LspVocabulary vocabulary, SchemaCoordinate coord,
-        Directives.Directive directive, FileSnapshot file, CompletionData catalog,
-        Optional<StoreHandle> store, SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot,
+        Directives.Directive directive, FileSnapshot file,
+        Optional<StoreHandle> store, LspSchemaSnapshot snapshot,
         Point pos, Node rangeNode
     ) {
         var behavior = vocabulary.behaviorAt(coord);
@@ -207,55 +226,87 @@ public final class Hovers {
             case Behavior.MethodNameBinding mnb ->
                 store.flatMap(s -> methodHover(
                     vocabulary, directive, file, s, pos, rangeNode, mnb.classNameCoord()));
-            case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, sourceIndex, rangeNode);
-            case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, sourceIndex, snapshot, rangeNode);
-            case Behavior.CatalogFkBinding ignored -> fkHover(file, catalog, rangeNode);
+            case Behavior.CatalogTableBinding ignored -> store.flatMap(s -> tableHover(file, s, rangeNode));
+            // The column arm takes the store as an option rather than behind a flatMap: its
+            // record- and POJO-backed sites answer from the classification snapshot's member
+            // slots, and only the table-backed ones are a census read.
+            case Behavior.CatalogColumnBinding ignored ->
+                columnHover(directive, file, store, snapshot, rangeNode);
+            case Behavior.CatalogFkBinding ignored -> store.flatMap(s -> fkHover(file, s, rangeNode));
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
             case Behavior.ScalarTypeBinding ignored -> Optional.empty();
-            case Behavior.NodeTypeBinding ignored -> nodeTypeHover(file, catalog, rangeNode);
+            case Behavior.NodeTypeBinding ignored -> store.flatMap(s -> nodeTypeHover(file, s, rangeNode));
         };
     }
 
+    /**
+     * A {@code @node} type, its {@code typeId} and its key columns, all graph-keyed: a
+     * {@code @node} declaration is a fact about one graph's SDL, so the scope is the relation's own
+     * {@code graph_name} rather than a source membership.
+     */
     private static Optional<Hover> nodeTypeHover(
-        FileSnapshot file, CompletionData catalog, Node valueNode
+        FileSnapshot file, StoreHandle store, Node valueNode
     ) {
         String typeName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (typeName.isEmpty()) return Optional.empty();
-        var meta = catalog.nodeMetadata().get(typeName);
-        if (meta == null) return Optional.empty();
-        return Optional.of(hover(file, valueNode, formatNodeType(typeName, meta, catalog)));
+        // The declaration and its ordered key columns in one query. The left join keeps a @node
+        // that named none, whose key-column side is absent rather than empty: the type-name and
+        // catalog-primary-key fallbacks are derivations, and a hover reports what was written.
+        var rows = store.dsl()
+            .select(GRAPHITRON_NODE.TYPE_ID, GRAPHITRON_NODE_KEY_COLUMN.COLUMN_REF)
+            .from(GRAPHITRON_NODE)
+            .leftJoin(GRAPHITRON_NODE_KEY_COLUMN)
+            .on(GRAPHITRON_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME))
+            .and(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME))
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_NODE.TYPE_NAME.eq(typeName))
+            .orderBy(GRAPHITRON_NODE_KEY_COLUMN.POSITION)
+            .fetch();
+        if (rows.isEmpty()) return Optional.empty();
+        var keyColumns = rows.stream().map(Record2::value2).filter(Objects::nonNull).toList();
+        return Optional.of(hover(file, valueNode, formatNodeType(typeName, rows.getFirst().value1(),
+            keyColumns, keyColumns.isEmpty() ? List.of() : nodeColumns(store, typeName))));
+    }
+
+    /**
+     * The columns of the table the node type binds to, for typing its key columns. The projection
+     * looked a key column up by name across every table in the catalog and took the first hit, which
+     * on a name as common as {@code id} answered from whichever table came first; a key column of a
+     * node is a column of that node's own table or of nothing.
+     *
+     * <p>The binding is {@code @table}'s {@code name} argument as written, and the type-name
+     * fallback when it is absent is the same derivation the generator applies. A qualifier is
+     * dropped, since {@code sql_table} keys the schema separately.
+     */
+    private static List<CatalogColumns.Column> nodeColumns(StoreHandle store, String typeName) {
+        String tableRef = store.dsl()
+            .select(GRAPHITRON_TABLE.TABLE_REF)
+            .from(GRAPHITRON_TABLE)
+            .where(GRAPHITRON_TABLE.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TABLE.TYPE_NAME.eq(typeName))
+            .fetchOne(GRAPHITRON_TABLE.TABLE_REF);
+        String tableName = tableRef == null || tableRef.isBlank() ? typeName : tableRef;
+        int dot = tableName.lastIndexOf('.');
+        return CatalogColumns.of(store, dot < 0 ? tableName : tableName.substring(dot + 1));
     }
 
     private static String formatNodeType(
-        String typeName, CompletionData.NodeMetadata meta, CompletionData catalog
+        String typeName, String typeId, List<String> keyColumns, List<CatalogColumns.Column> columns
     ) {
         var sb = new StringBuilder();
         sb.append("**Node** `").append(typeName).append("`");
-        if (meta.typeId() != null) {
-            sb.append("\n\nTypeId: `").append(meta.typeId()).append("`");
+        if (typeId != null) {
+            sb.append("\n\nTypeId: `").append(typeId).append("`");
         }
-        if (meta.keyColumns() != null && !meta.keyColumns().isEmpty()) {
+        if (!keyColumns.isEmpty()) {
             sb.append("\n\nKey columns:");
-            for (String columnName : meta.keyColumns()) {
-                sb.append("\n- `").append(columnName).append("`");
-                String graphqlType = columnGraphqlType(catalog, columnName);
-                if (graphqlType != null) {
-                    sb.append(" — `").append(graphqlType).append("`");
-                }
+            for (String columnRef : keyColumns) {
+                sb.append("\n- `").append(columnRef).append("`");
+                columns.stream().filter(c -> c.isNamed(columnRef)).findFirst()
+                    .ifPresent(c -> sb.append(" (`").append(c.bindingType()).append("`)"));
             }
         }
         return sb.toString();
-    }
-
-    private static String columnGraphqlType(CompletionData catalog, String columnName) {
-        for (var table : catalog.tables()) {
-            for (var column : table.columns()) {
-                if (column.name().equalsIgnoreCase(columnName)) {
-                    return column.graphqlType();
-                }
-            }
-        }
-        return null;
     }
 
     /**
@@ -349,16 +400,80 @@ public final class Hovers {
         return byArity;
     }
 
-    private static Optional<Hover> tableHover(
-        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
-    ) {
+    /**
+     * The table the cursor names, with what the census holds about it: its description, and how many
+     * columns and foreign keys it has. One query, the two counts as correlated subselects, so a
+     * table with fifty columns costs the same as one with two and neither count can multiply the
+     * row it is counted for.
+     *
+     * <p>A name two schemas both declare answers for both. {@code sql_table} records every table
+     * every schema declares and its own charter says resolving an unqualified name against them is a
+     * derivation, so this arm reports rather than picks; the projection answered from whichever
+     * table its list happened to hold first.
+     */
+    private static Optional<Hover> tableHover(FileSnapshot file, StoreHandle store, Node valueNode) {
         String name = Nodes.unquote(Nodes.text(valueNode, file.source()));
-        return catalog.getTable(name).map(t -> hover(file, valueNode, formatTable(t, sourceIndex)));
+        if (name.isEmpty()) return Optional.empty();
+        var rows = store.dsl()
+            .select(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.DESCRIPTION, classJavadocOf(SQL_TABLE.CLASS_FQN),
+                columnCount(), referenceCount(store))
+            .from(SQL_TABLE)
+            .where(store.reads(SQL_TABLE.SOURCE_NAME))
+            .and(SQL_TABLE.TABLE_NAME.equalIgnoreCase(name))
+            .orderBy(SQL_TABLE.TABLE_SCHEMA)
+            .fetch();
+        if (rows.isEmpty()) return Optional.empty();
+        var sb = new StringBuilder("**Table** `").append(name).append("`");
+        boolean ambiguous = rows.size() > 1;
+        for (var row : rows) {
+            if (ambiguous) {
+                sb.append("\n\nIn schema `").append(row.value1()).append("`:");
+            }
+            // The database comment wins over the generated class Javadoc, which for a table names
+            // the table back at the reader. The column arm inverts this, for the reason stated
+            // there; the precedence is per relation and belongs to the surface, not to a view.
+            String description = row.value2() != null && !row.value2().isBlank()
+                ? row.value2()
+                : (row.value3() == null ? "" : row.value3());
+            if (!description.isBlank()) {
+                sb.append("\n\n").append(description);
+            }
+            sb.append("\n\n").append(count(row.value4(), "column"))
+              .append(", ").append(count(row.value5(), "reference")).append(".");
+        }
+        return Optional.of(hover(file, valueNode, sb.toString()));
+    }
+
+    /** How many columns the table on the query's own side declares. */
+    private static Field<Integer> columnCount() {
+        return field(selectCount().from(SQL_COLUMN)
+            .where(SQL_COLUMN.SOURCE_NAME.eq(SQL_TABLE.SOURCE_NAME))
+            .and(SQL_COLUMN.TABLE_SCHEMA.eq(SQL_TABLE.TABLE_SCHEMA))
+            .and(SQL_COLUMN.TABLE_NAME.eq(SQL_TABLE.TABLE_NAME)));
+    }
+
+    /**
+     * How many foreign keys touch the table, in either direction. Not scoped to the table's own
+     * source, because a key declared in another generated package against this table is still a key
+     * touching it; the graph's read set is the scope, as everywhere else.
+     */
+    private static Field<Integer> referenceCount(StoreHandle store) {
+        var touches = SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_TABLE.TABLE_SCHEMA)
+            .and(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME.eq(SQL_TABLE.TABLE_NAME))
+            .or(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA.eq(SQL_TABLE.TABLE_SCHEMA)
+                .and(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE.eq(SQL_TABLE.TABLE_NAME)));
+        return field(selectCount().from(SQL_REFERENTIAL_CONSTRAINT)
+            .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
+            .and(touches));
+    }
+
+    private static String count(int value, String noun) {
+        return value + " " + noun + (value == 1 ? "" : "s");
     }
 
     private static Optional<Hover> columnHover(
-        Directives.Directive directive, FileSnapshot file, CompletionData catalog,
-        SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Node valueNode
+        Directives.Directive directive, FileSnapshot file, Optional<StoreHandle> store,
+        LspSchemaSnapshot snapshot, Node valueNode
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
@@ -380,7 +495,7 @@ public final class Hovers {
             if (classification.isPresent()) {
                 switch (classification.get().lspColumnDispatch()) {
                     case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
-                        return tableColumnHover(catalog, tableName, memberName, file, valueNode, sourceIndex);
+                        return tableColumnHover(store, tableName, memberName, file, valueNode);
                     }
                     case FieldClassification.LspColumnDispatch.Silent ignored -> { return Optional.empty(); }
                     case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
@@ -393,25 +508,32 @@ public final class Hovers {
             case TypeBackingShape.RecordBacking r -> slotHover(r.components(), memberName, file, valueNode);
             case TypeBackingShape.PojoBacking p -> slotHover(p.accessors(), memberName, file, valueNode);
             case TypeBackingShape.JooqRecordBacking.WithTable j ->
-                tableColumnHover(catalog, j.tableName(), memberName, file, valueNode, sourceIndex);
+                tableColumnHover(store, j.tableName(), memberName, file, valueNode);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> Optional.empty();
             case TypeBackingShape.TableBacking t ->
-                tableColumnHover(catalog, t.tableName(), memberName, file, valueNode, sourceIndex);
+                tableColumnHover(store, t.tableName(), memberName, file, valueNode);
             case TypeBackingShape.NoBacking ignored -> Optional.empty();
         };
     }
 
+    /**
+     * The named column of the named table, under either of the two names the census carries for it.
+     * The projection held only the jOOQ field name, so an author who wrote the SQL name got a hover
+     * only where the two agree up to case; the diagnostic arm already accepts both spellings, and
+     * the census is what lets this one agree with it.
+     */
     private static Optional<Hover> tableColumnHover(
-        CompletionData catalog, String tableName, String columnName,
-        FileSnapshot file, Node valueNode, SourceWalker.Index sourceIndex
+        Optional<StoreHandle> store, String tableName, String columnName,
+        FileSnapshot file, Node valueNode
     ) {
-        var tableOpt = catalog.getTable(tableName);
-        if (tableOpt.isEmpty()) return Optional.empty();
-        var table = tableOpt.get();
-        return table.columns().stream()
-            .filter(c -> c.name().equalsIgnoreCase(columnName))
-            .findFirst()
-            .map(column -> hover(file, valueNode, formatColumn(table, column, sourceIndex)));
+        return store.flatMap(handle -> {
+            var matches = CatalogColumns.of(handle, tableName).stream()
+                .filter(column -> column.isNamed(columnName))
+                .toList();
+            return matches.isEmpty()
+                ? Optional.<Hover>empty()
+                : Optional.of(hover(file, valueNode, formatColumn(tableName, matches)));
+        });
     }
 
     private static Optional<Hover> slotHover(
@@ -423,20 +545,36 @@ public final class Hovers {
             .map(slot -> hover(file, valueNode, "**" + slot.name() + "**: `" + slot.displayType() + "`"));
     }
 
-    private static Optional<Hover> fkHover(
-        FileSnapshot file, CompletionData catalog, Node valueNode
-    ) {
-        String fkName = Nodes.unquote(Nodes.text(valueNode, file.source()));
-        for (var table : catalog.tables()) {
-            for (var ref : table.references()) {
-                if (!ref.keyName().equals(fkName)) continue;
-                String arrow = ref.inverse() ? "←" : "→";
-                String content = "**Foreign key** `" + fkName + "`\n\n"
-                    + "`" + table.name() + "` " + arrow + " `" + ref.targetTable() + "`";
-                return Optional.of(hover(file, valueNode, content));
+    /**
+     * The foreign key the cursor names, in the direction the census declares it: from the table that
+     * holds the key to the table it references, which is the same reading whatever the enclosing
+     * type is bound to. The projection matched the generated constant exactly, so an author who
+     * wrote the SQL constraint name, which is the spelling the manual teaches and the completion arm
+     * offers, got nothing; {@link CatalogKeys#named} matches the spellings the generator's own
+     * resolver accepts.
+     */
+    private static Optional<Hover> fkHover(FileSnapshot file, StoreHandle store, Node valueNode) {
+        String spelling = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (spelling.isEmpty()) return Optional.empty();
+        var keys = CatalogKeys.named(store, spelling);
+        if (keys.isEmpty()) return Optional.empty();
+        var sb = new StringBuilder("**Foreign key** `").append(spelling).append("`");
+        boolean ambiguous = keys.size() > 1;
+        for (var key : keys) {
+            sb.append("\n\n`").append(key.table()).append("` → `")
+              .append(key.referencedTable()).append('`');
+            if (ambiguous) {
+                sb.append(" (schema `").append(key.schema()).append("`)");
             }
         }
-        return Optional.empty();
+        var constants = keys.stream().map(CatalogKeys.Key::constant)
+            .filter(constant -> !constant.isEmpty() && !constant.equalsIgnoreCase(spelling))
+            .distinct().toList();
+        if (!constants.isEmpty()) {
+            sb.append("\n\nAlso resolves under the generated constant `")
+              .append(String.join("`, `", constants)).append("`.");
+        }
+        return Optional.of(hover(file, valueNode, sb.toString()));
     }
 
     private static Optional<Hover> docstringHover(
@@ -534,31 +672,32 @@ public final class Hovers {
         return sb.toString();
     }
 
-    private static String formatTable(CompletionData.Table table, SourceWalker.Index sourceIndex) {
+    /**
+     * One heading, then a section per matching column. Both of the column's types are rendered,
+     * because the census carries both and neither derives from the other: the SQL type is what the
+     * database declares and the Java type is what jOOQ binds it to, which is the one a resolver's
+     * signature will be written against. The projection carried only the second, under a name that
+     * called it a GraphQL type.
+     */
+    private static String formatColumn(String tableName, List<CatalogColumns.Column> matches) {
         var sb = new StringBuilder();
-        sb.append("**Table** `").append(table.name()).append("`");
-        String description = Descriptions.ofTable(table, sourceIndex);
-        if (!description.isEmpty()) {
-            sb.append("\n\n").append(description);
-        }
-        sb.append("\n\n").append(table.columns().size()).append(" column")
-            .append(table.columns().size() == 1 ? "" : "s")
-            .append(", ").append(table.references().size()).append(" reference")
-            .append(table.references().size() == 1 ? "" : "s").append(".");
-        return sb.toString();
-    }
-
-    private static String formatColumn(
-        CompletionData.Table table, CompletionData.Column column, SourceWalker.Index sourceIndex
-    ) {
-        var sb = new StringBuilder();
-        sb.append("**Column** `").append(column.name()).append("`")
-          .append(" on `").append(table.name()).append("`")
-          .append("\n\nType: `").append(column.graphqlType()).append("`")
-          .append(column.nullable() ? " (nullable)" : " (not null)");
-        String description = Descriptions.ofColumn(table, column, sourceIndex);
-        if (!description.isEmpty()) {
-            sb.append("\n\n").append(description);
+        sb.append("**Column** `").append(matches.getFirst().columnName()).append("`")
+          .append(" on `").append(tableName).append("`");
+        boolean ambiguous = matches.size() > 1;
+        for (var column : matches) {
+            if (ambiguous) {
+                sb.append("\n\nIn schema `").append(column.schema()).append("`:");
+            }
+            sb.append("\n\nSQL type: `").append(column.sqlType()).append("`")
+              .append(column.nullable() ? " (nullable)" : " (not null)")
+              .append("\n\nJava type: `").append(column.bindingType()).append("`");
+            // The generated field's Javadoc wins over the database comment, inverting the table
+            // arm: a column's generated Javadoc carries the qualified column name and, where the
+            // database has a comment, the comment too, so it is the richer of the two.
+            String description = !column.javadoc().isEmpty() ? column.javadoc() : column.comment();
+            if (!description.isBlank()) {
+                sb.append("\n\n").append(description);
+            }
         }
         return sb.toString();
     }

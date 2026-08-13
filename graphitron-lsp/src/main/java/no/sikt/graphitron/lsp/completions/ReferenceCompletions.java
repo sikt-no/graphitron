@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -22,9 +23,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
-
 /**
  * Foreign-key completions for any coordinate the {@link LspVocabulary}
  * overlay declares as a {@link Behavior.CatalogFkBinding}. Today's
@@ -42,6 +40,9 @@ import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
  * the one a rejection's candidate hint echoes, and the one every constraint has: the constant is
  * absent for a key no {@code Keys} class names. The constant goes in the item's documentation, since
  * it resolves too and an author reading generated code will recognise it.
+ *
+ * <p>The census read is {@link CatalogKeys}, shared with hover's key arm, which comes at the same
+ * rows from the other end: a name and no table, where this arm has a table and no name.
  */
 public final class ReferenceCompletions {
 
@@ -70,38 +71,20 @@ public final class ReferenceCompletions {
     private record Candidate(String schema, String name, String detail, String jooqName) {}
 
     /**
-     * The foreign keys touching {@code tableName}, matched case-insensitively as the column arm
-     * matches: the name comes from a directive an author typed rather than from the database.
-     *
-     * <p>One query for both directions rather than two, because a self-referencing key is one row
-     * that satisfies both halves of the predicate and a union would offer it twice. Ordered by
-     * declaring schema then constraint name, which is stateable where the projection's order was the
-     * generated {@code Tables} class's field order.
+     * The foreign keys touching {@code tableName}, read through {@link CatalogKeys} and rendered
+     * from this table's point of view: the direction arrow and the other endpoint are relative to
+     * the table the cursor sits under, which is the arm's own business rather than the census's.
      */
     private static List<CompletionItem> keyItems(
         StoreHandle store, String tableName, CompletionContext context
     ) {
-        var rows = store.dsl()
-            .select(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA, SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME,
-                SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME,
-                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE, SQL_CONSTRAINT.JOOQ_NAME)
-            .from(SQL_REFERENTIAL_CONSTRAINT)
-            .join(SQL_CONSTRAINT).on(SQL_CONSTRAINT.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)
-                .and(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
-                .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
-                .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME)))
-            .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
-            .and(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME.equalIgnoreCase(tableName)
-                .or(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE.equalIgnoreCase(tableName)))
-            .orderBy(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA, SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME,
-                SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME)
-            .fetch();
-        var candidates = new ArrayList<Candidate>(rows.size());
-        for (var row : rows) {
-            boolean outbound = row.value2().equalsIgnoreCase(tableName);
-            String other = outbound ? row.value4() : row.value2();
-            candidates.add(new Candidate(row.value1(), row.value3(),
-                (outbound ? "→ " : "← ") + other, row.value5()));
+        var keys = CatalogKeys.touching(store, tableName);
+        var candidates = new ArrayList<Candidate>(keys.size());
+        for (var key : keys) {
+            boolean outbound = key.outboundFrom(tableName);
+            String other = outbound ? key.referencedTable() : key.table();
+            candidates.add(new Candidate(key.schema(), key.name(),
+                (outbound ? "→ " : "← ") + other, key.constant()));
         }
         return items(candidates, context);
     }

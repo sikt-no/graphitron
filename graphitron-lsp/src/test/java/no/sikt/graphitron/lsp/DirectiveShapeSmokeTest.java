@@ -152,10 +152,9 @@ class DirectiveShapeSmokeTest {
                 bar: Int
             }
             """;
-        var data = catalogWith("com.example.FooDto", null);
         Point cursor = pointInside(source, "com.example");
 
-        var hover = hoverWithoutStore(WorkspaceFileTestSupport.snapshot(source), data,
+        var hover = hoverWithoutStore(WorkspaceFileTestSupport.snapshot(source),
             LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
@@ -202,14 +201,6 @@ class DirectiveShapeSmokeTest {
         }
     }
 
-    /** The same class and method as {@link #catalogWith}, captured into a store of its own. */
-    private StoreFixture storeWith(String className, String methodName) {
-        var methods = methodName == null
-            ? List.<CompletionData.Method>of()
-            : List.of(StoreFixture.method(methodName, "List"));
-        return StoreFixture.ofClasspath(tmp, List.of(StoreFixture.jarClass(className, methods)));
-    }
-
     private static CompletionData catalogWith(String className, String methodName) {
         var methods = methodName == null
             ? List.<CompletionData.Method>of()
@@ -219,6 +210,14 @@ class DirectiveShapeSmokeTest {
             List.of(),
             List.of(new CompletionData.ExternalReference(className, className, "", methods, List.of()))
         );
+    }
+
+    /** The same class and method as {@link #catalogWith}, captured into a store of its own. */
+    private StoreFixture storeWith(String className, String methodName) {
+        var methods = methodName == null
+            ? List.<CompletionData.Method>of()
+            : List.of(StoreFixture.method(methodName, "List"));
+        return StoreFixture.ofClasspath(tmp, List.of(StoreFixture.jarClass(className, methods)));
     }
 
     /**
@@ -259,9 +258,9 @@ class DirectiveShapeSmokeTest {
      * beside the point.
      */
     private static Optional<Hover> hoverWithoutStore(
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
     ) {
-        return Hovers.compute(file, catalog, Optional.empty(), snapshot, pos);
+        return Hovers.compute(file, Optional.empty(), snapshot, pos);
     }
 
     private static Directives.Directive directiveAt(String source, Point cursor) {

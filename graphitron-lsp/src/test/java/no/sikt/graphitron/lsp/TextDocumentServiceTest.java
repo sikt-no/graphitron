@@ -187,42 +187,39 @@ class TextDocumentServiceTest {
         assertThat(diagnostics.getDiagnostics().get(0).getMessage()).contains("MISSING");
     }
 
+    /**
+     * The hover request end to end, over the wire and through the read transaction the document
+     * service opens for it. The table arm answers from the graph's catalog census, so the document
+     * is opened under the captured file's URI: that is what resolves an open buffer to the graph
+     * whose facts answer for it.
+     */
     @Test
-    void hoverRequestRoundTripsCatalogMetadata() throws Exception {
-        var catalog = new CompletionData(
-            List.of(new CompletionData.Table(
-                "film",
-                "Movies the rental store carries",
-                null,
-                List.of(),
-                List.of()
-            )),
-            List.of(),
-            List.of()
-        );
-        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace(catalog));
-        var proxy = startServer(server);
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
-
-        String uri = "file:///hover.graphqls";
+    void hoverRequestRoundTripsCatalogMetadata(@TempDir Path tmp) throws Exception {
         String source = """
             type Foo @table(name: "film") { bar: Int }
             """;
-        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-            new TextDocumentItem(uri, "graphql", 1, source)));
 
-        // Cursor inside the "film" string value.
-        int filmStart = source.indexOf("film");
-        var hoverParams = new org.eclipse.lsp4j.HoverParams(
-            new TextDocumentIdentifier(uri),
-            new Position(0, filmStart + 1)
-        );
-        var hover = proxy.getTextDocumentService().hover(hoverParams).get(5, TimeUnit.SECONDS);
+        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
+             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+            var workspace = new no.sikt.graphitron.lsp.state.Workspace();
+            workspace.setStore(access);
+            var proxy = startServer(new GraphitronLanguageServer(workspace));
+            proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-        assertThat(hover).isNotNull();
-        var md = hover.getContents().getRight().getValue();
-        assertThat(md).contains("**Table** `film`");
-        assertThat(md).contains("Movies the rental store carries");
+            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+                new TextDocumentItem(uri, "graphql", 1, source)));
+
+            // Cursor inside the "film" string value.
+            var hoverParams = new org.eclipse.lsp4j.HoverParams(
+                new TextDocumentIdentifier(uri), new Position(0, source.indexOf("film") + 1));
+            var hover = proxy.getTextDocumentService().hover(hoverParams).get(5, TimeUnit.SECONDS);
+
+            assertThat(hover).isNotNull();
+            var md = hover.getContents().getRight().getValue();
+            assertThat(md).contains("**Table** `film`");
+            assertThat(md).containsPattern("\\d+ columns, \\d+ references\\.");
+        }
     }
 
     @Test
