@@ -10,8 +10,14 @@ package no.sikt.graphitron.lsp.parsing;
  * switch in each consumer expresses what varies by identity. New consumer
  * arms slot in by adding a Behavior variant and an arm to the consumer's
  * switch.
+ *
+ * <p>These eight arms are the value-binding family of {@link Trigger}: a cursor
+ * inside a directive-argument value, where the coordinate names which keyset the
+ * value is drawn from. They share the dispatch matrix with the name tokens and the
+ * document sweeps, which is what keeps a surface from covering the value bindings
+ * and leaving the rest of its triggers unaccounted for.
  */
-public sealed interface Behavior {
+public sealed interface Behavior extends Trigger {
 
     /** Class-name binding: complete and validate against the catalog scan. */
     record ClassNameBinding() implements Behavior {}
