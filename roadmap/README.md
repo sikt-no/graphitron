@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R639` | Session identity is a Java method resolved at build time, not generated SQL | Spec | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](session-identity-method-hooks.md) |
 | `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
-| `R638` | The LSP is a fact-store client | Ready | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
+| `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R645` | Admit projected @reference and @externalField leaves at nested depth under NestingField | Spec | 2026-08-13 | [plan](nested-depth-projected-reference-and-computed-leaves.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -381,7 +381,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
-- `R638` [**The LSP is a fact-store client**](lsp-reads-the-fact-store.md) — Ready, architecture
+- `R638` [**The LSP is a fact-store client**](lsp-reads-the-fact-store.md) — In Progress, architecture
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
