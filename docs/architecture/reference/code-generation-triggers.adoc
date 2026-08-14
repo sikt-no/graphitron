@@ -420,6 +420,35 @@ reference. The child-to-parent join must be PK=FK (the detail table's foreign-ke
 its own primary key, single-column or composite), which keeps the base-to-detail join single-valued.
 Asserted by the `joined-table-interface` corpus example.
 
+`@asConnection` on a discriminated interface root moves the coordinate along the operations and target
+axes exactly as it does on a plain table root: the member set gains `Paginate`, and the target becomes
+`Single` of shape `Connection`. Nothing about the source axis changes, so the launch stays the
+discriminated composition and the page is cut over it.
+
+That composition may be paginated because every join it emits is proven single-valued: the
+base-to-detail join is the PK=FK edge above, and a participant scalar reached one `@reference` hop off
+the base is projected as a capped correlated subselect, not joined in. `LIMIT` slices rows, so the
+property that makes a page correct is that one row is one entity; both facts above are what establish
+it, and `totalCount` counts the base under the same predicate the page ran under.
+
+[source,graphql]
+----
+type Query {
+  "A page of parties, each routed to its concrete type by the discriminator."
+  parties: [Party!]! @asConnection
+}
+
+interface Party @table(name: "party") @discriminate(on: "party_kind") {
+  displayName: String! @field(name: "display_name")
+}
+
+type Individual implements Party @table(name: "party_individual") @discriminator(value: "INDIVIDUAL") {
+  birthDate: String @field(name: "birth_date")
+}
+----
+
+Asserted by the `paginated-joined-table-interface` corpus example.
+
 === Reading the generator-output column
 
 The "`*Fetchers` Generates" column in the tables below names which of four emission paths a variant

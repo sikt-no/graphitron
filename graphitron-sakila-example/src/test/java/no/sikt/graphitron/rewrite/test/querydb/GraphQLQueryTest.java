@@ -4252,6 +4252,111 @@ class GraphQLQueryTest {
                 .as("ShortContent rows do not surface FilmContent.length").isFalse());
     }
 
+    // ===== the discriminated interface root, paginated =====
+    //
+    // The same composition the list roots run, cut into pages. What has to hold is that one base
+    // row is one entity: the cursor walks base-table ordering columns, so a statement that
+    // multiplied rows would page wrongly and count wrongly at once. The cross-table participant
+    // field rides the select list as a subselect and the joined-detail edge is PK=FK, so it does
+    // not. Seed volume is thin (content 4 rows, party 3), so the walks use small pages.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContentConnection_forwardWalk_pagesThroughEveryRowInPkOrder() {
+        var titles = new java.util.ArrayList<String>();
+        String after = null;
+        for (int page = 0; page < 4; page++) {
+            String args = after == null ? "first: 1" : "first: 1, after: \"" + after + "\"";
+            Map<String, Object> data = execute(
+                "{ allContentConnection(" + args + ") { totalCount pageInfo { hasNextPage endCursor } "
+                + "edges { node { __typename title } } } }");
+            var connection = (Map<String, Object>) data.get("allContentConnection");
+            assertThat(connection.get("totalCount"))
+                .as("totalCount counts the base under the discriminator restriction, so it agrees "
+                    + "with the walk's length rather than with any joined row count")
+                .isEqualTo(4);
+            var edges = (List<Map<String, Object>>) connection.get("edges");
+            assertThat(edges).hasSize(1);
+            var node = (Map<String, Object>) edges.get(0).get("node");
+            titles.add((String) node.get("title"));
+            var pageInfo = (Map<String, Object>) connection.get("pageInfo");
+            after = (String) pageInfo.get("endCursor");
+            if (!Boolean.TRUE.equals(pageInfo.get("hasNextPage"))) break;
+        }
+        assertThat(titles)
+            .as("every content row appears exactly once, in PK order; a page boundary lands "
+                + "between the two FILM rows and again at the FILM/SHORT transition")
+            .containsExactly(
+                "ACADEMY DINOSAUR (extended)", "ACE GOLDFINGER (extended)", "Sunrise", "Interlude");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContentConnection_backwardPage_takesTheLastRowsInForwardOrder() {
+        // first: null is required, not incidental: @asConnection synthesises `first` carrying the
+        // default page size, and the helper rejects a request that specifies both ends.
+        Map<String, Object> data = execute(
+            "{ allContentConnection(first: null, last: 2) { edges { node { __typename title } } } }");
+        var connection = (Map<String, Object>) data.get("allContentConnection");
+        var edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges).extracting(e -> ((Map<String, Object>) e.get("node")).get("title"))
+            .containsExactly("Sunrise", "Interlude");
+        assertThat(edges).extracting(e -> ((Map<String, Object>) e.get("node")).get("__typename"))
+            .containsExactly("ShortContent", "ShortContent");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allContentConnection_crossTableParticipantField_resolvesInsideThePage() {
+        Map<String, Object> data = execute("""
+            { allContentConnection(first: 2) { edges { node {
+                __typename
+                ... on FilmContent { rating }
+            } } } }
+            """);
+        var connection = (Map<String, Object>) data.get("allContentConnection");
+        var edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges)
+            .as("two FILM rows, not two of one row multiplied by its subselect")
+            .hasSize(2);
+        assertThat(edges).allSatisfy(edge -> {
+            var node = (Map<String, Object>) edge.get("node");
+            assertThat(node.get("__typename")).isEqualTo("FilmContent");
+            assertThat(node.get("rating")).isNotNull();
+        });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allPartiesConnection_walk_carriesTheDetachedBaseRowThroughNullDetail() {
+        // party_id 3 is an INDIVIDUAL base row with no party_individual detail row. It sits last
+        // in PK order, so a two-page walk puts it on the second page: the gated LEFT JOIN's
+        // NULL-through has to survive the seek.
+        Map<String, Object> first = execute(
+            "{ allPartiesConnection(first: 2) { totalCount pageInfo { hasNextPage endCursor } "
+            + "edges { node { __typename displayName ... on Individual { birthDate } } } } }");
+        var firstPage = (Map<String, Object>) first.get("allPartiesConnection");
+        assertThat(firstPage.get("totalCount")).isEqualTo(3);
+        var firstEdges = (List<Map<String, Object>>) firstPage.get("edges");
+        assertThat(firstEdges).extracting(e -> ((Map<String, Object>) e.get("node")).get("displayName"))
+            .containsExactly("Grace Hopper", "Sikt");
+        var pageInfo = (Map<String, Object>) firstPage.get("pageInfo");
+        assertThat(pageInfo.get("hasNextPage")).isEqualTo(true);
+
+        Map<String, Object> second = execute(
+            "{ allPartiesConnection(first: 2, after: \"" + pageInfo.get("endCursor") + "\") { "
+            + "edges { node { __typename displayName ... on Individual { birthDate } } } } }");
+        var secondEdges = (List<Map<String, Object>>)
+            ((Map<String, Object>) second.get("allPartiesConnection")).get("edges");
+        assertThat(secondEdges).hasSize(1);
+        var detached = (Map<String, Object>) secondEdges.get(0).get("node");
+        assertThat(detached.get("__typename")).isEqualTo("Individual");
+        assertThat(detached.get("displayName")).isEqualTo("Detached Individual");
+        assertThat(detached.get("birthDate"))
+            .as("no detail row, so the detail-exclusive field is null rather than the row missing")
+            .isNull();
+    }
+
     // ===== the cross-table participant field over a fanning hop =====
     //
     // FanAlpha.note reaches fan_detail, which holds several rows per fan_base row. Nothing in the

@@ -582,6 +582,17 @@ type Query {
     allFanItems: [FanItem!]!
     fanItem(fanBaseId: Int! @field(name: "fan_base_id")): FanItem
 
+    # Connection twin of allContent: the same participant-driven select list, paginated. The
+    # cross-table participant field rides the select list as a subselect, so the paginating
+    # statement is the base table alone and one row is one entity.
+    allContentConnection(last: Int, before: String): [Content!]! @asConnection
+
+    # Connection twin of allParties: the joined-table shape, where the paginating statement also
+    # carries the discriminator-gated detail LEFT JOIN. That join is proven 1:0..1 at build time
+    # (the detail's FK to the base is the detail's own PK), so it composes with seek and limit.
+    # party_id 3 is a base row with no detail row, and it appears mid-walk.
+    allPartiesConnection(last: Int, before: String): [Party!]! @asConnection
+
     # R389 composite-shared-key joined-table inheritance interface (composite counterpart of
     # allParties). Each participant declares its own detail @table (jti_app_account / jti_person)
     # joined to the base jti_subject on the composite key (jti_subject_id, subject_kind). That key

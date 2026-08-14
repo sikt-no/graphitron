@@ -234,13 +234,7 @@ class RootLauncherRendererTest {
     }
 
     @Test
-    void discriminatedSource_connectionAndFannedPairsAreUnrepresentable() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                discriminatedRow(null, new ResultShape.Connection(pkDesc(), 100,
-                    UNITS.connectionHelper(), UNITS.connectionResult(), null),
-                    List.of(), List.of()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("never paginates");
+    void discriminatedSource_fannedPairIsUnrepresentable() {
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                 new LauncherCommand(
                     UNITS.launcherMethod("Query", "allContent"),
@@ -250,6 +244,19 @@ class RootLauncherRendererTest {
                     null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections()), list(null)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("runs single-tenant");
+    }
+
+    @Test
+    void discriminatedSource_connection_returnsTheCarrierRefLikeTheAnchorArm() {
+        // Signature only, per this class's convention for the connection arm; the body's
+        // seam ordering and its SQL are the execution tier's baselines.
+        var m = render(discriminatedRow(null, new ResultShape.Connection(pkDesc(), 100,
+            UNITS.connectionHelper(), UNITS.connectionResult(), null),
+            List.of(), List.of(filmContentBranch())));
+        assertThat(m.returnType().toString())
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
     }
 
     // ===== the keyed-lookup source arm =====

@@ -620,6 +620,49 @@ public final class ClassifiedCorpus {
             }
             """),
 
+        /*
+         * The discriminated interface root, paginated: the same coordinate as
+         * joined-table-interface's allParties with @asConnection on it. The pair is what the
+         * classifier used to defer; the verdict is the plain connection root's, with the
+         * discriminated launch source underneath.
+         */
+        new Example("paginated-joined-table-interface", """
+            interface Party @table(name: "party") @discriminate(on: "party_kind") @classifiedType(as: TableInterfaceType) {
+              partyId: Int! @field(name: "party_id")
+              displayName: String! @field(name: "display_name")
+            }
+            type Individual implements Party @table(name: "party_individual") @discriminator(value: "INDIVIDUAL") {
+              partyId: Int! @field(name: "party_id")
+              displayName: String! @reference(path: [{key: "party_individual_party_id_fkey"}]) @field(name: "display_name")
+              birthDate: String @field(name: "birth_date")
+            }
+            type Company implements Party @table(name: "party_company") @discriminator(value: "COMPANY") {
+              partyId: Int! @field(name: "party_id")
+              displayName: String! @reference(path: [{key: "party_company_party_id_fkey"}]) @field(name: "display_name")
+              orgNumber: String @field(name: "org_number")
+            }
+            type Query {
+              parties: [Party!]! @asConnection
+                @classified(source: Query, operations: [OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+                @commits(source: DiscriminatedTable, result: Connection)
+            }
+            """,
+            """
+            {
+              # A page of parties, each routed to its concrete type by the discriminator.
+              parties(first: 2) {
+                edges {
+                  node {
+                    displayName
+                    ... on Individual {
+                      birthDate
+                    }
+                  }
+                }
+              }
+            }
+            """),
+
         new Example("relay-node", """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }

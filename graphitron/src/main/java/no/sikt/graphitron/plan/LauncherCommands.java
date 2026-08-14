@@ -554,13 +554,18 @@ public final class LauncherCommands {
      * A single-table discriminated interface row: the source arm carries the base table, the
      * source-entailed discriminator restriction, the whole-query base slice (copied off the
      * schema's joined-table reprojection fold) and the per-participant branches. Always
-     * single-tenant: the fan-out ladder rejects {@code @tenantFanOut} on
-     * interface-typed fields. Never {@link ResultShape.Connection}: the classifier defers
-     * {@code @asConnection} on this root, and the command backstop mirrors both.
+     * single-tenant: the fan-out ladder rejects {@code @tenantFanOut} on interface-typed fields.
+     *
+     * <p>The connection arm's facet plan is {@code null}, and legitimately so at both ends: no
+     * facet synthesis reaches this coordinate, because
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder#unsupportedFacetCarrierReason}
+     * rejects a carrier whose element is not a {@code @table}-backed object type at the SDL
+     * boundary, which an interface element never is.
      */
     private static LauncherCommand interfaceRow(QueryField.QueryTableInterfaceField qtif,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
             GlueCall where, GeneratedUnits units) {
+        var ordering = orderingOf(qtif.orderBy(), qtif.parentTypeName(), qtif.name(), units);
         return new LauncherCommand(
             units.launcherMethod(qtif.parentTypeName(), qtif.name()),
             FieldCoordinates.coordinates(qtif.parentTypeName(), qtif.name()),
@@ -572,10 +577,18 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            qtif.returnType().wrapper().isList()
-                ? new ResultShape.RecordList(orderingOf(qtif.orderBy(), qtif.parentTypeName(),
-                    qtif.name(), units))
-                : new ResultShape.SingleRecord());
+            interfaceResultOf(qtif, ordering, units));
+    }
+
+    /** The discriminated root's payload shape, forked on the coordinate's wrapper. */
+    private static ResultShape interfaceResultOf(QueryField.QueryTableInterfaceField qtif,
+            Ordering ordering, GeneratedUnits units) {
+        if (qtif.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
+            return connectionShape(conn, ordering, qtif.qualifiedName(), null, units);
+        }
+        return qtif.returnType().wrapper().isList()
+            ? new ResultShape.RecordList(ordering)
+            : new ResultShape.SingleRecord();
     }
 
     /**
@@ -849,14 +862,7 @@ public final class LauncherCommands {
     private static ResultShape resultShapeOf(QueryField.QueryTableField qtf, GeneratedUnits units,
             FacetPlan facets) {
         if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
-            var ordering = orderingOf(qtf, units);
-            if (ordering == null) {
-                throw new IllegalStateException(
-                    "connection coordinate '" + qtf.qualifiedName() + "' has no resolvable ordering;"
-                    + " the validator rejects pagination without ordering before production");
-            }
-            return new ResultShape.Connection(ordering, conn.defaultPageSize(),
-                units.connectionHelper(), units.connectionResult(), facets);
+            return connectionShape(conn, orderingOf(qtf, units), qtf.qualifiedName(), facets, units);
         }
         if (facets != null) {
             throw new IllegalStateException(
@@ -866,6 +872,24 @@ public final class LauncherCommands {
         return qtf.returnType().wrapper().isList()
             ? new ResultShape.RecordList(orderingOf(qtf, units))
             : new ResultShape.SingleRecord();
+    }
+
+    /**
+     * The connection payload both root arms build: the ordering (total on a connection, so an
+     * absent one is a production-time backstop of the validator's pagination-requires-ordering
+     * rejection), the wrapper's default page size, and the connection runtime's unit refs copied
+     * off the naming vocabulary. One home, so the plain root and the discriminated one cannot
+     * derive the same shape differently.
+     */
+    private static ResultShape.Connection connectionShape(FieldWrapper.Connection conn,
+            Ordering ordering, String coordinate, FacetPlan facets, GeneratedUnits units) {
+        if (ordering == null) {
+            throw new IllegalStateException(
+                "connection coordinate '" + coordinate + "' has no resolvable ordering;"
+                + " the validator rejects pagination without ordering before production");
+        }
+        return new ResultShape.Connection(ordering, conn.defaultPageSize(),
+            units.connectionHelper(), units.connectionResult(), facets);
     }
 
     /**

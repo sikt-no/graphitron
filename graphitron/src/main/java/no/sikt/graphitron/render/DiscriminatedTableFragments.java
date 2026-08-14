@@ -236,8 +236,8 @@ public final class DiscriminatedTableFragments {
             for (var ct : single.crossTableTerms()) {
                 var term = ct.term();
                 var aliases = PathFragments.generateAliases(term.path());
-                b.beginControlFlow("if (env.getSelectionSet().contains($S))",
-                    single.participant().typeName() + "." + ct.fieldName());
+                b.beginControlFlow("if ($L)",
+                    typeConditionedGate(single.participant().typeName(), ct.fieldName()));
                 for (int i = 0; i < term.path().size(); i++) {
                     var target = ((no.sikt.graphitron.rewrite.model.JoinStep.HasTargetTable)
                         term.path().get(i)).targetTable();
@@ -270,8 +270,8 @@ public final class DiscriminatedTableFragments {
             String aliasVar = jtb.detailAliasVarName();
             b.addStatement("$T $L = null", jtb.detailTable().tableClass(), aliasVar);
             for (var df : joined.detailFields()) {
-                b.beginControlFlow("if (env.getSelectionSet().contains($S))",
-                    jtb.typeName() + "." + df.fieldName());
+                b.beginControlFlow("if ($L)",
+                    typeConditionedGate(jtb.typeName(), df.fieldName()));
                 b.addStatement("$L = $T.$L.as($S)", aliasVar, jtb.detailTable().constantsClass(),
                     jtb.detailTable().javaFieldName(), jtb.detailAliasName());
                 b.addStatement("fields.add($L.$L)", aliasVar, df.column().javaName());
@@ -312,6 +312,20 @@ public final class DiscriminatedTableFragments {
             b.endControlFlow();
         }
         return b.build();
+    }
+
+    /**
+     * The runtime gate for a type-conditioned participant field: {@code <Type>.<field>} (dot, not
+     * slash) is how graphql-java flattens a field under an inline fragment, and the slash is
+     * reserved for parent/child path nesting. Both patterns are offered, because the same
+     * assembly serves coordinates at different depths: the field sits at the top of the selection
+     * for a plain fetch, and two segments down ({@code edges/node/<Type>.<field>}) under a
+     * connection, where a glob without the {@code **} prefix would silently match nothing and
+     * drop the column from the page.
+     */
+    private static CodeBlock typeConditionedGate(String typeName, String fieldName) {
+        String pattern = typeName + "." + fieldName;
+        return CodeBlock.of("env.getSelectionSet().containsAnyOf($S, $S)", pattern, "**/" + pattern);
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {

@@ -78,21 +78,16 @@ public record LauncherCommand(
                     "a routine-chain launcher never paginates; the classifier rejects @asConnection on the chain");
             }
         }
-        // A discriminated interface runs single-tenant and never paginates: the fan-out ladder
-        // rejects @tenantFanOut on interface-typed fields, and the classifier defers
-        // @asConnection on the single-table-interface root (no paginating emission exists for
-        // the participant-driven select list).
-        if (source instanceof LaunchSource.DiscriminatedTable) {
-            if (!(tenancy instanceof TenantStrategy.Single)) {
-                throw new IllegalArgumentException(
-                    "a discriminated-interface launcher runs single-tenant; got "
-                    + tenancy.getClass().getSimpleName());
-            }
-            if (result instanceof ResultShape.Connection) {
-                throw new IllegalArgumentException(
-                    "a discriminated-interface launcher never paginates; the classifier defers"
-                    + " @asConnection on the single-table-interface root");
-            }
+        // A discriminated interface runs single-tenant: the fan-out ladder rejects @tenantFanOut
+        // on interface-typed fields. There is no result-axis half here: the arm paginates, and
+        // the residual invariants on the pair are enforced where they are owned
+        // (pagination-requires-ordering in the validator, facet rejection at the SDL boundary),
+        // so a check here would invent one with no parse-boundary owner to mirror.
+        if (source instanceof LaunchSource.DiscriminatedTable
+                && !(tenancy instanceof TenantStrategy.Single)) {
+            throw new IllegalArgumentException(
+                "a discriminated-interface launcher runs single-tenant; got "
+                + tenancy.getClass().getSimpleName());
         }
         // The batched lookup child mirrors the keyed-lookup root's pair: the fan-out ladder
         // rejects @tenantFanOut with @lookupKey (fanning breaks one-row-per-key), and the

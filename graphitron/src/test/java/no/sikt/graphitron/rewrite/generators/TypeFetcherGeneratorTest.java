@@ -1245,8 +1245,11 @@ class TypeFetcherGeneratorTest {
             DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
-            .as("type-scoped selection-set check gates per-participant cross-table column fetch")
-            .contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
+            .as("type-scoped selection-set check gates per-participant cross-table column fetch, "
+                + "matching the coordinate wherever it sits in the selection (a connection puts "
+                + "it under edges/node)")
+            .contains("env.getSelectionSet().containsAnyOf(\"FilmContent.rating\", "
+                + "\"**/FilmContent.rating\")");
     }
 
     @Test
@@ -1328,7 +1331,8 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "content").code().toString();
-        assertThat(code).contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
+        assertThat(code).contains("env.getSelectionSet().containsAnyOf(\"FilmContent.rating\", "
+            + "\"**/FilmContent.rating\")");
         assertThat(code).contains("org.jooq.impl.DSL.select(f0.RATING)");
         assertThat(code).contains(".limit(1)).as(\"FilmContent_rating\"))");
     }

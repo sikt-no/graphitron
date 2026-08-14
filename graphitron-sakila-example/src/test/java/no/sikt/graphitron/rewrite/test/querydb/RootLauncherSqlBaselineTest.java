@@ -260,6 +260,66 @@ class RootLauncherSqlBaselineTest {
     }
 
     @Test
+    void interfaceRootConnection_pageQueryOverTheDiscriminatedComposition() {
+        execute("{ allContentConnection(first: 2) { edges { node { title } } } }");
+        assertThat(SQL_LOG)
+            .as("discriminated interface root, paginated: the participant-driven select list plus "
+                + "the cursor key, the discriminator restriction in the WHERE, PK order, limit as "
+                + "bind. The FROM is the base table alone, which is what makes the page correct: "
+                + "one row is one entity")
+            .containsExactly(
+                "select \"content\".\"content_type\" as \"__discriminator__\", "
+                    + "\"public\".\"content\".\"title\", "
+                    + "\"public\".\"content\".\"content_id\" "
+                    + "from \"public\".\"content\" "
+                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "order by \"public\".\"content\".\"content_id\" asc "
+                    + "fetch next ? rows only");
+    }
+
+    @Test
+    void interfaceRootConnection_totalCountCountsTheBaseUnderTheDiscriminatorRestriction() {
+        execute("{ allContentConnection(first: 2) { totalCount edges { node { title } } } }");
+        assertThat(SQL_LOG)
+            .as("the lazy totalCount resolver counts the base table under the same predicate the "
+                + "page ran under, discriminator IN included, so the count agrees with the page")
+            .containsExactlyInAnyOrder(
+                "select \"content\".\"content_type\" as \"__discriminator__\", "
+                    + "\"public\".\"content\".\"title\", "
+                    + "\"public\".\"content\".\"content_id\" "
+                    + "from \"public\".\"content\" "
+                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "order by \"public\".\"content\".\"content_id\" asc "
+                    + "fetch next ? rows only",
+                "select count(*) from \"public\".\"content\" "
+                    + "where \"content\".\"content_type\" in (?, ?)");
+    }
+
+    @Test
+    void joinedInterfaceRootConnection_gatedDetailJoinComposesWithSeekAndLimit() {
+        execute("{ allPartiesConnection(first: 2) { edges { node { displayName "
+            + "... on Individual { birthDate } } } } }");
+        assertThat(SQL_LOG)
+            .as("joined-table interface root, paginated: the discriminator-gated detail LEFT JOIN "
+                + "sits inside the paginating statement, which is sound because it is the PK=FK "
+                + "edge and cannot multiply rows. The cursor key needs no term of its own here: "
+                + "the base slice already projects party_id, and the page request merges rather "
+                + "than appends")
+            .containsExactly(
+                "select \"party\".\"party_kind\" as \"__discriminator__\", "
+                    + "\"public\".\"party\".\"party_id\" as \"party_id\", "
+                    + "\"public\".\"party\".\"display_name\" as \"__rk_displayname\", "
+                    + "\"individual_detail\".\"birth_date\" "
+                    + "from \"public\".\"party\" "
+                    + "left outer join \"public\".\"party_individual\" as \"individual_detail\" "
+                    + "on (\"individual_detail\".\"party_id\" = \"public\".\"party\".\"party_id\" "
+                    + "and \"party\".\"party_kind\" = ?) "
+                    + "where \"party\".\"party_kind\" in (?, ?) "
+                    + "order by \"public\".\"party\".\"party_id\" asc "
+                    + "fetch next ? rows only");
+    }
+
+    @Test
     void lookupRoot_valuesJoinKeyedAndIdxProjectedForTheScatter() {
         execute("{ languageByKey(language_id: [1, 2]) { name } }");
         assertThat(SQL_LOG)

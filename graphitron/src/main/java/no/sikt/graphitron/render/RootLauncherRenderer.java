@@ -158,24 +158,26 @@ public final class RootLauncherRenderer {
                 String tableLocal = TableLocal.name(disc.table());
                 builder.addCode(TableLocal.declare(disc.table()));
                 builder.addCode(conditionStatement(row, tableLocal));
-                // The whole discriminated assembly (routing projection, participant select
-                // list, gated LEFT JOIN arms) is the shared fragment; only the terminal is
-                // shape-forked here, over the same fetch tail the anchor arm chains.
-                builder.addCode(DiscriminatedTableFragments.assembly(disc,
-                    java.util.List.of(), tableLocal));
                 switch (row.result()) {
-                    case ResultShape.SingleRecord ignored ->
+                    // The non-paginating shapes read the assembly whole (routing projection,
+                    // participant select list, joined-detail join arms); only the terminal is
+                    // shape-forked here, over the same fetch tail the anchor arm chains.
+                    case ResultShape.SingleRecord ignored -> {
+                        builder.addCode(DiscriminatedTableFragments.assembly(disc,
+                            java.util.List.of(), tableLocal));
                         builder.addCode(directReturn(stepChain(false, false)));
+                    }
                     case ResultShape.RecordList list -> {
+                        builder.addCode(DiscriminatedTableFragments.assembly(disc,
+                            java.util.List.of(), tableLocal));
                         boolean ordered = list.ordering() != null;
                         if (ordered) {
                             builder.addCode(orderByStatement(list.ordering(), tableLocal));
                         }
                         builder.addCode(directReturn(stepChain(true, ordered)));
                     }
-                    case ResultShape.Connection ignored -> throw new IllegalStateException(
-                        "a discriminated-interface launcher never paginates; the command"
-                        + " constructor rejects the pair before rendering");
+                    case ResultShape.Connection connection -> builder.addCode(
+                        discriminatedConnectionBody(disc, connection, tableLocal, carrierDsl));
                     case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
                         "the LoaderDelegated result belongs to the service arms; the"
                         + " command constructor rejects the pair before rendering");
@@ -346,6 +348,52 @@ public final class RootLauncherRenderer {
                 "return new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs$L)",
                 className(connection.carrier()), tableLocal, dslTail);
         }
+        return code.build();
+    }
+
+    /**
+     * The discriminated arm's connection body: the anchor arm's connection shape bound over the
+     * discriminated seam instead of a projection unit. Order is what forces the seam: the page
+     * request takes the populated field list and hands back the merged selection the statement
+     * must run, so the projection half emits first, the page request between, and the joined
+     * step last.
+     *
+     * <p>Why the resulting statement may be paginated at all: after the two halves it contains
+     * the base table, the joined-detail LEFT JOINs (proven 1:0..1 at build time, see
+     * {@link DiscriminatedTableFragments#joinedStep}) and select-list subselects (row-neutral by
+     * construction), so one row is one entity and {@code .limit()} slices entities. The carrier's
+     * {@code totalCount} counts the base under the same condition, which by then carries the
+     * discriminator restriction the projection half ANDed in, so the count agrees with the page.
+     */
+    private static CodeBlock discriminatedConnectionBody(LaunchSource.DiscriminatedTable disc,
+            ResultShape.Connection connection, String tableLocal, CarrierDsl carrierDsl) {
+        var code = CodeBlock.builder();
+        code.add(DiscriminatedTableFragments.projection(disc, java.util.List.of(), tableLocal));
+        code.add(OrderingBlock.declareBothViews(connection.ordering(), tableLocal));
+        code.addStatement("Integer first = env.getArgument($S)", "first");
+        code.addStatement("Integer last = env.getArgument($S)", "last");
+        code.addStatement("String after = env.getArgument($S)", "after");
+        code.addStatement("String before = env.getArgument($S)", "before");
+        var helperClass = className(connection.helper());
+        code.addStatement(
+            "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, new $T<>($L))",
+            helperClass.nestedClass("PageRequest"), helperClass, connection.defaultPageSize(),
+            ARRAY_LIST, DiscriminatedTableFragments.FIELDS_LOCAL);
+        code.add(DiscriminatedTableFragments.joinedStep(disc, tableLocal,
+            CodeBlock.of("page.selectFields()")));
+        code.add("$T result = step\n", RESULT_OF_RECORD)
+            .indent()
+            .add(".where(condition)\n")
+            .add(".orderBy(page.effectiveOrderBy())\n")
+            .add(".seek(page.seekFields())\n")
+            .add(".limit(page.limit())\n")
+            .add(".fetch();\n")
+            .unindent();
+        String dslTail = carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "";
+        // No facet fork: an interface-element carrier is rejected at the SDL boundary, so the
+        // producer never lands a plan on this coordinate.
+        code.addStatement("return new $T(result, page, $L, condition$L)",
+            className(connection.carrier()), tableLocal, dslTail);
         return code.build();
     }
 
