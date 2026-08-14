@@ -165,19 +165,48 @@ safe recursive H2 view form, which is the question this item would otherwise hav
 itself.
 
 So the binding-leaf resolution is a **keying over that relation, not a second walk**, which is the
-move `intent_bound_table`'s own comment records for the spelling view ("a keying over the spelling
-view rather than a second copy of it"). An `argMapping` path maps to an occurrence path by a string
+move the stratum's own block comment records for `intent_bound_table` over `intent_spelled_table`
+("the binding view is a keying over it rather than a second copy of it"). An `argMapping` path maps
+to an occurrence path by a string
 expression over the pair's own key, in the `POSITION` / `SUBSTRING` vocabulary the stratum already
 uses; the leaf is that row, and "one trailing segment unconsumed" is a right-trim onto the prefix
 row rather than a traversal. Writing a second traversal instead is the drift the fact model names:
 two spellings of one resolution that agree until one of them changes.
 
-Three caveats the view's comment must own, each narrow and each a stated absence rather than a
-silent one:
+**The head is not always an argument, so the keying has four arms rather than one.** Each is
+narrow, and each absence below is a stated one rather than a silent one:
 
-* The occurrence seed covers arguments whose named type is an input object, so a head segment that
-  is a bare scalar argument (`pCustomerId: customerId`) needs a second arm joining
-  `graphql_argument` directly.
+* **Argument-rooted dotted head.** The main arm, and the right-trim onto the prefix row described
+  above. `InputOccurrencePaths.seed` seeds strictly from `graphql_argument`, so this arm covers
+  every site whose head names a field argument.
+* **Bare head, no dots.** The leaf *is* the head slot, so no occurrence path is involved: an
+  argument head reads `graphitron_argument_node_id`, an input-field head reads
+  `graphitron_field_node_id`. Cheap, and the most load-bearing arm of the four, because a bare
+  `@nodeId` head is exactly the silent-`TEXT` shape this item exists to close.
+* **Input-field-rooted dotted head.** `graphitron_field_condition` is a shared coordinate,
+  "@condition on a field or input field (shared coordinate; the parent kind decides which SDL site
+  this was)", and `SdlFactCapture.captureInputFields` routes an input-object field's directives
+  through the same `captureFieldDirectives` as an output field's. So a `@condition` on an input
+  field produces pair rows whose `type_name` is an *input* type and whose head names that input
+  field rather than an argument; `BuildContext.buildInputFieldCondition` seeds `ArgBindingMap.of`
+  with the input field's own name for exactly that reason. Two consequences. The arm is
+  discriminated by a join to `graphql_type.kind = 'INPUT_OBJECT'`, which is how the capture side
+  already tells the two halves apart ("the owning type's kind is a join away, so the SDL location
+  kind of an application on one falls out of a join rather than a second table"). And the keying is
+  a **suffix** match on the serialized path rather than a prefix trim, because the written path
+  starts partway down: one row per use site that reaches the input type, so this arm is
+  one-to-many where the others are one-to-one, and an input type no argument reaches yields no rows
+  at all. That last absence is the arm's own caveat and owes a sentence in the view's comment.
+* **Path-step heads resolve no leaf, by construction.** The three step-site pair relations (two
+  `*_reference_step_*`, one `*_reference_for_step_*`) carry rows, but `BuildContext` resolves a
+  path-step
+  `@condition` against an *empty* slot map ("no GraphQL arguments are in scope at a path-step
+  @condition"), so no head at that site resolves today at all. Those arms belong in the union for
+  the `site` vocabulary and for the deferred arm, and they resolve nothing. Saying so is what keeps
+  their emptiness a recorded fact rather than a suspected bug in the view.
+
+Two further caveats the view's comment must own:
+
 * The expansion stops at a type already visited on the path (the classification walk's own
   first-visit guard, restated), so a cyclic re-entry has no row. That absence is load-bearing and
   owes a sentence.
@@ -204,16 +233,32 @@ The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suf
   wants exactly this list for completion, and an editor reading the store is the second reader that
   turns a derivation into a relation.
 * **`intent_argmapping_binding_leaf`.** The keying over `intent_input_occurrence_path` described
-  above, unioned across the six `*_arg_mapping_pair` relations with a `site` literal per arm, plus
-  the unconsumed-segment count.
-* **`intent_argmapping_node_key_projection`.** The reduction: a binding whose leaf carries `@nodeId`
-  and whose single trailing segment names one of that node type's resolved key columns.
+  above, unioned across the **seven** `*_arg_mapping_pair` relations
+  (`graphitron_routine`, `graphitron_service`, `graphitron_field_condition`,
+  `graphitron_argument_condition`, `graphitron_field_reference_step`,
+  `graphitron_argument_reference_step`, `graphitron_reference_for_step`) with a `site` literal per
+  arm, plus the unconsumed-segment count.
+* **`intent_resolved_node_key_projection`.** The reduction: a binding whose leaf carries `@nodeId`
+  and whose single trailing segment names one of that node type's resolved key columns. Named
+  `intent_resolved_*` because it is a reduction, per the same rule that names the key-column view.
 
-Uniformity across `@routine`, `@service` and `@condition` is then structural: the six pair
-relations are one shape, so the binding view is a `UNION` with a `site` literal and a projection is
-resolved identically everywhere because it is resolved once. That is a stronger guarantee than the
-previous draft's "one shared resolver called by three directive resolvers", which was three call
-sites agreeing by discipline.
+Uniformity across `@routine`, `@service` and `@condition` is then structural: a projection is
+resolved identically everywhere because it is resolved once, in a `UNION` with a `site` literal per
+arm. That is a stronger guarantee than the previous draft's "one shared resolver called by three
+directive resolvers", which was three call sites agreeing by discipline.
+
+Two things about that `UNION` the previous draft asserted away. The seven relations are one shape
+only in their tail (`position`, `param_name`, `argument_path`); their use-site keys run from four
+columns (`graph_name, type_name, field_name, position`) to seven (adding `argument_name`,
+`ordinal`, `step_position`), so the view has to carry the consuming coordinate in a projection that
+survives the widest arm. Carry it as a serialized use-site key beside the columns every arm has,
+in the same vocabulary `intent_input_occurrence_path` already uses for its own key, with the
+per-arm components reachable by joining back to the arm's own relation on `site` plus that key.
+This is not a detail to settle at pickup: the rejection's use-keyed property below is precisely the
+requirement that the message can name the consuming coordinate. And there are **eight** `site`
+values over the seven relations, because `graphitron_field_condition_arg_mapping_pair` is the
+shared coordinate whose parent kind splits it into an output-field site and an input-field site
+with different heads and different emitters.
 
 Case-insensitive column matching is a settled convention rather than a new rule, so the docs need
 not introduce it: `intent_spelled_table` and `intent_column_match_claim` both compare under
@@ -246,8 +291,9 @@ non-event:
 
 * `ArgBindingMap.of` must stop rejecting a trailing segment after an `ID`-typed leaf ("walks
   through scalar 'ID' at segment ...; only input-object types may be traversed"), which is what
-  makes the spelling unwritable today. But `of` has **five** callers (`RoutineDirectiveResolver`,
-  `ServiceDirectiveResolver`, `ConditionResolver` twice, `BuildContext` twice), and the widened
+  makes the spelling unwritable today. But `of` has **six** call sites across four classes
+  (`RoutineDirectiveResolver`, `ServiceDirectiveResolver`, `ConditionResolver` twice,
+  `BuildContext` twice, the second of which is the input-field `@condition`), and the widened
   `PathExpr` is *consumed*: `RoutineCallEmitter.nestedSlotRead` registers a descent helper that
   walks every tail segment over the raw argument map and casts at the leaf. An admitted but
   uninterpreted key-column segment therefore emits `get("organisasjonskode")` against a `String`,
@@ -463,7 +509,7 @@ registered under the derived arm.
 right side as written, it is still a dotted path, and capture still records it verbatim. What
 changes is that its comment enumerates what a segment can name ("a GraphQL argument name or dotted
 input path") and now enumerates it incompletely; restate it at the rule's grain on the `@routine`
-pair relation and on its five siblings.
+pair relation and on its six siblings.
 
 The `sql_` half is what makes this more than a view stack, and it is worth doing on its own terms:
 both populations are unreachable outside the codegen classloader, so a run that does not capture
@@ -487,7 +533,7 @@ unrecoverable afterwards").
   closed vocabularies as `CHECK` or as stated column comments): `intent_resolved_node_key_column`
   (three tiers, `tier` column), `intent_argmapping_binding_leaf` (the keying over
   `intent_input_occurrence_path`, `site` literal per union arm, unconsumed-segment count), and
-  `intent_argmapping_node_key_projection`, plus the detection views for the rejections including
+  `intent_resolved_node_key_projection`, plus the detection views for the rejections including
   the site-keyed `deferred` arm.
 * **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: records built from
   query rows, decoding a closed verdict vocabulary into `Rejection` arms. The only new Java types
@@ -496,7 +542,7 @@ unrecoverable afterwards").
   transaction and return it in the typed product the caller already folds into the error stream.
 * **`GraphitronSchemaValidator`**: fuse the new violations the way the claim conflicts are fused.
 * **`ArgBindingMap.of`**: widen the traversal rejection to admit one trailing segment after an
-  `ID`-typed leaf, *with* the five-caller audit and the `RoutineCallEmitter.nestedSlotRead`
+  `ID`-typed leaf, *with* the six-call-site audit and the `RoutineCallEmitter.nestedSlotRead`
   consequence handled in the same commit (see "What this item does not add").
 * **`EmitPlan` / `LauncherCommands`**: read the projection view into a plan-local relation keyed by
   the pair's natural key and join it into the `LaunchSource.RoutineChain` command row. Nothing in
@@ -505,7 +551,7 @@ unrecoverable afterwards").
   pre-statements alongside its expression and the four call sites add them.
 * **`ConditionGlueRenderer`** and the `@service` pair, when their sites land: the same read, with
   the decode helper body hosted on the conditions class for the `@condition` site.
-* **Comments**: restate `argument_path` on all six `*_arg_mapping_pair` relations.
+* **Comments**: restate `argument_path` on all seven `*_arg_mapping_pair` relations.
 
 ## Tests
 
@@ -521,20 +567,26 @@ unrecoverable afterwards").
 * **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view.
   `intent_resolved_node_key_column` needs all three tiers populated, not two, plus a composite-key
   type (`bar` in the `nodeidfixture` catalog is the one `NodeIdPipelineTest` already uses).
-* **The binding-leaf view wants its caveats pinned, not just its happy path**: a bare-scalar
-  argument head, a path whose leaf is an input object rather than a scalar, and the two-trailing-
-  segment case that must not resolve as a projection.
+* **The binding-leaf view wants each of its four arms pinned, not just its happy path**: a
+  bare-scalar argument head, a bare `@nodeId` head (the arm the whole silent-`TEXT` case runs
+  through), an input-field-level `@condition` whose head names the input field, one whose input
+  type no argument reaches (the zero-row absence), a path-step `@condition` pair row that resolves
+  no leaf, a path whose leaf is an input object rather than a scalar, and the two-trailing-segment
+  case that must not resolve as a projection.
 * **Registration**: `FactCaptureAgreementTest` for every new relation and view, base and derived.
 * **Corpus population per arm.** A view arm no fixture reaches is a vacuous pin. Each rejection
-  arm, each key-column tier and each admitted `site` needs a coordinate that reaches it.
-* **Cross-site parity**: one test over `@routine`, `@service` and `@condition`. The `UNION` arms
-  are six hand-written `SELECT`s and a typo in one is exactly the drift it catches.
+  arm, each key-column tier and each of the eight `site` values needs a coordinate that reaches it,
+  including the two the field-condition relation splits into.
+* **Cross-site parity**: one test over `@routine`, `@service` and both `@condition` sites. The
+  `UNION` arms are seven hand-written `SELECT`s over relations whose key arities differ, and a typo
+  in one is exactly the drift it catches.
 * **Pipeline tier**: the `rent_film` fixture binding `pInventoryId` from
   `ID! @nodeId(typeName: "Inventory")` through the projected key column, asserting the emitted call
   materialises the record once and reads the column off it, plus the rejection cases.
 * **Validate-time tests** that the build fails, not only that a `Rejection` is produced.
-* **The widening's blast radius**: a test at each `ArgBindingMap.of` caller that a trailing segment
-  which resolves to no projection cannot reach `nestedSlotRead` and emit a raw map read.
+* **The widening's blast radius**: a test at each of the six `ArgBindingMap.of` call sites that a
+  trailing segment which resolves to no projection cannot reach `nestedSlotRead` and emit a raw
+  map read.
 * **`@condition` emission** needs a compilation-tier assertion about *which class* hosts the decode
   helper body, since that is the half the pipeline tier cannot see.
 * **Execution tier** (`graphitron-sakila-example`): one round trip proving the decoded key reaches
@@ -543,7 +595,7 @@ unrecoverable afterwards").
 
 ## Risks
 
-* **The widening at `ArgBindingMap.of` is the sharp edge**, not the views. Five callers, and a
+* **The widening at `ArgBindingMap.of` is the sharp edge**, not the views. Six call sites, and a
   consumer (`RoutineCallEmitter.nestedSlotRead`) that will happily emit a raw map read for a
   segment nobody interpreted. Gate it or teach every consumer in the same commit.
 * **Whether the parameters' SQL-side vocabulary is worth reaching.** They are `Field<?>` values on
@@ -558,8 +610,11 @@ The user surface is a new spelling on an existing directive argument, so the doc
 small and lands in three places:
 
 * `docs/manual/reference/directives/service.adoc#arg-mapping` is the shared home of the
-  right-hand-side path form, cross-referenced by `@service`, `@condition`, `@routine` and
-  `@tableMethod`. Its rule list currently reads "each subsequent segment must name a field on the
+  right-hand-side path form. Its intro currently lists `@service`, `@condition`, `@routine` and
+  `@tableMethod` as the directives it covers; the last of those is legacy residue in the prose (the
+  rewrite does not declare `@tableMethod`, per `docs/manual/how-to/migrating-from-legacy.adoc`) and
+  is a stale mention to drop while editing the paragraph, not a site this item owes anything to.
+  The rule list currently reads "each subsequent segment must name a field on the
   input-object type at that depth", which is the openability rule stated for the only kind that
   existed. Generalise that bullet rather than appending a special case: a segment opens the thing
   at that position, an input object opens into its fields, a `@nodeId` leaf opens into the key
@@ -653,13 +708,15 @@ plan tracks what is next by collapsing a shipped stage into a one-line note.
    metadata population. Registered under `FactCaptureAgreementTest`, transcription twins, comment
    coverage. Exit: the rows exist and agree with what the catalog walk read. No reader yet.
 2. **Resolution views.** `intent_resolved_node_key_column` (three tiers), the binding-leaf keying
-   over `intent_input_occurrence_path`, and the projection reduction. Exit: each view pinned
-   against hand-written expectations, every tier and every `site` arm reached by a fixture.
+   over `intent_input_occurrence_path` (four arms), and the projection reduction. Exit: each view
+   pinned against hand-written expectations, every tier and all eight `site` values reached by a
+   fixture, and the two arms that resolve no leaf (the unreached input type, the path-step
+   `@condition`) pinned as empty on purpose rather than left untested.
 3. **Rejections.** The detection views, the typed product in `AuthoredClaimConflicts`' shape, and
    the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
    the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that
    closes the silent-base64 hole.
-4. **Grammar and emit.** The `ArgBindingMap.of` widening with its five-caller audit, the planning
+4. **Grammar and emit.** The `ArgBindingMap.of` widening with its six-call-site audit, the planning
    join into `LaunchSource.RoutineChain`, `RoutineCallEmitter`'s pre-statement change, and the
    `@condition` helper hosting. Exit: the projection emits and executes.
 
@@ -671,15 +728,18 @@ stages ship to consumers separately.
 
 The site-keyed `deferred` arm from stage 3 is what keeps that honest while stage 4 is in flight and
 afterwards: a projection that resolves at a site whose emitter is not wired says so, rather than
-emitting nothing or emitting the raw base64. When stage 4 lands the three `argMapping` directives,
-the arm shrinks to the sites that have an argument path but no emitter (the path-step `@condition`,
-`@tableMethod`), and it stays as the standing enforcer for whichever site is wired next.
+emitting nothing or emitting the raw base64. When stage 4 lands the `@routine`, `@service` and
+output-field `@condition` sites, the arm shrinks to the `site` values that carry pair rows but no
+emitter: the input-field `@condition`, and the three path-step sites (which resolve no leaf today
+and so can only ever defer). It stays as the standing enforcer for whichever site is wired next.
+`@tableMethod` is deliberately absent from that list: it is a legacy directive the rewrite does not
+declare, so it has no relation, no `site` value and nothing to defer.
 
 ## Open questions
 
 * **What the plan-local projection relation looks like** in `EmitPlan`, and whether
   `LauncherCommands` is the only command that needs the join or `ProjectionCommands` does too.
-  Bounded, but it decides how much of (3) is plumbing.
+  Bounded, but it decides how much of stage 4 is plumbing.
 * Whether `PathFragments.emitTableExpression` takes the pre-statement change (which propagates to
   its callers, since it returns a bare expression consumed inside alias-declaration loops) or keeps
   a per-read call as a documented site-local exception. A signature question one level up, not an
