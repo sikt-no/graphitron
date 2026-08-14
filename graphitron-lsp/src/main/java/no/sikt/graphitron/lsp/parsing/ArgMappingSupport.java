@@ -1,6 +1,5 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
@@ -9,11 +8,12 @@ import java.util.Optional;
 /**
  * Resolution shared by the {@code argMapping} completion and diagnostic
  * consumers: deriving the sibling {@code className} / {@code method}
- * coordinates that scope an {@code argMapping} slot, and resolving what they name.
+ * coordinates that scope an {@code argMapping} slot, and reading the names they carry.
  *
- * <p>Two resolutions, mid-migration. {@link #siblingMethodTarget} stops at the pair of names, for
- * the consumer that asks the store what they refer to; the {@link CompletionData} form below answers
- * with a resolved method off the projection, and retires with the last surface reading it.
+ * <p>Resolution stops at the pair of names. What that pair refers to is a census question, so both
+ * consumers put it to the store rather than to a resolved Java object; the two overloads below
+ * differ only in what the cursor is, a point on the completion path and a node on the diagnostic
+ * one.
  *
  * <p>An {@code argMapping} slot is always one field of a class/method group:
  * the nested {@code ExternalCodeReference.{className, method, argMapping}} (on
@@ -49,35 +49,28 @@ public final class ArgMappingSupport {
         LspVocabulary vocabulary, Directives.Directive directive, Point anchor,
         SchemaCoordinate argMappingCoord, byte[] source
     ) {
-        String className = siblingCoord(argMappingCoord, "className")
-            .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)).orElse(null);
-        String methodName = siblingCoord(argMappingCoord, "method")
-            .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)).orElse(null);
-        if (className == null || methodName == null) return Optional.empty();
-        return Optional.of(new MethodTarget(className, methodName));
+        return target(
+            siblingCoord(argMappingCoord, "className")
+                .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)),
+            siblingCoord(argMappingCoord, "method")
+                .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)));
     }
 
-    /** Node-anchored method resolution (diagnostics path). */
-    public static Optional<CompletionData.Method> resolveMethod(
+    /** The same read anchored on the slot's own node (diagnostics path). */
+    public static Optional<MethodTarget> siblingMethodTarget(
         LspVocabulary vocabulary, Directives.Directive directive, Node anchor,
-        SchemaCoordinate argMappingCoord, CompletionData catalog, byte[] source
+        SchemaCoordinate argMappingCoord, byte[] source
     ) {
-        String className = siblingCoord(argMappingCoord, "className")
-            .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)).orElse(null);
-        String methodName = siblingCoord(argMappingCoord, "method")
-            .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)).orElse(null);
-        return lookup(catalog, className, methodName);
+        return target(
+            siblingCoord(argMappingCoord, "className")
+                .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)),
+            siblingCoord(argMappingCoord, "method")
+                .flatMap(c -> vocabulary.siblingStringAt(directive, anchor, c, source)));
     }
 
-    private static Optional<CompletionData.Method> lookup(
-        CompletionData catalog, String className, String methodName
+    private static Optional<MethodTarget> target(
+        Optional<String> className, Optional<String> methodName
     ) {
-        if (className == null || methodName == null) return Optional.empty();
-        return catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(className))
-            .findFirst()
-            .flatMap(ref -> ref.methods().stream()
-                .filter(m -> m.name().equals(methodName))
-                .findFirst());
+        return className.flatMap(c -> methodName.map(m -> new MethodTarget(c, m)));
     }
 }

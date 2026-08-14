@@ -465,10 +465,10 @@ around it.
 
 | Provider | Trigger | Fact source |
 |---|---|---|
-| `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` joined to the `java_` source family's positions |
+| `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_class`, `jvm_method`, `jvm_method_parameter`, `sql_table`, `sql_column`, `sql_constraint`, `sql_referential_constraint`, `sql_schema`, joined to the `java_` source family's positions. The column arm's own table via `intent_field_column_table`, its parent's via `intent_bound_table` |
 | `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
 | `IntraSchemaDefinitions` | Type reference to its declaring SDL site | `graphql_type_declaration`; a declaring file that has moved since capture re-anchors through its live tree |
-| `DeclarationDefinitions` | SDL declaration name to its bound Java | `intent_class_member_slot` for which declaration a member name binds to, a field or a method; the `java_` source family for where it is written |
+| `DeclarationDefinitions` | SDL declaration name to its bound Java | `intent_class_member_slot` for which declaration a member name binds to, a field or a method; `sql_table` and `sql_column` for a table-backed one, `jvm_method` for the arity a method-backed field resolves at; the `java_` source family for where it is written |
 
 **Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
 
@@ -493,7 +493,7 @@ again whenever a build swaps the snapshot; save reaches it through the rebuild, 
 
 | Source | What it reports |
 |---|---|
-| Coordinate validation | Dispatches all eight `Behavior` arms; unresolved values against the catalog and classpath |
+| Coordinate validation | Dispatches all eight `Behavior` arms; unresolved values against the catalog, classpath and SDL censuses, all eight reading the store |
 | Unknown args | Directive args not declared, bundled and user-declared paths separately |
 | Required args | Declared-required args absent |
 | Unknown directive | Skipping the GraphQL spec built-ins |
@@ -1479,6 +1479,58 @@ permits now name a class and nothing else.
   besides. The table now carries the two rows separately with that blocker named, and the four arms
   keep reading the binding off the projection.
 
+## Settled while building: an empty census is a fact, and the deferral has one home
+
+The definition provider and the diagnostics coordinate dispatch read the store on every arm. Two
+whole inventory rows close with it, and `CompletionData` leaves both classes plus `DeclTarget`, which
+the same rules ran through for the declaration-name half.
+
+* **An empty census is an answer, not a missing one.** Every arm that resolved a name against the
+  projection carried a guard: if the population is empty, say nothing. The projection needed it
+  because it could be half-populated, a snapshot existing before the consumer had run `mvn compile`,
+  and a schema full of red class names is the wrong thing to show someone waiting for a build. The
+  guard was a separate `isEmpty()` test per surface, ahead of the lookup, correct only in that
+  order. The readers answer it in the same read now: `ClasspathClasses.presenceOf` and
+  `CatalogTables.named` return *known*, *unknown* and *no census* as three arms, so no reader can
+  hold the two questions in the wrong order and each states which of them it defers on.
+* **Three answers, two shapes, and the difference is data.** The class reader's three arms carry
+  nothing beyond which arm they are, so they are an enum; the table reader's *known* arm carries the
+  rows, so it is a sealed interface. Same question, different shapes, decided by what the arm holds
+  rather than by consistency for its own sake.
+* **The pre-build silence moved up one level.** With every value arm reading the store, "no store"
+  and "nothing captured yet" stopped being per-arm cases: the dispatch takes the handle as an option
+  and the arms that wholly need it run only when there is one. Two arms take the option instead,
+  because each has something to say without a census: the scalar reference's malformed-value check,
+  and `argMapping`'s structural checks. How each arm takes the handle is what its requirement now
+  looks like.
+* **The `@node` deferral retires rather than moving.** It existed because a graph declaring no
+  `@node` type looked exactly like a projection nobody had built. A store answers only after a
+  capture and a capture writes every `@node` in the graph, so no rows means the schema declares none
+  and the build will reject the reference; the arm flags it, and silence before the first build is
+  the absent store. One guard fewer, from the substrate rather than from a decision.
+* **The FK diagnostic's spelling set was fixed by the migration, as predicted.** It accepted only the
+  generated constant, so a plain SQL constraint name red-squiggled even though the generator resolves
+  it and the completion arm on the same coordinate offers it. Asking `CatalogKeys.named` is the fix:
+  both namespaces, case-insensitive, qualifier scoping rather than stripping. That last part closed a
+  hole the note said was untestable, a real name under a schema that does not declare it, which the
+  projection had nowhere to record and therefore waved through.
+* **The column arm's first hop changed, and both surfaces now agree about where a name lives.**
+  Goto-definition validated `@field(name:)` against the enclosing type's own `@table`; the diagnostic
+  had already moved to the site's resolved scope, which differs at a `@reference` path's terminal
+  table. Two surfaces disagreeing about which table a name belongs to is one bug wearing two faces,
+  so the jump reads `intent_field_column_table` and falls back to `intent_bound_table` exactly as the
+  squiggle does. `TypeContext.tableNameOf`, whose last caller this was, retires.
+* **A jOOQ name is what the generated class declares.** The projection's column list held the
+  generated field name under a component called `name`, and the position join keyed on it. Reading
+  `sql_column` gives both spellings, and the reader that answers whether an author's spelling matches
+  is not the one that answers what the class declares, so the two are separate now: matched under
+  either name, keyed by the jOOQ one.
+* **What is left, and where.** `Diagnostics` keeps one projection read and `Definitions` none: which
+  class or table backs an SDL type, the piece with no relation. The `@table` projection itself is not
+  dead and cannot be: `CatalogFacts` takes it as capture's *input*, the same relationship the class
+  census has with `ClasspathScanner`'s output, which is why `FixtureCatalogTest` now asserts on both
+  sides of that capture rather than dropping the projection half.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1492,7 +1544,8 @@ path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declare
 `FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
 switched on, and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
 `PojoBacking.accessors` payloads and `CatalogBuilder`'s `projectRecord`, `projectPojo`,
-`beanAccessorSlot` and `lowercaseFirst`; `DirectiveResolution`
+`beanAccessorSlot` and `lowercaseFirst`, and `TypeContext.tableNameOf` with
+`Diagnostics.collectAllFkNames` and `ArgMappingSupport.resolveMethod`; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
 `typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's

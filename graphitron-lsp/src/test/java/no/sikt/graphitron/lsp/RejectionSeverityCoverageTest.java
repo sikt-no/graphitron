@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -55,7 +54,7 @@ class RejectionSeverityCoverageTest {
                 List.of());
             List<Diagnostic> diags;
             try {
-                diags = Diagnostics.compute(uri, file, CompletionData.empty(), snapshot, report);
+                diags = Diagnostics.compute(uri, file, snapshot, report);
             } catch (RuntimeException e) {
                 unmapped.add(permit.getName() + " (compute threw: " + e + ")");
                 continue;
@@ -117,7 +116,7 @@ class RejectionSeverityCoverageTest {
                 String declared = declaredLspCode(sample);
                 var report = ValidationReport.from(
                     List.of(new ValidationError("Coord", sample, loc)), List.of());
-                var diags = Diagnostics.compute(uri, file, CompletionData.empty(), snapshot, report);
+                var diags = Diagnostics.compute(uri, file, snapshot, report);
                 String lspSide = diags.size() == 1 && diags.get(0).getCode() != null
                     ? diags.get(0).getCode().getLeft()
                     : null;

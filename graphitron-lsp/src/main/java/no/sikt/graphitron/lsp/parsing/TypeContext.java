@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 
 import java.util.Optional;
@@ -100,30 +99,6 @@ public final class TypeContext {
         Node nameNode = Nodes.childOfKind(fieldDef, NAME);
         if (nameNode == null) return Optional.empty();
         return Optional.of(Nodes.text(nameNode, source));
-    }
-
-    /**
-     * Resolves the SQL table name for the type declared at {@code typeDecl} by routing
-     * through the classifier's name-keyed projection on the snapshot. Returns empty when the
-     * snapshot is unavailable, the declared name resolves to no classification, or the
-     * classification has no {@code tableName} (e.g. plain object, scalar, enum). Works
-     * uniformly for definition and extension nodes because the projection is keyed on the
-     * declared type name, not on the AST node.
-     *
-     * <p>The projection-reading residue of a question the store now answers:
-     * {@link no.sikt.graphitron.lsp.facts.BoundTables} resolves a type's binding against the
-     * catalog census, and the surfaces that ask it that way get the whole candidate set rather
-     * than one name. What still routes here is goto-definition's column arm, whose next hop is
-     * the same projection for the table's generated class, so pointing its first hop at the store
-     * would leave one arm reading both.
-     */
-    public static Optional<String> tableNameOf(
-        Node typeDecl, byte[] source, LspSchemaSnapshot snapshot
-    ) {
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
-        return declaredNameOf(typeDecl, source)
-            .map(name -> built.typeClassificationsByName().get(name))
-            .flatMap(TypeContext::tableNameFromClassification);
     }
 
     /**

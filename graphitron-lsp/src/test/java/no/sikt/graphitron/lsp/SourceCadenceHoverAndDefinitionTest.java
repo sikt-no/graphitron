@@ -72,8 +72,8 @@ class SourceCadenceHoverAndDefinitionTest {
                 .contains("Looks up a price for a film.");
 
             // Goto-definition jumps to the same method declaration in the same file.
-            var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                store.handle(), workspace.snapshot(), methodPos).orElseThrow();
+            var loc = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
+                .orElseThrow();
             assertThat(loc.getUri()).endsWith("PriceService.java");
             // The method is declared on the 6th line (0-based line 5) of the source above.
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(5);
@@ -102,8 +102,8 @@ class SourceCadenceHoverAndDefinitionTest {
             // carries no comment, so a parse is the only thing that can have supplied it.
             assertThat(hoverText(workspace, store, file, tablePos)).contains("The film table.");
 
-            var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                store.handle(), workspace.snapshot(), tablePos).orElseThrow();
+            var loc = Definitions.compute(LspVocabulary.load(), file, store.handle(), tablePos)
+                .orElseThrow();
             assertThat(loc.getUri()).endsWith("Film.java");
             // The class is declared on line 3 (0-based line 2).
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
@@ -130,9 +130,8 @@ class SourceCadenceHoverAndDefinitionTest {
         var methodPos = pointAt(file, 1, "price\"");
 
         try (var store = priceServiceStore(srcRoot)) {
-            int lineBefore = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                store.handle(), workspace.snapshot(), methodPos).orElseThrow()
-                .getRange().getStart().getLine();
+            int lineBefore = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
+                .orElseThrow().getRange().getStart().getLine();
             assertThat(hoverText(workspace, store, file, methodPos)).contains("First doc.");
 
             // Edit the source: new Javadoc, and the method shifts down two lines.
@@ -155,9 +154,8 @@ class SourceCadenceHoverAndDefinitionTest {
                 .as("source-cadence refresh must not rebuild the catalog")
                 .isSameAs(catalogBefore);
 
-            int lineAfter = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                store.handle(), workspace.snapshot(), methodPos).orElseThrow()
-                .getRange().getStart().getLine();
+            int lineAfter = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
+                .orElseThrow().getRange().getStart().getLine();
 
             // Hover and goto move together off one edit: the new doc comment and the new line come
             // out of one re-read of the file, so the two cannot disagree about the declaration.
@@ -194,7 +192,7 @@ class SourceCadenceHoverAndDefinitionTest {
                 .contains("The film table.");
 
             var loc = DeclarationDefinitions
-                .compute(file, workspace.catalog(), store.handle(), snapshot, namePos)
+                .compute(file, store.handle(), snapshot, namePos)
                 .orElseThrow();
             assertThat(loc.getUri()).endsWith("Film.java");
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
@@ -236,7 +234,7 @@ class SourceCadenceHoverAndDefinitionTest {
         return new Workspace(new CompletionData(List.of(), List.of(), List.of(ref)));
     }
 
-    /** The census half both surfaces still read: a table and the FQN it was captured under. */
+    /** The projection hover still reads for a table: its name and the FQN it was captured under. */
     private static Workspace workspaceWithTableCatalog(String filmFqn) {
         var film = new CompletionData.Table(
             "film", "", filmFqn,

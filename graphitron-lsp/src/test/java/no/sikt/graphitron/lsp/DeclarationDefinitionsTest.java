@@ -26,15 +26,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Goto-definition from an SDL declaration name (a type name or a field / input-value name, not a
  * directive argument) to the Java the model bound it to. Dispatches on the enclosing type's
  * {@code TypeBackingShape} and resolves each target against the fact store's java-source family,
- * joined by the catalog's structural keys, exactly like {@code Definitions} does for the
+ * joined by the census's structural keys, exactly like {@code Definitions} does for the
  * directive-argument half. Covers one case per backing shape per axis.
  *
  * <p>Every position asserted here came from parsing a real {@code .java} file written to disk: the
  * sources below are the fixture, and their line numbers are the expectations. That matters for a
  * provider whose whole job is a position, since a hand-built substrate can assert a declaration the
  * parse would not produce, which is how a record component's doc comment went unnoticed for a while.
- * The catalog stays a hand-built projection, being the classpath census half rather than the source
- * half: it says which names are references, and the store says where they are declared.
+ * The census is captured for the same reason, the fixture module's real generated catalog for the
+ * table arms and a real class list for the rest: it says which names are references, and the parse
+ * says where they are declared, and the join between the two is only ever a name.
  */
 class DeclarationDefinitionsTest {
 
@@ -50,7 +51,6 @@ class DeclarationDefinitionsTest {
     /** The schema is beside the point in every case here; the subject is the {@code .java} files. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
-    private static final String FILM_FQN = "fake.jooq.tables.Film";
     private static final String RECORD_FQN = "com.example.FilmDto";
     private static final String POJO_FQN = "com.example.FilmPojo";
     private static final String STD_FQN = "com.example.FilmRecord";
@@ -70,18 +70,19 @@ class DeclarationDefinitionsTest {
     private static final int GREET2_LINE = 7;
     private static final int TWIN_FIRST_LINE = 8;
 
+    /** The generated table class the census recorded, read back rather than spelled out. */
+    private static String filmFqn;
+
     @BeforeAll
     static void parseSources() {
-        // The classpath census carries the two class-backed fixtures: a member name resolves to its
-        // declaration through the store's member-slot rule, and where that declaration is written
-        // comes from the parsed sources below.
-        store = StoreFixture.of(sourceRoot, PLACEHOLDER_SDL, List.of(
-            StoreFixture.jarRecord(RECORD_FQN, StoreFixture.component("firstName", "String")),
-            StoreFixture.jarClass(POJO_FQN, List.of(StoreFixture.method("getFirstName", "String")))));
-        bare = StoreFixture.of(bareRoot, PLACEHOLDER_SDL);
-        store.withJavaSource(sourceRoot, FILM_FQN, """
+        store = StoreFixture.ofCatalog(sourceRoot, PLACEHOLDER_SDL, census());
+        bare = StoreFixture.ofCatalog(bareRoot, PLACEHOLDER_SDL, census());
+        filmFqn = store.tableClassFqn("film");
+        // The column constant is the census's own spelling of it, which is what the class declares
+        // and what the resolution keys the position lookup by.
+        store.withJavaSource(sourceRoot, filmFqn, """
             public class Film {
-                public final Object title = null;
+                public final Object TITLE = null;
             }
             """);
         store.withJavaSource(sourceRoot, RECORD_FQN, """
@@ -158,7 +159,7 @@ class DeclarationDefinitionsTest {
         // non-jump, the same contract as the jOOQ half.
         var file = file("type FilmRecord { firstName: String }");
         assertThat(DeclarationDefinitions.compute(
-            file, catalog(), bare.handle(), snapshot(), pointAt(file, 0, "FilmRecord")))
+            file, bare.handle(), snapshot(), pointAt(file, 0, "FilmRecord")))
             .isEmpty();
     }
 
@@ -279,7 +280,7 @@ class DeclarationDefinitionsTest {
         // the same contract as the other backing arms.
         var file = file("type Query { price: Int }");
         assertThat(DeclarationDefinitions.compute(
-            file, catalog(), bare.handle(), snapshot(), pointAt(file, 0, "price")))
+            file, bare.handle(), snapshot(), pointAt(file, 0, "price")))
             .isEmpty();
     }
 
@@ -309,7 +310,7 @@ class DeclarationDefinitionsTest {
     void unavailableSnapshotReturnsEmpty() {
         var file = file("type FilmRecord { firstName: String }");
         assertThat(DeclarationDefinitions.compute(
-            file, catalog(), store.handle(), LspSchemaSnapshot.unavailable(),
+            file, store.handle(), LspSchemaSnapshot.unavailable(),
             pointAt(file, 0, "FilmRecord")))
             .isEmpty();
     }
@@ -320,12 +321,12 @@ class DeclarationDefinitionsTest {
         // nowhere to jump from, and says so once rather than per arm.
         var file = file("type FilmRecord { firstName: String }");
         assertThat(DeclarationDefinitions.compute(
-            file, catalog(), Optional.empty(), snapshot(), pointAt(file, 0, "FilmRecord")))
+            file, Optional.empty(), snapshot(), pointAt(file, 0, "FilmRecord")))
             .isEmpty();
     }
 
     private static Optional<Location> compute(FileSnapshot file, Point pos) {
-        return DeclarationDefinitions.compute(file, catalog(), store.handle(), snapshot(), pos);
+        return DeclarationDefinitions.compute(file, store.handle(), snapshot(), pos);
     }
 
     private static Optional<Location> locate(DeclTarget target) {
@@ -333,27 +334,22 @@ class DeclarationDefinitionsTest {
     }
 
     /**
-     * The classpath census half: which names are references, and with what members. Positions are
-     * the store's answer, joined to this by name.
+     * The classpath census half: which names are references, and with what members. The record's
+     * component and the POJO's accessor are what a member name resolves through; the service's four
+     * one-argument methods are the arities a method-backed field resolves at. {@code greet} and
+     * {@code twin} are deliberately absent, so the cases that name them exercise the arity-0 fallback
+     * on a method the census does not carry. Positions are the parse's answer, joined to this by name.
      */
-    private static CompletionData catalog() {
-        var film = new CompletionData.Table(
-            "film", "", FILM_FQN,
-            List.of(new CompletionData.Column("title", "String", false, "")),
-            List.of());
-        var getFirstName = new CompletionData.Method("getFirstName", "String", "", List.of());
-        var pojoRef = new CompletionData.ExternalReference(
-            POJO_FQN, POJO_FQN, "", List.of(getFirstName), List.of());
-        var oneArg = List.of(new CompletionData.Parameter("ctx", "DSLContext", "", ""));
-        var serviceRef = new CompletionData.ExternalReference(
-            SVC_FQN, SVC_FQN, "",
-            List.of(
-                new CompletionData.Method("price", "Field", "", oneArg),
-                new CompletionData.Method("discount", "Field", "", oneArg),
-                new CompletionData.Method("computeCol", "Field", "", oneArg),
-                new CompletionData.Method("viaMethod", "Film", "", oneArg)),
-            List.of());
-        return new CompletionData(List.of(film), List.of(), List.of(pojoRef, serviceRef));
+    private static List<CompletionData.ExternalReference> census() {
+        var oneArg = StoreFixture.parameter("ctx", "DSLContext");
+        return List.of(
+            StoreFixture.jarRecord(RECORD_FQN, StoreFixture.component("firstName", "String")),
+            StoreFixture.jarClass(POJO_FQN, List.of(StoreFixture.method("getFirstName", "String"))),
+            StoreFixture.jarClass(SVC_FQN, List.of(
+                StoreFixture.method("price", "Field", oneArg),
+                StoreFixture.method("discount", "Field", oneArg),
+                StoreFixture.method("computeCol", "Field", oneArg),
+                StoreFixture.method("viaMethod", "Film", oneArg))));
     }
 
     private static LspSchemaSnapshot snapshot() {

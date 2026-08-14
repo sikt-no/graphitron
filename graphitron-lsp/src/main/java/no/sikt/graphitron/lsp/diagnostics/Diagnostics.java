@@ -19,17 +19,19 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
+import no.sikt.graphitron.lsp.facts.ClasspathClasses;
+import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
@@ -47,6 +49,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DESCRIPTION;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ENUM_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
@@ -55,11 +59,20 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 
 /**
- * Validates known directive coordinates against the catalog and emits LSP
- * diagnostics for values that do not resolve. Dispatch is coordinate-driven:
+ * Validates known directive coordinates against the fact store's catalog, classpath and SDL
+ * censuses, and emits LSP diagnostics for values that do not resolve. Dispatch is coordinate-driven:
  * for each directive in the document, the {@link LspVocabulary} walks every
  * value-bearing leaf and the validator pattern-matches on the leaf's
  * {@link Behavior} arm.
+ *
+ * <p>Every value arm reads the store. What each of them defers on is stated where it defers, and the
+ * shape is one rule: a census holding nothing about a family is a consumer who has not built or
+ * compiled yet, and a schema full of red names is the wrong thing to show them. That guard used to
+ * be an {@code isEmpty()} test per surface against a projection that could be half-populated; the
+ * readers answer it in the same read that answers the name now.
+ *
+ * <p>What is left of the classifier's projection here is one thing: which class or table backs an SDL
+ * type, which the column arm needs and no relation reproduces yet.
  */
 public final class Diagnostics {
 
@@ -79,30 +92,30 @@ public final class Diagnostics {
     );
 
     public static List<Diagnostic> compute(
-        String uri, FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot,
-        ValidationReport report
+        String uri, FileSnapshot file, LspSchemaSnapshot snapshot, ValidationReport report
     ) {
-        return compute(LspVocabulary.load(), uri, file, catalog, snapshot, report);
+        return compute(LspVocabulary.load(), uri, file, snapshot, report);
     }
 
     /**
-     * The store-free form: the arms that read the store answer as if it were unavailable, which is
-     * the same silence policy the class already takes on a snapshot it cannot trust.
+     * The store-free form: every arm that resolves a value against the catalog or the classpath
+     * answers as if the census were unavailable, which is silence. That is the same policy the class
+     * takes on a snapshot it cannot trust, and it is what a session before its first build sees.
      */
     public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
+        LspVocabulary vocabulary, String uri, FileSnapshot file,
         LspSchemaSnapshot snapshot, ValidationReport report
     ) {
-        return compute(vocabulary, uri, file, catalog, snapshot, report, Optional.empty());
+        return compute(vocabulary, uri, file, snapshot, report, Optional.empty());
     }
 
     public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
+        LspVocabulary vocabulary, String uri, FileSnapshot file,
         LspSchemaSnapshot snapshot, ValidationReport report, Optional<StoreHandle> store
     ) {
         try (var span = LspTrace.span("diagnostics.compute")) {
             span.detail("uri", uri);
-            var result = computeTraced(vocabulary, uri, file, catalog, snapshot, report, store, span);
+            var result = computeTraced(vocabulary, uri, file, snapshot, report, store, span);
             span.detail("diagnostics", result.size());
             return result;
         }
@@ -110,12 +123,12 @@ public final class Diagnostics {
 
     /**
      * The document walk itself. Split from {@link #compute(LspVocabulary, String, FileSnapshot,
-     * CompletionData, LspSchemaSnapshot, ValidationReport)} so the trace span can attach the
+     * LspSchemaSnapshot, ValidationReport)} so the trace span can attach the
      * directive count and the validator-projection cost measured inside it without threading a
      * span through every private validator.
      */
     private static List<Diagnostic> computeTraced(
-        LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
+        LspVocabulary vocabulary, String uri, FileSnapshot file,
         LspSchemaSnapshot snapshot, ValidationReport report, Optional<StoreHandle> store,
         LspTrace.Span span
     ) {
@@ -134,7 +147,7 @@ public final class Diagnostics {
                 validateRequiredArgs(directive, dirDef, file, out);
                 var leaves = vocabulary.leafCoordinates(directive, file.source());
                 for (var leaf : leaves) {
-                    dispatch(directive, leaf, vocabulary, file, catalog, snapshot, store, out);
+                    dispatch(directive, leaf, vocabulary, file, snapshot, store, out);
                 }
                 continue;
             }
@@ -485,30 +498,38 @@ public final class Diagnostics {
     }
 
 
+    /**
+     * The per-leaf dispatch. How each arm takes the store says what it requires: the arms whose whole
+     * subject is a census value run only where there is a census to read, and the two that have
+     * something to say without one take the option and decide for themselves. Nothing here reads a
+     * store-free model any more, so a session before its first build is silent on every value.
+     */
     private static void dispatch(
         Directives.Directive directive, LspVocabulary.Leaf leaf, LspVocabulary vocabulary,
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot,
+        FileSnapshot file, LspSchemaSnapshot snapshot,
         Optional<StoreHandle> store, List<Diagnostic> out
     ) {
         var behavior = vocabulary.behaviorAt(leaf.coord()).orElse(null);
         if (behavior == null) return;
         switch (behavior) {
             case Behavior.CatalogTableBinding ignored ->
-                validateCatalogTable(leaf.valueNode(), file, catalog, out);
+                store.ifPresent(handle -> validateCatalogTable(handle, leaf.valueNode(), file, out));
             case Behavior.CatalogColumnBinding ignored ->
-                validateFieldMember(directive, leaf.valueNode(), file, catalog, snapshot, store, out);
+                validateFieldMember(directive, leaf.valueNode(), file, snapshot, store, out);
             case Behavior.CatalogFkBinding ignored ->
-                validateCatalogFk(leaf.valueNode(), file, catalog, out);
+                store.ifPresent(handle -> validateCatalogFk(handle, leaf.valueNode(), file, out));
             case Behavior.ClassNameBinding ignored ->
-                validateClassName(directive, leaf.valueNode(), file, catalog, out);
+                store.ifPresent(handle ->
+                    validateClassName(handle, directive, leaf.valueNode(), file, out));
             case Behavior.MethodNameBinding mnb ->
-                validateMethod(vocabulary, directive, leaf, mnb, file, catalog, out);
+                store.ifPresent(handle ->
+                    validateMethod(handle, vocabulary, directive, leaf, mnb, file, out));
             case Behavior.ArgMappingBinding ignored ->
-                validateArgMapping(vocabulary, directive, leaf, file, catalog, out);
+                validateArgMapping(vocabulary, directive, leaf, file, store, out);
             case Behavior.ScalarTypeBinding ignored ->
-                validateScalarType(leaf.valueNode(), file, catalog, out);
+                validateScalarType(store, leaf.valueNode(), file, out);
             case Behavior.NodeTypeBinding ignored ->
-                validateNodeType(leaf.valueNode(), file, catalog, out);
+                store.ifPresent(handle -> validateNodeType(handle, leaf.valueNode(), file, out));
         }
     }
 
@@ -518,17 +539,26 @@ public final class Diagnostics {
      * that {@link no.sikt.graphitron.rewrite.FieldBuilder} produces for the same
      * coordinate: {@code Rejection.unknownTypeName} when no such type exists,
      * {@code Rejection.structural} when the type exists without {@code @node}.
+     *
+     * <p>Graph-keyed, so the scope is the relation's own {@code graph_name} rather than a membership
+     * join, as the completion arm on the same coordinate has it: a {@code @node} declaration is a
+     * fact about one graph's SDL however much of a store its module shares.
+     *
+     * <p>The empty-population guard the projection needed retires with it. A graph declaring no
+     * {@code @node} type was indistinguishable from a projection nobody had built yet, so the arm
+     * deferred on both; a store answers only after a capture, and a capture writes every
+     * {@code @node} in the graph, so no rows now means the schema declares none and the build will
+     * reject the reference. Silence before the first build is the absent store, decided one level up
+     * in the dispatch.
      */
     private static void validateNodeType(
-        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        StoreHandle store, Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         String typeName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (typeName.isEmpty()) return;
-        if (catalog.nodeMetadata().containsKey(typeName)) return;
-        if (catalog.nodeMetadata().isEmpty()) {
-            // No @node-bearing types known to the catalog yet (pre-build state,
-            // or a schema that uses @nodeId only for its argument-resolution
-            // side effect). Defer to the build-tier rejection.
+        if (store.dsl().fetchExists(GRAPHITRON_NODE,
+                GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName())
+                    .and(GRAPHITRON_NODE.TYPE_NAME.eq(typeName)))) {
             return;
         }
         out.add(diagnostic(file, valueNode,
@@ -544,10 +574,14 @@ public final class Diagnostics {
      * <ul>
      *   <li>Shape: the value must split at the last dot into a class FQN + field name. A value
      *       with no dot cannot be resolved at codegen and is flagged here.</li>
-     *   <li>Classpath: the class part must be present in the catalog's external-reference scan
-     *       (mirrors {@link #validateClassName}). Skipped when the scan is empty (pre-compile
+     *   <li>Classpath: the class part must be one the census holds
+     *       (mirrors {@link #validateClassName}). Skipped when the census holds nothing (pre-compile
      *       state); the build-tier resolver produces the precise rejection arm then.</li>
      * </ul>
+     *
+     * <p>The malformed-value diagnostic is the one thing here that needs no census, which is why this
+     * arm takes the store as an option: a value with no dot cannot be resolved at codegen whatever
+     * the classpath holds, and saying so before the first build costs nothing.
      *
      * <p>Field-level validation ({@code FieldNotFound}, {@code NotAScalarType},
      * {@code CoercingErased}) requires reflection on the actual class and lives in the
@@ -555,7 +589,7 @@ public final class Diagnostics {
      * errors via the build pipeline's diagnostics, not inline.
      */
     private static void validateScalarType(
-        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        Optional<StoreHandle> store, Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return;
@@ -566,39 +600,49 @@ public final class Diagnostics {
                     + "field reference of the form 'fully.qualified.Class.FIELD' pointing at a "
                     + "public static final GraphQLScalarType."));
             case ScalarTypeResolver.ParsedDirectiveValue.Parsed p ->
-                validateScalarTypeClasspath(p, valueNode, file, catalog, out);
+                store.ifPresent(handle -> validateScalarTypeClasspath(handle, p, valueNode, file, out));
         }
     }
 
     /**
-     * Classpath half of {@link #validateScalarType}. The catalog's reference scan is the compile
-     * classpath, which is what the codegen loader resolves against, so a library constant such as
+     * Classpath half of {@link #validateScalarType}. The census is the compile classpath, which is
+     * what the codegen loader resolves against, so a library constant such as
      * {@code graphql.scalars.ExtendedScalars.Date} is found here exactly when codegen would bind
-     * it. Skipped when the scan is empty (pre-`mvn compile` state). The structural / malformed-FQN diagnostic fires
-     * regardless; only the unknown-class check defers until the scan has at least one entry.
+     * it. Deferred when the census holds no class at all (pre-{@code mvn compile} state).
      */
     private static void validateScalarTypeClasspath(
-        ScalarTypeResolver.ParsedDirectiveValue.Parsed parsed,
-        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        StoreHandle store, ScalarTypeResolver.ParsedDirectiveValue.Parsed parsed,
+        Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
-        if (catalog.externalReferences().isEmpty()) return;
-        boolean found = catalog.externalReferences().stream()
-            .anyMatch(r -> r.className().equals(parsed.classFqn()));
-        if (!found) {
-            out.add(diagnostic(file, valueNode,
-                "Unknown class '" + parsed.classFqn() + "' on @scalarType. Not found on "
-                + "the compile classpath."));
+        if (ClasspathClasses.presenceOf(store, parsed.classFqn()) != ClasspathClasses.Presence.UNKNOWN) {
+            return;
         }
+        out.add(diagnostic(file, valueNode,
+            "Unknown class '" + parsed.classFqn() + "' on @scalarType. Not found on "
+            + "the compile classpath."));
     }
 
+    /**
+     * Validates {@code @table(name:)} against the catalog census, case-insensitively and across every
+     * schema, which is how the generator's own resolver matches: an editor must not flag a name the
+     * build accepts, and which of two schemas an unqualified name means is a resolution question the
+     * census leaves open.
+     *
+     * <p>A census holding no table at all defers, for the reason the class arm defers: a consumer
+     * whose generated model is not there yet has written no wrong names, and turning every
+     * {@code @table} in their schema red while they wait for codegen is noise.
+     */
     private static void validateCatalogTable(
-        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        StoreHandle store, Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         String tableName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (tableName.isEmpty()) return;
-        if (catalog.getTable(tableName).isEmpty()) {
-            out.add(diagnostic(file, valueNode,
-                "Unknown table '" + tableName + "'. The jOOQ catalog does not contain a table with this name."));
+        switch (CatalogTables.named(store, tableName)) {
+            case CatalogTables.Match.Tables ignored -> { /* the name resolves */ }
+            case CatalogTables.Match.NoCensus ignored -> { /* nothing generated yet */ }
+            case CatalogTables.Match.Unknown ignored ->
+                out.add(diagnostic(file, valueNode,
+                    "Unknown table '" + tableName + "'. The jOOQ catalog does not contain a table with this name."));
         }
     }
 
@@ -611,7 +655,7 @@ public final class Diagnostics {
      * answer.
      */
     private static void validateFieldMember(
-        Directives.Directive directive, Node valueNode, FileSnapshot file, CompletionData catalog,
+        Directives.Directive directive, Node valueNode, FileSnapshot file,
         LspSchemaSnapshot snapshot, Optional<StoreHandle> store, List<Diagnostic> out
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
@@ -675,10 +719,10 @@ public final class Diagnostics {
             case TypeBackingShape.PojoBacking p ->
                 validateMemberSlot(store, p.fqClassName(), memberName, valueNode, file, out);
             case TypeBackingShape.JooqRecordBacking.WithTable j ->
-                validateColumnOnTable(catalog, j.tableName(), memberName, valueNode, file, out);
+                validateColumnOnTable(store, j.tableName(), memberName, valueNode, file, out);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> { /* no actionable diagnostic */ }
             case TypeBackingShape.TableBacking t ->
-                validateColumnOnTable(catalog, t.tableName(), memberName, valueNode, file, out);
+                validateColumnOnTable(store, t.tableName(), memberName, valueNode, file, out);
             case TypeBackingShape.NoBacking ignored -> { /* no actionable diagnostic */ }
         }
     }
@@ -704,20 +748,25 @@ public final class Diagnostics {
         }
     }
 
+    /**
+     * The same check against a table named by a spelling rather than resolved: the parent's
+     * {@code @table} argument as the classifier's projection carried it. A name two schemas both
+     * declare contributes both column lists, which is what the census says and what makes this the
+     * looser of the two reads; the resolved-key form above is the one an author's own site resolves
+     * to.
+     */
     private static void validateColumnOnTable(
-        CompletionData catalog, String tableName, String columnName,
+        Optional<StoreHandle> store, String tableName, String columnName,
         Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
-        var table = catalog.getTable(tableName);
-        if (table.isEmpty()) {
-            // The enclosing @table is itself a typo; the @table validation
-            // already flagged it. Skip the duplicate here.
+        if (store.isEmpty()) return;
+        var columns = CatalogColumns.of(store.get(), tableName);
+        if (columns.isEmpty()) {
+            // Either the enclosing @table is itself a typo, which the @table validation already
+            // flagged, or the census has no columns for it and there is nothing to check against.
             return;
         }
-        var matched = table.get().columns().stream()
-            .filter(c -> c.name().equalsIgnoreCase(columnName))
-            .findFirst();
-        if (matched.isEmpty()) {
+        if (columns.stream().noneMatch(column -> column.isNamed(columnName))) {
             out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
                 "Unknown column '" + columnName + "' on table '" + tableName + "'."));
         }
@@ -748,63 +797,64 @@ public final class Diagnostics {
             "Unknown " + kind + " '" + memberName + "' on backing class '" + fqClassName + "'."));
     }
 
+    /**
+     * Validates {@code @reference(key:)} against the key census, matched the way the generator's own
+     * resolver matches so the editor cannot flag a name the build accepts: either namespace, the SQL
+     * constraint name or the generated {@code Keys} constant, case-insensitively, with a leading
+     * {@code schema.} qualifier scoping rather than widening. {@link CatalogKeys#named} owns that
+     * whole rule, which is the point of asking it: the accepted set is one spelling of one
+     * resolution instead of two that agree until one changes.
+     *
+     * <p>Wider than the projection's answer was, and deliberately. The projection carried only the
+     * generated constant, so a plain SQL constraint name flagged even though the generator resolves
+     * it and the completion arm on this coordinate offers it. A qualified name under a wrong schema
+     * is flagged now rather than waved through, the census carrying the declaring schema the
+     * projection had nowhere to put. Path-step refinement (which step's table the cursor is on) is
+     * still not validated.
+     */
     private static void validateCatalogFk(
-        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        StoreHandle store, Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         String rawFk = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (rawFk.isEmpty()) return;
-        // Strip an optional leading schema qualifier ("multischema_a.note_event_fk") off the value
-        // before the bare-name match, re-sourcing the split from JooqCatalog.parseQualifiedForeignKeyName
-        // (the shared parse boundary the generator uses) rather than re-implementing the grammar. A
-        // valid qualified key equals no bare FK name, so without this it would red-squiggle a name the
-        // generator accepts. A real name under a wrong schema is not flagged: the LSP snapshot
-        // carries no per-FK schema to test against.
-        String fkName = JooqCatalog.parseQualifiedForeignKeyName(rawFk)
-            .map(JooqCatalog.QualifiedForeignKeyName::name)
-            .orElse(rawFk);
-        // Match case-insensitively to mirror JooqCatalog.findForeignKey(name, source),
-        // which the runtime resolver uses; the LSP must not flag names the
-        // generator would accept. Path-step refinement (which step's table we
-        // are on) is not validated.
-        if (collectAllFkNames(catalog).stream().noneMatch(known -> known.equalsIgnoreCase(fkName))) {
-            out.add(diagnostic(file, valueNode,
-                "Unknown foreign key '" + rawFk + "'. Not present in the jOOQ catalog."));
+        if (!CatalogKeys.named(store, rawFk).isEmpty()) return;
+        // No key of this name, in either namespace. Defer while the census holds no key at all: a
+        // generated model that is not there yet has no names to be wrong about.
+        if (!store.dsl().fetchExists(SQL_REFERENTIAL_CONSTRAINT,
+                store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))) {
+            return;
         }
+        out.add(diagnostic(file, valueNode,
+            "Unknown foreign key '" + rawFk + "'. Not present in the jOOQ catalog."));
     }
 
     private static void validateClassName(
-        Directives.Directive directive, Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        StoreHandle store, Directives.Directive directive, Node valueNode,
+        FileSnapshot file, List<Diagnostic> out
     ) {
         // @record carve-out: @record is deprecated/ignored, so its className slot binds no class
         // and an unknown-class diagnostic would be noise. The ExternalCodeReference.className
         // coordinate is shared with @enum, so the carve-out keys on the directive name, not
         // the coordinate (see DirectivePolicy).
         if (!DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))) return;
-        // Empty `externalReferences` means the classpath scan saw nothing
-        // (typically: consumer hasn't run `mvn compile` yet). Reporting
-        // every reference as unknown in that state would be noise; defer
-        // until the scan has at least one entry to match against.
-        if (catalog.externalReferences().isEmpty()) return;
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return;
-        var found = catalog.externalReferences().stream()
-            .anyMatch(r -> r.className().equals(fqn));
-        if (!found) {
-            out.add(diagnostic(file, valueNode,
-                "Unknown class '" + fqn + "'. Not found on the compile classpath."));
-        }
+        // A census holding nothing is a consumer who has not run `mvn compile` yet, not a schema full
+        // of wrong names, so it defers; the reader answers the two apart in one read.
+        if (ClasspathClasses.presenceOf(store, fqn) != ClasspathClasses.Presence.UNKNOWN) return;
+        out.add(diagnostic(file, valueNode,
+            "Unknown class '" + fqn + "'. Not found on the compile classpath."));
     }
 
     private static void validateMethod(
-        LspVocabulary vocabulary,
+        StoreHandle store, LspVocabulary vocabulary,
         Directives.Directive directive, LspVocabulary.Leaf leaf,
         Behavior.MethodNameBinding mnb,
-        FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        FileSnapshot file, List<Diagnostic> out
     ) {
         // @record / @enum bind ExternalCodeReference but the method slot
         // wraps a type, not a method invocation; skip (see DirectivePolicy).
         if (!DirectivePolicy.bindsLiveMethod(Nodes.text(directive.nameNode(), file.source()))) return;
-        if (catalog.externalReferences().isEmpty()) return;
 
         String methodName = Nodes.unquote(Nodes.text(leaf.valueNode(), file.source()));
         if (methodName.isEmpty()) return;
@@ -813,48 +863,35 @@ public final class Diagnostics {
             directive, leaf.valueNode(), mnb.classNameCoord(), file.source());
         if (classFqn.isEmpty()) return;
 
-        var refOpt = catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(classFqn.get()))
-            .findFirst();
-        if (refOpt.isEmpty()) {
-            // Sibling className itself unresolved; the className validator
-            // already flagged it. Skip the duplicate here.
+        // Sibling className unresolved, or a census with nothing in it: the className validator has
+        // the first case and defers on the second, so this arm has nothing to add to either.
+        if (ClasspathClasses.presenceOf(store, classFqn.get()) != ClasspathClasses.Presence.KNOWN) {
             return;
         }
-        var methodOpt = refOpt.get().methods().stream()
-            .filter(m -> m.name().equals(methodName))
-            .findFirst();
-        if (methodOpt.isEmpty()) {
+        var overloads = ClasspathMethods.named(store, classFqn.get(), methodName);
+        if (overloads.isEmpty()) {
             out.add(diagnostic(file, leaf.valueNode(),
                 "Unknown method '" + methodName + "' on class '" + classFqn.get() + "'."));
             return;
         }
         // The method resolved. If it takes parameters but the consumer
         // compiled the class without -parameters, parameter names are
-        // unknown (null on every Parameter record). Surface the same
+        // unknown on every one of them. Surface the same
         // warning the rewrite generator emits at build time
         // (ServiceCatalog.emitParametersWarning), but as a per-reference
         // warning so the schema author sees it inline next to the
-        // affected directive.
-        var method = methodOpt.get();
-        if (!method.parameters().isEmpty()
-                && method.parameters().stream().allMatch(p -> p.name() == null)) {
+        // affected directive. Every overload of the name has to be nameless for it: one that carries
+        // names is one the author may have meant, and the message is about the name they wrote.
+        boolean noNames = overloads.stream()
+            .allMatch(m -> !m.parameters().isEmpty()
+                && m.parameters().stream().allMatch(p -> p.name() == null));
+        if (noNames) {
             out.add(diagnostic(file, leaf.valueNode(), DiagnosticSeverity.Warning,
                 "Class '" + classFqn.get() + "' was compiled without `-parameters`; "
                 + "parameter help on '" + methodName + "' is unavailable. "
                 + "Set `<parameters>true</parameters>` on maven-compiler-plugin "
                 + "to surface parameter names."));
         }
-    }
-
-    private static Set<String> collectAllFkNames(CompletionData catalog) {
-        var names = new LinkedHashSet<String>();
-        for (var table : catalog.tables()) {
-            for (var ref : table.references()) {
-                names.add(ref.keyName());
-            }
-        }
-        return names;
     }
 
     /**
@@ -876,7 +913,7 @@ public final class Diagnostics {
      */
     private static void validateArgMapping(
         LspVocabulary vocabulary, Directives.Directive directive, LspVocabulary.Leaf leaf,
-        FileSnapshot file, CompletionData catalog, List<Diagnostic> out
+        FileSnapshot file, Optional<StoreHandle> store, List<Diagnostic> out
     ) {
         Node valueNode = stringValueOf(leaf.valueNode());
         if (valueNode == null) return;
@@ -890,7 +927,8 @@ public final class Diagnostics {
         var entries = ArgMapping.parse(content);
         if (entries.isEmpty()) return; // blank content is identity for every parameter
 
-        Set<String> paramNames = resolveParameterNames(vocabulary, directive, valueNode, leaf.coord(), catalog, source);
+        Set<String> paramNames = resolveParameterNames(
+            vocabulary, directive, valueNode, leaf.coord(), store, source);
         List<String> fieldArgs = TypeContext.enclosingFieldDefinition(directive.outer())
             .map(fd -> TypeContext.fieldArgumentNames(fd, source))
             .orElse(List.of());
@@ -957,22 +995,33 @@ public final class Diagnostics {
     }
 
     /**
-     * Parameter-name set for the {@code argMapping}'s resolved method, or
-     * {@code null} when the unknown-parameter check must be suppressed: the
-     * method does not resolve, or its parameter names are unavailable (compiled
-     * without {@code -parameters}). An empty set means the method resolves with
-     * zero (named) parameters, so any mapping entry is unknown.
+     * Parameter-name set for the method the {@code argMapping}'s siblings name, or {@code null} when
+     * the unknown-parameter check must be suppressed: no store to ask, a method that does not
+     * resolve, or parameter names unavailable (compiled without {@code -parameters}). An empty set
+     * means the method resolves with zero named parameters, so any mapping entry is unknown.
+     *
+     * <p>Across overloads rather than on one of them. SDL names a method by name alone, so which
+     * overload codegen binds is not something this arm can know, and a name that is a parameter of
+     * some overload is one the author may correctly have written; the union is the set that cannot
+     * produce a false positive. The projection answered from whichever overload it held first, which
+     * was the same guess made silently.
      */
     private static Set<String> resolveParameterNames(
         LspVocabulary vocabulary, Directives.Directive directive, Node anchor,
-        SchemaCoordinate argMappingCoord, CompletionData catalog, byte[] source
+        SchemaCoordinate argMappingCoord, Optional<StoreHandle> store, byte[] source
     ) {
-        var method = ArgMappingSupport.resolveMethod(vocabulary, directive, anchor, argMappingCoord, catalog, source);
-        if (method.isEmpty()) return null;
-        var params = method.get().parameters();
-        if (params.stream().anyMatch(p -> p.name() == null)) return null;
+        if (store.isEmpty()) return null;
+        var target = ArgMappingSupport.siblingMethodTarget(
+            vocabulary, directive, anchor, argMappingCoord, source);
+        if (target.isEmpty()) return null;
+        var overloads = ClasspathMethods.named(
+            store.get(), target.get().className(), target.get().methodName());
+        if (overloads.isEmpty()) return null;
+        if (overloads.stream().anyMatch(ClasspathMethods.Method::hasUnnamedParameters)) return null;
         var names = new LinkedHashSet<String>();
-        for (var p : params) names.add(p.name());
+        for (var method : overloads) {
+            for (var parameter : method.parameters()) names.add(parameter.name());
+        }
         return names;
     }
 

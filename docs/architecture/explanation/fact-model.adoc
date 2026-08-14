@@ -80,6 +80,8 @@ The invariant that keeps it one model through the migration: every consumer re-s
 
 *Enforced by:* `FactCaptureAgreementTest` keeps the two live pictures honest for every relation while the window is open; each projection seam keeps a compile-checked exhaustive switch (`CatalogBuilder.projectFieldClassification` on the transitional surface), so a variant change breaks every view that has not covered it.
 
+An empty relation is a fact about the population, and a reader that wants to distinguish "this name is wrong" from "nothing has told us about these names yet" must get both answers from one read. That distinction is real: a consumer who has not run their build yet has a census with nothing in it, and a surface that treats every name as unresolved then is wrong about every one of them. Splitting it into a presence check before a lookup makes correctness depend on the order a caller happens to write them in, and each caller writes them again. So the reader answers with the arms, not with a boolean: `known`, `unknown`, `nothing captured`. The shape follows what an arm carries; an arm set where none of them carries anything beyond its identity is an enum, and one where a single arm carries rows is a sealed interface. Where several arms of a surface share the deferral, it is decided once for all of them, at the dispatch, rather than restated per arm.
+
 == The back half: complete commands, a closed graph
 
 The emit side consumes the facts as commands, and the law is that commands must be complete: the render shell makes no decision the planner could have made. A command row carries everything its renderer needs, and the `command` / `plan` / `render` package triangle keeps producers and consumers apart, with the emit library visible only to `render`.

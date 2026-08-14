@@ -8,14 +8,17 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 
 /**
  * The foreign keys of the catalog census: one query over {@code sql_referential_constraint} joined
- * to the constraint it extends, which is where the generated {@code Keys} constant lives.
+ * to the constraint it extends, which is where the generated {@code Keys} constant lives, and to the
+ * declaring schema, which is where the class holding that constant lives.
  *
- * <p>Shared because completion and hover ask about the same rows from opposite ends. Completion asks
- * which keys touch a table, having a table and no name; hover asks which key an author has named,
- * having a name and no table. Both need the two endpoints and both spellings, so the filter is what
+ * <p>Shared because completion, hover and goto-definition ask about the same rows from different
+ * ends. Completion asks which keys touch a table, having a table and no name; hover asks which key
+ * an author has named, having a name and no table; definition asks the same as hover and then wants
+ * the declaration. All of them need the two endpoints and both spellings, so the filter is what
  * differs and the row is what does not.
  */
 public final class CatalogKeys {
@@ -69,17 +72,24 @@ public final class CatalogKeys {
     /**
      * Ordered by declaring schema then constraint name, which is stateable where the projection's
      * order was the generated {@code Tables} class's field order.
+     *
+     * <p>The schema join is an inner one and stays inner: the schema of a captured constraint is
+     * always captured with it, {@code sql_schema} being written for every schema the census touches,
+     * so a left join would only widen the shape to admit a row capture cannot write.
      */
     private static List<Key> read(StoreHandle store, Condition match) {
         var rows = store.dsl()
             .select(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA, SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME,
                 SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME,
-                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE, SQL_CONSTRAINT.JOOQ_NAME)
+                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE, SQL_CONSTRAINT.JOOQ_NAME,
+                SQL_SCHEMA.KEYS_CLASS_FQN)
             .from(SQL_REFERENTIAL_CONSTRAINT)
             .join(SQL_CONSTRAINT).on(SQL_CONSTRAINT.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)
                 .and(SQL_CONSTRAINT.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
                 .and(SQL_CONSTRAINT.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
                 .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME)))
+            .join(SQL_SCHEMA).on(SQL_SCHEMA.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)
+                .and(SQL_SCHEMA.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA)))
             .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
             .and(match)
             .orderBy(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA,
@@ -88,9 +98,13 @@ public final class CatalogKeys {
         var keys = new ArrayList<Key>(rows.size());
         for (var row : rows) {
             keys.add(new Key(row.value1(), row.value2(), row.value3(), row.value4(),
-                row.value5() == null ? "" : row.value5()));
+                nullToEmpty(row.value5()), nullToEmpty(row.value6())));
         }
         return keys;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     /**
@@ -100,9 +114,17 @@ public final class CatalogKeys {
      *                 names the key. Empty is a fact rather than a gap: a generated model need not
      *                 carry a {@code Keys} class, and a key with no constant is one nobody can name
      *                 that way.
+     * @param keysClassFqn the generated {@code Keys} class the constant is declared on, or empty
+     *                 where the declaring schema has none. Per schema rather than per key, which is
+     *                 why it comes from {@code sql_schema}: a multi-schema model gives each schema
+     *                 its own {@code Keys} class in its own package, so the two spellings of a name
+     *                 that collides across schemas are declared in two different classes. Empty
+     *                 exactly when {@link #constant} is, both being facts about the same absent
+     *                 class, but read from the relation that owns each rather than inferred.
      */
     public record Key(
-        String schema, String table, String name, String referencedTable, String constant
+        String schema, String table, String name, String referencedTable, String constant,
+        String keysClassFqn
     ) {
 
         /**

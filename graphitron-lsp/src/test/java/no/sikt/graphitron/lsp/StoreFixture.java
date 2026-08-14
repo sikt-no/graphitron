@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 
 /**
@@ -197,6 +198,21 @@ final class StoreFixture implements AutoCloseable {
             .where(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
             .fetchOptional(SQL_TABLE.CLASS_FQN)
             .orElseThrow(() -> new AssertionError("no captured table named " + tableName));
+    }
+
+    /**
+     * The FQN of the generated {@code Keys} class the census recorded for {@code tableName}'s schema,
+     * read back out for the same reason {@link #tableClassFqn} is: a test joining the java-source
+     * family to it must not hard-code a package layout the generator might not be using.
+     */
+    String keysClassFqn(String tableName) {
+        return store.dsl().select(SQL_SCHEMA.KEYS_CLASS_FQN)
+            .from(SQL_SCHEMA)
+            .join(SQL_TABLE).on(SQL_TABLE.SOURCE_NAME.eq(SQL_SCHEMA.SOURCE_NAME)
+                .and(SQL_TABLE.TABLE_SCHEMA.eq(SQL_SCHEMA.TABLE_SCHEMA)))
+            .where(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
+            .fetchOptional(SQL_SCHEMA.KEYS_CLASS_FQN)
+            .orElseThrow(() -> new AssertionError("no captured Keys class for " + tableName));
     }
 
     /**

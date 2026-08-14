@@ -143,7 +143,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                     var diagnostics = workspace.answering(uri, store ->
                         workspace.withView(uri, null, view ->
                             Diagnostics.compute(
-                                workspace.vocabulary(), uri, view, workspace.catalog(),
+                                workspace.vocabulary(), uri, view,
                                 workspace.snapshot(), workspace.validationReport(), store)));
                     if (diagnostics != null) {
                         fileSpan.detail("diagnostics", diagnostics.size());
@@ -185,11 +185,10 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                         // one: a chain that fell through to a second read could decline on a
                         // declaration the first read positioned.
                         return workspace.answering(uri, store ->
-                            Definitions.compute(workspace.vocabulary(), file, workspace.catalog(),
-                                    store, workspace.snapshot(), pos)
+                            Definitions.compute(workspace.vocabulary(), file, store, pos)
                                 .or(() -> IntraSchemaDefinitions.compute(workspace, store, uri, pos))
-                                .or(() -> DeclarationDefinitions.compute(file, workspace.catalog(),
-                                    store, workspace.snapshot(), pos)))
+                                .or(() -> DeclarationDefinitions.compute(
+                                    file, store, workspace.snapshot(), pos)))
                             .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                             .orElseGet(() -> Either.forLeft(List.of()));
                     });

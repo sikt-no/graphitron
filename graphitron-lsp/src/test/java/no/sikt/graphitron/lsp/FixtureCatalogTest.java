@@ -4,10 +4,7 @@ import graphql.Scalars;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.lsp.completions.FieldCompletions;
-import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
-import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.JooqCatalog;
@@ -16,23 +13,25 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.Diagnostic;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import io.github.treesitter.jtreesitter.Parser;
-import io.github.treesitter.jtreesitter.Point;
-import io.github.treesitter.jtreesitter.Language;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * LSP diagnostics verified against the real fixture jOOQ catalog, complementing the hand-crafted
- * catalogs in {@link DiagnosticsTest} by proving that {@link CatalogBuilder} wires up correctly and
- * that the catalog reflects the generated jOOQ metadata (column names, FK references, nullability).
+ * LSP diagnostics verified against the real fixture jOOQ catalog, on both sides of the capture the
+ * catalog now passes through. {@link CatalogBuilder}'s own projection is asserted directly, because
+ * capture takes it as input and a wrong column name there is a wrong {@code sql_column} row; the
+ * diagnostics then read the store the capture wrote, which is how a consumer's editor reaches the
+ * same generated model.
  *
  * <p>It used to drive the table and column completion arms too. Those read the fact store now, and
  * {@link TableCompletionsTest} and {@link FieldCompletionsTest} capture the same generated model
@@ -41,6 +40,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FixtureCatalogTest {
 
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
+
+    /**
+     * The captured schema. {@code Foo}'s binding is a captured fact the column arm resolves through,
+     * so the type the buffers below name is the type the store knows.
+     */
+    private static final String CAPTURED_SDL = """
+        type Query { placeholder: Int }
+        type Foo @table(name: "film") { x: Int }
+        """;
+
+    @TempDir
+    static Path storeRoot;
+
+    private static StoreFixture store;
+
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.ofCatalog(storeRoot, CAPTURED_SDL);
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
 
     private static CompletionData catalog() {
         var jooq = new JooqCatalog(JOOQ_PACKAGE);
@@ -85,7 +108,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "FILM_ID")
             }
             """);
-        assertThat(Diagnostics.compute("", file, catalog(), fooFilmSnapshot(), ValidationReport.empty())).isEmpty();
+        assertThat(diagnose(file)).isEmpty();
     }
 
     @Test
@@ -95,8 +118,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "film_id")
             }
             """);
-        var diags = Diagnostics.compute("", file, catalog(), fooFilmSnapshot(), ValidationReport.empty());
-        assertThat(diags).isEmpty();
+        assertThat(diagnose(file)).isEmpty();
     }
 
     @Test
@@ -106,7 +128,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "NO_SUCH_COL")
             }
             """);
-        var diags = Diagnostics.compute("", file, catalog(), fooFilmSnapshot(), ValidationReport.empty());
+        var diags = diagnose(file);
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NO_SUCH_COL");
     }
@@ -117,8 +139,7 @@ class FixtureCatalogTest {
     void knownFkKeyFromCatalogProducesNoDiagnostic() {
         // Read the FK key name from the catalog itself so the test does not
         // hard-code a constant that may change under different jOOQ naming strategies.
-        var data = catalog();
-        String fkKey = data.getTable("film").orElseThrow().references().stream()
+        String fkKey = catalog().getTable("film").orElseThrow().references().stream()
             .filter(r -> !r.inverse())
             .map(CompletionData.Reference::keyName)
             .findFirst().orElseThrow();
@@ -127,24 +148,23 @@ class FixtureCatalogTest {
                 x: Int @reference(path: [{key: "%s"}])
             }
             """, fkKey));
-        assertThat(Diagnostics.compute("", file, data, fooFilmSnapshot(), ValidationReport.empty())).isEmpty();
+        assertThat(diagnose(file)).isEmpty();
     }
 
     /**
-     * Snapshot mapping {@code Foo → TableBacking("film")}: the LSP's
-     * {@code @field(name:)} arm reads the classifier-projected backing,
-     * not the SDL directive. Each test in this file declares its types as
-     * {@code type Foo @table(name: "film")}, so this snapshot matches.
+     * Snapshot mapping {@code Foo → TableBacking("film")}: the {@code @field(name:)} arm still reads
+     * the classifier-projected backing for which table a type is bound to, that binding being the one
+     * piece with no relation; what the table then holds comes from the store.
      */
     private static LspSchemaSnapshot fooFilmSnapshot() {
         return new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            List.of(),
+            Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
         Map.of());
     }
 
-    // ---- Helpers ----
-
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
-
+    private static List<Diagnostic> diagnose(no.sikt.graphitron.lsp.state.FileSnapshot file) {
+        return Diagnostics.compute(LspVocabulary.load(), "", file, fooFilmSnapshot(),
+            ValidationReport.empty(), Optional.of(store.handle()));
+    }
 }

@@ -249,7 +249,7 @@ class R157PipelineTest {
     private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {
         var file = WorkspaceFileTestSupport.snapshot(source);
         try (var store = storeOver(artefacts)) {
-            return Diagnostics.compute(LspVocabulary.load(), "", file, artefacts.catalog(),
+            return Diagnostics.compute(LspVocabulary.load(), "", file,
                 artefacts.snapshot(), ValidationReport.empty(), Optional.of(store.handle()));
         }
     }

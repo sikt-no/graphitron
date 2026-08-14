@@ -73,7 +73,6 @@ class LintSuppressionDiagnosticsParityTest {
         var output = new GraphQLRewriteGenerator(ctx).buildOutput();
         var uri = ValidationReport.canonicalUri(schema.toString());
         var file = WorkspaceFileTestSupport.snapshot(SDL);
-        return Diagnostics.compute(uri, file, output.artifacts().catalog(),
-            output.artifacts().snapshot(), output.report());
+        return Diagnostics.compute(uri, file, output.artifacts().snapshot(), output.report());
     }
 }

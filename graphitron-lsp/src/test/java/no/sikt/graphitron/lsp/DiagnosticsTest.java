@@ -8,24 +8,100 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Catalog-aware validation for known directives. Cleans-vs-typo test
+ * Census-aware validation for known directives. Cleans-vs-typo test
  * matrix per directive plus the "no false positives on neutral schema"
  * sanity check.
+ *
+ * <p>Every value arm reads the fact store, so the fixtures are captures rather than hand-built
+ * projections: the {@code sql_} arms read the fixture module's real generated jOOQ model, the
+ * {@code jvm_} arms a real class list, the {@code @node} arm a real capture of SDL that declares one.
+ * Four stores cover the whole matrix and are captured once, since what separates the cases is which
+ * census is populated rather than what is in it. A case whose subject is the resolution of a site in
+ * the document under validation captures that document instead; see {@link #computeCaptured}.
  */
 class DiagnosticsTest {
 
+    /** The schema is beside the point in the shared fixtures; each case's own buffer is the subject. */
+    private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
+
     @TempDir
     Path tmp;
+
+    @TempDir
+    static Path catalogRoot;
+    @TempDir
+    static Path multiSchemaRoot;
+    @TempDir
+    static Path classesRoot;
+    @TempDir
+    static Path backingRoot;
+    @TempDir
+    static Path nodesRoot;
+
+    /** The generated catalog and nothing else, which is also the empty-class-census case. */
+    private static StoreFixture catalogOnly;
+    /** The two-schema generated model, where a constraint name stops identifying one key. */
+    private static StoreFixture multiSchema;
+    /** The catalog plus the class census the class-name, method and scalar arms resolve against. */
+    private static StoreFixture withClasses;
+    /** The catalog plus the backing-class fixtures, whose members the class-backed arms read. */
+    private static StoreFixture withBackingClasses;
+    /** A graph whose SDL declares a {@code @node} type, and one that declares none. */
+    private static StoreFixture withNodes;
+
+    @BeforeAll
+    static void capture() {
+        catalogOnly = StoreFixture.ofCatalog(catalogRoot, PLACEHOLDER_SDL);
+        multiSchema = StoreFixture.ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
+        withClasses = StoreFixture.ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus());
+        withBackingClasses = StoreFixture.ofCatalog(
+            backingRoot, PLACEHOLDER_SDL, StoreFixture.backingClasses());
+        withNodes = StoreFixture.of(nodesRoot, """
+            type Query { x: Int }
+            type Film @node(typeId: "Film") { id: ID }
+            """);
+    }
+
+    @AfterAll
+    static void closeStores() {
+        catalogOnly.close();
+        multiSchema.close();
+        withClasses.close();
+        withBackingClasses.close();
+        withNodes.close();
+    }
+
+    /**
+     * The classes the class-name, method and scalar arms name. Each carries {@code foo}, the method
+     * the happy paths reference, so a case about a class name does not trip the sibling method arm;
+     * {@code FilmService} carries the two the method cases name and, deliberately, no {@code ghost}.
+     */
+    private static List<CompletionData.ExternalReference> classCensus() {
+        var foo = List.of(StoreFixture.method("foo", "String"));
+        return List.of(
+            StoreFixture.jarClass("com.example.RealService", foo),
+            StoreFixture.jarClass("com.example.RealCondition", foo),
+            StoreFixture.jarClass("com.example.RealRecord", foo),
+            StoreFixture.jarClass("com.example.RealEnum", foo),
+            StoreFixture.jarClass("com.example.RealLifter", foo),
+            StoreFixture.scalarHolder("com.example.Scalars", "MONEY"),
+            StoreFixture.jarClass("com.example.FilmService", List.of(
+                StoreFixture.method("list", "List"),
+                StoreFixture.method("get", "String"))));
+    }
 
     @Test
     void unknownTableNameProducesError() {
@@ -35,7 +111,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING").contains("table");
@@ -50,7 +126,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -63,7 +139,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains("column");
@@ -77,7 +153,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }
@@ -90,7 +166,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }
@@ -105,7 +181,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("MISSING"));
+        var diags = compute(file, catalogOnly, fooTableBacking("MISSING"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING");
@@ -124,7 +200,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = computeWithBackingClasses(file, filmCatalog(), recordBackedFilmInput());
+        var diags = compute(file, withBackingClasses, recordBackedFilmInput());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -139,7 +215,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = computeWithBackingClasses(file, filmCatalog(), recordBackedFilmInput());
+        var diags = compute(file, withBackingClasses, recordBackedFilmInput());
 
         assertThat(diags).isEmpty();
     }
@@ -173,7 +249,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
@@ -187,7 +263,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }
@@ -208,7 +284,7 @@ class DiagnosticsTest {
             java.util.Map.of("FilmListPayload", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.NoBacking.UnbackedResult()),
             java.util.Map.of("FilmListPayload", "films")
         );
-        var diags = compute(file, filmCatalog(), snapshot);
+        var diags = compute(file, catalogOnly, snapshot);
 
         assertThat(diags).isEmpty();
     }
@@ -228,7 +304,7 @@ class DiagnosticsTest {
             java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking("com.example.FooDto")),
             java.util.Map.of()
         );
-        var diags = compute(file, filmCatalog(), snapshot);
+        var diags = compute(file, catalogOnly, snapshot);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -248,7 +324,7 @@ class DiagnosticsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             java.util.List.of(), java.util.Map.of(), java.util.Map.of());
-        var diags = compute(file, filmCatalog(), snapshot);
+        var diags = compute(file, catalogOnly, snapshot);
 
         assertThat(diags).isEmpty();
     }
@@ -261,7 +337,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NOPE").contains("foreign key");
@@ -275,7 +351,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -291,7 +367,24 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void referenceKeyResolvesUnderTheSqlConstraintName() {
+        // The census carries both namespaces a key can be named in, and the generator resolves either,
+        // so an author who wrote the SQL constraint name is not red-squiggled for it. The projection
+        // carried only the generated constant, so this was a false positive on a name the build accepts
+        // and the completion arm on this very coordinate offers.
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            """);
+
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -299,32 +392,61 @@ class DiagnosticsTest {
     @Test
     void schemaQualifiedReferenceKeyProducesNoError() {
         // A valid key: may carry a leading schema qualifier ("multischema_a.note_event_fk").
-        // The mirror strips the qualifier before the bare-name match (the split comes from the
-        // shared JooqCatalog.parseQualifiedForeignKeyName), so a qualified key naming a real FK
-        // is not red-squiggled. The bogus-schema arm (a real name under a wrong schema) is
-        // untested: the snapshot carries no per-FK schema to test against.
+        // The qualifier scopes to the declaring schema rather than being stripped and forgotten, which
+        // is how the generator's own resolver reads it.
         var file = file("""
             type Foo @table(name: "note") {
                 bar: Int @reference(path: [{key: "multischema_a.note_event_fk"}])
             }
             """);
 
-        var diags = compute(file, noteCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, multiSchema, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
 
     @Test
+    void schemaQualifiedReferenceKeyUnderTheWrongSchemaProducesError() {
+        // dup_gizmo_fk is declared in multischema_a only. Under the projection the qualifier was
+        // stripped and the bare name matched, so a key named under a schema that does not declare it
+        // was waved through; the census carries the declaring schema, so the qualifier binds.
+        var file = file("""
+            type Foo @table(name: "gizmo") {
+                bar: Int @reference(path: [{key: "multischema_b.dup_gizmo_fk"}])
+            }
+            """);
+
+        var diags = compute(file, multiSchema, LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("multischema_b.dup_gizmo_fk");
+    }
+
+    @Test
+    void aCensusWithNoCatalogDefersOnEveryCatalogName() {
+        // The consumer's generated model is not there yet: no table resolves, no key resolves, and
+        // nothing they wrote is wrong about a catalog nobody has generated. The same argument the
+        // class arm defers on, on the other census.
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+            }
+            """);
+
+        assertThat(compute(file, withNodes, LspSchemaSnapshot.unavailable())).isEmpty();
+    }
+
+    @Test
     void schemaQualifiedReferenceKeyWithUnknownBareNameStillProducesError() {
-        // Qualifier stripping must not swallow a genuinely unknown key: the leftover bare name is
-        // absent from the catalog and is still flagged (echoing the full author value).
+        // A qualified spelling must not swallow a genuinely unknown key: no constraint of that name is
+        // declared under that schema, and the message echoes the full author value.
         var file = file("""
             type Foo @table(name: "note") {
                 bar: Int @reference(path: [{key: "multischema_a.NOPE"}])
             }
             """);
 
-        var diags = compute(file, noteCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, multiSchema, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("multischema_a.NOPE").contains("foreign key");
@@ -338,7 +460,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST");
@@ -460,7 +582,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -473,7 +595,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         var d = diags.get(0);
         // The reported range should sit on line 0 of the source.
@@ -491,7 +613,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
@@ -505,7 +627,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealCondition"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -522,7 +644,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealRecord"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -535,7 +657,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -548,7 +670,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("ghost").contains("FilmService");
@@ -562,70 +684,43 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
 
-    private static CompletionData classWithListMethod() {
-        var listMethod = new CompletionData.Method("list", "List", "", List.of());
-        return new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "",
-                List.of(listMethod)
-            , List.of()))
-        );
-    }
-
     @Test
     void methodWithNullParameterNamesProducesParametersWarning() {
-        // Method takes one parameter, but parameter name is null
-        // (consumer compiled the class without -parameters).
-        var method = new CompletionData.Method(
-            "list", "List", "",
-            List.of(new CompletionData.Parameter(null, "int", null, ""))
-        );
-        var catalog = new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "",
-                List.of(method)
-            , List.of()))
-        );
+        // The census's only overload of `list` takes one parameter and carries no name for it, which
+        // is what a class compiled without -parameters records. Its own store, because the shared
+        // census carries a nameless-free `list` and the point here is that no overload of the name has
+        // names to offer.
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
 
-        var diags = compute(file, catalog, LspSchemaSnapshot.unavailable());
+        try (var nameless = StoreFixture.ofClasspath(tmp, List.of(
+            StoreFixture.jarClass("com.example.FilmService", List.of(
+                StoreFixture.method("list", "List", StoreFixture.parameter(null, "int"))))))) {
+            var diags = compute(file, nameless, LspSchemaSnapshot.unavailable());
 
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
-        assertThat(diags.get(0).getMessage()).contains("-parameters");
+            assertThat(diags).hasSize(1);
+            assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+            assertThat(diags.get(0).getMessage()).contains("-parameters");
+        }
     }
 
     @Test
     void methodWithNoParametersDoesNotProduceParametersWarning() {
-        var method = new CompletionData.Method("get", "String", "", List.of());
-        var catalog = new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmService", "com.example.FilmService", "",
-                List.of(method)
-            , List.of()))
-        );
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "get"})
             }
             """);
 
-        var diags = compute(file, catalog, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -638,7 +733,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
@@ -650,7 +745,7 @@ class DiagnosticsTest {
             enum Foo @enum(enumReference: {className: "com.example.Missing"}) { A B }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealEnum"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -667,7 +762,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealLifter"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -681,7 +776,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealCondition"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -695,7 +790,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -710,7 +805,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());  // empty externalReferences
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());  // empty externalReferences
 
         assertThat(diags).isEmpty();
     }
@@ -727,7 +822,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
@@ -747,7 +842,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -766,7 +861,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
@@ -791,7 +886,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
@@ -816,7 +911,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
@@ -836,7 +931,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -849,7 +944,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         // No required-arg miss because @table(name:) is optional.
         assertThat(diags).hasSize(1);
@@ -866,7 +961,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -883,7 +978,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -899,7 +994,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -912,7 +1007,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "NoDotsHere")
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -927,7 +1022,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Scalars.")
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("fully.qualified.Class.FIELD");
@@ -939,7 +1034,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -954,7 +1049,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Scalars.MONEY")
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -967,7 +1062,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "")
             """);
 
-        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -981,7 +1076,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());  // empty externalReferences
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());  // empty externalReferences
 
         assertThat(diags).isEmpty();
     }
@@ -1000,7 +1095,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(2);
@@ -1018,7 +1113,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
@@ -1035,7 +1130,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
@@ -1051,7 +1146,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -1065,7 +1160,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
@@ -1089,7 +1184,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(),
+        var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
@@ -1111,7 +1206,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
@@ -1126,7 +1221,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }
@@ -1139,7 +1234,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, nodeCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withNodes, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Ghost").contains("@node");
@@ -1154,42 +1249,41 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, nodeCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withNodes, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
 
     @Test
-    void nodeIdTypeName_emptyNodeMetadata_suppressesUnknownTypeDiagnostic() {
-        // Pre-build state: no @node types known. Defer to the build-tier
-        // rejection rather than yelp at every @nodeId site.
+    void nodeIdTypeName_graphDeclaringNoNodeType_stillFlagsTheReference() {
+        // A graph whose SDL declares no @node type is not a graph nobody has built: capture writes
+        // every @node it sees, so no rows means the schema declares none and the build will reject
+        // this reference. The projection could not tell those apart and deferred on both.
         var file = file("""
             type Query {
                 x(id: ID @nodeId(typeName: "Ghost")): Int
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
-        assertThat(diags).isEmpty();
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Ghost").contains("@node");
     }
 
-    private static CompletionData nodeCatalog() {
-        var film = new CompletionData.Table(
-            "film", "", null,
-            List.of(
-                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
-                CompletionData.Column.of("TITLE", "String", false, "")
-            ),
-            List.of()
-        );
-        return new CompletionData(
-            List.of(film),
-            List.of(),
-            List.of(),
-            Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("FILM_ID")))
-        );
+    @Test
+    void nodeIdTypeName_beforeTheFirstBuild_isSilent() {
+        // The pre-build state the deferral existed for, now the absence of a store rather than the
+        // emptiness of a projection: one decision, taken once, for every value arm.
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Ghost")): Int
+            }
+            """);
+
+        assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
     }
+
 
     private static no.sikt.graphitron.rewrite.catalog.DirectiveShape authShape() {
         return new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
@@ -1199,18 +1293,6 @@ class DiagnosticsTest {
                 new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
                 java.util.Optional.empty())),
             java.util.Optional.empty());
-    }
-
-    private static CompletionData catalogWithKnownClass(String fqn) {
-        // The class diagnostic also validates the sibling `method:` slot
-        // when the class resolves; include the method names referenced by
-        // the per-test happy paths so unrelated diagnostics don't fire.
-        var foo = new CompletionData.Method("foo", "String", "", List.of());
-        return new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(foo), List.of()))
-        );
     }
 
     private static FileSnapshot file(String source) {
@@ -1225,104 +1307,35 @@ class DiagnosticsTest {
      * production callers to a backward-compat overload.
      */
     private static List<org.eclipse.lsp4j.Diagnostic> compute(
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot
+        FileSnapshot file, StoreFixture store, LspSchemaSnapshot snapshot
     ) {
-        return Diagnostics.compute("", file, catalog, snapshot, ValidationReport.empty());
+        return Diagnostics.compute(LspVocabulary.load(), "", file, snapshot,
+            ValidationReport.empty(), Optional.of(store.handle()));
+    }
+
+    /** The same walk with no store at all, which is what a session before its first build sees. */
+    private static List<org.eclipse.lsp4j.Diagnostic> computeWithoutStore(
+        FileSnapshot file, LspSchemaSnapshot snapshot
+    ) {
+        return Diagnostics.compute(LspVocabulary.load(), "", file, snapshot, ValidationReport.empty());
     }
 
     /**
-     * The store-bearing form for a snapshot the caller built, over a store holding the
-     * backing-class census. A class-backed member arm needs both: the projection names the class,
-     * and the store says what it offers.
-     */
-    private List<org.eclipse.lsp4j.Diagnostic> computeWithBackingClasses(
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot
-    ) {
-        try (var fixture = StoreFixture.ofCatalog(
-            tmp, "type Query { placeholder: Int }\n", StoreFixture.backingClasses())) {
-            return Diagnostics.compute(LspVocabulary.load(), "", file, catalog, snapshot,
-                ValidationReport.empty(), java.util.Optional.of(fixture.handle()));
-        }
-    }
-
-    /**
-     * Runs the walk against a store that captured this very document, with no projection behind it.
-     * The column arm resolves a site's scope from the facts of the schema the directive sits in, so a
-     * case about that resolution captures the schema it is validating rather than describing it twice.
+     * Runs the walk against a store that captured this very document. The column arm resolves a
+     * site's scope from the facts of the schema the directive sits in, so a case about that
+     * resolution captures the schema it is validating rather than describing it twice.
      */
     private List<org.eclipse.lsp4j.Diagnostic> computeCaptured(String sdl) {
         try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
-            // The catalog still answers the @table arm, which has its own retirement ahead of it;
-            // what the column arm reads is the store.
             return Diagnostics.compute(LspVocabulary.load(), "", file(sdl),
-                filmAndLanguageCatalogWithLanguageName(), LspSchemaSnapshot.unavailable(),
-                ValidationReport.empty(), java.util.Optional.of(fixture.handle()));
+                LspSchemaSnapshot.unavailable(),
+                ValidationReport.empty(), Optional.of(fixture.handle()));
         }
     }
 
     /** The census's record, whose components the class-backed member cases resolve against. */
     private static final String RECORD_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
 
-    private static CompletionData filmCatalog() {
-        var film = new CompletionData.Table(
-            "film", "", null,
-            List.of(
-                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
-                CompletionData.Column.of("TITLE", "String", false, "")
-            ),
-            List.of(
-                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
-            )
-        );
-        var language = new CompletionData.Table(
-            "language", "", null, List.of(), List.of()
-        );
-        return new CompletionData(List.of(film, language), List.of(), List.of());
-    }
 
-    // A minimal catalog with a `note` table carrying a bare-SQL-name FK (`note_event_fk`), mirroring
-    // the multi-schema fixture's colliding constraint name so the schema-qualified-key diagnostics can
-    // strip the qualifier and match on the bare name.
-    private static CompletionData noteCatalog() {
-        var note = new CompletionData.Table(
-            "note", "", null,
-            List.of(
-                CompletionData.Column.of("NOTE_ID", "Integer", false, ""),
-                CompletionData.Column.of("EVENT_ID", "Integer", true, "")
-            ),
-            List.of(
-                CompletionData.Reference.of("event", "note_event_fk", false)
-            )
-        );
-        var event = new CompletionData.Table("event", "", null, List.of(), List.of());
-        return new CompletionData(List.of(note, event), List.of(), List.of());
-    }
 
-    /**
-     * Variant of {@link #filmCatalog()} where {@code language} carries the
-     * {@code NAME} column. Lets the regression tests demonstrate the @reference path
-     * retarget: {@code NAME} exists on {@code language} (the path's terminal) but not
-     * on {@code film} (the enclosing type's @table).
-     */
-    private static CompletionData filmAndLanguageCatalogWithLanguageName() {
-        var film = new CompletionData.Table(
-            "film", "", null,
-            List.of(
-                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
-                CompletionData.Column.of("TITLE", "String", false, "")
-            ),
-            List.of(
-                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
-            )
-        );
-        var language = new CompletionData.Table(
-            "language", "", null,
-            List.of(
-                CompletionData.Column.of("LANGUAGE_ID", "Integer", false, ""),
-                CompletionData.Column.of("NAME", "String", false, "")
-            ),
-            List.of()
-        );
-        return new CompletionData(List.of(film, language), List.of(), List.of());
-    }
 }

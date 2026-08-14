@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.server.GraphitronLanguageServer;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.StoreAccess;
@@ -157,34 +156,39 @@ class TextDocumentServiceTest {
         assertThat(version).isEqualTo(2);
     }
 
+    /**
+      * The diagnostic publish end to end, over the wire and through the read transaction the document
+      * service opens for it. The table arm answers from the graph's catalog census, so the document is
+      * opened under the captured file's URI, which is what resolves an open buffer to the graph whose
+      * facts answer for it.
+      */
     @Test
-    void didOpenPublishesDiagnosticsForUnknownTable() throws Exception {
-        var catalog = new CompletionData(
-            List.of(table("FILM")),
-            List.of(),
-            List.of()
-        );
-        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace(catalog));
-        var proxy = startServer(server);
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+    void didOpenPublishesDiagnosticsForUnknownTable(@TempDir Path tmp) throws Exception {
+        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
+             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+            var workspace = new no.sikt.graphitron.lsp.state.Workspace();
+            workspace.setStore(access);
+            var proxy = startServer(new GraphitronLanguageServer(workspace));
+            proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-        String uri = "file:///bad.graphqls";
-        String source = """
-            type Foo @table(name: "MISSING") { bar: Int }
-            """;
-        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-            new TextDocumentItem(uri, "graphql", 1, source)));
+            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String source = """
+                type Foo @table(name: "MISSING") { bar: Int }
+                """;
+            proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+                new TextDocumentItem(uri, "graphql", 1, source)));
 
-        // Notifications are fire-and-forget; round-trip a request to flush
-        // the queued didOpen + diagnostic publish.
-        proxy.getTextDocumentService().completion(new CompletionParams(
-            new TextDocumentIdentifier(uri), new Position(0, 0))
-        ).get(5, TimeUnit.SECONDS);
+            // Notifications are fire-and-forget; round-trip a request to flush
+            // the queued didOpen + diagnostic publish.
+            proxy.getTextDocumentService().completion(new CompletionParams(
+                new TextDocumentIdentifier(uri), new Position(0, 0))
+            ).get(5, TimeUnit.SECONDS);
 
-        var diagnostics = clientStub.latestDiagnostics.get(uri);
-        assertThat(diagnostics).isNotNull();
-        assertThat(diagnostics.getDiagnostics()).hasSize(1);
-        assertThat(diagnostics.getDiagnostics().get(0).getMessage()).contains("MISSING");
+            var diagnostics = clientStub.latestDiagnostics.get(uri);
+            assertThat(diagnostics).isNotNull();
+            assertThat(diagnostics.getDiagnostics()).hasSize(1);
+            assertThat(diagnostics.getDiagnostics().get(0).getMessage()).contains("MISSING");
+        }
     }
 
     /**
@@ -224,27 +228,21 @@ class TextDocumentServiceTest {
 
     /**
      * The definition request end to end, over the wire and through the read transaction the document
-     * service opens for it. The catalog carries the table's {@code classFqn} and the store's
+     * service opens for it. The catalog census carries the table's {@code classFqn} and the store's
      * java-source family the declaration that FQN names, so the document is opened under the captured
      * file's URI for the same reason hover's is: that is what resolves an open buffer to the graph
      * whose facts answer for it.
      */
     @Test
     void definitionRequestRoundTripsToTheParsedDeclaration(@TempDir Path tmp) throws Exception {
-        String filmFqn = "fake.jooq.tables.Film";
-        var catalog = new CompletionData(
-            List.of(new CompletionData.Table("film", "", filmFqn, List.of(), List.of())),
-            List.of(),
-            List.of()
-        );
-
-        try (var fixture = StoreFixture.of(tmp, "type Query { x: Int }\n");
+        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
              var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+            String filmFqn = fixture.tableClassFqn("film");
             fixture.withJavaSource(tmp, filmFqn, """
                 public class Film {
                 }
                 """);
-            var workspace = new no.sikt.graphitron.lsp.state.Workspace(catalog);
+            var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
             proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
@@ -349,15 +347,5 @@ class TextDocumentServiceTest {
         clientListening = clientThread.submit(() -> { clientLauncher.startListening().get(); return null; });
 
         return clientLauncher.getRemoteProxy();
-    }
-
-    private static CompletionData.Table table(String name) {
-        return new CompletionData.Table(
-            name,
-            "",
-            null,
-            List.of(),
-            List.of()
-        );
     }
 }

@@ -3,7 +3,6 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.hover.DeclarationHovers;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
@@ -18,8 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The declaration-name hover overlay and its agreement with goto-definition. Both falsifiable pieces
- * are separable: the shared {@link DeclTarget} resolver is pure (a function over the {@code Built}
- * backing projection and the catalog), and the two projections of it,
+ * are separable: the shared {@link DeclTarget} resolver names a declaration from the {@code Built}
+ * backing projection and the store's censuses, and the two projections of it,
  * {@link DeclarationHovers#overlay} and {@link DeclarationDefinitions#locate}, are queries against one
  * store. The only tree-sitter-bound step, the {@code @field(name:)} trigger, is shared with goto and
  * covered by the live {@code DeclarationHoversTest}.
@@ -39,8 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DeclarationHoverOverlayParityTest {
 
-    /** The resolver cases' own projection FQN; the overlay cases use the captured one instead. */
-    private static final String FILM_CLASS = "no.sikt.example.tables.Film";
     private static final String STANDALONE_CLASS = "no.sikt.example.CustomRecord";
     private static final String RECORD_CLASS = "no.sikt.example.PersonRecord";
     private static final String POJO_CLASS = "no.sikt.example.PersonPojo";
@@ -52,19 +49,21 @@ class DeclarationHoverOverlayParityTest {
     // ===== resolver: SDL coordinate -> named declaration =====
 
     @Test
-    void typeNameResolvesPerBacking() {
-        var catalog = catalog();
+    void typeNameResolvesPerBacking(@TempDir Path root) {
         var built = built();
-        assertThat(DeclTarget.ofType("Film", built, catalog))
-            .isEqualTo(new DeclTarget.CatalogTable("film", FILM_CLASS));
-        assertThat(DeclTarget.ofType("Standalone", built, catalog))
-            .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
-        assertThat(DeclTarget.ofType("Person", built, catalog))
-            .isEqualTo(new DeclTarget.SourceClass(RECORD_CLASS));
-        assertThat(DeclTarget.ofType("PersonPojo", built, catalog))
-            .isEqualTo(new DeclTarget.SourceClass(POJO_CLASS));
-        assertThat(DeclTarget.ofType("Query", built, catalog)).isInstanceOf(DeclTarget.None.class);
-        assertThat(DeclTarget.ofType("Unknown", built, catalog)).isInstanceOf(DeclTarget.None.class);
+        try (var store = resolverStore(root)) {
+            var handle = store.handle();
+            assertThat(DeclTarget.ofType("Film", built, handle))
+                .isEqualTo(new DeclTarget.CatalogTable("film", store.tableClassFqn("film")));
+            assertThat(DeclTarget.ofType("Standalone", built, handle))
+                .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
+            assertThat(DeclTarget.ofType("Person", built, handle))
+                .isEqualTo(new DeclTarget.SourceClass(RECORD_CLASS));
+            assertThat(DeclTarget.ofType("PersonPojo", built, handle))
+                .isEqualTo(new DeclTarget.SourceClass(POJO_CLASS));
+            assertThat(DeclTarget.ofType("Query", built, handle)).isInstanceOf(DeclTarget.None.class);
+            assertThat(DeclTarget.ofType("Unknown", built, handle)).isInstanceOf(DeclTarget.None.class);
+        }
     }
 
     /**
@@ -74,34 +73,31 @@ class DeclarationHoverOverlayParityTest {
      */
     @Test
     void fieldNameResolvesPerBacking(@TempDir Path root) {
-        var catalog = catalog();
         var built = built();
-        try (var store = StoreFixture.of(root, PLACEHOLDER_SDL, List.of(
-            StoreFixture.jarRecord(RECORD_CLASS, StoreFixture.component("firstName", "String")),
-            StoreFixture.jarClass(POJO_CLASS, List.of(
-                StoreFixture.method("getFirstName", "String")))))) {
+        try (var store = resolverStore(root)) {
             var handle = store.handle();
-            // Case-insensitive column match yields the canonical (uppercase) column name.
-            assertThat(DeclTarget.ofField("Film", "title", built, catalog, handle))
-                .isEqualTo(new DeclTarget.CatalogColumn("film", FILM_CLASS, "TITLE"));
+            // The author's spelling is the SQL name; the target carries the generated field's, which
+            // is what the class declares and what either consumer then reads about it.
+            assertThat(DeclTarget.ofField("Film", "title", built, handle))
+                .isEqualTo(new DeclTarget.CatalogColumn("film", store.tableClassFqn("film"), "TITLE"));
             // A standalone-jOOQ field degrades to its backing class, where goto jumps.
-            assertThat(DeclTarget.ofField("Standalone", "anything", built, catalog, handle))
+            assertThat(DeclTarget.ofField("Standalone", "anything", built, handle))
                 .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
             // Record component and POJO accessor field arms.
-            assertThat(DeclTarget.ofField("Person", "firstName", built, catalog, handle))
+            assertThat(DeclTarget.ofField("Person", "firstName", built, handle))
                 .isEqualTo(new DeclTarget.SourceField(RECORD_CLASS, "firstName"));
-            assertThat(DeclTarget.ofField("PersonPojo", "firstName", built, catalog, handle))
+            assertThat(DeclTarget.ofField("PersonPojo", "firstName", built, handle))
                 .isEqualTo(new DeclTarget.SourceMethod(POJO_CLASS, "getFirstName", 0));
             // A method-backed (@service) field name resolves to its bound method, with
-            // the arity read off the catalog, taking precedence over the parent backing.
-            assertThat(DeclTarget.ofField("Priced", "price", built, catalog, handle))
+            // the arity read off the census, taking precedence over the parent backing.
+            assertThat(DeclTarget.ofField("Priced", "price", built, handle))
                 .isEqualTo(new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1));
             // Unknown column / unknown member / no backing all yield no target.
-            assertThat(DeclTarget.ofField("Film", "no_such_column", built, catalog, handle))
+            assertThat(DeclTarget.ofField("Film", "no_such_column", built, handle))
                 .isInstanceOf(DeclTarget.None.class);
-            assertThat(DeclTarget.ofField("Person", "noSuchMember", built, catalog, handle))
+            assertThat(DeclTarget.ofField("Person", "noSuchMember", built, handle))
                 .isInstanceOf(DeclTarget.None.class);
-            assertThat(DeclTarget.ofField("Query", "whatever", built, catalog, handle))
+            assertThat(DeclTarget.ofField("Query", "whatever", built, handle))
                 .isInstanceOf(DeclTarget.None.class);
         }
     }
@@ -277,29 +273,19 @@ class DeclarationHoverOverlayParityTest {
         return filmFqn;
     }
 
-    private static CompletionData.Column titleColumn() {
-        return new CompletionData.Column("TITLE", "String", true, "");
-    }
-
-    private static CompletionData.Table filmTable() {
-        return new CompletionData.Table(
-            "film", "", FILM_CLASS, List.of(titleColumn()), List.of());
-    }
-
-    private static CompletionData catalog() {
-        // The POJO accessor (arity 0) and the service method (arity 1) are external
-        // references; the service ref's parameter count is what the @service field's
-        // resolution reads to key the right overload.
-        var pojoRef = new CompletionData.ExternalReference(
-            "PersonPojo", POJO_CLASS, "",
-            List.of(new CompletionData.Method("getFirstName", "String", "", List.of())),
-            List.of());
-        var serviceRef = new CompletionData.ExternalReference(
-            "PriceService", SERVICE_CLASS, "",
-            List.of(new CompletionData.Method("price", "Field", "",
-                List.of(new CompletionData.Parameter("ctx", "DSLContext", "", "")))),
-            List.of());
-        return new CompletionData(List.of(filmTable()), List.of(), List.of(pojoRef, serviceRef));
+    /**
+     * The store the resolver cases read: the fixture module's generated catalog for the table and
+     * column arms, plus a census carrying the record's component, the POJO's accessor and the service
+     * method whose parameter count is the arity a method-backed field resolves at.
+     */
+    private static StoreFixture resolverStore(Path root) {
+        return StoreFixture.ofCatalog(root, PLACEHOLDER_SDL, List.of(
+            StoreFixture.jarRecord(RECORD_CLASS, StoreFixture.component("firstName", "String")),
+            StoreFixture.jarClass(POJO_CLASS, List.of(
+                StoreFixture.method("getFirstName", "String"))),
+            StoreFixture.jarClass(SERVICE_CLASS, List.of(
+                StoreFixture.method("price", "Field",
+                    StoreFixture.parameter("ctx", "DSLContext"))))));
     }
 
     private static LspSchemaSnapshot.Built built() {

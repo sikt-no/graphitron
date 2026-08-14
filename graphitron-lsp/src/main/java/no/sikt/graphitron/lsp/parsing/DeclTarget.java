@@ -1,9 +1,11 @@
 package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
+import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
+import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
@@ -58,19 +60,19 @@ public sealed interface DeclTarget {
 
     /**
      * Resolves the declaration {@code declaration} binds to against the backing
-     * projection on {@code built}, the catalog, and the store. The only tree-sitter-bound step
+     * projection on {@code built} and the store's censuses. The only tree-sitter-bound step
      * is reading a field's {@code @field(name:)} override off its node; the backing
      * switch itself is the {@link #ofType} / {@link #ofField} core, so the
-     * source-index read is left to the per-consumer projection. The store answers what a
-     * class-backed type's members are, which is what decides whether a member name resolves to a
-     * field or to a method; where the declaration <em>is</em> is still the consumer's own read.
+     * source-index read is left to the per-consumer projection. The store answers what every
+     * backing offers: a table's generated class and columns, a class's member slots, a method's
+     * arity. Where the declaration <em>is</em> is still the consumer's own read.
      */
     static DeclTarget resolve(
-        SdlDeclaration declaration, LspSchemaSnapshot.Built built, CompletionData catalog,
+        SdlDeclaration declaration, LspSchemaSnapshot.Built built,
         StoreHandle store, byte[] source
     ) {
         return switch (declaration) {
-            case SdlDeclaration.TypeName t -> ofType(t.typeName(), built, catalog);
+            case SdlDeclaration.TypeName t -> ofType(t.typeName(), built, store);
             case SdlDeclaration.FieldName f -> {
                 // The bound member is named by the field's @field(name:) override
                 // when it carries one, else by the SDL field name itself. The
@@ -79,18 +81,18 @@ public sealed interface DeclTarget {
                 String memberName = fieldDef == null
                     ? f.fieldName()
                     : effectiveMemberName(fieldDef, f.fieldName(), source);
-                yield ofField(f.parentTypeName(), memberName, built, catalog, store);
+                yield ofField(f.parentTypeName(), memberName, built, store);
             }
         };
     }
 
     /** Pure resolver core for a type-name coordinate (no tree-sitter, no source index). */
-    static DeclTarget ofType(String typeName, LspSchemaSnapshot.Built built, CompletionData catalog) {
+    static DeclTarget ofType(String typeName, LspSchemaSnapshot.Built built, StoreHandle store) {
         var shapeOpt = built.typeBacking(typeName);
         if (shapeOpt.isEmpty()) return new None();
         return switch (shapeOpt.get()) {
-            case TypeBackingShape.TableBacking t -> tableTarget(t.tableName(), catalog);
-            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableTarget(j.tableName(), catalog);
+            case TypeBackingShape.TableBacking t -> tableTarget(store, t.tableName());
+            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableTarget(store, j.tableName());
             case TypeBackingShape.JooqRecordBacking.Standalone s -> new SourceClass(s.fqClassName());
             case TypeBackingShape.RecordBacking r -> new SourceClass(r.fqClassName());
             case TypeBackingShape.PojoBacking p -> new SourceClass(p.fqClassName());
@@ -107,19 +109,18 @@ public sealed interface DeclTarget {
      * declaration a member binds to without saying where it is written.
      */
     static DeclTarget ofField(
-        String parentTypeName, String memberName, LspSchemaSnapshot.Built built,
-        CompletionData catalog, StoreHandle store
+        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, StoreHandle store
     ) {
         // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
         // classification takes precedence over the parent-type backing below.
-        var methodBacked = methodBackedTarget(parentTypeName, memberName, built, catalog);
+        var methodBacked = methodBackedTarget(parentTypeName, memberName, built, store);
         if (methodBacked.isPresent()) return methodBacked.get();
         var shapeOpt = built.typeBacking(parentTypeName);
         if (shapeOpt.isEmpty()) return new None();
         return switch (shapeOpt.get()) {
-            case TypeBackingShape.TableBacking t -> columnTarget(t.tableName(), memberName, catalog);
-            case TypeBackingShape.JooqRecordBacking.WithTable j -> columnTarget(j.tableName(), memberName, catalog);
+            case TypeBackingShape.TableBacking t -> columnTarget(store, t.tableName(), memberName);
+            case TypeBackingShape.JooqRecordBacking.WithTable j -> columnTarget(store, j.tableName(), memberName);
             case TypeBackingShape.PojoBacking p -> memberTarget(store, p.fqClassName(), memberName);
             case TypeBackingShape.RecordBacking r -> memberTarget(store, r.fqClassName(), memberName);
             // A standalone jOOQ record has no table (no column join) and no
@@ -138,64 +139,73 @@ public sealed interface DeclTarget {
      * variants carry no {@code @field(name:)} override (that override redirects a
      * column / accessor binding, a different classification), so the resolved
      * member name is the coordinate the classification map is keyed by. The bound
-     * arity is read off the catalog method of that name; when the name is
+     * arity is read off the census's method of that name; when the name is
      * arity-overloaded the classification does not record which overload bound, so
-     * the first catalog candidate's arity is taken and the consumers' name-level
+     * the first candidate's arity is taken and the consumers' name-level
      * fallback still guarantees a jump if that exact arity key was dropped.
      */
     private static Optional<DeclTarget> methodBackedTarget(
-        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, CompletionData catalog
+        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, StoreHandle store
     ) {
         var classOpt = built.fieldClassification(parentTypeName, memberName);
         if (classOpt.isEmpty()) return Optional.empty();
         // Every classification outside these method-backed arms binds no developer
         // method and falls through to the parent-type backing.
         return switch (classOpt.get()) {
-            case FieldClassification.ServiceBacked s -> Optional.of(sourceMethod(catalog, s.methodClassName(), s.methodName()));
-            case FieldClassification.Computed c -> Optional.of(sourceMethod(catalog, c.methodClassName(), c.methodName()));
-            case FieldClassification.QueryService q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
-            case FieldClassification.RoutineBacked q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
-            case FieldClassification.MutationService m -> Optional.of(sourceMethod(catalog, m.methodClassName(), m.methodName()));
+            case FieldClassification.ServiceBacked s -> Optional.of(sourceMethod(store, s.methodClassName(), s.methodName()));
+            case FieldClassification.Computed c -> Optional.of(sourceMethod(store, c.methodClassName(), c.methodName()));
+            case FieldClassification.QueryService q -> Optional.of(sourceMethod(store, q.methodClassName(), q.methodName()));
+            case FieldClassification.RoutineBacked q -> Optional.of(sourceMethod(store, q.methodClassName(), q.methodName()));
+            case FieldClassification.MutationService m -> Optional.of(sourceMethod(store, m.methodClassName(), m.methodName()));
             default -> Optional.empty();
         };
     }
 
-    private static DeclTarget sourceMethod(CompletionData catalog, String className, String methodName) {
-        return new SourceMethod(className, methodName, arityOf(catalog, className, methodName));
+    private static DeclTarget sourceMethod(StoreHandle store, String className, String methodName) {
+        return new SourceMethod(className, methodName, arityOf(store, className, methodName));
     }
 
     /**
-     * Parameter count of the first catalog method of {@code methodName} on
-     * {@code className}, or 0 when the catalog carries no such method (the
-     * name-level fallback on the source index then guarantees the jump).
+     * Parameter count of the first overload of {@code methodName} the census holds on
+     * {@code className}, or 0 when it holds none (the name-level fallback on the source index then
+     * guarantees the jump). First in the census's own order, which is by descriptor, so an
+     * arity-overloaded name resolves the same way on every read.
      */
-    private static int arityOf(CompletionData catalog, String className, String methodName) {
-        if (catalog == null) return 0;
-        return catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(className))
-            .flatMap(r -> r.methods().stream())
-            .filter(m -> m.name().equals(methodName))
+    private static int arityOf(StoreHandle store, String className, String methodName) {
+        return ClasspathMethods.named(store, className, methodName).stream()
             .findFirst()
-            .map(m -> m.parameters().size())
+            .map(ClasspathMethods.Method::arity)
             .orElse(0);
     }
 
-    private static DeclTarget tableTarget(String tableName, CompletionData catalog) {
-        return catalog.getTable(tableName)
-            .<DeclTarget>map(table -> new CatalogTable(table.name(), table.classFqn()))
-            .orElseGet(None::new);
+    /**
+     * The generated class for a table the parent is bound to. A name two schemas both declare takes
+     * the first in schema order, as the other surfaces resolving a spelling to one declaration do:
+     * which one was meant is a resolution question, and a single declaration target cannot hold both.
+     */
+    private static DeclTarget tableTarget(StoreHandle store, String tableName) {
+        return switch (CatalogTables.named(store, tableName)) {
+            case CatalogTables.Match.Tables(var tables) -> {
+                var table = tables.getFirst();
+                yield new CatalogTable(table.tableName(), table.classFqn());
+            }
+            case CatalogTables.Match.Unknown ignored -> new None();
+            case CatalogTables.Match.NoCensus ignored -> new None();
+        };
     }
 
-    private static DeclTarget columnTarget(String tableName, String memberName, CompletionData catalog) {
-        var tableOpt = catalog.getTable(tableName);
-        if (tableOpt.isEmpty()) return new None();
-        var table = tableOpt.get();
-        // Unknown column resolves to no target; the case-insensitive match yields
-        // the canonical column name.
-        return table.columns().stream()
-            .filter(c -> c.name().equalsIgnoreCase(memberName))
+    /**
+     * The generated field for a column on that table, named the way the class declares it: the census
+     * carries the SQL name and the jOOQ one, an author may have written either, and what a consumer
+     * then reads about the declaration is keyed by the second.
+     */
+    private static DeclTarget columnTarget(StoreHandle store, String tableName, String memberName) {
+        if (!(tableTarget(store, tableName) instanceof CatalogTable table)) return new None();
+        return CatalogColumns.of(store, tableName).stream()
+            .filter(column -> column.isNamed(memberName))
             .findFirst()
-            .<DeclTarget>map(c -> new CatalogColumn(table.name(), table.classFqn(), c.name()))
+            .<DeclTarget>map(column ->
+                new CatalogColumn(table.tableName(), table.classFqn(), column.jooqName()))
             .orElseGet(None::new);
     }
 

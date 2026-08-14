@@ -1,5 +1,13 @@
 package no.sikt.graphitron.lsp.definition;
 
+import no.sikt.graphitron.lsp.facts.BoundTables;
+import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.CatalogKeys;
+import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.CatalogTables;
+import no.sikt.graphitron.lsp.facts.ClasspathClasses;
+import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
@@ -11,13 +19,12 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Location;
 import io.github.treesitter.jtreesitter.Point;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -34,7 +41,7 @@ import java.util.Optional;
  *       reached from {@code @table}, {@code @field}, and {@code @reference(path:)}):
  *       jumps to the generated table class, column field, or FK constant. The
  *       position comes from the fact store's java-source family at request time,
- *       joined by the table / {@code Keys} class FQN the catalog carries, so it
+ *       joined by the table / {@code Keys} class FQN the catalog census carries, so it
  *       rides the {@code .java} source cadence.</li>
  *   <li><b>service half</b> ({@link Behavior.ClassNameBinding} /
  *       {@link Behavior.MethodNameBinding}: {@code @service},
@@ -56,12 +63,11 @@ import java.util.Optional;
  * a {@code Located} jumps, a {@code SourceAbsent} (known reference, no
  * positioned declaration) is a non-jump decided by the type, not a sentinel.
  *
- * <p>Two populations still meet here, on two cadences. Whether a name is a
- * reference at all is the classpath census's answer, which the catalog
- * projection carries and this provider guards on; where its declaration sits is
- * the {@code .java} parse's, which the store holds and
- * {@link SourceDeclarations} reads. The guard is what keeps an unknown name an
- * empty answer rather than a {@code SourceAbsent} one.
+ * <p>Two populations meet here, on two cadences, and both are the store's now. Whether a name is a
+ * reference at all is the census's answer, read from the {@code jvm_} and {@code sql_} families and
+ * guarded on here; where its declaration sits is the {@code .java} parse's, which the same store
+ * holds on its own cadence and {@link SourceDeclarations} reads. The guard is what keeps an unknown
+ * name an empty answer rather than a {@code SourceAbsent} one.
  */
 public final class Definitions {
 
@@ -73,13 +79,10 @@ public final class Definitions {
      * Back-compatible overload that loads the bundled vocabulary; the
      * service-half binding arm uses the canonical overlay. Production callers
      * pass the workspace vocabulary through
-     * {@link #compute(LspVocabulary, FileSnapshot, CompletionData, StoreHandle, LspSchemaSnapshot, Point)}.
+     * {@link #compute(LspVocabulary, FileSnapshot, StoreHandle, Point)}.
      */
-    public static Optional<Location> compute(
-        FileSnapshot file, CompletionData catalog, StoreHandle store,
-        LspSchemaSnapshot snapshot, Point pos
-    ) {
-        return compute(LspVocabulary.load(), file, catalog, store, snapshot, pos);
+    public static Optional<Location> compute(FileSnapshot file, StoreHandle store, Point pos) {
+        return compute(LspVocabulary.load(), file, store, pos);
     }
 
     /**
@@ -88,15 +91,13 @@ public final class Definitions {
      * declines once here rather than per arm.
      */
     public static Optional<Location> compute(
-        LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
-        Optional<StoreHandle> store, LspSchemaSnapshot snapshot, Point pos
+        LspVocabulary vocabulary, FileSnapshot file, Optional<StoreHandle> store, Point pos
     ) {
-        return store.flatMap(handle -> compute(vocabulary, file, catalog, handle, snapshot, pos));
+        return store.flatMap(handle -> compute(vocabulary, file, handle, pos));
     }
 
     public static Optional<Location> compute(
-        LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
-        StoreHandle store, LspSchemaSnapshot snapshot, Point pos
+        LspVocabulary vocabulary, FileSnapshot file, StoreHandle store, Point pos
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
@@ -112,16 +113,16 @@ public final class Definitions {
         // silently resolving to nothing.
         return switch (behaviorOpt.get()) {
             case Behavior.ClassNameBinding ignored ->
-                classDefinition(location, catalog, store, file.source());
+                classDefinition(location, store, file.source());
             case Behavior.MethodNameBinding mnb ->
-                methodDefinition(vocabulary, directive, location, catalog, store, pos,
+                methodDefinition(vocabulary, directive, location, store, pos,
                     mnb.classNameCoord(), file.source());
             case Behavior.CatalogTableBinding ignored ->
-                tableDefinition(location, catalog, store, file.source());
+                tableDefinition(location, store, file.source());
             case Behavior.CatalogColumnBinding ignored ->
-                fieldDefinition(directive, location, catalog, store, snapshot, file.source());
+                fieldDefinition(directive, location, store, file.source());
             case Behavior.CatalogFkBinding ignored ->
-                referenceKeyDefinition(catalog, store,
+                referenceKeyDefinition(store,
                     Nodes.unquote(Nodes.text(location.leafNode(), file.source())));
             // No Java declaration target: @argMapping content, @scalarType FQNs
             // (handled by the class-name half when bound), and @nodeId typeNames
@@ -133,8 +134,7 @@ public final class Definitions {
     }
 
     private static Optional<Location> classDefinition(
-        LspVocabulary.CursorLocation location, CompletionData catalog,
-        StoreHandle store, byte[] source
+        LspVocabulary.CursorLocation location, StoreHandle store, byte[] source
     ) {
         // @record's className is deprecated/ignored and binds no class; mirror
         // the completion / hover carve-out (the coordinate is shared with @enum,
@@ -142,17 +142,19 @@ public final class Definitions {
         if (!DirectivePolicy.bindsLiveClass(location.directiveName())) return Optional.empty();
         String fqn = Nodes.unquote(Nodes.text(location.leafNode(), source));
         if (fqn.isEmpty()) return Optional.empty();
-        // Unknown class name (not a scanned reference) is "not our target":
-        // empty, distinct from the SourceAbsent arm of a known reference.
-        boolean known = catalog.externalReferences().stream()
-            .anyMatch(r -> r.className().equals(fqn));
-        if (!known) return Optional.empty();
+        // A name the census does not hold is "not our target": empty, distinct from the SourceAbsent
+        // arm of a class it does hold. The census's third answer, that it holds nothing at all, is
+        // the same empty here; it separates a wrong name from an uncompiled consumer for a reader
+        // that has something to say about the difference, and this one has nowhere to jump either way.
+        if (ClasspathClasses.presenceOf(store, fqn) != ClasspathClasses.Presence.KNOWN) {
+            return Optional.empty();
+        }
         return resolve(classTarget(fqn, store), fqn);
     }
 
     private static Optional<Location> methodDefinition(
         LspVocabulary vocabulary, Directives.Directive directive,
-        LspVocabulary.CursorLocation location, CompletionData catalog,
+        LspVocabulary.CursorLocation location,
         StoreHandle store, Point pos, SchemaCoordinate classNameCoord, byte[] source
     ) {
         String methodName = Nodes.unquote(Nodes.text(location.leafNode(), source));
@@ -160,15 +162,12 @@ public final class Definitions {
         var fqnOpt = vocabulary.siblingStringAt(directive, pos, classNameCoord, source);
         if (fqnOpt.isEmpty()) return Optional.empty();
         String fqn = fqnOpt.get();
-        var ref = catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(fqn))
-            .findFirst();
-        // Unknown class, or a known class with no method of this name, is "not
-        // our target": empty, distinct from the typed no-jump arms below.
-        if (ref.isEmpty() || ref.get().methods().stream().noneMatch(m -> m.name().equals(methodName))) {
-            return Optional.empty();
-        }
-        return resolve(methodTarget(fqn, methodName, catalog, store), fqn);
+        // Unknown class, or a class the census holds with no method of this name, is "not our
+        // target": empty, distinct from the typed no-jump arms below. Both read as an empty overload
+        // set, which is the one read the join below wants anyway.
+        var overloads = ClasspathMethods.named(store, fqn, methodName);
+        if (overloads.isEmpty()) return Optional.empty();
+        return resolve(methodTarget(fqn, methodName, overloads, store), fqn);
     }
 
     /**
@@ -193,21 +192,17 @@ public final class Definitions {
      * <p>The census arities are tried before the fallback rather than one at a time
      * through it, because a fallback consulted per arity would answer the first
      * census overload with some other overload's position while a later census arity
-     * matched exactly. Caller guards that the class is known and carries at least one
-     * method of this name. Public for LSP-tier arm tests.
+     * matched exactly. The overloads are the caller's rather than read again here: the
+     * caller reads them to guard that the name resolves at all, and reading them twice
+     * would make one query's answer guard another's. Public for LSP-tier arm tests.
      */
     public static DefinitionTarget methodTarget(
-        String fqn, String methodName, CompletionData catalog, StoreHandle store
+        String fqn, String methodName, List<ClasspathMethods.Method> overloads, StoreHandle store
     ) {
         var declared = SourceDeclarations.methodLocationByArity(store, fqn, methodName);
         if (declared.isEmpty()) return new DefinitionTarget.SourceAbsent();
-        var ref = catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(fqn))
-            .findFirst();
-        if (ref.isEmpty()) return new DefinitionTarget.SourceAbsent();
-        for (var method : ref.get().methods()) {
-            if (!method.name().equals(methodName)) continue;
-            var declaration = declared.get(method.parameters().size());
+        for (var method : overloads) {
+            var declaration = declared.get(method.arity());
             if (declaration != null) return new DefinitionTarget.Located(declaration);
         }
         return new DefinitionTarget.Located(declared.firstEntry().getValue());
@@ -254,52 +249,95 @@ public final class Definitions {
      * {@code @reference(path: [{table:}])}. The generated table class is a class
      * declaration like any other, so this reuses the {@link #classTarget} join on
      * the table's {@code classFqn}.
+     *
+     * <p>A name two schemas both declare jumps to the first in schema order. Which one the author
+     * meant is a resolution question the census leaves open, and one editor jump cannot answer it
+     * either; what the order buys is that the jump is the same one every time.
      */
     private static Optional<Location> tableDefinition(
-        LspVocabulary.CursorLocation location, CompletionData catalog,
-        StoreHandle store, byte[] source
+        LspVocabulary.CursorLocation location, StoreHandle store, byte[] source
     ) {
         String tableName = Nodes.unquote(Nodes.text(location.leafNode(), source));
-        var tableOpt = catalog.getTable(tableName);
-        if (tableOpt.isEmpty()) return Optional.empty();
-        String classFqn = tableOpt.get().classFqn();
-        return resolve(classTarget(classFqn, store), classFqn);
+        return switch (CatalogTables.named(store, tableName)) {
+            case CatalogTables.Match.Tables(var tables) -> {
+                String classFqn = tables.getFirst().classFqn();
+                yield resolve(classTarget(classFqn, store), classFqn);
+            }
+            case CatalogTables.Match.Unknown ignored -> Optional.empty();
+            case CatalogTables.Match.NoCensus ignored -> Optional.empty();
+        };
     }
 
     /**
-     * Column goto-definition for {@code @field(name:)}.
+     * Column goto-definition for {@code @field(name:)}, against the table the name resolves against
+     * rather than against the enclosing type's own binding. Those differ at a
+     * {@code @reference} path's terminal table and wherever the field's named type carries the
+     * binding, and jumping to the parent's table there lands the developer on the wrong end of a
+     * join. This is the resolution the diagnostic for the same coordinate validates against, read
+     * from the same relation, so a jump and a squiggle cannot disagree about where a name lives.
      */
     private static Optional<Location> fieldDefinition(
         Directives.Directive directive, LspVocabulary.CursorLocation location,
-        CompletionData catalog, StoreHandle store,
-        LspSchemaSnapshot snapshot, byte[] source
+        StoreHandle store, byte[] source
     ) {
         String columnName = Nodes.unquote(Nodes.text(location.leafNode(), source));
         var typeDecl = DeclarationKind.enclosing(directive.outer());
         if (typeDecl.isEmpty()) return Optional.empty();
-        var tableName = TypeContext.tableNameOf(typeDecl.get(), source, snapshot);
-        if (tableName.isEmpty()) return Optional.empty();
-        var tableOpt = catalog.getTable(tableName.get());
-        if (tableOpt.isEmpty()) return Optional.empty();
-        var table = tableOpt.get();
-        var columnOpt = table.columns().stream()
-            .filter(c -> c.name().equalsIgnoreCase(columnName))
-            .findFirst();
-        // Unknown column is "not our target" (empty), distinct from a known
-        // column whose source is not indexed (SourceAbsent, also a non-jump).
-        if (columnOpt.isEmpty()) return Optional.empty();
-        return resolve(fieldTarget(table.classFqn(), columnOpt.get().name(), store), table.classFqn());
+        var typeName = TypeContext.declaredNameOf(typeDecl.get(), source);
+        if (typeName.isEmpty()) return Optional.empty();
+        var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
+            .flatMap(fd -> TypeContext.fieldNameOf(fd, source));
+        if (fieldName.isPresent()) {
+            var scope = FieldColumnScope.of(store, typeName.get(), fieldName.get());
+            if (scope.isPresent()) {
+                return switch (scope.get()) {
+                    case FieldColumnScope.Scope.Resolved(var table) ->
+                        columnDefinition(store, table, columnName);
+                    // No column name resolves here at all, so there is nothing to jump to and the
+                    // parent's binding must not stand in for one.
+                    case FieldColumnScope.Scope.Silent ignored -> Optional.empty();
+                };
+            }
+        }
+        // The parent's own binding answers. A class-backed parent's members are a jump the SDL
+        // declaration name already offers through DeclarationDefinitions; this arm is the table half.
+        for (var table : BoundTables.of(store, typeName.get())) {
+            var located = columnDefinition(store, table, columnName);
+            if (located.isPresent()) return located;
+        }
+        return Optional.empty();
     }
 
-    private static Optional<Location> referenceKeyDefinition(
-        CompletionData catalog, StoreHandle store, String fkName
+    /**
+     * The column's own declaration on the generated table class. The generated field's name is the
+     * jOOQ one whichever of the column's two names the author wrote, that being what the class
+     * declares; an unknown column is "not our target" (empty), distinct from a known column whose
+     * source is not indexed (SourceAbsent, also a non-jump).
+     */
+    private static Optional<Location> columnDefinition(
+        StoreHandle store, CatalogTable table, String columnName
     ) {
-        for (var table : catalog.tables()) {
-            for (var ref : table.references()) {
-                if (ref.keyName().equals(fkName)) {
-                    return resolve(fieldTarget(ref.keysClassFqn(), fkName, store), fkName);
-                }
-            }
+        var column = CatalogColumns.of(store, table).stream()
+            .filter(c -> c.isNamed(columnName))
+            .findFirst();
+        if (column.isEmpty()) return Optional.empty();
+        var located = CatalogTables.of(store, table);
+        if (located.isEmpty()) return Optional.empty();
+        String classFqn = located.get().classFqn();
+        return resolve(fieldTarget(classFqn, column.get().jooqName(), store), classFqn);
+    }
+
+    /**
+     * Foreign-key goto-definition for {@code @reference(key:)}, under any spelling the generator's
+     * own resolver accepts: the SQL constraint name as well as the generated constant, either of them
+     * schema-qualified. The declaration is the constant's, so a key no {@code Keys} class names is
+     * one this cannot jump to, and a name two schemas both declare tries each in schema order rather
+     * than declining on the first that has no constant.
+     */
+    private static Optional<Location> referenceKeyDefinition(StoreHandle store, String spelling) {
+        for (var key : CatalogKeys.named(store, spelling)) {
+            if (key.constant().isEmpty() || key.keysClassFqn().isEmpty()) continue;
+            return resolve(fieldTarget(key.keysClassFqn(), key.constant(), store), key.constant());
         }
         return Optional.empty();
     }

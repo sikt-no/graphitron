@@ -2,12 +2,11 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.definition.DefinitionTarget;
 import no.sikt.graphitron.lsp.definition.Definitions;
+import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -17,7 +16,6 @@ import io.github.treesitter.jtreesitter.Point;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,13 +27,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Two families are covered: the jOOQ half ({@code @table} / {@code @field} / {@code @reference})
  * and its fall-throughs (unknown name, unknown table, unknown nested field, source not parsed), and
  * the service half (the class-name / method-name binding directives). Both resolve positions from the
- * fact store's java-source family, joined by the FQNs the catalog carries; the catalog itself holds no
- * source positions.
+ * fact store's java-source family, joined by the FQNs the census carries.
  *
- * <p>The sources below are the fixture, written to disk and parsed for real, so every line number
- * asserted here is a parse's answer rather than a hand-built substrate's. The catalog stays a
- * hand-built projection: it is the classpath census half, saying which names are references at all,
- * which is what keeps an unknown name an empty answer rather than a no-position one.
+ * <p>Both populations are captured rather than declared. The catalog is the fixture module's real
+ * generated jOOQ model, so a table's class FQN, a column's generated field name and a key's
+ * {@code Keys} constant are the values a consumer's editor would actually be jumping to, and the test
+ * reads them back out of the census rather than spelling a naming strategy. The {@code .java} sources
+ * are written to disk and parsed for real, so every line number asserted here is a parse's answer.
+ * What the two have in common is only a name, which is the join the whole provider stands on and the
+ * one thing a fixture must not fake.
  */
 class DefinitionsTest {
 
@@ -48,13 +48,28 @@ class DefinitionsTest {
     private static StoreFixture store;
     private static StoreFixture bare;
 
-    /** The schema is beside the point in every case here; the subject is the {@code .java} files. */
-    private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
+    /**
+     * The captured schema. Mostly beside the point, the subject here being the {@code .java} files,
+     * except for {@code Foo}: the column arm resolves the enclosing type's binding from the store, so
+     * which table {@code Foo} is bound to is a captured fact and not something a buffer can assert.
+     * That is the dev session's own shape, a capture from the last build under a buffer being edited,
+     * and the buffers below name {@code Foo} because that is the type the store knows.
+     */
+    private static final String CAPTURED_SDL = """
+        type Query { placeholder: Int }
+        type Foo @table(name: "film") { bar: Int }
+        """;
 
-    private static final String FILM_FQN = "fake.jooq.tables.Film";
-    private static final String LANGUAGE_FQN = "fake.jooq.tables.Language";
-    private static final String KEYS_FQN = "fake.jooq.Keys";
     private static final String SVC_FQN = "com.example.PriceService";
+
+    /**
+     * The one foreign key the {@code @reference(key:)} cases name, in both spellings the resolver
+     * accepts: the generated constant and the SQL constraint name it was generated from. Named
+     * literally rather than read back, because the point of the second case is that the two are
+     * different strings and a reader cannot tell which one a lookup answered otherwise.
+     */
+    private static final String FK_CONSTANT = "FILM__FILM_LANGUAGE_ID_FKEY";
+    private static final String FK_SQL_NAME = "film_language_id_fkey";
 
     // 0-based lines, as LSP counts them, in the sources written below; line 0 is the package
     // declaration every one of them opens with.
@@ -67,23 +82,26 @@ class DefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.of(sourceRoot, PLACEHOLDER_SDL);
-        bare = StoreFixture.of(bareRoot, PLACEHOLDER_SDL);
-        store.withJavaSource(sourceRoot, FILM_FQN, """
+        store = StoreFixture.ofCatalog(sourceRoot, CAPTURED_SDL, census());
+        bare = StoreFixture.ofCatalog(bareRoot, CAPTURED_SDL, census());
+        // The generated classes the census points at, standing in for the real generated sources: the
+        // join between the two populations is by name across two cadences, so a source that agrees on
+        // the name is all it takes, and the column constants are the census's own spelling of them.
+        store.withJavaSource(sourceRoot, store.tableClassFqn("film"), """
             public class Film {
-                public final Object film_id = null;
-                public final Object title = null;
+                public final Object FILM_ID = null;
+                public final Object TITLE = null;
             }
             """);
-        store.withJavaSource(sourceRoot, LANGUAGE_FQN, """
+        store.withJavaSource(sourceRoot, store.tableClassFqn("language"), """
             public class Language {
             }
             """);
-        store.withJavaSource(sourceRoot, KEYS_FQN, """
+        store.withJavaSource(sourceRoot, store.keysClassFqn("film"), """
             public class Keys {
-                public static final Object FILM__FILM_LANGUAGE_ID_FKEY = null;
+                public static final Object %s = null;
             }
-            """);
+            """.formatted(FK_CONSTANT));
         // One method per line, so each line number above names one declaration. "shifted" is
         // declared at an arity the census does not carry, and "pick" is overloaded across two.
         store.withJavaSource(sourceRoot, SVC_FQN, """
@@ -107,7 +125,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
 
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("Film.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(CLASS_LINE);
     }
@@ -116,7 +134,7 @@ class DefinitionsTest {
     void unknownTableReturnsEmpty() {
         var file = file("type Foo @table(name: \"GHOST\") { bar: Int }");
         var pos = pointAt(file, 0, "GHOST");
-        assertThat(compute(file, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(compute(file, pos)).isEmpty();
     }
 
     @Test
@@ -128,7 +146,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var loc = compute(file, fooFilmSnapshot(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("Film.java");
         // The column's own declaration, not the class's.
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(TITLE_LINE);
@@ -136,14 +154,16 @@ class DefinitionsTest {
 
     @Test
     void referenceKeyMapsToKeysSourceUri() {
-        var file = file("""
-            type Foo @table(name: "film") {
-                bar: Int @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
-            }
-            """);
-        var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
+        var loc = keyDefinition(FK_CONSTANT).orElseThrow();
+        assertThat(loc.getUri()).endsWith("Keys.java");
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(FK_LINE);
+    }
 
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+    @Test
+    void referenceKeyResolvesUnderTheSqlConstraintName() {
+        // The generator resolves either namespace, and the completion arm offers both, so the jump
+        // lands on the same constant whichever one the author wrote.
+        var loc = keyDefinition(FK_SQL_NAME).orElseThrow();
         assertThat(loc.getUri()).endsWith("Keys.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(FK_LINE);
     }
@@ -157,7 +177,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("Language.java");
     }
 
@@ -166,7 +186,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         // Cursor on the @table directive name token, not on its argument.
         int col = "type Foo @t".length();
-        assertThat(compute(file, LspSchemaSnapshot.unavailable(), new Point(0, col))).isEmpty();
+        assertThat(compute(file, new Point(0, col))).isEmpty();
     }
 
     @Test
@@ -177,7 +197,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "GHOST");
-        assertThat(compute(file, fooFilmSnapshot(), pos)).isEmpty();
+        assertThat(compute(file, pos)).isEmpty();
     }
 
     @Test
@@ -187,8 +207,7 @@ class DefinitionsTest {
         // synthesising a file-head jump.
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
-        assertThat(Definitions.compute(
-            file, catalog(), bare.handle(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, bare.handle(), pos)).isEmpty();
     }
 
     @Test
@@ -197,8 +216,7 @@ class DefinitionsTest {
         // language server nobody handed store access to declines once rather than per arm.
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
-        assertThat(Definitions.compute(LspVocabulary.load(), file, catalog(),
-            Optional.empty(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(LspVocabulary.load(), file, Optional.empty(), pos)).isEmpty();
     }
 
     // ---- Service half: class-name / method-name binding directives ----
@@ -211,7 +229,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "com.example.PriceService");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("PriceService.java");
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(CLASS_LINE);
     }
@@ -224,7 +242,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(PRICE_LINE);
     }
 
@@ -236,7 +254,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(PRICE_LINE);
     }
 
@@ -246,7 +264,7 @@ class DefinitionsTest {
             enum Color @enum(enumReference: {className: "com.example.PriceService"}) { RED }
             """);
         var pos = pointAt(file, 0, "com.example.PriceService");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("PriceService.java");
     }
 
@@ -258,7 +276,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(PRICE_LINE);
     }
 
@@ -270,7 +288,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "com.example.PriceService");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getUri()).endsWith("PriceService.java");
     }
 
@@ -282,7 +300,7 @@ class DefinitionsTest {
             type Foo @record(record: {className: "com.example.PriceService"}) { bar: Int }
             """);
         var pos = pointAt(file, 0, "com.example.PriceService");
-        assertThat(compute(file, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(compute(file, pos)).isEmpty();
     }
 
     @Test
@@ -293,7 +311,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "com.example.Ghost");
-        assertThat(compute(file, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(compute(file, pos)).isEmpty();
     }
 
     @Test
@@ -306,7 +324,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "shifted");
-        var loc = compute(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = compute(file, pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(SHIFTED_LINE);
     }
 
@@ -328,7 +346,7 @@ class DefinitionsTest {
 
     @Test
     void methodTargetLocatedWhenSourceParsed() {
-        assertThat(Definitions.methodTarget(SVC_FQN, "price", catalog(), store.handle()))
+        assertThat(methodTarget("price", store))
             .isInstanceOf(DefinitionTarget.Located.class);
     }
 
@@ -337,7 +355,7 @@ class DefinitionsTest {
         // The census carries "pick" at no arguments and at two; the source declares one and two. A
         // fallback consulted per census arity would answer the first (no-argument) entry with the
         // one-argument declaration, so the arities are all tried before any fallback.
-        var target = Definitions.methodTarget(SVC_FQN, "pick", catalog(), store.handle());
+        var target = methodTarget("pick", store);
         assertThat(target).isInstanceOf(DefinitionTarget.Located.class);
         assertThat(((DefinitionTarget.Located) target).location().getRange().getStart().getLine())
             .isEqualTo(PICK_TWO_ARG_LINE);
@@ -345,51 +363,44 @@ class DefinitionsTest {
 
     @Test
     void methodTargetSourceAbsentWhenNotParsed() {
-        assertThat(Definitions.methodTarget(SVC_FQN, "price", catalog(), bare.handle()))
+        assertThat(methodTarget("price", bare))
             .isInstanceOf(DefinitionTarget.SourceAbsent.class);
     }
 
-    private static Optional<Location> compute(
-        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
-    ) {
-        return Definitions.compute(file, catalog(), store.handle(), snapshot, pos);
+    /** The arm as its caller reaches it: the overload set read once, then joined to the sources. */
+    private static DefinitionTarget methodTarget(String methodName, StoreFixture from) {
+        List<ClasspathMethods.Method> overloads =
+            ClasspathMethods.named(from.handle(), SVC_FQN, methodName);
+        assertThat(overloads).as("census carries %s", methodName).isNotEmpty();
+        return Definitions.methodTarget(SVC_FQN, methodName, overloads, from.handle());
+    }
+
+    private static Optional<Location> keyDefinition(String spelling) {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{key: "%s"}])
+            }
+            """.formatted(spelling));
+        return compute(file, pointAt(file, 1, spelling));
+    }
+
+    private static Optional<Location> compute(FileSnapshot file, Point pos) {
+        return Definitions.compute(file, store.handle(), pos);
     }
 
     /**
-     * The classpath census half: the jOOQ-derived structure plus the generated class FQNs (table
-     * {@code classFqn}, {@code Keys} FQN on the reference) and the service's method signatures.
-     * Positions live in the store, joined by those FQNs at request time.
+     * The classpath census half: one service class whose method signatures are what the arity join
+     * reads. Positions live in the store's java-source family, joined by the class FQN at request
+     * time.
      */
-    private static CompletionData catalog() {
-        var film = new CompletionData.Table(
-            "film", "", FILM_FQN,
-            List.of(
-                new CompletionData.Column("film_id", "Integer", false, ""),
-                new CompletionData.Column("title", "String", false, "")
-            ),
-            List.of(
-                new CompletionData.Reference("language", "FILM__FILM_LANGUAGE_ID_FKEY", false, KEYS_FQN)
-            )
-        );
-        var language = new CompletionData.Table("language", "", LANGUAGE_FQN, List.of(), List.of());
-        var twoArgs = List.of(
-            new CompletionData.Parameter("a", "Object", "", ""),
-            new CompletionData.Parameter("b", "Object", "", ""));
-        var service = new CompletionData.ExternalReference(
-            SVC_FQN, SVC_FQN, "",
-            List.of(
-                new CompletionData.Method("price", "Field", "", List.of()),
-                new CompletionData.Method("shifted", "Object", "", List.of()),
-                new CompletionData.Method("pick", "Object", "", List.of()),
-                new CompletionData.Method("pick", "Object", "", twoArgs)),
-            List.of());
-        return new CompletionData(List.of(film, language), List.of(), List.of(service));
-    }
-
-    private static LspSchemaSnapshot fooFilmSnapshot() {
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(), Map.of(), Map.of(),
-            Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
+    private static List<CompletionData.ExternalReference> census() {
+        return List.of(StoreFixture.jarClass(SVC_FQN, List.of(
+            StoreFixture.method("price", "Field"),
+            StoreFixture.method("shifted", "Object"),
+            StoreFixture.method("pick", "Object"),
+            StoreFixture.method("pick", "Object",
+                StoreFixture.parameter("a", "Object"),
+                StoreFixture.parameter("b", "Object")))));
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {

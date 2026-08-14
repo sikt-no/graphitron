@@ -6,7 +6,6 @@ import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Location;
 
@@ -47,21 +46,21 @@ public final class DeclarationDefinitions {
     private DeclarationDefinitions() {}
 
     public static Optional<Location> compute(
-        FileSnapshot file, CompletionData catalog, Optional<StoreHandle> store,
+        FileSnapshot file, Optional<StoreHandle> store,
         LspSchemaSnapshot snapshot, Point pos
     ) {
-        return store.flatMap(handle -> compute(file, catalog, handle, snapshot, pos));
+        return store.flatMap(handle -> compute(file, handle, snapshot, pos));
     }
 
     public static Optional<Location> compute(
-        FileSnapshot file, CompletionData catalog, StoreHandle store,
+        FileSnapshot file, StoreHandle store,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (file == null || file.tree() == null) return Optional.empty();
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, store, file.source()), store);
+        return locate(DeclTarget.resolve(declOpt.get(), built, store, file.source()), store);
     }
 
     /**

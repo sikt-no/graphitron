@@ -57,14 +57,9 @@ class DirectiveShapeSmokeTest {
                     })
             }
             """;
-        var data = catalogWith(
-            "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-            "filmsByService"
-        );
-        // Two fixtures, deliberately: the completion arms below read the store and the diagnostics
-        // pass at the end still reads the projection, which is what mid-migration looks like from a
-        // smoke test's seat. Both are built from the same class and method, so a divergence between
-        // them would be this test's own doing rather than the migration's.
+        // One fixture for every arm: completion and diagnostics both read this census, so a class the
+        // one offers is a class the other accepts, and neither can be right about a schema the other
+        // is wrong about.
         try (var store = storeWith(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService", "filmsByService")) {
         // Class-name completion: cursor inside className: value.
@@ -88,11 +83,10 @@ class DirectiveShapeSmokeTest {
         var methodItems = MethodCompletions.generate(
             VOCAB, store.handle(), methodContext, methodDirective, methodCursor, methodBytes);
         assertThat(methodItems).extracting(i -> i.getLabel()).contains("filmsByService");
-        }
 
         // Diagnostics: this schema is internally consistent; no errors.
-        var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
-        assertThat(diags).isEmpty();
+        assertThat(diagnose(source, store)).isEmpty();
+        }
     }
 
     @Test
@@ -106,15 +100,13 @@ class DirectiveShapeSmokeTest {
                     })
             }
             """;
-        var data = catalogWith(
-            "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-            "filmsByService"
-        );
+        try (var store = storeWith(
+            "no.sikt.graphitron.rewrite.test.services.SampleQueryService", "filmsByService")) {
+            var diags = diagnose(source, store);
 
-        var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("NotInClasspath");
+            assertThat(diags).hasSize(1);
+            assertThat(diags.get(0).getMessage()).contains("NotInClasspath");
+        }
     }
 
     @Test
@@ -129,15 +121,14 @@ class DirectiveShapeSmokeTest {
                     }, override: true)
             }
             """;
-        var data = catalogWith(
+        try (var store = storeWith(
             "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-            "outerOverrideMethod"
-        );
+            "outerOverrideMethod")) {
+            var diags = diagnose(source, store);
 
-        var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("ghostMethod");
+            assertThat(diags).hasSize(1);
+            assertThat(diags.get(0).getMessage()).contains("ghostMethod");
+        }
     }
 
     @Test
@@ -203,18 +194,13 @@ class DirectiveShapeSmokeTest {
         }
     }
 
-    private static CompletionData catalogWith(String className, String methodName) {
-        var methods = methodName == null
-            ? List.<CompletionData.Method>of()
-            : List.of(new CompletionData.Method(methodName, "List", "", List.of()));
-        return new CompletionData(
-            List.of(),
-            List.of(),
-            List.of(new CompletionData.ExternalReference(className, className, "", methods, List.of()))
-        );
+    private static List<org.eclipse.lsp4j.Diagnostic> diagnose(String source, StoreFixture store) {
+        return Diagnostics.compute(VOCAB, "", WorkspaceFileTestSupport.snapshot(source),
+            LspSchemaSnapshot.unavailable(), ValidationReport.empty(),
+            Optional.of(store.handle()));
     }
 
-    /** The same class and method as {@link #catalogWith}, captured into a store of its own. */
+    /** One class, with one method where the case needs one, captured into a store of its own. */
     private StoreFixture storeWith(String className, String methodName) {
         var methods = methodName == null
             ? List.<CompletionData.Method>of()

@@ -110,7 +110,7 @@ public final class Hovers {
             // The catalog resolves which declaration the coordinate binds to, the store
             // describes it, and the description lands beneath the classification block.
             if (classificationHoverEnabled) {
-                return DeclarationHovers.compute(file, catalog, store, snapshot, pos);
+                return DeclarationHovers.compute(file, store, snapshot, pos);
             }
             return Optional.empty();
         }

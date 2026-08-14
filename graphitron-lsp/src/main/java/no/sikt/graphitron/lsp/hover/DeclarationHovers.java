@@ -10,7 +10,6 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
@@ -52,14 +51,14 @@ public final class DeclarationHovers {
     private DeclarationHovers() {}
 
     /**
-     * Classification-only entry: nothing captured and no catalog, so the block the classification
+     * Classification-only entry: no store, so the block the classification
      * snapshot renders is the whole hover. What a session in that state can say about a declaration
      * name, and no less.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
     ) {
-        return compute(file, CompletionData.empty(), Optional.empty(), snapshot, pos);
+        return compute(file, Optional.empty(), snapshot, pos);
     }
 
     /**
@@ -71,7 +70,7 @@ public final class DeclarationHovers {
      * overlay is available.
      */
     public static Optional<Hover> compute(
-        FileSnapshot file, CompletionData catalog, Optional<StoreHandle> store,
+        FileSnapshot file, Optional<StoreHandle> store,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
@@ -86,7 +85,7 @@ public final class DeclarationHovers {
         // declaration being one of those facts, so it happens inside the read; no store is still no
         // overlay, leaving the classification block exactly as the classification arm renders it.
         String overlay = store
-            .map(handle -> overlay(DeclTarget.resolve(declaration, built, catalog, handle, file.source()), handle))
+            .map(handle -> overlay(DeclTarget.resolve(declaration, built, handle, file.source()), handle))
             .orElse("");
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));

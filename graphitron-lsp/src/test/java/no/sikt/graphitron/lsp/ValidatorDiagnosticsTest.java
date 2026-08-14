@@ -7,7 +7,6 @@ import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -45,7 +44,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(7, 3, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).hasSize(1);
         var d = diags.get(0);
@@ -68,7 +67,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(3, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
             assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -86,7 +85,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(5, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
             assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -103,7 +102,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(10, 5, path));
         var report = ValidationReport.from(List.of(), List.of(warning));
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
             assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
@@ -131,7 +130,7 @@ class ValidatorDiagnosticsTest {
             no.sikt.graphitron.rewrite.lint.LintRule.REDUNDANT_RECORD_DIRECTIVE);
         var report = ValidationReport.from(List.of(), List.of(warning));
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
             assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
@@ -158,7 +157,7 @@ class ValidatorDiagnosticsTest {
             }
             """;
 
-        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(source), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
             assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
@@ -181,7 +180,7 @@ class ValidatorDiagnosticsTest {
             no.sikt.graphitron.rewrite.lint.LintRule.FIELD_NAMES_CAMEL_CASE);
         var report = ValidationReport.from(List.of(), List.of(finding));
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(),
+        var diags = Diagnostics.compute(uri, file(),
             new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of()), report);
 
         assertThat(diags).isEmpty();
@@ -203,7 +202,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(4, 1, otherPath));
         var report = ValidationReport.from(List.of(ours, theirs), List.of());
 
-        var diags = Diagnostics.compute(openUri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(openUri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d ->
             assertThat(d.getMessage()).isEqualTo("error on the open file"));
@@ -219,7 +218,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(2, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(),
+        var diags = Diagnostics.compute(uri, file(),
             LspSchemaSnapshot.unavailable(), report);
 
         assertThat(diags).isEmpty();
@@ -235,7 +234,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(2, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(),
+        var diags = Diagnostics.compute(uri, file(),
             new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of()), report);
 
         assertThat(diags).isEmpty();
@@ -252,7 +251,7 @@ class ValidatorDiagnosticsTest {
             null, Rejection.structural("schema-wide"), null);
         var report = ValidationReport.from(List.of(withLoc, noLoc), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d ->
             assertThat(d.getMessage()).isEqualTo("has location"));
@@ -267,7 +266,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(0, 0, path));
         var report = ValidationReport.from(List.of(zero), List.of());
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).isEmpty();
     }
@@ -276,7 +275,7 @@ class ValidatorDiagnosticsTest {
     void emptyReportProducesNoValidatorDiagnostics() {
         var uri = ValidationReport.canonicalUri("/tmp/schema.graphqls");
 
-        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT,
+        var diags = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT,
             ValidationReport.empty());
 
         assertThat(diags).isEmpty();
@@ -297,10 +296,10 @@ class ValidatorDiagnosticsTest {
                 "Foo.bar", Rejection.structural("error"),
                 new SourceLocation(2, 1, path))),
             List.of());
-        var first = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, initial);
+        var first = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT, initial);
         assertThat(first).hasSize(1);
 
-        var second = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT,
+        var second = Diagnostics.compute(uri, file(), CURRENT_SNAPSHOT,
             ValidationReport.empty());
 
         assertThat(second).isEmpty();
@@ -335,7 +334,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(1, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(source), CURRENT_SNAPSHOT, report);
 
         // "type Foo {" is line index 3; "Foo" spans characters 5..8.
         assertThat(diags).singleElement().satisfies(d -> {
@@ -367,7 +366,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(2, 3, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(source), CURRENT_SNAPSHOT, report);
 
         // "  bar: Int" is line index 2; "bar" spans characters 2..5.
         assertThat(diags).singleElement().satisfies(d -> {
@@ -395,7 +394,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(1, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(source), CURRENT_SNAPSHOT, report);
 
         // "type Foo {" is line index 1; "Foo" spans characters 5..8.
         assertThat(diags).singleElement().satisfies(d -> {
@@ -426,7 +425,7 @@ class ValidatorDiagnosticsTest {
             new SourceLocation(2, 3, path));
         var report = ValidationReport.from(List.of(error), List.of());
 
-        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+        var diags = Diagnostics.compute(uri, file(source), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
             assertThat(d.getRange().getStart().getLine()).isEqualTo(1);
