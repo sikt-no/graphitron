@@ -1,7 +1,7 @@
 ---
 id: R666
 title: "Delivery verdict derives from the store, not from a hand-maintained negative-space switch"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
