@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-13
+last-updated: 2026-08-14
 ---
 
 # The LSP is a fact-store client
@@ -475,7 +475,7 @@ around it.
 | Toggle | Collector | Fact source |
 |---|---|---|
 | `classification` | `collectClassificationHints` | the verdict views, both grains, their classifier vocabularies grown to the whole taxonomy |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `graphitron_field_binding` and `intent_reference_step_target` (unbuilt) for the other two |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_type_backing_class` (unbuilt) where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the verdict views, as the `classification` toggle above |
 
@@ -1275,9 +1275,11 @@ that already ask them.
 
 | What an arm needs | The view that answers it | State |
 |---|---|---|
-| Which catalog table a type's `@table` binds to | `intent_bound_table` | built, this increment |
-| Which table a *field site's* columns come from | `intent_field_column_table`: the parent's binding for a plain column, the path's terminal table for a `@reference` field, the navigated element table for the order-by sites | unbuilt |
-| What a `@reference` step lands on, authored or auto-discovered | `intent_reference_step_target`, over `graphitron_field_reference_step` and `sql_referential_constraint` | unbuilt |
+| How a written table name meets the census | `intent_spelled_table`, keyed on the spelling, under every binding | built |
+| Which catalog table a type's `@table` binds to | `intent_bound_table`, a keying of the spelling view on a type | built |
+| What an authored `@reference` element lands on | `intent_field_reference_step_hop` for the element's local resolution, `intent_field_reference_step_target` for the chain over it | built |
+| Which table a *field site's* columns come from | `intent_field_column_table`: the parent's binding for a plain column, the chain's terminal arrival for a `@reference` field, the navigated element table for the order-by sites | unbuilt |
+| What an *omitted* `@reference` path infers | foreign-key discovery between the parent's binding and the field's named type's binding; both bindings are built, the discovery is not | unbuilt |
 | Which Java class a type is backed by, and its member slots | `intent_type_backing_class`, joined to `jvm_record_component` for components and `jvm_method` for bean accessors | unbuilt |
 | The verdict label for a declaration | `intent_resolved_field_claim` and a type-grain sibling, their `classifier` vocabularies grown from today's seven and two to the whole taxonomy | partly built |
 
@@ -1318,6 +1320,58 @@ nothing else, and it moved.
   for the table's generated class. Pointing its first hop at the store would leave one arm reading both
   models, so it moves when the definition capability's catalog arms do, which is its own inventory row
   and not this one.
+
+## Settled while building: the reference chain, and an increment with no reader
+
+The second substrate increment builds the spelling resolution and the `@reference` chain over it,
+three views, and retires nothing. That is a deviation from this item's own rule that each increment
+deletes an incumbent reader in the same commit, so it is stated rather than glossed: no single
+substrate view retires an arm, because the arms that would read these views read a *dispatch* that
+collapses seven questions onto one switch, and the switch cannot half-move without leaving one arm
+reading both models. The pin is a derive-tier anchor instead, which is the same shape
+`intent_authored_claim_conflict` shipped under. What makes that acceptable here and not in general is
+that the views are provably equal to the walk on the case set that matters, against the real catalog;
+what would make it unacceptable is a third increment in a row with no reader.
+
+* **A resolution keyed on a string sits under the ones keyed on a coordinate.** The binding view knew
+  how a qualifier splits, how an unqualified name matches, and which catalog sources are in scope. None
+  of that varies by coordinate: a `@reference` element's `table:`, its argument-site and `@referenceFor`
+  siblings, and `@mutation`'s delete target all name a table by the same rule. So the rule moved down
+  into `intent_spelled_table`, keyed on the spelling itself, and the binding view became a keying over
+  it. This is the previous increment's argument applied one level deeper, and it is what stopped the
+  chain's table arm from becoming the third copy of a qualifier split.
+* **The population of a relation keyed on a string is the strings someone wrote.** Not every table the
+  census holds, and not the subset one site happens to spell. Five relations carry a table name today
+  and all five are in the union, so a spelling reaching resolution never depends on which site wrote it.
+* **Only the chain needs recursion, so only the chain is recursive.** An element's own resolution is
+  local; the chain is sequential because an element departs from where the previous one arrived. Two
+  views: the hop view enumerates every table-to-table hop an element could express, both orientations
+  of its key included, and the chain walks them from the type's binding. Mixing them would have put a
+  copy of every element arm inside the recursive term, which is where a four-branch recursive CTE and
+  the H2 support question came from before the split. After it, the recursive term is one join.
+* **Two arities, because the case that separates them is real.** `film` declares two foreign keys to
+  `language`, so a `{table: "language"}` element reaches one destination by two routes. `targets` and
+  `candidates` are therefore separate columns: a reader that needs the table can trust the answer, a
+  reader that has to render the join cannot, and the walk's own "which foreign key did you mean"
+  rejection is the second count. One arity column would have made every such element look ambiguous
+  to both readers.
+* **A self-referential key is one hop, not two.** Both orientations land on the same table, so the
+  cardinality hint the walk uses there chooses join columns rather than a destination. Emitting both
+  rows would have made an unambiguous destination fail every `targets = 1` gate, which is the sort of
+  defect an arity column invites if the rows feeding it are not thought through. The probe caught it
+  before the DDL landed; the fixture pins it now.
+* **Two silences, and the view says which it owns.** An element that resolves to nothing ends the
+  chain, so a path whose second element is fine and whose first names an unknown key contributes no
+  rows at all. An element carrying neither key nor table is a different silence: its destination comes
+  from a condition method's Java return type. Absence here means "not reached", never "resolves to
+  nothing in particular", and a view whose absence is load-bearing owes that sentence in its comment.
+* **The next increment is the one that retires.** `intent_field_column_table` is now one view away from
+  answerable across six of the column dispatch's seven `Resolve` arms: the parent's binding and the
+  chain's terminal arrival are built, the navigated element table is the same binding view on the
+  field's named type, and only the multi-table participant arm is missing. Its `Silent` versus
+  `FallThrough` split is the verdict vocabulary, which is the label rows' dependency, so those two
+  pieces of the substrate finish together and retire three readers at once: `FieldCompletions`,
+  hover's column arm and the field-member diagnostic.
 
 ## Retired vocabulary
 

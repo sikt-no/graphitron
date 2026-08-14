@@ -119,6 +119,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       over the spec-by-example corpus, and the table resolution that arm stands on
  *       ({@code intent_bound_table}) through the claim's own table witness, with pins for the
  *       bindings a column claim cannot speak for;
+ *       {@code no.sikt.graphitron.rewrite.derive.ReferenceStepTargetTest} binds the spelling
+ *       resolution the bindings themselves stand on ({@code intent_spelled_table}) and the
+ *       {@code @reference} chain over it ({@code intent_field_reference_step_hop} and
+ *       {@code intent_field_reference_step_target}, the hop view pinned through the chain that
+ *       reaches or refuses it rather than twice), mostly over captured SDL against the test
+ *       catalog because a hand-seeded chain is free to assert a path the catalog cannot connect;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
@@ -210,6 +216,9 @@ class FactCaptureAgreementTest {
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
+        registrations.put("intent_spelled_table", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);

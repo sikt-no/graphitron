@@ -2595,7 +2595,12 @@ COMMENT ON COLUMN walk_claim_domain_field.field_name IS 'the registered coordina
 -- classifier views sit the resolutions they stand on, residents in their own right rather than
 -- CTEs inside their first reader: intent_bound_table answers which catalog table a type's @table
 -- binds to, which the column-match classifier asks on its way to a claim and an editor asks with
--- no claim in view.
+-- no claim in view. Those resolutions layer among themselves on the same rule. intent_spelled_table
+-- answers the rule every table name is subject to whatever site wrote it, so the binding view is a
+-- keying over it rather than a second copy of it; intent_field_reference_step_hop and
+-- intent_field_reference_step_target then split a @reference path into its local element
+-- resolutions and the chain that walks them, because only the chain needs recursion and mixing the
+-- two would put a copy of every element arm inside the recursive term.
 --
 -- Each claiming relation contributes a decoded arm, and each claiming directive additionally
 -- contributes an undecoded presence arm: the site-family application rows anti-joined against
@@ -2794,30 +2799,198 @@ COMMENT ON COLUMN intent_authored_type_claim.source_name IS 'the claiming applic
 COMMENT ON COLUMN intent_authored_type_claim.source_line IS 'source line of the claiming application, 1-based';
 COMMENT ON COLUMN intent_authored_type_claim.source_column IS 'source column of the claiming application, 1-based';
 
+CREATE VIEW intent_spelled_table
+  (graph_name, spelling, table_source_name, table_schema, table_name, candidates) AS
+SELECT graph_name, spelling, table_source_name, table_schema, table_name, candidates
+  FROM (SELECT s.graph_name, s.spelling, st.source_name AS table_source_name,
+               st.table_schema, st.table_name,
+               CAST(COUNT(*) OVER (PARTITION BY s.graph_name, s.spelling) AS INT) AS candidates
+          FROM (SELECT graph_name, COALESCE(table_ref, type_name) AS spelling
+                  FROM graphitron_table
+                 UNION
+                SELECT graph_name, table_ref FROM graphitron_field_reference_step
+                 WHERE table_ref IS NOT NULL
+                 UNION
+                SELECT graph_name, table_ref FROM graphitron_argument_reference_step
+                 WHERE table_ref IS NOT NULL
+                 UNION
+                SELECT graph_name, table_ref FROM graphitron_reference_for_step
+                 WHERE table_ref IS NOT NULL
+                 UNION
+                SELECT graph_name, table_ref FROM graphitron_mutation
+                 WHERE table_ref IS NOT NULL) s
+          JOIN store_graph_source m ON m.graph_name = s.graph_name
+          JOIN sql_table st ON st.source_name = m.source_name
+           AND CASE WHEN POSITION('.' IN s.spelling) > 0
+                THEN UPPER(st.table_schema) = UPPER(SUBSTRING(s.spelling
+                       FROM 1 FOR POSITION('.' IN s.spelling) - 1))
+                 AND UPPER(st.table_name) = UPPER(SUBSTRING(s.spelling
+                       FROM POSITION('.' IN s.spelling) + 1))
+                ELSE UPPER(st.table_name) = UPPER(s.spelling)
+                END) resolved;
+COMMENT ON VIEW intent_spelled_table IS 'How a written table name resolves against the catalog census: one row per candidate table, keyed on the spelling itself rather than on any one site that wrote it. A qualified spelling splits on its first dot and binds both halves, an unqualified one matches its table name case-insensitively, and the catalog side scopes through store_graph_source so a sibling graph''s tables never resolve here. Keyed on the spelling because the rule does not vary by site: @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, and @mutation''s delete target all name a table the same way, and a resolution with several askers is a relation rather than a subquery repeated in each of them. The population is therefore every spelling this graph authors anywhere, including graphitron_table''s type-name fallback, which is a spelling by the time resolution sees it. Ambiguity is rows, never a decline: a name two schemas both declare is two rows and candidates says so, leaving the reading to the reader.';
+COMMENT ON COLUMN intent_spelled_table.graph_name IS 'the owning graph''s partition, carried from the authoring relation';
+COMMENT ON COLUMN intent_spelled_table.spelling IS 'the table name as written at some site in this graph, qualifier included where one was written; the key this resolution answers for';
+COMMENT ON COLUMN intent_spelled_table.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_spelled_table.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one spelling apart';
+COMMENT ON COLUMN intent_spelled_table.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key';
+COMMENT ON COLUMN intent_spelled_table.candidates IS 'how many tables the spelling resolves to, this row being one of them; 1 on an unambiguous spelling';
+
 CREATE VIEW intent_bound_table
   (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
-SELECT graph_name, type_name, table_source_name, table_schema, table_name, candidates
-  FROM (SELECT t.graph_name, t.type_name, st.source_name AS table_source_name,
-               st.table_schema, st.table_name,
-               CAST(COUNT(*) OVER (PARTITION BY t.graph_name, t.type_name) AS INT) AS candidates
-          FROM graphitron_table t
-          JOIN store_graph_source m ON m.graph_name = t.graph_name
-          JOIN sql_table st ON st.source_name = m.source_name
-           AND CASE WHEN POSITION('.' IN COALESCE(t.table_ref, t.type_name)) > 0
-                THEN UPPER(st.table_schema) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
-                       FROM 1 FOR POSITION('.' IN COALESCE(t.table_ref, t.type_name)) - 1))
-                 AND UPPER(st.table_name) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
-                       FROM POSITION('.' IN COALESCE(t.table_ref, t.type_name)) + 1))
-                ELSE UPPER(st.table_name) = UPPER(COALESCE(t.table_ref, t.type_name))
-                END
-         WHERE t.type_name NOT IN ('Query', 'Mutation', 'Subscription')) resolved;
-COMMENT ON VIEW intent_bound_table IS 'Which catalog table an @table-bearing type is bound to: the resolution of graphitron_table''s reference against the census, one row per candidate table. The reference is the name argument as written, or the type name where the argument was omitted, which is the derivation graphitron_table.table_ref''s own comment defers; a qualified reference splits on its first dot and binds both halves, an unqualified one matches its table name case-insensitively, and the catalog side scopes through store_graph_source so a sibling graph''s tables never resolve here. The three root names are masked, transcribing the walk''s root short-circuit that classifies a root before any table binding is read, which is the same mask the authored type claims carry. A base derivation rather than a resolved_ reduction: it stands directly on a transcription pair and nothing reduces over sibling views to produce it. Ambiguity is rows, never a decline: two candidates are two rows and the count says so, so a reader can transcribe the walk''s Ambiguous verdict (require candidates = 1, as the column-match classifier does), offer every candidate (as an editor does, since each is a table the author might mean), or report the ambiguity, without any of them re-spelling the resolution. The reference as written and the application''s position are one join back to graphitron_table, which holds both.';
+SELECT t.graph_name, t.type_name,
+       sp.table_source_name, sp.table_schema, sp.table_name, sp.candidates
+  FROM graphitron_table t
+  JOIN intent_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+ WHERE t.type_name NOT IN ('Query', 'Mutation', 'Subscription');
+COMMENT ON VIEW intent_bound_table IS 'Which catalog table an @table-bearing type is bound to: graphitron_table''s reference resolved through intent_spelled_table, one row per candidate table. The reference is the name argument as written, or the type name where the argument was omitted, which is the derivation graphitron_table.table_ref''s own comment defers; how a spelling then meets the census is the spelling view''s rule, stated once there and not restated here. What this view adds over that one is the keying: a type, not a string, which is what every reader of a binding actually holds. The three root names are masked, transcribing the walk''s root short-circuit that classifies a root before any table binding is read, which is the same mask the authored type claims carry. A base derivation rather than a resolved_ reduction: it stands directly on a transcription pair and nothing reduces over sibling views to produce it. Ambiguity is rows, never a decline: two candidates are two rows and the count says so, so a reader can transcribe the walk''s Ambiguous verdict (require candidates = 1, as the column-match classifier does), offer every candidate (as an editor does, since each is a table the author might mean), or report the ambiguity, without any of them re-spelling the resolution. The reference as written and the application''s position are one join back to graphitron_table, which holds both.';
 COMMENT ON COLUMN intent_bound_table.graph_name IS 'the owning graph''s partition, carried from graphitron_table';
 COMMENT ON COLUMN intent_bound_table.type_name IS 'the @table-bearing type whose binding this row resolves';
 COMMENT ON COLUMN intent_bound_table.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN intent_bound_table.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one name apart';
 COMMENT ON COLUMN intent_bound_table.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts (its jOOQ name, its generated class, its comment) are one join away, per the referenced-side discipline sql_referential_constraint states';
-COMMENT ON COLUMN intent_bound_table.candidates IS 'how many tables the reference resolves to, this row being one of them; 1 on an unambiguous binding. Stated as a column rather than left to each reader''s own count, because whether a binding is ambiguous decides the reading (a claim declines, an editor offers every candidate) and a reader that counted for itself would be re-deriving the resolution''s own arity';
+COMMENT ON COLUMN intent_bound_table.candidates IS 'how many tables the reference resolves to, this row being one of them; 1 on an unambiguous binding. Carried through from the spelling view rather than recounted here, and stated as a column rather than left to each reader''s own count, because whether a binding is ambiguous decides the reading (a claim declines, an editor offers every candidate) and a reader that counted for itself would be re-deriving the resolution''s own arity';
+
+CREATE VIEW intent_field_reference_step_hop
+  (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS
+SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.position, 'KEY',
+       CASE WHEN UPPER(c.constraint_name) = UPPER(
+                   CASE WHEN POSITION('.' IN s.key_ref) > 0
+                        THEN SUBSTRING(s.key_ref FROM POSITION('.' IN s.key_ref) + 1)
+                        ELSE s.key_ref END)
+            THEN 'SQL_NAME' ELSE 'JOOQ_NAME' END,
+       CASE WHEN o.fk_on_from THEN rc.source_name ELSE rc.referenced_source_name END,
+       CASE WHEN o.fk_on_from THEN rc.table_schema ELSE rc.referenced_schema END,
+       CASE WHEN o.fk_on_from THEN rc.table_name ELSE rc.referenced_table END,
+       CASE WHEN o.fk_on_from THEN rc.referenced_source_name ELSE rc.source_name END,
+       CASE WHEN o.fk_on_from THEN rc.referenced_schema ELSE rc.table_schema END,
+       CASE WHEN o.fk_on_from THEN rc.referenced_table ELSE rc.table_name END,
+       rc.constraint_name, o.fk_on_from
+  FROM graphitron_field_reference_step s
+  JOIN store_graph_source m ON m.graph_name = s.graph_name
+  JOIN sql_constraint c ON c.source_name = m.source_name
+   AND CASE WHEN POSITION('.' IN s.key_ref) > 0
+        THEN UPPER(c.table_schema) = UPPER(SUBSTRING(s.key_ref
+               FROM 1 FOR POSITION('.' IN s.key_ref) - 1))
+         AND UPPER(c.constraint_name) = UPPER(SUBSTRING(s.key_ref
+               FROM POSITION('.' IN s.key_ref) + 1))
+        ELSE UPPER(c.constraint_name) = UPPER(s.key_ref)
+          OR (UPPER(c.jooq_name) = UPPER(s.key_ref)
+              AND NOT EXISTS (SELECT 1
+                                FROM sql_constraint c2
+                                JOIN store_graph_source m2
+                                  ON m2.source_name = c2.source_name
+                               WHERE m2.graph_name = s.graph_name
+                                 AND UPPER(c2.constraint_name) = UPPER(s.key_ref)))
+        END
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = c.source_name AND rc.table_schema = c.table_schema
+   AND rc.table_name = c.table_name AND rc.constraint_name = c.constraint_name
+  JOIN (VALUES (TRUE), (FALSE)) o (fk_on_from) ON 1 = 1
+ WHERE s.key_ref IS NOT NULL
+   AND (o.fk_on_from OR rc.source_name <> rc.referenced_source_name
+        OR rc.table_schema <> rc.referenced_schema OR rc.table_name <> rc.referenced_table)
+UNION ALL
+SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.position, 'TABLE', NULL,
+       CASE WHEN o.fk_on_from THEN rc.source_name ELSE rc.referenced_source_name END,
+       CASE WHEN o.fk_on_from THEN rc.table_schema ELSE rc.referenced_schema END,
+       CASE WHEN o.fk_on_from THEN rc.table_name ELSE rc.referenced_table END,
+       sp.table_source_name, sp.table_schema, sp.table_name,
+       rc.constraint_name, o.fk_on_from
+  FROM graphitron_field_reference_step s
+  JOIN intent_spelled_table sp
+    ON sp.graph_name = s.graph_name AND sp.spelling = s.table_ref
+  JOIN (VALUES (TRUE), (FALSE)) o (fk_on_from) ON 1 = 1
+  JOIN sql_referential_constraint rc
+    ON CASE WHEN o.fk_on_from
+         THEN rc.referenced_source_name = sp.table_source_name
+          AND rc.referenced_schema = sp.table_schema
+          AND rc.referenced_table = sp.table_name
+         ELSE rc.source_name = sp.table_source_name
+          AND rc.table_schema = sp.table_schema
+          AND rc.table_name = sp.table_name
+       END
+ WHERE s.table_ref IS NOT NULL AND s.key_ref IS NULL
+   AND (o.fk_on_from OR rc.source_name <> rc.referenced_source_name
+        OR rc.table_schema <> rc.referenced_schema OR rc.table_name <> rc.referenced_table);
+COMMENT ON VIEW intent_field_reference_step_hop IS 'One @reference path element''s local resolution: every table-to-table hop the element could express, before anything decides which table the chain has actually arrived at. Both arms of authored navigation are here. A key element resolves its constraint name the way the generator''s resolver does: a leading schema qualifier splits on the first dot and binds hard, an unqualified name matches the SQL constraint name, and only where no SQL constraint in this graph''s sources answers that name does the generated Keys-class constant become eligible, which is the resolver''s namespace precedence rather than a looser match on either. A table element resolves its spelling through intent_spelled_table and pins the arriving side to it, leaving the foreign key to be discovered. Both arms enumerate the hop in both orientations, because a foreign key is a hop in either direction and which one an element means depends on where the chain stands; a self-referential key is one hop and not two, since both orientations land on the same table and the walk''s cardinality hint chooses join columns rather than a destination. Separate from intent_field_reference_step_target because the local resolution has no recursion in it: keeping the two apart is what lets that view''s recursive term be a single join instead of a copy of these arms.';
+COMMENT ON COLUMN intent_field_reference_step_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_field_reference_step';
+COMMENT ON COLUMN intent_field_reference_step_hop.type_name IS 'the type owning the field the @reference is applied to';
+COMMENT ON COLUMN intent_field_reference_step_hop.field_name IS 'the field the @reference is applied to';
+COMMENT ON COLUMN intent_field_reference_step_hop.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable';
+COMMENT ON COLUMN intent_field_reference_step_hop.position IS 'the element''s 0-based position within its application''s path';
+COMMENT ON COLUMN intent_field_reference_step_hop.via IS 'which arm resolved the element: KEY where it named a constraint, TABLE where it named a table. The element''s own written form is one join back to graphitron_field_reference_step; this column is the resolution''s reading of it';
+COMMENT ON COLUMN intent_field_reference_step_hop.key_matched_by IS 'for a KEY hop, which namespace answered: SQL_NAME (the SQL constraint name) or JOOQ_NAME (the generated Keys constant). NULL on a TABLE hop, which names no constraint. Makes the resolver''s namespace precedence visible data instead of a hidden pick, as the column-match claim''s own tier column does';
+COMMENT ON COLUMN intent_field_reference_step_hop.from_source_name IS 'the departing table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_field_reference_step_hop.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_step_hop.from_table IS 'the departing table''s SQL name; a candidate departure, not yet a fact about the chain';
+COMMENT ON COLUMN intent_field_reference_step_hop.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_field_reference_step_hop.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_step_hop.to_table IS 'the arriving table''s SQL name';
+COMMENT ON COLUMN intent_field_reference_step_hop.constraint_name IS 'the foreign key the hop joins on, named or discovered. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says';
+COMMENT ON COLUMN intent_field_reference_step_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what completes the constraint''s key from the two endpoint triples';
+
+CREATE VIEW intent_field_reference_step_target
+  (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+   targets, candidates) AS
+WITH RECURSIVE chain (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
+  SELECT h.graph_name, h.type_name, h.field_name, h.ordinal, h.position, h.via, h.key_matched_by,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM intent_field_reference_step_hop h
+    JOIN intent_bound_table bt
+      ON bt.graph_name = h.graph_name AND bt.type_name = h.type_name
+     AND bt.table_source_name = h.from_source_name AND bt.table_schema = h.from_schema
+     AND bt.table_name = h.from_table
+   WHERE h.position = 0
+  UNION
+  SELECT h.graph_name, h.type_name, h.field_name, h.ordinal, h.position, h.via, h.key_matched_by,
+         h.from_source_name, h.from_schema, h.from_table,
+         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
+    FROM chain p
+    JOIN intent_field_reference_step_hop h
+      ON h.graph_name = p.graph_name AND h.type_name = p.type_name
+     AND h.field_name = p.field_name AND h.ordinal = p.ordinal
+     AND h.position = p.position + 1
+     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
+     AND h.from_table = p.to_table
+)
+SELECT graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table, constraint_name, fk_on_from,
+       CAST(MAX(target_rank) OVER (
+         PARTITION BY graph_name, type_name, field_name, ordinal, position) AS INT),
+       CAST(COUNT(*) OVER (
+         PARTITION BY graph_name, type_name, field_name, ordinal, position) AS INT)
+  FROM (SELECT c.*, DENSE_RANK() OVER (
+                 PARTITION BY c.graph_name, c.type_name, c.field_name, c.ordinal, c.position
+                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
+          FROM chain c) ranked;
+COMMENT ON VIEW intent_field_reference_step_target IS 'Where each element of a field''s @reference path actually lands: the hop view walked from the enclosing type''s table binding, one element at a time, so a row exists only for an element the chain can be shown to reach. Recursive because the arms are sequential and nothing else about them is: an element''s departure is the previous element''s arrival, and only the first element''s departure is known without walking, being the type''s own binding. Two consequences worth stating, both deliberate. An element that resolves to nothing ends the chain, so a path whose second element is fine but whose first names an unknown key contributes no rows at all rather than a row starting from nowhere; that is the walk''s own behaviour and the reason absence here means "not reached", never "resolves to nothing in particular". And an element carrying neither key nor table is not a hop this view knows: a condition-only element takes its target from the condition method''s Java return type, and an omitted path is foreign-key discovery between a parent and a child type, both resolutions this view does not perform and neither of which should be mistaken for its silence. Terminal-element readers project the maximum position per application; the chain has no separate terminal relation because one would be a reduction over this view with a single reader.';
+COMMENT ON COLUMN intent_field_reference_step_target.graph_name IS 'the owning graph''s partition, carried from the hop view';
+COMMENT ON COLUMN intent_field_reference_step_target.type_name IS 'the type owning the field the @reference is applied to; also the type whose binding started the chain';
+COMMENT ON COLUMN intent_field_reference_step_target.field_name IS 'the field the @reference is applied to';
+COMMENT ON COLUMN intent_field_reference_step_target.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable';
+COMMENT ON COLUMN intent_field_reference_step_target.position IS 'the element''s 0-based position within its application''s path; positions are contiguous from 0 up to wherever the chain stopped';
+COMMENT ON COLUMN intent_field_reference_step_target.via IS 'which arm resolved the element, as on the hop view: KEY or TABLE';
+COMMENT ON COLUMN intent_field_reference_step_target.key_matched_by IS 'for a KEY element, the namespace that answered; NULL on a TABLE element. As on the hop view';
+COMMENT ON COLUMN intent_field_reference_step_target.from_source_name IS 'the departing table''s catalog partition; the type''s bound table at position 0, the previous element''s arrival after that';
+COMMENT ON COLUMN intent_field_reference_step_target.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_step_target.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN intent_field_reference_step_target.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_field_reference_step_target.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_step_target.to_table IS 'the arriving table''s SQL name. At the path''s last position this is the table a @field(name:) on the same field resolves its column against';
+COMMENT ON COLUMN intent_field_reference_step_target.constraint_name IS 'the foreign key this element joins on, named or discovered';
+COMMENT ON COLUMN intent_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction';
+COMMENT ON COLUMN intent_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
+COMMENT ON COLUMN intent_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
 
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
@@ -3601,7 +3774,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
   ('java_', 'The consumer''s Java sources', 5, 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
   ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
   ('walk_', 'The legacy walk''s reach', 7, 'What the legacy classification walk registered, transcribed as membership rows in the walk''s own vocabulary (its registries'' reach). Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent.'),
-  ('intent_', 'Derived intent', 8, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
+  ('intent_', 'Derived intent', 8, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them and which layer among themselves on that same rule, a resolution keyed on a written name sitting under the ones keyed on a coordinate; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
   ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 10, 'The linter''s vocabulary (lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
   ('build_warning_', 'The advisory arm', 11, 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the jvm_scalar_type_field precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not walk_, because a family may not be named for its producer and both of the arm''s producers outlive the walk.'),
