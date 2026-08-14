@@ -206,25 +206,34 @@ directive @multitableReference(
 ) on FIELD_DEFINITION
 
 """
-Identifies the static Java method that extracts the parent-side join-key tuple
-when the parent is a class-backed DTO with no jOOQ FK metadata in the catalog.
-Applies when the parent's backing class is a plain POJO or a Java record (not a
-jOOQ Record / TableRecord). The parent's backing class is the one inferred from
-its producing field (typically an @service method's return type); the directive
-is rejected on parents that no producer binds to a class, on @table parents (use
+Identifies the static Java method that produces the field's batch key from a
+class-backed parent, for the cases where the catalog cannot infer one. Applies
+when the parent's backing class is a plain POJO or a Java record (not a jOOQ
+Record / TableRecord). The parent's backing class is the one inferred from its
+producing field (typically an @service method's return type); the directive is
+rejected on parents that no producer binds to a class, on @table parents (use
 @reference there), and on jOOQ-backed parents (JooqTableRecordType /
-JooqRecordType, where the catalog record already drives batching).
+JooqRecordType, where the catalog record already supplies the key).
 
-The method takes the parent's backing class and returns Row1..Row22<...>. The
-returned tuple must equal the columns the field's first JOIN ON predicate
-consumes on the parent side: the first hop's source-side columns when @reference
-is present, or the leaf target table's primary key columns when @reference is
-absent. Composes with @reference to express multi-hop paths from a DTO parent.
+The method takes the parent's backing class; what it returns is derived from the
+site it sits on.
+
+On a child field resolved by a join, it returns the join-key tuple as
+Row1..Row22<...>, which must equal the columns the field's first JOIN ON
+predicate consumes on the parent side: the first hop's source-side columns when
+@reference is present, or the leaf target table's primary key columns when
+@reference is absent. Composes with @reference to express multi-hop paths from a
+DTO parent.
+
+On a child field resolved by @service, it returns the record class the service
+method's Sources parameter names, whose table's primary key is the batch key.
+Reach for it there when the parent class is not yours to edit, or when more than
+one of its accessors returns that record and the build asks you to break the tie.
 """
 directive @sourceRow(
-  """Fully-qualified Java class name carrying the static lifter method."""
+  """Fully-qualified Java class name carrying the static producer method."""
   className: String!
-  """Static method name; must take a single arg assignable from the parent's backing class and return Row1..Row22<...>."""
+  """Static method name; must take a single arg assignable from the parent's backing class, and return Row1..Row22<...> on a join-resolved field or the @service Sources element record on an @service field."""
   method: String!
 ) on FIELD_DEFINITION
 

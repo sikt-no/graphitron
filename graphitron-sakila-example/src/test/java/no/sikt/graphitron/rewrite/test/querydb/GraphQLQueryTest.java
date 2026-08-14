@@ -2550,6 +2550,25 @@ class GraphQLQueryTest {
             .containsExactlyInAnyOrder("Lethbridge", "Rome", "Tokyo");
     }
 
+    /**
+     * The {@code @sourceRow}-declared batch key on a child {@code @service}: the parent carries
+     * only scalar key columns, so neither producer inference can serve it and the directive's
+     * static producer is the only route to a key. Three parents share two languages, and the
+     * service encodes the batch's own size into each value, so a regression to per-parent dispatch
+     * reports {@code @1} rather than {@code @2} and this test names it.
+     */
+    @Test
+    void languageSummaries_declaredKeyProducer_batchesThreeParentsIntoOneCall() {
+        Map<String, Object> data = execute("{ languageSummaries { languageId label languageName } }");
+        assertThat(data).extractingByKey("languageSummaries", as(list(Map.class)))
+            .as("one batched call over the two distinct keys the three parents dedup to")
+            .extracting(s -> s.get("label"), s -> s.get("languageName"))
+            .containsExactly(
+                tuple("first", "English@2"),
+                tuple("second", "Italian@2"),
+                tuple("third", "English@2"));
+    }
+
     // ===== Unmasked @service-child SourceKey projection =====
     // City carries no @splitQuery sibling, so the selected @service child's own gated
     // correlation-key arm is the only reason CITY_ID lands in the parent SELECT. Both queries

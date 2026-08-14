@@ -6,7 +6,7 @@ import java.util.Objects;
 /**
  * Where the jOOQ record carrying a batched child {@code @service} field's key columns is bound in
  * the emitted fetcher. The arms differ on the source expression the key is read off, and on
- * nothing else: all three emit through the same wrap-driven extraction
+ * nothing else: all four emit through the same wrap-driven extraction
  * ({@code GeneratorUtils.buildKeyExtraction}), which is why this is not a {@link KeyLift}. A
  * {@code @service}-backed field's {@link SourceKey#wrap()} is authored (the {@code Sources}
  * signature declares it) rather than derived from a lift, so routing these leaves through
@@ -23,6 +23,12 @@ import java.util.Objects;
  * derivation off this one component. Neither service leaf is parent-kind-pure (a
  * {@code ServiceTableField} is minted on both a {@code @table} and a class-backed parent), so a
  * leaf-identity switch cannot answer that question and this component is what carries it.
+ *
+ * <p>The four arms now shadow {@link KeyLift}'s arm for arm, with nothing binding the two seals.
+ * The split's justification is unchanged and is wrap provenance rather than the arm set, but the
+ * shadowing is worth an audit: a residue check gated on wrap provenance rather than on leaf
+ * identity could let one lift axis serve both paths. That collapse is a question for a later
+ * inventory, not a pending decision here.
  */
 public sealed interface ServiceKeySource {
 
@@ -47,6 +53,7 @@ public sealed interface ServiceKeySource {
             case FromTableRow ignored -> SourceShape.Table;
             case FromHeldRecord ignored -> SourceShape.Record;
             case FromAccessor ignored -> SourceShape.Record;
+            case FromLifter ignored -> SourceShape.Record;
         };
     }
 
@@ -82,6 +89,22 @@ public sealed interface ServiceKeySource {
         public FromAccessor {
             Objects.requireNonNull(keyOwner, "keyOwner");
             Objects.requireNonNull(accessor, "accessor");
+        }
+    }
+
+    /**
+     * A class-backed parent whose {@code @sourceRow}-declared static method produces the key
+     * record from the parent. The accessor arm's static twin: the author names a producer the
+     * class does not itself expose, which is what lets a parent carrying only scalar key columns,
+     * or one whose class is not the author's to edit, host a batched child.
+     *
+     * <p>The declared method may return {@code null} for the same reason an accessor may, so the
+     * emitted fetcher guards the produced record before extracting.
+     */
+    record FromLifter(TableRef keyOwner, StaticProducerRef producer) implements ServiceKeySource {
+        public FromLifter {
+            Objects.requireNonNull(keyOwner, "keyOwner");
+            Objects.requireNonNull(producer, "producer");
         }
     }
 }

@@ -1391,7 +1391,7 @@ CREATE TABLE graphitron_source_row (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_source_row IS '@sourceRow on a field: the parent-side join-key lifter. Flat arguments by declaration, not an ExternalCodeReference.';
+COMMENT ON TABLE graphitron_source_row IS '@sourceRow on a field: the parent-side key producer, a join key on a join-resolved field and a batch key on an @service one. Flat arguments by declaration, not an ExternalCodeReference.';
 COMMENT ON COLUMN graphitron_source_row.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_source_row.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_source_row.field_name IS 'the field name within the owning type';

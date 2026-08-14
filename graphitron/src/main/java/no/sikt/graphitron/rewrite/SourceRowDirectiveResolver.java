@@ -21,7 +21,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.WildcardType;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -166,63 +165,20 @@ final class SourceRowDirectiveResolver {
                 + "' is missing 'method'"));
         }
 
-        // 4. Reflect the lifter method: class load, method discovery, single-parameter
-        //    check, RowN raw-return + arity-bounds checks. The arity check against the
-        //    derived parent-side tuple lives in step 6, not here.
-        Class<?> lifterClass;
-        try {
-            lifterClass = Class.forName(lifterClassName, false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
-                + "': lifter class '" + lifterClassName + "' could not be loaded"));
+        // 4. Reflect the lifter method. The class load, the by-name static-method lookup and the
+        //    single-parameter check are the preamble every @sourceRow site shares, so they live in
+        //    LifterMethodResolver; the RowN raw-return and arity-bounds checks below are this
+        //    site's own return contract. The arity check against the derived parent-side tuple
+        //    lives in step 6, not here.
+        var lifterResolution = LifterMethodResolver.resolve(ctx.codegenLoader(),
+            "@sourceRow on '" + parentTypeName + "." + fieldName + "'",
+            lifterClassName, lifterMethodName, parentFqClassName);
+        if (lifterResolution instanceof LifterMethodResolver.Resolution.Rejected rejected) {
+            return new Resolved.Rejected(rejected.rejection());
         }
-
-        Class<?> parentClass;
-        try {
-            parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
-                + "': parent backing class '" + parentFqClassName + "' could not be loaded"));
-        }
-
-        List<Method> namedMethods = new ArrayList<>();
-        for (Method m : lifterClass.getDeclaredMethods()) {
-            if (m.getName().equals(lifterMethodName) && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
-                namedMethods.add(m);
-            }
-        }
-        if (namedMethods.isEmpty()) {
-            List<String> candidates = new ArrayList<>();
-            for (Method m : lifterClass.getDeclaredMethods()) {
-                if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
-                    candidates.add(m.getName());
-                }
-            }
-            return new Resolved.Rejected(Rejection.unknownLifterMethod(
-                "@sourceRow on '" + parentTypeName + "." + fieldName
-                + "': no static method named '" + lifterMethodName + "' on class '"
-                + lifterClassName + "'",
-                lifterMethodName, candidates));
-        }
-        if (namedMethods.size() > 1) {
-            return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
-                + "': multiple static methods named '" + lifterMethodName + "' on class '"
-                + lifterClassName + "'; the lifter must be uniquely identifiable by name"));
-        }
-        Method lifterMethod = namedMethods.get(0);
-
-        if (lifterMethod.getParameterCount() != 1) {
-            return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
-                + "': lifter method '" + lifterMethodName + "' must take exactly one parameter; got "
-                + lifterMethod.getParameterCount()));
-        }
-        Class<?> liftedParam = lifterMethod.getParameterTypes()[0];
-        if (!liftedParam.isAssignableFrom(parentClass)) {
-            return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
-                + "': lifter method '" + lifterMethodName + "' parameter type '"
-                + liftedParam.getName() + "' is not assignable from the parent's backing class '"
-                + parentFqClassName + "'"));
-        }
+        var resolvedLifter = (LifterMethodResolver.Resolution.Ok) lifterResolution;
+        Class<?> lifterClass = resolvedLifter.lifterClass();
+        Method lifterMethod = resolvedLifter.method();
 
         Type genericReturn = lifterMethod.getGenericReturnType();
         if (!(genericReturn instanceof ParameterizedType pt)

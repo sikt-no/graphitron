@@ -546,7 +546,7 @@ class GeneratorUtils {
     }
 
     /**
-     * The batched child {@code @service} path's key read: one home for all three
+     * The batched child {@code @service} path's key read: one home for all four
      * {@link ServiceKeySource} arms, each of which is the shared wrap-driven
      * {@link #buildKeyExtraction} against a different source binding.
      *
@@ -565,6 +565,11 @@ class GeneratorUtils {
      * extraction, not in the pre-registration prelude, so a throwing developer accessor routes
      * through the same disposition as the rest of the synchronous key read instead of escaping
      * {@code DataFetcher.get()} unrouted.
+     *
+     * <p>The lifter arm is that arm verbatim with a static call in place of the instance one: the
+     * author-declared producer can return {@code null} for the same reasons, and what follows the
+     * call is the same PK copy into a fresh record by jOOQ field identity, so "the keys carry the
+     * key columns, and nothing else" holds even when the producer populated more.
      */
     static CodeBlock buildServiceKeyExtraction(SourceKey sourceKey, ServiceKeySource keySource) {
         return switch (keySource) {
@@ -581,6 +586,18 @@ class GeneratorUtils {
                     ClassName.get("java.util.concurrent", "CompletableFuture"))
                 .endControlFlow()
                 .add(buildKeyExtraction(sourceKey, acc.keyOwner(), CodeBlock.of("keyRecord")))
+                .build();
+            case ServiceKeySource.FromLifter lifted -> CodeBlock.builder()
+                .addStatement("$T keyRecord = $T.$L(($T) env.getSource())",
+                    ClassName.bestGuess(lifted.producer().elementClass()),
+                    ClassName.bestGuess(lifted.producer().declaringClass()),
+                    lifted.producer().methodName(),
+                    ClassName.bestGuess(lifted.producer().parentBackingClass()))
+                .beginControlFlow("if (keyRecord == null)")
+                .addStatement("return $T.completedFuture(null)",
+                    ClassName.get("java.util.concurrent", "CompletableFuture"))
+                .endControlFlow()
+                .add(buildKeyExtraction(sourceKey, lifted.keyOwner(), CodeBlock.of("keyRecord")))
                 .build();
         };
     }

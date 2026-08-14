@@ -272,24 +272,50 @@ public static Map<AktivitetRecord, String> hentBeskrivelser(
         Set<AktivitetRecord> keys, DSLContext ctx) { ... }
 ----
 
-`AktivitetRecord` names the key: the framework resolves it to the `aktivitet` table and keys the batch on that table's primary key. For the parent to supply it, one of two things must hold:
+`AktivitetRecord` names the key: the framework resolves it to the `aktivitet` table and keys the batch on that table's primary key. For the parent to supply it, one of three things must hold:
 
 * the parent's backing class *is* an `AktivitetRecord`, or
-* the parent's backing class exposes exactly one zero-arg accessor returning `AktivitetRecord`.
+* the parent's backing class exposes exactly one zero-arg accessor returning `AktivitetRecord`, or
+* the field declares `@sourceRow(className: ..., method: ...)` naming a public static method that takes the parent and returns an `AktivitetRecord`.
 
-As everywhere else on the `@service` path, the records the framework hands you carry the key columns and nothing else, even when the accessor it read them from returned a fully populated record. Fetch the rest through the injected `DSLContext`, in one query for the batch.
+Reach for the third when the parent class is not yours to edit, or when more than one accessor returns the declared record and the build asks you to break the tie:
 
-If neither holds, the build fails:
+[source,graphql]
+----
+    beskrivelse: String @service(
+        service: {className: "no.example.TekstService", method: "hentBeskrivelser"}
+    ) @sourceRow(className: "no.example.AktivitetKeyLifter", method: "key")
+----
+
+[source,java]
+----
+public final class AktivitetKeyLifter {
+    public static AktivitetRecord key(Aktivitet parent) {
+        var r = new AktivitetRecord();
+        r.setAktivitetId(parent.aktivitetId());
+        return r;
+    }
+}
+----
+
+The declared producer wins over accessor inference wherever both would apply: writing it is how you say which record is the key, and inference does not run under it.
+
+As everywhere else on the `@service` path, the records the framework hands you carry the key columns and nothing else, even when the accessor or producer it read them from returned a fully populated record. Fetch the rest through the injected `DSLContext`, in one query for the batch.
+
+If none of the three holds, the build fails:
 
 ....
 @service on 'Aktivitet.beskrivelse' declares a batch key of 'AktivitetRecord'
 (table 'aktivitet'), but the parent type's backing class 'no.example.Aktivitet'
-cannot produce one. Either expose a zero-arg accessor returning 'AktivitetRecord'
-on that class, or change the Sources element type to a record class the parent
-can produce. A parent that carries only scalar key columns has no route today.
+cannot produce one. Either be that record, or expose a zero-arg accessor
+returning 'AktivitetRecord' on that class, or declare
+@sourceRow(className: ..., method: ...) on the field naming a public static
+method that takes the parent and returns 'AktivitetRecord'. The third route is
+the one for a class that is not yours to edit, or a parent that carries only
+scalar key columns.
 ....
 
-Two shapes are rejected by name rather than guessed at: more than one accessor returning the declared record (which of them produces the key is not determined by the element type alone), and an accessor returning many of them (a child `@service` batches one key per parent, which is what its `Map<Key, Value>` return means).
+Two shapes are rejected by name rather than guessed at: more than one accessor returning the declared record (which of them produces the key is not determined by the element type alone, so declare the producer to break the tie), and an accessor or producer returning many of them (a child `@service` batches one key per parent, which is what its `Map<Key, Value>` return means).
 
 === One DataLoader per request, per field
 

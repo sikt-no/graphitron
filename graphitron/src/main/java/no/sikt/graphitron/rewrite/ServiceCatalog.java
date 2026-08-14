@@ -1286,7 +1286,8 @@ class ServiceCatalog {
             + " — free-form DTO sources on @service SOURCES parameters are not supported."
             + " Declare the batch key as a jOOQ record class instead: the element type names the"
             + " table the batch keys on, and on a class-backed parent the parent must either be"
-            + " that record or expose exactly one zero-arg accessor returning it";
+            + " that record, expose exactly one zero-arg accessor returning it, or declare"
+            + " @sourceRow naming a static method that produces it from the parent";
     }
 
     // ===== Suggestion-side path search =====

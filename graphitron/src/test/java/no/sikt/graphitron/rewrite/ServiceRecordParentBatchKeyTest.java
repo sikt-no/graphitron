@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
@@ -17,10 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * it, and the coordinate asks the parent one question with a determinate answer: can you produce a
  * record of that table?
  *
- * <p>Two producers qualify, and they are the two class-backed {@link ServiceKeySource} arms: the
- * parent's backing <em>is</em> the declared record, or it exposes exactly one zero-arg accessor
- * returning one. Everything else is a rejection naming both routes, and each rejection has its own
- * fixture below rather than being asserted as a bare "unclassified".
+ * <p>Three producers qualify, and they are the class-backed {@link ServiceKeySource} arms: the
+ * parent's backing <em>is</em> the declared record, it exposes exactly one zero-arg accessor
+ * returning one, or the field declares {@code @sourceRow} naming a static method that produces one
+ * from the parent. Everything else is a rejection naming all three routes, and each rejection has
+ * its own fixture below rather than being asserted as a bare "unclassified".
  *
  * <p>No arm asserts a {@code KeyLift}: these leaves carry none. The {@code @service} path's wrap is
  * authored by the signature rather than derived from a lift, and asserting a lift alongside the
@@ -33,6 +35,7 @@ class ServiceRecordParentBatchKeyTest {
 
     private static final String SVC = "no.sikt.graphitron.rewrite.generators.TestFilmService";
     private static final String DUMMY = "no.sikt.graphitron.codereferences.dummyreferences.DummyService";
+    private static final String LIFTERS = "no.sikt.graphitron.codereferences.dummyreferences.ServiceKeyLifters";
 
     /**
      * A class-backed parent reachable from the root, its backing class bound by the reflected return
@@ -172,7 +175,7 @@ class ServiceRecordParentBatchKeyTest {
 
     /** No producer: the backing class has no accessor returning the declared record. */
     @Test
-    void classBackedParentThatCannotProduceTheKey_isRejectedNamingBothRoutes() {
+    void classBackedParentThatCannotProduceTheKey_isRejectedNamingEveryRoute() {
         var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
                 title: String
                 rank: Int @service(service: {className: "%s", method: "getRankMappedByRecord"})
@@ -181,10 +184,15 @@ class ServiceRecordParentBatchKeyTest {
         assertThat(reasonOf(schema, "Parent", "rank"))
             .contains("LanguageRecord", "language", "cannot produce one")
             .contains("expose a zero-arg accessor")
-            .contains("only scalar key columns has no route");
+            .as("the declared-producer route is the one that fits this parent, so the diagnostic names it")
+            .contains("@sourceRow(className: ..., method: ...)")
+            .contains("only scalar key columns");
     }
 
-    /** More than one accessor returning the declared record: which one produces the key is ambiguous. */
+    /**
+     * More than one accessor returning the declared record: which one produces the key is ambiguous.
+     * The rejection names the tie-break that needs no edit to the parent class.
+     */
     @Test
     void classBackedParentWithTwoMatchingAccessors_isRejectedNamingBoth() {
         var schema = TestSchemaHelper.buildSchema(classBackedParent("makeTwoLanguageAccessors", """
@@ -194,7 +202,8 @@ class ServiceRecordParentBatchKeyTest {
         assertThat(reasonOf(schema, "Parent", "rank"))
             .contains("more than one zero-arg accessor")
             .contains("fallback", "primary")
-            .contains("ambiguous");
+            .contains("ambiguous")
+            .contains("@sourceRow(className: ..., method: ...)");
     }
 
     /**
@@ -231,10 +240,11 @@ class ServiceRecordParentBatchKeyTest {
 
     /**
      * An anonymous key wrap names no table, so a class-backed parent has nothing to read the columns
-     * through. The diagnostic must not promise the {@code @sourceRow} route, which is a follow-up.
+     * through. Once a record class is declared all three producer routes apply, so the diagnostic
+     * asks for the record class and promises nothing beyond it.
      */
     @Test
-    void anonymousKeyWrapOnClassBackedParent_isRejectedWithoutPromisingARoute() {
+    void anonymousKeyWrapOnClassBackedParent_isRejectedAskingForARecordClass() {
         var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
                 rank: Int @service(service: {className: "%s", method: "getRankMapped"})
             """.formatted(SVC)));
@@ -242,7 +252,7 @@ class ServiceRecordParentBatchKeyTest {
         assertThat(reasonOf(schema, "Parent", "rank"))
             .contains("Row/Record batch parameter")
             .contains("Declare the batch key as a jOOQ record class")
-            .contains("only scalar key columns has no route");
+            .contains("all three producer routes apply");
     }
 
     // ===== The Sources-less child, on both parent kinds =====
@@ -298,5 +308,251 @@ class ServiceRecordParentBatchKeyTest {
 
         assertThat(reasonOf(schema, "Parent", "language"))
             .contains("declares no Sources parameter");
+    }
+
+    // ===== The declared producer: @sourceRow on the child @service =====
+
+    /**
+     * The motivating shape. {@code NoRecordAccessor} carries only scalar fields, so neither
+     * inference can serve it, and the field declares a static producer instead. The key is
+     * unchanged by the route: it is still the {@code Sources} element type's table's primary key,
+     * read off the record the producer returns.
+     */
+    @Test
+    void scalarOnlyParentWithDeclaredProducer_keysOffTheLifter() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                title: String
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfNoRecordAccessor")
+            """.formatted(SVC, LIFTERS)));
+
+        var field = schema.field("Parent", "rank");
+        assertThat(field)
+            .as("a declared producer hosts the batched child a scalar-only parent could not")
+            .isInstanceOf(ChildField.ServiceRecordField.class);
+        var srf = (ChildField.ServiceRecordField) field;
+        assertThat(srf.keySource())
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.type(ServiceKeySource.FromLifter.class))
+            .satisfies(lifted -> {
+                assertThat(lifted.keyOwner().tableName()).isEqualTo("language");
+                assertThat(lifted.producer().methodName()).isEqualTo("keyOfNoRecordAccessor");
+                assertThat(lifted.producer().declaringClass()).endsWith(".ServiceKeyLifters");
+                assertThat(lifted.producer().elementClass())
+                    .as("the producer returns the Sources element record itself")
+                    .endsWith(".LanguageRecord");
+                assertThat(lifted.producer().parentBackingClass())
+                    .as("the cast target for env.getSource() is the canonical name, so a nested "
+                        + "parent class renders as one javac accepts")
+                    .endsWith(".ServiceKeyPayloads.NoRecordAccessor");
+            });
+        assertThat(srf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+        assertThat(srf.sourceKey().columns())
+            .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+            .containsExactly("language_id");
+        assertThat(srf.sourceShape()).isEqualTo(SourceShape.Record);
+    }
+
+    /**
+     * The table-bound sibling leaf, which is also the ordering pin: this field carries both
+     * directives, and the classifier used to route it into {@code SourceRowDirectiveResolver} and
+     * drop the {@code @service} silently. It must mint the service leaf.
+     */
+    @Test
+    void tableBoundChildWithBothDirectives_classifiesAsTheServiceLeaf() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                title: String
+                filmsViaService: [Film!]!
+                    @service(service: {className: "%s", method: "getFilmsMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfNoRecordAccessor")
+            """.formatted(SVC, LIFTERS)));
+
+        var field = schema.field("Parent", "filmsViaService");
+        assertThat(field)
+            .as("@service wins the ordering; the directive is its key-producer declaration")
+            .isInstanceOf(ChildField.ServiceTableField.class);
+        var stf = (ChildField.ServiceTableField) field;
+        assertThat(stf.keySource()).isInstanceOf(ServiceKeySource.FromLifter.class);
+        assertThat(stf.sourceShape()).isEqualTo(SourceShape.Record);
+    }
+
+    /**
+     * The declaration is authored intent and accessor enumeration is the inference default, so the
+     * declaration wins on a parent that would have keyed by accessor. Neither rejected nor warned:
+     * an author who writes it is overriding inference, not drifting from it.
+     */
+    @Test
+    void declaredProducerOnAParentWithAQualifyingAccessor_winsOverInference() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
+                title: String
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfLanguageKeyed")
+            """.formatted(SVC, LIFTERS)));
+
+        var srf = (ChildField.ServiceRecordField) schema.field("Parent", "rank");
+        assertThat(srf.keySource())
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.type(ServiceKeySource.FromLifter.class))
+            .satisfies(lifted -> assertThat(lifted.producer().methodName()).isEqualTo("keyOfLanguageKeyed"));
+    }
+
+    /**
+     * The two-accessor ambiguity's exit. The parent is the shape rejected above; declaring the
+     * producer resolves it without an edit to a class the author may not own.
+     */
+    @Test
+    void declaredProducer_breaksTheTwoAccessorAmbiguity() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeTwoLanguageAccessors", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfTwoAccessors")
+            """.formatted(SVC, LIFTERS)));
+
+        var srf = (ChildField.ServiceRecordField) schema.field("Parent", "rank");
+        assertThat(srf.keySource()).isInstanceOf(ServiceKeySource.FromLifter.class);
+    }
+
+    /** The advisory follows the field onto its new branch: the keyed DataLoader still opens a scope. */
+    @Test
+    void splitQueryBesideADeclaredProducer_stillGetsTheRedundancyAdvisory() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int @splitQuery
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfNoRecordAccessor")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(schema.warnings())
+            .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT
+                && lf.message().contains("Parent.rank"))
+            .as("an author who wrote both directives sees both diagnostics")
+            .hasSize(1);
+    }
+
+    // ===== The declared producer's rejections =====
+
+    @Test
+    void declaredProducerOnAnUnloadableClass_isRejectedNamingIt() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "no.example.NotOnTheClasspath", method: "key")
+            """.formatted(SVC)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("@sourceRow on 'Parent.rank'")
+            .contains("lifter class 'no.example.NotOnTheClasspath' could not be loaded");
+    }
+
+    /**
+     * The did-you-mean candidates are the shared preamble's, which is why the message reads the
+     * same here as it does for the identical mistake on a {@code @table} child.
+     */
+    @Test
+    void declaredProducerWithAnUnknownMethod_isRejectedWithCandidates() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfNoRecordAccessorr")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("no static method named 'keyOfNoRecordAccessorr'")
+            .contains("keyOfNoRecordAccessor");
+    }
+
+    @Test
+    void declaredProducerWithAnOverloadedName_isRejectedAsNotUniquelyIdentifiable() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "overloaded")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("multiple static methods named 'overloaded'")
+            .contains("uniquely identifiable by name");
+    }
+
+    @Test
+    void declaredProducerThatDoesNotTakeTheParent_isRejected() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "takesUnrelatedParameter")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("parameter type 'java.lang.String'")
+            .contains("not assignable from the parent's backing class");
+    }
+
+    /**
+     * The one enforcer of the return contract, so it checks class identity rather than the table the
+     * class denotes: the emit casts and copies by field identity off exactly this class.
+     */
+    @Test
+    void declaredProducerReturningAnotherRecordClass_isRejectedNamingTheElementType() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "wrongRecordClass")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("FilmRecord")
+            .contains("the batch key is")
+            .contains("LanguageRecord", "language");
+    }
+
+    /** The list-cardinality rejection's static twin: one key per parent, whatever produced it. */
+    @Test
+    void declaredProducerReturningMany_isRejectedByName() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "manyKeys")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("returns many records")
+            .contains("one key per parent");
+    }
+
+    /** A jOOQ-backed parent already holds the key record, so the declaration is redundant there. */
+    @Test
+    void declaredProducerOnAJooqBackedParent_isRejectedAsRedundant() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Parent {
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+                    @sourceRow(className: "%s", method: "keyOfNoRecordAccessor")
+            }
+            type Query {
+                parent: Parent
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+            }
+            """.formatted(SVC, LIFTERS));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("@sourceRow on 'Parent.rank'")
+            .contains("redundant on a jOOQ-backed parent");
+    }
+
+    /**
+     * The wrap gate outranks the declaration: an anonymous key wrap names no table, and the element
+     * type is the catalog grounding nothing else supplies, directive or not.
+     */
+    @Test
+    void declaredProducerUnderAnAnonymousWrap_stillHitsTheWrapRejection() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
+                rank: Int
+                    @service(service: {className: "%s", method: "getRankMapped"})
+                    @sourceRow(className: "%s", method: "keyOfNoRecordAccessor")
+            """.formatted(SVC, LIFTERS)));
+
+        assertThat(reasonOf(schema, "Parent", "rank"))
+            .contains("Row/Record batch parameter")
+            .contains("Declare the batch key as a jOOQ record class");
     }
 }

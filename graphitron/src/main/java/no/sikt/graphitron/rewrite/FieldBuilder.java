@@ -91,6 +91,7 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
+import no.sikt.graphitron.rewrite.model.StaticProducerRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -6217,55 +6218,21 @@ class FieldBuilder {
             }
         }
 
-        // @sourceRow is owned by its dedicated resolver from this point onward: the resolver
-        // validates the parent shape, the directive payload, the lifter's signature, and the
-        // @reference composition; non-table returns surface a directive-specific rejection here
-        // rather than being silently dropped by the RecordReadField branches below.
-        if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
-            // @splitQuery on a @sourceRow class-backed-parent field is structurally redundant: the
-            // lifter-keyed DataLoader already opens a new scope. Fire the advisory before the
-            // resolver's rejection guards so an unrelated invariant failure (bad lifter signature,
-            // wrong arity, missing parent backing class, etc.) doesn't suppress it; the developer
-            // who wrote both directives needs to see both diagnostics, not just whichever fires
-            // first.
-            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
-            String rawTypeName = baseTypeName(fieldDef);
-            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            var sourceRowResult = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
-            if (sourceRowResult instanceof SourceRowDirectiveResolver.Resolved.Rejected rj) {
-                return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
-            }
-            var ok = (SourceRowDirectiveResolver.Resolved.Ok) sourceRowResult;
-            var components = resolveTableFieldComponents(parentTypeName, fieldDef, ok.tbReturnType().table(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, ok.tbReturnType().table()));
-            if (components instanceof TableFieldComponents.Rejected rj) {
-                return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
-            }
-            var tfc = (TableFieldComponents.Ok) components;
-            // joinPath: empty + OnLiftedSlots for the leaf-PK lift (no @reference), the
-            // resolved FK chain for the @reference-composed lift (@reference present). Both are
-            // the KeyLift.Lifter arm; the resolver already constructs the right shape and
-            // surfaces it as ok.joinPath() / ok.lifted().
-            List<JoinStep> joinPath = ok.joinPath();
-            // class-backed-parent carriers: the surface SDL parent type has no @table binding, so a
-            // condition-join first hop has no parent table to anchor against and routes to
-            // AuthorError. The FK-derived arm produces ParentCorrelation.OnFkSlots and doesn't
-            // consult parentTable; the leaf-PK shape arrives pre-resolved as OnLiftedSlots.
-            var srPcResolution = ok.lifted() != null
-                ? new BuildContext.ParentCorrelationResolution.Resolved(ok.lifted())
-                : ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
-            if (srPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(e.message()));
-            }
-            var srParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) srPcResolution).correlation();
-            return new ChildField.BatchedTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                tfc.filters(), tfc.orderBy(), tfc.pagination(), SourceShape.Record, ok.sourceKey(), ok.lift(),
-                ok.loaderRegistration(), tfc.lookup(), srParentCorrelation);
-        }
-
+        // @service outranks @sourceRow: a field carrying both is a batched child whose key producer
+        // the directive declares, not a lifter-keyed table child that happens to also name a
+        // service. The two guards used to sit the other way round, which routed such a field into
+        // SourceRowDirectiveResolver and silently dropped the @service.
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
+            var sourceRow = SourceRowDeclaration.read(fieldDef);
+            if (sourceRow != null) {
+                // The advisory's subject is the same on this branch as on the @sourceRow one
+                // below: the key-producing DataLoader already opens a new scope, so a @splitQuery
+                // beside it is redundant. Fired ahead of the resolver's guards for the same reason
+                // it is there — an unrelated invariant failure must not suppress it.
+                warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
+            }
             var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
-                new ServiceDirectiveResolver.ParentContext.RecordParent(parentResultType));
+                new ServiceDirectiveResolver.ParentContext.RecordParent(parentResultType, sourceRow));
             if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
                 return new UnclassifiedField(parentTypeName, name, location, r.rejection());
             }
@@ -6308,6 +6275,52 @@ class FieldBuilder {
                         + "ServiceDirectiveResolver's child-polymorphic classify arm defers this coordinate: field '"
                         + parentTypeName + "." + name + "'");
             };
+        }
+
+        // @sourceRow without @service is owned by its dedicated resolver from this point onward:
+        // the resolver validates the parent shape, the directive payload, the lifter's signature,
+        // and the @reference composition; non-table returns surface a directive-specific rejection
+        // here rather than being silently dropped by the RecordReadField branches below.
+        if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
+            // @splitQuery on a @sourceRow class-backed-parent field is structurally redundant: the
+            // lifter-keyed DataLoader already opens a new scope. Fire the advisory before the
+            // resolver's rejection guards so an unrelated invariant failure (bad lifter signature,
+            // wrong arity, missing parent backing class, etc.) doesn't suppress it; the developer
+            // who wrote both directives needs to see both diagnostics, not just whichever fires
+            // first.
+            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
+            String rawTypeName = baseTypeName(fieldDef);
+            String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
+            var sourceRowResult = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
+            if (sourceRowResult instanceof SourceRowDirectiveResolver.Resolved.Rejected rj) {
+                return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
+            }
+            var ok = (SourceRowDirectiveResolver.Resolved.Ok) sourceRowResult;
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, ok.tbReturnType().table(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, ok.tbReturnType().table()));
+            if (components instanceof TableFieldComponents.Rejected rj) {
+                return new UnclassifiedField(parentTypeName, name, location, rj.rejection());
+            }
+            var tfc = (TableFieldComponents.Ok) components;
+            // joinPath: empty + OnLiftedSlots for the leaf-PK lift (no @reference), the
+            // resolved FK chain for the @reference-composed lift (@reference present). Both are
+            // the KeyLift.Lifter arm; the resolver already constructs the right shape and
+            // surfaces it as ok.joinPath() / ok.lifted().
+            List<JoinStep> joinPath = ok.joinPath();
+            // class-backed-parent carriers: the surface SDL parent type has no @table binding, so a
+            // condition-join first hop has no parent table to anchor against and routes to
+            // AuthorError. The FK-derived arm produces ParentCorrelation.OnFkSlots and doesn't
+            // consult parentTable; the leaf-PK shape arrives pre-resolved as OnLiftedSlots.
+            var srPcResolution = ok.lifted() != null
+                ? new BuildContext.ParentCorrelationResolution.Resolved(ok.lifted())
+                : ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
+            if (srPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(e.message()));
+            }
+            var srParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) srPcResolution).correlation();
+            return new ChildField.BatchedTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), SourceShape.Record, ok.sourceKey(), ok.lift(),
+                ok.loaderRegistration(), tfc.lookup(), srParentCorrelation);
         }
 
         if (isScalarOrEnum(fieldDef)) {
@@ -6939,15 +6952,21 @@ class FieldBuilder {
      *
      * <p>The element type is the input, not a claim to be checked: it resolves through the catalog
      * to a real table whose primary key is a real column tuple, and the question put to the parent
-     * has a determinate answer, "can you produce a record of that table?". Two producers qualify,
-     * and they are the {@link ServiceKeySource} arms:
+     * has a determinate answer, "can you produce a record of that table?". Three producers qualify,
+     * and they are the class-backed {@link ServiceKeySource} arms:
      *
      * <ul>
      *   <li>the parent's backing <em>is</em> a record of the key owner's table
      *       ({@link ServiceKeySource.FromHeldRecord}), or</li>
      *   <li>the parent's backing class exposes exactly one zero-arg accessor returning one
-     *       ({@link ServiceKeySource.FromAccessor}).</li>
+     *       ({@link ServiceKeySource.FromAccessor}), or</li>
+     *   <li>the field declares {@code @sourceRow} naming a static method that produces one from
+     *       the parent ({@link ServiceKeySource.FromLifter}, resolved by
+     *       {@link #declaredKeyProducer}).</li>
      * </ul>
+     *
+     * <p>The declaration outranks both inferences: {@code sourceRow} being non-null decides the
+     * route on its own, and neither the held-record check nor accessor enumeration runs under it.
      *
      * <p>This is not a reduction of {@link #collectAccessorMatches}: that helper enumerates by the
      * child field's name and filters by the field's {@code @table} return, and neither anchor exists
@@ -6961,14 +6980,15 @@ class FieldBuilder {
      */
     ServiceDirectiveResolver.ParentKeyResolution resolveServiceKeySource(
             String parentTypeName, GraphitronType.ResultType parentType,
+            SourceRowDeclaration sourceRow,
             ServiceCatalog.ServiceSignature signature, ServiceCatalog.SourcesShape shape) {
         String site = "method '" + signature.methodName() + "' in class '" + signature.className() + "'";
         if (!(shape.wrap() instanceof SourceKey.Wrap.TableRecord tr)) {
             return keySourceRejection(site + " takes a Row/Record batch parameter, but type '"
                 + parentTypeName + "' is backed by a Java class rather than a table, so there is no"
                 + " projected row to read anonymous key columns off. Declare the batch key as a jOOQ"
-                + " record class instead: the element type names the table the batch keys on. A"
-                + " parent carrying only scalar key columns has no route today");
+                + " record class instead: the element type names the table the batch keys on, and"
+                + " all three producer routes apply once it does");
         }
         TableRef keyOwner = svc.resolveTableByRecordClassName(tr.className()).orElse(null);
         if (keyOwner == null) {
@@ -6982,12 +7002,6 @@ class FieldBuilder {
                 + " nothing to key the batch on. Name a record class whose table is keyed, or add a"
                 + " primary key to '" + keyOwner.tableName() + "'");
         }
-        if (parentType instanceof GraphitronType.JooqTableRecordType jtr
-                && jtr.table() != null
-                && jtr.table().denotesSameTableAs(keyOwner)) {
-            return new ServiceDirectiveResolver.ParentKeyResolution.Available(
-                new ServiceKeySource.FromHeldRecord(keyOwner));
-        }
         String parentFqClassName = switch (parentType) {
             case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
             case GraphitronType.PojoResultType prt -> prt.fqClassName();
@@ -6995,6 +7009,19 @@ class FieldBuilder {
             // typed one that got here holds the wrong table.
             case GraphitronType.JooqRecordCarrier _ -> null;
         };
+        // The author's declaration wins totally over inference: neither the held-record route nor
+        // accessor enumeration runs below it. Inference is deliberately name-free precisely because
+        // a coincidentally-shaped accessor is feared, so an author who writes the directive is
+        // overriding the inference default rather than drifting from it.
+        if (sourceRow != null) {
+            return declaredKeyProducer(parentTypeName, sourceRow, parentType, parentFqClassName, tr, keyOwner);
+        }
+        if (parentType instanceof GraphitronType.JooqTableRecordType jtr
+                && jtr.table() != null
+                && jtr.table().denotesSameTableAs(keyOwner)) {
+            return new ServiceDirectiveResolver.ParentKeyResolution.Available(
+                new ServiceKeySource.FromHeldRecord(keyOwner));
+        }
         if (parentFqClassName == null) {
             return cannotProduceKey(parentTypeName, site, tr, keyOwner, null);
         }
@@ -7025,8 +7052,10 @@ class FieldBuilder {
                 + keyOwner.tableName() + "' record: ["
                 + singles.stream().map(java.lang.reflect.Method::getName).collect(Collectors.joining(", "))
                 + "]. " + site + " declares '" + tr.className().simpleName() + "' as its batch key, and"
-                + " which accessor produces it is ambiguous; leave exactly one, or key the batch on a"
-                + " different table");
+                + " which accessor produces it is ambiguous; leave exactly one, key the batch on a"
+                + " different table, or break the tie without editing the class by declaring"
+                + " @sourceRow(className: ..., method: ...) on the field, naming a public static"
+                + " method that takes the parent and returns '" + tr.className().simpleName() + "'");
         }
         if (singles.size() == 1) {
             return new ServiceDirectiveResolver.ParentKeyResolution.Available(
@@ -7045,7 +7074,68 @@ class FieldBuilder {
     }
 
     /**
-     * The no-producer rejection: the shape the author most often lands on, so it names both routes
+     * The author-declared key producer: the {@code @sourceRow} route on a batched child
+     * {@code @service}. The accessor route's static twin, and validated as one: the shared
+     * reflection preamble ({@link LifterMethodResolver}) answers the same questions it answers for
+     * the {@code @table} child, and only the return contract is this site's own.
+     *
+     * <p>That contract is the {@code Sources} element class itself, compared by class identity
+     * rather than by the table the class denotes. Table identity would be a proxy: the emit casts
+     * and copies by jOOQ field identity off the returned record, so a class that merely denotes the
+     * same table is not a fact any downstream compile would check. This is the only enforcer of the
+     * return type, so it carries exactly what the emit assumes. Per-position typing is the author's
+     * own javac (the record's setters are typed), and whether the producer actually populated the
+     * key columns is unenforced at build time, the same hole the accessor route has.
+     */
+    private ServiceDirectiveResolver.ParentKeyResolution declaredKeyProducer(
+            String parentTypeName, SourceRowDeclaration sourceRow,
+            GraphitronType.ResultType parentType, String parentFqClassName,
+            SourceKey.Wrap.TableRecord tr, TableRef keyOwner) {
+        String at = "@sourceRow on '" + parentTypeName + "." + sourceRow.fieldName() + "'";
+        if (parentType instanceof GraphitronType.JooqRecordCarrier) {
+            return keySourceRejection(at + " is redundant on a jOOQ-backed parent; the catalog"
+                + " record the parent already holds supplies the batch key. Remove the directive");
+        }
+        if (parentFqClassName == null) {
+            return keySourceRejection(at + " requires the record-backed parent to resolve a backing"
+                + " class; produce the parent from a @service return type, @table, or a"
+                + " parent-accessor chain");
+        }
+        if (sourceRow.className() == null) {
+            return keySourceRejection(at + " is missing 'className'");
+        }
+        if (sourceRow.methodName() == null) {
+            return keySourceRejection(at + " is missing 'method'");
+        }
+        var resolution = LifterMethodResolver.resolve(ctx.codegenLoader(), at,
+            sourceRow.className(), sourceRow.methodName(), parentFqClassName);
+        if (resolution instanceof LifterMethodResolver.Resolution.Rejected rejected) {
+            return new ServiceDirectiveResolver.ParentKeyResolution.Rejected(rejected.rejection());
+        }
+        var ok = (LifterMethodResolver.Resolution.Ok) resolution;
+        Class<?> returned = ok.method().getReturnType();
+        if (Iterable.class.isAssignableFrom(returned)) {
+            return keySourceRejection(at + ": lifter method '" + sourceRow.methodName()
+                + "' returns many records ('" + returned.getName() + "'). A child @service batches"
+                + " one key per parent (its Map<Key, Value> return is keyed that way), so a"
+                + " many-valued producer cannot supply the key; return a single '"
+                + tr.className().simpleName() + "'");
+        }
+        if (!ClassName.get(returned).equals(tr.className())) {
+            return keySourceRejection(at + ": lifter method '" + sourceRow.methodName()
+                + "' returns '" + returned.getName() + "', but the batch key is '"
+                + tr.className().canonicalName() + "' (table '" + keyOwner.tableName()
+                + "'), which the Sources element type names. Return that record class, or change"
+                + " the Sources element type to the one the producer returns");
+        }
+        return new ServiceDirectiveResolver.ParentKeyResolution.Available(
+            new ServiceKeySource.FromLifter(keyOwner, new StaticProducerRef(
+                ok.lifterClass().getCanonicalName(), sourceRow.methodName(),
+                ok.parentClass().getCanonicalName(), returned.getCanonicalName())));
+    }
+
+    /**
+     * The no-producer rejection: the shape the author most often lands on, so it names every route
      * out rather than only the one that failed. {@code backingClassName} is {@code null} when the
      * parent carries no typed backing class at all.
      */
@@ -7057,9 +7147,12 @@ class FieldBuilder {
             + (backingClassName == null
                 ? " carries no backing class that can produce one"
                 : "'s backing class '" + backingClassName + "' cannot produce one")
-            + ". Either expose a zero-arg accessor returning '" + tr.className().simpleName()
-            + "' on that class, or change the Sources element type to a record class the parent can"
-            + " produce. A parent that carries only scalar key columns has no route today");
+            + ". Either be that record, or expose a zero-arg accessor returning '"
+            + tr.className().simpleName() + "' on that class, or declare"
+            + " @sourceRow(className: ..., method: ...) on the field naming a public static method"
+            + " that takes the parent and returns '" + tr.className().simpleName()
+            + "'. The third route is the one for a class that is not yours to edit, or a parent"
+            + " that carries only scalar key columns");
     }
 
     private static ServiceDirectiveResolver.ParentKeyResolution keySourceRejection(String message) {

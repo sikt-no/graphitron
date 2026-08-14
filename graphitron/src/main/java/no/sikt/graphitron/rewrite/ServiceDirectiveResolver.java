@@ -80,8 +80,15 @@ final class ServiceDirectiveResolver {
         record Root() implements ParentContext {}
         /** Child of a {@code @table}-backed parent; the table carries the PK columns and the name. */
         record TableParent(TableRef table) implements ParentContext {}
-        /** Child of a class-backed (record / POJO) parent, carrying the parent's resolved type. */
-        record RecordParent(GraphitronType.ResultType parentType) implements ParentContext {}
+        /**
+         * Child of a class-backed (record / POJO) parent, carrying the parent's resolved type and
+         * the field's {@code @sourceRow} declaration when it carries one ({@code null} otherwise).
+         * The declaration is the author's key-producer override: it names a static method that
+         * produces the {@code Sources} element record from the parent, and where it is present the
+         * accessor inference never runs.
+         */
+        record RecordParent(GraphitronType.ResultType parentType, SourceRowDeclaration sourceRow)
+                implements ParentContext {}
     }
 
     /**
@@ -369,7 +376,8 @@ final class ServiceDirectiveResolver {
                 shape == null ? null : tableParentKey(parentTypeName, tp, signature, candidate, shape),
                 dtoParam, signature);
             case ParentContext.RecordParent rp -> childSourcesVerdict(
-                shape == null ? null : fb.resolveServiceKeySource(parentTypeName, rp.parentType(), signature, shape),
+                shape == null ? null : fb.resolveServiceKeySource(
+                    parentTypeName, rp.parentType(), rp.sourceRow(), signature, shape),
                 dtoParam, signature);
         };
     }
