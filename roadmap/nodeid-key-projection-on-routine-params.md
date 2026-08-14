@@ -182,9 +182,25 @@ columns with one `record.fromArray(values, Tables.<T>.<col1>, ...)`, through a p
 `decode<RecordType>Record` helper that returns the generated `*Record` type. So the segment does
 not need a new decode mechanism; it needs a column read off a record that is already produced.
 
-That is why the projection reuses `NodeIdDecodeRecord` rather than adding a
-`NodeIdKeyProjection` arm over `NodeIdDecodeKeys`. Four things follow, and they are the reason
-this shape wins rather than merely being available:
+So the projection builds on `NodeIdDecodeRecord` rather than adding a `NodeIdKeyProjection` over
+`NodeIdDecodeKeys`, and it builds *on top of* that decode's result while leaving the decode itself
+untouched. **`NodeIdDecodeRecord` does not change.** The projection is a new top-level
+`CallSiteExtraction` arm, `NodeIdRecordColumn(NodeIdDecodeRecord record, ColumnRef column)`,
+meaning "open this record and read this column". The carrier nesting mirrors the path nesting,
+which is the model made structural: `NodeIdDecodeRecord` is the node id opened, and
+`NodeIdRecordColumn` is that record opened again. Existing consumers of the record decode see a
+zero diff, and the emitted `decode<RecordType>Record` helper is the same method an input-bean
+member already gets, called the same way.
+
+Adding a slot to `NodeIdDecodeRecord` instead is wrong for the reason a terminal `PathExpr` arm
+was wrong: it fuses two axes on one carrier. It would also be a nullable slot that
+`InputBeanInstantiationEmitter` carries forever and never reads, a fact with no consumer at one
+site and load-bearing at another. The new arm costs a compile error in every exhaustive
+`CallSiteExtraction` switch until each names it, and that cost is the mechanism working: those
+errors are the work list, where an optional slot would have compiled silently everywhere.
+
+Four things follow from the record model, and they are why it wins rather than merely being
+available:
 
 * **No positional index, so no transposition.** A `NodeIdDecodeKeys` projection reads
   `RowN.value<i>()`, positional against `HelperRef.Decode.outputColumnShape`. A record read names
@@ -193,9 +209,10 @@ this shape wins rather than merely being available:
   execution-tier test whose stated job was catching it.
 * **Typed for free.** The generated accessor returns the column's Java type, so the type gate
   compares real types and javac backstops the whole thing in the consumer's own compile.
-* **No new `CallSiteExtraction` arm.** The axis that varies is "read the whole record, or one
-  column of it", so `NodeIdDecodeRecord` gains an optional projected `ColumnRef` and the sealed
-  hierarchy stays as it is. Every existing exhaustive switch keeps compiling.
+* **The decode is reused whole, not adapted.** The resolver
+  (`BuildContext.resolveNodeIdRecordDecode`) and the emitted helper are both taken as they are, so
+  this item's diff on the existing node-id machinery is zero and its own surface is one arm plus
+  the reads. Nothing becomes routine-flavoured on the way through.
 * **The overlap dissolves rather than needing documentation.** Binding the whole record and
   binding one of its columns are one mechanism at two depths, which is exactly what the
   openability rule predicts: `input.organisasjonId` *is* the record, `.organisasjonskode` opens
@@ -449,11 +466,13 @@ projection is a derived fact whose home is the classifier, not the capture twin.
 
 ## Implementation
 
-* `CallSiteExtraction.NodeIdDecodeRecord`: gains an optional projected `ColumnRef`. No new arm and
-  no change to the sealed permits list, so every existing exhaustive switch keeps compiling; the
-  arms that already handle the record decode gain the projected read, and the arms that reject it
-  keep rejecting for their own reasons. Its javadoc gets the second depth: the record is what a
-  node id decodes into, and the projection reads one column off it.
+* `CallSiteExtraction.NodeIdDecodeRecord`: **unchanged**, zero diff. Its javadoc may gain a
+  sentence pointing at the new arm as the further opening, but the record itself does not move.
+* `CallSiteExtraction`: new top-level arm
+  `NodeIdRecordColumn(NodeIdDecodeRecord record, ColumnRef column)` in the sealed permits list.
+  Every exhaustive switch becomes a compile error until it names the arm; that enumeration is the
+  work list. `InputBeanInstantiationEmitter` rejects it the way it already rejects `JooqRecord`
+  (not an input-bean field leaf), and the four emitters below implement it.
 * `ArgMappingSigil.Site`: `admitsNodeKeyProjection()`, the single admission predicate parse,
   diagnostics and completions all read.
 * `ArgBindingMap`: `of` admits the trailing segment when the preceding leaf is an `ID` carrying
@@ -468,7 +487,8 @@ projection is a derived fact whose home is the classifier, not the capture twin.
   `NodeType` carrying both `nodeKeyColumns` and `decodeMethod`), reject a segment that is not one
   of its key columns with a candidate list, reject a bare `@nodeId` leaf, reject a `@nodeId`
   without `typeName:` through `NodeIdLeafResolver`'s existing message owner, run the shared
-  resolved-column type gate, and mint the projected `NodeIdDecodeRecord` instead of `Direct`.
+  resolved-column type gate, and mint `NodeIdRecordColumn` wrapping the `NodeIdDecodeRecord` that
+  `resolveNodeIdRecordDecode` returns, instead of `Direct`.
 * `ServiceDirectiveResolver` / `ConditionResolver` (both sites): resolve the candidate through the
   same shared resolver and run the same type-gate predicate against their own target type (the
   reflected Java parameter, the condition-method parameter).
@@ -494,9 +514,12 @@ projection is a derived fact whose home is the classifier, not the capture twin.
   resolution is not exercised here because `of` no longer does it.
 * `RoutineMutationWritePipelineTest` (pipeline): a sakila-shaped variant of the existing nested
   `rent_film` fixture binding `pInventoryId` from `ID! @nodeId(typeName: "Inventory")` through
-  the projected key column. Assert the classified `ArgBinding` carries a projected
-  `NodeIdDecodeRecord`, and assert the emitted call site materialises the record exactly once and
-  reads the column off it. Plus the rejection cases: the bare `@nodeId` leaf, a segment naming a non-key
+  the projected key column. Assert the classified `ArgBinding` carries a `NodeIdRecordColumn`
+  wrapping an unaltered `NodeIdDecodeRecord`, and assert the emitted call site materialises the
+  record exactly once and reads the column off it. The wrapping is worth asserting structurally,
+  not just the emitted string: it is what keeps the decode carrier reusable rather than
+  routine-flavoured.
+  Plus the rejection cases: the bare `@nodeId` leaf, a segment naming a non-key
   column, a `@nodeId` without `typeName:`, and a projected column whose Java type does not match
   the parameter's.
 * Each rejection also wants a **validate-time** test that the build fails, not only that
