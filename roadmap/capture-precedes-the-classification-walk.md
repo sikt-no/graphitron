@@ -61,6 +61,10 @@ LSP/MCP completion catalog), `TypeFetcherGenerator` (37), `TypeUnitCommands` (29
 `LauncherCommands` (10). Draining those directly *is*
 `roadmap/coordinate-lowers-to-datafetcher-queryparts.md`, and it is the slow path by construction.
 
+The counts are a snapshot, and the largest entry is already moving: every one of `CatalogBuilder`'s
+76 sites is inside `projectFieldClassifications`, which `roadmap/lsp-reads-the-fact-store.md` retires
+at its cutover. Read the table as the order of magnitude rather than the balance on any given day.
+
 The shim is worth doing because it inverts the burden of proof. Today the store has two producers
 for the same facts, so every relation must be held equal to the walk forever; that is what
 `FactCaptureAgreementTest` and the shadow tests exist to do, and the obligation grows with every
@@ -138,6 +142,12 @@ takes the work to run against the captured store and keeps ownership, preserving
 javadoc already states ("the store handle never escapes"). The alternative, opening twice, would put
 the branch decision at two sites and is how the two arms come to disagree about which store the run
 landed in.
+
+What the callback receives is `StoreHandle`, not a bare `DSLContext`. It already exists in
+`graphitron-model` for exactly this reason, and its javadoc already states the ownership split this
+deliverable needs: the handle owns nothing, the `DSLContext` belongs to whoever opened the store, and
+closing it is that owner's business. Do not mint a second handle shape here; one type for every
+consumer is that record's stated rule.
 
 Also hoist the LSP path's external references. On `buildOutput()` capture's `extensions` argument
 comes from `CatalogBuilder.build(jooq, bundle.assembled(), ctx)`, where the build paths use the
@@ -260,6 +270,19 @@ test that says so directly, so the reason is legible rather than merely emergent
 * `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` owns the drain. This item removes a
   constraint on the order that drain can proceed in, so it is infrastructure for the drain rather
   than a slice of it.
+* `roadmap/lsp-reads-the-fact-store.md` is In Progress at a higher priority and shares more ground
+  with this item than any other, mostly favourably. It has already landed what deliverable 1 stands
+  on: two-stage capture, assembly running unconditionally so its verdict is a fact whether or not the
+  pass has a use for the schema, and the `graphql_syntax_error` / `graphql_schema_error` arms. That is
+  what `assembleAndCaptureVerdicts` already is, and it is why the assembled schema is available ahead
+  of the builder rather than produced by it. It also owns `StoreHandle`, which deliverable 1 adopts
+  rather than duplicates. Its landed commits are confined to `graphitron-lsp` and touch none of this
+  item's files. Two things to keep an eye on rather than resolve here: its remaining scope moves
+  assembly's failure so it writes rows instead of propagating out of `buildOutput`, which is the same
+  method deliverable 1 restructures, so the later of the two rebases onto the earlier; and both items
+  change what the agreement suite means, this one when `DemandShadowTest` loses its second side and
+  that one when the LSP starts reading relations `FactCaptureAgreementTest` currently shadows. Neither
+  is a design conflict, but a reviewer should know the two are converging on the same tests.
 * `roadmap/delivery-verdict-derives-from-the-store.md` scopes itself around today's ordering: it
   takes the planning-stage consumers, which sit after capture, and declares the classifier's own
   mint decision out of reach. That boundary is a consequence of this item, not a property of
