@@ -237,6 +237,17 @@ class LauncherCommandsPipelineTest {
             .findFirst().orElseThrow();
         assertThat(filmBranch.participant().crossTableFields()).hasSize(1);
         assertThat(filmBranch.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.FilmContent");
+        // The cross-table field is lowered here, not in the render shell: one capped correlated
+        // subselect over the hop, carrying the fixed alias the per-field fetcher reads back and
+        // the branch's discriminator gate that makes a row of another type project NULL.
+        assertThat(filmBranch.crossTableTerms()).hasSize(1);
+        var crossTable = filmBranch.crossTableTerms().get(0);
+        assertThat(crossTable.fieldName()).isEqualTo("rating");
+        assertThat(crossTable.term().asName()).isEqualTo("FilmContent_rating");
+        assertThat(crossTable.term().path()).hasSize(1);
+        assertThat(crossTable.term().terminal().sqlName()).isEqualToIgnoringCase("rating");
+        assertThat(crossTable.term().gate().column()).isEqualToIgnoringCase("content_type");
+        assertThat(crossTable.term().gate().value()).isEqualTo("FILM");
         // The WHERE handshake and the invocation/result axes work exactly as the plain root's:
         // glue copied off the condition relation, direct invocation, ordered list shape.
         var conditionRow = conditions.rows().get(0);
