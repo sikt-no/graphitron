@@ -16,13 +16,17 @@ import java.util.List;
  * The discriminated-interface re-projection assembly: the shared body of every query over a
  * single-table discriminated interface (the root launcher, the child twin, the service
  * single-table-interface fetcher, the two DML discriminated follow-ups), total over the
- * {@link LaunchSource.DiscriminatedTable} arm's data. Emits, in order: the discriminator
- * {@code IN} restriction ANDed into the caller's {@code condition} local; the
- * {@code LinkedHashSet<Field<?>> fields} projection (the {@link ReservedAliases#DISCRIMINATOR}
- * routing alias first, each single-table branch's {@code $project}, the arm's base slice, plus
- * {@code alwaysProject}); the cross-table subselect terms and the joined-detail alias
- * declarations; the {@code SelectJoinStep<Record> step} declaration; and the
- * discriminator-gated joined-detail {@code LEFT JOIN} chain. The caller finishes the chain
+ * {@link LaunchSource.DiscriminatedTable} arm's data. It splits on the fact boundary:
+ * {@link #projection} emits what the query selects (the discriminator {@code IN} restriction
+ * ANDed into the caller's {@code condition} local, then the {@link #FIELDS_LOCAL} set: the
+ * {@link ReservedAliases#DISCRIMINATOR} routing alias first, each single-table branch's
+ * {@code $project}, the arm's base slice, {@code alwaysProject}, the cross-table subselects and
+ * the joined-detail alias declarations), and {@link #joinedStep} emits what it selects from (the
+ * {@code SelectJoinStep<Record> step} declaration and the discriminator-gated joined-detail
+ * {@code LEFT JOIN} chain). {@link #assembly} is the two composed, which is what every caller
+ * that reads the field list only through the select expression wants; a paginating caller binds
+ * the halves itself, because its page request has to observe {@link #FIELDS_LOCAL} before the
+ * statement is composed. Either way the caller finishes the chain
  * ({@code step.where(condition)...}); this class knows nothing about the fetch cardinality.
  *
  * <p>Every join the assembly emits is proven single-valued: the joined-detail edge is the
@@ -63,8 +67,39 @@ public final class DiscriminatedTableFragments {
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName SELECTED_FIELD = ClassName.get("graphql.schema", "SelectedField");
 
-    /** The whole assembly, ending with {@code step} joined and ready for the caller's terminal. */
+    /**
+     * The name of the {@code LinkedHashSet<Field<?>>} local {@link #projection} declares and
+     * populates. It crosses the seam: {@link #assembly} composes it into the select expression,
+     * and a paginating caller reads it between the two halves (the page request takes the
+     * selection as an argument and returns the merged select list the statement must receive), so
+     * the name is minted once here rather than spelled at each site.
+     */
+    public static final String FIELDS_LOCAL = "fields";
+
+    /**
+     * The whole assembly, ending with {@code step} joined and ready for the caller's terminal:
+     * {@link #projection} composed with {@link #joinedStep} over the populated field list. A
+     * caller that must observe the field list before the statement is composed calls the two
+     * halves itself.
+     */
     public static CodeBlock assembly(LaunchSource.DiscriminatedTable source,
+            List<ColumnRef> alwaysProject, String tableLocal) {
+        return CodeBlock.builder()
+            .add(projection(source, alwaysProject, tableLocal))
+            .add(joinedStep(source, tableLocal,
+                CodeBlock.of("new $T<>($L)", ArrayList.class, FIELDS_LOCAL)))
+            .build();
+    }
+
+    /**
+     * Everything that decides <em>what the query selects</em>: the discriminator {@code IN}
+     * restriction ANDed into the caller's {@code condition}, the {@link #FIELDS_LOCAL}
+     * declaration and every term that lands in it (the routing alias, the per-branch
+     * {@code $project} calls, the base slice, the caller's {@code alwaysProject} columns, and the
+     * gated cross-table subselects). Emits no statement, so a caller may read the populated
+     * field list before deciding the statement's shape.
+     */
+    public static CodeBlock projection(LaunchSource.DiscriminatedTable source,
             List<ColumnRef> alwaysProject, String tableLocal) {
         var b = CodeBlock.builder();
         b.add(discriminatorFilter(source, tableLocal));
@@ -77,12 +112,33 @@ public final class DiscriminatedTableFragments {
         }
         b.add(crossTableProjections(source, tableLocal));
         b.add(joinedDetailAliasDeclarations(source, tableLocal));
+        return b.build();
+    }
+
+    /**
+     * Everything that decides <em>what the query selects from</em>: the
+     * {@code SelectJoinStep<Record> step} declaration over the caller's select expression, then
+     * the discriminator-gated joined-detail {@code LEFT JOIN} chain, which after the cross-table
+     * conversion is this fragment's only join chain.
+     *
+     * <p>Every join it emits is proven single-valued at build time: a joined-table participant's
+     * detail table joins on columns that <em>are</em> the detail's own primary key
+     * ({@link no.sikt.graphitron.rewrite.TypeBuilder#resolveJoinedTableParticipant} rejects
+     * anything else), so one base row is one entity. That is what lets a paginating caller put
+     * {@code .limit()} on this step: {@code .limit()} slices rows, not entities.
+     *
+     * <p>{@code selectExpression} is what {@code dsl.select(...)} receives: the field list
+     * itself for a plain fetch, or the connection helper's merged selection for a paginating one.
+     */
+    public static CodeBlock joinedStep(LaunchSource.DiscriminatedTable source, String tableLocal,
+            CodeBlock selectExpression) {
         var selectJoinStepOfRecord = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "SelectJoinStep"), RECORD);
-        b.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
-            selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        b.add(joinedDetailJoinChain(source, tableLocal));
-        return b.build();
+        return CodeBlock.builder()
+            .addStatement("$T step = dsl.select($L).from($L)",
+                selectJoinStepOfRecord, selectExpression, tableLocal)
+            .add(joinedDetailJoinChain(source, tableLocal))
+            .build();
     }
 
     /**
@@ -118,7 +174,7 @@ public final class DiscriminatedTableFragments {
             WildcardTypeName.subtypeOf(Object.class));
         var setType = ParameterizedTypeName.get(
             ClassName.get(LinkedHashSet.class), fieldType);
-        b.addStatement("$T fields = new $T<>()", setType, LinkedHashSet.class);
+        b.addStatement("$T $L = new $T<>()", setType, FIELDS_LOCAL, LinkedHashSet.class);
         b.addStatement("fields.add($T.field($L.getQualifiedName().append($T.name($S)), $T.class).as($S))",
             DSL, tableLocal, DSL, source.discriminatorColumn(), Object.class, ReservedAliases.DISCRIMINATOR);
         for (var branch : source.branches()) {
