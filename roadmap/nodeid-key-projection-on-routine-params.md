@@ -362,8 +362,10 @@ argument for a shared vocabulary is that authors meet one wording for one condit
 
 ### Emission
 
-The emitted expression is unchanged in spirit from what the record model described: decode the node
-id into the target `TableRecord` once, read the named column off it. Naming the column rather than
+The emitted expression is what the existing `@nodeId` machinery already produces one level up:
+decode the node id into the target `TableRecord` once, then read the named column off it. That is
+the same body `InputBeanInstantiationEmitter.buildRecordDecodeHelper` emits for a jOOQ-record-typed
+input-bean member, so the decode is reused rather than rebuilt. Naming the column rather than
 indexing a tuple is what makes a transposed composite-key projection unconstructable, and it comes
 free from a view whose row *is* a column name.
 
