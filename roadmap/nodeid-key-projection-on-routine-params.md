@@ -642,37 +642,38 @@ Draft of the `routine.adoc` subsection:
   separator. They still share an owner, so coordinate on edits to
   `ArgBindingMap.parseArgMapping` plus `ArgBindingMap.of`.
 
-## Scope: three items, in dependency order
+## Stages
 
-This spans base-relation capture, a view stack, detection views fused into validation, a grammar
-widening with a five-caller audit, a planning join and three emit sites. That is too much for one
-item, and the split that helps is not the one an earlier draft proposed (bare-form rejection versus
-projection), which separates two consumers of the same view stack and leaves the capture extension
-welded to both.
+One item, four stages in dependency order. The numbering is a real seam rather than bookkeeping:
+each stage's result is observable on its own (rows in the store, a view a test can query, a
+rejection the build emits, generated source), so there is something to verify between them. The
+plan tracks what is next by collapsing a shipped stage into a one-line note.
 
 1. **Capture.** `sql_table.table_type`, `sql_routine_parameter` with its call surface, and the node
-   metadata population. Registered, twinned, comment-covered, with no reader. This is R666's
-   shipped shape exactly (land the facts, change no production read) and it has value independent
-   of this item: two populations that are otherwise unreachable after the classloader closes.
-2. **Views plus the bare-form rejection.** `intent_resolved_node_key_column`, the binding-leaf
-   keying over `intent_input_occurrence_path`, the projection reduction, the detection views, the
-   typed product, the validator fusion. No grammar change, no planning join, no emit. This closes
-   the silent-base64 hole, which is the sharper half of the problem and the half worth landing even
-   if the rest slipped.
-3. **Grammar plus emit.** The `ArgBindingMap.of` widening with its five-caller audit, the planning
-   join, `RoutineCallEmitter`'s pre-statement signature change, and the `@condition` helper
-   hosting. This is where the risk actually is, and the only piece that needs the emitter-signature
-   question answered.
+   metadata population. Registered under `FactCaptureAgreementTest`, transcription twins, comment
+   coverage. Exit: the rows exist and agree with what the catalog walk read. No reader yet.
+2. **Resolution views.** `intent_resolved_node_key_column` (three tiers), the binding-leaf keying
+   over `intent_input_occurrence_path`, and the projection reduction. Exit: each view pinned
+   against hand-written expectations, every tier and every `site` arm reached by a fixture.
+3. **Rejections.** The detection views, the typed product in `AuthoredClaimConflicts`' shape, and
+   the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
+   the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that
+   closes the silent-base64 hole.
+4. **Grammar and emit.** The `ArgBindingMap.of` widening with its five-caller audit, the planning
+   join into `LaunchSource.RoutineChain`, `RoutineCallEmitter`'s pre-statement change, and the
+   `@condition` helper hosting. Exit: the projection emits and executes.
 
-(1) and (2) are both shadow-shaped and cheap to review. Splitting this way also means the
-projection never resolves at a site whose emitter is unwired without the `deferred` arm saying so,
-because (2) ships that arm covering every site and (3) shrinks it.
+**Why this lands as one item rather than three.** Stages 3 and 4 are two halves of one author-facing
+change: stage 3 rejects a spelling and stage 4 makes the replacement spelling work. Shipping 3
+alone would leave an author told to write something the generator does not yet accept, which is a
+worse state than either end. The staging exists so the work is verifiable in order, not so the
+stages ship to consumers separately.
 
-The interim state after (2) is a rejection with no fix yet available, which is a worse author
-experience than either end state. That is the real cost of the split and it is why the verdict
-stays `structural` rather than `deferred`: "bind the decoded key by naming a key column" is a
-statement about what the author must write, and it becomes constructive when (3) lands rather than
-retroactively true.
+The site-keyed `deferred` arm from stage 3 is what keeps that honest while stage 4 is in flight and
+afterwards: a projection that resolves at a site whose emitter is not wired says so, rather than
+emitting nothing or emitting the raw base64. When stage 4 lands the three `argMapping` directives,
+the arm shrinks to the sites that have an argument path but no emitter (the path-step `@condition`,
+`@tableMethod`), and it stays as the standing enforcer for whichever site is wired next.
 
 ## Open questions
 
@@ -682,7 +683,7 @@ retroactively true.
 * Whether `PathFragments.emitTableExpression` takes the pre-statement change (which propagates to
   its callers, since it returns a bare expression consumed inside alias-declaration loops) or keeps
   a per-read call as a documented site-local exception. A signature question one level up, not an
-  implementation detail, and it belongs to slice (3).
+  implementation detail, and it belongs to stage 4.
 * Whether a `@nodeId` input field that nothing consumes should warn. Today it is silently
   ignored wherever no consumer reads it, which is how the `TEXT` case above stays invisible;
   the bare-form rejection closes it at the `argMapping` sites only. A general "declared and
