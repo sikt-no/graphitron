@@ -1,7 +1,7 @@
 ---
 id: R656
 title: "@sourceRow-declared batch key for @service children on scalar-only parents"
-status: Ready
+status: In Review
 bucket: feature
 priority: 4
 theme: service
