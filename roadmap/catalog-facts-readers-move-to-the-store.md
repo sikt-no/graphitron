@@ -297,8 +297,18 @@ hand-building projection fixtures.
   first time here, so it gets a named case rather than a bullet: a multi-column foreign key (Sakila
   carries one) whose `targetColumns` come back in the referenced constraint's own order, which is
   the only thing position-matching can get wrong.
-* `ConflictedReverseEdgeTest` and `EdgeCoverageTest` follow `EdgeProducer.Context`'s new shape;
-  the coverage test's partition over the classification permits is untouched by this item.
+* `ConflictedReverseEdgeTest` follows `EdgeProducer.Context`'s new shape, and is the only test that
+  constructs one. `EdgeCoverageTest` is not: it reads `EdgeProducer`'s four permit-set constants and
+  never builds a context, so its partition over the classification permits is untouched by this item.
+* `ServerInstructionsTest` is a seventh site and needs its own answer. Its `pagedWorkspace` fixture
+  hand-builds a two-table `CatalogFacts` purely so a `limit=1` call on `catalog.tables` pages, beside
+  hand-built projections giving five other tools two entries each, and the test boots a real server
+  and asserts every tool's leading `N item(s)` line against what came back. That makes it an
+  acceptance surface for a migrating tool, and its constraint is a per-tool minimum count, which a
+  real capture does not promise. So it is not simply a move onto `StoreBackedBuild`: either the
+  captured store is chosen to carry at least two tables (the test jOOQ package does) while the five
+  hand-built projections stay, or `catalog.tables`' paging agreement moves to a store-backed case of
+  its own. Which of the two is the implementer's call; that the case exists is this item's to say.
 * A store-backed case per shared reader lands with the reader, in whichever module's fixture can
   capture (the LSP's `StoreFixture` for the readers the LSP also reads).
 
