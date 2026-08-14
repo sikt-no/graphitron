@@ -122,6 +122,8 @@ Asserting on the generated `.orderBy(...)` string is banned by
   non-lookup batched population.
 * `roadmap/routine-write-key-capture-unordered.md` (R660): the Mutation routine write path's
   unordered step 2.
+* `roadmap/list-ordering-invariant-enforcement.md` (R677): the shared enforcement question this
+  item and R659 both pushed out, now filed and nobody's rider.
 * `roadmap/multitable-interface-query-orderby-lowering.md` (R382): the root query field over a
   multitable interface or union, where the arm carries no ordering slot at all. The consumer who
   reported this coordinate reported that one first and reads the two as one bug, so fixing either
