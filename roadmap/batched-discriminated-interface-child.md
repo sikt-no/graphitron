@@ -168,9 +168,9 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   encoding (`DeliveryFact.leafDerivedOf`) and the materialized relation (`DeliveryFactRelation.mint`,
   read through `GraphitronSchema.deliveryOf`), and `DeliveryFactPinTest` requires the two to agree.
   The crosswalk side is compile-forced, its switch being total with no default, so adding the
-  batched leaf there cannot be missed; the relation side can. It is also the *only* site that can.
-  The other three places that name leaves by class identity are each census-enforced, so a leaf
-  missing from them fails the build rather than generating quietly:
+  batched leaf there cannot be missed; the relation side can. It is also the *only* site that can
+  do so *quietly*. The other three leaf-identity rosters are each census-enforced, so a leaf missing
+  from them fails the build:
   `TypeFetcherGenerator.IMPLEMENTED_LEAVES` by
   `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`,
   `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` by
@@ -181,7 +181,10 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   `LoaderRegistration`-iff-`BatchKeyField` biconditional in `ProjectionMembershipTest` is the
   reason the "delivery slot on the existing record" option above is the harder of the two: a
   nullable registration on `TableInterfaceField` puts it inside `BatchKeyField`, whose
-  `sourceKey()` contract has no absent arm.
+  `sourceKey()` contract has no absent arm. The scatter-helper emission gates in
+  `TypeFetcherGenerator` also name a leaf by class identity and are not census-enforced, but they
+  fail loudly rather than quietly (a rows method calling an unemitted helper does not compile);
+  whether they need widening at all is the scatter question under "Open for the implementer".
 
   **The edit here is a new positive arm, not a flip of the existing negative one.** Read `mint`
   before touching it: its only arms that answer `Batched` are the polymorphic fan-in (keyed on
@@ -221,6 +224,22 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   edited into, is a defect in its own right, and
   `roadmap/delivery-verdict-derives-from-the-store.md` owns it. This item is not the place to
   restructure the site; it is one of the two reasons that item exists.
+* **The author-facing directive page.** `docs/manual/reference/directives/splitQuery.adoc`'s
+  Constraints list is where an author learns what the directive does on each shape, and it already
+  carries the redundancy population this arm is joining: the class-backed-parent bullet ("redundant
+  but not rejected"), and the nesting bullet, which explicitly draws "the line between the
+  positionally inert cases on this page" between *redundant and at most warned about* and
+  *unimplemented and rejected*. This item's resolution puts the discriminated interface child on the
+  redundant side of exactly that line, so it needs a bullet there, phrased against the line the page
+  already draws. Nothing renders or gates this file. The item's whole author-visible surface change
+  is what `@splitQuery` now means on this arm, so this is the deliverable a schema author actually
+  reads, not an afterthought to the javadoc below.
+
+  Also regenerate `docs/manual/_generated/supported-schema-shapes.adoc`, which is keyed per sealed
+  leaf and so gains a row for the batched leaf. `roadmap/root-connection-over-discriminated-interface.md`
+  names this item as where that row arrives. It regenerates from the model sources
+  (`roadmap-tool leaf-coverage --mode=migration`, via `mvn verify -Pleaf-coverage`) and its drift
+  check is a manual `--verify`, not a build step, so a stale file will not fail anything.
 * The javadoc that lists the `@splitQuery`-half readers. There are three sites, not one.
   `DeliveryFacts`' *class* javadoc carries the list in prose (naming the pivot gate and the
   nesting-projection deferral) and `{@link}`s `Row#splitQuery`, which is a bare record component
@@ -241,6 +260,23 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   `Multiset` call, so the sibling's single-cardinality delivery is per-parent exactly as this arm's
   is. Neither leaf records a rationale for the boundary. If there is none, single cardinality
   batching is a strictly larger change and belongs in its own item rather than being absorbed here.
+* **Which scatter the batched leaf uses.** This one has a consequence outside the item, so settle it
+  before writing the rows method. Two machineries exist. The shared one is
+  `SplitRowsMethodEmitter`'s `scatterByIdx` / `scatterSingleByIdx` / `scatterConnectionByIdx`
+  helpers, whose emission gates in `TypeFetcherGenerator` name `ChildField.BatchedTableField` by
+  class identity (the list gate and the connection gate; the single gate reads the
+  `emitsSingleRecordPerKey` capability instead). The other is the polymorphic pair's, which inlines
+  its own scatter, renders through no launcher row, and is why `BatchedInterfaceField` overrides
+  `emitsSingleRecordPerKey()` to a stated `false`. The bullet above points at
+  `MultiTablePolymorphicEmitter` for the loader plumbing, which reads as the second;
+  `roadmap/root-connection-over-discriminated-interface.md` has already assumed the first, planning
+  its connection half around the scatter gate widening "from 'any `BatchedTableField` with a
+  Connection wrapper' to include the interface leaf". Pick one and say so. On the shared machinery
+  both class-identity gates need widening and `emitsSingleRecordPerKey()` needs a deliberate answer
+  rather than an inherited default; neither gate is census-enforced, though a rows method calling a
+  helper that was never emitted fails to compile, so this is discoverable at the compile tier rather
+  than silent. On the inlined machinery neither edit applies and that item's child half is planned
+  against the wrong seam.
 * Whether the ordering the unbatched fetcher applies (`buildOrderByCode` off `tif.orderBy()`)
   survives the loader boundary unchanged, or needs the per-key windowing the batched connection uses.
   Unpaginated batching may be able to order globally and group by key; confirm rather than assume.
@@ -286,17 +322,33 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 ## Retired vocabulary
 
 * Prose asserting that the discriminated interface child is N+1 by construction, that it registers
-  no `DataLoader`, or that its only delivery is inline. Five live sites:
-  `roadmap/root-connection-over-discriminated-interface.md`'s child section; this item's own problem
-  statement; `ClassifiedCorpus`'s polymorphic preamble comment, which calls the per-parent query "a
-  known defect" the corpus deliberately does not assert;
+  no `DataLoader`, or that its only delivery is inline. Four live sites, two of them in one file:
+  this item's own problem statement; `ClassifiedCorpus`'s polymorphic preamble comment, which calls
+  the per-parent query "a known defect" the corpus deliberately does not assert;
   `DeliveryFactRelation.singleTableBackedVerdict`'s javadoc, which names "the single-table interface
   child, whose only delivery is inline" as the discriminating fact for its `false` case; and
-  `docs/architecture/reference/code-generation-triggers.adoc`, whose polymorphic-rule section
-  parenthesises the child as "`TableInterfaceField`, inline, target shape `Table`". The middle two
-  sit in code the change touches anyway, so they are sweep targets rather than stragglers; the
-  published doc is the one a reader outside the change would hit, and it needs the cardinality fork
-  stated rather than the word deleted.
+  `docs/architecture/reference/code-generation-triggers.adoc` twice over. Its polymorphic-rule
+  section parenthesises the child as "`TableInterfaceField`, inline, target shape `Table`", and
+  thirty lines of narrative earlier the same rule's prose makes the stronger claim: "it is
+  foreign-key-correlatable from the parent, so it inlines rather than opening a new query". That
+  second one is already false today (the re-projection is its own statement, per the Problem
+  statement above), so it is a correction the change makes rather than a word it deletes. Both need
+  the cardinality fork stated. The two code sites sit in code the change touches anyway, so they are
+  sweep targets rather than stragglers; the published doc is the one a reader outside the change
+  would hit, and nothing renders or drift-guards these two passages, so only the sweep catches them.
+
+  `roadmap/root-connection-over-discriminated-interface.md` carries none of this vocabulary and is
+  not a sweep target: its child section is already written forward ("R661 gives the child arm
+  batched delivery"), and its one use of "the unbatched fetcher" stays true, since that fetcher
+  survives for single cardinality.
+* Two enumerations the seal edit invalidates, neither of them prose about delivery.
+  `docs/architecture/reference/code-generation-triggers.adoc`'s closing note calls `TableTargetField`
+  an "intermediate sealed sub-interface of `ChildField` grouping all 4 SQL-generating child field
+  variants" and lists them by name; the `permits` edit makes that five. `BatchKeyField`'s class
+  javadoc opens "Implemented by all field variants that are DataLoader-backed" and enumerates them,
+  with the biconditional named right after, so the new leaf belongs in that list. Neither is
+  guarded: the adoc section is hand-written, and the javadoc names only live symbols so the
+  reference gate stays quiet.
 * Nothing in main sources retires by name: `buildTableInterfaceFieldFetcher` survives for single
   cardinality unless the open question above moves it.
 
