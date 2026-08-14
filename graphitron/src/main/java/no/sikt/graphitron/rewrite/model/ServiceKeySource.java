@@ -45,7 +45,7 @@ public sealed interface ServiceKeySource {
 
     /**
      * What arrives at {@code env.getSource()} under this key source: a catalog-projected table row
-     * for {@link FromTableRow}, a producer-handed domain record for the other two. Read by
+     * for {@link FromTableRow}, a producer-handed domain record for the other three. Read by
      * {@link ChildField#sourceShape()} on both service leaves.
      */
     default SourceShape sourceShape() {
