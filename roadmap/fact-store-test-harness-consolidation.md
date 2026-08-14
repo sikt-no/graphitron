@@ -14,42 +14,54 @@ last-updated: 2026-08-14
 
 ## Problem
 
-Seven `@PipelineTier` test classes each hand-roll their own harness for the same thing: open a fact
+Eight `@PipelineTier` test classes each hand-roll their own harness for the same thing: open a fact
 store, capture one SDL fixture into it, run assertions against the resulting `DSLContext`. The
-helper is called `withCapturedStore` in six of them and is close to verbatim across all six:
+helper is called `withCapturedStore` in seven of them and is close to verbatim across those seven:
 
 * `derive/ColumnMatchClaimTest`, `derive/DemandShadowTest`, `derive/InputOccurrenceShadowTest`,
   `derive/ReferenceStepTargetTest`, `derive/AuthoredClaimConflictsTest`
 * `derive/FieldColumnTableTest`, which has already hit the variation problem internally and carries a
   `withCapturedStoreAndClaimDomain` sibling over a private boolean-flag core
+* `derive/ClassMemberSlotTest`, whose copy takes no SDL argument, because its fixture SDL is a
+  placeholder constant and its subject is the classpath, and which feeds capture a real
+  `ClasspathScanner` census
 * `diagnostics/DiagnosticFactsTest.withStore`, the same shape with the capture step removed
 
 Alongside them, `private static Path write(Path directory, String sdl)` (writing `fixture.graphqls`)
-is duplicated verbatim in eight test classes, and each of the seven declares its own
+is duplicated verbatim across all eight, and each of the eight declares its own
 `private static final String GRAPH = "<OwnClassName>"`.
 
 The utility these classes want **already exists**. `capture/CapturedStore` is an `AutoCloseable`
 handle offering `of(Path, String)`, `ofPipeline(Path, String)`, `registryOf`, `attributionOf` and
-`fixtureFile`, and roughly six test classes inside `capture/` use it happily. It is package-private,
+`fixtureFile`, and nine test classes inside `capture/` use it happily. It is package-private,
 so `derive/` and `diagnostics/` cannot see it at all. Each of them reinvented it independently.
 
-**But the duplication is the symptom, not the item.** The decision being re-made at eight sites is
+**But the duplication is the symptom, not the item.** The decision being re-made at nine sites is
 *which capture inputs the store under assertion is built from*, and the sites disagree without
 anything saying why. Past the 5-arg `FactCapture.capture` default (which fixes `jooq = null`,
-`extensions = List.of()`, `nodes = new NodeDeclaration(null)`), three shapes are live in the tree:
+`extensions = List.of()`, `nodes = new NodeDeclaration(null)`), four shapes are live in the tree:
 
 | Shape | Sites |
 |---|---|
 | bare | `AuthoredClaimConflictsTest.capture`, `DiagnosticFactsTest`, `CapturedStore.of` |
 | catalog, node inference off | `ColumnMatchClaimTest`, `ReferenceStepTargetTest`, `FieldColumnTableTest` |
 | catalog, node inference on | `DemandShadowTest`, `InputOccurrenceShadowTest` |
+| catalog, node inference off, real classpath census | `ClassMemberSlotTest` |
 
 That split is not cosmetic. `NodeDeclaration` changes what capture writes, and `DemandShadowTest`'s
 own sweep comment says its equality is "also the enforcer for the node-inference seed's
 over-approximation." Whether the column-match and reference-step views are node-inference-sensitive
 is currently unstated and unasserted. A consolidation that silently picks one default answers that
 question by accident; one that carries a boolean flag defers it forever. The item's job is to make
-the shape a named, closed choice, and the deduplication follows from that.
+the shape a named choice, and the deduplication follows from that.
+
+The fourth row is a different kind of axis from the first three, and saying so is part of the job.
+The `extensions` argument the 5-arg default fixes at `List.of()` is not a shape a factory should own:
+`ClassMemberSlotTest` hands capture the output of a real `ClasspathScanner.scan` filtered to its own
+three fixture classes, which is per-fixture data, as the SDL string is. So it is a caller of the
+handle rather than a fourth factory, and the axis it exercises is served by the exposed primitives
+(below) rather than by a `with(...)` arm. If a second census-carrying test ever appears, the
+gathering rule below covers minting an arm then.
 
 ## Implementation
 
@@ -68,7 +80,12 @@ duplicate `TestSchemaHelper.attribution` under a second name.
 
 Expose `registryOf` / `attributionOf` / `fixtureFile` publicly alongside the factories. The corpus
 sweeps drive `FactCapture.capture` themselves, per example, and need the primitives without a
-factory arm for every combination.
+factory arm for every combination; so does `ClassMemberSlotTest` with its census, and so does
+`DiagnosticFactsTest` with the one case that passes real `SdlVerdicts` and an explicit `warm` flag.
+That is the third layer, under the handle: a test whose axis combination no factory names writes the
+capture call itself off shared primitives instead of hand-rolling the file, the attribution and the
+store lifetime with it. Naming the primitives as a layer is what keeps the factory set from having to
+be the cross-product of catalog, nodes, registry source, extensions and verdicts.
 
 ### The governing rule: `CapturedStore` is where these utilities gather
 
@@ -84,12 +101,13 @@ out to be the same is a mechanical afternoon. Growth is expected and fine. If th
 clean it then, with the whole set in view, which is exactly the vantage point the current eight
 copies deny.
 
-So the shape set below is a starting point, not a closed taxonomy, and a later item adding a ninth
-factory is the design working rather than failing.
+So the shape set below is a starting point, not a closed taxonomy, and a later item adding a factory
+is the design working rather than failing.
 
-### Name the three shapes; do not flag them
+### Name the shapes; do not flag them
 
-Give the handle named factories, one per shape above, rather than nullable arguments or a `boolean`.
+Give the handle named factories, one per capture shape above, rather than nullable arguments or a
+`boolean`.
 Named entry points are what make the set legible enough to prune later; a growing pile of flags is
 not. Each factory carries a one-line javadoc note saying what its shape carries that its sibling
 cannot. Writing those notes is the work: if the note for the middle shape turns out to read
@@ -97,14 +115,14 @@ cannot. Writing those notes is the work: if the note for the middle shape turns 
 Resolving the `new NodeDeclaration(null)` versus `TestSchemaHelper.nodeDeclaration()` split is in
 scope and must not be preserved silently on the grounds that it is what the copies did.
 
-### Two layers: a closure convenience over a resource primitive
+### Layered: a closure convenience over a resource handle over the primitives
 
 `capture/` uses `try (var store = CapturedStore.of(tmp, FIXTURE))`; `derive/` uses
-`withCapturedStore(sdl, dsl -> {...})`. Ship both, layered, with the closure form as the one most
-tests reach for.
+`withCapturedStore(sdl, dsl -> {...})`. Ship both, layered over the exposed primitives, with the
+closure form as the one most tests reach for.
 
 The goal here is good common tools, not a single sanctioned way to open a store. The closure form is
-genuinely the nicer call site for the common case, which is most of the seven classes: hand it SDL,
+genuinely the nicer call site for the common case, which is most of the eight classes: hand it SDL,
 get a `DSLContext`, assert. It should stay, and it should be the shortest thing to type. The
 resource handle sits underneath it as the primitive, for the tests that need more than one step
 against the open store.
@@ -118,15 +136,24 @@ does `siblingGraphConflictsDoNotLeak` inline. With a primitive available, those 
 of the closure form and become ordinary calls in a `try` block, and the closure form gets to stay
 simple because it no longer has to be the only door.
 
+`diagnostics/DiagnosticFactsTest.withStore` is worth reading as the primitive layer already existing
+in the tree rather than as another copy of the closure form: it opens a store, captures nothing, and
+lets each case drive capture itself, which is how the one case carrying real `SdlVerdicts` and an
+explicit `warm` flag stays expressible without either argument reaching the shared harness.
+
 So: reach for the closure form first, drop to the handle when a test needs a second step against the
-open store. `withCapturedStoreAndClaimDomain` and the two hand-rolled re-opens are the first three
-callers of the handle. Neither layer is capped; per the rule above, a genuinely common new shape
-earns a `with(...)` arm rather than being pushed down to the handle on principle.
+open store. `withCapturedStoreAndClaimDomain`, the two hand-rolled re-opens, `DiagnosticFactsTest`
+and `ClassMemberSlotTest` are the first callers of the handle. Neither layer is capped; per the rule
+above, a genuinely common new shape earns a `with(...)` arm rather than being pushed down to the
+handle on principle.
 
 ### The graph identity is caller-supplied
 
 `CapturedStore.graph(Path)` hardcodes the graph name to the literal `"CapturedStore"`. That is the
-one thing that makes it unusable for the current consumers, and it must become a parameter.
+one thing that makes it unusable for the current consumers, and it must become a parameter. The
+literal appears twice, and both occurrences have to move together: `ofPipeline` spells it again as
+the `graphName` component of the `RewriteContext` it builds, so threading the name through
+`graph(Path)` alone would leave the pipeline arm attributing under a name its caller never asked for.
 
 The per-class `GRAPH = "<ClassName>"` value is incidental: `GraphitronModelStore.open()` mints a
 private in-memory database per call, so the constant buys no cross-class isolation. What is
@@ -155,19 +182,32 @@ because the load would still succeed against whatever text landed there last. So
 take a `(name, directory)` pair, or mint per-graph subdirectories themselves the way the sweeps
 already do by hand (`Files.createDirectories(tmp.resolve(example.id()))`).
 
+One line of the eight copies has to survive the merge: each of them calls `Files.createDirectories`
+before writing and `CapturedStore.write` does not, because every `capture/` caller hands it a
+`@TempDir` that already exists. Every incoming caller writes into a directory it named itself, so the
+shared `write` needs that line or the sweeps and the sibling-partition negatives fail on the first
+subdirectory.
+
 ### Make the registry source an explicit arm
 
-All seven derive helpers feed capture a bare `RewriteSchemaLoader.load` registry. Production capture
+All seven `derive/` helpers feed capture a bare `RewriteSchemaLoader.load` registry, as does
+`DiagnosticFactsTest` in each of its own capture calls. Production capture
 reads the attribution pipeline's pre-synthesis registry, and `CapturedStore.ofPipeline` already
 exists for that, with javadoc stating the hazard: a bare parse lets capture's macro expansion mint
 what the rewrite has already put there in the pipeline, so the store agrees with the model for the
 wrong reason.
 
-Today that choice is invisible because it is made identically seven times by accident. After
+Today that choice is invisible because it is made identically eight times by accident. After
 consolidation it is one line, and whichever arm the factory defaults to becomes the pipeline tier's
 implicit claim about which registry these views are derived from. No current derive fixture is
 federation-shaped, so nothing is broken; name it as an explicit arm now while the decision is cheap,
 rather than leaving a default nobody revisits when the first federation-shaped derive fixture lands.
+
+"Explicit arm" here means the existing naming convention carries it, not that every call site passes
+an argument: bare parse is the unmarked name (`of...`, `withCapturedStore`) and the pipeline registry
+is the marked one (`ofPipeline...`), which is already how `capture/` reads and keeps the convenience
+form the shortest thing to type. The claim is legible because the marked name is what a `grep`
+separates on, not because the unmarked call spells its choice out.
 
 ### Seeding gathers here too, and stays legible by naming
 
@@ -198,17 +238,22 @@ writes, and a DDL change adding a non-null column should break one place rather 
 
 ### Update the agreement anchors
 
-`ColumnMatchClaimTest`, `ReferenceStepTargetTest`, `FieldColumnTableTest`, `DemandShadowTest`,
-`InputOccurrenceShadowTest` and `AuthoredClaimConflictsTest` are cited by name in
-`FactCaptureAgreementTest`'s class javadoc and in `docs/architecture/explanation/fact-model.adoc` as
-the registered per-view agreement anchors. Those citations are `{@code}`, not `{@link}`, so the
-javadoc reference gate will not catch a rename or move. Any class rename in this item must update
-both surfaces by hand.
+`FactCaptureAgreementTest`'s class javadoc cites seven of the migrated classes by name as the
+registered per-view agreement anchors: `ColumnMatchClaimTest`, `ReferenceStepTargetTest`,
+`FieldColumnTableTest`, `ClassMemberSlotTest`, `DemandShadowTest`, `InputOccurrenceShadowTest` and
+`AuthoredClaimConflictsTest`, each as a fully qualified `{@code}` name.
+`docs/architecture/explanation/fact-model.adoc` cites four of them the same way
+(`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`, `DemandShadowTest`,
+`InputOccurrenceShadowTest`) plus `DiagnosticFactsTest` on the diagnostics stratum. Because the
+citations are `{@code}` and not `{@link}`, the javadoc reference gate will not catch a rename or move,
+so any class rename in this item must update both surfaces by hand.
 
 ## Tests
 
-This item changes test-support code only, so its acceptance is the existing suite: the seven
-migrated classes and the six `capture/` classes pass with their assertion content unchanged. An
+This item changes test-support code only, so its acceptance is the existing suite: the eight migrated
+classes and the nine `capture/` classes that already read `CapturedStore` pass with their assertion
+content unchanged. Those nine straddle `@UnitTier` and `@PipelineTier` today, which is the
+tier-neutral home argument above holding as an observation rather than a prediction. An
 assertion that has to change to accommodate the shared harness is the signal that an axis was
 load-bearing after all and must stay expressible, not that the assertion should be relaxed. The
 node-inference axis is the one to watch here.
@@ -223,7 +268,7 @@ grep-based ratchet would add a maintenance surface to enforce what discoverabili
 
 ## Out of scope
 
-* Changing what any of the seven classes asserts.
+* Changing what any of the eight classes asserts.
 * Reshaping `FactCapture`'s own overload set. The 5-arg overload is a reasonable public default and
   this item consumes it.
 * Pruning the factory set to some minimal basis. Per the gathering rule, arriving with more factories
