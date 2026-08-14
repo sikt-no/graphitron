@@ -1,7 +1,7 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -197,7 +197,94 @@ constant moves with it.
 
 Full reactor build green after the change (`mvn clean install -Plocal-db`, all 14 modules, exit 0).
 
+## The third In Review gate, and what it holds open
+
+The gate re-verified the delivery end to end and found the emit, the tiered coverage and the
+root-versus-child doc scoping sound. `mvn install -Plocal-db` is green (all 14 modules, exit 0).
+Two findings block, both cheap.
+
+### The `@asConnection` sentence now over-quantifies in the other direction
+
+The rewritten sentence at `docs/manual/how-to/batch-lookups.adoc:15` reads "rejected by the
+classifier (`@asConnection on @lookupKey fields is invalid`), on root and child fields alike". The
+rejection is indeed universal, but the attributed component and the quoted message are child-only.
+Measured, not reasoned about: a root field
+`filmById(film_id: [Int!]! @lookupKey, first: Int, after: String): FilmConnection @asConnection`
+classifies to `UnclassifiedField` with the reason **`@lookupKey requires a @table-annotated return
+type`**, emitted by `LookupKeyDirectiveResolver.resolveAtRoot`, which never inspects the wrapper.
+The quoted string comes from `resolveAtChild`
+(`LookupKeyDirectiveResolver.java:59`) and only a child coordinate reaches it. The validator's
+`lookup fields must not return a connection`
+(`GraphitronSchemaValidator.java:810`) is a third message again, and appears unreachable from real
+root SDL, since the classifier rejects first on the non-`@table` connection type;
+`RootLookupValidationTest`'s `CONNECTION_RETURN` cell reaches it only through a hand-built model.
+
+This is the same species the second gate blocked on, a claim quantified over both arms that
+describes one, introduced by the pass whose deliverable was to stop doing that. It is milder than
+that one: the consumer-facing advice ("don't combine them"; "use `@splitQuery` + `@asConnection`
+for a paginated child list") is correct, and the `@splitQuery` + `@asConnection` remedy is real,
+pinned by `GraphitronSchemaBuilderTest`'s `Store.customers` cell. So no consumer is pushed toward a
+wrong edit. But a reader who hits the root error and searches the manual for the quoted string
+finds nothing that matches, and the sentence names a mechanism that does not fire at the arm it
+claims.
+
+**Suggested fix.** State the rejection as universal and stop attributing one message to both arms:
+name the child message where it applies, and say that a root field is rejected earlier, on the
+`@table` invariant, because the promoted connection type is not `@table`-annotated. Keep the
+`@splitQuery` + `@asConnection` remedy as written; it verified clean.
+
+### The pass added code-string body assertions, which the ban does not permit
+
+`RootLauncherRendererTest:303-305` asserts on `render(row).code().toString()`:
+
+    .contains("selectFields.add(input.field(\"idx\").as(\"__idx__\"))")
+    .contains("return scatterLookupByIdx(flat, rows.length)")
+    .doesNotContain(".orderBy(")
+
+`development-principles.adoc:271` bans code-string assertions on generated method bodies "at every
+tier", and records the ban as review-enforced at test-review time, which is this gate. The body's
+recorded defence does not hold: `testing.adoc:75-82` calls renderer arm tests the preferred home
+for per-arm *structural* assertions, and structural assertions on a `MethodSpec` are not
+code-string matching on its rendered body. The neighbouring tier paragraphs
+(`testing.adoc:63`, `:95`) ban the practice by name, and the renderer-arm paragraph never lifts it.
+So the two documents do not actually conflict here, and there is nothing for this item to decline
+to settle.
+
+What makes the remedy cheap is that all three assertions are redundant. Each was checked against
+its sanctioned-tier twin and every one is covered:
+
+- the `__idx__` projection and the absent `ORDER BY` are pinned verbatim by
+  `RootLauncherSqlBaselineTest.lookupRoot_valuesJoinKeyedAndIdxProjectedForTheScatter`, whose
+  baseline SQL is `select … "languagebykeyinput"."idx" as "__idx__" from …` with no `ORDER BY`;
+- the scatter's behaviour is pinned by `ScatterLookupByIdxTest`, which invokes the emitted helper
+  reflectively and asserts slots, nulls, out-of-order rows and the first-wins tie-break;
+- the end-to-end contract is pinned by
+  `GraphQLQueryTest.languageByKey_repeatedAndUnorderedKeys_areNeverDeduplicatedOrReordered`
+  (`[2, 1, 2, 99, 1]` → `2, 1, 2, null, 1`).
+
+**Suggested fix.** Delete the three assertions; the `.as(...)` description that explains the scatter
+can stay on the surviving assertions. Nothing is lost. The file's other ~30 such assertions are
+pre-existing and out of scope here, filed separately as `roadmap/renderer-test-code-string-sweep.md`
+(R669). Honest limitation on this finding: this branch's history is squashed below `0bf512d`, so the
+pre-item diff of that file is not recoverable; the three assertions name mechanisms this item
+introduced, which is what places them with this item.
+
+### Two non-blocking notes
+
+- `RootLauncherRendererTest`'s test method is still named
+  `keyedLookupSource_valuesJoinInputOrderedAndTheEmptyInputShortCircuit` while asserting
+  `.doesNotContain(".orderBy(")`. This is the same stale-name species the second gate's first note
+  fixed on the SQL baseline, and its sibling was missed. Defensible as written, since the launcher
+  does still deliver input order, just not by ordering; rename if the assertions move anyway.
+- The root diagnostic for `@lookupKey` + `@asConnection` is poor on its own terms: the author gets
+  "requires a `@table`-annotated return type" pointing at a connection type they never wrote by
+  hand. Not this item's contract; filed as `roadmap/root-lookup-connection-diagnostic.md` (R670).
+
 ### Reviewed clean, for the record
+
+The record below is the *second* gate's. The third gate re-ran both checks and confirms the
+user-facing-doc and retirement-sweep lines; its code-string paragraph is superseded by the blocking
+finding above, which reads `testing.adoc` differently and finds no document conflict to decline.
 
 The user-facing-doc marker check (no roadmap vocabulary, `Phase <n>`, TODO or slug reference in the
 item's `docs/` diff). The retirement sweep, which this item skips: it declares no retired vocabulary,
