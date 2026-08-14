@@ -98,6 +98,16 @@ Per consumer read, with the reader that answers it:
   and the wire taxonomies that already exist (`EdgesTool.Selection`, `catalog.describe`'s
   `resolution` field) keep their arms and read the row count.
 
+  `CatalogTables` already carries one sealed answer, and this entry point deliberately does not
+  widen it. `CatalogTables.named` matches a spelling case-insensitively and returns `Match`, whose
+  third arm `NoCensus` separates "the census holds no table at all" from "no table spells this", so
+  that a catalog nobody has generated yet does not turn every `@table` in a schema red. That
+  distinction belongs to the LSP, and it is the reading the refusal delta below rejects for the
+  tools: absence of rows is absence of tables, so an MCP arm over `NoCensus` would report a
+  database the store cannot distinguish from an empty one. The new entry point therefore answers
+  with rows, and takes the schema qualifier `named` has no argument for. Two entry points on one
+  reader is exactly the rule this item already set for a read one consumer wants.
+
   The qualifier split, the case-insensitive match and the membership scope are the rule
   `intent_spelled_table` owns for spellings an author wrote in a directive, and the sibling item
   spent an increment moving it there so it would not acquire a third copy. This is deliberately not
@@ -149,10 +159,30 @@ the server holds today does not give that: the handle carries the session writer
 whose isolation level is whatever the writer left it at, and a wrapper on a connection a capture
 may itself be inside is a savepoint rather than a boundary. `StoreReader` is the substrate's own
 answer, setting H2's snapshot isolation at mint and stating that a second reader is a mint away, so
-the MCP server takes one (opened beside the handle in `DevMojo`, closed with it) and the catalog
+the MCP server takes one (minted in `DevMojo` beside the handle, closed at `cleanup()`) and the catalog
 tools answer inside `reader.read(...)`, which is the shape `StoreAccess.answering` gives the LSP.
 The diagnostics tools' existing reads through the writer handle are left as they are: they are one
 query each, so they have nothing to straddle, and moving them is not this item's call to make.
+
+Three things come with the server holding both. The reader is a second field beside `storeHandle`
+on a constructor chain whose forms this class names by arity in its own javadoc ("the six-arg form
+without a fact store handle"), so extending that chain and its prose is part of this change rather
+than a consequence of it. `DevMojo` mints it from `sessionStore.reader()`, the same call that
+already gives `StoreAccess` the LSP's reader, and closes it in `cleanup()` beside `lspStore`. That
+is its own lifetime rather than the handle's: a `StoreHandle` is a record over a connection the
+store owns and closes nothing, so the two are neighbours in the wiring and not in teardown. And the
+refusal gate is the
+reader rather than the handle. The two are wired together, so a server built without one is built
+without both and the distinction never shows at runtime, but the catalog tools check the thing they
+answer through, which keeps the refusal true by construction instead of by that coincidence.
+
+The full constructor's javadoc owes the split. It states today that sharing the writer's connection
+"is safe here only because this server is turn-based; a consumer answering concurrently mints a
+`StoreReader` instead", which stays exactly true of the diagnostics tools and stops being the whole
+story once the catalog tools mint one for a different reason: not concurrency, but an answer
+assembled from five queries. Turn-based is also what makes the one reader enough, its reads
+serializing on a single connection; `StoreReader` names a second reader as the remedy should that
+ever bite, and nothing here needs one.
 
 **`catalog.search`** loses its `Supplier<CatalogFacts>` and composes the corpus from the census plus
 the column census. `CatalogDescriptors.descriptor` takes the shared reader's row shape and is
