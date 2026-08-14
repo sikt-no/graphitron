@@ -1,11 +1,11 @@
 ---
 id: R682
 title: "Planners read facts, emitters read commands: close the seam on both tiers"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: []
+depends-on: [delivery-verdict-derives-from-the-store]
 created: 2026-08-14
 last-updated: 2026-08-14
 ---
@@ -18,9 +18,26 @@ emitters render commands. Each tier reads only the tier below it, so a planner n
 the facts into the walk that produced them, and an emitter never reaches past its command into the
 thing that produced it.
 
-This item owns getting there, on both tiers. It is a programme rather than a single change: the
-planner half is already specced in detail as its own item (below), and the emitter half is
-unstarted. What has not existed until now is one owner for the end state.
+This item owns getting there, on both tiers.
+
+## Problem
+
+Every store migration that has landed so far moved a *reader*. The authored-claim conflict detection
+reads the claim views, the `diagnostic` surface serves the diagnostics stratum, and the language
+server has re-sourced completion, hover and goto-definition arm by arm. All of them answer questions.
+None of them emit code.
+
+The emit half is still made entirely from the leaf model, at both of its tiers. `EmitPlan.produce`
+takes a `GraphitronSchema` and joins its facts into the six command relations the run will render,
+every one of those joins dispatching on sealed leaf variants. Below it, the un-migrated emitters
+dispatch on leaves directly rather than folding over command rows. So the store has never been the
+source of a single generated file, and the claim that it is the destination is, on the evidence of
+the emitted output, unproven.
+
+Those are one problem at two tiers, which is why one item owns them. Converting the plan without the
+emitters leaves a store-derived command relation that a leaf-reading emitter can still bypass;
+converting the emitters without the plan leaves commands that are complete rows derived from the
+walk. Neither half alone makes the sentence at the top true.
 
 ## Where the line actually falls today
 
@@ -84,6 +101,96 @@ none of them is responsible for finishing, which is how the counts sat where the
 relocation is precisely what the tertiary counter's comment says the instrument exists to make
 visible.
 
+## Why the plan is the narrow waist, and why the emitters still have to follow
+
+The plan is where conversion buys the most. Commands are complete rows: the render shell folds over
+them and hands each row to its renderer, and the fold enforces closure in both directions (a renderer
+emitting an uncommitted unit fails the run, a committed unit nobody emitted fails it too). So
+converting the plan makes every *already-migrated* renderer store-derived transitively, without
+touching a renderer.
+
+The doctrine is already written on `EmitPlan` itself: "the fact store carries what the schema means,
+the plan carries what this run emits." Today the first half of that sentence is aspirational, because
+what the plan reads to decide what this run emits is the walk's model rather than the store. The
+planner half makes the sentence true.
+
+Two further properties make the plan the right first producer. It sits after capture, so nothing
+about the pipeline's stage order has to change; and its output is pinned harder than anything else in
+the tree, because the emitted sources are compiled and executed against a real database, so a
+conversion that changes a single command row cannot pass silently.
+
+The transitive argument only reaches renderers that already consume commands, which is the render
+package and nothing else. The emitters still dispatching on leaves are not downstream of the plan at
+all, so no amount of planner conversion reaches them: they have to be migrated, one family at a time,
+onto the command rows the plan produces. That is the emitter half, and it is why "convert the plan"
+is not the whole job.
+
+## The read surface, measured
+
+The plan package is 3175 lines across six relations, and the command vocabulary it produces is a
+further 2139 lines across 31 types. Inside it there are 100 leaf dispatch sites over 53 distinct
+sealed variants, which is most of the zoo.
+
+The line counts overstate the problem, though, because the plan reaches the model through a short and
+enumerable set of accessors. Thirteen, in full:
+
+[cols="3,1,3"]
+|===
+| Accessor | Sites | What it is
+
+| `types()` / `type()`
+| 14
+| the type-grain classification verdicts
+
+| `fieldsOf()`
+| 7
+| the field-grain verdicts, per type
+
+| `operationMembersOf()`
+| 6
+| `OperationMemberRelation`, already relation-shaped
+
+| `nestingReach()`
+| 2
+| `NestingReach`
+
+| `joinedTableReprojectionOf()`
+| 2
+| `JoinedTableReprojection`
+
+| `entitiesByType()`
+| 2
+| `EntityResolution`, the federation entity fold
+
+| `deliveryOf()`
+| 2
+| `DeliveryFactRelation`, the declared dependency
+
+| `tenantScopes()` / `tenantBindingOf()`
+| 2
+| the tenancy axis
+
+| `sessionHooks()`
+| 1
+| the resolved session-hook carrier
+
+| `connectionSynthesis()`
+| 1
+| `ConnectionSynthesisRelation`, already relation-shaped
+
+| `argumentReachableInputs()`
+| 1
+| a name set
+|===
+
+Four of those are already relations in all but storage (`operationMembers`, `delivery`,
+`connectionSynthesis`, `tenantBindings`); they were built as post-walk folds precisely because a
+relation was the right shape, and moving them is transcription plus a view rather than new derivation.
+Three producers additionally reach the jOOQ catalog directly (`ConditionCommands`,
+`FetcherEdgeCommands`, `ProjectionCommands`), which the `sql_` family already covers.
+
+The hard core is the first two rows: the per-coordinate classification verdicts.
+
 ## The facts to plan against are available
 
 The planner half was previously sequenced behind the fact population it needed. That blocker has
@@ -105,48 +212,125 @@ The practical consequence: the two halves are no longer blocked on different thi
 justified keeping them apart. Both are now sequencing problems rather than modelling problems, which
 is why one item owns them.
 
-## How it decomposes
+## Scope
 
-* **Planner half.** `roadmap/emit-plan-reads-the-store.md` is the specced slice and keeps its own
-  body, dependency and review history. Its success criterion is exact: `EmitPlan.produce` takes a
-  `StoreHandle` and no `GraphitronSchema`, with the six command relations converting in dependency
-  order. Nothing here supersedes it; this item carries it as its planner half and inherits its
-  sequencing.
-* **Emitter half.** Unstarted, and the smaller surface. Families migrate one at a time: a command
-  relation minted in `plan` from the leaves, the emitters moved to `render` reading only that row,
-  the borrow dial extended, output held byte-identical. The routine-write family is already scoped
-  as a worked example (below).
-* **The closer.** Extending `PackageImportDirectionTest` over both packages once they are empty of
-  leaf readers, and deciding whether the ratchet pins retire at zero or stay as a second mechanism.
+Two success criteria, one per tier, and every deliverable is a step toward one of them:
 
-## What a Spec would have to settle
+1. `EmitPlan.produce` takes a `StoreHandle` and no `GraphitronSchema`.
+2. No emitter reads a classification leaf, and `PackageImportDirectionTest` covers the emitters'
+   package the way it already covers `render`.
 
-* **Whether the two halves interleave or serialise.** They touch different packages and could run
-  concurrently, but the emitter half's cutovers are easier to verify against a plan that is not
-  simultaneously changing its own inputs. This is the main sequencing question.
-* **Slice order within the emitter half**, which needs a per-family census before it can be argued:
-  some families already have a command relation and need only the emitter cutover, others need the
-  relation minted first.
-* **What happens to `TypeFetcherGenerator`.** At zero it has no leaf dispatch left, which is a
-  different file from the one `roadmap/decompose-typefetchergenerator.md` proposed decomposing.
-* **The end-state guard's sequencing**, so it does not land as a wall of suppressions ahead of the
-  last slice.
-* **Whether the ratchet retires at zero.** A pin at zero that can only be raised by a rule violation
-  is arguably a guard already, and keeping both would be two mechanisms for one invariant.
+### Planner half: the six relations, in dependency order
+
+Later relations reference the earlier ones' rows, so the order is forced:
+
+1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface and the
+   one every other relation references by glue row, so it goes first and establishes the shape.
+2. **Projections** (`ProjectionCommands`, 557 lines, 25 sites).
+3. **Launchers** (`LauncherCommands`, 1047 lines, 10 sites). The largest producer, and the one whose
+   rows the fetcher generator reads to decide between the launcher emission and the legacy builder.
+4. **Fetcher edges** (`FetcherEdgeCommands`, 277 lines, 23 sites).
+5. **Type units** (`TypeUnitCommands`, 188 lines, 29 sites). The highest dispatch density in the
+   package, because it is the generator families' membership loops.
+6. **Globals and the schema-level facts** (`EmitPlan` itself). `federationLink` and `usesOneOf`
+   arrive today as `Bundle` components landed by the builder; they become store reads like the rest.
+
+Each step is a complete unit: the relation's rows must be identical before and after, and the row
+identity is directly assertable.
+
+**Why per-relation increments are legitimate here.** An earlier plan for this work argued against a
+half-converted resting state, and that argument was right for the classifier: `BuildContext.schema`
+is one field, so as long as it exists every read site may use it and a partial migration is
+invisible. The plan is not shaped that way. Each producer takes its inputs as parameters and writes
+one relation, so "conditions and projections read the store, launchers do not yet" is a state the
+signatures state plainly and a reviewer can see. The all-or-nothing argument does not transfer, and
+pretending it does would make a 5000-line change land in one commit for no gain.
+
+### Emitter half: family by family
+
+The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
+emitters to `render` reading only that row, extend the borrow dial by the refs the row carries,
+delete the leaf-reading bodies. Output is held byte-identical throughout, which is what makes each
+family a verifiable unit with nothing to argue about.
+
+The families are not equal and the order needs a census before it can be fixed: some already have a
+command relation and need only the emitter cutover, others need the relation minted first. What is
+known now is that the launcher family is done, and the routine-write family is scoped as a worked
+example on another item (below).
+
+### The closer
+
+Extend `PackageImportDirectionTest` over both packages once they are empty of leaf readers, and
+decide whether the ratchet pins retire at zero or stay as a second mechanism. A pin at zero that can
+only be raised by a rule violation is arguably a guard already, and keeping both would be two
+mechanisms for one invariant.
+
+### Sequencing between the halves
+
+The open question this item's Spec has to settle. They touch different packages and could run
+concurrently, but an emitter cutover is easier to verify against a plan that is not simultaneously
+changing its own inputs. The likely answer is that the planner half leads per family rather than
+globally: a family's command relation becomes store-derived, then its emitter moves onto that row.
+That keeps both halves advancing on the same family instead of two fronts crossing.
+
+## What the store must provide
+
+Do not model a relation at the plan's convenience; that is how a store accretes consumer-shaped
+columns. Each fact lands at its own grain and every other consumer inherits it, which is the loop
+`roadmap/lsp-reads-the-fact-store.md` ran four times and wrote down as doctrine. The three
+populations are enumerated under "The facts to plan against are available" above.
+
+## Risks
+
+* **This is the largest item on the roadmap by surface.** The planner half alone is 5314 lines of
+  plan and command code, 100 dispatch sites, 53 variants; the emitter half adds the generators'
+  package on top. It is scoped as one item because it has one architecture and one end state, not
+  because it is small. Expect it to run as long as the LSP migration has, or longer.
+* **The per-coordinate verdict population is the schedule.** Everything else is plumbing. If the
+  classification views turn out to need residues the way the demand stratum did, the honest response
+  is to carry them as named residues and convert the relations whose verdicts are clean, not to widen
+  the item.
+* **Command rows are structured, not flat.** `LauncherCommand` carries nested sealed payloads
+  (`LaunchSource`, `GlueCall`, `Invocation`, `TenantStrategy`, `ResultShape`). Relationally that is a
+  row plus child relations, and choosing those grains badly is how the command vocabulary ends up
+  transcribed into SQL rather than modeled. Some of it is deliberately not store-bound: the plan
+  already refuses to hold javapoet types, and that boundary stays.
+* **The closure invariant is the safety net and must not be weakened.** A converted producer that
+  commits a row no renderer emits, or drops one a renderer needs, fails the fold. Keep that gate loud
+  during the migration rather than relaxing it per increment.
+* **The two halves can deadlock on each other if sequenced globally.** Converting all six relations
+  before any emitter moves leaves the emitters reading leaves for the whole programme; converting all
+  emitters first means minting command relations from leaves that the planner half will then re-source.
+  Per-family sequencing is the way out and the Spec has to commit to it.
+
+## Out of scope
+
+* **The classification walk itself.** It keeps producing the leaf model for its remaining consumers.
+  This item removes the plan and the emitters from that list; the validator and the LSP projection are
+  other items' work.
+* **Reordering capture ahead of the walk.** The plan runs after capture already. An earlier plan for
+  the planner half proposed the reorder plus a store-reading classifier; that was scaffolding for a
+  walk being drained from the consumer end instead, and it is dropped rather than deferred. It becomes
+  relevant again only if some axis has to migrate its walk-side mint rather than its consumers, which
+  no axis has needed yet.
 
 ## Relationship to other items
 
-* `roadmap/emit-plan-reads-the-store.md` is this item's planner half, already in Spec. Its own "out
-  of scope" section names the emitter half as a finding to file rather than to fix there, which is
-  what produced this item; the two were designed to fit together and this makes the join explicit.
-  If it lands independently, this item inherits the result and is left with the emitter half alone.
-* `roadmap/delivery-verdict-derives-from-the-store.md` is the planner half's declared dependency and
-  transitively this item's: it derives the delivery fold and names the planning-stage consumers as
-  the eligible ones.
-* `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` owns the model: the facts that replace
-  the leaves. This item is the **consumption** side and must not redesign facts. The two meet at the
-  plan tier: that item decides what a planner reads, this one decides that a planner is the only
-  thing that reads it.
+* `roadmap/delivery-verdict-derives-from-the-store.md` is the declared dependency. It derives one
+  verdict and deliberately stops short of flipping consumers, naming the planning-stage consumers as
+  the eligible ones. Those consumers are this item. It is also the worked example the per-coordinate
+  verdicts follow, so it lands first for the pattern as much as for the view.
+* `roadmap/lsp-reads-the-fact-store.md` is the shape to copy: one item, many increments, each arm
+  landing on its own commit with what it settled written down. It also owns `StoreHandle`, which the
+  planner half's producers take. Not a declared dependency: the earlier edge existed because both
+  restructured `buildOutput`, and this item no longer touches the pipeline order. Its cutover still
+  matters as intelligence, being the first store-side projection of classification in the tree.
+* `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` owns the drain: the facts that replace
+  the leaves, and the method graph the emit lowers onto. This item is a slice of it, the slice whose
+  consumers emit code, and it is independently schedulable while carrying its own `depends-on` edge.
+  It is the **consumption** side and must not redesign facts. The two meet at the plan tier: that
+  item decides what a planner reads, this one decides that a planner is the only thing that reads
+  it.
 * The `facts-and-commands` programme (Done, see `roadmap/changelog.md`) built the
   `command` / `plan` / `render` triangle, `EmitPlan`, the command relations and these ratchets. This
   item is that programme's completion condition, not a re-run of it. Its slice logs are the
@@ -159,5 +343,55 @@ is why one item owns them.
 * `roadmap/decompose-typefetchergenerator.md` asks how to break up `TypeFetcherGenerator` and offers
   decomposing along the field taxonomy as its leading option. That option is superseded: the file
   does not get decomposed along the leaves, it empties into `render` as the families migrate. It
-  should be re-scoped or discarded when this item reaches Spec, and should not be picked up
+  should be re-scoped or discarded when this item reaches Ready, and should not be picked up
   independently in the meantime.
+
+## Retired vocabulary
+
+Provisional; the Done-gate sweep greps for these, and the list grows as increments land.
+
+* `EmitPlan.produce`'s `GraphitronSchema` parameter, and the `Bundle` components it threads
+  (`federationLink`, `usesOneOf`).
+* Whichever post-walk folds lose their last reader as their relation moves store-side:
+  `OperationMemberRelation`, `ConnectionSynthesisRelation`, `TenantBindingIndex`,
+  `DeliveryFactRelation`, `NestingReach`, `JoinedTableReprojection`. Each retires only when the plan
+  was its last consumer; name them individually as they go rather than as a block.
+* `TypeFetcherGenerator.IMPLEMENTED_LEAVES` and the leaf-keyed coverage vocabulary around it, once
+  membership is a command relation's rows rather than a set of leaf classes.
+* The `CommandSeamRatchetTest` pins themselves, if the Spec rules that a zeroed pin is a guard and
+  the two mechanisms collapse into one.
+
+## Coverage
+
+* **Row identity, per increment.** Each converted relation's rows must equal the leaf-derived rows on
+  the whole classified corpus. Assert it directly rather than inferring it from a green build; this is
+  the shadow-agreement discipline the demand and column-match sweeps set, applied per relation.
+* **Output identity, per emitter family.** The emitter half changes no generated source, so the
+  assertion is that it changes none: the family's existing pipeline-tier expectations hold verbatim
+  across the cutover.
+* **The compile and execution tiers are the real gate.** `graphitron-sakila-example` compiles the
+  emitted sources and runs them against PostgreSQL, so a command row that changed shows up as
+  behaviour, not just as a diff. `GeneratorDeterminismTest` and `IdempotentWriterTest` cover ordering.
+* **The fold's closure invariant** stays as-is and is the per-increment backstop.
+* **The registered agreement anchor** for every new relation, through `FactCaptureAgreementTest`'s
+  mechanical driver, which has no skip list, so a relation added for this item cannot arrive
+  unchecked.
+* **The ratchet pins** move down in the same commit as the work that lowers them, never raised on the
+  generators side, and the plan-side pin falls rather than rises once the producers re-source.
+
+## Provenance
+
+The planner half was filed separately and specified three times before landing here. The first plan
+took a pipeline reorder plus a store-reading classification walk; the second kept that target after an
+owner correction sharpened it. Both were dropped when the owner observed that the drain is working
+from the consumer end: the LSP migration has moved nearly all of its surface, the MCP is close, and a
+store-reading classifier is scaffolding for a walk that is being demolished. The reorder had no
+consumer without the classifier work behind it, so the item was repointed onto the gap that survey
+exposed: no slice had yet moved working generation code onto the store.
+
+The emitter half was filed after a spec review found a feature item routing a fact into
+`LaunchSource.RoutineChain`, a carrier its own motivating case never reaches, because the emitter it
+actually needed reads a leaf directly and nothing forbids that. The two halves were briefly separate
+items on the reasoning that the planner half was blocked on facts that did not exist yet; measuring
+the DDL showed the expensive population had landed and only four relation-shaped folds were missing,
+so they merged at the owner's direction, the planner half's body absorbed whole rather than restated.

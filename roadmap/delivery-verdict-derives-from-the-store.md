@@ -75,7 +75,7 @@ is the complement, the absence of any arm, rather than an enumerated set of shap
 remember to keep current. The exceptions are the two populations below, and they are why the
 exemption relation exists rather than being a file-layout choice copied from the sibling.
 
-Two shape decisions, both settled here because they land in R667's read surface rather than only in
+Two shape decisions, both settled here because they land in R682's read surface rather than only in
 the shadow test. The names carry one noun across the stratum, `delivery`, the way the sibling's carry
 `demand`: three relations a reader meets in `SHOW VIEWS` should be recognisable as one stratum, and
 an earlier draft's `batching_rule` broke that for a word the `rule` column already says better.
@@ -347,7 +347,7 @@ runs), then `captureFactsAndDetect` (where the store is filled), then `validateA
   empty. That read is leaf-zoo business and dissolves with the leaf zoo under
   `roadmap/coordinate-lowers-to-datafetcher-queryparts.md`, not here. This is a fact about today's
   stage order rather than about delivery, but as of 2026-08-14 no open item proposes changing it: the
-  item that specified the reorder was repointed onto the emit plan (R667, below) when its owner found
+  item that specified the reorder was repointed onto the emit plan (R682, below) when its owner found
   the reorder had no consumer, and that item now states it does not touch the pipeline order. So the
   ordering constraint is load-bearing for this item's scope, not a temporary accident to route
   around; re-check it at pickup rather than assuming either way.
@@ -475,7 +475,7 @@ set acquiring an enforcer that is not another switch.**
 ## The exit criterion, and the successor
 
 The successor slice flips `ProjectionCommands` and `LauncherCommands` onto
-`intent_resolved_field_delivery`. It is filed: `roadmap/emit-plan-reads-the-store.md` (R667, Spec)
+`intent_resolved_field_delivery`. It is filed: `roadmap/planners-read-facts-emitters-read-commands.md` (R682, Spec)
 declares this item as its dependency, and its measured read surface counts `deliveryOf()` as one of
 the accessors it converts, at two call sites, which are exactly the two consumers named above (a
 whole-tree check confirms there is no third production reader). So the successor is not a slice to write later but a plan
@@ -517,15 +517,15 @@ has left the question exactly where it was and reproduced the defect in a new pl
   the axis where the two-site duplication has already produced a live defect. It should ride R333's
   vocabulary rather than invent its own. On whether that makes it a slice or a dependent, the
   question the earlier draft left to R333's author now has a precedent to follow rather than needing
-  a ruling: R667 states plainly that R333 "owns the drain" and that it is a slice of it, while
+  a ruling: R682 states plainly that R333 "owns the drain" and that it is a slice of it, while
   carrying its own `depends-on` edge. Read this item the same way, a slice of R333 that is
   independently schedulable, unless R333's author says otherwise.
-* `roadmap/emit-plan-reads-the-store.md` (R667, Spec) is the successor named above and the one item
+* `roadmap/planners-read-facts-emitters-read-commands.md` (R682, Spec) is the successor named above and the one item
   that declares a dependency on this one. It converts the whole emit plan onto the store, and the
   two delivery consumers this item leaves in place are inside its scope. Two consequences for
-  whoever implements this item. The view's column names and rule vocabulary become R667's read
+  whoever implements this item. The view's column names and rule vocabulary become R682's read
   surface, so pick them for a consumer rather than only for the shadow test. And the exit criterion
-  above is checkable against a real population now, because R667's measured read surface says
+  above is checkable against a real population now, because R682's measured read surface says
   exactly which coordinates `deliveryOf()` is asked about.
 * `roadmap/batched-discriminated-interface-child.md` (R661, Spec) must not wait for this, and there
   is deliberately no dependency in either direction: an N+1 defect should not block on a structural
@@ -570,7 +570,7 @@ One question is genuinely open, and it is narrower than the two the earlier draf
   `@tenantFanOut` arm having no coordinate anywhere, so a split ships a literal nothing reaches.
   Three observations for whoever decides. The vacuity is an argument for the fixture rather than
   against the split, since the arm is equally unwitnessed under one literal and merely less visibly
-  so. The decision is cheap now and expensive later: the rule vocabulary becomes R667's read
+  so. The decision is cheap now and expensive later: the rule vocabulary becomes R682's read
   surface once that item lands, so splitting a literal afterwards is a consumer change rather than a
   DDL change. That asymmetry, not the arm count, is the thing to weigh. And the split is what makes
   the precedence between the two readings a stated fact instead of an accident of `UNION` dedup: one
