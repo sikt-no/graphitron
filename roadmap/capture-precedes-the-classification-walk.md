@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: []
+depends-on: [lsp-reads-the-fact-store]
 created: 2026-08-14
 last-updated: 2026-08-14
 ---
@@ -270,19 +270,24 @@ test that says so directly, so the reason is legible rather than merely emergent
 * `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` owns the drain. This item removes a
   constraint on the order that drain can proceed in, so it is infrastructure for the drain rather
   than a slice of it.
-* `roadmap/lsp-reads-the-fact-store.md` is In Progress at a higher priority and shares more ground
-  with this item than any other, mostly favourably. It has already landed what deliverable 1 stands
-  on: two-stage capture, assembly running unconditionally so its verdict is a fact whether or not the
-  pass has a use for the schema, and the `graphql_syntax_error` / `graphql_schema_error` arms. That is
-  what `assembleAndCaptureVerdicts` already is, and it is why the assembled schema is available ahead
-  of the builder rather than produced by it. It also owns `StoreHandle`, which deliverable 1 adopts
-  rather than duplicates. Its landed commits are confined to `graphitron-lsp` and touch none of this
-  item's files. Two things to keep an eye on rather than resolve here: its remaining scope moves
-  assembly's failure so it writes rows instead of propagating out of `buildOutput`, which is the same
-  method deliverable 1 restructures, so the later of the two rebases onto the earlier; and both items
-  change what the agreement suite means, this one when `DemandShadowTest` loses its second side and
-  that one when the LSP starts reading relations `FactCaptureAgreementTest` currently shadows. Neither
-  is a design conflict, but a reviewer should know the two are converging on the same tests.
+* `roadmap/lsp-reads-the-fact-store.md` is this item's declared dependency, and the edge means
+  sequencing rather than capability. Everything this item *needs* from it has already landed:
+  two-stage capture, assembly running unconditionally so its verdict is a fact whether or not the
+  pass has a use for the schema, the `graphql_syntax_error` / `graphql_schema_error` arms, and
+  `StoreHandle`. That is what `assembleAndCaptureVerdicts` already is, and it is why the assembled
+  schema is available ahead of the builder rather than produced by it. What is still in flight is
+  what would collide. Its remaining scope moves assembly's failure so it writes rows instead of
+  propagating out of `buildOutput`, the same method deliverable 1 restructures, and two sessions
+  restructuring one method concurrently is a rebase nobody needs when the ordering is not in dispute:
+  that item is In Progress at a higher priority and this one is not started. Its cutover also retires
+  `CatalogBuilder`'s projection pass, which is the largest single block of leaf-model dispatch in the
+  tree, so waiting means deliverable 4 lands against a smaller surface.
+
+  Read the edge that way rather than as a block. If that item stalls, this one is not waiting on a
+  capability and the dependency can be dropped on a reviewer's call. One thing to carry into both
+  Done gates regardless of order: each item changes what the agreement suite means, this one when
+  `DemandShadowTest` loses its second side, that one when the LSP starts reading relations
+  `FactCaptureAgreementTest` currently shadows.
 * `roadmap/delivery-verdict-derives-from-the-store.md` scopes itself around today's ordering: it
   takes the planning-stage consumers, which sit after capture, and declares the classifier's own
   mint decision out of reach. That boundary is a consequence of this item, not a property of
