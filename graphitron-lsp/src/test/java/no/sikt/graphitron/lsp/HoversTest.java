@@ -3,11 +3,8 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
-import no.sikt.graphitron.rewrite.catalog.InputValueShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
-import no.sikt.graphitron.rewrite.catalog.TypeShape;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupKind;
 import org.junit.jupiter.api.AfterAll;
@@ -24,20 +21,33 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Per-directive hover content. Cursor inside a known argument value
- * surfaces catalog metadata as Markdown; positions on directive names
- * or unknown arg values produce no hover so the editor falls through.
+ * Per-directive hover content. Cursor inside a known argument value surfaces catalog metadata as
+ * Markdown; a name token or a value nothing resolves falls back to the captured SDL's docstring for
+ * the coordinate, and a coordinate nothing describes produces no hover at all.
  */
 class HoversTest {
 
     /** The class the Java-side arms hover on, present in the census and declared in a source file. */
     private static final String SERVICE = "com.example.FilmService";
 
-    /** The graph's own SDL: a {@code @node} type, which is the one arm whose subject is the graph. */
+    /**
+     * The graph's own SDL: a {@code @node} type, which is the one binding arm whose subject is the
+     * graph, and a directive of the author's own, whose docstrings the same relations hold that
+     * graphitron's bundled ones land in.
+     */
     private static final String SDL = """
+        "Restricts access to callers who hold the named role; guards access at the field level."
+        directive @auth(
+            "The required role name."
+            role: String!
+        ) on FIELD_DEFINITION
+
         type Query { placeholder: Int }
         type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
         """;
+
+    /** A second graph of the same store, for the arms whose subject is that a census is per-graph. */
+    private static final String OTHER_GRAPH = "elsewhere";
 
     @TempDir
     static Path tmp;
@@ -61,6 +71,9 @@ class HoversTest {
                 StoreFixture.method("page", "Object",
                     StoreFixture.parameter("film", "Object"), StoreFixture.parameter("limit", "int")))),
             StoreFixture.jarClass("com.example.FooDto", List.of())));
+        // A second graph over a schema of its own: it captured the same bundled directive
+        // definitions and none of this graph's classes, which is what a sibling module looks like.
+        store.andGraph(tmp, OTHER_GRAPH, "type Query { placeholder: Int }\n", List.of());
         store.withJavaSource(tmp.resolve("src"), SERVICE, """
             /** Lists films from the catalog. */
             public class FilmService {
@@ -183,6 +196,28 @@ class HoversTest {
             .contains("**Column** `title` on `film`");
     }
 
+    /**
+     * Stale-prefers-over-silence, at the one arm that still reads the snapshot: an old classification
+     * beats nothing while the author is mid-edit, so a {@code Built.Previous} snapshot resolves the
+     * enclosing type's table exactly as a current one does. The directive-docstring arms used to carry
+     * this case and no longer read the snapshot at all.
+     */
+    @Test
+    void columnHoverUnderAPreviousSnapshotStillAnswers() {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "title")
+            }
+            """);
+        var pos = pointAt(file, 1, "title");
+        var stale = new LspSchemaSnapshot.Built.Previous(
+            List.of(),
+            java.util.Map.of("Foo", new TypeBackingShape.TableBacking("film")),
+            Map.of());
+
+        assertThat(markdownAt(file, stale, pos)).contains("**Column** `title` on `film`");
+    }
+
     @Test
     void fieldHoverOnRecordBackingShowsComponentMetadata() {
         // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
@@ -286,25 +321,23 @@ class HoversTest {
         assertThat(markdownAt(file, pos)).contains("**Table** `language`");
     }
 
+    /**
+     * The docstring arms read the store like every other arm, which costs the one thing the bundled
+     * registry gave for free: a session that has captured nothing has no docstring to render either.
+     * The bundled definitions are rows, and that is the item's own rule rather than a regression to
+     * work around inside the arm.
+     */
     @Test
-    void cursorOnBundledDirectiveNameSurfacesDocstring() {
-        // Cursor on a bundled directive's name token (the
-        // @table identifier itself, not its arguments) surfaces the
-        // directive's SDL docstring. The bundled SDL ships descriptions
-        // on every directive, so the hover now lights up free for all
-        // seventeen built-in directives.
+    void aDocstringArmAnswersNothingWithoutAStore() {
         var file = file("""
             type Foo @table(name: "film") {
                 bar: Int
             }
             """);
-        int line = 0;
-        int col = "type Foo @t".length();
-        var pos = new Point(line, col);
+        var pos = new Point(0, "type Foo @t".length());
 
-        // The docstring arms read the bundled SDL, so they answer with no store behind them.
-        var hover = hoverWithoutStore(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue()).isNotBlank();
+        assertThat(hoverWithoutStore(file, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(markdownAt(file, pos)).isNotBlank();
     }
 
     @Test
@@ -352,9 +385,9 @@ class HoversTest {
 
     @Test
     void aClassNoGraphOfThisSessionsHasWalkedHoversAsUnknown() {
-        // The census is a graph's own. A second graph in the same store carries the class; hovering
-        // through this one falls through to the SDL docstring, the same answer an author gets before
-        // anything has been compiled.
+        // The census is a graph's own. This graph captured the same bundled directives and none of
+        // the other's classes, so the class arm declines and the coordinate's docstring answers: an
+        // FQN a sibling module compiled is as unknown here as one nothing compiled at all.
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})
@@ -362,7 +395,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "FilmService");
 
-        var md = Hovers.compute(file, Optional.of(store.handleFor("elsewhere")),
+        var md = Hovers.compute(file, Optional.of(store.handleFor(OTHER_GRAPH)),
             LspSchemaSnapshot.unavailable(), pos).orElseThrow()
             .getContents().getRight().getValue();
         assertThat(md).doesNotContain("**Class**");
@@ -491,120 +524,94 @@ class HoversTest {
         assertThat(markdownAt(file, pointAt(file, 1, "missing"))).isNotBlank();
     }
 
-    // ---- user-declared directives via the snapshot. ----
+    // ---- directives an author declared: the same relations, read the same way. ----
 
+    /**
+     * Cursor on the {@code @auth} identifier itself. Nothing about this arm knows the directive is
+     * the author's rather than graphitron's: capture wrote both definitions into
+     * {@code graphql_directive}, and the incumbent's bundled-versus-user fork had nothing left to
+     * decide once the projection stopped being the user side's only home.
+     */
     @Test
-    void userDeclaredDirectiveNameHover_returnsSnapshotDescription() {
-        // Cursor on the @auth identifier itself. The bundled overlay has no
-        // @auth, so resolution falls through to the snapshot's directive
-        // shape and the directive's description renders as the hover body.
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of());
+    void aDirectiveAnAuthorDeclaredHoversOnItsOwnDocstring() {
         var file = file("""
             type Query {
                 customers: [String!]! @auth(role: "admin")
             }
             """);
-        int line = 1;
-        int col = lineSource(file, line).indexOf("@auth") + 2;
-        var pos = new Point(line, col);
+        var pos = new Point(1, lineSource(file, 1).indexOf("@auth") + 2);
 
-        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue())
-            .contains("guards access");
+        assertThat(markdownAt(file, pos)).contains("guards access");
     }
 
     @Test
-    void userDeclaredDirectiveArgHover_returnsSnapshotArgDescription() {
-        // Cursor on the `role:` arg-name token of a user-declared directive.
-        // Bundled has no coordinate for @auth's role; falls through to the
-        // user snapshot's InputValueShape description.
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of());
+    void anArgumentOfADirectiveAnAuthorDeclaredHoversOnItsOwnDocstring() {
         var file = file("""
             type Query {
                 customers: [String!]! @auth(role: "admin")
             }
             """);
-        int line = 1;
-        int col = lineSource(file, line).indexOf("role:") + 1;
-        var pos = new Point(line, col);
+        var pos = new Point(1, lineSource(file, 1).indexOf("role:") + 1);
 
-        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue())
-            .contains("required role name");
+        assertThat(markdownAt(file, pos)).contains("required role name");
     }
 
+    /**
+     * A bundled directive's argument name answers too, which the incumbent declined: its arg-name arm
+     * was gated on the user-shaped projection, so hovering {@code typeName:} said nothing while
+     * hovering the value beside it resolved the node. One relation describes both, so there is no gate
+     * left to state, and the two positions now give the two different answers they should.
+     */
     @Test
-    void userDirectiveHoverUnderUnavailableSnapshot_returnsEmpty() {
-        // Pre-build state. No snapshot to consult, so the user directive
-        // name resolves to Unknown and the hover surface is empty.
+    void anArgumentOfABundledDirectiveHoversOnItsDocstringToo() {
         var file = file("""
             type Query {
-                customers: [String!]! @auth(role: "admin")
+                x(id: ID @nodeId(typeName: "Film")): Int
             }
             """);
-        int line = 1;
-        int col = lineSource(file, line).indexOf("@auth") + 2;
-        var pos = new Point(line, col);
+        var pos = new Point(1, lineSource(file, 1).indexOf("typeName:") + 1);
 
-        assertThat(hoverWithoutStore(file, LspSchemaSnapshot.unavailable(), pos))
-            .isEmpty();
+        assertThat(markdownAt(file, pos))
+            .contains("Name of the type the ID belongs to")
+            .doesNotContain("**Node**");
     }
 
+    /** A directive no capture read has no row, and absence is the answer. */
     @Test
-    void userDirectiveHoverUnderPreviousSnapshot_stillReturnsContent() {
-        // Stale-prefers-over-silence: hovers fire even on Built.Previous,
-        // since an old description beats nothing while the user is mid-edit.
-        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of(), Map.of());
+    void aDirectiveNoCaptureReadHoversAsNothing() {
         var file = file("""
             type Query {
-                customers: [String!]! @auth(role: "admin")
+                customers: [String!]! @ghost(role: "admin")
             }
             """);
-        int line = 1;
-        int col = lineSource(file, line).indexOf("@auth") + 2;
-        var pos = new Point(line, col);
+        var pos = new Point(1, lineSource(file, 1).indexOf("@ghost") + 2);
 
-        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
-        assertThat(hover.getContents().getRight().getValue())
-            .contains("guards access");
+        assertThat(hoverAt(file, pos)).isEmpty();
     }
 
+    /**
+     * An argument name no definition declares hovers as nothing. The incumbent reached the same
+     * answer by a precedence rule, refusing to let a snapshot's shadow {@code @table} describe an
+     * argument the bundled definition has none of; the store has no shadow to prefer against, since a
+     * redeclaration of a bundled directive loses at registry admission before capture sees it.
+     */
     @Test
-    void bundledDirectiveArgHover_ignoresSnapshotShadow() {
-        // Settled design: bundled shadows snapshot. Cursor on
-        // an arg-name that lives only in the snapshot's shadow @table
-        // (not in the bundled @table) must NOT surface the shadow's arg
-        // description — doing so would make the LSP appear to "know" an
-        // arg that the build pipeline will reject. Hover stays empty;
-        // the snapshot-driven arg-typo diagnostic on the Diagnostics side
-        // already covers user feedback.
-        var shadow = new DirectiveShape(
-            "table",
-            List.of(new InputValueShape(
-                "extraArg",
-                new TypeShape.Named("String", false),
-                java.util.Optional.of("shadow description — must not leak through to hover."))),
-            java.util.Optional.empty());
+    void anArgNameNoDefinitionDeclaresHoversAsNothing() {
         var file = file("""
             type Foo @table(extraArg: "x", name: "film") {
                 bar: Int
             }
             """);
-        int line = 0;
-        int col = lineSource(file, line).indexOf("extraArg:") + 1;
-        var pos = new Point(line, col);
+        var pos = new Point(0, lineSource(file, 0).indexOf("extraArg:") + 1);
 
-        assertThat(hoverWithoutStore(file,
-            new LspSchemaSnapshot.Built.Current(List.of(shadow), Map.of(), Map.of()), pos))
-            .isEmpty();
+        assertThat(hoverAt(file, pos)).isEmpty();
     }
 
     @Test
     void bundledDirectiveNameHover_returnsBundledDescription() {
-        // Pins the bundled side-benefit explicitly: hovering on @table's
-        // own name token surfaces directives.graphqls's description for
-        // the directive, not the table-binding catalog content (that
-        // requires the cursor on the name: arg's value).
+        // Pins the bundled side-benefit explicitly: hovering on @table's own name token surfaces the
+        // captured description of the bundled definition, not the table-binding catalog content
+        // (that requires the cursor on the name: arg's value).
         var file = file("""
             type Foo @table(name: "film") {
                 bar: Int
@@ -682,17 +689,6 @@ class HoversTest {
     private static String lineSource(FileSnapshot file, int line) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         return source.split("\n")[line];
-    }
-
-    private static DirectiveShape authShape() {
-        return new DirectiveShape(
-            "auth",
-            List.of(new InputValueShape(
-                "role",
-                new TypeShape.Named("String", true),
-                java.util.Optional.of("The required role name."))),
-            java.util.Optional.of("Restricts access to callers who hold the named role; guards access at the field level.")
-        );
     }
 
 
@@ -817,8 +813,9 @@ class HoversTest {
     }
 
     /**
-     * Hover with no store at all, which is what a document whose graph was never captured gets. The
-     * arms that read facts answer nothing here; only the docstring arms can still speak.
+     * Hover with no store at all, which is what a document whose graph was never captured gets. Every
+     * arm reading facts answers nothing here; what can still speak is the member-slot hover, whose
+     * subject is the classification snapshot.
      */
     private static Optional<Hover> hoverWithoutStore(
         FileSnapshot file, LspSchemaSnapshot snapshot, Point pos

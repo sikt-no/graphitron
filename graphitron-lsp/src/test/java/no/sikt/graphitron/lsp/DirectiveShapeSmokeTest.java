@@ -8,12 +8,10 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
-import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import org.eclipse.lsp4j.Hover;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
@@ -154,12 +152,16 @@ class DirectiveShapeSmokeTest {
             """;
         Point cursor = pointInside(source, "com.example");
 
-        var hover = hoverWithoutStore(WorkspaceFileTestSupport.snapshot(source),
-            LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
+        // The class is in the census, so the carve-out is what declines rather than a lookup miss;
+        // the docstring that answers instead is a captured row like every other fact here.
+        try (var store = storeWith("com.example.FooDto", null)) {
+            var hover = Hovers.compute(WorkspaceFileTestSupport.snapshot(source),
+                Optional.of(store.handle()), LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
 
-        var md = hover.getContents().getRight().getValue();
-        assertThat(md).doesNotContain("**Class**");
-        assertThat(md).isNotBlank();
+            var md = hover.getContents().getRight().getValue();
+            assertThat(md).doesNotContain("**Class**");
+            assertThat(md).isNotBlank();
+        }
     }
 
     @Test
@@ -250,17 +252,6 @@ class DirectiveShapeSmokeTest {
         if (idx < 0) return fallback;
         int valueStart = idx + prefixSearch.indexOf('"') + 1;
         return lspPoint(source, valueStart + 1);
-    }
-
-    /**
-     * Hover with no store. The case here is the {@code @record} carve-out, whose whole subject is
-     * that the class arm declines before it reads anything, so the census it would have read is
-     * beside the point.
-     */
-    private static Optional<Hover> hoverWithoutStore(
-        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
-    ) {
-        return Hovers.compute(file, Optional.empty(), snapshot, pos);
     }
 
     private static Directives.Directive directiveAt(String source, Point cursor) {

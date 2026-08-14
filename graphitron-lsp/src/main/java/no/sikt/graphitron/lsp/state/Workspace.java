@@ -390,16 +390,6 @@ public final class Workspace {
     }
 
     /**
-     * Convenience wrapper around
-     * {@link DirectiveResolution#resolve(LspVocabulary, LspSchemaSnapshot, String)}
-     * for request callbacks that already hold a {@link Workspace}. Reads the
-     * snapshot ref through the volatile field.
-     */
-    public DirectiveResolution resolveDirective(String name) {
-        return DirectiveResolution.resolve(vocabulary, snapshot, name);
-    }
-
-    /**
      * Enqueue every open file for diagnostic recalculation. Used by the
      * dev goal when the generator runs (the source tree changed even
      * though no individual buffer did) and internally on catalog swaps.

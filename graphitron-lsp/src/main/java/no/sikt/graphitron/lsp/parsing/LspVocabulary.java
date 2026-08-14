@@ -1,6 +1,5 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import graphql.language.Description;
 import graphql.language.DirectiveDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
@@ -36,11 +35,18 @@ import java.util.Optional;
  * {@link TypeDefinitionRegistry} of the bundled {@code directives.graphqls}.
  *
  * <p>The parsed registry contributes the full directive surface: every
- * directive, every arg, every input type and field, plus their description
- * strings. The overlay declares semantics ("complete this as a class name",
- * "validate this against the catalog's table set") only for the subset the
- * LSP knows how to act on. Filing semantics for a new directive is an
- * additive overlay entry; the parse already exposes the coordinate.
+ * directive, every arg, every input type and field, which is what makes a
+ * cursor position resolvable to a coordinate. The overlay declares semantics
+ * ("complete this as a class name", "validate this against the catalog's
+ * table set") only for the subset the LSP knows how to act on. Filing
+ * semantics for a new directive is an additive overlay entry; the parse
+ * already exposes the coordinate.
+ *
+ * <p>What the registry no longer answers is what a coordinate <em>means</em>
+ * in prose. Descriptions are rows: capture parses the bundled SDL like any
+ * other schema file, so a docstring is read from the store through
+ * {@code SdlDescriptions} and the bundled definitions are not a second
+ * source beside it.
  *
  * <p><b>Structural invariant.</b> Every coordinate in the overlay must
  * resolve against the parsed registry. The constructor enforces this and
@@ -516,35 +522,6 @@ public record LspVocabulary(
     }
 
     /**
-     * Returns the SDL docstring (description) on the parsed registry's
-     * definition of {@code coord}. Empty if the coordinate has no
-     * description; whitespace-only descriptions remain present (callers
-     * filter as needed).
-     *
-     * <p>Used by {@code Hovers} as the default hover content for any
-     * coordinate without a richer behavior arm: every directive,
-     * argument, input type, and input field carries description prose
-     * in the parsed registry, so editing the SDL is the authoring path
-     * for hover content.
-     */
-    public Optional<String> descriptionOf(SchemaCoordinate coord) {
-        return switch (coord) {
-            case SchemaCoordinate.Directive d ->
-                findDirective(d.name()).flatMap(x -> descriptionText(x.getDescription()));
-            case SchemaCoordinate.DirectiveArg da ->
-                findDirective(da.directive())
-                    .flatMap(x -> findInputValue(x.getInputValueDefinitions(), da.arg()))
-                    .flatMap(v -> descriptionText(v.getDescription()));
-            case SchemaCoordinate.InputType t ->
-                findInputType(t.name()).flatMap(x -> descriptionText(x.getDescription()));
-            case SchemaCoordinate.InputField f ->
-                findInputType(f.type())
-                    .flatMap(x -> findInputValue(x.getInputValueDefinitions(), f.field()))
-                    .flatMap(v -> descriptionText(v.getDescription()));
-        };
-    }
-
-    /**
      * Returns every coordinate the parsed registry marks deprecated, in
      * either the native {@code @deprecated(reason:)} form (member-level)
      * or the docstring {@code @deprecated} convention (whole-directive).
@@ -606,21 +583,6 @@ public record LspVocabulary(
     public static Optional<InputValueDefinition> findInputValue(
         java.util.List<InputValueDefinition> values, String name) {
         return DeprecationRecognizer.findInputValue(values, name);
-    }
-
-    private Optional<DirectiveDefinition> findDirective(String name) {
-        for (var d : registry.getDirectiveDefinitions().values()) {
-            if (d.getName().equals(name)) return Optional.of(d);
-        }
-        return Optional.empty();
-    }
-
-    private Optional<InputObjectTypeDefinition> findInputType(String name) {
-        return Optional.ofNullable(registry.getTypeOrNull(name, InputObjectTypeDefinition.class));
-    }
-
-    private static Optional<String> descriptionText(Description description) {
-        return Optional.ofNullable(description).map(Description::getContent);
     }
 
     private static boolean resolves(SchemaCoordinate coord, TypeDefinitionRegistry registry) {

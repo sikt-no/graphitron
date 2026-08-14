@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.maven.dev;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
-import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -32,11 +32,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class DevServerTest {
 
     /**
-     * The round trip is the subject, so the request it makes is a hover on a directive's name token:
-     * that arm renders the bundled definition's own docstring and reads no facts, which keeps this
-     * test about the socket, the launcher and the handler rather than about what any session happened
-     * to capture. Every completion arm reads the store now, this workspace has none, and an empty
-     * popup would prove nothing about the wire.
+     * The round trip is the subject, so the request it makes is goto-definition on an intra-schema
+     * type reference: that provider resolves inside the open buffers themselves and reads no facts,
+     * which keeps this test about the socket, the launcher and the handler rather than about what any
+     * session happened to capture. Hover and completion both answer from the store now, this workspace
+     * has none, and an empty response would prove nothing about the wire.
      */
     @Test
     void bindsRandomPortAndServesRequests() throws Exception {
@@ -48,20 +48,21 @@ class DevServerTest {
                 proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
                 String uri = "file:///schema.graphqls";
-                String source = "type Query { x: Int @service(service: {className: \"x\"}) }\n";
+                String source = "type Film { id: Int }\ntype Query { film: Film }\n";
                 proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
                     new TextDocumentItem(uri, "graphql", 1, source)));
 
-                // Cursor inside the @service name token.
-                var params = new HoverParams(
+                // Cursor inside the Film reference on the second line.
+                var params = new DefinitionParams(
                     new TextDocumentIdentifier(uri),
-                    new Position(0, source.indexOf("@service") + 2)
+                    new Position(1, "type Query { film: F".length())
                 );
-                var hover = proxy.getTextDocumentService().hover(params).get(5, TimeUnit.SECONDS);
+                var locations = proxy.getTextDocumentService().definition(params)
+                    .get(5, TimeUnit.SECONDS);
 
-                assertThat(hover).isNotNull();
-                assertThat(hover.getContents().getRight().getValue())
-                    .as("the bundled @service definition carries a docstring, rendered over the wire")
+                assertThat(locations).isNotNull();
+                assertThat(locations.getLeft())
+                    .as("the Film declaration in the same buffer, resolved over the wire")
                     .isNotEmpty();
             }
         }

@@ -458,8 +458,8 @@ around it.
 | `CatalogFkBinding` | FK direction and endpoints, under any spelling the resolver accepts | `sql_referential_constraint`, `sql_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column`, `graphitron_table` + `sql_column` for the types |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
-| Any coordinate, no richer arm | SDL docstring | `graphql_directive`, `graphql_directive_argument` |
-| User-declared directive arg | Arg docstring | `graphql_directive_argument` |
+| Any coordinate, no richer arm | SDL docstring | `graphql_directive_argument` for a directive argument, `graphql_field` for a nested input field |
+| Directive argument name | Arg docstring | `graphql_directive_argument`, bundled and author-declared alike |
 | SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + Javadoc | classification + the `java_` source family |
 
 **Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
@@ -987,6 +987,61 @@ declaration-name arm around the dispatch.
   diagnostics capability's to fix when that arm reads `CatalogKeys`, and the fix falls out of the
   migration rather than needing a separate decision.
 
+## Settled while building: hover's docstring arms
+
+The three arms that render prose rather than a binding, the directive's own name token, any coordinate
+no richer arm answered, and an argument's name, read the captured SDL now. With them the bundled
+directive vocabulary stops being a source: `LspVocabulary` still resolves a cursor to a coordinate
+from its parsed registry, and no longer answers what a coordinate means.
+
+* **Three rows, one read, because the coordinate is the key.** `SdlDescriptions.of(store, coord)`
+  switches over the sealed `SchemaCoordinate` family and each arm's key is exactly its relation's
+  primary key, so every lookup is one row and absence is the answer. The three hover arms differ only
+  in which coordinate they hand over and which node they highlight. A fifth coordinate arm would fail
+  to compile until it named the relation that describes it, which is the same enforcement the
+  behaviour dispatch gets.
+* **`DirectiveResolution` leaves hover, and its bundled-versus-user fork with it.** The incumbent
+  resolved a directive name to a bundled definition, a projected user shape, or unknown, and hover
+  had three arms behind that. One relation holds both populations, so the fork had nothing left to
+  decide: an author's own directive hovers through the same query graphitron's do. Diagnostics is the
+  last reader of that type. `Workspace.resolveDirective`, a convenience wrapper with no caller left,
+  went at the same time.
+* **A bundled argument's name now answers.** The incumbent's arg-name arm was gated on the user-shaped
+  projection, so hovering `typeName:` said nothing while hovering the value beside it resolved the
+  node. The gate was there to stop a snapshot's shadow `@table` describing an argument the bundled
+  definition has none of, and the store has no shadow to prefer against: a redeclaration of a bundled
+  directive loses at registry admission before capture sees it. So the precedence rule retires and the
+  arm widens, which is one behaviour recovered by deleting a rule rather than by writing one.
+* **Nested argument names stay unanswered, as they were.** Hovering `className:` inside
+  `@service(service: {...})` needs the enclosing input type, which the coordinate walk derives for
+  value positions only. The relation is there (`graphql_field` describes an input field, and the
+  docstring arm already reads it when the cursor is in the value), so this is a walk to extend rather
+  than a fact to model, and it belongs with whatever else moves the coordinate walk.
+* **The input-type coordinate is answered though nothing triggers it.** `SchemaCoordinate.InputType` is
+  in the sealed family and no cursor position produces it, the walk keying a cursor as a directive
+  argument or an input field. The arm reads `graphql_type.description` rather than returning empty,
+  because what a named type's description is has an answer whether or not a trigger asks; the reader's
+  own test covers it, since no hover case can.
+* **A named type is found by name, without a kind check.** `ArgNameCompletions` joins `graphql_type`
+  for `kind = 'INPUT_OBJECT'` because its descent must stop at a type with no input fields. A
+  description lookup has no such stop: one GraphQL name is one type per graph whatever kind it is, so
+  the kind join would only be able to suppress a description that is correct.
+* **The cost is stated: no capture, no docstring.** This is the same charge the argument-name
+  completion arm paid, and now hover pays it too. The bundled definitions are rows, so a session that
+  has captured nothing renders no prose either; a case pins both directions so the loss is a decision
+  on the record rather than a surprise. What still answers without a store is the member-slot hover,
+  whose subject is the classification snapshot.
+* **The freshness case moved rather than retired.** "A stale snapshot still hovers" was pinned on the
+  user-directive arm, which no longer reads the snapshot. The property is real and now sits on the
+  column arm, the one arm still asking classification which table a site belongs to, where a
+  `Built.Previous` snapshot resolves the table exactly as a current one does.
+* **The dev server's round trip changed vehicle again.** It moved to a directive-name hover when
+  completion went store-side, on the grounds that the arm read no facts; it now reads facts too. The
+  request is goto-definition on an intra-schema type reference, which resolves inside the open buffers
+  themselves, so the case stays about the socket and the handler. That provider is on the list, so the
+  vehicle will have to move once more, and by then the test should stand up a store rather than keep
+  hunting for an arm that needs none.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -994,4 +1049,6 @@ Provisional until the cutover lands; the Done-gate sweep greps for these. `Compl
 `typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo`'s keep-previous-and-demote
 path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
 `dependsOnDeclarations`, `SourceWalker.Index` with its `ambiguousMethods` and `methodsByName`, and
-`Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`.
+`Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`. Gone already:
+`LspVocabulary.descriptionOf` and `Workspace.resolveDirective`; `DirectiveResolution` follows when
+diagnostics moves.

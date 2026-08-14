@@ -1,9 +1,9 @@
 package no.sikt.graphitron.lsp.hover;
 
-import graphql.language.Description;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.SdlDescriptions;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
@@ -13,11 +13,9 @@ import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -65,11 +63,11 @@ import static org.jooq.impl.DSL.selectCount;
  * the declaration-name arm around the coordinate dispatch.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
- * the SDL-docstring hover: every {@code DirectiveDefinition} and
- * {@code InputValueDefinition} carries a description string in the parsed
- * registry, and that description renders as the default hover. New
- * directives in {@code directives.graphqls} light up hover automatically;
- * authoring effort moves from "edit Hovers.java" to "edit the SDL".
+ * the SDL-docstring hover, and so do the two name tokens the coordinate walk does not key: the
+ * directive's own name and an argument's name. All three read {@link SdlDescriptions}, so a
+ * description is the graph's own captured SDL whether an author wrote it or graphitron ships it. New
+ * directives in {@code directives.graphqls} light up hover automatically; authoring effort moves from
+ * "edit Hovers.java" to "edit the SDL".
  */
 public final class Hovers {
 
@@ -90,11 +88,12 @@ public final class Hovers {
 
     /**
      * Canonical hover entry point. {@code store} is this document's graph, scoped and inside the
-     * caller's read transaction, and every coordinate arm reads through it: the class census and its
-     * methods, the catalog census behind the table, column and key arms, the graph's {@code @node}
-     * declarations, and the Javadoc beneath several of them, which is a join to the {@code java_}
-     * family on the source's own cadence. {@code catalog} and {@code sourceIndex} are what the
-     * declaration-name arm still reads, and retire with it.
+     * caller's read transaction, and every arm but the declaration-name one reads through it: the
+     * class census and its methods, the catalog census behind the table, column and key arms, the
+     * graph's {@code @node} declarations, the Javadoc beneath several of them, which is a join to the
+     * {@code java_} family on the source's own cadence, and the captured SDL behind every docstring.
+     * {@code catalog} and {@code sourceIndex} are what the declaration-name arm still reads, and
+     * retire with it.
      *
      * <p>{@code classificationHoverEnabled} gates the parallel {@link DeclarationHovers} dispatch on
      * SDL declaration coordinates. Default false preserves the no-behaviour-change-by-default
@@ -118,17 +117,14 @@ public final class Hovers {
             return Optional.empty();
         }
         var directive = directiveOpt.get();
-        String directiveName = Nodes.text(directive.nameNode(), file.source());
-        var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
 
-        // Directive-name hover comes first. coordinateAt is leaf-oriented
-        // (arg coordinates, not directive coordinates), so a cursor on the
-        // directive's name token falls through coordinateAt to no-coord
-        // today. Resolve through DirectiveResolution and surface the
-        // directive's description (bundled SDL or user snapshot) before
-        // the coordinate path runs.
+        // Directive-name hover comes first. coordinateAt is leaf-oriented (arg coordinates, not
+        // directive coordinates), so a cursor on the directive's name token falls through
+        // coordinateAt to no-coord; the directive's own coordinate is what describes it.
         if (Nodes.contains(directive.nameNode(), pos)) {
-            return directiveNameHover(resolution, directive, file);
+            String directiveName = Nodes.text(directive.nameNode(), file.source());
+            return descriptionHover(
+                store, new SchemaCoordinate.Directive(directiveName), file, directive.nameNode());
         }
 
         var coordOpt = vocabulary.coordinateAt(directive, pos, file.source());
@@ -139,64 +135,36 @@ public final class Hovers {
             var richer = richerHover(
                 vocabulary, coord, directive, file, store, snapshot, pos, rangeNode);
             if (richer.isPresent()) return richer;
-            // SDL docstring on the coordinate. Empty if the parsed
-            // definition has no description (rare in directives.graphqls).
-            var bundled = docstringHover(vocabulary, coord, file, rangeNode);
-            if (bundled.isPresent()) return bundled;
+            // SDL docstring on the coordinate. Empty if the definition carries no description
+            // (rare in directives.graphqls).
+            var docstring = descriptionHover(store, coord, file, rangeNode);
+            if (docstring.isPresent()) return docstring;
         }
 
-        // User-arm fallback: only on User resolution. Gating here preserves
-        // bundled-shadows-snapshot precedence: for bundled directives, a
-        // missing bundled arg description stays empty rather than leaking
-        // through to a shadow snapshot entry.
-        if (resolution instanceof DirectiveResolution.User user) {
-            return userArgHover(user.shape(), directive, pos, file);
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<Hover> directiveNameHover(
-        DirectiveResolution resolution, Directives.Directive directive, FileSnapshot file
-    ) {
-        return switch (resolution) {
-            case DirectiveResolution.Bundled bundled ->
-                bundledDescription(bundled.def().getDescription())
-                    .map(text -> hover(file, directive.nameNode(), text));
-            case DirectiveResolution.User user ->
-                user.shape().description()
-                    .filter(d -> !d.isBlank())
-                    .map(text -> hover(file, directive.nameNode(), text));
-            case DirectiveResolution.Unknown ignored -> Optional.empty();
-        };
-    }
-
-    private static Optional<String> bundledDescription(Description description) {
-        if (description == null) return Optional.empty();
-        String text = description.getContent();
-        if (text == null || text.isBlank()) return Optional.empty();
-        return Optional.of(text);
+        return argNameHover(store, directive, pos, file);
     }
 
     /**
-     * Arg-name docstring fallback for a user-declared directive. Walks the
-     * user-typed arg list, matches the cursor against an arg-key node, and
-     * surfaces the snapshot's {@link DirectiveShape}-side
-     * {@code InputValueShape.description()} when present. Freshness-agnostic
-     * by design — hovers prefer stale info over silence.
+     * The cursor on an argument's <em>name</em> rather than its value, which the coordinate walk
+     * declines by design (a name is not a bound value), answered by the argument's own coordinate.
+     * Bundled and user-declared directives alike: one relation describes both, so the incumbent's
+     * gate on a user-shaped projection is gone and hovering {@code name:} inside {@code @table} now
+     * says what {@code name:} means.
+     *
+     * <p>Top-level arguments only, as the incumbent did. A nested object field's key would need the
+     * enclosing input type, which is the descent {@link LspVocabulary#locateAt} performs for value
+     * positions only.
      */
-    private static Optional<Hover> userArgHover(
-        DirectiveShape shape, Directives.Directive directive, Point pos, FileSnapshot file
+    private static Optional<Hover> argNameHover(
+        Optional<StoreHandle> store, Directives.Directive directive, Point pos, FileSnapshot file
     ) {
+        String directiveName = Nodes.text(directive.nameNode(), file.source());
         for (var arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
             if (!Nodes.contains(arg.key(), pos)) continue;
             String argName = Nodes.text(arg.key(), file.source());
-            for (var argShape : shape.args()) {
-                if (!argShape.name().equals(argName)) continue;
-                return argShape.description()
-                    .filter(d -> !d.isBlank())
-                    .map(text -> hover(file, arg.key(), text));
-            }
+            return descriptionHover(store,
+                new SchemaCoordinate.DirectiveArg(directiveName, argName), file, arg.key());
         }
         return Optional.empty();
     }
@@ -577,11 +545,15 @@ public final class Hovers {
         return Optional.of(hover(file, valueNode, sb.toString()));
     }
 
-    private static Optional<Hover> docstringHover(
-        LspVocabulary vocabulary, SchemaCoordinate coord, FileSnapshot file, Node rangeNode
+    /**
+     * The description the graph's captured SDL carries at {@code coord}, rendered over
+     * {@code rangeNode}. The three docstring arms differ only in which coordinate they hand over and
+     * which node they highlight; the read is one.
+     */
+    private static Optional<Hover> descriptionHover(
+        Optional<StoreHandle> store, SchemaCoordinate coord, FileSnapshot file, Node rangeNode
     ) {
-        return vocabulary.descriptionOf(coord)
-            .filter(d -> !d.isBlank())
+        return store.flatMap(handle -> SdlDescriptions.of(handle, coord))
             .map(text -> hover(file, rangeNode, text));
     }
 
