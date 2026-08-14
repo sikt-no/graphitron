@@ -460,7 +460,7 @@ around it.
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
 | Any coordinate, no richer arm | SDL docstring | `graphql_directive_argument` for a directive argument, `graphql_field` for a nested input field |
 | Directive argument name | Arg docstring | `graphql_directive_argument`, bundled and author-declared alike |
-| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + Javadoc | classification + the `java_` source family |
+| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | classification for the block; `sql_table`, `sql_column` and the `java_` source family for the description |
 
 **Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
 
@@ -817,7 +817,7 @@ rows; the table arms stayed apart, because hover's asks a different question of 
   classifier decision, and pretending it were a fact would be the keying-axis confusion.
 
 `CompletionRequest` lost its `sourceIndex` arm, which no provider reads any more. `Descriptions`
-survives for hover, which has not moved; the two methods these arms used stay until it does.
+survived this pass for hover, which had not moved yet; it went with hover's last arm.
 
 The tests moved to the real generated model rather than keeping their hand-built column lists. Both
 arms are captured from the fixture module's jOOQ catalog through `StoreFixture.ofCatalog`, so a
@@ -1042,6 +1042,69 @@ from its parsed registry, and no longer answers what a coordinate means.
   vehicle will have to move once more, and by then the test should stand up a store rather than keep
   hunting for an arm that needs none.
 
+## Settled while building: hover's last arm, the declaration name
+
+Hover's last unmigrated arm fires when the cursor sits on an SDL declaration's own name, a type name or
+a field name, rather than inside a directive. It renders two things: a **classification block**, which
+is what the classifier decided about that declaration, and beneath it an **overlay**, which is the
+prose written about whatever Java or database object the declaration binds to. The classification block
+was already the snapshot's answer and stays there. The overlay is what moved, so every hover arm now
+reads the fact store and `Hovers.compute` takes no source index at all. What the arm still reads off the
+projection is the classification snapshot and the catalog, and the catalog only to work out which
+declaration the cursor's coordinate binds to, a resolution it shares with goto-definition.
+
+Two readers of Java sources coexist during the migration, and the rest of this section turns on the
+difference. The **source index** is the LSP's own in-memory parse of the workspace's `.java` files, and
+goto-definition still uses it to find a declaration's position. The store's **java-source family** is
+the same material as relations, and hover now uses it to find a declaration's doc comment. One walk
+feeds both.
+
+* **Parity between hover and goto is a narrower claim now, and it is stated where it is asserted.**
+  Both arms resolve through one shared `DeclTarget`, and while both then read the index, "they cannot
+  disagree" was structural. It cannot mean that once the reads differ. What survives is worth keeping:
+  both switch exhaustively over the same resolved target, so a new backing permit breaks both at
+  compile time, and one walk feeds the index and the java-source family alike, so the two cannot
+  disagree about a declaration's text either. What differs is the question each asks of it, a position
+  or a doc comment.
+* **`DeclTarget`'s catalog arms carry names now, not projection rows.** `CatalogTable` held a whole
+  `CompletionData.Table` and `CatalogColumn` held a table and a column, so a description was sitting
+  right there for the overlay to read instead of querying. Narrowing them to `(tableName, classFqn)`
+  and `(tableName, classFqn, columnName)` makes the store read the only route to description text, and
+  it takes a projection type out of a sealed type in the parsing layer. The type's own javadoc already
+  claimed its variants name a declaration and nothing else; now they do.
+* **A record component jumps but has no doc comment to overlay.** Found by rewriting the overlay's
+  fixture against a real parse instead of a hand-built index. The walk reads a record's component as a
+  field declaration and positions it, so goto jumps, but a doc comment written in the record's header
+  is not retained for that declaration, so there is nothing to overlay. The incumbent had the same gap;
+  a fixture asserting a component Javadoc no parse produces was hiding it. Pinned as a case rather than
+  fixed, because it is a property of the parse and not of either surface.
+* **`Descriptions` retires.** Its whole job was layering an index Javadoc onto a catalog fallback, and
+  each of its three methods had exactly one caller left, all in this arm. The precedence it centralised
+  stays per surface, which is where the coordinate hover and the completion popup already keep it: a
+  table's database comment beats its generated class Javadoc, a column's Javadoc beats its comment, and
+  which text wins is a rendering choice rather than a fact.
+* **The java-source family gets one reader, `SourceDeclarations`.** `Hovers` held a class-Javadoc
+  lookup and an arity-keyed method lookup, `TableCompletions` held a copy of the first, and
+  `CatalogColumns` held the field equivalent. Two shapes, because two kinds of caller need it: a
+  correlated subselect for a query that already carries a class name on its own side, a direct lookup
+  for a caller holding plain names. The family is keyed on a file rather than on a source membership, so
+  it takes no graph scope, and the file-order tie-break for a name two files declare is stated once
+  instead of three times.
+* **The method overlay resolves in two tiers, the same two goto's does.** SDL names a method by name
+  alone, so the arity a consumer holds is itself a resolution rather than a fact. `methodJavadoc`
+  prefers the overload declaring that arity and falls back to any declaration of the name; declining on
+  a guessed arity would lose a comment the source plainly carries. The index has always resolved in
+  those two tiers, and the query mirrors them rather than sharing them.
+* **A table's overlay answers for one schema, where the coordinate hover reports every match.** The
+  block above the overlay has already named one table, and an overlay is a paragraph rather than a
+  list, so a name two schemas both declare resolves in schema order here. The coordinate hover, whose
+  whole subject is the table, still lists both. Same relation, two renderings, per surface again.
+* **The two readers are asserted together end-to-end, not simulated.**
+  `SourceCadenceHoverAndDefinition` gained a declaration-name case: one parse of one file, hover
+  overlaying out of the store while goto jumps off the index, on a type name that is the only handle
+  either surface has. That is where the property belongs while both readers exist, and the case keeps
+  passing unchanged once definition reads the store too.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1050,5 +1113,6 @@ Provisional until the cutover lands; the Done-gate sweep greps for these. `Compl
 path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
 `dependsOnDeclarations`, `SourceWalker.Index` with its `ambiguousMethods` and `methodsByName`, and
 `Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`. Gone already:
-`LspVocabulary.descriptionOf` and `Workspace.resolveDirective`; `DirectiveResolution` follows when
-diagnostics moves.
+`LspVocabulary.descriptionOf`, `Workspace.resolveDirective` and the whole of `Descriptions`
+(`ofTable`, `ofColumn`, `classJavadoc`); `DirectiveResolution` follows when diagnostics moves, and the
+source index when the four definition providers do.

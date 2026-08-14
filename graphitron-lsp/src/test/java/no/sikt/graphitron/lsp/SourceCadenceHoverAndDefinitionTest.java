@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -7,7 +8,9 @@ import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
+import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -172,6 +176,42 @@ class SourceCadenceHoverAndDefinitionTest {
     }
 
     /**
+     * The declaration-name arm, whose two halves now read two substrates: hover overlays the doc
+     * comment out of the store's java-source family, goto jumps to the position the index holds, and
+     * one parse of one file is behind both. The type name is the only handle either surface has here,
+     * the coordinate being a declaration rather than a directive argument.
+     */
+    @Test
+    void declarationNameHoverOverlaysTheStoreWhileGotoJumpsFromTheIndex(@TempDir Path srcRoot) {
+        var file = file("type Film @table(name: \"film\") { title: String }");
+        // Cursor on the 'i' of the Film declaration's own name token.
+        var namePos = new Point(0, "type Fi".length());
+
+        try (var store = StoreFixture.ofCatalog(srcRoot, PLACEHOLDER_SDL)) {
+            String filmFqn = store.tableClassFqn("film");
+            store.withJavaSource(srcRoot, filmFqn, """
+                /** The film table. */
+                public class Film {
+                    public final Object TITLE = null;
+                }
+                """);
+            var workspace = workspaceWithTableCatalog(filmFqn);
+            var index = new SourceWalker().walk(List.of(srcRoot));
+            var snapshot = new LspSchemaSnapshot.Built.Current(
+                List.of(), Map.of("Film", new TypeBackingShape.TableBacking("film")),
+                Map.of(), Map.of(), Map.of());
+
+            assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
+                .contains("The film table.");
+
+            var loc = DeclarationDefinitions.compute(file, workspace.catalog(), index, snapshot, namePos)
+                .orElseThrow();
+            assertThat(loc.getUri()).endsWith("Film.java");
+            assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
+        }
+    }
+
+    /**
      * The census and the parse for {@code PriceService}, captured from the file the test wrote: the
      * classpath side is what makes the method resolvable, the parse side is where its doc comment
      * comes from, and hover needs both.
@@ -186,8 +226,15 @@ class SourceCadenceHoverAndDefinitionTest {
     private static String hoverText(
         Workspace workspace, StoreFixture store, FileSnapshot file, Point pos
     ) {
+        return hoverText(workspace, store, file, pos, workspace.snapshot(), false);
+    }
+
+    private static String hoverText(
+        Workspace workspace, StoreFixture store, FileSnapshot file, Point pos,
+        LspSchemaSnapshot snapshot, boolean declarationNames
+    ) {
         return Hovers.compute(LspVocabulary.load(), file, workspace.catalog(),
-            Optional.of(store.handle()), workspace.sourceIndex(), workspace.snapshot(), pos, false)
+            Optional.of(store.handle()), snapshot, pos, declarationNames)
             .orElseThrow().getContents().getRight().getValue();
     }
 

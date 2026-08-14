@@ -16,23 +16,28 @@ import java.util.Optional;
  * variant to a source {@code Location}; the declaration-name hover arm projects
  * each to a Javadoc overlay.
  *
- * <p>Sharing the resolution makes hover/goto parity <em>structural</em> rather
- * than asserted: a single backing-switch ({@link #resolve}) produces the target,
- * and the two consumers each switch over the <em>same</em> {@code DeclTarget}
- * exhaustively, so they cannot point at different declarations and a new
- * {@link TypeBackingShape} permit breaks both switches at compile time. The
- * per-consumer difference is only the final read: {@code Decl.location()} for
- * goto vs. {@code Decl.javadoc()} (plus the catalog-description precedence the
- * table/column arms honour) for hover. The variants name the resolved
- * declaration, not its location or Javadoc.
+ * <p>Sharing the resolution is what keeps the two consumers pointing at one
+ * declaration: a single backing-switch ({@link #resolve}) produces the target,
+ * and each consumer switches over the <em>same</em> {@code DeclTarget}
+ * exhaustively, so a new {@link TypeBackingShape} permit breaks both switches at
+ * compile time. What differs is where each then reads: hover asks the fact
+ * store's java-source family for the declaration's doc comment, goto still asks
+ * the LSP-owned source index for its position, and the two agree while both are
+ * refreshed off the same parse. The variants name the resolved declaration and
+ * nothing else, so neither read can be short-circuited by a value the
+ * resolution happened to have in hand.
  */
 public sealed interface DeclTarget {
 
-    /** A jOOQ table class. Hover precedence: the SQL comment wins, else the class Javadoc. */
-    record CatalogTable(CompletionData.Table table) implements DeclTarget {}
+    /**
+     * A jOOQ table class, named by the table it was generated for and the class the catalog census
+     * recorded. Names only: what either consumer then reads about the table, a position or a
+     * description, is a fact neither this type nor the resolution carries.
+     */
+    record CatalogTable(String tableName, String classFqn) implements DeclTarget {}
 
-    /** A named column on a jOOQ table class. */
-    record CatalogColumn(CompletionData.Table table, CompletionData.Column column) implements DeclTarget {}
+    /** A named column on a jOOQ table class, under the census's own spelling of the column. */
+    record CatalogColumn(String tableName, String classFqn, String columnName) implements DeclTarget {}
 
     /** A reflection-bound backing class, or a standalone-jOOQ field degrading to its class. */
     record SourceClass(String fqClassName) implements DeclTarget {}
@@ -171,7 +176,7 @@ public sealed interface DeclTarget {
 
     private static DeclTarget tableTarget(String tableName, CompletionData catalog) {
         return catalog.getTable(tableName)
-            .<DeclTarget>map(CatalogTable::new)
+            .<DeclTarget>map(table -> new CatalogTable(table.name(), table.classFqn()))
             .orElseGet(None::new);
     }
 
@@ -184,7 +189,7 @@ public sealed interface DeclTarget {
         return table.columns().stream()
             .filter(c -> c.name().equalsIgnoreCase(memberName))
             .findFirst()
-            .<DeclTarget>map(c -> new CatalogColumn(table, c))
+            .<DeclTarget>map(c -> new CatalogColumn(table.name(), table.classFqn(), c.name()))
             .orElseGet(None::new);
     }
 

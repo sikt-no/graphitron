@@ -4,6 +4,7 @@ import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.facts.SdlDescriptions;
+import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
@@ -18,7 +19,6 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
@@ -29,7 +29,6 @@ import org.jooq.Record2;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,8 +39,6 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
-import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -56,11 +53,12 @@ import static org.jooq.impl.DSL.selectCount;
  * {@code ReferenceElement.key}, ...) reveals catalog metadata: class FQNs,
  * method signatures, table descriptions, FK direction, and so on.
  *
- * <p>Every coordinate arm reads the fact store: the classpath census and the java-source family for
- * the two arms that answer about Java, the catalog census for the three that answer about the
- * database, and the graph's own {@code @node} declarations for the fourth. What still comes from the
- * projection is the classification snapshot, which answers which table a column site belongs to, and
- * the declaration-name arm around the coordinate dispatch.
+ * <p>Every arm reads the fact store, the declaration-name arm around the coordinate dispatch
+ * included: the classpath census and the java-source family for the arms that answer about Java, the
+ * catalog census for those that answer about the database, and the graph's own {@code @node}
+ * declarations for one more. What still comes from the projection is the classification snapshot,
+ * which answers which table a column site belongs to, and the catalog the declaration-name arm's
+ * binding resolution shares with goto-definition.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
  * the SDL-docstring hover, and so do the two name tokens the coordinate walk does not key: the
@@ -74,26 +72,23 @@ public final class Hovers {
     private Hovers() {}
 
     /**
-     * Every arm this entry point can reach, which is every arm but the declaration-name one, reads
-     * either the store or the classification snapshot, so it takes no projection and no source
-     * index. The bundled vocabulary is the only one in scope today; the workspace's vocabulary is
-     * wired through {@code GraphitronTextDocumentService}.
+     * Every arm this entry point can reach reads either the store or the classification snapshot, so
+     * it takes no projection. The bundled vocabulary is the only one in scope today; the workspace's
+     * vocabulary is wired through {@code GraphitronTextDocumentService}.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, Optional<StoreHandle> store, LspSchemaSnapshot snapshot, Point pos
     ) {
-        return compute(LspVocabulary.load(), file, CompletionData.empty(), store,
-            SourceWalker.Index.EMPTY, snapshot, pos, false);
+        return compute(LspVocabulary.load(), file, CompletionData.empty(), store, snapshot, pos, false);
     }
 
     /**
      * Canonical hover entry point. {@code store} is this document's graph, scoped and inside the
-     * caller's read transaction, and every arm but the declaration-name one reads through it: the
-     * class census and its methods, the catalog census behind the table, column and key arms, the
-     * graph's {@code @node} declarations, the Javadoc beneath several of them, which is a join to the
-     * {@code java_} family on the source's own cadence, and the captured SDL behind every docstring.
-     * {@code catalog} and {@code sourceIndex} are what the declaration-name arm still reads, and
-     * retire with it.
+     * caller's read transaction, and every arm reads through it: the class census and its methods, the
+     * catalog census behind the table, column and key arms, the graph's {@code @node} declarations,
+     * the doc comments beneath several of them, which are a join to the {@code java_} family on the
+     * source's own cadence, and the captured SDL behind every docstring. {@code catalog} is what the
+     * declaration-name arm's binding resolution still reads, and retires with goto-definition's.
      *
      * <p>{@code classificationHoverEnabled} gates the parallel {@link DeclarationHovers} dispatch on
      * SDL declaration coordinates. Default false preserves the no-behaviour-change-by-default
@@ -102,17 +97,17 @@ public final class Hovers {
      */
     public static Optional<Hover> compute(
         LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
-        Optional<StoreHandle> store, SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot,
+        Optional<StoreHandle> store, LspSchemaSnapshot snapshot,
         Point pos, boolean classificationHoverEnabled
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) {
             // No directive at the cursor; try the classification-hover arm on SDL
             // declaration coordinates (field-definition / type-definition name tokens).
-            // Pass the catalog and source index so the arm overlays the bound
-            // jOOQ class / column / member Javadoc beneath the classification block.
+            // The catalog resolves which declaration the coordinate binds to, the store
+            // describes it, and the description lands beneath the classification block.
             if (classificationHoverEnabled) {
-                return DeclarationHovers.compute(file, catalog, sourceIndex, snapshot, pos);
+                return DeclarationHovers.compute(file, catalog, store, snapshot, pos);
             }
             return Optional.empty();
         }
@@ -288,7 +283,7 @@ public final class Hovers {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return Optional.empty();
         var row = store.dsl()
-            .select(classJavadocOf(JVM_CLASS.CLASS_NAME))
+            .select(SourceDeclarations.classJavadocOf(JVM_CLASS.CLASS_NAME))
             .from(JVM_CLASS)
             .where(store.reads(JVM_CLASS.SOURCE_NAME))
             .and(JVM_CLASS.CLASS_NAME.eq(fqn))
@@ -321,51 +316,8 @@ public final class Hovers {
         if (fqn.isEmpty()) return Optional.empty();
         var overloads = ClasspathMethods.named(store, fqn.get(), methodName);
         if (overloads.isEmpty()) return Optional.empty();
-        return Optional.of(hover(file, valueNode,
-            formatMethod(fqn.get(), methodName, overloads, javadocByArity(store, fqn.get(), methodName))));
-    }
-
-    /**
-     * The doc comment a source declaration carries, as a correlated scalar select against a class
-     * name on the query's own side. A correlated select rather than a join because
-     * {@code java_class_declaration} is keyed on {@code (file, class_name)}: one FQN declared in two
-     * files is two rows, which a join would multiply the answer by. The first declaration in file
-     * order that carries a comment wins, which is arbitrary but stated, deterministic, and a property
-     * of a malformed source tree rather than of a census.
-     */
-    private static Field<String> classJavadocOf(Field<String> className) {
-        return field(select(JAVA_CLASS_DECLARATION.JAVADOC)
-            .from(JAVA_CLASS_DECLARATION)
-            .where(JAVA_CLASS_DECLARATION.CLASS_NAME.eq(className))
-            .and(JAVA_CLASS_DECLARATION.JAVADOC.isNotNull())
-            .orderBy(JAVA_CLASS_DECLARATION.FILE)
-            .limit(1));
-    }
-
-    /**
-     * Doc comments for one method name, keyed by the arity the source declares. Arity is what the
-     * two populations can be joined on: a parse reads unqualified parameter types as written where
-     * the classfile carries erased ones, so {@code java_method_declaration} counts parameters and
-     * {@code jvm_method} spells a descriptor, and the count is their only common ground. Two
-     * same-arity overloads therefore share one comment, the first in (file, declaration) order, the
-     * same collapse the projection's source index made before this read replaced it.
-     */
-    private static Map<Integer, String> javadocByArity(
-        StoreHandle store, String classFqn, String methodName
-    ) {
-        var byArity = new HashMap<Integer, String>();
-        var rows = store.dsl()
-            .select(JAVA_METHOD_DECLARATION.PARAMETER_COUNT, JAVA_METHOD_DECLARATION.JAVADOC)
-            .from(JAVA_METHOD_DECLARATION)
-            .where(JAVA_METHOD_DECLARATION.CLASS_NAME.eq(classFqn))
-            .and(JAVA_METHOD_DECLARATION.METHOD_NAME.eq(methodName))
-            .and(JAVA_METHOD_DECLARATION.JAVADOC.isNotNull())
-            .orderBy(JAVA_METHOD_DECLARATION.FILE, JAVA_METHOD_DECLARATION.ORDINAL)
-            .fetch();
-        for (var row : rows) {
-            byArity.putIfAbsent(row.value1(), row.value2());
-        }
-        return byArity;
+        return Optional.of(hover(file, valueNode, formatMethod(fqn.get(), methodName, overloads,
+            SourceDeclarations.methodJavadocByArity(store, fqn.get(), methodName))));
     }
 
     /**
@@ -383,7 +335,8 @@ public final class Hovers {
         String name = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (name.isEmpty()) return Optional.empty();
         var rows = store.dsl()
-            .select(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.DESCRIPTION, classJavadocOf(SQL_TABLE.CLASS_FQN),
+            .select(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.DESCRIPTION,
+                SourceDeclarations.classJavadocOf(SQL_TABLE.CLASS_FQN),
                 columnCount(), referenceCount(store))
             .from(SQL_TABLE)
             .where(store.reads(SQL_TABLE.SOURCE_NAME))

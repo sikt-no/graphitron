@@ -219,7 +219,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                     // describe it from after.
                     return workspace.answering(uri, store ->
                         Hovers.compute(workspace.vocabulary(), file, workspace.catalog(), store,
-                            workspace.sourceIndex(), workspace.snapshot(), pos,
+                            workspace.snapshot(), pos,
                             workspace.inlayHintConfig().hoverClassification())).orElse(null);
                 });
             }

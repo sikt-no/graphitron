@@ -2,16 +2,17 @@ package no.sikt.graphitron.lsp.hover;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
-import no.sikt.graphitron.lsp.Descriptions;
+import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.inlay.LspClassificationLabels;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
@@ -20,6 +21,8 @@ import org.eclipse.lsp4j.Range;
 
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 
 /**
  * Classification-hover dispatch on SDL declaration coordinates. Parallel to
@@ -31,40 +34,44 @@ import java.util.stream.Collectors;
  * SDL declaration coordinate added to the sealed family fails to compile until its
  * hover content lands here in the same commit.
  *
- * <p>Beneath the classification block, the hover overlays the jOOQ class /
- * column / member Javadoc the coordinate binds to, read at request time from the
- * LSP-owned {@link SourceWalker.Index}. The binding is resolved through the shared
- * {@link DeclTarget} that goto-definition ({@code DeclarationDefinitions}) also
- * projects, so the two arms agree on which declaration the coordinate names: goto
- * jumps to its {@code location()}, hover overlays its {@code javadoc()}. The overlay
- * switch over {@code DeclTarget} is exhaustive, mirroring goto's, so a new backing
- * permit breaks both at compile time.
+ * <p>Beneath the classification block, the hover overlays what the graph's own facts say about the
+ * declaration the coordinate binds to: a table's database comment, a column's or member's doc
+ * comment, a backing class's doc comment. The binding is resolved through the shared
+ * {@link DeclTarget} that goto-definition ({@code DeclarationDefinitions}) also projects, so the two
+ * arms agree on which declaration the coordinate names; the overlay switch over {@code DeclTarget} is
+ * exhaustive, mirroring goto's, so a new backing permit breaks both at compile time.
+ *
+ * <p>The two reads have parted company, though: the overlay is a query and goto's jump is still a
+ * lookup in the LSP-owned source index. They answer about one declaration as long as both are
+ * refreshed off the same parse, which is what a dev session does, but a session holding only one of
+ * the two answers on only one surface. Nothing here can hide that by reading the other's substrate:
+ * the resolution hands over names.
  */
 public final class DeclarationHovers {
 
     private DeclarationHovers() {}
 
     /**
-     * Classification-only entry: no source-index Javadoc overlay. Back-compat for
-     * callers that carry no catalog / source index; the production path uses the
-     * five-arg overload so the declaration-name overlay lights up.
+     * Classification-only entry: nothing captured and no catalog, so the block the classification
+     * snapshot renders is the whole hover. What a session in that state can say about a declaration
+     * name, and no less.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
     ) {
-        return compute(file, null, SourceWalker.Index.EMPTY, snapshot, pos);
+        return compute(file, CompletionData.empty(), Optional.empty(), snapshot, pos);
     }
 
     /**
      * Computes the declaration-name hover for {@code pos}: the classification
-     * projection, and, when the catalog / source index resolve the
-     * coordinate to a jOOQ class / column / member, that declaration's Javadoc
-     * overlaid beneath it. Returns {@link Optional#empty()} when the cursor
-     * is not on a recognised SDL declaration name token, the snapshot is
-     * unavailable, or neither a classification nor an overlay is available.
+     * projection, and, when the coordinate binds to a jOOQ table / column or a Java
+     * declaration, what the store holds about it overlaid beneath. Returns
+     * {@link Optional#empty()} when the cursor is not on a recognised SDL declaration
+     * name token, the snapshot is unavailable, or neither a classification nor an
+     * overlay is available.
      */
     public static Optional<Hover> compute(
-        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        FileSnapshot file, CompletionData catalog, Optional<StoreHandle> store,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
@@ -74,12 +81,11 @@ public final class DeclarationHovers {
         var declaration = declOpt.get();
         var hoverDecl = toDeclarationHover(declaration);
         String classification = classificationMarkdown(built, hoverDecl);
-        // The overlay shares goto-definition's binding resolution. A null catalog
-        // (the classification-only entry) skips it; an empty source index yields no
-        // overlay, leaving the classification block exactly as the classification arm rendered it.
-        String overlay = catalog == null
-            ? ""
-            : overlay(DeclTarget.resolve(declaration, built, catalog, file.source()), sourceIndex);
+        // The overlay shares goto-definition's binding resolution, then reads the graph's own facts
+        // about what it resolved to. No store is no overlay, leaving the classification block exactly
+        // as the classification arm renders it.
+        var target = DeclTarget.resolve(declaration, built, catalog, file.source());
+        String overlay = store.map(handle -> overlay(target, handle)).orElse("");
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
     }
@@ -119,32 +125,74 @@ public final class DeclarationHovers {
     }
 
     /**
-     * The Javadoc overlay for the resolved {@link DeclTarget}, or empty when the
-     * coordinate binds to no Java declaration or the source index does not hold it.
-     * Switches over the same target goto-definition projects to a {@code Location};
-     * the table / column arms honour {@link Descriptions}'s catalog-description
-     * precedence, the member arms read the indexed {@code Decl} directly (the catalog
-     * carries no description to layer under a POJO accessor or record component).
+     * The description overlay for the resolved {@link DeclTarget}, or empty when the coordinate binds
+     * to nothing the store describes. Switches over the same target goto-definition projects to a
+     * {@code Location}; the difference is only which fact each arm asks for.
      *
-     * <p>Public so {@code DeclarationHoverOverlayParityTest} can assert, per variant,
-     * that this overlay is non-empty exactly when goto-definition jumps (the
-     * parity property), without a tree-sitter round-trip.
+     * <p>Each of the two catalog arms picks its own text where a table has both a database comment and
+     * a generated class Javadoc. A table's comment wins, its generated Javadoc being boilerplate that
+     * names the table back at the reader; a column's Javadoc wins, being the richer of the two (it
+     * carries the qualified column name and the comment where there is one). That is the precedence
+     * the coordinate hovers and the completion popup already apply, per surface, because it is a
+     * rendering choice rather than a fact.
+     *
+     * <p>Public so {@code DeclarationHoverOverlayParityTest} can assert per variant, without a
+     * tree-sitter round-trip, that the overlay answers for exactly the targets goto-definition jumps
+     * on when both substrates hold the same parse.
      */
-    public static String overlay(DeclTarget target, SourceWalker.Index sourceIndex) {
+    public static String overlay(DeclTarget target, StoreHandle store) {
         return switch (target) {
-            case DeclTarget.CatalogTable t -> Descriptions.ofTable(t.table(), sourceIndex);
-            case DeclTarget.CatalogColumn c -> Descriptions.ofColumn(c.table(), c.column(), sourceIndex);
-            case DeclTarget.SourceClass s -> Descriptions.classJavadoc(s.fqClassName(), sourceIndex);
-            case DeclTarget.SourceMethod m -> memberJavadoc(
-                sourceIndex.resolveMethod(m.fqClassName(), m.methodName(), m.paramCount()).orElse(null));
-            case DeclTarget.SourceField f -> memberJavadoc(
-                sourceIndex.fields().get(new SourceWalker.FieldKey(f.fqClassName(), f.memberName())));
+            case DeclTarget.CatalogTable t -> tableDescription(store, t.tableName(), t.classFqn());
+            case DeclTarget.CatalogColumn c -> columnDescription(store, c.tableName(), c.columnName());
+            case DeclTarget.SourceClass s -> SourceDeclarations.classJavadoc(store, s.fqClassName());
+            case DeclTarget.SourceMethod m ->
+                SourceDeclarations.methodJavadoc(store, m.fqClassName(), m.methodName(), m.paramCount());
+            case DeclTarget.SourceField f -> SourceDeclarations.fieldJavadoc(store, f.fqClassName(), f.memberName());
             case DeclTarget.None ignored -> "";
         };
     }
 
-    private static String memberJavadoc(SourceWalker.Decl decl) {
-        return decl != null ? decl.javadoc() : "";
+    /**
+     * A table's own description, in one query: its database comment, else the doc comment on the
+     * class the census recorded for it. A name two schemas both declare is answered for the first in
+     * schema order, since the block above it has already named one table and an overlay is a
+     * paragraph rather than a list; the coordinate hover, whose whole subject is the table, reports
+     * every match instead.
+     */
+    private static String tableDescription(StoreHandle store, String tableName, String classFqn) {
+        if (tableName == null) return SourceDeclarations.classJavadoc(store, classFqn);
+        var row = store.dsl()
+            .select(SQL_TABLE.DESCRIPTION, SourceDeclarations.classJavadocOf(SQL_TABLE.CLASS_FQN))
+            .from(SQL_TABLE)
+            .where(store.reads(SQL_TABLE.SOURCE_NAME))
+            .and(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
+            .orderBy(SQL_TABLE.TABLE_SCHEMA)
+            .limit(1)
+            .fetchOne();
+        // A census that does not hold the table still leaves the class reachable by name, which is
+        // the state a dev session is in before it has run a catalog walk.
+        if (row == null) return SourceDeclarations.classJavadoc(store, classFqn);
+        return firstNonBlank(row.value1(), row.value2());
+    }
+
+    /**
+     * The named column's own description: the generated field's doc comment, else the database
+     * comment. Matched under either of the two names the census carries, as every other column read
+     * does, so a target resolved under the jOOQ spelling and one resolved under the SQL spelling
+     * describe the same column.
+     */
+    private static String columnDescription(StoreHandle store, String tableName, String columnName) {
+        if (tableName == null || columnName == null) return "";
+        return CatalogColumns.of(store, tableName).stream()
+            .filter(column -> column.isNamed(columnName))
+            .findFirst()
+            .map(column -> firstNonBlank(column.javadoc(), column.comment()))
+            .orElse("");
+    }
+
+    private static String firstNonBlank(String preferred, String fallback) {
+        if (preferred != null && !preferred.isBlank()) return preferred;
+        return fallback == null ? "" : fallback;
     }
 
     /** Joins the (nullable) classification block and the (possibly empty) overlay with a rule. */

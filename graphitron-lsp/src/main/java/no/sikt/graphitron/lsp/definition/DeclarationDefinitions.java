@@ -28,13 +28,17 @@ import java.util.Optional;
  * <p>{@link DeclTarget#resolve} performs the one backing-switch from SDL
  * coordinate to a named jOOQ / Java declaration; this provider only projects
  * the result. The declaration-name hover arm switches over the same
- * {@link DeclTarget}, so hover/goto parity is structural: a new backing permit
- * breaks both switches at compile time. The catalog / class / column / field
- * arms route through the sealed {@link DefinitionTarget} and
- * {@link Definitions#resolve}, the single empty-resolution contract
- * ({@code Located} jumps, {@code SourceAbsent} stays put); the method arm
- * shares {@link Definitions#methodLocation} with the hover overlay, so its
- * arity-then-name resolution cannot drift from hover's.
+ * {@link DeclTarget}, so a new backing permit breaks both switches at compile
+ * time. The catalog / class / column / field arms route through the sealed
+ * {@link DefinitionTarget} and {@link Definitions#resolve}, the single
+ * empty-resolution contract ({@code Located} jumps, {@code SourceAbsent} stays
+ * put).
+ *
+ * <p>The source index is this provider's alone now. Hover reads the same
+ * declarations out of the fact store's java-source family, so the arity-then-name
+ * resolution {@link Definitions#methodLocation} performs on the index is mirrored
+ * by a query rather than shared with it; both are refreshed off one parse of the
+ * file, and this provider is what the index still exists for.
  */
 public final class DeclarationDefinitions {
 
@@ -60,10 +64,10 @@ public final class DeclarationDefinitions {
     public static Optional<Location> locate(DeclTarget target, SourceWalker.Index sourceIndex) {
         return switch (target) {
             case DeclTarget.CatalogTable t ->
-                Definitions.resolve(Definitions.classTarget(t.table().classFqn(), sourceIndex), t.table().classFqn());
+                Definitions.resolve(Definitions.classTarget(t.classFqn(), sourceIndex), t.classFqn());
             case DeclTarget.CatalogColumn c ->
                 Definitions.resolve(
-                    Definitions.fieldTarget(c.table().classFqn(), c.column().name(), sourceIndex), c.table().classFqn());
+                    Definitions.fieldTarget(c.classFqn(), c.columnName(), sourceIndex), c.classFqn());
             case DeclTarget.SourceClass s ->
                 Definitions.resolve(Definitions.classTarget(s.fqClassName(), sourceIndex), s.fqClassName());
             case DeclTarget.SourceMethod m ->

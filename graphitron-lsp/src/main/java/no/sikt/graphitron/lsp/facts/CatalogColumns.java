@@ -6,16 +6,13 @@ import org.jooq.Field;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.select;
 
 /**
  * The columns a table declares, as the catalog census holds them, with the generated field's doc
- * comment overlaid from the {@code java_} family. One query over {@code sql_column} joined to its
- * table, in table-definition order.
+ * comment overlaid from the java-source family through {@link SourceDeclarations}. One query over
+ * {@code sql_column} joined to its table, in table-definition order.
  *
  * <p>Shared because completion and hover want the same rows of the same relations: completion offers
  * every column of the table and hover names one of them. What each surface keeps to itself is which
@@ -37,14 +34,8 @@ public final class CatalogColumns {
      */
     public static List<Column> of(StoreHandle store, String tableName) {
         // The generated field's Javadoc, on the .java cadence, keyed by the table class FQN the
-        // catalog walk captured. A correlated scalar select rather than a left join, so a duplicate
-        // declaration of one FQN cannot multiply a column into two rows.
-        Field<String> javadoc = field(select(JAVA_FIELD_DECLARATION.JAVADOC)
-            .from(JAVA_FIELD_DECLARATION)
-            .where(JAVA_FIELD_DECLARATION.CLASS_NAME.eq(SQL_TABLE.CLASS_FQN))
-            .and(JAVA_FIELD_DECLARATION.FIELD_NAME.eq(SQL_COLUMN.JOOQ_NAME))
-            .orderBy(JAVA_FIELD_DECLARATION.FILE)
-            .limit(1));
+        // catalog walk captured and the column constant's own name.
+        Field<String> javadoc = SourceDeclarations.fieldJavadocOf(SQL_TABLE.CLASS_FQN, SQL_COLUMN.JOOQ_NAME);
         var rows = store.dsl()
             .select(SQL_COLUMN.TABLE_SCHEMA, SQL_COLUMN.TABLE_NAME, SQL_COLUMN.COLUMN_NAME,
                 SQL_COLUMN.JOOQ_NAME, SQL_COLUMN.SQL_TYPE, SQL_COLUMN.BINDING_TYPE,

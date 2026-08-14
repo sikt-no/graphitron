@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -13,10 +14,7 @@ import org.jooq.Field;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.select;
 
 /**
  * Catalog table-name completions for any coordinate the
@@ -47,14 +45,8 @@ public final class TableCompletions {
         }
         // The generated table class's Javadoc, on the .java cadence, joined by the FQN capture
         // recorded for exactly this purpose: jvm_class excludes the generated package, so nothing
-        // else reaches these classes. A correlated scalar select rather than a left join, so a
-        // duplicate declaration of one FQN cannot multiply the candidate into two popup entries;
-        // file order is the tiebreak, which is arbitrary but stated and stable.
-        Field<String> javadoc = field(select(JAVA_CLASS_DECLARATION.JAVADOC)
-            .from(JAVA_CLASS_DECLARATION)
-            .where(JAVA_CLASS_DECLARATION.CLASS_NAME.eq(SQL_TABLE.CLASS_FQN))
-            .orderBy(JAVA_CLASS_DECLARATION.FILE)
-            .limit(1));
+        // else reaches these classes.
+        Field<String> javadoc = SourceDeclarations.classJavadocOf(SQL_TABLE.CLASS_FQN);
         var rows = store.dsl()
             .select(SQL_TABLE.TABLE_NAME, SQL_TABLE.DESCRIPTION, javadoc)
             .from(SQL_TABLE)
