@@ -1167,6 +1167,54 @@ comments out of.
   declining once at the top rather than per arm. Both are the shape hover took, and the round-trip
   test now opens its document under the captured file's URI for the same reason hover's does.
 
+## Settled while building: goto-definition's last arm, the intra-schema jump
+
+The third provider is the one whose cursor sits on a reference to another SDL type, and it jumps
+within the schema rather than into the Java tree. It is also the only migration in this item where the
+projection was never the authoritative reader. A type being edited resolves against the open buffer's
+own tree-sitter parse, which is live in a way no capture can be; the projection served the case where
+the declaring file is on disk and in no buffer. So this increment retires a fallback rather than a
+reader, and what replaces it is `SdlDeclarations`, the SDL sibling of the java-source family's
+`SourceDeclarations`, asking the same question of a schema file.
+
+* **The reduction the projection did becomes an ordering.** The projection held one entry per type
+  name, reduced out of the registry before the language server saw it. The relation holds every
+  declaration site a type has, base and all five live extension kinds, each with the `merge_ordinal`
+  capture assigned it. So "jump to the definition, not to an extension of it" stops being a property
+  of which registry map the reducer read last and becomes the query's own `order by`, matching what
+  the buffer scan has always done. The fixture writes the extension above the base, so document order
+  and merge order disagree and the ordering is falsifiable.
+* **Whether a declaration can be opened is a property of its source name, not a list of names.** The
+  projection dropped two populations before emitting: definitions whose source name was null, and
+  definitions from graphitron's bundled directive file, the latter by comparing against a constant.
+  The store's answer needs no list. Capture writes a schema file's `source_name` as the absolute
+  normalized path it read, which is the convention `StoreAccess.sourceNameOf` reads in the other
+  direction, so a source name that is not an absolute path names something no editor can open. One
+  predicate covers the bundled directive definitions, a programmatic caller's SDL label, and the
+  source name the `@link` tag synthesiser stamps. The middle case is one the projection got wrong: a
+  label has a non-null source name, so it would have handed the editor a `file://` URI built from a
+  bare word.
+* **A site nothing can open is skipped, not a refusal of the type.** Because the sites are ordered,
+  the fallback takes the first one that yields a location rather than the first one at all. A type
+  whose base definition arrived under a label and whose extension sits in a file still jumps, to the
+  extension. The unopenable sites stay perfectly readable facts for every other question; they are
+  simply nowhere to jump.
+* **The fallback's position is coarser than the buffer's, and that is the grain rather than a
+  placeholder.** A site is where the declaration starts, at its `type` keyword; the name span is a
+  parse's answer and the arm that has a parse returns one. The incumbent's javadoc explained the same
+  coarseness by contrast with "the `0:0` placeholder the jOOQ path returns", which stopped being true
+  an increment ago, so the comparison went with it.
+* **Two behaviours changed at the edges, and both are the graph scope arriving.** The fallback answers
+  from the graph the cursor's own document belongs to, where the projection answered from whatever the
+  last build produced for the session. And a buffer whose file no capture has seen keeps its
+  workspace-wide buffer scan but loses the on-disk fallback, which is the same trade the Java-side
+  arms took.
+* **The store is optional in this provider for a different reason than in its siblings.** They have
+  nothing to say without one and decline at the top; this one's authoritative arm is the buffer, so a
+  session started outside a build still resolves every reference the workspace declares. That
+  asymmetry is now a named case rather than a thing a reader has to infer from where the `flatMap`
+  sits.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1179,3 +1227,5 @@ path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declare
 (`ofTable`, `ofColumn`, `classJavadoc`) and `Definitions.methodLocation`; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
+`typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's
+intra-schema arm was the language server's only one, and it reads the declaration sites now.

@@ -1,14 +1,13 @@
 package no.sikt.graphitron.lsp.definition;
 
+import no.sikt.graphitron.lsp.facts.SdlDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.TypeNames;
 import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
@@ -33,22 +32,25 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAMED_TYPE;
  * with {@code .or()} rather than classifying up front.
  *
  * <p>When an open buffer declares the type, the returned range is the real
- * declaration-name span from the tree-sitter parse, not the {@code 0:0} placeholder
- * the jOOQ path returns. Otherwise resolution falls back to the build snapshot's
- * {@link LspSchemaSnapshot.Built#typeDefinitionLocations()}, which covers every type
- * in every schema file regardless of which buffers are open. The open-buffer scan
- * stays first and authoritative: a type being edited resolves to its live
- * tree-sitter span, not the last-built on-disk position. The snapshot is an explicit
- * parameter (not read off the {@link Workspace}) so the fallback is unit-testable
- * without a full build; the production call site in
- * {@code GraphitronTextDocumentService} passes {@code workspace.snapshot()}.
+ * declaration-name span from the tree-sitter parse. Otherwise resolution falls back to
+ * the graph's captured declaration sites, through {@link SdlDeclarations}, which cover
+ * every type in every schema file regardless of which buffers are open. The
+ * open-buffer scan stays first and authoritative: a type being edited resolves to its
+ * live tree-sitter span, not the position the last capture recorded.
+ *
+ * <p>The store is optional here, and not for the reason it is optional elsewhere. The
+ * providers that resolve into the Java tree have nothing to say without it and decline
+ * at the top; this one's authoritative arm is the buffer, so a session outside a build
+ * still resolves every reference the workspace declares and loses only the on-disk
+ * fallback. What that fallback additionally needs is for the cursor's own document to
+ * name a captured source, since it is the document that decides which graph answers.
  */
 public final class IntraSchemaDefinitions {
 
     private IntraSchemaDefinitions() {}
 
     public static Optional<Location> compute(
-        Workspace workspace, LspSchemaSnapshot snapshot, String cursorUri, Point pos
+        Workspace workspace, Optional<StoreHandle> store, String cursorUri, Point pos
     ) {
         // withAllViews so the cursor-file leaf resolution and the workspace-wide
         // declaration scan read one consistent generation of every open file; the
@@ -75,28 +77,11 @@ public final class IntraSchemaDefinitions {
                     return Optional.of(locationOf(entry.getKey(), nameNode.get(), file.source()));
                 }
             }
-            return snapshotFallback(snapshot, typeName);
+            // Workspace-wide fallback: no open buffer declares the type, so the graph's own
+            // captured declaration sites answer. Empty for a name the graph does not declare,
+            // and for one it declares only where an editor cannot follow.
+            return store.flatMap(handle -> SdlDeclarations.typeLocation(handle, typeName));
         });
-    }
-
-    /**
-     * Workspace-wide fallback: resolve the type to its declaration position recorded in the
-     * build snapshot when no open buffer declares it. Returns empty for an
-     * {@link LspSchemaSnapshot.Unavailable} snapshot or a name the map does not carry
-     * (built-in scalar, bundled-directive type, or a name the schema does not declare).
-     */
-    private static Optional<Location> snapshotFallback(LspSchemaSnapshot snapshot, String typeName) {
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
-        return built.typeDefinitionLocation(typeName).map(IntraSchemaDefinitions::locationOf);
-    }
-
-    private static Location locationOf(CompletionData.SourceLocation loc) {
-        // The snapshot map already holds 0-based LSP coordinates (CatalogBuilder reduces the
-        // registry's 1-based SourceLocation). The fallback points at the declaration's start
-        // (the type/scalar keyword); the precise name span is only available from the
-        // open-buffer tree-sitter path above.
-        var pos = new Position(loc.line(), loc.column());
-        return new Location(loc.uri(), new Range(pos, pos));
     }
 
     private static Location locationOf(String uri, Node nameNode, byte[] source) {

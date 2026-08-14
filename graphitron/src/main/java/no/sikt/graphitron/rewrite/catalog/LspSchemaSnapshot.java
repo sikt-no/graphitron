@@ -88,10 +88,14 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          * Per-named-type declaration location, keyed by the SDL type name; value is
          * the canonical {@code type}/{@code scalar} declaration's source position
          * (0-based LSP coordinates, as in {@link CompletionData.SourceLocation}).
-         * The workspace-wide goto-definition fallback for type references whose
-         * declaring file is not in an open buffer; the open-buffer tree-sitter scan
-         * stays authoritative. Absent entries (built-in scalars, types declared in
-         * the bundled directive source) are not jumpable.
+         * Absent entries (built-in scalars, types declared in the bundled directive
+         * source) are not jumpable.
+         *
+         * <p>The MCP schema view is what still reads this. The language server's
+         * goto-definition fallback used to, and now asks the fact store's declaration
+         * sites instead, which hold every site a type has rather than the one entry
+         * this map reduces them to; the projection retires when its remaining reader
+         * does rather than for want of a substrate.
          */
         Map<String, CompletionData.SourceLocation> typeDefinitionLocations();
 
