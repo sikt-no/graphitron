@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: [capture-expands-facet-synthesis]
+depends-on: []
 created: 2026-08-14
 last-updated: 2026-08-14
 ---
@@ -85,8 +85,8 @@ decision.
 `SchemaReachability.reachableTypeNames` with `containsExactlyInAnyOrderElementsOf` over every
 `ClassifiedCorpus` example. That is plain equality, not a residue-tolerant diff, with exactly one
 named subtraction: the walk's own facet verdicts, because capture records the `@asFacet` marker but
-does not synthesize the facet types. Closing that hole is this item's one dependency
-(`roadmap/capture-expands-facet-synthesis.md`).
+does not synthesize the facet types. Closing that hole is deliverable 3 below, and the template for
+it already ships.
 
 **2b. The read surface the walk needs from graphql-java is narrow, and all of it is captured.**
 File size is a poor proxy for coupling here. Across `TypeBuilder` and `FieldBuilder` there are 56
@@ -119,7 +119,8 @@ migrate. This item deliberately does not wait for that.
 
 ## Scope
 
-Four deliverables, in order.
+Five deliverables, in order. They land together: the item's success criterion is a classified model
+built with no `GraphQLSchema` in reach, and no prefix of this list satisfies it.
 
 ### 1. Capture runs above the walk
 
@@ -154,7 +155,28 @@ miniature, and keeping it as a shadow would preserve the very thing this item ex
 carriers, survivor directive argument types) live where they are derived rather than in two places
 that must be kept equal.
 
-### 3. `GraphitronSchemaBuilder` reads the store and nothing else
+### 3. Capture expands `@asFacet`, so no synthesis is left walk-side
+
+`MacroCapture` already runs macro expansion inside the capture walk: `expandConnections` mints the
+Relay Connection and Edge declarations an `@asConnection` carrier implies, written through the same
+doors an authored row goes through with `graphitron_type_declaration_synthesis` provenance saying an
+expansion put them there. `@asFacet` has no such expansion; capture records the marker
+(`graphitron_facet`) and stops, so the facet types the walk mints exist only in the walk's rebuilt
+assembled schema and never in the store.
+
+This is a step here rather than an item of its own because it has no independent success criterion. A
+facet expansion nobody reads is another shipped-but-unread relation, and the thing that demonstrates
+it is correct is the next deliverable classifying a faceted schema with no `GraphQLSchema` in reach. A
+builder that holds no schema cannot mint types that only a schema rebuild produces, so the two land
+together or neither is finished.
+
+Follow `expandConnections`: carriers collected during the walk and minted after it so a type's own
+rows are never interleaved, provenance rows for the anti-join that recovers the authored picture, and
+nothing that rejects. The walk-side twin to pin against is `ConnectionPromoter`'s facet arm, and per
+`MacroCapture`'s own doctrine the two stay pinned by the agreement suite rather than one calling the
+other, right up until the twin retires with the rebuild in deliverable 4.
+
+### 4. `GraphitronSchemaBuilder` reads the store and nothing else
 
 The builder loses its `GraphQLSchema` and its `TypeDefinitionRegistry`. Its inputs become the store
 and the `RewriteContext`, and it produces the classified model by querying relations. This is the
@@ -181,7 +203,7 @@ Concretely, that means:
   schema rebuild it exists to perform. Once capture expands facets too, no synthesis is
   walk-side and there is nothing left for a rebuild to produce.
 
-### 4. The order becomes load-bearing
+### 5. The order becomes load-bearing
 
 With the model derived from the store, a build that walks before capturing cannot produce a model at
 all. The ordering constraint stops being a comment in `runPipeline` and becomes structural. Add the
@@ -217,8 +239,6 @@ test that says so directly, so the reason is legible rather than merely emergent
 * **Migrating any classification decision onto a view.** The decisions stay in Java; only their
   inputs change. Sourcing a verdict from SQL is a reasonable separate item, and this is what makes
   one possible; picking the first arm belongs to whoever owns the drain sequence.
-* **Capture-side facet expansion**, which is `roadmap/capture-expands-facet-synthesis.md` and lands
-  first.
 * **Draining any leaf-model consumer.** The census above is the argument for projecting the leaf
   model from the store, not work this item takes on.
 * **The emitters' reads of the assembled schema.** They keep reading it; this item only stops routing
@@ -255,8 +275,9 @@ test that says so directly, so the reason is legible rather than merely emergent
   `AttributedRegistry` overloads.
 * `GraphitronSchemaBuilder.Bundle`'s `assembled` component, once the pipeline hands the assembled
   schema to the emitters directly.
-* `ConnectionPromoter`, including `rebuildAssembledForConnections`, once `roadmap/capture-expands-facet-synthesis.md` puts facet expansion
-  in capture beside `MacroCapture.expandConnections`.
+* `ConnectionPromoter`, including `rebuildAssembledForConnections` and its facet arm, which has
+  nothing left to produce once the facet expansion sits in capture beside
+  `MacroCapture.expandConnections`.
 
 ## Coverage
 
@@ -264,6 +285,10 @@ test that says so directly, so the reason is legible rather than merely emergent
   `intent_type_domain` against a walk-side traversal; when the traversal is gone there is nothing to
   diff, and the agreement becomes the corpus-wide assertion that the domain relation is the
   population the classifier actually classified. Restate it in those terms rather than deleting it.
+* The facet expansion's own agreement, pinned against `ConnectionPromoter`'s facet arm the way
+  `expandConnections` is pinned against its twin, plus a faceted corpus example that classifies with
+  no schema in reach. That second one is what makes the expansion demonstrably right rather than
+  merely present, and it is why the expansion is not shippable on its own.
 * `GeneratorDeterminismTest` plus the compile and execution tiers are the registration-order gate,
   and the broadest signal that a store-sourced read surface returns what the graphql-java one did.
 * A pipeline-tier test that the store holds this run's rows before the model exists, so the ordering
@@ -289,3 +314,11 @@ stayed on the assembled schema; the owner rejected that split on the grounds tha
 belongs to capture and the builder should hold no schema at all. That is the version specified here,
 and it is the stronger target: the intermediate state would have added a store dependency without
 removing a graphql-java one, and left the two-producer obligation fully intact.
+
+The capture-side facet expansion was briefly filed as a separate dependency and folded back in on the
+owner's call. The test it failed is the one that should govern any split: an item needs an independent
+success criterion and an independent consumer. The expansion has neither, and separating it would have
+doubled the gate count (two Spec reviews, two Done reviews, each needing a different session) around a
+step whose correctness is only demonstrated by the deliverable that follows it. The gate flip stays
+out of scope on the opposite reading: it has its own criterion, already written on `ClaimDomain`, and
+it unblocks on a schedule this item does not control.
