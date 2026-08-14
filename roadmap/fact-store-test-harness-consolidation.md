@@ -36,6 +36,12 @@ handle offering `of(Path, String)`, `ofPipeline(Path, String)`, `registryOf`, `a
 `fixtureFile`, and nine test classes inside `capture/` use it happily. It is package-private,
 so `derive/` and `diagnostics/` cannot see it at all. Each of them reinvented it independently.
 
+The inventory above is bounded rather than exhaustive: it counts the classes in this module that
+capture an SDL fixture into a store they then assert against. What sits just outside that boundary,
+including a further copy of the harness in `graphitron-lsp` and three classes here that open a store
+without capturing anything, is named under "The rule's boundary" below. Stating the edge is part of
+the item, because an inventory with no edge is the thing that rots.
+
 **But the duplication is the symptom, not the item.** The decision being re-made at nine sites is
 *which capture inputs the store under assertion is built from*, and the sites disagree without
 anything saying why. Past the 5-arg `FactCapture.capture` default (which fixes `jooq = null`,
@@ -92,9 +98,10 @@ be the cross-product of catalog, nodes, registry source, extensions and verdicts
 
 ### The governing rule: `CapturedStore` is where these utilities gather
 
-`CapturedStore` is the home for fact-store test utilities. A test that needs a store shape no
-existing factory produces adds a factory *there*, rather than hand-rolling a helper in its own class.
-That is the rule this item establishes, and it outranks the individual shape decisions below.
+`CapturedStore` is the home for fact-store test utilities in the `graphitron` module. A test that
+needs a store shape no existing factory produces adds a factory *there*, rather than hand-rolling a
+helper in its own class. That is the rule this item establishes, and it outranks the individual shape
+decisions below. The module qualifier is load-bearing; the next section says why.
 
 The failure mode being designed against is fragmentation, not accretion. Eight private copies that
 have quietly diverged is the expensive state, and it is expensive because nothing points a new test
@@ -107,6 +114,46 @@ copies deny.
 So the shape set below is a starting point, not a closed taxonomy, and a later item adding a factory
 is the design working rather than failing.
 
+The rule needs a carrier, or it is a sentence in a plan nobody reads twice. The per-factory javadoc
+notes required below do not carry it: those explain a shape to someone already in the file, and the
+author this rule is aimed at is the one who never opens it. So the rule is stated in
+`CapturedStore`'s class javadoc, as the orientation note a reader meets first. That is the whole of
+the enforcement this item ships, deliberately; the Tests section says why no guard beyond it.
+
+### The rule's boundary, and the copy on the other side of it
+
+The rule is scoped to the `graphitron` module because another copy of this harness lives outside it
+and is staying there: `no.sikt.graphitron.lsp.StoreFixture`, in `graphitron-lsp`'s test sources.
+`graphitron-lsp` does not depend on `graphitron`'s test-jar (`graphitron-sakila-example` is its only
+consumer), so an LSP test author cannot follow an unscoped version of the rule even if they wanted
+to, and an implementer who reads the rule as reactor-wide has no instruction for what to do on
+finding it.
+
+`StoreFixture` is not a near-miss of this item's target design; it is largely that design, reached
+independently. Its class javadoc opens on almost the same sentence as `CapturedStore`'s. It carries
+named factories rather than flags (`of`, `ofClasspath`, `ofCatalog`, `ofMultiSchemaCatalog`), each
+with the one-line note on what its shape carries that a sibling cannot that the section below
+prescribes. It takes a caller-supplied graph name over a shared default, captures a second graph into
+an already-open store (`andGraph`, `andGraphSharingTheFile`), and takes the classpath census as a
+factory argument rather than an axis. Its placeholder SDL constant is character-for-character
+`ClassMemberSlotTest`'s, and it makes the same unexamined `new NodeDeclaration(null)` choice.
+
+Read it before designing the factory set. On one question it reaches a different answer than the
+graph-identity section below: it keys the fixture filename on the graph name rather than taking a
+directory per graph, dissolving the one-directory-one-fixture constraint from the other side. Either
+answer is defensible; picking one without having seen the other is how a reactor ends up holding two.
+
+Consolidating the two is nonetheless out of scope here, for a scheduling reason rather than a design
+one. The in-flight item moving the LSP onto the fact store is actively growing `StoreFixture`, so a
+merge now would land on top of live work, and it would need a test-jar dependency added to
+`graphitron-lsp` besides. That merge is a later item, to be filed once both sides have settled.
+
+Three further classes in this module open a store by hand and are deliberately not in the inventory:
+`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest` and `capture/JavaSourceFactsTest`.
+All three are `@UnitTier`, and none calls `FactCapture` at all: they open a store and write to it
+directly, which is not the harness this item consolidates. Stating that here stops the next reader
+re-deriving it, and stops the inventory above reading as a census of everything that opens a store.
+
 ### Name the shapes; do not flag them
 
 Give the handle named factories, one per capture shape in the first three rows above, rather than
@@ -116,7 +163,16 @@ shape carries that its sibling cannot. Writing those notes is the work: if the n
 node-inference-off shape turns out to read "nothing, these tests just never needed nodes," that is
 the finding, and the set collapses to two.
 Resolving the `new NodeDeclaration(null)` versus `TestSchemaHelper.nodeDeclaration()` split is in
-scope and must not be preserved silently on the grounds that it is what the copies did.
+scope and must not be preserved silently on the grounds that it is what the copies did. Start from
+the production shape: `GraphQLRewriteGenerator` passes `new NodeDeclaration(jooq)` on both of its
+capture paths, so catalog-backed inference is what every real capture sees, and the bare
+`NodeDeclaration(null)` in three of these tests is the deviation. That makes inference-on the default
+a factory should carry and inference-off the arm that owes a note naming the case that needs it. It
+is the same argument the registry-source section below runs, applied to the other axis.
+
+Watch the direction of evidence while resolving it. Switching a test to inference-on and finding the
+suite still green does not show the axis is inert; it shows this fixture does not reach it, which is
+the weaker claim and not the one a collapsed factory set would be asserting.
 
 ### Layered: a closure convenience over a resource handle over the primitives
 
