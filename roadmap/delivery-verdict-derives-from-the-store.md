@@ -67,7 +67,7 @@ a switch instead of as a view over keyed relations.
 
 ## What the shape would be
 
-`intent_field_batching_rule (graph_name, type_name, field_name, rule)` as a union of positive arms,
+`intent_field_delivery_rule (graph_name, type_name, field_name, rule)` as a union of positive arms,
 one per trigger; `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` for
 the negatives that are stated rather than absent; and `intent_resolved_field_delivery (graph_name,
 type_name, field_name, verdict, rule)` as the reduction under a declared precedence. Most `INLINE`
@@ -75,21 +75,49 @@ is the complement, the absence of any arm, rather than an enumerated set of shap
 remember to keep current. The exceptions are the two populations below, and they are why the
 exemption relation exists rather than being a file-layout choice copied from the sibling.
 
+Two shape decisions, both settled here because they land in R667's read surface rather than only in
+the shadow test. The names carry one noun across the stratum, `delivery`, the way the sibling's carry
+`demand`: three relations a reader meets in `SHOW VIEWS` should be recognisable as one stratum, and
+an earlier draft's `batching_rule` broke that for a word the `rule` column already says better.
+Nothing is lost, because the literals still name batching triggers; the relation says which verdict
+it rules on, the row says which trigger produced it. And **the authored grain here is the
+coordinate**, unlike the sibling's, whose rule views are type-keyed on the stated ground that "every
+rule shipped so far is a property of the parent type". Delivery's are not: every batching arm reads a
+marker or a target on the field itself. The one exception is the root exemption, which is authored on
+the parent type and projects to its fields, so it is the sibling's grain appearing as a single arm
+inside a coordinate-grained relation rather than a reason to key the relation differently. Say so in
+the view comment, because the sibling's comment argues the opposite default and this item's other
+instruction is to copy it.
+
 The property worth naming: **every arm is additive**. A new batched delivery is a new `SELECT`
 `UNION`ed in, joining the base relations that already witness it. Nothing elsewhere has to be
 edited to stay true, which is the difference between this and the `singleTableBackedVerdict` case
 that started the item. That is the fact model's stated law ("a capability is added by adding a fact
 relation, never a new leaf type") applied to a verdict that never got the treatment.
 
-Integrity moves to the instruments the store already uses:
+Integrity moves to the instruments the store already uses. Two of the three arrive by inheritance
+rather than by declaration, which is worth being exact about, because a view takes no constraints
+and an earlier draft of this section asked for two that cannot be written:
 
-* `CHECK` on the verdict and rule vocabularies, in the `intent_resolved_field_demand` mould, so the
-  closed sets are declared where they are read rather than implied by a switch's arms.
-* `FOREIGN KEY` to `graphql_field` at the coordinate grain, which every `graphitron_` marker
-  relation already carries, so a rule arm cannot name a coordinate capture never saw.
-* Ambiguity as a **detection view** in the `intent_authored_claim_conflict` mould: a coordinate
-  matching two arms whose precedence is undeclared is a row to report, not a switch fallthrough to
-  guess at. The current model cannot even ask this question.
+* **The closed vocabularies are declared in the column comments.** That is the
+  `intent_resolved_field_demand` mould read literally: its `verdict` column says "a closed two-value
+  vocabulary" and its `rule` column enumerates the four literals "in their declared precedence
+  order", and neither is a `CHECK`, because H2 views cannot carry one. No `intent_` view in the model
+  does. `FactSchemaGateTest.commentCoverageIsTotal` is what makes the comment mandatory, so the
+  declaration is build-enforced even where the constraint is unavailable, and what holds the rows
+  inside the vocabulary is that each arm emits its literal as a constant. The gain over the switch is
+  unchanged: the closed set is written where it is read instead of being implied by which arms
+  somebody wrote.
+* **The `graphql_field` foreign key is inherited, not declared.** Every `graphitron_` marker relation
+  already carries it, so an arm joining one cannot name a coordinate capture never saw; the
+  guarantee rides through the projection rather than being restated on it. The switch has no
+  analogue, keying a `Map` on whatever the walk happened to mint.
+* **Ambiguity becomes a question the model can ask**, in the `intent_authored_claim_conflict` mould.
+  Not a deliverable here, and the reason is worth stating so nobody looks for a fourth relation: that
+  view reports genuine violations, whereas the precedence this item declares is total, so a delivery
+  analogue is empty by construction on landing. Overlap is designed in rather than pathological, as
+  the root coordinate below shows. What the store buys is that the question is expressible at all. A
+  switch fallthrough is not a row and cannot be counted; two arms claiming one coordinate can be.
 
 ### Delivery's negative side is not pure complement, and the corpus already proves it
 
@@ -217,6 +245,62 @@ trigger copies `PRODUCER_PAYLOAD`. And resolving the element the verdict anchors
 hop. It is still fixed-depth and needs no closure, which is what the materialization question
 actually turns on; the closing section states it in the form that survives.
 
+### The arms, once
+
+The rules are stated across the sections above in the order the reasoning needed them, which is not
+an order anybody writing the DDL can use. Collected, so the arm list has one place to check itself
+against. Precedence runs down the table: every exemption arm beats every rule arm, and within each
+side the first matching arm names the row.
+
+One sub-predicate is shared, and naming it once is worth a paragraph because it is where this item's
+whole point lands. **Table-anchored target** means the coordinate's target base type binds one
+catalog table through `intent_bound_table` (`candidates = 1`) and carries no `@discriminate`, a
+connection-shaped target anchoring through its element instead. That anti-join on
+`graphitron_discriminate` is precisely what replaces `singleTableBackedVerdict`'s hand-written
+`case TableInterfaceType _ -> false`: the same verdict, stated as a join against a fact that capture
+already holds rather than as a shape somebody remembered to exclude. If one line of the DDL is the
+deliverable, it is that one. Its two inputs are not repeated per row below, and the fan-in arm is the
+one that does not use it, its target being polymorphic rather than table-shaped.
+
+[cols="2,4,2"]
+|===
+| Arm | Gate | Reads
+
+| `ROOT_COORDINATE` (exemption)
+| the parent type is a root operation binding
+| `graphql_root_operation`, projected onto the type's fields
+
+| `SERVICE_CALL` (exemption)
+| the coordinate carries `@service`
+| `graphitron_service`
+
+| `POLYMORPHIC_FAN_IN`
+| the target is an interface or union carrying no `@discriminate`, list-valued or connection-shaped, with at least one table-bound participant
+| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`
+
+| `RECORD_HANDED_PARENT`
+| the parent is a producer payload and the target is table-anchored
+| the `PRODUCER_PAYLOAD` arm's own shape
+
+| `AUTHORED`, the split reading
+| `@splitQuery` on the coordinate, and either the target is table-anchored or the coordinate carries `@pivot`
+| `graphitron_split_query`, `graphitron_pivot`
+
+| `AUTHORED`, the tenant reading
+| `@tenantFanOut` on the coordinate, the target is table-anchored, and the coordinate carries no `@routine`
+| `graphitron_tenant_fan_out`, `graphitron_routine`
+|===
+
+Two things the table shows that the prose could not. `UNION` rather than `UNION ALL` means the two
+`AUTHORED` readings collapse to one row wherever both match, so the open question below is about the
+vocabulary and not about row counts. And the within-side order is load-bearing on the exemption side
+with a witness already in the corpus: `Query.aggregated`, in the same
+`service-child-class-backed-parent` example, is a root *and* carries `@service`, so both exemption
+arms match it and `mint`'s order is what makes `ROOT_COORDINATE` the reason it reports rather than
+`SERVICE_CALL`. The verdict is `INLINE` either way, which is exactly why the reason column needs the
+order stated: the shadow test only catches a mis-ordering here if it compares the winning literal and
+not just the verdict, and that is a choice the implementer makes.
+
 ## Which consumers can read it, and when
 
 Delivery has two consumer classes, and the pipeline order splits them. `runPipeline` is, in order:
@@ -270,12 +354,14 @@ set acquiring an enforcer that is not another switch.**
 ## Implementation
 
 * The three views in the DDL, in the demand stratum's shape:
-  `intent_field_batching_rule (graph_name, type_name, field_name, rule)` as a `UNION` of one arm per
+  `intent_field_delivery_rule (graph_name, type_name, field_name, rule)` as a `UNION` of one arm per
   trigger, `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` with the
   two arms established above, and `intent_resolved_field_delivery (graph_name, type_name,
-  field_name, verdict, rule)` as the reduction. `CHECK` on all three closed vocabularies,
-  `FOREIGN KEY` to `graphql_field`, full comment coverage per
-  `FactSchemaGateTest.commentCoverageIsTotal`.
+  field_name, verdict, rule)` as the reduction. Six arms in total, and the table above is the
+  checklist: four rule arms under three literals, two exemption arms. The closed vocabularies are
+  declared in the column comments rather than in constraints a view cannot carry, per the integrity
+  note above, with full comment coverage per `FactSchemaGateTest.commentCoverageIsTotal`; the
+  vocabulary's *enforcement* is the shadow test's containment assertion, two bullets down.
 * The reduction's precedence runs exemption before rule, which is the opposite of the demand
   sibling's and has to be stated as such in the view comment rather than inherited by analogy.
   `intent_resolved_field_demand` lets demand beat exemption because a `@table` type shaped like a
@@ -304,7 +390,15 @@ set acquiring an enforcer that is not another switch.**
   `Arm.DERIVED` for all three views. Per that test's stated residue discipline: equality outside the
   named residues, each disagreement direction pinned against a store-derived population rather than
   a Java-side coordinate list, and each residue asserted non-empty on the shapes that create it so
-  no pin can go vacuous.
+  no pin can go vacuous. Three specifics that mould already settles, worth copying rather than
+  re-deciding. Compare the verdict and the winning literal as one value, the way the sibling folds a
+  coordinate to `DEMANDED:<rule>`, or a mis-ordered precedence passes wherever both readings agree on
+  the verdict, which is every exemption overlap. Assert both vocabularies are subsets of the declared
+  sets, since that assertion is what actually enforces the closed sets the comments declare and the
+  DDL cannot. And pin the exemption overlap directly, as
+  `overlappingExemptionReadingsSurviveInTheRulesAndResolveByPrecedence` pins the sibling's: both rows
+  survive in the rule view and the reduction picks the declared winner. `Query.aggregated` is the
+  coordinate.
 * Corpus population for every arm the view declares. A shadow test over a corpus that does not
   exercise an arm is vacuous in exactly the way the R661 review found `DeliveryFactPinTest` to be,
   so each declared rule needs a coordinate that reaches it. Three populations are missing today, all
@@ -410,7 +504,7 @@ has left the question exactly where it was and reproduced the defect in a new pl
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
   `@splitQuery`: every marker consumed, inert-by-construction, or rejected. Its spec proposes a
   total switch over the classified leaf. If delivery becomes a view, that sweep is an anti-join
-  instead (`graphitron_split_query` rows with no `intent_field_batching_rule` row and no stated
+  instead (`graphitron_split_query` rows with no `intent_field_delivery_rule` row and no stated
   inert reason), which is both simpler and the same instrument the demand stratum's future gate
   already plans to use. The Spec-time question that draft left open, whether R557 collapses into
   this one, resolves to no. R557's deliverable is a validate-time rejection with a stated reason per
@@ -434,11 +528,16 @@ One question is genuinely open, and it is narrower than the two the earlier draf
   `@tenantFanOut` on a table-anchored non-`@routine` child) that mint the same literal. The
   sibling's vocabulary is one literal per arm, which argues for splitting, and against it stands the
   `@tenantFanOut` arm having no coordinate anywhere, so a split ships a literal nothing reaches.
-  Two observations for whoever decides. The vacuity is an argument for the fixture rather than
+  Three observations for whoever decides. The vacuity is an argument for the fixture rather than
   against the split, since the arm is equally unwitnessed under one literal and merely less visibly
-  so. And the decision is cheap now and expensive later: the rule vocabulary becomes R667's read
+  so. The decision is cheap now and expensive later: the rule vocabulary becomes R667's read
   surface once that item lands, so splitting a literal afterwards is a consumer change rather than a
-  DDL change. That asymmetry, not the arm count, is the thing to weigh.
+  DDL change. That asymmetry, not the arm count, is the thing to weigh. And the split is what makes
+  the precedence between the two readings a stated fact instead of an accident of `UNION` dedup: one
+  literal means a coordinate carrying both markers yields one row and the question never comes up,
+  while two literals means two rows and the reduction has to declare which one names the verdict.
+  Under one literal that precedence is unstated because it is unobservable, which is the same trade
+  the negative-space switch was making.
 
 Settled at review rather than left open, in the order the questions were retired.
 
