@@ -141,12 +141,17 @@ and which columns does the predicate bind against. A routine IN parameter has no
 and no predicate. It wants only the wire half, "decode into typed key values", with no projection
 against a table at all.
 
-The seam is narrower than either that resolver or the `resolveDecodeHelperForType` /
-`resolveTargetKeys` pair the Backlog draft named: `NodeIndex.forName(typeName)` returns a
-`NodeType` that already carries both `nodeKeyColumns` and `decodeMethod`, fully reconciled by
-`TypeBuilder`. Everything the segment needs is one index lookup. Routing through the
-table-anchored resolver would force a fake containing table into the call and re-derive an FK
-verdict nobody asked for.
+The seam already exists under a name, and it is neither of the two the Backlog draft guessed at:
+`BuildContext.resolveNodeIdRecordDecode(typeName)` takes a type name and produces exactly the
+record decode this item projects from. It reads its key columns through `resolveTargetKeys`, the
+same place `NodeIdLeafResolver` does, "so the `@node(keyColumns:)` fallback lives in exactly one
+place". Everything the segment needs is that one call.
+
+That is the strongest evidence for the record model: this item ends up reusing an existing
+resolver *and* an existing emitter, and contributes the one thing genuinely missing, which is
+opening the record a level further. Routing instead through the table-anchored
+`NodeIdLeafResolver` would force a fake containing table into the call and re-derive an FK verdict
+nobody asked for.
 
 ### The path stays SDL-only; the decode rides the extraction slot
 
@@ -169,15 +174,41 @@ against input-object fields and would return `null` for a projection segment, fa
 documented "pass through conservatively rather than over-reject" arm. That is a silent hole in
 the wire-coercion gate, which is the same defect this item exists to close, one level up.
 
-**The new arm composes with `NodeIdDecodeKeys` rather than joining it.**
-`NodeIdKeyProjection(NodeIdDecodeKeys decode, ColumnRef column, int keyIndex)` is a top-level
-`CallSiteExtraction` arm that *carries* the decode. Making it a sibling of `ThrowOnMismatch`
-under `NodeIdDecodeKeys` would be wrong twice: that interface's documented axis is the failure
-mode, and a projection is not a failure mode (a projected binding still needs one); and
+**What the node id opens into is a `TableRecord`, and that is the thing the segment opens
+further.** This is the model, and it decides the carrier. `CallSiteExtraction.NodeIdDecodeRecord`
+already exists and already emits exactly this: it calls
+`encoderClass.decodeValues(typeId, nodeId)` and loads the values onto the target record's key
+columns with one `record.fromArray(values, Tables.<T>.<col1>, ...)`, through a per-record-type
+`decode<RecordType>Record` helper that returns the generated `*Record` type. So the segment does
+not need a new decode mechanism; it needs a column read off a record that is already produced.
+
+That is why the projection reuses `NodeIdDecodeRecord` rather than adding a
+`NodeIdKeyProjection` arm over `NodeIdDecodeKeys`. Four things follow, and they are the reason
+this shape wins rather than merely being available:
+
+* **No positional index, so no transposition.** A `NodeIdDecodeKeys` projection reads
+  `RowN.value<i>()`, positional against `HelperRef.Decode.outputColumnShape`. A record read names
+  its column (the generated typed accessor, or `Tables.<T>.<COL>`), so a transposed composite-key
+  projection is unconstructable rather than merely tested for. That deletes a bug class and the
+  execution-tier test whose stated job was catching it.
+* **Typed for free.** The generated accessor returns the column's Java type, so the type gate
+  compares real types and javac backstops the whole thing in the consumer's own compile.
+* **No new `CallSiteExtraction` arm.** The axis that varies is "read the whole record, or one
+  column of it", so `NodeIdDecodeRecord` gains an optional projected `ColumnRef` and the sealed
+  hierarchy stays as it is. Every existing exhaustive switch keeps compiling.
+* **The overlap dissolves rather than needing documentation.** Binding the whole record and
+  binding one of its columns are one mechanism at two depths, which is exactly what the
+  openability rule predicts: `input.organisasjonId` *is* the record, `.organisasjonskode` opens
+  it. There is no longer a second way to get a decoded key into a call that the docs must
+  disambiguate against the first.
+
+Recorded for whoever reads the superseded shape: had this ridden `NodeIdDecodeKeys`, the arm
+would have had to be a top-level `CallSiteExtraction` composing with it rather than a sibling of
+`ThrowOnMismatch`, because that interface's documented axis is the failure mode and because
 `ConditionGlueRenderer.decodeCall` reads the mode as
-`nidk instanceof ThrowOnMismatch ? THROW : SKIP`, so a new sibling arm would silently route to
-SKIP semantics. If a later item does widen `NodeIdDecodeKeys`, that ternary must become an
-exhaustive switch first.
+`nidk instanceof ThrowOnMismatch ? THROW : SKIP` and would have routed a new sibling silently to
+SKIP. That ternary is still fragile and still wants to be an exhaustive switch, but it is now
+somebody else's item rather than this one's problem.
 
 The extraction slot is the item's other payoff. `RoutineDirectiveResolver` hardcodes
 `new CallSiteExtraction.Direct()` on every argument-sourced binding and `RoutineCallEmitter`
@@ -270,6 +301,17 @@ same spelling mean two different things depending on a fact (the node's key arit
 visible at the `argMapping` site, and it would leave composite-key node types needing the
 explicit segment anyway. One spelling, always explicit.
 
+**The rejection is target-driven, not universal**, which the record model makes visible.
+Unopened, `input.organisasjonId` denotes the decoded `TableRecord`. Whether that is bindable
+depends on what it is being bound to: a routine IN parameter takes a single value, so it is a
+rejection there; a `@service` parameter typed as the generated `*Record` is exactly what
+`NodeIdDecodeRecord` was built to serve, so it is legal there. That is the same "one predicate,
+several targets" shape as the type gate, and it is a better rule than "the bare form is always
+wrong", which was an artefact of looking only at `@routine`. Note that binding a record to a
+service parameter *through `argMapping`* may not be reachable today (`NodeIdDecodeRecord` is
+produced for input-bean member fields); confirm at pickup whether this item enables it or merely
+declines to forbid it.
+
 This is a breaking change for any schema relying on the silent pass-through. It is a rejection
 of a spelling that produces wrong data, so it is a bug fix rather than a capability removal, and
 the rejection message names the fix. Call it out in the changelog entry at Done.
@@ -312,42 +354,54 @@ projecting the wrong column of a composite key is told exactly that.
 
 ### Emission
 
-`CompositeDecodeHelperRegistry` already emits precisely the required helper.
-`register(HelperRef.Decode, Mode.THROW, list)` produces a private static method returning the
-single key column's type at arity 1 and a typed `RowN` above, raising the generated
-`GraphitronClientException` on a null decode with the two-branch malformed-versus-wrong-type
-message. So:
+The expression is the existing record-decode helper plus a column read:
+`decode<RecordType>Record(<raw read>).get<Column>()`. The helper already raises the generated
+client error on a malformed or wrong-type id, so the failure surface is inherited rather than
+rebuilt.
 
-* arity 1: `decode<Type>(<raw read>)`
-* arity N: `decode<Type>(<raw read>).value<i>()`, `i` being the projected column's 1-based
-  position in `HelperRef.Decode.outputColumnShape`
+**What is threaded changes; that it is threaded does not.** The record-decode helpers are named
+through `FetchersHelperNames` (which resolves collisions with ordinal suffixes, so the name is a
+generation-time fact and cannot be pinned onto the classified model), and they are drained onto
+the `<Type>Fetchers` builder from maps collected *up front* from the classified model rather than
+registered during emit. Two consequences:
 
-The `list` axis is `false` here: a routine IN parameter takes one value, which the existing
-`leafTypeGate` cardinality check already enforces.
+* The collection walk must reach routine, service and condition `argMapping` bindings, not just
+  input-bean members, so the up-front `scalarDecoders` collection widens.
+* `RoutineCallEmitter` needs `FetchersHelperNames` rather than a `CompositeDecodeHelperRegistry`.
+  That is still a new parameter at the four `emitCall` sites, so the earlier "registry threading"
+  cost does not vanish. It does get cheaper in kind: `FetchersHelperNames` is already threaded to
+  `ArgCallEmitter` and `ServiceMethodCallEmitter` and already lives on the emission context, so
+  this is an established parameter reaching one more emitter rather than a new registry type
+  reaching four new places.
 
-**A composite key decodes once per projected column, and that is accepted.**
-`CompositeDecodeHelperRegistry` deduplicates *helpers*, keyed on
-`(encoderClass, methodName, mode, list)`, not *calls*. Two parameters projecting two columns of
-one composite key therefore register one helper and emit two `decode<Type>OrThrow(raw)`
-invocations. Decoding once instead would need a hoisted typed local, and `emitCall` returns a
-single `CodeBlock` expression with no statement context to hoist into, so it would cost a contract
-change across the four call sites the registry threading already touches.
+**Reversing the double-decode decision: materialise once, via a hoisted local.** The earlier call
+in this item was to accept one decode per projected column, on the grounds that a decode is a
+base64 parse and the alternative cost an `emitCall` signature change. Under the record model both
+halves of that reasoning change. The duplicated work is now a full record materialisation
+(`decodeValues` plus a `fromArray` over every key column) and, more importantly, a duplicated
+*failure* site: two identical throw points for what is one bad id. Hoisting one typed local gives
+one materialisation and one failure site, and the generated source reads as what it is.
 
-Take the double decode. A decode is a base64 parse and an arity check, not a query, and the
-duplicated call keeps `emitCall`'s signature intact. The visible cost is two identical throw sites
-in the generated source for a composite-key binding, which is acceptable; if it ever stops being
-acceptable, the lift is a self-contained follow-up and
-`CompositeDecodeHelperRegistry.decodedType(decode, list)` already exists for it, "so a caller
-declaring a typed local for the helper's result derives the type from the same shape the helper
-body is built from". Only `ConditionGlueRenderer` calls it today.
+So take the signature change: `emitCall` yields pre-statements alongside its expression, and the
+call sites add the pre-statements before the statement they already build. Three of the four have
+statement context immediately to hand (`TypeFetcherGenerator`'s two routine fetchers and
+`RootLauncherRenderer` all wrap the result in `addStatement`).
+
+**The fourth site is the one to check at pickup.** `PathFragments.emitTableExpression` feeds the
+correlated lateral form, where the routine call is embedded inside a join chain
+(`.crossJoin(DSL.lateral(...))`) rather than a standalone statement, so a pre-statement has to
+hoist above the enclosing query construction rather than sit next to it. Resolve it there by
+hoisting to the method preamble if that is clean, and otherwise keep the per-read call at that one
+site and say so in a comment. A correlated routine call binding two columns of one node id from
+`argMapping` is a narrow enough shape that a site-local fallback is honest rather than a hole; do
+not let it dictate the shape of the other three.
 
 **The three emitters are at three different starting points, and the middle one is the surprise.**
 Worth measuring before sizing, because the intuition "`@service` is the mature path" is wrong here:
 
-* **`@condition` is already there.** `ConditionGlueRenderer` threads
-  `CompositeDecodeHelperRegistry` and already emits `@nodeId` decodes through `decodeCall`, and
-  already calls `decodedType` to declare a typed local. The projection is a small addition to a
-  site that decodes today.
+* **`@condition` is already there.** `ConditionGlueRenderer` already emits `@nodeId` decodes
+  through `decodeCall` and already declares a typed local for the result, so it has both the
+  decode and the hoist. The projection is a small addition to a site that does this today.
 * **`@service` explicitly refuses, and its refusal is the claim being overturned.**
   `ArgCallEmitter` has two invariant-throws on `NodeIdDecodeKeys`, one in the top-level extraction
   switch and one in `buildNestedInputFieldExtraction`, both stating that "NodeId decodes are
@@ -395,11 +449,11 @@ projection is a derived fact whose home is the classifier, not the capture twin.
 
 ## Implementation
 
-* `CallSiteExtraction`: new top-level arm
-  `NodeIdKeyProjection(NodeIdDecodeKeys decode, ColumnRef column, int keyIndex)` in the sealed
-  permits list, composing with the failure-mode axis rather than joining it. Every exhaustive
-  switch over `CallSiteExtraction` becomes a compile error until it names the arm, which is the
-  point; arms that cannot reach it document that rather than falling through.
+* `CallSiteExtraction.NodeIdDecodeRecord`: gains an optional projected `ColumnRef`. No new arm and
+  no change to the sealed permits list, so every existing exhaustive switch keeps compiling; the
+  arms that already handle the record decode gain the projected read, and the arms that reject it
+  keep rejecting for their own reasons. Its javadoc gets the second depth: the record is what a
+  node id decodes into, and the projection reads one column off it.
 * `ArgMappingSigil.Site`: `admitsNodeKeyProjection()`, the single admission predicate parse,
   diagnostics and completions all read.
 * `ArgBindingMap`: `of` admits the trailing segment when the preceding leaf is an `ID` carrying
@@ -414,19 +468,24 @@ projection is a derived fact whose home is the classifier, not the capture twin.
   `NodeType` carrying both `nodeKeyColumns` and `decodeMethod`), reject a segment that is not one
   of its key columns with a candidate list, reject a bare `@nodeId` leaf, reject a `@nodeId`
   without `typeName:` through `NodeIdLeafResolver`'s existing message owner, run the shared
-  resolved-column type gate, and mint the projection arm instead of `Direct`.
+  resolved-column type gate, and mint the projected `NodeIdDecodeRecord` instead of `Direct`.
 * `ServiceDirectiveResolver` / `ConditionResolver` (both sites): resolve the candidate through the
   same shared resolver and run the same type-gate predicate against their own target type (the
   reflected Java parameter, the condition-method parameter).
-* `ArgCallEmitter`: replace the two `NodeIdDecodeKeys` invariant-throws with real emission, and
-  drop the stale "condition-binding concept" rationale from both messages.
-* `ServiceMethodCallEmitter.scalarLeaf`: implement the `NodeIdDecodeKeys` arm instead of emitting a
-  plain cast, and consider removing the `default ->` fallback so a future arm is a compile error.
-* `ConditionGlueRenderer`: the projection arm alongside the existing `decodeCall`.
+* `ArgCallEmitter`: emit the projected record read at an argument position. Its two
+  `NodeIdDecodeKeys` invariant-throws stay as they are (that arm genuinely does belong to the
+  condition glue), but their messages must stop implying that *no* node-id decode reaches a
+  service argument, because `NodeIdDecodeRecord` now does.
+* `ServiceMethodCallEmitter.scalarLeaf`: the `NodeIdDecodeKeys` arm emitting a plain
+  `($T) rawValue` cast is documented as unreachable for well-formed scalar leaves; confirm that
+  still holds under the record model, and drop the `default ->` fallback either way so a future
+  arm is a compile error rather than a silent cast.
+* `ConditionGlueRenderer`: the projected read alongside the existing `decodeCall`.
 * `RoutineCallEmitter`: `argExpression` switches on `b.source()`'s extraction for the first time.
-  `emitCall` gains the decode-registry parameter; the four call sites thread it.
-* `GenerationContext`: `compositeDecodeHelpers()` accessor plus the drain in
-  `TypeFetcherGenerator`, mirroring `argPathHelpers()`.
+  `emitCall` gains a `FetchersHelperNames` parameter and yields pre-statements alongside its
+  expression; the four call sites thread the first and add the second.
+* `TypeFetcherGenerator`: widen the up-front record-decode collection so it reaches `argMapping`
+  bindings at all three directives, not only input-bean members.
 
 ## Tests
 
@@ -435,9 +494,9 @@ projection is a derived fact whose home is the classifier, not the capture twin.
   resolution is not exercised here because `of` no longer does it.
 * `RoutineMutationWritePipelineTest` (pipeline): a sakila-shaped variant of the existing nested
   `rent_film` fixture binding `pInventoryId` from `ID! @nodeId(typeName: "Inventory")` through
-  the projected key column. Assert the classified `ArgBinding` carries
-  `NodeIdKeyProjection`, and assert the emitted call site registers and invokes the decode helper
-  exactly once. Plus the rejection cases: the bare `@nodeId` leaf, a segment naming a non-key
+  the projected key column. Assert the classified `ArgBinding` carries a projected
+  `NodeIdDecodeRecord`, and assert the emitted call site materialises the record exactly once and
+  reads the column off it. Plus the rejection cases: the bare `@nodeId` leaf, a segment naming a non-key
   column, a `@nodeId` without `typeName:`, and a projected column whose Java type does not match
   the parameter's.
 * Each rejection also wants a **validate-time** test that the build fails, not only that
@@ -450,12 +509,16 @@ projection is a derived fact whose home is the classifier, not the capture twin.
   their own emission coverage besides, since their current contents are invariant-throws and a
   test asserting the throw is gone is not the same as a test asserting the decode is right.
 * Composite-key coverage belongs on the `nodeidfixture` catalog (`bar` is the composite-key node
-  type `NodeIdPipelineTest` already uses), pinning the `.value<i>()` index and the
-  decode-once-project-twice sharing. A transposed projection is exactly the failure a
-  single-column fixture cannot catch.
+  type `NodeIdPipelineTest` already uses), binding two parameters from one node id. What it pins is
+  the *single materialisation*: one `decode<RecordType>Record` call and one failure site, with two
+  column reads off the local. Note what this fixture no longer has to pin: under the record model a
+  transposed projection is unconstructable, because the reads name their columns instead of
+  indexing a tuple, so the test covers the hoist rather than the ordering.
 * Execution tier (`graphitron-sakila-example`): one round trip proving the decoded key reaches
-  the database, alongside the existing `NodeIdValueAgreementExecutionTest`. A pipeline assertion
-  on emitted source cannot prove the projection is not transposed; only a real row can.
+  the database, alongside the existing `NodeIdValueAgreementExecutionTest`. This is now a
+  smaller claim than the earlier draft made, since the transposition it was chiefly guarding
+  against cannot arise; keep it for the end-to-end proof that the decode reaches SQL as a key
+  rather than a base64 string.
 
 ## User documentation (first-client check)
 
@@ -536,13 +599,12 @@ Draft of the `routine.adoc` subsection:
 
 ## Open questions
 
-* Whether `emitCall` lifts to `(statements, expression)` so a composite key decodes once rather
-  than once per projected column. Recommendation is to accept the double decode; the counter is
-  the duplicated throw site in the generated source.
-* How the projection at a `@service` argument relates to `CallSiteExtraction.NodeIdDecodeRecord`,
-  which already decodes a `@nodeId` input-bean member into a jOOQ record. They are different
-  targets (a scalar parameter versus a record member) and should coexist, but an author now has
-  two ways to get a decoded key into a service call and the docs must say which is for what.
+* Whether `PathFragments.emitTableExpression`'s correlated lateral form can take the hoisted
+  local cleanly, or keeps a per-read call as a documented site-local exception (see "Emission").
+  This is the one place the single-materialisation decision is not mechanical.
+* Whether binding an unopened node id (the whole `TableRecord`) to a `@service` parameter through
+  `argMapping` is reachable today, or whether this item enables it as a side effect of making the
+  bare form's legality target-driven.
 * Whether a `@nodeId` input field that nothing consumes should warn. Today it is silently
   ignored wherever no consumer reads it, which is how the `TEXT` case above stays invisible;
   the bare-form rejection closes it at the `@routine` site only. A general "declared and
