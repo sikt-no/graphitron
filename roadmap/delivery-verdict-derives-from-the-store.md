@@ -132,20 +132,26 @@ contrasting with the `@tenantFanOut` literal the Implementation section flags as
 coordinate at all. The exemption view cannot ship vacuous.
 
 **Every input is already captured.** This is the finding that makes the item view-only rather than
-a capture project, and it survives a relation-by-relation check, but the inventory is wider than a
-first read suggests. The arms need `graphitron_split_query`, `graphitron_tenant_fan_out`,
+a capture project, and it survives a relation-by-relation check, but only a check at that grain: the
+inventory is wider than a first read suggests, and picking the relation whose *name* matches an arm's
+vocabulary is how two successive drafts got an entry wrong. The arms need
+`graphitron_split_query`, `graphitron_tenant_fan_out`,
 `graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (through
 `intent_bound_table`, see below), `graphitron_service` / `graphitron_external_field` /
-`graphitron_mutation`, `graphitron_connection`, `graphql_field.is_list`, `graphql_type.kind`,
-`graphql_implements`, `graphql_union_member`, and `graphql_root_operation` (the root exemption arm,
+`graphitron_mutation`, `graphql_field.is_list`, `graphql_type.kind`,
+`graphql_implements`, `graphql_union_member`, `graphql_root_operation` (the root exemption arm,
 keyed the way the demand sibling's `ROOT_OPERATION` arm already keys it, by the binding rather than
-by the conventional names). All exist, all are keyed
+by the conventional names), and the structural connection recognition over `graphql_field` /
+`graphql_type` (the third predicate below, which is also where `graphitron_connection` turns out to
+be the wrong relation for the arm whose name it matches). All exist, all are keyed
 at the coordinate or type grain the arms would join on, and the marker relations already carry the
 `graphql_field` FK. The `sql_` catalog family is deliberately absent; the second predicate below is
 where that is established.
 
-One predicate needs real care. A second looks like it does and does not, and the reason it does not
-is worth stating, because the obvious reading sends the arm at the catalog for nothing.
+Three predicates want attention before an arm is written, for three different reasons. One needs
+real care. A second looks like it does and does not, and the reason it does not is worth stating,
+because the obvious reading sends the arm at the catalog for nothing. The third is the one the
+inventory got wrong twice, in the same way the `RecordHandedParent` trigger nearly went wrong.
 
 **The fan-in arm's gate is non-discrimination, not participant boundness.** The tempting reading is
 that the arm has to tell `ParticipantRef.TableBound` from `JoinedTableBound`, because
@@ -165,7 +171,7 @@ independently, as the reason it must not copy this guard's shape.
 Two consequences. The arm's store-side gate is that the target is an interface or union that is
 *not* `@discriminate`-bearing, with at least one table-bound participant: `graphql_implements` /
 `graphql_union_member` joined to `graphitron_table`, anti-joined against `graphitron_discriminate`
-on the target type. Every input is in the inventory above and every hop is single. The arm stays
+on the target type. Every input is in the inventory above and every hop in this arm is single. The arm stays
 unmasked against the root exemption, which is the sibling's discipline (its rule views let
 overlapping readings survive as rows and give the reduction the meet), so this arm does carry
 `Query.people` and the reduction is where that row becomes `INLINE`. And the `sql_`
@@ -185,6 +191,31 @@ member of the population that arm does not cover, since its source is the pivot 
 record rather than a producer's. `SourceShapeProjectionTest` already states the parent-backing
 predicate independently of the leaf identities, so it is the cross-check to read before writing the
 arm, and the residue candidate if the store side cannot reach the pivot slot.
+
+**A connection target is not `@asConnection`, and the inventory entry was inverted.**
+`graphitron_connection` captures the `@asConnection` macro's authored spec, one row per carrier
+field. It is not the relation that witnesses "this coordinate's target is a connection", and the
+reason is worth following because it points the arm the other way. `mint` reads the *pre-rewrite*
+schema and capture reads the pre-synthesis registry, so both see the authored type expression and
+agree on it. For an `@asConnection` carrier the authored expression is the bare list
+(`films: [Film!]!`), so `singleTableBackedVerdict` resolves it straight through its
+`TableBackedType` arm and never enters the `ConnectionType` arm at all; store-side the same
+coordinate reaches its bound table in one hop and the marker is not needed. The `ConnectionType` arm
+is entered only when the authored base type is *itself* connection-shaped, which is
+`BuildContext.isConnectionType`'s purely structural test (an object whose `edges` field's element
+type has a `node` field) and carries no `graphitron_connection` row anywhere:
+`ConnectionPromoter`'s structural arm references the SDL-declared type instead of synthesising one.
+So the marker's rows are the population the arm never sees, and the arm's population has no marker
+rows. Both directions of the inventory entry were backwards.
+
+Two consequences. The store-side gate for a connection target is the structural edges/node pattern,
+which the store already states once: `intent_field_exemption_rule`'s `CONNECTION_MACHINERY` arm
+assembles exactly this shape in SQL, so it is the arm to copy, the way the `RecordHandedParent`
+trigger copies `PRODUCER_PAYLOAD`. And resolving the element the verdict anchors on
+(`ConnectionType.elementTypeName`, the `edges` element's `node` type) is a further walk of
+`graphql_field` rather than a join on a marker, so this is the one predicate that is not a single
+hop. It is still fixed-depth and needs no closure, which is what the materialization question
+actually turns on; the closing section states it in the form that survives.
 
 ## Which consumers can read it, and when
 
@@ -276,7 +307,7 @@ set acquiring an enforcer that is not another switch.**
   no pin can go vacuous.
 * Corpus population for every arm the view declares. A shadow test over a corpus that does not
   exercise an arm is vacuous in exactly the way the R661 review found `DeliveryFactPinTest` to be,
-  so each declared rule needs a coordinate that reaches it. Two populations are missing today, both
+  so each declared rule needs a coordinate that reaches it. Three populations are missing today, all
   counted against `ClassifiedCorpus` rather than assumed:
   * The list-cardinality discriminated interface child that review named. The `table-interface`
     example's `Inventory.media` is the only discriminated interface *child* in the corpus and it is
@@ -300,6 +331,18 @@ set acquiring an enforcer that is not another switch.**
     `TriggerFactPopulationPinTest` is the mould for the latter, being pipeline-tier and pinning each
     gather slot's rows by coordinate so that an empty relation fails as loudly as an over-gathering
     one.
+  * **No connection reaches any arm as a child.** Every connection-returning coordinate in the
+    corpus sits on `Query`: the three `@asConnection` carriers (`catalog`'s `films`,
+    `paginated-joined-table-interface`'s `parties`, `faceted-connection`'s `films`) and both
+    structurally-declared ones (`connection` and `arrival-connection-ancestor`, each
+    `Query.films: FilmsConnection`). A root returns `Inline` before `tableAnchoredChild` is computed,
+    so `singleTableBackedVerdict`'s `ConnectionType` arm is unreached over the whole corpus, and its
+    javadoc states the shape it exists for: "a connection verdict anchors through its element, so
+    authored connection returns stay batched-capable". That is a child returning a connection under
+    `@splitQuery`, and nothing in the corpus is one. The predicate this leaves unwitnessed is the
+    structural one corrected above, so the missing coordinate and the mis-picked relation are the
+    same gap seen twice, which is why an arm keyed on `graphitron_connection` would have shipped
+    green.
 
 ## The exit criterion, and the successor
 
@@ -411,7 +454,10 @@ reason rather than by copying a file layout.
 a cyclic type graph. Every arm in `mint` reads its own coordinate's markers, that coordinate's target
 type, and that type's participants or bound table, so nothing recurses and no arm needs a closure.
 The joined-table anti-join was the one candidate exception, and the fan-in trace above removes it:
-with no arm reaching the `sql_` family, every predicate is a single hop and a plain view holds
+no arm reaches the `sql_` family. The connection predicate is the one that is not a single hop,
+walking `graphql_field` from the connection type through its edge to the node's type, and it does not
+change the answer, because what a view cannot state is a closure of unbounded depth rather than a
+join of more than one. That walk is fixed-depth by the shape's definition, so a plain view holds
 unconditionally.
 
 ## Coverage
