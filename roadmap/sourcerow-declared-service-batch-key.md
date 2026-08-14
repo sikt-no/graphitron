@@ -63,17 +63,21 @@ Enforcers, per invariant:
 3. Directive present: the parent must be class-backed (`PojoResultType.Backed` or `JavaRecordType`), mirroring `SourceRowDirectiveResolver.parentBackingClass`'s gate. On a `JooqRecordCarrier` parent the directive is rejected as redundant, matching the table path's rule that the catalog record already supplies the key; the wrong-table typed-record parent's diagnostic wording stays R665's concern. Otherwise resolve and validate the lifter (below) and mint `FromLifter`. Accessor enumeration never runs; the directive wins totally.
 4. Directive absent: existing routes unchanged (`FromHeldRecord`, then accessor enumeration into `FromAccessor` / ambiguity / list-cardinality / `cannotProduceKey`).
 
-On a `@table` parent, `classifyChildFieldOnTableType` already rejects `@sourceRow` before `@service` is consulted ("@sourceRow is for record-backed (non-table) parents"), so the table-parent and root combinations are covered by the existing rejection and stay as they are.
+`resolveServiceKeySource` cannot see the directive as it is signed today: it takes `(parentTypeName, parentType, signature, shape)`, not even the field name, and the `fieldDef` its caller chain starts from stops at `ServiceDirectiveResolver.resolve` (`classify` and `classifySourcesCoordinate` never receive it). Read the directive where the field is still in hand and pass a resolved declaration down, rather than threading the SDL node: `classifyChildFieldOnResultType` already holds the `fieldDef`, and `ParentContext.RecordParent` (one construction site) gains a second component carrying the declaration, so the payload reaches the `RecordParent` arm of `classifySourcesCoordinate` with no change to `classify` or `classifySourcesCoordinate` and only `resolveServiceKeySource` gaining a parameter. Threading `GraphQLFieldDefinition` three frames deeper is declined: every other input those methods take is a reduced fact (`signature`, `claims`, `shape`), and pushing an SDL node inward moves the decode past the boundary that already owns it.
+
+One behavioural consequence of the reorder to settle here rather than at the keyboard: the `@sourceRow` branch fires the `@splitQuery`-redundancy advisory (`warnIfSplitQueryOnRecordParent`) ahead of the resolver's guards, deliberately, so an author who wrote both directives sees both diagnostics. A `@service` child carrying `@sourceRow` no longer passes through that branch. The advisory's subject is the lifter-keyed DataLoader already opening a new scope, which is equally true on this path, so fire it from the service branch too when the directive is present.
+
+On a `@table` parent, `classifyChildFieldOnTableType` already rejects `@sourceRow` before `@service` is consulted ("@sourceRow is for record-backed (non-table) parents"), so the table-parent combination is covered by the existing rejection and stays as it is. Root fields are a different story and stay out of scope: `DIR_SOURCE_ROW` is consulted at exactly the two child classify sites, a `RootType` parent routes to `classifyRootField`, which never reads it, so `@sourceRow` on a root `@service` field is silently ignored today. The reorder does not change that; rejecting it is its own item's work.
 
 Directive-over-accessor coexistence is neither rejected nor warned. The directive is authored intent; accessor enumeration is the inference default, and it is deliberately name-free precisely because a coincidentally-shaped accessor is feared. An author who writes the directive is overriding inference, not drifting. This also gives the two-accessor ambiguity rejection an actionable exit that needs no edit to the class.
 
 ### Model
 
-One new arm: `ServiceKeySource.FromLifter(TableRef keyOwner, StaticProducerRef ref)`, where the new `StaticProducerRef(ClassName declaringClass, String methodName, ClassName parentBackingClass, ClassName elementClass)` record (name open to reviewer) is the static twin of `AccessorRef`: it carries the cast target and the resolved return class so the emitter has typed access without redoing reflection. This matters because `TypeFetcherGenerator.buildServiceDataFetcher` receives only `(SourceKey, ServiceKeySource)` and has no `GraphitronType.ResultType` in hand; the table path's two-component `LifterRef` gets away without a cast target only because `GeneratorUtils.backingClassOf` recovers it from the result type, a recovery this arm has no input for. `LifterRef` stays untouched and keeps its single documented meaning (returns `RowN`).
+One new arm: `ServiceKeySource.FromLifter(TableRef keyOwner, StaticProducerRef ref)`, where the new `StaticProducerRef(ClassName declaringClass, String methodName, ClassName parentBackingClass, ClassName elementClass)` record (name open to reviewer) is the static twin of `AccessorRef`: it carries the cast target and the resolved return class so the emitter has typed access without redoing reflection. This matters because `GeneratorUtils.buildServiceKeyExtraction` receives only `(SourceKey, ServiceKeySource)`, and nothing above it holds the missing fact either: its caller `TypeFetcherGenerator.buildServiceDataFetcher` has a `BatchKeyField` whose parent is a bare type name, and a `TypeFetcherEmissionContext` carrying the assembled `GraphQLSchema` but no classified-type registry. The table path's two-component `LifterRef` gets away without a cast target only because `GeneratorUtils.backingClassOf` recovers it from the result type, a recovery this arm has no input for. `LifterRef` stays untouched and keeps its single documented meaning (returns `RowN`).
 
 Nothing else in the model moves. `keyColumns()` stays a derivation off `keyOwner().primaryKeyColumns()`; `sourceShape()` gains `FromLifter -> SourceShape.Record` and stays a total derivation; `MethodRef.Param.Sourced` keeps its non-empty columns (the key owner's PK); `SourceKey.keyElementType()` is untouched.
 
-At four arms `ServiceKeySource` shadows `KeyLift` arm-for-arm (`FromTableRow`/`FkColumns`, `FromHeldRecord`/`ProducedRecords`-adjacent, `FromAccessor`/`Accessor`, `FromLifter`/`Lifter`) with nothing binding the two seals. The split's justification is wrap provenance, not the arm set: `@service` wraps are authored by the signature, record-parent wraps are derived and residue-checked via `KeyLift.checkResidueAgreement`. Restate that in `ServiceKeySource`'s javadoc when the fourth arm lands, and note there the collapse question (a residue check gated on wrap provenance rather than leaf identity could let one lift axis serve both paths) as a future-audit pointer, not this item's work.
+At four arms `ServiceKeySource` shadows `KeyLift` arm-for-arm (`FromTableRow`/`FkColumns`, `FromHeldRecord`/`ProducedRecords`-adjacent, `FromAccessor`/`Accessor`, `FromLifter`/`Lifter`) with nothing binding the two seals. The split's justification is wrap provenance, not the arm set: `@service` wraps are authored by the signature, record-parent wraps are derived and residue-checked via `KeyLift.checkResidueAgreement`. That justification is already in `ServiceKeySource`'s javadoc and needs no rewrite; what the fourth arm breaks there is the "all three emit through the same wrap-driven extraction" count. Fix the count, and note there the collapse question (a residue check gated on wrap provenance rather than leaf identity could let one lift axis serve both paths) as a future-audit pointer, not this item's work.
 
 ### Classification and validation
 
@@ -93,11 +97,12 @@ All producer-route message surfaces gain the third route; two retire the "has no
 * The anonymous-wrap rejection: keep "declare the batch key as a jOOQ record class instead", drop the tail; once a record class is declared all three routes apply. The test `anonymousKeyWrapOnClassBackedParent_isRejectedWithoutPromisingARoute` exists precisely to be flipped by this item.
 * The two-accessor ambiguity rejection: name `@sourceRow` as the tie-break that needs no class edit.
 * `ServiceCatalog.dtoSourcesRejectionReason`: the "must either be that record or expose exactly one zero-arg accessor returning it" prose gains the lifter.
-* The `@sourceRow` description in `directives.graphqls` and the `graphitron_source_row` table comment in `graphitron-model.sql` both currently assert the `RowN`-only contract. Rewrite each once, site-derived: the lifter returns the batch key in the shape the annotated field's key wants, the first-hop or leaf tuple as `RowN` on a `@table` child, the `Sources` element record on a `@service` child. No DDL shape change: the relation stays a site-agnostic verbatim transcription keyed on the field coordinate, so no new fact enters the store, and `GraphitronFactCapture`'s `sourceRow` arm is untouched.
+* `directives.graphqls` asserts the `RowN`-only contract in two places, not one: the directive block's description ("The method takes the parent's backing class and returns Row1..Row22<...>", and the first-JOIN-ON-predicate framing built on top of it, which no `@service` child has), and the `method:` argument's own description ("must take a single arg assignable from the parent's backing class and return Row1..Row22<...>"). Rewrite both, site-derived: the lifter returns the batch key in the shape the annotated field's key wants, the first-hop or leaf tuple as `RowN` on a `@table` child, the `Sources` element record on a `@service` child.
+* The `graphitron_source_row` table comment in `graphitron-model.sql` asserts no return shape, so there is no `RowN` claim to retire there. What is stale is its noun: "the parent-side join-key lifter", where a `@service` child's lifter produces a batch key and no join. Widen it. No DDL shape change: the relation stays a site-agnostic verbatim transcription keyed on the field coordinate, so no new fact enters the store, and `GraphitronFactCapture`'s `sourceRow` arm is untouched.
 
 ### LSP
 
-`LspVocabulary`'s bindings for `sourceRow(className:)` / `sourceRow(method:)` are coordinate-keyed and return-type-agnostic, so no vocabulary change. Check whether `MethodCompletions` filters `@sourceRow` method candidates by `RowN` return; if it does, derive the expected return per site.
+No LSP work. `LspVocabulary`'s bindings for `sourceRow(className:)` / `sourceRow(method:)` are coordinate-keyed and return-type-agnostic, and `MethodCompletions` narrows method candidates only for `@externalField` (its `liftsField` predicate, that directive's own rule); `@sourceRow` already gets the unfiltered class method list, so no per-site expected return has to be derived.
 
 ## User documentation (first-client check)
 
@@ -109,7 +114,9 @@ All producer-route message surfaces gain the third route; two retire the "has no
 > * the parent's backing class exposes exactly one zero-arg accessor returning `AktivitetRecord`, or
 > * the field declares `@sourceRow(className: ..., method: ...)` naming a public static method that takes the parent and returns an `AktivitetRecord`.
 >
-> Reach for the third when the parent class is not yours to edit, or when more than one accessor returns the declared record and the build asks you to break the tie. As everywhere on the `@service` path, the framework copies the key columns off the record the lifter returns and hands the service a record carrying the key columns and nothing else.
+> Reach for the third when the parent class is not yours to edit, or when more than one accessor returns the declared record and the build asks you to break the tie.
+
+Do not restate the copy semantics in the new bullet: the section's existing "As everywhere else on the `@service` path, the records the framework hands you carry the key columns and nothing else, even when the accessor it read them from returned a fully populated record" paragraph already carries them. Widen its parenthetical to cover the record a lifter returns.
 
 `docs/manual/how-to/result-types.adoc`: the decision tree's `@service` row currently states "Neither accessor inference (which matches by the child field's name) nor `@sourceRow` (which needs a catalog anchor for its columns) applies" on this path. Replace: accessor inference still does not apply (the `@service` key is name-free), and `@sourceRow` does apply with the record-return contract keyed on the `Sources` element type. The constraints bullet "`@sourceRow` is rejected on `JooqTableRecordType` and `JooqRecordType` parents" stays true and unchanged.
 
@@ -117,14 +124,15 @@ All producer-route message surfaces gain the third route; two retire the "has no
 
 ## Implementation
 
-* `ServiceKeySource`: new `FromLifter` arm, `sourceShape()` case, javadoc restatement (wrap-provenance justification plus the collapse-question pointer).
+* `ServiceKeySource`: new `FromLifter` arm, `sourceShape()` case, javadoc arm-count fix plus the collapse-question pointer.
 * New `StaticProducerRef` record beside `AccessorRef` in `no.sikt.graphitron.rewrite.model`.
-* `FieldBuilder`: reorder the `DIR_SOURCE_ROW` / `DIR_SERVICE` guards in `classifyChildFieldOnResultType`; the lifter path and message edits in `resolveServiceKeySource` / `cannotProduceKey`; the shared reflection-preamble helper.
+* `FieldBuilder`: reorder the `DIR_SOURCE_ROW` / `DIR_SERVICE` guards in `classifyChildFieldOnResultType` and read the directive there; carry the `@splitQuery` advisory into the service branch; the lifter path and message edits in `resolveServiceKeySource` / `cannotProduceKey`; the shared reflection-preamble helper.
+* `ServiceDirectiveResolver`: the declaration component on `ParentContext.RecordParent` and the parameter `classifySourcesCoordinate`'s `RecordParent` arm forwards to `resolveServiceKeySource`.
 * `SourceRowDirectiveResolver`: consume the shared preamble helper; behaviour otherwise unchanged.
 * `ServiceCatalog.dtoSourcesRejectionReason`: prose.
 * `GeneratorUtils.buildServiceKeyExtraction`: `FromLifter` arm.
 * `GraphitronSchemaValidator`: verify the mirror needs no per-arm change.
-* `directives.graphqls` description; `graphitron-model.sql` `graphitron_source_row` comment prose.
+* `directives.graphqls`: the directive block's description and the `method:` argument's description; `graphitron-model.sql` `graphitron_source_row` table-comment prose.
 * Exhaustive switches over `ServiceKeySource` elsewhere: the compiler finds them.
 * Docs: `handle-services.adoc`, `result-types.adoc` per the draft above.
 * Fixtures: a lifter in `graphitron-sakila-service`, a scalar-only DTO field wired through it in `graphitron-sakila-example`'s schema.
@@ -138,7 +146,7 @@ Pipeline tier, extending `ServiceRecordParentBatchKeyTest` with its existing fix
 * Directive breaks the two-accessor ambiguity (the currently-rejected `TwoLanguageAccessors` shape plus a directive classifies).
 * Rejections: unknown lifter class; unknown method with did-you-mean candidates (`Rejection.unknownLifterMethod`); non-unique method name; parameter not assignable from the parent backing class; return class differs from the `Sources` element class; `List`-returning lifter; directive on a `JooqRecordCarrier` parent; directive with an anonymous wrap (wrap rejection fires, unchanged).
 * Message pins updated: the "only scalar key columns has no route" tail assertions in `classBackedParentThatCannotProduceTheKey_isRejectedNamingBothRoutes` and `anonymousKeyWrapOnClassBackedParent_isRejectedWithoutPromisingARoute` re-pin the new route-naming text.
-* Both-directives ordering: a `@service` child carrying `@sourceRow` no longer routes into `SourceRowDirectiveResolver` (today it does, silently dropping `@service`).
+* Both-directives ordering: a `@service` child carrying `@sourceRow` no longer routes into `SourceRowDirectiveResolver` (today it does, silently dropping `@service`), and the same field carrying `@splitQuery` still gets the redundancy advisory from its new branch.
 
 Compile and execution tier: the emit arm is new generated-code shape, and two of its three enforcers live in the consumer's compiler and at runtime, so this is not optional polish. A `graphitron-sakila-service` lifter plus a `graphitron-sakila-example` schema use pins the compile tier; one execution test (style of the existing service-batching tests in `GraphQLQueryTest`) asserts one service invocation per request with per-parent values scattered correctly.
 
@@ -155,4 +163,5 @@ Compile and execution tier: the emit arm is new generated-code shape, and two of
 
 * "has no route today" (the shared message tail in `cannotProduceKey` and the anonymous-wrap rejection, quoted in `handle-services.adoc`, pinned by `ServiceRecordParentBatchKeyTest`).
 * "needs a catalog anchor for its columns" (the `result-types.adoc` claim that `@sourceRow` does not apply on the `@service` path).
-* "return Row1..Row22" as the whole `@sourceRow` contract (the `directives.graphqls` description and the `graphitron_source_row` table comment; both become site-derived statements).
+* "return Row1..Row22" as the whole `@sourceRow` contract (the `directives.graphqls` directive-block description and its `method:` argument description; both become site-derived statements).
+* "the parent-side join-key lifter" as the whole of what `@sourceRow` names (the `graphitron_source_row` table comment).
