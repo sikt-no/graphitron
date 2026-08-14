@@ -121,68 +121,107 @@ The segment names a column of the referenced type's **node key**: what
 otherwise. The authority is the `@node` declaration on the type the `@nodeId` refers to, which is
 the same place an author already looks to know what a node id encodes.
 
-Both halves of that are captured facts, which is what makes this item a store item rather than a
-resolver item: `graphitron_node_key_column (graph_name, type_name, position, column_ref)` holds the
-pinned list in written order, and `sql_primary_key` holds the catalog fallback, reachable from the
-node type through `intent_bound_table`. The reconciliation of the two is a view, and it is the
-item's spine (see "The resolution is a view").
+"Otherwise" hides two distinct sources rather than one, and the resolution has three tiers rather
+than two: the reconciled `NodeType`, the table's own generator metadata, then `@node` plus the
+catalog primary key. `graphitron_node_key_column (graph_name, type_name, position, column_ref)`
+holds the pinned list in written order; the primary-key fallback is `sql_primary_key` joined
+through `sql_constraint_column` for the ordered columns, reached from the node type through
+`intent_bound_table`; and the middle tier is not captured at all yet. The reconciliation is a view
+and it is the item's spine (see "The resolution is a view over facts").
 
-The spelling is the SQL column name, because that is what `@node(keyColumns:)` itself is a list
-of. Case-insensitive matching is the intent; check at pickup whether that is inherited from a
-settled convention in the neighbouring `ColumnRef.sqlName` comparisons or is a new rule this item
-introduces, and say which in the docs. The answer changes nothing about the design and everything
-about whether the rule needs stating.
+The spelling is the SQL column name, because that is what `@node(keyColumns:)` itself is a list of,
+and matching is case-insensitive. That is inherited rather than introduced: `intent_spelled_table`
+and `intent_column_match_claim` both compare under `UPPER()`, and `JooqCatalog.resolveColumn` uses
+`equalsIgnoreCase`, so the docs can state the behaviour without announcing a rule.
 
 `@nodeId` without `typeName:` is rejected at this position. `NodeIdLeafResolver.inferTypeName`
 infers a bare `@nodeId`'s target from the *containing table*, and a routine parameter has no
-containing table; there is nothing to infer from. `NodeIdLeafResolver` already carries two permanent
-messages for this same underlying fact ("cannot infer a node type here"), though they end
-differently ("Add typeName: explicitly." and "Specify typeName: explicitly."). The projection's
-rejection is derived elsewhere (see "The bare form becomes a rejection"), so what carries over is
-the *wording*, not the site: an author meets one vocabulary for one condition, and the existing two
-should converge on one phrasing as this third one is written.
+containing table; there is nothing to infer from. The message to converge with is
+`InputBeanResolver`'s, which states this same condition for a jOOQ-record-typed input-bean member
+("@nodeId on a jOOQ-record-typed member must specify typeName: explicitly, the record type alone
+does not name the NodeType to decode against"), and not `NodeIdLeafResolver`'s pair: those two say
+*zero candidates* and *ambiguous candidates*, which are different facts that happen to share a
+remedy. The projection's rejection is derived elsewhere (see "The bare form becomes a rejection"),
+so what carries over is the wording, not the site.
 
-### The resolution is a view, not a resolver
+### The resolution is a view over facts, one of which needs capturing first
 
-Every input this projection needs is already captured, and that is the finding that decides the
-item's shape. The store holds `graphitron_routine_arg_mapping_pair.argument_path` (the right side
-as written, per-pair, keyed at the application's coordinate), `graphitron_field_node_id
-(type_name, field_name, node_type_ref)` for the `@nodeId` on an input field, `graphitron_node` and
-`graphitron_node_key_column` for the node identity and its pinned key list, `graphql_field` for the
-input-object fields the path walks through, and `sql_column` / `sql_primary_key` reachable through
-`intent_bound_table` for the catalog side. Nothing about resolving the motivating path needs a fact
-the store lacks on the SDL side.
+Most of what this projection needs is already captured, and one thing is not. The SDL side is
+complete: `graphitron_routine_arg_mapping_pair.argument_path` (the right side as written, keyed at
+the application's coordinate), `graphitron_field_node_id (type_name, field_name, node_type_ref)`
+for the `@nodeId` on an input field and `graphitron_argument_node_id` for the one on an argument,
+`graphitron_node` and `graphitron_node_key_column` for the node identity and its pinned key list,
+and `sql_table` / `sql_constraint` / `sql_constraint_column` / `sql_primary_key` through
+`intent_bound_table` for the catalog fallback. The catalog side has a gap, covered two sections
+down.
 
-So the projection is derived by **querying those relations**, not by a Java resolver walking
-graphql-java objects. Concretely, three views in the shipped `intent_` mould:
+**The dotted path is already walked, and this is the finding that removes the item's biggest
+unknown.** `intent_input_occurrence_path` is a capture-cadence derivation whose rows are exactly
+this: an argument whose named type is an input object, or a nested input field reached from one,
+keyed by the serialized path `<root type>.<root field>(<argument>)[/<input field>...]`, with every
+prefix present as its own row and an `intent_input_occurrence_path_step` child carrying the same
+data relationally "so no consumer parses the key". It exists because cyclic input nesting has no
+safe recursive H2 view form, which is the question this item would otherwise have had to answer for
+itself.
 
-* **`intent_node_key_column_resolved (graph_name, type_name, position, column_ref, source)`.** The
-  reconciliation the item's authoring rule depends on: the pinned `graphitron_node_key_column` list
-  where the author wrote one, the catalog primary key through `intent_bound_table` and
-  `sql_primary_key` where they did not, with `source` naming which arm won. This is the relational
-  form of what `BuildContext.resolveTargetKeys` does in Java, and it is worth having on its own
-  terms: the LSP wants exactly this list for completion, and `NodeType.nodeKeyColumns` cannot serve
-  it (that list is empty whenever the author did not pin one, and an empty completion list is worse
-  than none). A second reader is what turns a derivation into a named relation, and this one has
-  three.
-* **`intent_argmapping_binding_leaf`.** Each `*_arg_mapping_pair` row's path resolved against
-  `graphql_field`, segment by segment, down to the leaf it names, plus whether one trailing segment
-  remains unconsumed. Path traversal in SQL is the part to prototype first (see "Risks").
-* **`intent_argmapping_node_key_projection (graph_name, site, type_name, field_name, ordinal,
-  position, param_name, node_type, table_schema, table_name, column_name)`.** The reduction: a
-  binding whose leaf carries `@nodeId` and whose trailing segment names one of that node type's
-  resolved key columns. One row per projected binding, keyed by the pair's own natural key.
+So the binding-leaf resolution is a **keying over that relation, not a second walk**, which is the
+move `intent_bound_table`'s own comment records for the spelling view ("a keying over the spelling
+view rather than a second copy of it"). An `argMapping` path maps to an occurrence path by a string
+expression over the pair's own key, in the `POSITION` / `SUBSTRING` vocabulary the stratum already
+uses; the leaf is that row, and "one trailing segment unconsumed" is a right-trim onto the prefix
+row rather than a traversal. Writing a second traversal instead is the drift the fact model names:
+two spellings of one resolution that agree until one of them changes.
 
-The property that matters is the same one the demand stratum has: **every arm is additive**, and
-uniformity across `@routine`, `@service` and `@condition` costs nothing rather than being
-maintained. The six `*_arg_mapping_pair` relations are the same shape, so the binding view is a
-`UNION` with a `site` literal per arm, and a projection is resolved identically at every site
-because it is resolved once. That is a stronger guarantee than the previous draft's "one shared
-resolver called by three directive resolvers", which was three call sites agreeing by discipline.
+Three caveats the view's comment must own, each narrow and each a stated absence rather than a
+silent one:
+
+* The occurrence seed covers arguments whose named type is an input object, so a head segment that
+  is a bare scalar argument (`pCustomerId: customerId`) needs a second arm joining
+  `graphql_argument` directly.
+* The expansion stops at a type already visited on the path (the classification walk's own
+  first-visit guard, restated), so a cyclic re-entry has no row. That absence is load-bearing and
+  owes a sentence.
+* The trailing-segment count is a **column, not a flag**. One unconsumed segment is this item; two
+  is a typo or R249's nested form, and the rejection messages must tell them apart. The stratum
+  already states arity as a column rather than leaving each reader to count (`intent_spelled_table.
+  candidates`).
+
+**The key-column resolution has three arms, not two.** `BuildContext.resolveTargetKeys` prefers the
+`NodeIndex` entry (which `TypeBuilder` already reconciled against the table's metadata, SDL winning
+on `typeId` outright and on `keyColumns` order), falls back to the table's own
+`KjerneJooqGenerator` metadata read through `JooqCatalog.nodeIdMetadata`, and only then to `@node`
+plus the catalog primary key. A two-arm view would answer differently from the generator for every
+type in the middle arm's population, which is the metadata-carrying table with no matching
+`NodeType`. `graphitron_node`'s comment already anticipates this: "the SDL-versus-jOOQ-metadata
+precedence rules are detections". So the reduction is three arms with a `tier` column naming which
+one answered, in `intent_resolved_field_claim`'s shape, and the middle arm needs a fact that does
+not exist yet.
+
+The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suffix at the front):
+
+* **`intent_resolved_node_key_column (graph_name, type_name, position, column_name, tier)`.** The
+  three-arm reduction above. Worth naming on its own terms, and not only for this item: the LSP
+  wants exactly this list for completion, and an editor reading the store is the second reader that
+  turns a derivation into a relation.
+* **`intent_argmapping_binding_leaf`.** The keying over `intent_input_occurrence_path` described
+  above, unioned across the six `*_arg_mapping_pair` relations with a `site` literal per arm, plus
+  the unconsumed-segment count.
+* **`intent_argmapping_node_key_projection`.** The reduction: a binding whose leaf carries `@nodeId`
+  and whose single trailing segment names one of that node type's resolved key columns.
+
+Uniformity across `@routine`, `@service` and `@condition` is then structural: the six pair
+relations are one shape, so the binding view is a `UNION` with a `site` literal and a projection is
+resolved identically everywhere because it is resolved once. That is a stronger guarantee than the
+previous draft's "one shared resolver called by three directive resolvers", which was three call
+sites agreeing by discipline.
+
+Case-insensitive column matching is a settled convention rather than a new rule, so the docs need
+not introduce it: `intent_spelled_table` and `intent_column_match_claim` both compare under
+`UPPER()`, and `JooqCatalog.resolveColumn` uses `equalsIgnoreCase`.
 
 The typed product is `AuthoredClaimConflicts`' shape exactly: a class in `rewrite/derive` reading
-the view through the `DSLContext` inside the capture transaction, returning records built from
-query rows. Those records are the item's new types, and they are the only new types it introduces.
+the views through the `DSLContext` inside the capture transaction, returning records built from
+query rows. Those records are the item's new Java types, and they are the only ones it introduces.
 
 ### What this item does not add
 
@@ -201,18 +240,26 @@ The projection *is* another coordinate's query. It is a functional dependency of
 (graph, type, field, ordinal, position), resolved against the node type's key columns, and it has
 no business on a leaf minted while walking a different coordinate.
 
-What the walk does instead is **stop rejecting**. Two removals, both narrowings rather than
-extensions:
+**The walk's own contribution is one widening, and it is not free.** An earlier draft called it
+"two deletions"; measured against the code it is one deletion with a blast radius and one
+non-event:
 
-* `ArgBindingMap.of` must stop rejecting a trailing segment after an `ID`-typed leaf. Today it
-  rejects with "walks through scalar 'ID' at segment ...; only input-object types may be
-  traversed", and that rejection is what makes the spelling unwritable. It admits the extra segment
-  and carries it in the `PathExpr` without interpreting it.
-* `RoutineDirectiveResolver.leafTypeGate` must stop rejecting the `ID`-into-`INTEGER` binding whose
-  path has that trailing segment, since the value reaching the parameter is no longer the `ID`'s
-  coercion output. The gate keeps every other verdict.
-
-Both are deletions from the drained surface. Neither adds a fact to it.
+* `ArgBindingMap.of` must stop rejecting a trailing segment after an `ID`-typed leaf ("walks
+  through scalar 'ID' at segment ...; only input-object types may be traversed"), which is what
+  makes the spelling unwritable today. But `of` has **five** callers (`RoutineDirectiveResolver`,
+  `ServiceDirectiveResolver`, `ConditionResolver` twice, `BuildContext` twice), and the widened
+  `PathExpr` is *consumed*: `RoutineCallEmitter.nestedSlotRead` registers a descent helper that
+  walks every tail segment over the raw argument map and casts at the leaf. An admitted but
+  uninterpreted key-column segment therefore emits `get("organisasjonskode")` against a `String`,
+  which is this item's own failure mode relocated. So the widening must be gated on the projection
+  resolving, or every consumer of the widened shape must be taught in the same commit. "Admits the
+  segment and carries it without interpreting it" is not a safe halfway house.
+* `RoutineDirectiveResolver.leafTypeGate` needs **no** change. Trace the motivating path:
+  `ServiceCatalog.resolvePathLeafType` returns `null` as soon as a segment descends through a
+  non-input-object, so the gate hits its `if (leafType == null) return null; // unresolvable leaf:
+  pass through` arm and rejects nothing. That is a better fact for this item than a deletion would
+  be: the gate is *already silent* on this shape, and it is equally silent on a typo'd key column,
+  which is precisely why the store-side detection is load-bearing rather than a nicety.
 
 ### Where the resolved projection is consumed
 
@@ -221,101 +268,103 @@ decides what each can do.
 
 * **Validation reads it as violations, and this is the shipped pattern.** `FactCapture` already
   runs `AuthoredClaimConflicts` over freshly captured rows inside the transaction and returns a
-  typed `Detection` the caller folds into the error stream. The rejections this item needs (the
-  bare form, a segment naming no key column, `@nodeId` without `typeName:`, a `@nodeId` on the
-  argument itself) are detection views in the `intent_authored_claim_conflict` mould, decoded into
-  located `ValidationError`s by a sibling of that class. Rejection stays a typed value; what
-  changes is that the rule lives in SQL and the Java decodes a closed verdict vocabulary.
-* **Planning joins it onto the command row.** `EmitPlan.produce` runs after capture, so the
-  resolved projection is available to it, and commands are complete rows: a renderer that had to
-  query the store would break the completeness law the render fold enforces. So the routine-call
-  command carries the resolved projection per binding, and `RoutineCallEmitter` emits from the row
-  it is handed.
+  typed `Detection` the caller folds into the error stream. The rejections this item needs are
+  detection views in the `intent_authored_claim_conflict` mould, decoded into located
+  `ValidationError`s by a sibling of that class. Rejection stays a typed value; what changes is
+  that the rule lives in SQL and the Java decodes a closed verdict vocabulary.
+* **Planning joins it onto the command, and the grain matters.** `RoutineRef.ArgBinding` and
+  `RoutineChain` live in `rewrite/model`, the walk surface this item may not touch.
+  `LauncherCommand` and `LaunchSource.RoutineChain` live in `command/`, the plan surface, which is
+  where a complete command row is assembled. So the projection is read by `EmitPlan` into a
+  plan-local relation keyed by the pair's natural key and joined into the command row that
+  `LauncherCommands` already mints. Nothing in `rewrite/model` changes, the command reaching the
+  renderer is complete by construction, and no new committed command relation is minted for
+  something that renders no unit (which would owe the render fold a closure obligation it cannot
+  discharge).
 
-**The open seam is exactly one question: what the command row carries.** `RoutineRef.ArgBinding`
-holds a `ParamSource.Arg(CallSiteExtraction, PathExpr)` today, and this item may not add an arm to
-that. Two candidate shapes, to settle at the Ready gate rather than during implementation:
+The distinction is worth stating plainly because "a projection map on the routine-call command"
+reads either way, and that ambiguity is where the ruling gets broken by accident.
 
-* a projection map on the routine-call command, keyed by parameter name, carrying the resolved
-  `(node type, table, column, wire facts)` rows the view produced, with `ParamSource.Arg` untouched
-  and still `Direct`; or
-* the same rows reaching the renderer as their own committed command relation, joined by the
-  binding's key, which is closer to where the architecture is going and further from what the
-  routine path looks like today.
+**One rejection arm this design needs and an earlier draft lacked.** The view resolves a projection
+at every `site` its `UNION` covers, but the emitters land site by site. A projection that resolves
+where no emitter is wired is a classified decision implying a generator branch that does not exist,
+which is the silence this item was filed to close. So the detection stratum carries a `deferred`
+arm keyed on the `site` column, naming the sites that emit, and it shrinks as sites land.
 
-The first is smaller and does not touch the sealed model at all. Prefer it unless the reviewer sees
-the second as the shape that stops this from being re-done later.
+### The `sql_` family gains two populations
 
-### The `sql_` family gains routine parameters
+Two facts this item needs are unreachable outside the codegen classloader, so both close in
+capture, where the fact-finding code is already standing on the objects that carry them. `sql_`
+is the family for both, and `sql_column` is the model, down to the rationale: "A column carries two
+types, not one: the SQL type the database declares and the Java type jOOQ binds it to. Both are
+facts about the column and neither derives from the other by any rule the store could apply."
 
-The type gate needs the routine parameter's Java type, and the store does not hold it. That is a
-capture gap, so it closes in capture: the facts are extended where the fact-finding code can most
-easily reach them, which is the jOOQ catalog walk that is already standing on the objects that
-carry them.
-
-**A table-returning routine is exposed by jOOQ as a table**, and that decides the shape. It arrives
-in the catalog as a `Table` whose `getTableType()` is `FUNCTION`, which is exactly how
+**A table-returning routine is exposed by jOOQ as a table**, and that decides where its facts hang.
+It arrives in the catalog as a `Table` whose table type is `FUNCTION`, which is exactly how
 `JooqCatalog.resolveTableValuedFunction` finds it: `findTable(routineName)` first, then the
 `getOptions().type().isFunction()` check. So the walk that writes `sql_table` has already visited
-every routine `@routine` can name; what it does not write is that the row is a function, or what
-parameters it takes. The `routines/` sub-package probe in `JooqCatalog.findNonTableValuedRoutine`
-is *not* part of this picture: it is the fallback for a routine that is **not** table-valued, which
-`@routine` rejects outright with `RoutineResolution.NonTableValuedRoutine`.
+every routine `@routine` can name. `JooqCatalog.findNonTableValuedRoutine`'s `routines/`
+sub-package probe is *not* part of this picture: it is the fallback for a routine that is **not**
+table-valued, which `@routine` rejects outright.
 
-`sql_column` is the model, down to the rationale. Its own comment argues the shape: "A column
-carries two types, not one: the SQL type the database declares and the Java type jOOQ binds it to.
-Both are facts about the column and neither derives from the other by any rule the store could
-apply, since the mapping is the generator's configured binding." A routine parameter is the same
-subject with the same two types, and `binding_type` is exactly what the gate compares against.
-
-Two additions to `CatalogFactCapture.captureCatalog`, both inside the loop it already runs over
+The additions, all inside `CatalogFactCapture.captureCatalog`'s existing loop over
 `jooq.allTableEntries()`:
 
-* **`sql_table.table_type`**, one column, from `Table.getTableType()`. jOOQ's
-  `TableOptions.TableType` distinguishes `TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION` and the
-  rest; `sql_table` records none of it, so the store cannot currently tell a table-valued function
-  from a table. The walk is already holding the `Table<?>`; this is the cheapest true fact in the
-  item, and it is what makes "which of these rows is a routine" a query.
-* **`sql_routine_parameter (source_name, table_schema, table_name, position, parameter_name,
-  jooq_name, sql_type, binding_type, ...)`**, hanging off the function-typed `sql_table` row by
-  foreign key exactly as `sql_column` hangs off a table. A function's parameters are to it what its
-  columns are to a table, and keying them the same way means no new anchor and no new source
-  vocabulary.
+* **`sql_table.table_type`**, one column, read as `table.getOptions().type()` (the accessor every
+  site in the tree uses). jOOQ distinguishes `TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION` and
+  the rest; `sql_table` records none of it, so the store cannot currently tell a table-valued
+  function from a table. Cheapest true fact in the item, and what makes "which of these rows is a
+  routine" a query.
+* **`sql_routine_parameter (source_name, table_schema, table_name, position, jooq_name,
+  binding_type, ...)`**, hanging off the function-typed `sql_table` row by foreign key exactly as
+  `sql_column` hangs off a table. A function's parameters are to it what its columns are to a
+  table, one walk reads both, and they share a refresh cadence, so no new anchor and no new source
+  vocabulary. Two things the relation's comment must own rather than leave implied: its population
+  is table-valued functions only (a non-table-valued routine has no `sql_table` row at all, so its
+  absence here is by construction, not by omission), and the rows describe **one method**, the
+  table-form convenience overload, since `Routines` also generates a `Configuration`-first form and
+  a `Field<?>` form for the same routine.
+* **The call surface.** Because the parameters are a fact about a method, the method has to be
+  named: the generated `Routines` class FQN and the method name. `sql_schema.keys_class_fqn` is the
+  shipped precedent for a per-schema generated artifact recorded as a fact, and the emitter needs
+  both values anyway. Without them the relation cannot answer "which overload", and the stated
+  downstream payoff (routine hover and completion off the store rather than a live classloader)
+  does not arrive.
+* **The node metadata population**, which is the gap under the key-column resolution's middle tier:
+  the `KjerneJooqGenerator` `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics that
+  `JooqCatalog.nodeIdMetadata` reads reflectively off the table class. A `type_id` column plus an
+  ordered `sql_node_key_column` child of `sql_table` is the shape, and the reader already exists,
+  cached per table per build, with a sibling that surfaces malformed-metadata reasons. This is the
+  same move as the parameters and for the same reason: `graphitron_node`'s own comment already
+  says "the SDL-versus-jOOQ-metadata precedence rules are detections", so the DDL is waiting for a
+  population it does not have.
 
-**Which reader gives which half.** The parameters live on the table object as `Field<?>` values, but
-`TableImpl.parameters` is `protected`, so the public `Table` interface does not expose them. The
-publicly reachable reader is the generated `Routines` convenience method, which is what
-`JooqCatalog.resolveTableValuedFunction` reads today (`Class.forName(schemaPackage + ".Routines")`,
-then the table-form overload picked by return type and by taking no `org.jooq.Field` parameters).
-That gives the **Java** parameter name and Java type, which is what this item's join and gate both
-need:
+**How capture reads them, and one thing it must not do.** Do not route capture through
+`resolveTableValuedFunction`: it is name-keyed, re-runs `findTable`, and collapses a function name
+two schemas both declare into `NotInCatalog`. Capture is already holding the resolved `Table<?>`
+and its schema and needs no lookup. The in-tree precedent is explicit, `candidateKeys(Table<?>)`
+existing as the "table-scoped overload without a (potentially ambiguous) SQL-name lookup" beside
+`columnFactsOf(Table<?>)`. So the reader is a new `Table<?>`-scoped method on `JooqCatalog`
+returning a value record beside `ColumnFacts`.
 
-* `jooq_name` is the join key, because `graphitron_routine_arg_mapping_pair.param_name` holds what
-  the author wrote (`pInventoryId`) and `RoutineDirectiveResolver` matches it with
-  `p.name().equals(claimed)` against that same reflected method parameter.
-* `binding_type` is the gate's left-hand side, against `sql_column.binding_type` on the right.
+It must also return values, not emit vocabulary. `RoutineResolution.Resolved` carries javapoet
+(`RoutineParam(String name, TypeName type)`, `ClassName routinesClass`), and reading capture
+through it would land a `TypeName.toString()` in `binding_type`. `ColumnFacts`' own javadoc already
+rules on this: the javapoet form is "a code-emission representation with no meaning in a relation".
 
-The **SQL** half (the database's own parameter name and type) is on those `Field<?>` values and is
-therefore reachable only by reading a protected member. Decide at pickup rather than in the DDL:
-capture it for parity with `sql_column` if the read is clean, or omit the two columns and say in
-the relation's comment that the parameter's SQL vocabulary is not publicly exposed by jOOQ. Do not
-write columns that will always be null.
+**One dependency the join key inherits, which is silent today.** `jooq_name` is the join key,
+because `graphitron_routine_arg_mapping_pair.param_name` holds what the author wrote
+(`pInventoryId`) and `RoutineDirectiveResolver` matches it with `p.name().equals(claimed)` against
+the reflected method parameter. A reflected parameter name is `arg0` unless the consumer compiled
+their jOOQ output with `-parameters`. The generator already depends on this in that matching, and
+this repo compiles for it in both `graphitron-sakila-db` and its own test tree. Capturing the name
+makes the dependency visible instead of creating it, and the column's comment is where it belongs.
+If the flag is absent the row stays faithful (it records what the class says); what degrades is the
+join, which is the honest place for that to surface.
 
-**One dependency the join key inherits, which is silent today.** A reflected parameter name is
-`arg0` unless the consumer compiled their jOOQ output with `-parameters`. The generator already
-depends on this in the name matching above, and this repo's own test tree compiles with
-`-parameters` for a related reason. Capturing the name makes the dependency visible instead of
-creating it, and the column's comment is where it belongs. If the flag is absent the row is still
-faithful (it records what the class actually says); what degrades is the join, which is the honest
-place for that to surface.
-
-**What this buys beyond this item.** The type gate becomes a join between two `binding_type`
-columns. `@routine`'s "no such parameter" rejection, which today reads
-`fn.params().stream().noneMatch(...)` in the resolver, becomes an anti-join against a captured
-population. The routine half of the LSP's hover and completion stops being reachable only through a
-live codegen classloader. None of that is this item's job to deliver, but all of it is unreachable
-until these rows exist, which is the argument for capturing them properly rather than working
-around the gap.
+The parameters' SQL-side vocabulary (the database's own parameter names and types) sits on
+`TableImpl.parameters`, which is `protected`, so reaching it means reading a non-public member.
+Decide at pickup, and omit the columns rather than ship ones that are always null.
 
 ### The bare form becomes a rejection
 
@@ -401,11 +450,11 @@ level up, not an implementation detail.
 
 The store grows on both strata, and the two grow for different reasons.
 
-**Base relations, from the catalog walk:** `sql_routine_parameter` and the `sql_table.table_type`
-column, per "The `sql_` family gains routine parameters". These carry the usual obligations: dense
-positions on the parameter list, total comment coverage, a `FOREIGN KEY` to `sql_table`,
-transcription-twin agreement for the decode, and registration in `FactCaptureAgreementTest` so a
-new relation cannot arrive unchecked.
+**Base relations, from the catalog walk:** `sql_routine_parameter`, the call-surface columns, the
+node-metadata population and the `sql_table.table_type` column, per "The `sql_` family gains two
+populations". These carry the usual obligations: dense positions on the ordered children, total
+comment coverage, a `FOREIGN KEY` to `sql_table`, transcription-twin agreement for the decode, and
+registration in `FactCaptureAgreementTest` so a new relation cannot arrive unchecked.
 
 **Derived relations:** the three resolution views plus the detection views, all `intent_`, all
 registered under the derived arm.
@@ -416,77 +465,76 @@ changes is that its comment enumerates what a segment can name ("a GraphQL argum
 input path") and now enumerates it incompletely; restate it at the rule's grain on the `@routine`
 pair relation and on its five siblings.
 
-The `sql_` half is the part that makes this item bigger than a view stack, and it is worth it on
-its own terms: the parameter facts are unreachable outside the codegen classloader, so a run that
-does not capture them cannot answer a routine question later, and every consumer that wants one is
-forced back through a live reflective walk. That is the same argument `sql_column.binding_type`'s
+The `sql_` half is what makes this more than a view stack, and it is worth doing on its own terms:
+both populations are unreachable outside the codegen classloader, so a run that does not capture
+them cannot answer a routine or node-metadata question afterwards, and every consumer that wants
+one is forced back through a live reflective walk. That is the argument `sql_column.binding_type`'s
 comment already makes for columns ("read off the live `Field` during the catalog walk and
 unrecoverable afterwards").
 
 ## Implementation
 
-* **`graphitron-model.sql`, base relations**: the `sql_table.table_type` column, and
-  `sql_routine_parameter` in `sql_column`'s mould (dense positions, FK to `sql_table`,
-  `binding_type` and `jooq_name` carrying the Java vocabulary the join and the gate read).
-* **`CatalogFactCapture`**: write `table_type` in the existing `sql_table` loop, and add
-  `captureRoutineParameters` beside `captureColumns` / `captureConstraints` / `captureIndexes`,
-  guarded on the function arm. It reads the generated `Routines` convenience method, which
-  `JooqCatalog` already resolves; capture should go through that owner rather than re-deriving the
-  lookup.
-* **Views**, in `graphitron-model.sql`, house style per `intent_bound_table` (declared column list,
-  full comment coverage, closed vocabularies as `CHECK` or as stated column comments):
-  `intent_node_key_column_resolved`, `intent_argmapping_binding_leaf`,
-  `intent_argmapping_node_key_projection`, and the detection views for the four rejections.
-* **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: one class reading the
-  projection view and one reading the detections, returning records built from query rows and
-  decoding the closed verdict vocabulary into `Rejection` arms. These records are the only new
-  Java types the item introduces.
+* **`graphitron-model.sql`, base relations**: `sql_table.table_type`; `sql_routine_parameter` in
+  `sql_column`'s mould with the call-surface columns; the node-metadata `type_id` plus an ordered
+  `sql_node_key_column` child of `sql_table`.
+* **`JooqCatalog`**: a `Table<?>`-scoped reader beside `columnFactsOf`, returning a value record
+  beside `ColumnFacts` (no javapoet). The node-metadata reader already exists
+  (`nodeIdMetadata`, with `nodeIdMetadataDiagnostic` beside it) and is already cached per table.
+* **`CatalogFactCapture`**: `table_type` in the existing `sql_table` loop, plus
+  `captureRoutineParameters` and `captureNodeMetadata` beside `captureColumns` /
+  `captureConstraints` / `captureIndexes`, the first guarded on the function arm.
+* **Views**, house style per `intent_bound_table` (declared column list, full comment coverage,
+  closed vocabularies as `CHECK` or as stated column comments): `intent_resolved_node_key_column`
+  (three tiers, `tier` column), `intent_argmapping_binding_leaf` (the keying over
+  `intent_input_occurrence_path`, `site` literal per union arm, unconsumed-segment count), and
+  `intent_argmapping_node_key_projection`, plus the detection views for the rejections including
+  the site-keyed `deferred` arm.
+* **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: records built from
+  query rows, decoding a closed verdict vocabulary into `Rejection` arms. The only new Java types
+  the item introduces.
 * **`FactCapture`**: run the detection over the freshly captured rows inside the existing
   transaction and return it in the typed product the caller already folds into the error stream.
 * **`GraphitronSchemaValidator`**: fuse the new violations the way the claim conflicts are fused.
-* **`ArgBindingMap.of`**: delete the traversal rejection for one trailing segment after an
-  `ID`-typed leaf; carry the segment in the `PathExpr`. No `@nodeId` check (it holds no directive
-  container for a head-segment leaf), no `Site` parameter, no new type.
-* **`RoutineDirectiveResolver.leafTypeGate`**: stop rejecting an `ID` leaf whose path carries the
-  trailing segment. Every other verdict stands, including the ordering fact that the gate's
-  `resolvePathLeafType == null` pass-through sits between the list-shape scan and `argExtraction`.
-* **`EmitPlan`**: join the projection view onto the routine-call command, per the open seam above.
+* **`ArgBindingMap.of`**: widen the traversal rejection to admit one trailing segment after an
+  `ID`-typed leaf, *with* the five-caller audit and the `RoutineCallEmitter.nestedSlotRead`
+  consequence handled in the same commit (see "What this item does not add").
+* **`EmitPlan` / `LauncherCommands`**: read the projection view into a plan-local relation keyed by
+  the pair's natural key and join it into the `LaunchSource.RoutineChain` command row. Nothing in
+  `rewrite/model` changes.
 * **`RoutineCallEmitter`**: emit the decode-and-read from the command row; `emitCall` yields
   pre-statements alongside its expression and the four call sites add them.
-* **`ConditionGlueRenderer`** and the `@service` pair: the same read, with the decode helper body
-  hosted on the conditions class for the `@condition` site.
+* **`ConditionGlueRenderer`** and the `@service` pair, when their sites land: the same read, with
+  the decode helper body hosted on the conditions class for the `@condition` site.
 * **Comments**: restate `argument_path` on all six `*_arg_mapping_pair` relations.
 
 ## Tests
 
-* **Capture tests for the new base relations**, in the shape the `sql_` family already uses: the
-  transcription twin proving the rows agree with what the catalog walk read, dense positions on the
-  parameter list, and `FactSchemaGateTest` for comment coverage. The sakila catalog carries
-  `rent_film` and `create_secure_note` as table-valued functions with parameters, so the fixtures
-  exist; pin the parameter rows each produces, and pin that an ordinary table produces none.
-  `table_type` wants a case per arm it can carry, at minimum `TABLE` and `FUNCTION`.
+* **Capture tests for the new populations**, in the shape the `sql_` family already uses: the
+  transcription twin proving the rows agree with what the catalog walk read, dense positions,
+  `FactSchemaGateTest` for comment coverage. The sakila catalog carries `rent_film` and
+  `create_secure_note` as table-valued functions, so the fixtures exist; pin the parameter rows
+  each produces, that an ordinary table produces none, and at least the `TABLE` and `FUNCTION` arms
+  of `table_type`. The node-metadata population needs a metadata-carrying table and one without.
 * **A test that pins the `-parameters` dependency**, since `jooq_name` is the join key and is
   `arg0` without it. This repo already compiles one test package deliberately without
-  `-parameters` to cover the `@field(name:)` case, so the precedent for testing both sides exists.
-* **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view,
-  pinning each derivation against hand-written expectations the view cannot produce by
-  construction. `intent_node_key_column_resolved` needs both arms populated: a node type with
-  pinned `@node(keyColumns:)` and one falling back to the catalog primary key, plus a composite-key
+  `-parameters`, so the precedent for covering both sides exists.
+* **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view.
+  `intent_resolved_node_key_column` needs all three tiers populated, not two, plus a composite-key
   type (`bar` in the `nodeidfixture` catalog is the one `NodeIdPipelineTest` already uses).
-* **Registration**: `FactCaptureAgreementTest` under the derived arm for every new view, which is
-  what stops a view arriving unchecked; `FactSchemaGateTest` for comment coverage.
-* **Corpus population per arm.** A view arm no fixture reaches is a vacuous pin. Each rejection arm
-  and each key-column source arm needs a coordinate that reaches it.
-* **Cross-site parity is now structural rather than tested**, since one view resolves all six pair
-  relations. Keep one test that asserts it anyway, over `@routine`, `@service` and `@condition`:
-  the `UNION` arms are still six hand-written `SELECT`s and a typo in one is exactly the drift the
-  test catches.
+* **The binding-leaf view wants its caveats pinned, not just its happy path**: a bare-scalar
+  argument head, a path whose leaf is an input object rather than a scalar, and the two-trailing-
+  segment case that must not resolve as a projection.
+* **Registration**: `FactCaptureAgreementTest` for every new relation and view, base and derived.
+* **Corpus population per arm.** A view arm no fixture reaches is a vacuous pin. Each rejection
+  arm, each key-column tier and each admitted `site` needs a coordinate that reaches it.
+* **Cross-site parity**: one test over `@routine`, `@service` and `@condition`. The `UNION` arms
+  are six hand-written `SELECT`s and a typo in one is exactly the drift it catches.
 * **Pipeline tier**: the `rent_film` fixture binding `pInventoryId` from
   `ID! @nodeId(typeName: "Inventory")` through the projected key column, asserting the emitted call
-  materialises the record once and reads the column off it, plus the four rejection cases.
-* **Validate-time tests** that the build fails, not only that a `Rejection` is produced. "Validator
-  mirrors classifier invariants" is the rule, and a rejection that derives but does not fail the
-  build is the failure mode it guards against.
+  materialises the record once and reads the column off it, plus the rejection cases.
+* **Validate-time tests** that the build fails, not only that a `Rejection` is produced.
+* **The widening's blast radius**: a test at each `ArgBindingMap.of` caller that a trailing segment
+  which resolves to no projection cannot reach `nestedSlotRead` and emit a raw map read.
 * **`@condition` emission** needs a compilation-tier assertion about *which class* hosts the decode
   helper body, since that is the half the pipeline tier cannot see.
 * **Execution tier** (`graphitron-sakila-example`): one round trip proving the decoded key reaches
@@ -495,21 +543,14 @@ unrecoverable afterwards").
 
 ## Risks
 
-* **Path traversal in SQL is the piece to prototype before committing the item.** Resolving a
-  dotted path against `graphql_field` means an iterative walk, and H2's view vocabulary is what
-  decides whether that is a recursive CTE inside the view, a bounded join chain for a stated
-  maximum depth, or a capture-cadence materialization like the two `InputOccurrencePaths` and
-  `ReachabilityRows` already are ("H2 cannot state them as safe views"). That precedent exists
-  precisely for derivations a view cannot express, so the fallback is house style rather than a
-  concession, but which of the three applies changes the item's size and should be answered before
-  Ready.
+* **The widening at `ArgBindingMap.of` is the sharp edge**, not the views. Five callers, and a
+  consumer (`RoutineCallEmitter.nestedSlotRead`) that will happily emit a raw map read for a
+  segment nobody interpreted. Gate it or teach every consumer in the same commit.
 * **Whether the parameters' SQL-side vocabulary is worth reaching.** They are `Field<?>` values on
-  `TableImpl.parameters`, which is `protected`, so capturing the database's own parameter names and
-  types means reading a non-public member. The Java side, which is what this item's join and gate
-  need, comes off the generated `Routines` method with no such problem. Settle before the DDL is
-  written, and omit the columns rather than ship ones that are always null.
+  the protected `TableImpl.parameters`; the Java side, which is what the join and the gate need,
+  comes off the generated `Routines` method with no such problem. Settle before the DDL is written
+  and omit the columns rather than ship ones that are always null.
 * **The `-parameters` dependency** the join key inherits: real, pre-existing, and now explicit.
-* **The command-row seam** above: what carries the resolved projection to the renderer.
 
 ## User documentation (first-client check)
 
@@ -587,60 +628,62 @@ Draft of the `routine.adoc` subsection:
   rather than a misleading flat list") because the LSP snapshot carries no nested-input-field
   projection. Under the openability rule that limitation splits by kind rather than being uniform:
   the input-object arm still waits on the snapshot projection, while the node-id arm is answerable
-  from the node type's key columns, which the snapshot can carry cheaply. Under this design it is
-  answerable from a *relation*: `intent_node_key_column_resolved` is exactly the completion list,
-  including the catalog primary-key fallback that `NodeType.nodeKeyColumns` cannot serve (that list
-  is empty whenever the author did not pin `@node(keyColumns:)`, and an empty completion list is
-  worse than none). That the editor is a second reader of the same view is the argument for naming
-  it rather than leaving it a CTE. So key-column completion is reachable *ahead* of the general
-  case rather than after it. It is still its own item and must
-  not ride this one, but R626's "offer nothing" note should be narrowed to the input-object arm
-  when either item lands, so it does not read as a blanket bar on a case that is no longer blocked.
+  from the node type's key columns. Under this design it is answerable from a *relation*:
+  `intent_resolved_node_key_column` is exactly the completion list, all three tiers of it. That the
+  editor is a second reader of the same view is the argument for naming it rather than leaving it a
+  CTE inside whoever asked first, and it is why the view earns its place independently of this
+  item's own use of it. So key-column completion is reachable *ahead* of the general case rather
+  than after it. It is still its own item and must not ride this one, but R626's "offer nothing"
+  note should be narrowed to the input-object arm when either item lands, so it does not read as a
+  blanket bar on a case that is no longer blocked.
 * `roadmap/nested-argmapping-syntax.md` (R249) extends the right-hand side with a nested object
   form. It varies the same grammar from the other end and composes with the openability rule
   rather than negotiating against it, so the two no longer need a joint decision on the
   separator. They still share an owner, so coordinate on edits to
   `ArgBindingMap.parseArgMapping` plus `ArgBindingMap.of`.
 
-## Scope: one item or two
+## Scope: three items, in dependency order
 
-The bare-form rejection is separable from the projection, and separating it is worth considering at
-the sign-off gate rather than after implementation starts.
+This spans base-relation capture, a view stack, detection views fused into validation, a grammar
+widening with a five-caller audit, a planning join and three emit sites. That is too much for one
+item, and the split that helps is not the one an earlier draft proposed (bare-form rejection versus
+projection), which separates two consumers of the same view stack and leaves the capture extension
+welded to both.
 
-Landed alone it needs the binding-leaf view and one detection view, the typed product that decodes
-them, and the fusion into the validator. It needs no grammar change, no planning join, no command
-row, no emitter work at any site and no answer to the capture gap. That closes the silent-base64
-hole, which this item itself calls the sharper half of the problem and "worth landing even if
-everything else here slipped".
+1. **Capture.** `sql_table.table_type`, `sql_routine_parameter` with its call surface, and the node
+   metadata population. Registered, twinned, comment-covered, with no reader. This is R666's
+   shipped shape exactly (land the facts, change no production read) and it has value independent
+   of this item: two populations that are otherwise unreachable after the classloader closes.
+2. **Views plus the bare-form rejection.** `intent_resolved_node_key_column`, the binding-leaf
+   keying over `intent_input_occurrence_path`, the projection reduction, the detection views, the
+   typed product, the validator fusion. No grammar change, no planning join, no emit. This closes
+   the silent-base64 hole, which is the sharper half of the problem and the half worth landing even
+   if the rest slipped.
+3. **Grammar plus emit.** The `ArgBindingMap.of` widening with its five-caller audit, the planning
+   join, `RoutineCallEmitter`'s pre-statement signature change, and the `@condition` helper
+   hosting. This is where the risk actually is, and the only piece that needs the emitter-signature
+   question answered.
 
-The store direction makes the split cheaper than it was under the previous design, because the
-first half is now the half that ships in shadow anyway: a detection view plus its agreement test is
-the shape R666 argues should land before any consumer flips. The projection half is then the flip
-plus the emit.
+(1) and (2) are both shadow-shaped and cheap to review. Splitting this way also means the
+projection never resolves at a site whose emitter is unwired without the `deferred` arm saying so,
+because (2) ships that arm covering every site and (3) shrinks it.
 
-Splitting does not reintroduce a per-directive deferral. Rejecting the bare form at all sites *is*
-uniform behaviour, and under one view it is uniform by construction. Nor does the message have to
-promise the segment: "bind the decoded key by naming a key column" is a `structural` statement
-about what the author must write, and it becomes constructive when the projection lands rather than
-retroactively true. That is what keeps the interim verdict `structural` rather than `deferred`.
-
-The argument against splitting is that a rejection with no fix available yet is a worse author
-experience than either state alone. That is real, and it is why this is a judgment call for the
-sign-off rather than a decision recorded here.
+The interim state after (2) is a rejection with no fix yet available, which is a worse author
+experience than either end state. That is the real cost of the split and it is why the verdict
+stays `structural` rather than `deferred`: "bind the decoded key by naming a key column" is a
+statement about what the author must write, and it becomes constructive when (3) lands rather than
+retroactively true.
 
 ## Open questions
 
-* **Whether a dotted path can be resolved against `graphql_field` inside a view**, or needs the
-  capture-cadence materialization the two existing exceptions use. This is the first thing to
-  prototype; it decides the item's size (see "Risks").
-* **What the routine-call command row carries** to get the resolved projection to the renderer
-  without touching `ParamSource` (see "Where the resolved projection is consumed"). Settle at the
-  Ready gate.
+* **What the plan-local projection relation looks like** in `EmitPlan`, and whether
+  `LauncherCommands` is the only command that needs the join or `ProjectionCommands` does too.
+  Bounded, but it decides how much of (3) is plumbing.
 * Whether `PathFragments.emitTableExpression` takes the pre-statement change (which propagates to
   its callers, since it returns a bare expression consumed inside alias-declaration loops) or keeps
-  a per-read call as a documented site-local exception. Answered far enough to size: it is a
-  signature question one level up, not an implementation detail.
+  a per-read call as a documented site-local exception. A signature question one level up, not an
+  implementation detail, and it belongs to slice (3).
 * Whether a `@nodeId` input field that nothing consumes should warn. Today it is silently
   ignored wherever no consumer reads it, which is how the `TEXT` case above stays invisible;
-  the bare-form rejection closes it at the `@routine` site only. A general "declared and
+  the bare-form rejection closes it at the `argMapping` sites only. A general "declared and
   unconsumed" warning is a larger question and belongs in its own item if anyone wants it.
