@@ -69,9 +69,12 @@ gathering rule below covers minting an arm then.
 
 Widen `CapturedStore` from package-private and move it beside the shared test support in
 `no.sikt.graphitron.rewrite`, which already hosts `TestSchemaHelper`, `TestFixtures` and the
-`*RenderTestSupport` classes. That package is also tier-neutral, which matters: the new consumers
-are `@PipelineTier` while `capture/SourceGraphScopingTest` is `@UnitTier`, and a home that reads as
-belonging to one tier's family invites the next reader to infer a tier rule that does not exist.
+`*RenderTestSupport` classes. That package is also tier-neutral, which matters: the incoming
+consumers are all `@PipelineTier`, while the nine that already read the handle straddle both tiers
+(`FactCaptureAgreementTest`, `TaggedCaptureStampTest` and `WarmStartRefreshTest` are `@PipelineTier`,
+the other six `@UnitTier`). A home that reads as belonging to one tier's family invites the next
+reader to infer a tier rule that does not exist, and the mixed readership is already the status quo
+rather than something this item introduces.
 
 Do **not** let this become a third shared-test home. `TestSchemaHelper` already owns the parse-side
 primitives (`attribution`, `nodeDeclaration`, `buildSchema`) and the derive tests already call it.
@@ -106,12 +109,12 @@ is the design working rather than failing.
 
 ### Name the shapes; do not flag them
 
-Give the handle named factories, one per capture shape above, rather than nullable arguments or a
-`boolean`.
-Named entry points are what make the set legible enough to prune later; a growing pile of flags is
-not. Each factory carries a one-line javadoc note saying what its shape carries that its sibling
-cannot. Writing those notes is the work: if the note for the middle shape turns out to read
-"nothing, these tests just never needed nodes," that is the finding, and the set collapses to two.
+Give the handle named factories, one per capture shape in the first three rows above, rather than
+nullable arguments or a `boolean`. Named entry points are what make the set legible enough to prune
+later; a growing pile of flags is not. Each factory carries a one-line javadoc note saying what its
+shape carries that its sibling cannot. Writing those notes is the work: if the note for the
+node-inference-off shape turns out to read "nothing, these tests just never needed nodes," that is
+the finding, and the set collapses to two.
 Resolving the `new NodeDeclaration(null)` versus `TestSchemaHelper.nodeDeclaration()` split is in
 scope and must not be preserved silently on the grounds that it is what the copies did.
 
@@ -191,9 +194,9 @@ subdirectory.
 ### Make the registry source an explicit arm
 
 All seven `derive/` helpers feed capture a bare `RewriteSchemaLoader.load` registry, as does
-`DiagnosticFactsTest` in each of its own capture calls. Production capture
-reads the attribution pipeline's pre-synthesis registry, and `CapturedStore.ofPipeline` already
-exists for that, with javadoc stating the hazard: a bare parse lets capture's macro expansion mint
+`DiagnosticFactsTest` in each of its own capture calls. Production capture reads the attribution
+pipeline's pre-synthesis registry, and `CapturedStore.ofPipeline` already exists for that, with
+javadoc stating the hazard: a bare parse lets capture's macro expansion mint
 what the rewrite has already put there in the pipeline, so the store agrees with the model for the
 wrong reason.
 
@@ -214,10 +217,13 @@ separates on, not because the unmarked call spells its choice out.
 `ColumnMatchClaimTest` carries `withSeededStore` plus `seedGraph` / `seedSource` / `seedField` /
 `seedTable` / `seedSchema` / `seedColumn`; `ReferenceStepTargetTest` carries `withCollidingKeySeed`
 plus `seedTable` / `seedRootType` / `seedStep`. These insert store rows directly and bypass capture,
-because they construct states capture cannot reach. The rule governing them is already written twice
-in class javadoc (`ReferenceStepTargetTest`: "a fixture is free to seed a chain the catalog cannot
-connect, and the case then documents behaviour no build can produce"; `FieldColumnTableTest`
-likewise), and each seeded case carries its own escape note.
+because they construct states capture cannot reach. The hazard that governs them is already stated in
+two class javadocs, from opposite ends. `ReferenceStepTargetTest` states the permission and its
+price: "a fixture is free to seed a chain the catalog cannot connect, and the case then documents
+behaviour no build can produce," and it then names the two conditions under which its own cases seed.
+`FieldColumnTableTest` reaches the other conclusion from the same premise, that a seeded fixture could
+assert a combination no schema produces, and so seeds nothing at all. Each seeded case carries its own
+escape note on top of that.
 
 An earlier draft put these in a separate `SeededStore` type, to keep the reach for an
 unreachable-by-production store state visible at the call site. That is the wrong trade under the
@@ -252,11 +258,9 @@ so any class rename in this item must update both surfaces by hand.
 
 This item changes test-support code only, so its acceptance is the existing suite: the eight migrated
 classes and the nine `capture/` classes that already read `CapturedStore` pass with their assertion
-content unchanged. Those nine straddle `@UnitTier` and `@PipelineTier` today, which is the
-tier-neutral home argument above holding as an observation rather than a prediction. An
-assertion that has to change to accommodate the shared harness is the signal that an axis was
-load-bearing after all and must stay expressible, not that the assertion should be relaxed. The
-node-inference axis is the one to watch here.
+content unchanged. An assertion that has to change to accommodate the shared harness is the signal
+that an axis was load-bearing after all and must stay expressible, not that the assertion should be
+relaxed. The node-inference axis is the one to watch here.
 
 `mvn install -Plocal-db` is the gate; the inner loop is
 `mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution`.
