@@ -121,7 +121,20 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   correlation re-keyed: today it equates the child's target side against one `parentRecord`, and
   batched it equates against the key set the loader hands in. `MultiTablePolymorphicEmitter`'s
   batched child is the shape to compare against for the loader plumbing, not necessarily for the
-  statement, since this arm has one base table where that one stages a union.
+  statement, since this arm has one base table where that one stages a union. Two concrete points
+  the re-key runs into:
+  * **The re-key is a widening, not a translation.** `buildJoinPathCondition` reads
+    `fkJoin.slots().get(0)` and correlates on that one slot; the key the bullet above proposes,
+    `parentRowColumns()`, is `On.ColumnPairs.sourceSideColumns()`, which is *every* slot. On a
+    composite FK the two disagree, and the batched form is the one that is right. Say which it is
+    rather than letting it fall out: either the batched arm correlates on the full slot list (and
+    the "Regression" line below is then a statement about the unbatched path only, which is fine),
+    or composite FKs are declared out of scope here and the single-slot read carries over.
+  * **The key columns have to reach the select list.** `buildTableInterfaceReprojection` takes an
+    `alwaysProject` parameter that this call site passes `List.of()` for; the launcher's
+    discriminated arm is what uses it. That is the hook for projecting the correlation columns the
+    scatter groups by, so the batched form should thread the key columns through it rather than
+    appending to the assembled select.
 * `warnIfSplitQueryOnRecordParent`'s sibling for this arm, or a generalisation of it: the redundancy
   warning plus the delete fix. Needs its own `LintRule` constant if the existing
   `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` does not fit the wording.
@@ -129,22 +142,55 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   encoding (`DeliveryFact.leafDerivedOf`) and the materialized relation (`DeliveryFactRelation.mint`,
   read through `GraphitronSchema.deliveryOf`), and `DeliveryFactPinTest` requires the two to agree.
   The crosswalk side is compile-forced, its switch being total with no default, so adding the
-  batched leaf there cannot be missed; the relation side can. Today
-  `DeliveryFactRelation.singleTableBackedVerdict` hardcodes `TableInterfaceType -> false` (and
-  excludes it again from the `ConnectionType` arm) on the stated ground that the single-table
-  interface child's "only delivery is inline", which makes the relation answer `Inline` for the new
-  batched leaf. Update the case, the connection sub-clause and that javadoc rationale alongside the
-  classifier fork, and decide which `DeliveryFact.Trigger` the leaf declares: the sibling pair uses
-  `Trigger.PolymorphicFanIn` for the same cardinality-plus-participants rule, and both sides have to
-  name the same one. Fix it in place and stop there. That the relation encodes delivery as
+  batched leaf there cannot be missed; the relation side can.
+
+  **The edit here is a new positive arm, not a flip of the existing negative one.** Read `mint`
+  before touching it: its only arms that answer `Batched` are the polymorphic fan-in (keyed on
+  `TargetShape.Interface` / `TargetShape.Union`), the record-handed arm (keyed on
+  `child.sourceShape() == SourceShape.Record`), and the two marker arms. This leaf reaches none of
+  them. `ChildField.target()` gives `TableInterfaceField` a `TargetShape.Table`, and
+  `ChildField.sourceShape()` gives it `SourceShape.Table`. So flipping
+  `singleTableBackedVerdict`'s `TableInterfaceType -> false` to `true` does not make the relation
+  answer `Batched` for the plain list coordinate at all: `tableAnchoredChild` is a conjunct, never a
+  verdict, and the coordinate falls through to `Inline` exactly as before. What the flip *does*
+  reach is the marker arm, `markers.splitQuery() && tableAnchoredChild`, which then answers
+  `Batched(Trigger.Authored)` at *both* cardinalities. Three divergences from the one edit: the
+  plain list coordinate (relation `Inline`, leaf `Batched`), the `@splitQuery`-marked list
+  coordinate (relation `Authored`, leaf `PolymorphicFanIn`), and the `@splitQuery`-marked single
+  coordinate (relation `Batched`, leaf `Inline`). The last two are live because this item's own
+  resolution makes `@splitQuery` warn-and-ignore rather than reject, so the marked coordinate stays
+  author-reachable and both sites compute it.
+
+  Mint the arm the way line-for-line sibling `unwrapped instanceof TargetShape.Interface ||
+  TargetShape.Union` is minted: a `TableInterfaceType`-keyed arm on the cardinality rule, placed
+  *ahead* of the marker reads so the redundant marker cannot claim the trigger. Both sides then name
+  `Trigger.PolymorphicFanIn`, which is what the sibling pair uses for the same
+  cardinality-plus-participants rule.
+
+  Leave `singleTableBackedVerdict`'s `ConnectionType` sub-clause alone, for the same reason the
+  classifier fork above leaves the `FieldWrapper.Connection` half alone: the connection coordinate
+  is rejected at the arm's head today, so the sub-clause is a present-but-unreachable branch with
+  no enforcer, and `roadmap/root-connection-over-discriminated-interface.md` states that it verifies
+  both delivery sites for the connection coordinate in the commit that lifts the deferral. Whether
+  the `TableInterfaceType -> false` case in `singleTableBackedVerdict` needs any edit at all falls
+  out of where the new arm lands: if the arm precedes the `tableAnchoredChild` computation, the
+  case stays correct as written and only its javadoc rationale ("the single-table interface child,
+  whose only delivery is inline") needs rewriting.
+
+  Fix it in place and stop there. That the relation encodes delivery as
   negative space, an enumeration of what does not batch that every new batched shape has to be
   edited into, is a defect in its own right, and
   `roadmap/delivery-verdict-derives-from-the-store.md` owns it. This item is not the place to
   restructure the site; it is one of the two reasons that item exists.
-* The `DeliveryFacts` javadoc that lists the `@splitQuery`-half readers. It is the record's *class*
-  javadoc plus `Row#splitQuery` / `splitQuery(GraphQLFieldDefinition)`, which name the pivot and
-  nesting-deferral halves; `forcesSplitDelivery`'s own javadocs are one-liners about the union and
-  carry no list. Add this arm where the list actually lives.
+* The javadoc that lists the `@splitQuery`-half readers. There are three sites, not one.
+  `DeliveryFacts`' *class* javadoc carries the list in prose (naming the pivot gate and the
+  nesting-projection deferral) and `{@link}`s `Row#splitQuery`, which is a bare record component
+  with no javadoc of its own; `DeliveryFacts.splitQuery(GraphQLFieldDefinition)`'s one-liner repeats
+  it as "(the pivot / nesting-deferral half)"; and `FieldBuilder.forcesSplitDelivery`'s javadoc
+  carries the longest and most-read version of the list ("the nesting arm's deferred rejection, the
+  `@pivot` batching gate and the routine-chain child read the `@splitQuery` half"). Add this arm to
+  all three. Note that its read is the nesting arm's kind exactly: a marker read that feeds a
+  diagnostic, not one that gates delivery.
 
 ## Open for the implementer
 
@@ -172,12 +218,26 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   child. Without a list-cardinality child in the corpus (or in the test's own marker fixture) the
   relation can keep answering `Inline` while the leaf says `Batched` and the build stays green.
   Adding that coordinate is what turns the pin into a gate, so it is not optional coverage.
+  **Three coordinates, not one**, because the relation's marker arm reads `@splitQuery`
+  independently of the cardinality fork and the divergences enumerated above are exactly the
+  marked ones: a list-cardinality child, a list-cardinality child *carrying* `@splitQuery`, and a
+  single-cardinality child carrying `@splitQuery`. `DeliveryFactPinTest`'s own `MARKER_FIXTURE` is
+  the natural home for the two marked ones (it exists for precisely this, marker coverage beside a
+  corpus that is thin on markers), and it keeps the redundancy warning out of the corpus, where a
+  marked coordinate would have to be reconciled with the `@classified` verdict rows. The test's
+  per-trigger floors should gain nothing; `PolymorphicFanIn`'s floor already covers the new arm.
 * **The redundancy warning.** Its own case asserting the `LintFinding`, the rule constant and the
   delete fix, modelled on whatever pins `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` today.
 * **Execution tier.** The statement-count claim is the whole point and is invisible to every other
   tier. `GraphQLQueryTest`'s `SQL_LOG` idiom over a discriminated interface child across several
   parents: one child statement, not one per parent. A `ProjectionSqlBaselineTest`-style whole-
-  statement pin is worth having for the batched form since the correlation shape changes.
+  statement pin is worth having for the batched form since the correlation shape changes. Give the
+  execution case a participant carrying a **cross-table field**. That is what distinguishes this
+  arm's statement from the plain batched child's: `buildTableInterfaceReprojection` folds the
+  per-participant capped correlated subselects and conditional joins into the select list, and
+  `ParticipantColumnReferenceField`'s fetcher reads the values back off the record by alias. Under
+  batching that record now arrives from the loader's scatter rather than from a per-parent fetch,
+  and nothing in the classification or delivery-fact tiers can see whether the aliases survived.
 * **Regression.** The existing per-parent behaviour stays pinned for single cardinality, so the fork
   is proven to be a fork rather than a wholesale move.
 
