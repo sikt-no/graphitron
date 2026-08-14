@@ -89,8 +89,35 @@ other SQL-name comparison in the classifier is.
 
 `@nodeId` without `typeName:` is rejected at this position. `NodeIdLeafResolver.inferTypeName`
 infers a bare `@nodeId`'s target from the *containing table*, and a routine parameter has no
-containing table; there is nothing to infer from. The rejection says so and tells the author to
-add `typeName:`.
+containing table; there is nothing to infer from. That owner already carries two permanent
+messages for this same underlying fact ("cannot infer a node type here", both ending "Specify
+`typeName:` explicitly"). The routine-site rejection belongs in that owner as a third message
+rather than freshly composed at the detection site, so authors meet one vocabulary for one
+condition.
+
+#### The one open fork on the authoring surface
+
+Reusing the dot separator makes one right-hand side carry two vocabularies: every segment
+today names a *GraphQL* input field, and this one names a *SQL* column, disambiguated only by
+looking up `@nodeId(typeName:)` on the field the previous segment named. The alternative is a
+lexically disjoint form (a sigil, or a `key(input.organisasjonId, organisasjonskode)` call
+form) that the lexer separates, which would leave `ArgBindingMap.of`'s "only input-object types
+may be traversed" rejection permanent instead of conditional, and would give the LSP a
+decidable completion trigger without a nested-input projection.
+
+**Recommendation: keep the dot form**, on the grounds that `@routine` already asks authors to
+switch vocabulary between two arguments of the same directive: `argMapping`'s right-hand side
+is GraphQL-named and `columnMapping`'s is SQL-named. A key column appearing where the node id
+sits is the same SQL vocabulary the author is already using one line down, and the
+disambiguation is local and deterministic (the walk is already tracking the type at each
+depth), not an ambiguity. The costs are real but bounded, and each is named where it lands: the
+conditional traversal rejection below, the capture-comment widening in "Fact capture", and the
+LSP note under "Relationship to other items".
+
+Settle this jointly with `roadmap/nested-argmapping-syntax.md` (R249), which varies the same
+separator from the other end. This is the one decision in the item where the reviewer should
+expect to be asked to disagree; a disjoint form is defensible and the argument against the dot
+form is a real one, not a strawman.
 
 ### It is not a `NodeIdLeafResolver` reuse
 
@@ -118,18 +145,80 @@ The projection splits cleanly in two, and the split is what keeps both halves ho
 * **The decode-and-project becomes a `CallSiteExtraction` arm** on `ParamSource.Arg.extraction()`.
   That slot is exactly "how to extract one argument value at the call site", it already carries
   `NodeIdDecodeKeys.ThrowOnMismatch(decodeMethod)`, and the only fact missing for a routine
-  parameter is *which* key column to project. So the new arm is the existing decode plus a key
-  index.
+  parameter is *which* key column to project.
 
-This is preferable to a terminal `PathExpr` arm, which was the Backlog draft's guess. A terminal
-arm would put a decode concern inside a type whose whole contract is SDL traversal, and would
-leave `extraction()` still unread on this binding.
+A terminal `PathExpr` arm, the Backlog draft's guess, is the wrong shape and the reason is worth
+recording: `ParamSource.Arg(CallSiteExtraction extraction, PathExpr path)` already splits these
+as two axes, *where the value lives* and *what transform applies once extracted*, and a terminal
+arm fuses them. The concrete cost is that `ServiceCatalog.resolvePathLeafType` walks segments
+against input-object fields and would return `null` for a projection segment, falling into its
+documented "pass through conservatively rather than over-reject" arm. That is a silent hole in
+the wire-coercion gate, which is the same defect this item exists to close, one level up.
 
-That last point is the item's other payoff. `RoutineDirectiveResolver` hardcodes
+**The new arm composes with `NodeIdDecodeKeys` rather than joining it.**
+`NodeIdKeyProjection(NodeIdDecodeKeys decode, ColumnRef column, int keyIndex)` is a top-level
+`CallSiteExtraction` arm that *carries* the decode. Making it a sibling of `ThrowOnMismatch`
+under `NodeIdDecodeKeys` would be wrong twice: that interface's documented axis is the failure
+mode, and a projection is not a failure mode (a projected binding still needs one); and
+`ConditionGlueRenderer.decodeCall` reads the mode as
+`nidk instanceof ThrowOnMismatch ? THROW : SKIP`, so a new sibling arm would silently route to
+SKIP semantics. If a later item does widen `NodeIdDecodeKeys`, that ternary must become an
+exhaustive switch first.
+
+The extraction slot is the item's other payoff. `RoutineDirectiveResolver` hardcodes
 `new CallSiteExtraction.Direct()` on every argument-sourced binding and `RoutineCallEmitter`
 never reads `arg.extraction()` at all: a model fact with no consumer, which
-`roadmap/routine-coercing-arg-extractions.md` (R625) is chartered to fix. This item makes the
-emitter read the slot for the first time. See "Relationship to other items" for the ordering.
+`roadmap/routine-coercing-arg-extractions.md` (R625) is chartered to fix. Riding the slot makes
+this item open that switch for the first time, which makes the R625 relationship **directional**
+rather than merely adjacent: R668 introduces the two-arm switch (`Direct`, the projection arm)
+and R625 fills `EnumValueOf` and `JooqConvert` into it.
+
+### Grammar is shared; resolution is per-directive
+
+The Backlog draft's recommendation was to teach `ArgBindingMap.of` to resolve the segment for
+every site. That is the wrong altitude. `of` is a `static`, pure function over
+`(slotTypes, overrides)`; resolving `@nodeId(typeName:)` → `NodeIndex` → key columns →
+`HelperRef.Decode` would thread schema state through a function whose two `BuildContext` call
+sites pass an *empty* slot map (the path-step `@condition` site), where there is nothing to
+project from at all.
+
+The premise "this path ends in a decoded node key is directive-independent" is true of the
+**grammar** and false of the **resolution**: `@service` gates a binding against a reflected Java
+parameter type and `@routine` against a catalog IN-parameter type, and those want different type
+gates (see below). So:
+
+* **Grammar, one owner.** `of` admits the trailing segment when the preceding leaf is an `ID`
+  carrying `@nodeId`, and records it as an unresolved projection candidate. This is the one
+  place today's "only input-object types may be traversed" rejection becomes conditional, which
+  is the dot form's price.
+* **Admission, one predicate.** `ArgMappingSigil` is the precedent: it already owns the literal
+  set, the parse fork, the per-`Site` admission predicate and the canonical messages, precisely
+  so parse, diagnostics and completions cannot drift. A sibling `Site.admitsNodeKeyProjection()`
+  gives the new form the same single-owner admission fact.
+* **Resolution, per directive.** `RoutineDirectiveResolver` resolves the candidate against
+  `NodeIndex.forName`, runs its own type gate, and mints the extraction arm.
+
+One thing the `$session` precedent must *not* be copied on: its non-admission message reads as
+permanent ("only valid in @service argMapping"). For `@service` and `@condition` here the
+non-admission is a capability gap, so it must be `Rejection.deferred`, not a structural "not
+admitted". A validator stating a permanent rule about something a later item implements is the
+inverse of "validator mirrors classifier invariants".
+
+### One walk, not two: `resolvePathLeaf` must keep the container
+
+`ServiceCatalog.resolvePathLeafType` walks `iot.getField(name)` and immediately projects to
+`field.getType()`, discarding the `GraphQLInputObjectField`. But `@nodeId` sits on the *field*,
+not on the type. Both the bare-form rejection and the projection resolution need the field, so
+as drafted the routine resolver would re-walk the same segment chain to find it: two walks over
+one path that must agree on list unwrapping, non-null stripping and the null-on-miss convention,
+with nothing binding them.
+
+Widen the producer once instead. `resolvePathLeaf(path, slotTypes)` returns a small record
+carrying `(GraphQLDirectiveContainer container, GraphQLInputType type)`, and
+`resolvePathLeafType` stays as a thin projection over it for existing callers. The head
+segment's container is a `GraphQLArgument` and a deeper one is a `GraphQLInputObjectField`; both
+are `GraphQLDirectiveContainer`, which is also what `NodeIdLeafResolver.resolve` takes, so the
+shape composes with the existing node-side vocabulary.
 
 ### The bare form becomes a rejection
 
@@ -147,19 +236,37 @@ This is a breaking change for any schema relying on the silent pass-through. It 
 of a spelling that produces wrong data, so it is a bug fix rather than a capability removal, and
 the rejection message names the fix. Call it out in the changelog entry at Done.
 
-### Type gate
+Three properties of this rejection to settle here rather than let fall out of implementation:
 
-`RoutineDirectiveResolver.leafTypeGate` feeds `ServiceCatalog.resolvePathLeafType`'s answer (the
-`ID` scalar) into `ServiceCatalog.argExtraction`. For a projected binding the comparison is
-against the **projected column's** Java type (`ColumnRef.columnClass()`) and the routine
-parameter's Java type, boxed on both sides. A mismatch is a structural rejection naming both
-types, the column, and the node type, so an author who projects the wrong column of a composite
-key is told exactly that.
+* **Ordering.** It must run *ahead* of `argExtraction` in `leafTypeGate` (today: list-shape →
+  non-scalar → `argExtraction`). Placed after, an author gets the directed message or the
+  `Assignability[...]` message depending on which column type they happened to bind into, which
+  is the same defect this item is closing.
+* **Verdict class.** If the rejection ships ahead of the projection syntax, it is a capability
+  gap and wants `Rejection.deferred` naming what will exist. Once the syntax lands it becomes
+  `Rejection.structural`: there is no future in which the raw base64 was intended. That is a
+  planned message transition, not an implementation detail.
+* **Keying axis.** The rejection is *use-keyed*. One input type can be consumed by a `@routine`
+  mutation (no containing table, projection required) and by a table-bound `@service` mutation
+  (inference works, bare form legal). An author who reads "add `typeName:`" and edits the shared
+  input type is editing a definition-keyed fact to satisfy a use-site constraint, so the message
+  must name the consuming field that is asking.
 
-The `ID`-scalar coercion check does not run on a projected binding: the wire type is no longer
-what reaches the parameter. Keep the two paths visibly separate in `leafTypeGate` rather than
-threading a substituted leaf type through `argExtraction`, so a reader can see which check
-governs which binding.
+### Type gate: the `columnMapping` check, not a bypass of `argExtraction`
+
+The Backlog draft called this "a different input to `argExtraction` (or a bypass of it)".
+"Bypass" is the wrong framing: it is a different question that already has an answer twelve
+lines away in the same file. `argExtraction` asks a *wire* question, "is graphql-java's coercion
+output for this SDL leaf assignable to this Java type". A projected node key never reaches the
+parameter in SDL-scalar shape; its Java type is the column's.
+
+`RoutineDirectiveResolver` already compares `column.columnClass()` against
+`param.type().toString()` for `columnMapping` bindings, with the rationale that a mismatch would
+be a javac error in the generated source. That is the same fact: a resolved catalog column
+feeding a routine IN parameter, legitimately skipping the wire gate for the same reason. Factor
+the comparison so both sites share one predicate, so this is one enforcer rather than two
+dispatch sets that must agree. A mismatch names both types, the column and the node type, so an
+author projecting the wrong column of a composite key is told exactly that.
 
 ### Emission
 
@@ -176,9 +283,24 @@ message. So:
 The `list` axis is `false` here: a routine IN parameter takes one value, which the existing
 `leafTypeGate` cardinality check already enforces.
 
-Two bindings projecting different columns of the same node id share one registered helper (the
-registry keys on encoder class, method, mode and list-ness), so a composite key is decoded once
-per call site and projected twice, not decoded twice.
+**Composite keys decode twice unless `emitCall` changes shape, and that is a fork to settle.**
+`CompositeDecodeHelperRegistry` deduplicates *helpers*, keyed on
+`(encoderClass, methodName, mode, list)`, not *calls*. Two parameters projecting two columns of
+one composite key therefore register one helper and emit two `decode<Type>OrThrow(raw)`
+invocations: the id decodes twice, with two identical throw sites. Avoiding that needs a hoisted
+typed local, and `emitCall` returns a single `CodeBlock` expression with no statement context to
+hoist into. Evidence the statement-yielding shape was anticipated:
+`CompositeDecodeHelperRegistry.decodedType(decode, list)` exists precisely "so a caller declaring
+a typed local for the helper's result derives the type from the same shape the helper body is
+built from", and only `ConditionGlueRenderer` calls it today.
+
+So: either accept the double decode (two calls, readable, no signature change) or lift `emitCall`
+to yield `(statements, expression)`. The second costs a contract change across the same four call
+sites the registry threading already touches, and should be sized as such. Recommendation is to
+accept the double decode in this item and leave the lift to whoever needs it, since a decode is a
+base64 parse and an arity check rather than a query; but the implementer should re-check that
+against the throw-site duplication in the generated source, which is the readability cost a
+consumer actually reads.
 
 Four `RoutineCallEmitter.emitCall` sites need a decode registry in scope: `RootLauncherRenderer`,
 `PathFragments.emitTableExpression`, and two in `TypeFetcherGenerator`. Three of the four already
@@ -189,32 +311,48 @@ drained the same way is the symmetric move and keeps the threading identical at 
 Both call surfaces carry it: the uncorrelated value overload takes the projected value directly,
 and the correlated `Field` overload wraps it in the existing `DSL.val(...)`.
 
+### Fact capture
+
+An `argMapping` grammar change is a capture-relation change, and the Backlog draft was silent on
+the store. `graphitron_routine_arg_mapping_pair.argument_path` is commented "the right side as
+written: a GraphQL argument name or dotted input path", and the same comment sits on the sibling
+`*_arg_mapping_pair` relations. A key-column segment silently widens what that column holds
+without any DDL change, making the comment false while the comment-coverage gate still passes:
+that gate checks presence, not truth.
+
+The dot form's price here is that the widening is invisible unless someone writes it down, so
+this item writes it down. Update the comment on the `@routine` pair relation (and on whichever
+siblings the admitted-site set covers) to say the right side may end in a node key column.
+Whether the projection also deserves its own column or child relation is the reviewer's call:
+capture records the right side verbatim today, and a verbatim record of the new form is still
+faithful, so the minimal honest change is the comment. The raw `arg_mapping` column is
+unaffected either way; it is the verbatim twin.
+
 ## Implementation
 
-* `NodeKeyProjection` (new, `rewrite/model`): the resolved segment. Carries the node type name,
-  the `HelperRef.Decode`, the projected `ColumnRef`, and its index in the decode tuple. Small
-  enough to be a record; every consumer reads it and nothing re-derives.
-* `CallSiteExtraction`: new arm `NodeIdKeyProjection(HelperRef.Decode decodeMethod, int keyIndex,
-  ColumnRef column)` in the sealed permits list. Every exhaustive switch over
-  `CallSiteExtraction` becomes a compile error until it names the arm, which is the point;
-  arms that cannot reach it document that rather than falling through.
-* `ArgBindingMap`: `of` gains a `NodeIndex` parameter and, when a path segment would otherwise be
-  rejected for walking through a scalar, checks whether that scalar leaf carries
-  `@nodeId(typeName:)` and whether the segment names one of the node's key columns. The value
-  type `Map<String, PathExpr> byJavaName` becomes `Map<String, BoundPath>` where `BoundPath`
-  pairs the `PathExpr` with an optional `NodeKeyProjection`. Add a two-argument `of` overload
-  delegating with `NodeIndex.EMPTY` for the schema-free call site
-  (`BuildContext`'s segment-chain resolution, which passes an empty slot map) and the unit tests.
-  Three near-miss rejections, each listing candidates: segment on a non-`@nodeId` scalar (today's
-  message, unchanged), `@nodeId` without `typeName:`, and a segment that is not a key column of
-  the resolved node type.
-* `RoutineDirectiveResolver`: read the projection off the binding, run the projected-column type
-  gate, and mint `ParamSource.Arg(new CallSiteExtraction.NodeIdKeyProjection(...), path)` instead
-  of `Direct`. Add the bare-`@nodeId`-leaf rejection.
-* `ServiceDirectiveResolver` / `ConditionResolver` (both sites): a projected binding is a typed
-  deferral naming the follow-up. They resolve the segment through the same shared `of` but cannot
-  emit it; the deferral is what keeps the shared resolver honest rather than making it
-  routine-only.
+* `CallSiteExtraction`: new top-level arm
+  `NodeIdKeyProjection(NodeIdDecodeKeys decode, ColumnRef column, int keyIndex)` in the sealed
+  permits list, composing with the failure-mode axis rather than joining it. Every exhaustive
+  switch over `CallSiteExtraction` becomes a compile error until it names the arm, which is the
+  point; arms that cannot reach it document that rather than falling through.
+* `ArgMappingSigil.Site`: `admitsNodeKeyProjection()`, the single admission predicate parse,
+  diagnostics and completions all read.
+* `ArgBindingMap`: `of` admits the trailing segment when the preceding leaf is an `ID` carrying
+  `@nodeId`, and records it as an *unresolved* candidate (the segment name, unresolved against
+  any node type). The value type `Map<String, PathExpr> byJavaName` becomes
+  `Map<String, BoundPath>` where `BoundPath` pairs the `PathExpr` with an optional candidate
+  segment. `of` stays free of `NodeIndex` and `BuildContext`; the two rejections it keeps are
+  today's non-`@nodeId`-scalar traversal message (unchanged) and a non-admitted site.
+* `ServiceCatalog`: `resolvePathLeaf` returning `(container, type)`, with `resolvePathLeafType`
+  kept as a thin projection for existing callers.
+* `RoutineDirectiveResolver`: resolve the candidate against `NodeIndex.forName` (which yields the
+  `NodeType` carrying both `nodeKeyColumns` and `decodeMethod`), reject a segment that is not one
+  of its key columns with a candidate list, reject a bare `@nodeId` leaf, reject a `@nodeId`
+  without `typeName:` through `NodeIdLeafResolver`'s existing message owner, run the shared
+  resolved-column type gate, and mint the projection arm instead of `Direct`.
+* `ServiceDirectiveResolver` / `ConditionResolver` (both sites): a projection candidate is a
+  `Rejection.deferred` naming the follow-up, never a structural non-admission. They see the
+  candidate through the shared `of` but cannot resolve or emit it.
 * `RoutineCallEmitter`: `argExpression` switches on `b.source()`'s extraction for the first time.
   `emitCall` gains the decode-registry parameter; the four call sites thread it.
 * `GenerationContext`: `compositeDecodeHelpers()` accessor plus the drain in
@@ -222,15 +360,19 @@ and the correlated `Field` overload wraps it in the existing `DSL.val(...)`.
 
 ## Tests
 
-* `ArgBindingMapTest` (unit): segment resolution and the three near-miss rejections, driven
-  through a stub `NodeIndex`. This is where the grammar is pinned; the tier is cheap and the
-  rules are pure.
+* `ArgBindingMapTest` (unit): admission of the trailing segment and the unchanged traversal
+  rejection on a non-`@nodeId` scalar. `of` stays pure, so this stays a pure unit test; node
+  resolution is not exercised here because `of` no longer does it.
 * `RoutineMutationWritePipelineTest` (pipeline): a sakila-shaped variant of the existing nested
   `rent_film` fixture binding `pInventoryId` from `ID! @nodeId(typeName: "Inventory")` through
   the projected key column. Assert the classified `ArgBinding` carries
   `NodeIdKeyProjection`, and assert the emitted call site registers and invokes the decode helper
-  exactly once. Plus the two rejection cases: the bare `@nodeId` leaf, and a segment naming a
-  non-key column.
+  exactly once. Plus the rejection cases: the bare `@nodeId` leaf, a segment naming a non-key
+  column, a `@nodeId` without `typeName:`, and a projected column whose Java type does not match
+  the parameter's.
+* Each rejection also wants a **validate-time** test that the build fails, not only that
+  classification yields a `Rejection`. "Validator mirrors classifier invariants" is the rule, and
+  a rejection that classifies but does not fail the build is the failure mode it guards against.
 * Composite-key coverage belongs on the `nodeidfixture` catalog (`bar` is the composite-key node
   type `NodeIdPipelineTest` already uses), pinning the `.value<i>()` index and the
   decode-once-project-twice sharing. A transposed projection is exactly the failure a
@@ -289,11 +431,12 @@ Draft of the `routine.adoc` subsection:
 ## Relationship to other items
 
 * `roadmap/routine-coercing-arg-extractions.md` (R625) makes the routine emitter honour
-  non-`Direct` extraction arms (`EnumValueOf`, `JooqConvert`). This item builds the same seam for
-  a third arm. Whichever lands first pays for `RoutineCallEmitter.argExpression` switching on
-  `extraction()` and the other plugs into it. Neither blocks the other; the implementer should
-  check which is true at pickup and size accordingly. If R625 is already in flight, coordinate on
-  the switch rather than both writing it.
+  non-`Direct` extraction arms (`EnumValueOf`, `JooqConvert`). Riding the extraction slot makes
+  this **directional**: R668 opens the `RoutineCallEmitter.argExpression` switch on
+  `extraction()` with two arms and R625 fills the coercing ones into it. The Backlog draft said
+  the ordering was free either way; that was true only under the terminal-`PathExpr` shape and
+  stopped being true when the design moved onto the extraction slot. If R625 is already in
+  flight, coordinate on who writes the switch rather than both writing it.
 * `roadmap/lsp-argmapping-routine-coordinate.md` (R626) gives `@routine(argMapping:)` completions
   and diagnostics at all. Completing key columns after a `@nodeId` leaf is a *further* step: R626
   explicitly leaves dot-path expansion unmodelled ("offer nothing rather than a misleading flat
@@ -307,6 +450,12 @@ Draft of the `routine.adoc` subsection:
 
 ## Open questions
 
+* **The dot form versus a lexically disjoint form** (see "The one open fork on the authoring
+  surface"). The recommendation is the dot form, but this is the decision most worth a
+  reviewer's disagreement, and it should be settled together with R249.
+* Whether `emitCall` lifts to `(statements, expression)` so a composite key decodes once rather
+  than once per projected column. Recommendation is to accept the double decode; the counter is
+  the duplicated throw site in the generated source.
 * Whether the `@service` and `@condition` deferrals should instead be rejections. A deferral
   promises the shape is coming; nobody has asked for it on those directives, and `@service`
   already has a richer answer available (an input bean can carry a decoded record through
