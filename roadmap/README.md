@@ -22,8 +22,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R656` | @sourceRow-declared batch key for @service children on scalar-only parents | Spec | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](sourcerow-declared-service-batch-key.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
+| `R656` | @sourceRow-declared batch key for @service children on scalar-only parents | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](sourcerow-declared-service-batch-key.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
@@ -351,7 +351,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R656` [**@sourceRow-declared batch key for @service children on scalar-only parents**](sourcerow-declared-service-batch-key.md) — Spec, feature
+- `R656` [**@sourceRow-declared batch key for @service children on scalar-only parents**](sourcerow-declared-service-batch-key.md) — Ready, feature
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R555` [**Deprecate @externalField: fold the computed-field shape into @service**](deprecate-externalfield-fold-into-service.md) — Ready, cleanup
 - `R657` [**List-cardinality accessor keys on the @service path**](list-cardinality-service-batch-key.md) — Backlog, feature
