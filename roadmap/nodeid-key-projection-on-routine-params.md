@@ -187,19 +187,31 @@ this item open that switch for the first time, which makes the R625 relationship
 rather than merely adjacent: R668 introduces the two-arm switch (`Direct`, the projection arm)
 and R625 fills `EnumValueOf` and `JooqConvert` into it.
 
-### Grammar is shared; resolution is per-directive
+### `argMapping` behaves identically at every site
 
-The Backlog draft's recommendation was to teach `ArgBindingMap.of` to resolve the segment for
-every site. That is the wrong altitude. `of` is a `static`, pure function over
-`(slotTypes, overrides)`; resolving `@nodeId(typeName:)` → `NodeIndex` → key columns →
-`HelperRef.Decode` would thread schema state through a function whose two `BuildContext` call
-sites pass an *empty* slot map (the path-step `@condition` site), where there is nothing to
-project from at all.
+The form is admitted, resolved and emitted at `@routine`, `@service` and `@condition` alike. It
+is one binding language; a projection that is useful at one of its sites is useful at all of
+them, and shipping it at `@routine` only would bake in exactly the asymmetry the shared
+right-hand side exists to prevent. There is no deferral arm in this design.
 
-The premise "this path ends in a decoded node key is directive-independent" is true of the
-**grammar** and false of the **resolution**: `@service` gates a binding against a reflected Java
-parameter type and `@routine` against a catalog IN-parameter type, and those want different type
-gates (see below). So:
+What genuinely varies per directive is narrower than the Backlog draft claimed, and it is the
+same axis that already varied before this item: the **binding target**. `@routine` binds a
+catalog IN parameter, `@service` a reflected Java parameter, `@condition` a condition-method
+parameter. Every one of those is a Java type name, so the type *predicate* is shared and only its
+target argument differs (see "Type gate"). That is one enforcer with a parameter, not three
+dispatch sets.
+
+Resolution is shared too, because there is nothing directive-specific in it: the candidate
+segment resolves against `NodeIndex.forName(typeName)`, whose `NodeType` carries both
+`nodeKeyColumns` and `decodeMethod`. One shared resolver owns that lookup and its rejection
+messages, called by all three directive resolvers, the way `ServiceCatalog.argExtraction` is
+already a shared gate called by both `@service` and `@routine`.
+
+What must *not* absorb the resolution is `ArgBindingMap.of`. It is a `static`, pure function over
+`(slotTypes, overrides)`, and two of its `BuildContext` call sites pass an *empty* slot map (the
+path-step `@condition`), where there is nothing to project from at all. Threading schema state
+through it to serve callers that have none is the wrong altitude. So the split is by *kind of
+question*, not by directive:
 
 * **Grammar, one owner.** `of` admits the trailing segment when the preceding leaf is an `ID`
   carrying `@nodeId`, and records it as an unresolved projection candidate. Its traversal
@@ -211,15 +223,24 @@ gates (see below). So:
 * **Admission, one predicate.** `ArgMappingSigil` is the precedent: it already owns the literal
   set, the parse fork, the per-`Site` admission predicate and the canonical messages, precisely
   so parse, diagnostics and completions cannot drift. A sibling `Site.admitsNodeKeyProjection()`
-  gives the new form the same single-owner admission fact.
-* **Resolution, per directive.** `RoutineDirectiveResolver` resolves the candidate against
-  `NodeIndex.forName`, runs its own type gate, and mints the extraction arm.
+  gives the new form the same single-owner admission fact, true at `SERVICE`, `CONDITION` and
+  `ROUTINE`.
+* **Resolution, one owner.** The shared resolver above: candidate segment plus leaf container in,
+  a resolved projection or a located rejection out. All three directive resolvers call it.
+* **Type gate, one predicate, three targets.** See "Type gate".
+* **Emission, three sites.** `RoutineCallEmitter`, the `@service` pair
+  (`ArgCallEmitter` / `ServiceMethodCallEmitter`), and `ConditionGlueRenderer`.
 
-One thing the `$session` precedent must *not* be copied on: its non-admission message reads as
-permanent ("only valid in @service argMapping"). For `@service` and `@condition` here the
-non-admission is a capability gap, so it must be `Rejection.deferred`, not a structural "not
-admitted". A validator stating a permanent rule about something a later item implements is the
-inverse of "validator mirrors classifier invariants".
+The remaining `ArgMappingSigil.Site` values are excluded because their right-hand side is not an
+argument path at all, which is a difference in grammar rather than an asymmetry in capability:
+`ENUM` maps enum constants, `RECORD` and `EXTERNAL_FIELD` bind their own target vocabularies
+(and `@externalField` is folding into `@service` under its own item), and `REFERENCE_STEP` is the
+path-step `@condition` whose slot map is empty, so it has nothing to project from. `columnMapping`
+never routes through this owner and admits no sigil or projection: a column has nothing to open.
+
+Unlike `$session`, whose non-admission message is permanently true, these exclusions are
+statements about a different grammar rather than about a capability gap, so they are structural
+rejections and not `Rejection.deferred`. Nothing in this design defers.
 
 ### One walk, not two: `resolvePathLeaf` must keep the container
 
@@ -259,10 +280,10 @@ Three properties of this rejection to settle here rather than let fall out of im
   non-scalar → `argExtraction`). Placed after, an author gets the directed message or the
   `Assignability[...]` message depending on which column type they happened to bind into, which
   is the same defect this item is closing.
-* **Verdict class.** If the rejection ships ahead of the projection syntax, it is a capability
-  gap and wants `Rejection.deferred` naming what will exist. Once the syntax lands it becomes
-  `Rejection.structural`: there is no future in which the raw base64 was intended. That is a
-  planned message transition, not an implementation detail.
+* **Verdict class.** `Rejection.structural`, since the rejection and the syntax that fixes it land
+  together and there is no future in which the raw base64 was intended. Only if someone splits the
+  item and ships the rejection first does it want `Rejection.deferred` in the interim, naming what
+  will exist.
 * **Keying axis.** The rejection is *use-keyed*. One input type can be consumed by a `@routine`
   mutation (no containing table, projection required) and by a table-bound `@service` mutation
   (inference works, bare form legal). An author who reads "add `typeName:`" and edits the shared
@@ -279,11 +300,15 @@ parameter in SDL-scalar shape; its Java type is the column's.
 
 `RoutineDirectiveResolver` already compares `column.columnClass()` against
 `param.type().toString()` for `columnMapping` bindings, with the rationale that a mismatch would
-be a javac error in the generated source. That is the same fact: a resolved catalog column
-feeding a routine IN parameter, legitimately skipping the wire gate for the same reason. Factor
-the comparison so both sites share one predicate, so this is one enforcer rather than two
-dispatch sets that must agree. A mismatch names both types, the column and the node type, so an
-author projecting the wrong column of a composite key is told exactly that.
+be a javac error in the generated source. That is the same fact: a resolved catalog column feeding
+a Java-typed binding target, legitimately skipping the wire gate for the same reason.
+
+Factor it into one predicate taking the column and the target's Java type name. `columnMapping`
+passes the routine IN parameter, a projected `@routine` binding the same, `@service` the reflected
+Java parameter type, `@condition` the condition-method parameter type. Four callers, one enforcer,
+which is what keeps "identical at every site" true by construction rather than by three
+implementations agreeing. A mismatch names both types, the column and the node type, so an author
+projecting the wrong column of a composite key is told exactly that.
 
 ### Emission
 
@@ -300,24 +325,45 @@ message. So:
 The `list` axis is `false` here: a routine IN parameter takes one value, which the existing
 `leafTypeGate` cardinality check already enforces.
 
-**Composite keys decode twice unless `emitCall` changes shape, and that is a fork to settle.**
+**A composite key decodes once per projected column, and that is accepted.**
 `CompositeDecodeHelperRegistry` deduplicates *helpers*, keyed on
 `(encoderClass, methodName, mode, list)`, not *calls*. Two parameters projecting two columns of
 one composite key therefore register one helper and emit two `decode<Type>OrThrow(raw)`
-invocations: the id decodes twice, with two identical throw sites. Avoiding that needs a hoisted
-typed local, and `emitCall` returns a single `CodeBlock` expression with no statement context to
-hoist into. Evidence the statement-yielding shape was anticipated:
-`CompositeDecodeHelperRegistry.decodedType(decode, list)` exists precisely "so a caller declaring
-a typed local for the helper's result derives the type from the same shape the helper body is
-built from", and only `ConditionGlueRenderer` calls it today.
+invocations. Decoding once instead would need a hoisted typed local, and `emitCall` returns a
+single `CodeBlock` expression with no statement context to hoist into, so it would cost a contract
+change across the four call sites the registry threading already touches.
 
-So: either accept the double decode (two calls, readable, no signature change) or lift `emitCall`
-to yield `(statements, expression)`. The second costs a contract change across the same four call
-sites the registry threading already touches, and should be sized as such. Recommendation is to
-accept the double decode in this item and leave the lift to whoever needs it, since a decode is a
-base64 parse and an arity check rather than a query; but the implementer should re-check that
-against the throw-site duplication in the generated source, which is the readability cost a
-consumer actually reads.
+Take the double decode. A decode is a base64 parse and an arity check, not a query, and the
+duplicated call keeps `emitCall`'s signature intact. The visible cost is two identical throw sites
+in the generated source for a composite-key binding, which is acceptable; if it ever stops being
+acceptable, the lift is a self-contained follow-up and
+`CompositeDecodeHelperRegistry.decodedType(decode, list)` already exists for it, "so a caller
+declaring a typed local for the helper's result derives the type from the same shape the helper
+body is built from". Only `ConditionGlueRenderer` calls it today.
+
+**The three emitters are at three different starting points, and the middle one is the surprise.**
+Worth measuring before sizing, because the intuition "`@service` is the mature path" is wrong here:
+
+* **`@condition` is already there.** `ConditionGlueRenderer` threads
+  `CompositeDecodeHelperRegistry` and already emits `@nodeId` decodes through `decodeCall`, and
+  already calls `decodedType` to declare a typed local. The projection is a small addition to a
+  site that decodes today.
+* **`@service` explicitly refuses, and its refusal is the claim being overturned.**
+  `ArgCallEmitter` has two invariant-throws on `NodeIdDecodeKeys`, one in the top-level extraction
+  switch and one in `buildNestedInputFieldExtraction`, both stating that "NodeId decodes are
+  condition-binding concepts rendered inside the condition glue". Under a uniform `argMapping`
+  that assertion is false and both arms become real implementations. Separately,
+  `ServiceMethodCallEmitter.scalarLeaf` has a `NodeIdDecodeKeys` arm that emits a **plain cast**
+  (`($T) rawValue`) alongside a `default ->` fallback doing the same. That arm is documented as
+  unreachable for well-formed scalar leaves; this item makes it reachable, so a bad cast that is
+  latent today would become live. Implement it rather than leaning on the fallback, and consider
+  dropping the `default ->` so the compiler enumerates future arms instead of swallowing them.
+* **`@routine` has to build the switch,** since `argExpression` never reads `extraction()`.
+
+So the work is not three times the `@routine` slice, but it is not one site either: one new switch,
+one small addition, and three arms whose current contents are an assertion that this item
+invalidates. The `@service` throw messages are load-bearing documentation of today's boundary, so
+they are also the precise work list.
 
 Four `RoutineCallEmitter.emitCall` sites need a decode registry in scope: `RootLauncherRenderer`,
 `PathFragments.emitTableExpression`, and two in `TypeFetcherGenerator`. Three of the four already
@@ -369,9 +415,14 @@ projection is a derived fact whose home is the classifier, not the capture twin.
   of its key columns with a candidate list, reject a bare `@nodeId` leaf, reject a `@nodeId`
   without `typeName:` through `NodeIdLeafResolver`'s existing message owner, run the shared
   resolved-column type gate, and mint the projection arm instead of `Direct`.
-* `ServiceDirectiveResolver` / `ConditionResolver` (both sites): a projection candidate is a
-  `Rejection.deferred` naming the follow-up, never a structural non-admission. They see the
-  candidate through the shared `of` but cannot resolve or emit it.
+* `ServiceDirectiveResolver` / `ConditionResolver` (both sites): resolve the candidate through the
+  same shared resolver and run the same type-gate predicate against their own target type (the
+  reflected Java parameter, the condition-method parameter).
+* `ArgCallEmitter`: replace the two `NodeIdDecodeKeys` invariant-throws with real emission, and
+  drop the stale "condition-binding concept" rationale from both messages.
+* `ServiceMethodCallEmitter.scalarLeaf`: implement the `NodeIdDecodeKeys` arm instead of emitting a
+  plain cast, and consider removing the `default ->` fallback so a future arm is a compile error.
+* `ConditionGlueRenderer`: the projection arm alongside the existing `decodeCall`.
 * `RoutineCallEmitter`: `argExpression` switches on `b.source()`'s extraction for the first time.
   `emitCall` gains the decode-registry parameter; the four call sites thread it.
 * `GenerationContext`: `compositeDecodeHelpers()` accessor plus the drain in
@@ -392,6 +443,12 @@ projection is a derived fact whose home is the classifier, not the capture twin.
 * Each rejection also wants a **validate-time** test that the build fails, not only that
   classification yields a `Rejection`. "Validator mirrors classifier invariants" is the rule, and
   a rejection that classifies but does not fail the build is the failure mode it guards against.
+* **Cross-directive parity is itself the contract, so pin it as one.** The same projected binding
+  at `@routine`, `@service` and `@condition` must resolve to the same projection and produce the
+  same rejections; a parameterised test over the three sites states that directly and fails when
+  one site drifts, which prose in three separate test classes cannot. The `@service` arms need
+  their own emission coverage besides, since their current contents are invariant-throws and a
+  test asserting the throw is gone is not the same as a test asserting the decode is right.
 * Composite-key coverage belongs on the `nodeidfixture` catalog (`bar` is the composite-key node
   type `NodeIdPipelineTest` already uses), pinning the `.value<i>()` index and the
   decode-once-project-twice sharing. A transposed projection is exactly the failure a
@@ -411,8 +468,9 @@ small and lands in three places:
   input-object type at that depth", which is the openability rule stated for the only kind that
   existed. Generalise that bullet rather than appending a special case: a segment opens the thing
   at that position, an input object opens into its fields, a `@nodeId` leaf opens into the key
-  columns of the type it refers to. Note in the same bullet that only `@routine` binds the second
-  kind today.
+  columns of the type it refers to. Because the form works at every directive that accepts an
+  `argMapping`, the shared section needs no per-directive caveat: that uniformity is the point of
+  the section already existing.
 * `docs/manual/reference/directives/routine.adoc`: a short subsection after the existing
   wrapper-input example, showing the `@nodeId` input field and the projected binding. The
   Constraints list gains the bare-form rejection and the explicit-`typeName:` requirement.
@@ -481,10 +539,10 @@ Draft of the `routine.adoc` subsection:
 * Whether `emitCall` lifts to `(statements, expression)` so a composite key decodes once rather
   than once per projected column. Recommendation is to accept the double decode; the counter is
   the duplicated throw site in the generated source.
-* Whether the `@service` and `@condition` deferrals should instead be rejections. A deferral
-  promises the shape is coming; nobody has asked for it on those directives, and `@service`
-  already has a richer answer available (an input bean can carry a decoded record through
-  `CallSiteExtraction.NodeIdDecodeRecord`). Settle before implementing the two arms.
+* How the projection at a `@service` argument relates to `CallSiteExtraction.NodeIdDecodeRecord`,
+  which already decodes a `@nodeId` input-bean member into a jOOQ record. They are different
+  targets (a scalar parameter versus a record member) and should coexist, but an author now has
+  two ways to get a decoded key into a service call and the docs must say which is for what.
 * Whether a `@nodeId` input field that nothing consumes should warn. Today it is silently
   ignored wherever no consumer reads it, which is how the `TEXT` case above stays invisible;
   the bare-form rejection closes it at the `@routine` site only. A general "declared and
