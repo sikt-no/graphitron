@@ -3,9 +3,11 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -57,11 +59,13 @@ final class StoreFixture implements AutoCloseable {
     private final GraphitronModelStore store;
     private final String graphName;
     private final Path file;
+    private final Path directory;
 
-    private StoreFixture(GraphitronModelStore store, String graphName, Path file) {
+    private StoreFixture(GraphitronModelStore store, String graphName, Path file, Path directory) {
         this.store = store;
         this.graphName = graphName;
         this.file = file;
+        this.directory = directory;
     }
 
     /** Captures {@code sdl} alone: the shape for arms answered by SDL-derived facts. */
@@ -109,7 +113,7 @@ final class StoreFixture implements AutoCloseable {
         Path file = write(directory, GRAPH, sdl);
         var store = GraphitronModelStore.open();
         capture(store, file, directory, GRAPH, classpath, new JooqCatalog(jooqPackage));
-        return new StoreFixture(store, GRAPH, file);
+        return new StoreFixture(store, GRAPH, file, directory);
     }
 
     static StoreFixture of(Path directory, String graphName, String sdl,
@@ -117,7 +121,7 @@ final class StoreFixture implements AutoCloseable {
         Path file = write(directory, graphName, sdl);
         var store = GraphitronModelStore.open();
         capture(store, file, directory, graphName, classpath);
-        return new StoreFixture(store, graphName, file);
+        return new StoreFixture(store, graphName, file, directory);
     }
 
     /** Captures a second graph, over a schema file of its own, into this same store. */
@@ -202,6 +206,22 @@ final class StoreFixture implements AutoCloseable {
             throw new UncheckedIOException(e);
         }
         return path;
+    }
+
+    /**
+     * Writes {@code warnings} into this store's warning families under {@code graph}, the way a dev
+     * session's build does once the linter has run. The real writer, so a fixture cannot record a row
+     * shape the build never produces; the findings are the caller's, since what a rule concludes about
+     * a schema is the build's subject and not this fixture's.
+     */
+    void withBuildWarnings(String graph, List<BuildWarning> warnings) {
+        new BuildWarningFacts(store.dsl(), new FactCapture.GraphIdentity(graph, directory))
+            .write(warnings);
+    }
+
+    /** The same, under the graph this fixture captured. */
+    void withBuildWarnings(List<BuildWarning> warnings) {
+        withBuildWarnings(graphName, warnings);
     }
 
     /** A reader of this store, for the cases whose subject is the read boundary rather than a query. */

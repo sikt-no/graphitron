@@ -1,17 +1,14 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+
+import no.sikt.graphitron.model.read.SourceStamp;
 
 import org.jooq.DSLContext;
 
@@ -131,24 +128,12 @@ final class ClasspathSources {
      * The content hash of one file, unmemoised. Shared with {@link JavaSourceFacts}, which asks the
      * same question of a source file on a cadence where memoising the answer would be wrong: a
      * jar within one run is immutable, a {@code .java} under an editor is the opposite.
+     *
+     * <p>The algorithm itself is {@link SourceStamp}'s, the stamp column's own home, because a
+     * reader comparing text it holds against a recorded stamp has to compute the same value this
+     * writer stored.
      */
     static String hash(Path entry) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[1 << 16];
-            try (InputStream in = Files.newInputStream(entry)) {
-                int read;
-                while ((read = in.read(buffer)) > 0) {
-                    digest.update(buffer, 0, read);
-                }
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (IOException e) {
-            // An entry that cannot be read now is one the scan already declined to open, so there
-            // is nothing to invalidate against and an absent stamp is the honest answer.
-            return null;
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is required of every JVM", e);
-        }
+        return SourceStamp.ofFile(entry);
     }
 }

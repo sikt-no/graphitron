@@ -147,10 +147,14 @@ public final class CodeActions {
         // Cursor file not open: no SDL actions and, matching the prior behaviour,
         // no lint quick-fixes either.
         if (out == null) return List.of();
-        // The finding-keyed lint QuickFix branch, alongside the detector-driven SdlActions
-        // above. It projects the LintFix the rule computed build-side straight off the
-        // ValidationReport, sharing only the WorkspaceEdit / TextEdit / QuickFix emit primitives.
-        out.addAll(LintQuickFixes.compute(params, workspace));
+        // The finding-keyed lint QuickFix branch, alongside the detector-driven SdlActions above. It
+        // offers the fixes the rules computed build-side, sharing only the WorkspaceEdit / TextEdit /
+        // QuickFix emit primitives. Its own read rather than one wrapped around the whole request: the
+        // two branches read disjoint material, the detectors nothing but buffers and this nothing but
+        // rows, so there is no pair of reads a shared transaction would keep consistent.
+        out.addAll(workspace.withView(fileUri, List.<Either<Command, CodeAction>>of(), file ->
+            workspace.answering(fileUri, store ->
+                LintQuickFixes.compute(params, store, file.source()))));
         return out;
     }
 

@@ -484,7 +484,7 @@ around it.
 
 | Branch | Trigger | Fact source |
 |---|---|---|
-| `LintQuickFixes` | A fix-bearing lint finding in the report, `Built.Current` only | `lint_finding` + the rule's own `LintFix` |
+| `LintQuickFixes` | A fix-bearing lint finding for the document, while the buffer still holds the captured text | `lint_finding`, `lint_finding_fix`, `lint_finding_fix_edit`; the buffer gate against `store_source.stamp` |
 | `SdlActions` † | Detector re-scan per document; registry is empty today | — |
 
 Each `SdlActions` fix offers three scopes: per site, whole file, whole workspace.
@@ -1215,6 +1215,58 @@ reader, and what replaces it is `SdlDeclarations`, the SDL sibling of the java-s
   asymmetry is now a named case rather than a thing a reader has to infer from where the `flatMap`
   sits.
 
+## Settled while building: code actions, and what a fix cannot borrow from a diagnostic
+
+Code actions have two branches that deliberately share no path. `SdlActions` re-scans each open
+document through a detector and needs nothing but buffers, so it was already store-free and is
+untouched. `LintQuickFixes` is the other one: it offers the correction a lint rule worked out
+build-side, and it read that correction off the in-memory `ValidationReport`. It reads rows now, and
+with `SdlActions`' registry empty that finishes the capability.
+
+This is the first capability whose migration needed the store to hold something new. A finding was
+already a row; the fix it carries was not, so `lint_finding_fix` and its ordered
+`lint_finding_fix_edit` child landed with it. The interesting part is not the two relations, which are
+the DDL's standing parent-plus-ordered-child shape, but what asking the question store-side exposed
+about the incumbent's safety gate.
+
+* **A fix is not a diagnostic, and the difference is re-anchoring.** The item's diagnostics plan
+  promises a stale buffer its last captured findings, re-anchored through its live tree where the text
+  has moved. That works because a diagnostic points at a declaration, which a tree can be asked about
+  again. An edit points at a span of text. Nothing can re-anchor `[5:16, 5:22)`, so the two arms need
+  different answers to the same staleness question, and the fix arm's answer has to be a refusal.
+* **The incumbent's gate passed exactly when it should have refused.** It offered fixes only under
+  `Built.Current`, the snapshot's freshness. But a snapshot stays `Current` through every keystroke
+  after the build that produced it, and goes `Previous` only when a later parse fails. So the gate
+  fired on a schema the author had just broken, which is when the ranges are still the ones the last
+  successful build computed, and passed on a buffer edited without breaking anything, which is exactly
+  when the ranges have moved. It was answering a question about the build where the risk is a question
+  about one document's text.
+* **The store already held the right question's answer.** `store_source.stamp` is the content hash
+  capture recorded for each schema file, and comparing it against the bytes the workspace holds asks
+  precisely whether this buffer is the text the rule read. It is per file, which is the grain that
+  matters, since an edit is addressed by its own file's text whatever the other buffers say. It
+  compares content and not save state, so an unsaved buffer identical to the captured file is served.
+  And its failure directions are safe: an unstamped source, an uncaptured file and a session with no
+  store all decline.
+* **The stamp's algorithm needed one home once a second party computed it.** Capture hashed files
+  through a private helper in its classpath-sources walk. A reader comparing text against a recorded
+  stamp has to produce the same hash, and two spellings of one hash agree until one of them changes,
+  with nothing to notice. `SourceStamp` is now the column's home: the hash of a file, the hash of
+  bytes in hand, and the comparison against what the store recorded.
+* **The two file spellings meet in one place.** The diagnostics families carry the canonical URI their
+  union view renders, while `store_source` is keyed by the path capture read. The reader takes the
+  editor's URI and renders both, rather than a caller holding two spellings and picking one per query,
+  which is how they drift.
+* **The fix is deliberately not on the `diagnostic` view.** That surface is single-valued at one row
+  per diagnostic, and a fix is a list of edits. A reader wanting one joins the two relations on the
+  finding it is offered for, which also keeps the MCP diagnostics tools' output unchanged by this
+  increment.
+
+What this leaves is a clean line. Every capability that does not need a classification substrate now
+reads the store: completion, hover, goto-definition, code actions. What remains is that substrate and
+the four arms the inventory marks as reading "classification", plus diagnostics, whose own migration
+carries the cadence change and `DirectiveResolution`'s deletion.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1228,4 +1280,7 @@ path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declare
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
 `typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's
-intra-schema arm was the language server's only one, and it reads the declaration sites now.
+intra-schema arm was the language server's only one, and it reads the declaration sites now. The
+`Built.Current` / `Built.Previous` seal has one language-server reader left, the diagnostics replay,
+the code-action branch having stopped asking the snapshot about freshness and started asking the store
+about this document's text.

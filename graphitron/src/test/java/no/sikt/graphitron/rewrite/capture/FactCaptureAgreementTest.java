@@ -237,6 +237,8 @@ class FactCaptureAgreementTest {
         registrations.put("rejection_validation_error", Arm.ORACLE);
         registrations.put("rejection_validation_error_directive", Arm.ORACLE);
         registrations.put("lint_finding", Arm.ORACLE);
+        registrations.put("lint_finding_fix", Arm.ORACLE);
+        registrations.put("lint_finding_fix_edit", Arm.ORACLE);
         registrations.put("build_warning_no_rule", Arm.ORACLE);
         registrations.put("graphql_syntax_error", Arm.ORACLE);
         registrations.put("graphql_schema_error", Arm.ORACLE);

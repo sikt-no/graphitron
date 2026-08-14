@@ -3362,6 +3362,40 @@ COMMENT ON COLUMN lint_finding.file IS 'canonical file URI of the finding''s SDL
 COMMENT ON COLUMN lint_finding.source_line IS 'source line of the finding''s location, 1-based; NULL where unlocated';
 COMMENT ON COLUMN lint_finding.source_column IS 'source column of the finding''s location, 1-based; NULL where unlocated';
 
+CREATE TABLE lint_finding_fix (
+  graph_name      VARCHAR NOT NULL,
+  finding_ordinal INT     NOT NULL,
+  description     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, finding_ordinal),
+  FOREIGN KEY (graph_name, finding_ordinal) REFERENCES lint_finding (graph_name, ordinal)
+);
+COMMENT ON TABLE lint_finding_fix IS 'The correction a rule computed for one of its own findings: a suggestion an editor offers, never a rewrite the build performs. Its own relation rather than a column on lint_finding, because a fix is optional per rule and per site: a description column on the finding would be nullable by kind, and its absence would then mean both "this rule suggests nothing" and "this finding has no fix here". A row is the presence of a fix and the edits are its ordered child. Deliberately not projected onto the diagnostic view, whose every dimension is single-valued at one row per diagnostic where a fix is a list; a reader wanting one joins these two relations on the finding it is offered for.';
+COMMENT ON COLUMN lint_finding_fix.graph_name IS 'the owning graph''s partition, carried through the parent finding row';
+COMMENT ON COLUMN lint_finding_fix.finding_ordinal IS 'the fixed finding''s ordinal in lint_finding''s emit order';
+COMMENT ON COLUMN lint_finding_fix.description IS 'the fix''s rendered title, which an editor shows as the label of the action; display material, never a dimension';
+
+CREATE TABLE lint_finding_fix_edit (
+  graph_name      VARCHAR NOT NULL,
+  finding_ordinal INT     NOT NULL,
+  position        INT     NOT NULL,
+  start_line      INT     NOT NULL,
+  start_column    INT     NOT NULL,
+  end_line        INT     NOT NULL,
+  end_column      INT     NOT NULL,
+  replacement     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, finding_ordinal, position),
+  FOREIGN KEY (graph_name, finding_ordinal) REFERENCES lint_finding_fix (graph_name, finding_ordinal)
+);
+COMMENT ON TABLE lint_finding_fix_edit IS 'One text edit of a fix: the half-open range [start, end) becomes the replacement, on the DDL''s standing pattern for an ordered multi-valued decode. The positions are positions in the text the finding was computed against, which is what makes a fix unsafe to apply to a text that has moved since: an edit names a span rather than a declaration, so unlike a coordinate it cannot be re-anchored by resolving the declaration again, and a reader is expected to check the source''s recorded stamp against the text in hand before offering one. An insertion is the zero-width case where start equals end and a deletion the empty replacement; both are stored as written rather than flagged, being readable from the columns.';
+COMMENT ON COLUMN lint_finding_fix_edit.graph_name IS 'the owning graph''s partition, carried through the parent fix row';
+COMMENT ON COLUMN lint_finding_fix_edit.finding_ordinal IS 'the fixed finding''s ordinal, the parent fix row''s key';
+COMMENT ON COLUMN lint_finding_fix_edit.position IS '0-based position within the fix''s own edit list; order is the minted fact, since a rule may write two edits whose spans do not run in source order';
+COMMENT ON COLUMN lint_finding_fix_edit.start_line IS 'line of the replaced range''s inclusive start, 1-based per the graphql-java convention the finding''s own location follows';
+COMMENT ON COLUMN lint_finding_fix_edit.start_column IS 'column of the replaced range''s inclusive start, 1-based on the same convention';
+COMMENT ON COLUMN lint_finding_fix_edit.end_line IS 'line of the replaced range''s exclusive end, 1-based; equal to the start line on an insertion, and on every edit a rule writes today, a token never spanning a line';
+COMMENT ON COLUMN lint_finding_fix_edit.end_column IS 'column of the replaced range''s exclusive end, 1-based; equal to the start column on an insertion';
+COMMENT ON COLUMN lint_finding_fix_edit.replacement IS 'the text the range becomes, exactly as the rule wrote it; empty on a deletion, which is the honest spelling of replacing a span with nothing';
+
 CREATE TABLE build_warning_no_rule (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,

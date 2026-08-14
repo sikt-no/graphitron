@@ -1,11 +1,7 @@
 package no.sikt.graphitron.lsp.code_action;
 
-import graphql.language.SourceLocation;
-import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.lint.LintFix;
+import no.sikt.graphitron.lsp.facts.LintFixes;
+import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionParams;
@@ -20,55 +16,46 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * The finding-keyed {@code QuickFix} branch: projects a fix-bearing lint
- * {@link BuildWarning.LintFinding} in the build's {@link ValidationReport} into an editor
- * {@code QuickFix} {@link CodeAction}. This is deliberately <em>not</em> a reuse of the
- * detector-driven {@link SdlActions} path: that path re-scans each open document through an action's
- * detector and ignores the request's diagnostics, whereas this branch reads the finding (and the
- * {@link LintFix} the rule already computed build-side) straight off the report. The build stays the
- * single evaluator; the LSP only projects the fix, sharing the {@link WorkspaceEdit} / {@link TextEdit}
- * emit primitives, never recomputing how to fix a rule.
+ * The finding-keyed {@code QuickFix} branch: projects the corrections the graph's linter computed
+ * into editor {@link CodeAction}s, reading them through {@link LintFixes}. This is deliberately
+ * <em>not</em> a reuse of the detector-driven {@link SdlActions} path: that path re-scans each open
+ * document through an action's detector, whereas this branch offers a fix the rule already worked
+ * out. The build stays the single evaluator; the LSP only projects, sharing the
+ * {@link WorkspaceEdit} / {@link TextEdit} emit primitives and never recomputing how to fix a rule.
  *
- * <p>Respects the freshness-aware silence policy exactly as the diagnostics replay does: fixes
- * are offered only when the snapshot is {@link LspSchemaSnapshot.Built.Current}, because a finding
- * from a stale build may not reflect the buffer the user is editing, and an edit derived from a stale
- * range could corrupt the document.
+ * <p>The store is what makes a fix offerable at all here, so a session without one offers none. Which
+ * fixes those are is a question about one document's text, and {@link LintFixes} answers it: a stored
+ * edit is a span in the text the rule read, so it is offered only while the buffer still holds that
+ * text. The incumbent gated on the build's snapshot being the freshest one instead, which is a
+ * coarser question and the wrong one: a snapshot stays fresh across every keystroke after the build
+ * that produced it, so the gate passed exactly when the ranges had moved.
  */
 public final class LintQuickFixes {
 
     private LintQuickFixes() {}
 
-    public static List<Either<Command, CodeAction>> compute(CodeActionParams params, Workspace workspace) {
-        // Only a current snapshot's findings reflect the edited buffer.
-        if (!(workspace.snapshot() instanceof LspSchemaSnapshot.Built.Current)) {
+    /**
+     * @param buffer the cursor document's text as the workspace holds it, which is both what the
+     *               stored fixes are checked against and what the edits will be applied to
+     */
+    public static List<Either<Command, CodeAction>> compute(
+        CodeActionParams params, Optional<StoreHandle> store, byte[] buffer
+    ) {
+        if (store.isEmpty()) {
             return List.of();
         }
         String uri = params.getTextDocument().getUri();
-        ValidationReport report = workspace.validationReport();
-        if (!report.sourceUris().contains(uri)) {
-            return List.of();
-        }
         var out = new ArrayList<Either<Command, CodeAction>>();
-        for (BuildWarning warning : report.warnings()) {
-            if (!(warning instanceof BuildWarning.LintFinding finding) || finding.fix().isEmpty()) {
+        for (var fix : LintFixes.forDocument(store.get(), uri, buffer)) {
+            if (!intersectsRequest(params.getRange(), fix.findingLine())) {
                 continue;
             }
-            SourceLocation loc = finding.location();
-            if (!sameFile(uri, loc) || !intersectsRequest(params.getRange(), loc)) {
-                continue;
-            }
-            out.add(Either.forRight(toCodeAction(uri, finding, finding.fix().get(), params)));
+            out.add(Either.forRight(toCodeAction(uri, fix, params)));
         }
         return out;
-    }
-
-    private static boolean sameFile(String uri, SourceLocation loc) {
-        if (loc == null || loc.getLine() <= 0) return false;
-        String sourceName = loc.getSourceName();
-        if (sourceName == null || sourceName.isEmpty()) return false;
-        return uri.equals(ValidationReport.canonicalUri(sourceName));
     }
 
     /**
@@ -77,23 +64,24 @@ public final class LintQuickFixes {
      * forgiving check: offer the fix when the request spans the finding's line. A null range (the
      * whole document) always matches.
      */
-    private static boolean intersectsRequest(Range request, SourceLocation loc) {
+    private static boolean intersectsRequest(Range request, int findingLine) {
         if (request == null) return true;
-        int findingLine = loc.getLine() - 1;
-        return request.getStart().getLine() <= findingLine && findingLine <= request.getEnd().getLine();
+        int line = findingLine - 1;
+        return request.getStart().getLine() <= line && line <= request.getEnd().getLine();
     }
 
-    private static CodeAction toCodeAction(
-        String uri, BuildWarning.LintFinding finding, LintFix fix, CodeActionParams params
-    ) {
+    private static CodeAction toCodeAction(String uri, LintFixes.Fix fix, CodeActionParams params) {
         var edits = new ArrayList<TextEdit>();
-        for (LintFix.Edit edit : fix.edits()) {
-            edits.add(new TextEdit(new Range(position(edit.start()), position(edit.end())), edit.replacement()));
+        for (LintFixes.Edit edit : fix.edits()) {
+            edits.add(new TextEdit(
+                new Range(position(edit.startLine(), edit.startColumn()),
+                    position(edit.endLine(), edit.endColumn())),
+                edit.replacement()));
         }
         var ca = new CodeAction(fix.description());
         ca.setKind(CodeActionKind.QuickFix);
         ca.setEdit(new WorkspaceEdit(Map.of(uri, edits)));
-        ca.setDiagnostics(matchingRequestDiagnostics(params, finding.location()));
+        ca.setDiagnostics(matchingRequestDiagnostics(params, fix.findingLine()));
         return ca;
     }
 
@@ -102,24 +90,24 @@ public final class LintQuickFixes {
      * the squiggle it fixes. Empty when the request carried no diagnostics (some clients invoke code
      * actions without context); the action is still offered.
      */
-    private static List<Diagnostic> matchingRequestDiagnostics(CodeActionParams params, SourceLocation loc) {
+    private static List<Diagnostic> matchingRequestDiagnostics(CodeActionParams params, int findingLine) {
         if (params.getContext() == null || params.getContext().getDiagnostics() == null) {
             return List.of();
         }
-        int findingLine = loc.getLine() - 1;
+        int line = findingLine - 1;
         var matched = new ArrayList<Diagnostic>();
         for (Diagnostic d : params.getContext().getDiagnostics()) {
             if (d.getRange() != null
-                && d.getRange().getStart().getLine() <= findingLine
-                && findingLine <= d.getRange().getEnd().getLine()) {
+                && d.getRange().getStart().getLine() <= line
+                && line <= d.getRange().getEnd().getLine()) {
                 matched.add(d);
             }
         }
         return matched;
     }
 
-    /** graphql-java {@link SourceLocation} (1-based line/column) to lsp4j {@link Position} (0-based). */
-    private static Position position(SourceLocation loc) {
-        return new Position(Math.max(0, loc.getLine() - 1), Math.max(0, loc.getColumn() - 1));
+    /** A stored position (1-based line and column) as an lsp4j {@link Position} (0-based). */
+    private static Position position(int line, int column) {
+        return new Position(Math.max(0, line - 1), Math.max(0, column - 1));
     }
 }

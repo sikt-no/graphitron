@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomain;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
+import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.PivotError;
@@ -38,6 +39,8 @@ import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
+import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX;
+import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX_EDIT;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -206,6 +209,44 @@ class DiagnosticFactsTest {
                 .as("a whole-build finding sits in the stated NULL absent bucket")
                 .isNull();
             assertThat(wholeBuild.getDirectory()).isNull();
+        });
+    }
+
+    @Test
+    @DisplayName("a fix-bearing finding stores its edits in the rule's order; a fix-less one stores none")
+    void fixRowsCarryTheRulesOwnEditOrder() {
+        String source = tmp.resolve("s.graphqls").toString();
+        var rule = LintRule.NO_TYPENAME_PREFIX;
+        // Written later-span-first, which is what makes the position column the rule's order rather
+        // than a sort of the spans.
+        var fix = new LintFix("drop the suffixes", List.of(
+            new LintFix.Edit(new SourceLocation(5, 16, source), new SourceLocation(5, 22, source), "y"),
+            new LintFix.Edit(new SourceLocation(5, 3, source), new SourceLocation(5, 9, source), "x")));
+        var warnings = List.<BuildWarning>of(
+            new BuildWarning.LintFinding("fixable", new SourceLocation(5, 3, source), rule,
+                java.util.Optional.of(fix)),
+            BuildWarning.LintFinding.of("not fixable", new SourceLocation(6, 1, source), rule));
+        withStore(dsl -> {
+            new BuildWarningFacts(dsl, graph()).write(warnings);
+            var fixes = dsl.selectFrom(LINT_FINDING_FIX)
+                .where(LINT_FINDING_FIX.GRAPH_NAME.eq(GRAPH))
+                .fetch();
+            assertThat(fixes).as("only the fix-bearing finding has a fix row").hasSize(1);
+            assertThat(fixes.getFirst().getDescription()).isEqualTo("drop the suffixes");
+            assertThat(fixes.getFirst().getFindingOrdinal())
+                .as("the fix hangs off its own finding's emit ordinal")
+                .isEqualTo(0);
+            var edits = dsl.selectFrom(LINT_FINDING_FIX_EDIT)
+                .where(LINT_FINDING_FIX_EDIT.GRAPH_NAME.eq(GRAPH))
+                .orderBy(LINT_FINDING_FIX_EDIT.POSITION)
+                .fetch();
+            assertThat(edits).extracting(r -> r.getStartColumn()).containsExactly(16, 3);
+            assertThat(edits).extracting(r -> r.getEndColumn()).containsExactly(22, 9);
+            assertThat(edits).extracting(r -> r.getReplacement()).containsExactly("y", "x");
+            assertThat(edits).allSatisfy(r -> {
+                assertThat(r.getStartLine()).isEqualTo(5);
+                assertThat(r.getEndLine()).isEqualTo(5);
+            });
         });
     }
 
