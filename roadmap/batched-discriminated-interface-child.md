@@ -147,8 +147,18 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   correlation re-keyed: today it equates the child's target side against one `parentRecord`, and
   batched it equates against the key set the loader hands in. `MultiTablePolymorphicEmitter`'s
   batched child is the shape to compare against for the loader plumbing, not necessarily for the
-  statement, since this arm has one base table where that one stages a union. Two concrete points
-  the re-key runs into:
+  statement, since this arm has one base table where that one stages a union.
+
+  The re-projection itself needs no rework, and that is worth knowing before starting rather than
+  discovering. `DiscriminatedTableFragments` says of itself that it "knows nothing about the fetch
+  cardinality", and the two things that could have coupled it to a single parent do not: every
+  cross-table participant scalar rides the select list as a capped correlated subselect against
+  *the base row*, never against the parent, and every join it emits is the joined-detail 1:0..1 hop
+  whose FK columns are the detail's own primary key. One base row is one entity regardless of how
+  the WHERE was keyed, which is the same property that lets the paginating caller put `.limit()` on
+  this step. So widening the correlation from one parent key to a key set cannot disturb the select
+  list, and the alias-survival question under Coverage is a confirming test rather than a risk.
+  Two concrete points the re-key does run into:
   * **The re-key is a widening, not a translation.** `buildJoinPathCondition` reads
     `fkJoin.slots().get(0)` and correlates on that one slot; the key the bullet above proposes,
     `parentRowColumns()`, is `On.ColumnPairs.sourceSideColumns()`, which is *every* slot. On a
@@ -161,6 +171,36 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
     discriminated arm is what uses it. That is the hook for projecting the correlation columns the
     scatter groups by, so the batched form should thread the key columns through it rather than
     appending to the assembled select.
+* **Tenancy: the loader name has to partition the batch.** This is the one edit on the list whose
+  omission is both silent and unsafe, so do it deliberately rather than discovering it.
+
+  A discriminated interface child under a tenant-scoped parent classifies
+  `TenantBinding.Inherited` today: `TableInterfaceField.domainReturnType()` is a
+  `DomainReturnType.Record` of the base `@table`, so `TenantBindingIndex`'s `reachedTables` sees a
+  tenant-scoped table and the inherited arm fires when the parent carries tenant context. Unbatched
+  that is correct without anyone thinking about it, because `buildTableInterfaceFieldFetcher`
+  resolves the DSL inline per parent (`TenantDslEmitter.resolve`, the `Inherited` arm's
+  localContext-divined read) and each parent's fetch runs on its own tenant's connection.
+
+  Batched, the per-parent read is gone and the tenant rides the *loader registration* instead. The
+  hazard is stated at the seam itself, in `ConnectionRuntimeClassGenerator.tenantLoaderName`'s
+  javadoc: "a batch loader resolves one `DSLContext` from the environment captured at loader
+  creation, so a tenant-mixed loader would execute every key against the first key's tenant." One
+  batch spanning two tenants therefore serves one tenant's rows to the other. The existing batched
+  leaves avoid this by naming their loader through
+  `TenantDslEmitter.loaderNameDeclaration`, whose `Inherited` arm returns
+  `TenantConnections.tenantLoaderName(env)` rather than the bare path-derived `loaderName(env)`, so
+  each batch stays tenant-homogeneous. `TenantBindingIndex` already states the rule in prose for the
+  shape this arm is joining: a `@splitQuery` child "partitions per tenant through the loader-name
+  seam".
+
+  So: route this leaf's loader registration through `loaderNameDeclaration`, the same argument every
+  other batched fetcher builder passes. Note that it is passed per site, not structurally forced, so
+  a fresh emission path that spells the loader name itself compiles and passes every census in this
+  item. Nothing else here catches it: the leaf-identity rosters check membership, not the name
+  expression, and the delivery pin compares verdicts, not emitted SQL. Decide the same question for
+  the `@tenantFanOut` half only if the scatter choice below lands on the polymorphic machinery,
+  which resolves tenancy differently; on the shared machinery the seam above is the whole answer.
 * `warnIfSplitQueryOnRecordParent`'s sibling for this arm, or a generalisation of it: the redundancy
   warning plus the delete fix. Needs its own `LintRule` constant if the existing
   `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` does not fit the wording.
@@ -306,6 +346,12 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   per-trigger floors should gain nothing; `PolymorphicFanIn`'s floor already covers the new arm.
 * **The redundancy warning.** Its own case asserting the `LintFinding`, the rule constant and the
   delete fix, modelled on whatever pins `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` today.
+* **Tenant partitioning.** Assert the emitted loader name, not just that a loader exists: a
+  tenant-scoped discriminated interface child registers through `tenantLoaderName`, not the bare
+  path-derived name. Cheapest at whatever tier already reads emitted fetcher source for the other
+  batched leaves, since the failure is in the name expression rather than in any verdict. This is
+  the only listed failure that is both silent and a cross-tenant read, so it should not rest on the
+  execution tier alone, where it needs a two-tenant fixture to show up at all.
 * **Execution tier.** The statement-count claim is the whole point and is invisible to every other
   tier. `GraphQLQueryTest`'s `SQL_LOG` idiom over a discriminated interface child across several
   parents: one child statement, not one per parent. A `ProjectionSqlBaselineTest`-style whole-
