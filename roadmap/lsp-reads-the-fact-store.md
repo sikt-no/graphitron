@@ -459,7 +459,7 @@ around it.
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
 | Any coordinate, no richer arm | SDL docstring | `graphql_directive_argument` for a directive argument, `graphql_field` for a nested input field |
 | Directive argument name | Arg docstring | `graphql_directive_argument`, bundled and author-declared alike |
-| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | the verdict views for the block, their classifier vocabularies grown to the whole taxonomy; `sql_table`, `sql_column` and the `java_` source family for the description |
+| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | the claim views for the classifier, then one relation per further fact the block shows; `sql_table`, `sql_column` and the `java_` source family for the description |
 
 **Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
 
@@ -474,10 +474,10 @@ around it.
 
 | Toggle | Collector | Fact source |
 |---|---|---|
-| `classification` | `collectClassificationHints` | the verdict views, both grains, their classifier vocabularies grown to the whole taxonomy |
+| `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry |
 | `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
-| `hoverClassification` | gates `DeclarationHovers` (see hover) | the verdict views, as the `classification` toggle above |
+| `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations |
 
 **Code actions.** Two branches, deliberately not sharing a path.
 
@@ -1282,12 +1282,13 @@ that already ask them.
 | What an *omitted* `@reference` path infers | foreign-key discovery between the parent's binding and the field's named type's binding; both bindings are built, the discovery is not | unbuilt |
 | What member names a backing class offers | `intent_class_member_slot`: a record's components, or the bean accessors of anything else, the rule chosen by the class's declared form. Keyed by the census, not by a graph | built |
 | Which Java class a type is backed by | `intent_type_backing_class`, the reflective binding walk's own answer. The census blocker is gone: it now carries the declared return type beside the erasure, so an accessor hop names its element type. What is unbuilt is the walk over those hops, its grounding and its gates | unbuilt |
-| The verdict label for a declaration | `intent_resolved_field_claim` and a type-grain sibling, their `classifier` vocabularies grown from today's seven and two to the whole taxonomy | partly built |
+| The main classifier at a declaration | `intent_resolved_field_claim` at the field grain, `intent_authored_type_claim` at the type grain, both at the vocabulary they already carry | built |
+| The rest of what a declaration's incumbent label encoded | nothing: the other facts, each from the relation that owns it. See "the label is not a fact" below | built, unbuilt per fact |
 
-Two things fall out of writing that down. The label rows do not want a new view at all: they want the
-reduction that already exists to answer for every classifier, so what looked like the substrate's
-biggest unknown is arms in an existing view rather than a relation nobody has designed. And the column
-rows are not one question but three, which is why the column arm could not move with the key arm
+Two things fall out of writing that down. The label rows do not want a new view at all, and they do
+not want a grown vocabulary either: what an incumbent label encoded was several facts folded into one
+name, so the surfaces that render it stop rendering one name rather than the store learning every name
+they could have rendered. And the column rows are not one question but three, which is why the column arm could not move with the key arm
 despite the inventory giving them the same words: the key arm needs the enclosing type's binding and
 nothing else, and it moved.
 
@@ -1531,35 +1532,54 @@ the same rules ran through for the declaration-name half.
   census has with `ClasspathScanner`'s output, which is why `FixtureCatalogTest` now asserts on both
   sides of that capture rather than dropping the projection half.
 
-## Settled while building: the verdict labels are blocked, and the block is one column
+## Settled while building: the label is not a fact, and the census carried one form too few
 
-The next increment was going to be the verdict-label arms, on the finding above that they want no new
-relation, only the claim views' `classifier` vocabulary grown to the whole taxonomy. Costing that out
-first is what found the wall: the label an arm renders is the classified variant's own name, so a grain
-does not move until every one of its variants can be named, and eight of the twenty-two type variants
-(`JavaRecord`, `JavaRecordInput`, `JooqRecord`, `JooqRecordInput`, `JooqTableRecord`,
-`JooqTableRecordInput`, `PojoResult`, `PojoInput`) are decided by which Java class backs the type.
-The field grain has the same dependency through its record-read arms. So both grains sit behind the
-backing-class relation, which sat behind the census, and the honest next increment was the census
-rather than the labels.
+This increment started as the verdict-label arms and turned into a correction plus a census widening.
+The plan was to grow the claim views' `classifier` vocabulary until it could name every variant
+`FieldClassification` and `TypeClassification` permit, so the two label-rendering surfaces could read
+the store. That is a store-side rebuild of the projections' arms, which this item's own "What retires"
+section rules out in as many words, and the inventory rows that asked for it have been repointed.
 
-* **Partial coverage is not an option for these arms, which is what makes the order forced.** The
-  incumbent has a verdict at every coordinate and the inlay arm skips a coordinate with none. A
-  half-populated verdict view is therefore invisible: hints quietly stop appearing for some
-  declarations, with no error anywhere. That is why the vocabulary cannot be grown a few arms at a
-  time behind a live reader, and why "grow the vocabulary" is one increment per grain and not per arm.
-* **The blocker was one column, twice over.** The census recorded only the erasure the JVM descriptor
-  carries, so an accessor returning `List<Film>` said `List` and a walk following the hop had nothing
-  to follow. Reading the classfile `Signature` attribute is what the accessor walk was missing; it is
-  not a new relation and not a new family, it is a column beside one that was already there.
+* **The label was never one fact, which is why no relation should carry it.** The incumbent's
+  twenty-nine field permits and twenty-two type permits are combinations: `Column` against
+  `CompositeColumn` is an arity, `ColumnReference` against `Column` is the presence of a join path,
+  `QueryTable` against `TableTarget` is whether the parent is a root, and `TableTarget`'s
+  `splitBatched` and `hasLookupKey` are two more facts folded into the same name. A vocabulary naming
+  every combination is the monolith this item exists to take apart, rebuilt in SQL and keyed the same
+  way. The main classifier is the fact: which of `SERVICE`, `EXTERNAL_FIELD`, `NODE_ID`, `LOOKUP_KEY`,
+  `ROUTINE`, `MUTATION`, `TABLE_COLUMN` claims the coordinate, which the claim views already answer.
+  Everything else the label used to imply is a separate fact, already relational or already named as
+  an unbuilt row above.
+* **So the surfaces change what they show, and that is the point rather than a cost.** The inlay
+  toggle renders the classifier; the hover block renders the classifier and then whatever facts the
+  coordinate actually has, each read from the relation that owns it. A coordinate whose facts are not
+  all modelled yet renders the ones that are, instead of waiting on a name that could describe all of
+  them at once. `LspClassificationLabels`' pedagogical claim, that the label is the projection record's
+  simple name so a reader can grep the taxonomy, retires with the taxonomy it teaches.
+* **The type grain probably needs no reduction at all.** The field grain has a resolved view because
+  it has an inferred arm to mask. The type grain's authored claims are `TABLE` and `ERROR`, with no
+  structural claimant to mask them against, and the rest of what its labels encoded is type kind
+  (`graphql_type.kind`), root operation (`graphql_root_operation`) or a Relay wrapper
+  (`graphitron_connection`), all captured. A resolved type view would be a copy of the authored one,
+  which the discipline forbids, so the reader reads the authored view until an inferred type claim
+  exists.
+* **What the census widening was actually worth.** It shipped in this increment under the wrong
+  headline: it unblocks the reflective backing-class walk, which is real and still wanted, but the
+  backing class is not what stood between here and the label arms, because the label arms were never
+  going to be built. It stands on the two readers it fixed instead, both of which were showing the
+  wrong form of a type. That is the whole case for it and it is enough of one.
+
+* **The blocker was one column, and reading it is not a new relation.** The census recorded only the
+  erasure the JVM descriptor carries, so an accessor returning `List<Film>` said `List` and a walk
+  following the hop had nothing to follow. The classfile `Signature` attribute is what was missing.
 * **The erasure stays, and the reason is a type variable.** The tempting shape is one column holding
   the declared form with the erasure derived from it, and it is wrong: `T` erases to its bound, which
   the declared form does not name. Neither form is a function of the other, so both are base columns.
-  The direction each reader wants is a property of its question, not a preference: a signature spelled
-  for an author wants the declared form, and `@externalField`'s "does this return a jOOQ `Field`"
-  check wants the erasure, because every `Field<X>` answers that the same way.
-* **A pair of parameter lists is not a pair of positions.** The signature attribute's argument list
-  and the descriptor's differ in length where the compiler synthesised a parameter, and there is no
+  The direction each reader wants is a property of its question: a signature spelled for an author
+  wants the declared form, and `@externalField`'s "does this return a jOOQ `Field`" check wants the
+  erasure, because every `Field<X>` answers that the same way.
+* **A pair of parameter lists is not a pair of positions.** The signature attribute's argument list and
+  the descriptor's differ in length where the compiler synthesised a parameter, and there is no
   position-wise correction for that. So a length mismatch falls back to the erasure for the whole
   method rather than pairing a declared form with the wrong parameter, which is the failure that would
   have shipped silently and shown an author a type their source does not contain.
