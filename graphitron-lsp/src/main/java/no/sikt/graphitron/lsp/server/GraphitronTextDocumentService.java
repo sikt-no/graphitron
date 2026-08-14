@@ -137,10 +137,14 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             for (String uri : queued) {
                 try (var fileSpan = LspTrace.span("publishDiagnostics.file")) {
                     fileSpan.detail("uri", uri);
-                    var diagnostics = workspace.withView(uri, null, view ->
-                        Diagnostics.compute(
-                            workspace.vocabulary(), uri, view, workspace.catalog(),
-                            workspace.snapshot(), workspace.validationReport()));
+                    // One read transaction around the whole file's diagnostics, so the arms that
+                    // resolve a site's scope from the store and the arms that read the projection
+                    // cannot answer from two sides of a capture.
+                    var diagnostics = workspace.answering(uri, store ->
+                        workspace.withView(uri, null, view ->
+                            Diagnostics.compute(
+                                workspace.vocabulary(), uri, view, workspace.catalog(),
+                                workspace.snapshot(), workspace.validationReport(), store)));
                     if (diagnostics != null) {
                         fileSpan.detail("diagnostics", diagnostics.size());
                         client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));

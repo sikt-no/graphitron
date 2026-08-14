@@ -3124,6 +3124,101 @@ COMMENT ON COLUMN intent_authored_claim_conflict.source_name IS 'the violated co
 COMMENT ON COLUMN intent_authored_claim_conflict.source_line IS 'source line of the violated coordinate''s declaration, 1-based';
 COMMENT ON COLUMN intent_authored_claim_conflict.source_column IS 'source column of the violated coordinate''s declaration, 1-based';
 
+CREATE VIEW intent_field_column_table
+  (graph_name, type_name, field_name, disposition, basis,
+   table_source_name, table_schema, table_name) AS
+WITH path_terminal
+  (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
+  SELECT tg.graph_name, tg.type_name, tg.field_name,
+         tg.to_source_name, tg.to_schema, tg.to_table
+    FROM intent_field_reference_step_target tg
+    JOIN (SELECT graph_name, type_name, field_name, MIN(ordinal) AS ordinal
+            FROM graphitron_field_reference_step
+           GROUP BY graph_name, type_name, field_name) first_application
+      ON first_application.graph_name = tg.graph_name
+     AND first_application.type_name = tg.type_name
+     AND first_application.field_name = tg.field_name
+     AND first_application.ordinal = tg.ordinal
+    JOIN (SELECT graph_name, type_name, field_name, ordinal, MAX(position) AS position
+            FROM graphitron_field_reference_step
+           GROUP BY graph_name, type_name, field_name, ordinal) last_element
+      ON last_element.graph_name = tg.graph_name
+     AND last_element.type_name = tg.type_name
+     AND last_element.field_name = tg.field_name
+     AND last_element.ordinal = tg.ordinal
+     AND last_element.position = tg.position
+   WHERE tg.targets = 1
+)
+SELECT graph_name, type_name, field_name, disposition, basis,
+       table_source_name, table_schema, table_name
+  FROM (SELECT arms.graph_name, arms.type_name, arms.field_name, arms.disposition, arms.basis,
+               arms.table_source_name, arms.table_schema, arms.table_name,
+               ROW_NUMBER() OVER (
+                 PARTITION BY arms.graph_name, arms.type_name, arms.field_name
+                 ORDER BY arms.precedence) AS rn
+          FROM (SELECT c.graph_name, c.type_name, c.field_name,
+                       'SILENT' AS disposition, 'CONFLICTED' AS basis,
+                       CAST(NULL AS VARCHAR) AS table_source_name,
+                       CAST(NULL AS VARCHAR) AS table_schema,
+                       CAST(NULL AS VARCHAR) AS table_name,
+                       0 AS precedence
+                  FROM intent_authored_claim_conflict c
+                 WHERE c.field_name IS NOT NULL
+                UNION ALL
+                SELECT a.graph_name, a.type_name, a.field_name,
+                       'SILENT', 'UNRESOLVED_PATH', NULL, NULL, NULL, 1
+                  FROM (SELECT DISTINCT graph_name, type_name, field_name
+                          FROM graphitron_field_reference_step) a
+                 WHERE NOT EXISTS (SELECT 1 FROM path_terminal pt
+                                    WHERE pt.graph_name = a.graph_name
+                                      AND pt.type_name = a.type_name
+                                      AND pt.field_name = a.field_name)
+                UNION ALL
+                SELECT pt.graph_name, pt.type_name, pt.field_name,
+                       'RESOLVE', 'PATH_TERMINAL',
+                       pt.table_source_name, pt.table_schema, pt.table_name, 2
+                  FROM path_terminal pt
+                UNION ALL
+                SELECT f.graph_name, f.type_name, f.field_name,
+                       'RESOLVE', 'NAMED_TYPE_TABLE',
+                       bt.table_source_name, bt.table_schema, bt.table_name, 3
+                  FROM graphql_field f
+                  LEFT JOIN graphitron_field_synthesis fs
+                    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+                   AND fs.field_name = f.field_name
+                  JOIN graphql_type nt
+                    ON nt.graph_name = f.graph_name
+                   AND nt.type_name = COALESCE(
+                         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+                         f.named_type)
+                   AND nt.kind = 'OBJECT'
+                  JOIN intent_bound_table bt
+                    ON bt.graph_name = f.graph_name AND bt.type_name = nt.type_name
+                   AND bt.candidates = 1
+                 WHERE f.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                                    WHERE s.graph_name = f.graph_name
+                                      AND s.type_name = f.type_name
+                                      AND s.field_name = f.field_name)
+                   AND NOT EXISTS (SELECT 1 FROM intent_authored_field_claim ac
+                                    WHERE ac.graph_name = f.graph_name
+                                      AND ac.type_name = f.type_name
+                                      AND ac.field_name = f.field_name)
+                   AND NOT EXISTS (SELECT 1 FROM graphitron_pivot pv
+                                    WHERE pv.graph_name = f.graph_name
+                                      AND pv.type_name = f.type_name
+                                      AND pv.field_name = f.field_name)) arms) picked
+ WHERE rn = 1;
+COMMENT ON VIEW intent_field_column_table IS 'Which table a column name written at a field''s site resolves against, when that table is not the one the field''s own parent is bound to. The question an editor asks at a @field(name:) or @defaultOrder(fields: [{name:}]) site, and the resolution three LSP arms (completion, hover, the field-member diagnostic) each used to ask a projected per-permit switch. Deliberately narrow: a field whose column names resolve against its parent''s own binding contributes no row, because a reader already holding the parent''s binding needs no relation to tell it so, and stating that case here would make the relation a copy of intent_bound_table keyed one grain down. Absence therefore means "the parent''s own scope answers", which is the reading every consumer already falls back to; only a row overrides it. Two rules produce a table and both are readings of navigation rather than of a directive vocabulary: an authored @reference path resolves to its terminal element''s table, and a field with no path whose named type is itself bound to a table resolves to that table, which is where an ordering column named on a list field lives. Two rules produce silence instead, meaning "no column name resolves here, and the parent''s scope must not stand in": a coordinate whose classification the author has already contested, and an authored path that reaches no single table. The silences are structural, never a reading of the rejection residue: a derivation that asked the residue whether a coordinate had been reported would go quiet the day that family drains, and this relation''s meaning must not depend on where a message currently lives. The path rule reads the first application''s last element, the repeatable directive''s ordinal grain collapsed the way the authored-claim view collapses @routine''s, and it demands the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination. The named type the rule reads is the one the author wrote, not the one the field currently carries: where a macro rewrote a field''s type expression the authored expression survives on the synthesis relation, and a connection field''s columns are the element type''s rather than the wrapper''s. Taking the named type of that expression is three REPLACEs, list brackets and non-null markers removed, which is what a named type is; reading it there rather than walking the expansion''s own fields means any macro that rewrites a type expression keeps working without this view knowing the shape it expands into. The named-type rule carries the guards that keep it a reading of navigation: a root''s field navigates from no scope of its own, a named type of any kind but OBJECT is an interface, a union or an input and is a different question, an ambiguous binding names no single table, and a field whose classification the author has already claimed does not navigate to its named type at all, that last guard being an anti-join against the authored claims rather than a list of directive names, so it grows as that vocabulary does. @pivot is the one claim the guard names directly, because the claim vocabulary has no arm for it yet and a pivoted field reads its columns from the pivot rather than from the type it names; the explicit guard folds into the anti-join the day that arm lands.';
+COMMENT ON COLUMN intent_field_column_table.graph_name IS 'the owning graph''s partition, carried from every arm''s base relation';
+COMMENT ON COLUMN intent_field_column_table.type_name IS 'the site''s owning type; the parent whose binding this row overrides';
+COMMENT ON COLUMN intent_field_column_table.field_name IS 'the site''s field name within the owning type';
+COMMENT ON COLUMN intent_field_column_table.disposition IS 'RESOLVE when the row names a table to resolve column names against, SILENT when it names none and the parent''s scope must not stand in. A closed two-value fork, which is what a consumer switches on; the basis it came from is the next column. Determined by basis rather than independent of it, and carried anyway because the fork is the reading every consumer needs and re-deriving it from a five-value vocabulary at each of them is how the two would drift';
+COMMENT ON COLUMN intent_field_column_table.basis IS 'which rule produced this row: PATH_TERMINAL (an authored @reference path''s terminal element), NAMED_TYPE_TABLE (the field''s named type''s own binding), UNRESOLVED_PATH (an authored path reaching no single table), CONFLICTED (the coordinate''s claims are mutually exclusive). A closed vocabulary, and the column that lets a consumer explain its answer and a test pin which rule fired without asserting on the table it happened to reach';
+COMMENT ON COLUMN intent_field_column_table.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names; NULL on every SILENT row';
+COMMENT ON COLUMN intent_field_column_table.table_schema IS 'the resolved table''s SQL schema; NULL on every SILENT row';
+COMMENT ON COLUMN intent_field_column_table.table_name IS 'the resolved table''s SQL name; NULL on every SILENT row. With the two columns above this is sql_table''s full key, so the columns themselves are one join away';
+
 CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,

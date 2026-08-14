@@ -696,25 +696,18 @@ class HoversTest {
 
     @Test
     void outputTableWithReferencePathHoversOnTerminalTableColumn() {
-        // Output-side mirror.
-        var file = file("""
+        // The column named here lives on the path's terminal table, so that is the table the hover
+        // renders it on.
+        String sdl = """
             type Film @table(name: "film") {
                 languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
             }
-            """);
+            type Query { films: [Film] }
+            """;
+        var file = file(sdl);
         var pos = pointAt(file, 1, "last_update");
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("Film", new TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("Film.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "language", "last_update", List.of())),
-            java.util.Map.of()
-        );
-        var hover = hoverAt(file, snapshot, pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        var md = capturedHover(sdl, file, pos).orElseThrow().getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `last_update`");
         assertThat(md).contains("on `language`");
@@ -722,26 +715,19 @@ class HoversTest {
 
     @Test
     void unresolvedReferencePathHoverSilentOnLspSide() {
-        // Classifier could not assign a variant (Unclassified). The hover must be silent so the
-        // editor falls through to the SDL docstring rather than printing column metadata pulled
-        // from the wrong table.
-        var file = file("""
+        // The path names a table the catalog does not have, so it reaches nothing. The hover stays
+        // silent and the editor falls through to the SDL docstring, rather than printing column
+        // metadata pulled off the enclosing type's own table.
+        String sdl = """
             type FilmType @table(name: "film") {
-                languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "last_update") @reference(path: [{table: "no_such_table"}])
             }
-            """);
+            type Query { films: [FilmType] }
+            """;
+        var file = file(sdl);
         var pos = pointAt(file, 1, "last_update");
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("FilmType", new TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("FilmType.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unresolvable("synthetic test reason")),
-            java.util.Map.of()
-        );
-
-        assertThat(hoverAt(file, snapshot, pos)).isEmpty();
+        assertThat(capturedHover(sdl, file, pos)).isEmpty();
     }
 
     // ===== @field(name:) on a @table-interface participant cross-table reference =====
@@ -749,28 +735,20 @@ class HoversTest {
 
     @Test
     void participantCrossTableReferenceHoversOnTerminalTableColumn() {
-        // The enclosing @table is "film" (the participant table); the field reaches "last_update"
-        // on the terminal table "language" via a ParticipantCrossTable classification. Previously
-        // the hover dispatched on the enclosing backing and rendered the wrong table; routing
-        // ParticipantCrossTable through lspColumnDispatch() hovers the terminal-table column.
-        var file = file("""
+        // The enclosing @table is "film" (the participant table) and the field reaches "last_update"
+        // across a single-hop path. A participant is a table like any other here: the path decides,
+        // so the hover renders the column on "language".
+        String sdl = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
                 languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
             }
-            """);
+            interface Melding @table(name: "film") { languageName: String }
+            type Query { meldinger: [Melding] }
+            """;
+        var file = file(sdl);
         var pos = pointAt(file, 1, "last_update");
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("DokumentMelding", new TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("DokumentMelding.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
-                    "language", "last_update", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
-            java.util.Map.of()
-        );
-        var hover = hoverAt(file, snapshot, pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        var md = capturedHover(sdl, file, pos).orElseThrow().getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `last_update`");
         assertThat(md).contains("on `language`");
@@ -783,25 +761,18 @@ class HoversTest {
     void defaultOrderFieldNameHoversOnElementTableColumn() {
         // The enclosing @table is "film"; the list field navigates to "language". The ordering
         // column "last_update" lives on the element table, so the hover must render it on "language",
-        // not "film". TableTarget.lspColumnDispatch() Resolves the element table for the hover too.
-        var file = file("""
+        // not "film": the field's named type is bound to a table of its own.
+        String sdl = """
             type Film @table(name: "film") {
                 languages: [Language!]! @defaultOrder(fields: [{name: "last_update"}])
             }
-            """);
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
+            """;
+        var file = file(sdl);
         var pos = pointAt(file, 1, "last_update");
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("Film", new TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("Film.languages",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
-                    "language", List.of(), false, false)),
-            java.util.Map.of()
-        );
-        var hover = hoverAt(file, snapshot, pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
+        var md = capturedHover(sdl, file, pos).orElseThrow().getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `last_update`");
         assertThat(md).contains("on `language`");
@@ -831,6 +802,18 @@ class HoversTest {
     /** Hover against the captured facts and a classification snapshot: the column arms need both. */
     private static Optional<Hover> hoverAt(FileSnapshot file, LspSchemaSnapshot snapshot, Point pos) {
         return Hovers.compute(file, Optional.of(store.handle()), snapshot, pos);
+    }
+
+    /**
+     * Hover against a store that captured this very document. The column arms resolve a site's scope
+     * from the facts of the schema the cursor is inside, so a case whose subject is that resolution
+     * captures its own graph rather than sharing the class fixture's SDL.
+     */
+    private static Optional<Hover> capturedHover(String sdl, FileSnapshot file, Point pos) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
+            return Hovers.compute(
+                file, Optional.of(fixture.handle()), LspSchemaSnapshot.unavailable(), pos);
+        }
     }
 
     /** The markdown of a hover that must exist. */

@@ -33,6 +33,21 @@ public final class CatalogColumns {
      * database, and the database's own casing is not necessarily what they typed.
      */
     public static List<Column> of(StoreHandle store, String tableName) {
+        return of(store, SQL_COLUMN.TABLE_NAME.equalIgnoreCase(tableName));
+    }
+
+    /**
+     * The columns of one resolved table, by its whole census key. Where the spelling-keyed read
+     * above answers with every table that spells a name, this one answers about the table a
+     * resolution already picked, so an ambiguous name cannot widen the result behind the caller.
+     */
+    public static List<Column> of(StoreHandle store, CatalogTable table) {
+        return of(store, SQL_COLUMN.SOURCE_NAME.eq(table.sourceName())
+            .and(SQL_COLUMN.TABLE_SCHEMA.eq(table.schema()))
+            .and(SQL_COLUMN.TABLE_NAME.eq(table.tableName())));
+    }
+
+    private static List<Column> of(StoreHandle store, org.jooq.Condition tableFilter) {
         // The generated field's Javadoc, on the .java cadence, keyed by the table class FQN the
         // catalog walk captured and the column constant's own name.
         Field<String> javadoc = SourceDeclarations.fieldJavadocOf(SQL_TABLE.CLASS_FQN, SQL_COLUMN.JOOQ_NAME);
@@ -45,7 +60,7 @@ public final class CatalogColumns {
                 .and(SQL_TABLE.TABLE_SCHEMA.eq(SQL_COLUMN.TABLE_SCHEMA))
                 .and(SQL_TABLE.TABLE_NAME.eq(SQL_COLUMN.TABLE_NAME)))
             .where(store.reads(SQL_COLUMN.SOURCE_NAME))
-            .and(SQL_COLUMN.TABLE_NAME.equalIgnoreCase(tableName))
+            .and(tableFilter)
             .orderBy(SQL_COLUMN.TABLE_SCHEMA, SQL_COLUMN.ORDINAL)
             .fetch();
         var columns = new ArrayList<Column>(rows.size());

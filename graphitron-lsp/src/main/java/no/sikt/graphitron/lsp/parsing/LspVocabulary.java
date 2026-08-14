@@ -647,9 +647,9 @@ public record LspVocabulary(
                 new Behavior.CatalogColumnBinding());
             // @defaultOrder(fields: [{name: ...}]) names a column on the list/connection
             // field's target (element-type) table. The FieldSort.name coordinate binds to the
-            // same column behavior; the target table is resolved through
-            // FieldClassification.lspColumnDispatch() (TableTarget / RecordTableTarget Resolve
-            // their element table) rather than the enclosing type's backing.
+            // same column behavior; which table that is comes from the site's own resolved scope
+            // ({@link no.sikt.graphitron.lsp.facts.FieldColumnScope}, whose named-type rule
+            // answers the element table) rather than the enclosing type's backing.
             out.put(new SchemaCoordinate.InputField("FieldSort", "name"),
                 new Behavior.CatalogColumnBinding());
             out.put(new SchemaCoordinate.InputField("ReferenceElement", "key"),

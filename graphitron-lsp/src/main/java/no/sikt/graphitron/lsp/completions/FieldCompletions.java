@@ -1,6 +1,8 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -77,9 +79,6 @@ public final class FieldCompletions {
         StoreHandle store, LspSchemaSnapshot snapshot,
         CompletionContext context, String typeName, String fieldName
     ) {
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
-            return List.of();
-        }
         // At the payload data field site, prepend $source as a top-level completion.
         // The snapshot owns the (typeName, fieldName) -> SiteContext classification through
         // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
@@ -87,28 +86,32 @@ public final class FieldCompletions {
         // has no entry in the carrier projection, siteContext returns Other and the sigil is
         // not suggested.
         boolean isPayloadDataField = fieldName != null
+            && snapshot instanceof LspSchemaSnapshot.Built sigilSnapshot
             && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
-                built.siteContext(typeName, fieldName));
+                sigilSnapshot.siteContext(typeName, fieldName));
         var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
-        // Prefer the field classification's projected terminal table over the enclosing
-        // type's backing for @reference path fields and the other column-bearing permits.
-        // lspColumnDispatch() collapses the permits onto three arms; Resolve and Silent
-        // each return directly through mergeWithSigil, FallThrough drops through to the
-        // existing backing-driven dispatch below. Snapshot-uncertainty (empty optional)
-        // also falls through.
+        // Prefer the site's own resolved scope over the enclosing type's backing: a @reference
+        // path's terminal table, or the table the named type is itself bound to, is where the
+        // column named here lives. A Silent scope offers nothing rather than falling back on the
+        // parent's table, which would point the author at the wrong end of a join; no row at all
+        // means the parent's own scope answers, which is the dispatch below.
         if (fieldName != null) {
-            var classification = built.fieldClassification(typeName, fieldName);
-            if (classification.isPresent()) {
-                switch (classification.get().lspColumnDispatch()) {
-                    case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
-                        return mergeWithSigil(sigilItems, tableColumnItems(store, tableName, context));
+            var scope = FieldColumnScope.of(store, typeName, fieldName);
+            if (scope.isPresent()) {
+                switch (scope.get()) {
+                    case FieldColumnScope.Scope.Resolved(var table) -> {
+                        return mergeWithSigil(sigilItems, tableColumnItems(store, table, context));
                     }
-                    case FieldClassification.LspColumnDispatch.Silent ignored -> {
+                    case FieldColumnScope.Scope.Silent ignored -> {
                         return mergeWithSigil(sigilItems, List.of());
                     }
-                    case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
                 }
             }
+        }
+        // The parent's own scope, which is still the projection's to answer: a class-backed parent's
+        // member slots have no relation yet, and the arm reads one dispatch rather than two.
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
+            return sigilItems;
         }
         var backing = built.typesByName().get(typeName);
         if (backing == null) return sigilItems;
@@ -151,7 +154,23 @@ public final class FieldCompletions {
     private static List<CompletionItem> tableColumnItems(
         StoreHandle store, String tableName, CompletionContext context
     ) {
-        var columns = CatalogColumns.of(store, tableName);
+        return toItems(CatalogColumns.of(store, tableName), context);
+    }
+
+    /**
+     * The columns of one resolved table. Where the spelling-keyed read above offers both schemas'
+     * lists for an ambiguous name, a scope that resolved names one table and this offers only its
+     * columns.
+     */
+    private static List<CompletionItem> tableColumnItems(
+        StoreHandle store, CatalogTable table, CompletionContext context
+    ) {
+        return toItems(CatalogColumns.of(store, table), context);
+    }
+
+    private static List<CompletionItem> toItems(
+        List<CatalogColumns.Column> columns, CompletionContext context
+    ) {
         var items = new ArrayList<CompletionItem>(columns.size());
         for (var column : columns) {
             items.add(toColumnItem(column, context));

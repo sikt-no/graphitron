@@ -429,7 +429,7 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `ClassNameBinding` | `ClassNameCompletions` | `jvm_class` |
 | `MethodNameBinding` | `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
 | `CatalogTableBinding` | `TableCompletions` | `sql_table` |
-| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table` (unbuilt) |
+| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table`. The parent's own scope still falls through to the backing projection, whose member-slot arms wait on `intent_type_backing_class` |
 | `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; the enclosing type's binding via `intent_bound_table` |
 | `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter`; the GraphQL side off the buffer's own field definition, whose arguments are the ones being edited |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
@@ -453,7 +453,7 @@ around it.
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
 | `MethodNameBinding` | A signature per overload + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family, joined on arity |
 | `CatalogTableBinding` | Description, column and key counts | `sql_table`, `sql_column`, `sql_referential_constraint`; Javadoc via the `java_` source family |
-| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table` and the member arms via `intent_type_backing_class` joined to the `jvm_` census, both unbuilt |
+| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table`; the member arms wait on `intent_type_backing_class` joined to the `jvm_` census, still unbuilt |
 | `CatalogFkBinding` | FK direction and endpoints, under any spelling the resolver accepts | `sql_referential_constraint`, `sql_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column`, `graphitron_table` + `sql_column` for the types |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
@@ -1278,9 +1278,9 @@ that already ask them.
 | How a written table name meets the census | `intent_spelled_table`, keyed on the spelling, under every binding | built |
 | Which catalog table a type's `@table` binds to | `intent_bound_table`, a keying of the spelling view on a type | built |
 | What an authored `@reference` element lands on | `intent_field_reference_step_hop` for the element's local resolution, `intent_field_reference_step_target` for the chain over it | built |
-| Which table a *field site's* columns come from | `intent_field_column_table`: the parent's binding for a plain column, the chain's terminal arrival for a `@reference` field, the navigated element table for the order-by sites | unbuilt |
+| Which table a *field site's* columns come from | `intent_field_column_table`: the chain's terminal arrival for a `@reference` field, the navigated element table for the order-by sites. The parent's own binding is deliberately absent, being what a reader already holds | built |
 | What an *omitted* `@reference` path infers | foreign-key discovery between the parent's binding and the field's named type's binding; both bindings are built, the discovery is not | unbuilt |
-| Which Java class a type is backed by, and its member slots | `intent_type_backing_class`, joined to `jvm_record_component` for components and `jvm_method` for bean accessors | unbuilt |
+| Which Java class a type is backed by, and its member slots | `intent_type_backing_class`, joined to `jvm_record_component` for components and `jvm_method` for bean accessors. The one thing the three column arms still fall through to the projection for | unbuilt |
 | The verdict label for a declaration | `intent_resolved_field_claim` and a type-grain sibling, their `classifier` vocabularies grown from today's seven and two to the whole taxonomy | partly built |
 
 Two things fall out of writing that down. The label rows do not want a new view at all: they want the
@@ -1373,6 +1373,69 @@ what would make it unacceptable is a third increment in a row with no reader.
   pieces of the substrate finish together and retire three readers at once: `FieldCompletions`,
   hover's column arm and the field-member diagnostic.
 
+## Settled while building: the column dispatch retires, and an override is not an answer
+
+`intent_field_column_table` landed and `FieldClassification.lspColumnDispatch()` is gone, with the
+sealed `LspColumnDispatch` and its projection meta-test. All three of its readers, completion, hover
+and the field-member diagnostic, resolve a site's scope from the store now. The projection's whole
+content was a mapping from twenty-nine classification permits onto three audience-specific arms, and
+the mapping was the part worth keeping: as a resolution it is two rules and two silences, so what
+looked like the substrate's hardest piece was a switch standing in for a rule nobody had written down.
+
+The estimate above was wrong in a useful direction. The seven `Resolve` arms are not seven questions,
+and the participant arm that looked missing was never a separate one: a `@table`-interface participant
+reaching a column across a single-hop path is the path rule, the participant being a table like any
+other. What the increment did need that the estimate missed was the verdict vocabulary's absence being
+survivable, which it was, because the two silences worth keeping are structural.
+
+* **The relation overrides a default; it does not answer the question.** A field whose columns come
+  from its own parent's table contributes no row, because every reader already holds that binding and
+  stating it here would make the relation a copy of `intent_bound_table` keyed one grain down. So
+  absence means "the parent's scope stands", which is exactly the fall-through each reader already had.
+  Half the anchor test's cases pin coordinates that produce no row, and they are the cases that say
+  what the relation is: a root's field, a scalar field, a named type that is an interface, a field an
+  authored claim diverted.
+* **Two rules, not seven arms.** An authored `@reference` path resolves to its terminal element's
+  table; a field with no path resolves to the table its named type is itself bound to. That second one
+  needs guards to stay a reading of navigation rather than a guess, and the guard that matters is an
+  anti-join against `intent_authored_field_claim`: a field the author claimed does not navigate to its
+  named type at all. `@pivot` is named directly because the claim vocabulary has no arm for it yet, and
+  the explicit guard folds into the anti-join the day that arm lands. Stating the gap in the DDL
+  comment is the alternative to it becoming a silent divergence.
+* **The silences are structural, and one candidate was refused.** A contested coordinate is silent, and
+  an authored path reaching no single table is silent. A third silence was available and rejected: the
+  incumbent went quiet wherever the classifier had declined, whose real content was "a report already
+  covers this coordinate", and the relation that holds those reports is the rejection residue, which is
+  scheduled to drain. A derivation reading it would go quiet the day that family leaves, with no
+  compile error and no failing pin. So the case the incumbent pinned, an empty `@field(name:)` beside a
+  path that resolves, now offers the terminal table's columns, which is what the author needs; the
+  three tests pinning the old silence pinned a projection disagreeing with itself about one schema, and
+  they now pin a path that genuinely reaches nothing.
+* **A macro's rewrite is read at the authored end.** A connection field's own named type is the wrapper
+  `@asConnection` synthesized, so the named-type rule reads `graphitron_field_synthesis`'s authored type
+  expression instead and takes its named type, three `REPLACE`s removing brackets and bangs. The
+  alternative was walking the expansion's `nodes` field, which couples the view to the shape this one
+  macro expands into. The pinned connection case is what forced the choice, and it is the better rule
+  for any macro that rewrites a type expression.
+* **A resolved table is a key, and the readers now say so.** The projection's `Resolve` carried a bare
+  table name, so both column readers matched it case-insensitively across the census and an ambiguous
+  name quietly contributed two schemas' columns. The view answers with the whole `sql_table` key, so
+  the resolved arm reads one table and the spelling-keyed read stays where a spelling is genuinely what
+  the reader holds. Both overloads live on `CatalogColumns`, the difference stated in its javadoc.
+* **What is still the projection's, and why it did not block this.** All three readers still fall
+  through to `typesByName()` for the parent's own scope, because a class-backed parent's member slots
+  need `intent_type_backing_class` joined to the `jvm_` census. That fall-through is one dispatch, not
+  three, and the store arm now runs ahead of the snapshot's freshness gate: a site's scope is a fact
+  about the schema, so a document whose snapshot is unavailable still resolves it. The next increment
+  is the member slots, and it retires `typesByName()` and `TypeBackingShape` from the language server
+  outright, those three arms being their only readers.
+* **Diagnostics reads the store now, which it never did before.** The arm needed a handle threaded
+  through `Diagnostics.compute`, so the entry point gained a store-bearing overload beside the
+  store-free one, and the document service wraps the whole file's diagnostics in one read transaction.
+  The store-free form answers as if the store were unavailable, which is the same posture the class
+  already takes on a snapshot it cannot trust, and it is what keeps the thirty-odd existing call sites
+  unchanged rather than churned.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1382,7 +1445,9 @@ path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declare
 `dependsOnDeclarations`, `SourceWalker.Index` with its `ambiguousMethods` and `methodsByName`, and
 `Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`. Gone already:
 `LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
-(`ofTable`, `ofColumn`, `classJavadoc`) and `Definitions.methodLocation`; `DirectiveResolution`
+(`ofTable`, `ofColumn`, `classJavadoc`), `Definitions.methodLocation`, and
+`FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
+switched on; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
 `typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's

@@ -2,7 +2,9 @@ package no.sikt.graphitron.lsp.hover;
 
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
+import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.facts.SdlDescriptions;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.Behavior;
@@ -397,7 +399,6 @@ public final class Hovers {
         LspSchemaSnapshot snapshot, Node valueNode
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var typeDecl = DeclarationKind.enclosing(directive.outer());
         if (typeDecl.isEmpty()) return Optional.empty();
         var typeName = TypeContext.declaredNameOf(typeDecl.get(), file.source());
@@ -405,24 +406,26 @@ public final class Hovers {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
-        // Prefer the field classification's projected terminal table over the enclosing
-        // type's backing for @reference path fields and the other column-bearing permits.
-        // lspColumnDispatch() collapses the permits onto three arms; Resolve and Silent
-        // each return directly from this method, FallThrough drops through to the existing
-        // backing-driven dispatch below. Snapshot-uncertainty (empty optional) also falls
-        // through.
+        // Prefer the site's own resolved scope over the enclosing type's backing: a @reference
+        // path's terminal table, or the table the named type is itself bound to, is where the
+        // column named here lives. A Silent scope renders nothing rather than pulling metadata off
+        // the parent's table, so the editor falls through to the SDL docstring; no row at all means
+        // the parent's own scope answers, which is the dispatch below.
         if (fieldName != null) {
-            var classification = built.fieldClassification(typeName.get(), fieldName);
-            if (classification.isPresent()) {
-                switch (classification.get().lspColumnDispatch()) {
-                    case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
-                        return tableColumnHover(store, tableName, memberName, file, valueNode);
+            var scope = store.flatMap(handle ->
+                FieldColumnScope.of(handle, typeName.get(), fieldName));
+            if (scope.isPresent()) {
+                switch (scope.get()) {
+                    case FieldColumnScope.Scope.Resolved(var table) -> {
+                        return tableColumnHover(store, table, memberName, file, valueNode);
                     }
-                    case FieldClassification.LspColumnDispatch.Silent ignored -> { return Optional.empty(); }
-                    case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
+                    case FieldColumnScope.Scope.Silent ignored -> { return Optional.empty(); }
                 }
             }
         }
+        // The parent's own scope, which is still the projection's to answer: a class-backed parent's
+        // member slots have no relation yet, and the arm reads one dispatch rather than two.
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return Optional.empty();
         return switch (backing) {
@@ -447,14 +450,30 @@ public final class Hovers {
         Optional<StoreHandle> store, String tableName, String columnName,
         FileSnapshot file, Node valueNode
     ) {
-        return store.flatMap(handle -> {
-            var matches = CatalogColumns.of(handle, tableName).stream()
-                .filter(column -> column.isNamed(columnName))
-                .toList();
-            return matches.isEmpty()
-                ? Optional.<Hover>empty()
-                : Optional.of(hover(file, valueNode, formatColumn(tableName, matches)));
-        });
+        return store.flatMap(handle ->
+            render(CatalogColumns.of(handle, tableName), tableName, columnName, file, valueNode));
+    }
+
+    /**
+     * The same hover for a table a resolution already picked, so an ambiguous name cannot pull in a
+     * second schema's column of the same name behind the caller.
+     */
+    private static Optional<Hover> tableColumnHover(
+        Optional<StoreHandle> store, CatalogTable table, String columnName,
+        FileSnapshot file, Node valueNode
+    ) {
+        return store.flatMap(handle -> render(
+            CatalogColumns.of(handle, table), table.tableName(), columnName, file, valueNode));
+    }
+
+    private static Optional<Hover> render(
+        List<CatalogColumns.Column> columns, String tableName, String columnName,
+        FileSnapshot file, Node valueNode
+    ) {
+        var matches = columns.stream().filter(column -> column.isNamed(columnName)).toList();
+        return matches.isEmpty()
+            ? Optional.<Hover>empty()
+            : Optional.of(hover(file, valueNode, formatColumn(tableName, matches)));
     }
 
     private static Optional<Hover> slotHover(

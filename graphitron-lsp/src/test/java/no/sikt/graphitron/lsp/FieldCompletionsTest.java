@@ -338,26 +338,19 @@ class FieldCompletionsTest {
 
     @Test
     void outputTableWithReferencePathCompletesTerminalTableColumns() {
-        // Output-side mirror — covers the ChildField.ColumnReferenceField projection.
+        // The path's terminal table is where the named column lives, so the dropdown offers its
+        // columns and not the enclosing @table's.
         String source = """
             type Film @table(name: "film") {
                 languageName: String @field(name: "") @reference(path: [{table: "language"}])
             }
+            type Query { films: [Film] }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("Film", new TypeBackingShape.TableBacking("film")),
-            Map.of(),
-            Map.of("Film.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "language", "NAME", List.of())),
-            Map.of()
-        );
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
@@ -366,27 +359,20 @@ class FieldCompletionsTest {
 
     @Test
     void unresolvedReferencePathCompletionSilentOnLspSide() {
-        // Classifier could not assign a variant (Unclassified); suggestions from the enclosing-
-        // type backing would lead the user toward FILM columns rather than helping resolve the
-        // @reference target. The LSP must emit an empty list rather than leak the wrong table.
+        // The path names a table the catalog does not have, so it reaches nothing. Suggestions from
+        // the enclosing type's own table would point the author at the wrong end of the join they
+        // are still writing, so the arm offers nothing at all.
         String source = """
             type FilmType @table(name: "film") {
-                languageName: String @field(name: "") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "") @reference(path: [{table: "no_such_table"}])
             }
+            type Query { films: [FilmType] }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("FilmType", new TypeBackingShape.TableBacking("film")),
-            Map.of(),
-            Map.of("FilmType.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unresolvable("synthetic test reason")),
-            Map.of()
-        );
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -396,29 +382,21 @@ class FieldCompletionsTest {
 
     @Test
     void participantCrossTableReferenceCompletesTerminalTableColumns() {
-        // The enclosing @table is "film" (the participant table); the field reaches the terminal
-        // table "language" via a ParticipantCrossTable classification. Previously the dropdown
-        // listed FILM's columns; routing ParticipantCrossTable through lspColumnDispatch() emits
-        // LANGUAGE's columns instead.
+        // The enclosing @table is "film" (the participant table) and the field reaches "language"
+        // across a single-hop path. A participant is a table like any other here: the path decides,
+        // so the dropdown lists LANGUAGE's columns rather than FILM's.
         String source = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
                 languageName: String @field(name: "") @reference(path: [{table: "language"}])
             }
+            interface Melding @table(name: "film") { languageName: String }
+            type Query { meldinger: [Melding] }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("DokumentMelding", new TypeBackingShape.TableBacking("film")),
-            Map.of(),
-            Map.of("DokumentMelding.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
-                    "language", "", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
-            Map.of()
-        );
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
@@ -432,17 +410,19 @@ class FieldCompletionsTest {
     void defaultOrderFieldsCompletesElementTableColumns() {
         // The enclosing @table is "film"; the list field navigates to LANGUAGE. The ordering
         // column named in @defaultOrder lives on LANGUAGE, so the dropdown must list LANGUAGE's
-        // columns, never FILM's. TableTarget.lspColumnDispatch() Resolves the element table.
+        // columns, never FILM's: the field's named type is bound to a table of its own.
         String source = """
             type Film @table(name: "film") {
                 languages: [Language!]! @defaultOrder(fields: [{name: ""}])
             }
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf("{name: \"") + "{name: \"".length();
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
@@ -457,12 +437,14 @@ class FieldCompletionsTest {
             type Film @table(name: "film") {
                 languages: [Language!]! @asConnection @defaultOrder(fields: [{name: ""}])
             }
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf("{name: \"") + "{name: \"".length();
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
@@ -471,20 +453,22 @@ class FieldCompletionsTest {
 
     @Test
     void defaultOrderFieldsOnReferenceSplitQueryCompletesElementTableColumns() {
-        // The motivating shape: a @reference + @splitQuery list field. It still classifies as a
-        // table-navigating TableTarget whose element table is LANGUAGE, so the same Resolve path
-        // applies; the extra directives must not derail the cursor walk to FieldSort.name.
+        // The motivating shape: a @reference + @splitQuery list field. The authored path's terminal
+        // element is LANGUAGE and so is the named type's own table, so both rules agree; the extra
+        // directives must not derail the cursor walk to FieldSort.name.
         String source = """
             type Film @table(name: "film") {
                 languages: [Language!]! @reference(path: [{table: "language"}]) @splitQuery @defaultOrder(fields: [{name: ""}])
             }
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf("@defaultOrder(fields: [{name: \"")
             + "@defaultOrder(fields: [{name: \"".length();
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("LANGUAGE_ID", "NAME", "LAST_UPDATE")
@@ -504,7 +488,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("primaryKey: ") + "primaryKey: ".length();
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), defaultOrderSnapshot(), source, cursor);
+        var items = run(STORE.handle(), emptySnapshot(), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -599,18 +583,20 @@ class FieldCompletionsTest {
             .orElseThrow(() -> new AssertionError("no candidate labelled " + label));
     }
 
-    private static LspSchemaSnapshot defaultOrderSnapshot() {
-        // Enclosing Film backs FILM; the list field's classification carries the element table
-        // LANGUAGE. The dispatch must prefer the classification's table over the enclosing backing.
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("Film", new TypeBackingShape.TableBacking("film")),
-            Map.of(),
-            Map.of("Film.languages",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
-                    "language", List.of(), false, false)),
-            Map.of()
-        );
+    /**
+     * Runs the arm against a store that captured this very document. The cases that read a site's
+     * resolved scope need the facts of the schema they are completing inside, so each captures its
+     * own graph rather than sharing the class fixture's placeholder.
+     */
+    private List<CompletionItem> runCaptured(String source, Point cursor) {
+        try (var store = StoreFixture.ofCatalog(sharedDirectory, source)) {
+            return run(store.handle(), emptySnapshot(), source, cursor);
+        }
+    }
+
+    /** No projection at all: the cases using it resolve their scope from the store. */
+    private static LspSchemaSnapshot emptySnapshot() {
+        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
     }
 
     private static LspSchemaSnapshot tableSnapshot(String typeName, String tableName) {

@@ -18,7 +18,11 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
@@ -80,13 +84,24 @@ public final class Diagnostics {
         return compute(LspVocabulary.load(), uri, file, catalog, snapshot, report);
     }
 
+    /**
+     * The store-free form: the arms that read the store answer as if it were unavailable, which is
+     * the same silence policy the class already takes on a snapshot it cannot trust.
+     */
     public static List<Diagnostic> compute(
         LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
         LspSchemaSnapshot snapshot, ValidationReport report
     ) {
+        return compute(vocabulary, uri, file, catalog, snapshot, report, Optional.empty());
+    }
+
+    public static List<Diagnostic> compute(
+        LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, ValidationReport report, Optional<StoreHandle> store
+    ) {
         try (var span = LspTrace.span("diagnostics.compute")) {
             span.detail("uri", uri);
-            var result = computeTraced(vocabulary, uri, file, catalog, snapshot, report, span);
+            var result = computeTraced(vocabulary, uri, file, catalog, snapshot, report, store, span);
             span.detail("diagnostics", result.size());
             return result;
         }
@@ -100,7 +115,8 @@ public final class Diagnostics {
      */
     private static List<Diagnostic> computeTraced(
         LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
-        LspSchemaSnapshot snapshot, ValidationReport report, LspTrace.Span span
+        LspSchemaSnapshot snapshot, ValidationReport report, Optional<StoreHandle> store,
+        LspTrace.Span span
     ) {
         var out = new ArrayList<Diagnostic>();
         var directives = Directives.findAll(file.tree().getRootNode());
@@ -117,7 +133,7 @@ public final class Diagnostics {
                 validateRequiredArgs(directive, dirDef, file, out);
                 var leaves = vocabulary.leafCoordinates(directive, file.source());
                 for (var leaf : leaves) {
-                    dispatch(directive, leaf, vocabulary, file, catalog, snapshot, out);
+                    dispatch(directive, leaf, vocabulary, file, catalog, snapshot, store, out);
                 }
                 continue;
             }
@@ -470,7 +486,8 @@ public final class Diagnostics {
 
     private static void dispatch(
         Directives.Directive directive, LspVocabulary.Leaf leaf, LspVocabulary vocabulary,
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot,
+        Optional<StoreHandle> store, List<Diagnostic> out
     ) {
         var behavior = vocabulary.behaviorAt(leaf.coord()).orElse(null);
         if (behavior == null) return;
@@ -478,7 +495,7 @@ public final class Diagnostics {
             case Behavior.CatalogTableBinding ignored ->
                 validateCatalogTable(leaf.valueNode(), file, catalog, out);
             case Behavior.CatalogColumnBinding ignored ->
-                validateFieldMember(directive, leaf.valueNode(), file, catalog, snapshot, out);
+                validateFieldMember(directive, leaf.valueNode(), file, catalog, snapshot, store, out);
             case Behavior.CatalogFkBinding ignored ->
                 validateCatalogFk(leaf.valueNode(), file, catalog, out);
             case Behavior.ClassNameBinding ignored ->
@@ -593,12 +610,11 @@ public final class Diagnostics {
      * answer.
      */
     private static void validateFieldMember(
-        Directives.Directive directive, Node valueNode,
-        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
+        Directives.Directive directive, Node valueNode, FileSnapshot file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, Optional<StoreHandle> store, List<Diagnostic> out
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (memberName.isEmpty()) return;
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
         var typeDecl = DeclarationKind.enclosing(directive.outer());
         if (typeDecl.isEmpty()) return;
         var typeName = TypeContext.declaredNameOf(typeDecl.get(), file.source());
@@ -615,36 +631,40 @@ public final class Diagnostics {
         // parent type has no entry in the type-backing projection at all (mid-edit / not-yet-
         // classified), stay silent so we don't punish the user for a shape we cannot resolve.
         if (no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL.equals(memberName)) {
+            if (!(snapshot instanceof LspSchemaSnapshot.Built sigilSnapshot)) return;
             boolean isPayloadDataField = fieldName != null
                 && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
-                    built.siteContext(typeName.get(), fieldName));
-            if (!isPayloadDataField && built.typesByName().containsKey(typeName.get())) {
+                    sigilSnapshot.siteContext(typeName.get(), fieldName));
+            if (!isPayloadDataField && sigilSnapshot.typesByName().containsKey(typeName.get())) {
                 out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
                     no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
             }
             return;
         }
-        // Prefer the field classification's projected terminal table over the
-        // enclosing type's @table. FieldClassification.lspColumnDispatch() collapses the
-        // sealed permits onto three audience-specific arms: Resolve(tableName) carries the
-        // projected terminal table for the four column-bearing permits; Silent suppresses the
-        // diagnostic for InputUnbound / Unresolvable / Conflicted (the validator already emits a precise
-        // message via ValidationReport, and a duplicate LSP diagnostic with the wrong table
-        // would be noise); FallThrough routes back to the existing backing-driven dispatch.
-        // Snapshot-uncertainty (empty optional) also falls through.
+        // Prefer the site's own resolved scope over the enclosing type's @table: a @reference
+        // path's terminal table, or the table the named type is itself bound to, is where the
+        // column named here lives, and validating against the parent's table would report a
+        // column that is missing from the wrong end of a join. A Silent scope emits nothing: while
+        // the author's claims disagree or their path reaches no table, the report that names the
+        // real problem is the one to leave standing. No row at all means the parent's own scope
+        // answers, which is the dispatch below.
         if (fieldName != null) {
-            var classification = built.fieldClassification(typeName.get(), fieldName);
-            if (classification.isPresent()) {
-                switch (classification.get().lspColumnDispatch()) {
-                    case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
-                        validateColumnOnTable(catalog, tableName, memberName, valueNode, file, out);
+            var scope = store.flatMap(handle ->
+                FieldColumnScope.of(handle, typeName.get(), fieldName));
+            if (scope.isPresent()) {
+                switch (scope.get()) {
+                    case FieldColumnScope.Scope.Resolved(var table) -> {
+                        validateColumnOnResolvedTable(
+                            store.orElseThrow(), table, memberName, valueNode, file, out);
                         return;
                     }
-                    case FieldClassification.LspColumnDispatch.Silent ignored -> { return; }
-                    case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
+                    case FieldColumnScope.Scope.Silent ignored -> { return; }
                 }
             }
         }
+        // The parent's own scope, which is still the projection's to answer: a class-backed parent's
+        // member slots have no relation yet, and the arm reads one dispatch rather than two.
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return;
         switch (backing) {
@@ -658,6 +678,27 @@ public final class Diagnostics {
             case TypeBackingShape.TableBacking t ->
                 validateColumnOnTable(catalog, t.tableName(), memberName, valueNode, file, out);
             case TypeBackingShape.NoBacking ignored -> { /* no actionable diagnostic */ }
+        }
+    }
+
+    /**
+     * The same check against a table a resolution already picked, read from the census rather than
+     * from the projection. Both of the column's names count, as the spelling-keyed arm below
+     * already accepts: the author may write the SQL name or the one generated code spells.
+     */
+    private static void validateColumnOnResolvedTable(
+        StoreHandle store, CatalogTable table, String columnName,
+        Node valueNode, FileSnapshot file, List<Diagnostic> out
+    ) {
+        var columns = CatalogColumns.of(store, table);
+        if (columns.isEmpty()) {
+            // The resolved table carries no captured columns, so there is nothing to check it
+            // against and no basis for calling the name unknown.
+            return;
+        }
+        if (columns.stream().noneMatch(column -> column.isNamed(columnName))) {
+            out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
+                "Unknown column '" + columnName + "' on table '" + table.tableName() + "'."));
         }
     }
 

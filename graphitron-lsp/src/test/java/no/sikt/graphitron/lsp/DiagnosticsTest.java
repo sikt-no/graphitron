@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
@@ -8,7 +9,9 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * sanity check.
  */
 class DiagnosticsTest {
+
+    @TempDir
+    Path tmp;
 
     @Test
     void unknownTableNameProducesError() {
@@ -347,51 +353,32 @@ class DiagnosticsTest {
 
     @Test
     void outputTableWithReferencePathValidatesAgainstTerminalTable() {
-        // Mirror on an output type declaration — covers the
-        // ChildField.ColumnReferenceField projection arm of projectFieldClassification.
-        var file = file("""
+        // The named column lives on the path's terminal table, so that is the table the check runs
+        // against and a clean schema raises nothing.
+        String sdl = """
             type Film @table(name: "film") {
                 languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
             }
-            """);
+            type Query { films: [Film] }
+            """;
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("Film", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("Film.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
-                    "language", "NAME", java.util.List.of())),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
-
-        assertThat(diags).isEmpty();
+        assertThat(computeCaptured(sdl)).isEmpty();
     }
 
     @Test
     void unresolvedReferencePathColumnSilentOnLspSide() {
-        // Classifier could not assign a variant (Unclassified). The validator's
-        // ValidationReport emits a precise "no column reachable via @reference path"
-        // message; the LSP must not emit a duplicate "Unknown column ... on table '<enclosing>'"
-        // diagnostic naming the wrong table.
-        var file = file("""
+        // The path names a table the catalog does not have, so it reaches nothing and there is no
+        // table to check the column against. The report that names the real problem is the one to
+        // leave standing; a second one blaming the enclosing type's own table would name the wrong
+        // end of the join.
+        String sdl = """
             type FilmType @table(name: "film") {
-                languageName: String @field(name: "TYPO") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "TYPO") @reference(path: [{table: "no_such_table"}])
             }
-            """);
+            type Query { films: [FilmType] }
+            """;
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("FilmType", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("FilmType.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unresolvable("synthetic test reason")),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
-
-        assertThat(diags).noneMatch(d -> d.getMessage().contains("Unknown column"));
+        assertThat(computeCaptured(sdl)).noneMatch(d -> d.getMessage().contains("Unknown column"));
     }
 
     // ===== @field(name:) on a @table-interface participant cross-table reference =====
@@ -405,46 +392,29 @@ class DiagnosticsTest {
         // exists on "language" but not on "film"; validation targets the terminal table, so a
         // schema that builds clean raises no false-positive
         // "Unknown column 'NAME' on table 'film'."
-        var file = file("""
+        String sdl = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
                 languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
             }
-            """);
+            interface Melding @table(name: "film") { languageName: String }
+            type Query { meldinger: [Melding] }
+            """;
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("DokumentMelding", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("DokumentMelding.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
-                    "language", "NAME", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
-
-        assertThat(diags).isEmpty();
+        assertThat(computeCaptured(sdl)).isEmpty();
     }
 
     @Test
     void participantCrossTableReferenceBogusColumnCitesTerminalTable() {
         // The wrong-table message is the user-visible bug: a bogus column must be reported
         // against the terminal table ("language"), never the participant's own @table ("film").
-        var file = file("""
+        String sdl = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
                 languageName: String @field(name: "NOPE") @reference(path: [{table: "language"}])
             }
-            """);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("DokumentMelding", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("DokumentMelding.languageName",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
-                    "language", "NOPE", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+            interface Melding @table(name: "film") { languageName: String }
+            type Query { meldinger: [Melding] }
+            """;
+        var diags = computeCaptured(sdl);
 
         assertThat(diags).anyMatch(d -> d.getMessage().contains("Unknown column 'NOPE' on table 'language'"));
         assertThat(diags).noneMatch(d -> d.getMessage().contains("on table 'film'"));
@@ -456,47 +426,30 @@ class DiagnosticsTest {
     void defaultOrderFieldNameValidatesAgainstElementTable() {
         // The enclosing @table is "film"; the list field navigates to "language". "NAME"
         // exists on the element table, so a valid @defaultOrder column raises no diagnostic.
-        var file = file("""
+        String sdl = """
             type Film @table(name: "film") {
                 languages: [Language!]! @defaultOrder(fields: [{name: "NAME"}])
             }
-            """);
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
+            """;
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("Film", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("Film.languages",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
-                    "language", java.util.List.of(), false, false)),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
-
-        assertThat(diags).isEmpty();
+        assertThat(computeCaptured(sdl)).isEmpty();
     }
 
     @Test
     void defaultOrderFieldNameBogusColumnCitesElementTable() {
-        // validator-mirrors-classifier: a bogus @defaultOrder column must be reported against the
-        // element table ("language"), never the enclosing type's @table ("film"). This diagnostic
-        // comes for free from routing FieldSort.name through the shared lspColumnDispatch().
-        var file = file("""
+        // A bogus @defaultOrder column must be reported against the element table ("language"),
+        // never the enclosing type's @table ("film"): the ordering column lives where the field
+        // navigates to, and the site's resolved scope says so.
+        String sdl = """
             type Film @table(name: "film") {
                 languages: [Language!]! @defaultOrder(fields: [{name: "NOPE"}])
             }
-            """);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("Film", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-            java.util.Map.of(),
-            java.util.Map.of("Film.languages",
-                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
-                    "language", java.util.List.of(), false, false)),
-            java.util.Map.of()
-        );
-        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
+            """;
+        var diags = computeCaptured(sdl);
 
         assertThat(diags).anyMatch(d -> d.getMessage().contains("Unknown column 'NOPE' on table 'language'"));
         assertThat(diags).noneMatch(d -> d.getMessage().contains("on table 'film'"));
@@ -1280,6 +1233,21 @@ class DiagnosticsTest {
         FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot
     ) {
         return Diagnostics.compute("", file, catalog, snapshot, ValidationReport.empty());
+    }
+
+    /**
+     * Runs the walk against a store that captured this very document, with no projection behind it.
+     * The column arm resolves a site's scope from the facts of the schema the directive sits in, so a
+     * case about that resolution captures the schema it is validating rather than describing it twice.
+     */
+    private List<org.eclipse.lsp4j.Diagnostic> computeCaptured(String sdl) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
+            // The catalog still answers the @table arm, which has its own retirement ahead of it;
+            // what the column arm reads is the store.
+            return Diagnostics.compute(LspVocabulary.load(), "", file(sdl),
+                filmAndLanguageCatalogWithLanguageName(), LspSchemaSnapshot.unavailable(),
+                ValidationReport.empty(), java.util.Optional.of(fixture.handle()));
+        }
     }
 
     private static CompletionData filmCatalog() {
