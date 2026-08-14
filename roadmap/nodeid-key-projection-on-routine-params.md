@@ -246,12 +246,21 @@ that. Two candidate shapes, to settle at the Ready gate rather than during imple
 The first is smaller and does not touch the sealed model at all. Prefer it unless the reviewer sees
 the second as the shape that stops this from being re-done later.
 
-### The `sql_` family gains routines and their parameters
+### The `sql_` family gains routine parameters
 
 The type gate needs the routine parameter's Java type, and the store does not hold it. That is a
 capture gap, so it closes in capture: the facts are extended where the fact-finding code can most
 easily reach them, which is the jOOQ catalog walk that is already standing on the objects that
 carry them.
+
+**A table-returning routine is exposed by jOOQ as a table**, and that decides the shape. It arrives
+in the catalog as a `Table` whose `getTableType()` is `FUNCTION`, which is exactly how
+`JooqCatalog.resolveTableValuedFunction` finds it: `findTable(routineName)` first, then the
+`getOptions().type().isFunction()` check. So the walk that writes `sql_table` has already visited
+every routine `@routine` can name; what it does not write is that the row is a function, or what
+parameters it takes. The `routines/` sub-package probe in `JooqCatalog.findNonTableValuedRoutine`
+is *not* part of this picture: it is the fallback for a routine that is **not** table-valued, which
+`@routine` rejects outright with `RoutineResolution.NonTableValuedRoutine`.
 
 `sql_column` is the model, down to the rationale. Its own comment argues the shape: "A column
 carries two types, not one: the SQL type the database declares and the Java type jOOQ binds it to.
@@ -259,62 +268,54 @@ Both are facts about the column and neither derives from the other by any rule t
 apply, since the mapping is the generator's configured binding." A routine parameter is the same
 subject with the same two types, and `binding_type` is exactly what the gate compares against.
 
-Three additions to `CatalogFactCapture.captureCatalog`, each one read off something the walk
-already holds:
+Two additions to `CatalogFactCapture.captureCatalog`, both inside the loop it already runs over
+`jooq.allTableEntries()`:
 
-* **`sql_table.table_type`**, one column, from `table.getOptions().type().name()`. jOOQ's
+* **`sql_table.table_type`**, one column, from `Table.getTableType()`. jOOQ's
   `TableOptions.TableType` distinguishes `TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION` and the
   rest; `sql_table` records none of it, so the store cannot currently tell a table-valued function
-  from a table. `@routine` resolves to the `FUNCTION` arm and nothing else
-  (`JooqCatalog.resolveTableValuedFunction` rejects a non-table-valued routine outright), so this
-  column is what anchors a routine's rows to the table it was already captured as. The walk is
-  already holding the `Table<?>`; this is the cheapest true fact in the item.
-* **`sql_routine (source_name, routine_schema, routine_name, routines_class_fqn, method_name, ...)`**,
-  the call surface: which generated `Routines` class and which convenience method a call goes
-  through. Both come from the lookup `resolveTableValuedFunction` already performs
-  (`Class.forName(schemaPackage + ".Routines")`, then the table-form overload picked by return type
-  and by taking no `org.jooq.Field` parameters). Foreign key to `sql_table` on the function row.
-* **`sql_routine_parameter (source_name, routine_schema, routine_name, position, parameter_name,
-  jooq_name, sql_type, binding_type, param_mode, defaulted)`**, modelled on `sql_column` column for
-  column. `org.jooq.Parameter` extends `Named` and `Typed`, so `getName()`, `getDataType()`,
-  `getType()`, `getParamMode()` and `isDefaulted()` are one read each.
+  from a table. The walk is already holding the `Table<?>`; this is the cheapest true fact in the
+  item, and it is what makes "which of these rows is a routine" a query.
+* **`sql_routine_parameter (source_name, table_schema, table_name, position, parameter_name,
+  jooq_name, sql_type, binding_type, ...)`**, hanging off the function-typed `sql_table` row by
+  foreign key exactly as `sql_column` hangs off a table. A function's parameters are to it what its
+  columns are to a table, and keying them the same way means no new anchor and no new source
+  vocabulary.
 
-**Two readers, two vocabularies, and the join needs the Java one.** `org.jooq.Schema` has no
-routine enumeration: `getTables`, `getUDTs`, `getSequences`, `getDomains`, the keys and the
-indexes, and nothing for routines. That absence is why `JooqCatalog.findNonTableValuedRoutine`
-probes the `routines` sub-package by class name rather than walking a list, and it means the
-parameter facts have two possible sources:
+**Which reader gives which half.** The parameters live on the table object as `Field<?>` values, but
+`TableImpl.parameters` is `protected`, so the public `Table` interface does not expose them. The
+publicly reachable reader is the generated `Routines` convenience method, which is what
+`JooqCatalog.resolveTableValuedFunction` reads today (`Class.forName(schemaPackage + ".Routines")`,
+then the table-form overload picked by return type and by taking no `org.jooq.Field` parameters).
+That gives the **Java** parameter name and Java type, which is what this item's join and gate both
+need:
 
-* the generated `Routines` convenience method, read reflectively through `Method.getParameters()`,
-  which is what `JooqCatalog.RoutineParam` reads today and the only source of the **Java**
-  parameter name; and
-* the `org.jooq.Routine` instance in the `routines` sub-package, which carries the **SQL**
-  parameter name, its `DataType` and its mode, but is reached by a class-name probe.
+* `jooq_name` is the join key, because `graphitron_routine_arg_mapping_pair.param_name` holds what
+  the author wrote (`pInventoryId`) and `RoutineDirectiveResolver` matches it with
+  `p.name().equals(claimed)` against that same reflected method parameter.
+* `binding_type` is the gate's left-hand side, against `sql_column.binding_type` on the right.
 
-The join this item needs is against the Java name, because `graphitron_routine_arg_mapping_pair.
-param_name` holds what the author wrote (`pInventoryId`) and `RoutineDirectiveResolver` matches it
-with `p.name().equals(claimed)` against the reflected method parameter. So `jooq_name` is
-load-bearing, and it inherits a constraint that today is silent: a reflected parameter name is
+The **SQL** half (the database's own parameter name and type) is on those `Field<?>` values and is
+therefore reachable only by reading a protected member. Decide at pickup rather than in the DDL:
+capture it for parity with `sql_column` if the read is clean, or omit the two columns and say in
+the relation's comment that the parameter's SQL vocabulary is not publicly exposed by jOOQ. Do not
+write columns that will always be null.
+
+**One dependency the join key inherits, which is silent today.** A reflected parameter name is
 `arg0` unless the consumer compiled their jOOQ output with `-parameters`. The generator already
-depends on this in the matching above, and this repo's own test tree compiles with `-parameters`
-for the same reason. Capturing the name makes the dependency visible instead of creating it, and
-the column's comment is where it should be written down.
-
-So: read both, write both columns, and let the SQL-side reader be best-effort. A probe miss leaves
-`parameter_name` null, the way `graphitron_field_node_id.node_type_ref` is null when the author
-omitted the argument. Confirm at pickup whether jOOQ generates a `routines/` class for a
-table-valued function at all; today's probe only proves it for the non-table-valued kind, and if it
-does not, `parameter_name` is null for exactly the shape `@routine` uses and the SQL-side reader
-should be dropped rather than kept as a column that is always empty.
+depends on this in the name matching above, and this repo's own test tree compiles with
+`-parameters` for a related reason. Capturing the name makes the dependency visible instead of
+creating it, and the column's comment is where it belongs. If the flag is absent the row is still
+faithful (it records what the class actually says); what degrades is the join, which is the honest
+place for that to surface.
 
 **What this buys beyond this item.** The type gate becomes a join between two `binding_type`
 columns. `@routine`'s "no such parameter" rejection, which today reads
 `fn.params().stream().noneMatch(...)` in the resolver, becomes an anti-join against a captured
 population. The routine half of the LSP's hover and completion stops being reachable only through a
-live codegen classloader. And a `columnMapping` check that compares a column's Java type against a
-parameter's stops being two different readers of two different reflective walks. None of that is
-this item's job to deliver, but all of it is unreachable until these rows exist, which is the
-argument for capturing them properly rather than working around the gap.
+live codegen classloader. None of that is this item's job to deliver, but all of it is unreachable
+until these rows exist, which is the argument for capturing them properly rather than working
+around the gap.
 
 ### The bare form becomes a rejection
 
@@ -398,11 +399,11 @@ level up, not an implementation detail.
 
 The store grows on both strata, and the two grow for different reasons.
 
-**Base relations, from the catalog walk:** `sql_routine`, `sql_routine_parameter` and the
-`sql_table.table_type` column, per "The `sql_` family gains routines and their parameters". These
-carry the usual obligations: dense ordinals on the parameter list, total comment coverage, a
-`FOREIGN KEY` to `sql_table`, transcription-twin agreement for the decode, and registration in
-`FactCaptureAgreementTest` so a new relation cannot arrive unchecked.
+**Base relations, from the catalog walk:** `sql_routine_parameter` and the `sql_table.table_type`
+column, per "The `sql_` family gains routine parameters". These carry the usual obligations: dense
+positions on the parameter list, total comment coverage, a `FOREIGN KEY` to `sql_table`,
+transcription-twin agreement for the decode, and registration in `FactCaptureAgreementTest` so a
+new relation cannot arrive unchecked.
 
 **Derived relations:** the three resolution views plus the detection views, all `intent_`, all
 registered under the derived arm.
@@ -422,14 +423,14 @@ unrecoverable afterwards").
 
 ## Implementation
 
-* **`graphitron-model.sql`, base relations**: `sql_routine` and `sql_routine_parameter` in
-  `sql_column`'s mould (two types per parameter, `jooq_name` beside the SQL name, dense positions,
-  FK to `sql_table`), plus the `sql_table.table_type` column.
-* **`CatalogFactCapture`**: write `table_type` in the existing `sql_table` loop; add
-  `captureRoutines` beside `captureColumns` / `captureConstraints` / `captureIndexes`, reading the
-  generated `Routines` class for the Java-side call surface and parameter names, and the
-  `routines/` class probe for the SQL-side parameter facts where it resolves. `JooqCatalog` already
-  owns both lookups; capture should read through it rather than re-deriving them.
+* **`graphitron-model.sql`, base relations**: the `sql_table.table_type` column, and
+  `sql_routine_parameter` in `sql_column`'s mould (dense positions, FK to `sql_table`,
+  `binding_type` and `jooq_name` carrying the Java vocabulary the join and the gate read).
+* **`CatalogFactCapture`**: write `table_type` in the existing `sql_table` loop, and add
+  `captureRoutineParameters` beside `captureColumns` / `captureConstraints` / `captureIndexes`,
+  guarded on the function arm. It reads the generated `Routines` convenience method, which
+  `JooqCatalog` already resolves; capture should go through that owner rather than re-deriving the
+  lookup.
 * **Views**, in `graphitron-model.sql`, house style per `intent_bound_table` (declared column list,
   full comment coverage, closed vocabularies as `CHECK` or as stated column comments):
   `intent_node_key_column_resolved`, `intent_argmapping_binding_leaf`,
@@ -459,9 +460,9 @@ unrecoverable afterwards").
 * **Capture tests for the new base relations**, in the shape the `sql_` family already uses: the
   transcription twin proving the rows agree with what the catalog walk read, dense positions on the
   parameter list, and `FactSchemaGateTest` for comment coverage. The sakila catalog carries
-  `rent_film` and `create_secure_note`, so both a table-valued function with parameters and a
-  non-table-valued routine are available as fixtures; pin what each one produces, including the
-  null `parameter_name` case if the SQL-side probe misses.
+  `rent_film` and `create_secure_note` as table-valued functions with parameters, so the fixtures
+  exist; pin the parameter rows each produces, and pin that an ordinary table produces none.
+  `table_type` wants a case per arm it can carry, at minimum `TABLE` and `FUNCTION`.
 * **A test that pins the `-parameters` dependency**, since `jooq_name` is the join key and is
   `arg0` without it. This repo already compiles one test package deliberately without
   `-parameters` to cover the `@field(name:)` case, so the precedent for testing both sides exists.
@@ -500,10 +501,11 @@ unrecoverable afterwards").
   precisely for derivations a view cannot express, so the fallback is house style rather than a
   concession, but which of the three applies changes the item's size and should be answered before
   Ready.
-* **Whether jOOQ generates a `routines/` class for a table-valued function.** If it does not, the
-  SQL-side parameter facts are unreachable for exactly the shape `@routine` uses, and
-  `sql_routine_parameter` carries the Java side only. That changes the relation's shape, so it is
-  worth an hour against the sakila fixtures before the DDL is written.
+* **Whether the parameters' SQL-side vocabulary is worth reaching.** They are `Field<?>` values on
+  `TableImpl.parameters`, which is `protected`, so capturing the database's own parameter names and
+  types means reading a non-public member. The Java side, which is what this item's join and gate
+  need, comes off the generated `Routines` method with no such problem. Settle before the DDL is
+  written, and omit the columns rather than ship ones that are always null.
 * **The `-parameters` dependency** the join key inherits: real, pre-existing, and now explicit.
 * **The command-row seam** above: what carries the resolved projection to the renderer.
 
