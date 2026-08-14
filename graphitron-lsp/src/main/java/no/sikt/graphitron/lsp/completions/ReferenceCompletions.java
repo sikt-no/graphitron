@@ -1,13 +1,14 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
+import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -30,10 +31,18 @@ import java.util.Set;
  * field inside {@code @reference(path: [{key:}])}.
  *
  * <p>Candidates are the foreign keys touching the enclosing GraphQL type's table, in either
- * direction: the keys the table declares and the keys other tables declare against it. Which table
- * that is stays a classification question, answered by the snapshot; the key census is the store
- * read. Path-step refinement (narrowing later steps by where the previous step landed) is not
- * implemented; every step suggests the same set.
+ * direction: the keys the table declares and the keys other tables declare against it. Both halves
+ * are store reads now, the binding through {@link BoundTables} and the census through
+ * {@link CatalogKeys}, which is the arm's whole answer coming out of one transaction. Path-step
+ * refinement (narrowing later steps by where the previous step landed) is not implemented; every
+ * step suggests the same set.
+ *
+ * <p>A binding the census answers twice is offered twice. The incumbent asked the classifier, whose
+ * verdict on an unqualified name two schemas both declare is {@code Ambiguous} and therefore no
+ * table at all, so the popup went silent on precisely the schema where an author most needs to be
+ * told what the names are. Each candidate contributes its own keys instead, which is the discipline
+ * the table and column arms already answer under, and the colliding constraint names come out
+ * qualified by the schema that separates them.
  *
  * <p>The label is the SQL constraint name. {@code key:} resolves two namespaces, the SQL name first
  * and the generated {@code Keys} constant second, and the SQL name is the one the manual teaches,
@@ -51,7 +60,6 @@ public final class ReferenceCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         StoreHandle store,
-        LspSchemaSnapshot snapshot,
         CompletionContext context,
         Directives.Directive directive,
         byte[] source
@@ -62,29 +70,30 @@ public final class ReferenceCompletions {
         }
         var typeDecl = DeclarationKind.enclosing(directive.outer());
         if (typeDecl.isEmpty()) return List.of();
-        var tableName = TypeContext.tableNameOf(typeDecl.get(), source, snapshot);
-        if (tableName.isEmpty()) return List.of();
-        return keyItems(store, tableName.get(), context);
+        var typeName = TypeContext.declaredNameOf(typeDecl.get(), source);
+        if (typeName.isEmpty()) return List.of();
+        return keyItems(store, BoundTables.of(store, typeName.get()), context);
     }
 
     /** One foreign key as the arm renders it: what an author can spell, and what it joins. */
     private record Candidate(String schema, String name, String detail, String jooqName) {}
 
     /**
-     * The foreign keys touching {@code tableName}, read through {@link CatalogKeys} and rendered
-     * from this table's point of view: the direction arrow and the other endpoint are relative to
-     * the table the cursor sits under, which is the arm's own business rather than the census's.
+     * The foreign keys touching each bound table, read through {@link CatalogKeys} and rendered from
+     * that table's point of view: the direction arrow and the other endpoint are relative to the
+     * table the cursor sits under, which is the arm's own business rather than the census's.
      */
     private static List<CompletionItem> keyItems(
-        StoreHandle store, String tableName, CompletionContext context
+        StoreHandle store, List<CatalogTable> tables, CompletionContext context
     ) {
-        var keys = CatalogKeys.touching(store, tableName);
-        var candidates = new ArrayList<Candidate>(keys.size());
-        for (var key : keys) {
-            boolean outbound = key.outboundFrom(tableName);
-            String other = outbound ? key.referencedTable() : key.table();
-            candidates.add(new Candidate(key.schema(), key.name(),
-                (outbound ? "→ " : "← ") + other, key.constant()));
+        var candidates = new ArrayList<Candidate>();
+        for (CatalogTable table : tables) {
+            for (var key : CatalogKeys.touching(store, table)) {
+                boolean outbound = key.outboundFrom(table);
+                String other = outbound ? key.referencedTable() : key.table();
+                candidates.add(new Candidate(key.schema(), key.name(),
+                    (outbound ? "→ " : "← ") + other, key.constant()));
+            }
         }
         return items(candidates, context);
     }

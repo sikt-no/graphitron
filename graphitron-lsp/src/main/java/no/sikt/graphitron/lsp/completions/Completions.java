@@ -90,7 +90,7 @@ public final class Completions {
                     r.vocabulary(), s, r.snapshot(), r.context(), r.directive(), r.source())));
             case Behavior.CatalogFkBinding ignored -> List.of(
                 r -> r.fromStore(s -> ReferenceCompletions.generate(
-                    r.vocabulary(), s, r.snapshot(), r.context(), r.directive(), r.source())));
+                    r.vocabulary(), s, r.context(), r.directive(), r.source())));
             case Behavior.ArgMappingBinding ignored -> List.of(
                 r -> r.fromStore(s -> ArgMappingCompletions.generate(
                     r.vocabulary(), s, r.context(), r.directive(), r.pos(), r.lspPos(), r.source())));

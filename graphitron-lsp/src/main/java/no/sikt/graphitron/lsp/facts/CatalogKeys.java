@@ -23,13 +23,23 @@ public final class CatalogKeys {
     private CatalogKeys() {}
 
     /**
-     * The keys touching {@code tableName} in either direction: the ones it declares and the ones
-     * other tables declare against it. One query rather than two, because a self-referencing key is
-     * a single row satisfying both halves of the predicate and a union would yield it twice.
+     * The keys touching {@code table} in either direction: the ones it declares and the ones other
+     * tables declare against it. One query rather than two, because a self-referencing key is a
+     * single row satisfying both halves of the predicate and a union would yield it twice.
+     *
+     * <p>Both halves match the table's whole key, not its name. The caller has a table something
+     * resolved rather than a spelling someone typed, so a key of a same-named table in another
+     * schema is a different table's key and not a looser match on this one; the referenced side
+     * carries its own three columns for exactly this, a cross-schema key being the case that
+     * separates them.
      */
-    public static List<Key> touching(StoreHandle store, String tableName) {
-        return read(store, SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME.equalIgnoreCase(tableName)
-            .or(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE.equalIgnoreCase(tableName)));
+    public static List<Key> touching(StoreHandle store, CatalogTable table) {
+        return read(store, SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME.eq(table.sourceName())
+            .and(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA.eq(table.schema()))
+            .and(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME.eq(table.tableName()))
+            .or(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME.eq(table.sourceName())
+                .and(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA.eq(table.schema()))
+                .and(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE.eq(table.tableName()))));
     }
 
     /**
@@ -95,9 +105,14 @@ public final class CatalogKeys {
         String schema, String table, String name, String referencedTable, String constant
     ) {
 
-        /** Whether this key points away from {@code tableName} rather than at it. */
-        public boolean outboundFrom(String tableName) {
-            return table.equalsIgnoreCase(tableName);
+        /**
+         * Whether this key points away from {@code from} rather than at it. Within a set
+         * {@link #touching} scoped to one table, the declaring end deciding it is enough: a key
+         * that is not declared by that table is one declared against it, and a self-referencing key
+         * is honestly both, which is what the outbound reading says.
+         */
+        public boolean outboundFrom(CatalogTable from) {
+            return schema.equalsIgnoreCase(from.schema()) && table.equalsIgnoreCase(from.tableName());
         }
     }
 }

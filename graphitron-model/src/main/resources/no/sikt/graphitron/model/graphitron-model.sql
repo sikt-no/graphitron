@@ -2591,7 +2591,11 @@ COMMENT ON COLUMN walk_claim_domain_field.field_name IS 'the registered coordina
 -- sets those detectors saw. intent_resolved_field_claim is the stratum's second layer: the
 -- reduction over the claim views, authored winning coordinate-wise. Views, not tables: the
 -- rows derive on read from the transcription strata above, so capture writes nothing here and
--- a claim can never drift stale against the applications it is derived from.
+-- a claim can never drift stale against the applications it is derived from. Underneath the
+-- classifier views sit the resolutions they stand on, residents in their own right rather than
+-- CTEs inside their first reader: intent_bound_table answers which catalog table a type's @table
+-- binds to, which the column-match classifier asks on its way to a claim and an editor asks with
+-- no claim in view.
 --
 -- Each claiming relation contributes a decoded arm, and each claiming directive additionally
 -- contributes an undecoded presence arm: the site-family application rows anti-joined against
@@ -2790,25 +2794,35 @@ COMMENT ON COLUMN intent_authored_type_claim.source_name IS 'the claiming applic
 COMMENT ON COLUMN intent_authored_type_claim.source_line IS 'source line of the claiming application, 1-based';
 COMMENT ON COLUMN intent_authored_type_claim.source_column IS 'source column of the claiming application, 1-based';
 
+CREATE VIEW intent_bound_table
+  (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
+SELECT graph_name, type_name, table_source_name, table_schema, table_name, candidates
+  FROM (SELECT t.graph_name, t.type_name, st.source_name AS table_source_name,
+               st.table_schema, st.table_name,
+               CAST(COUNT(*) OVER (PARTITION BY t.graph_name, t.type_name) AS INT) AS candidates
+          FROM graphitron_table t
+          JOIN store_graph_source m ON m.graph_name = t.graph_name
+          JOIN sql_table st ON st.source_name = m.source_name
+           AND CASE WHEN POSITION('.' IN COALESCE(t.table_ref, t.type_name)) > 0
+                THEN UPPER(st.table_schema) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
+                       FROM 1 FOR POSITION('.' IN COALESCE(t.table_ref, t.type_name)) - 1))
+                 AND UPPER(st.table_name) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
+                       FROM POSITION('.' IN COALESCE(t.table_ref, t.type_name)) + 1))
+                ELSE UPPER(st.table_name) = UPPER(COALESCE(t.table_ref, t.type_name))
+                END
+         WHERE t.type_name NOT IN ('Query', 'Mutation', 'Subscription')) resolved;
+COMMENT ON VIEW intent_bound_table IS 'Which catalog table an @table-bearing type is bound to: the resolution of graphitron_table''s reference against the census, one row per candidate table. The reference is the name argument as written, or the type name where the argument was omitted, which is the derivation graphitron_table.table_ref''s own comment defers; a qualified reference splits on its first dot and binds both halves, an unqualified one matches its table name case-insensitively, and the catalog side scopes through store_graph_source so a sibling graph''s tables never resolve here. The three root names are masked, transcribing the walk''s root short-circuit that classifies a root before any table binding is read, which is the same mask the authored type claims carry. A base derivation rather than a resolved_ reduction: it stands directly on a transcription pair and nothing reduces over sibling views to produce it. Ambiguity is rows, never a decline: two candidates are two rows and the count says so, so a reader can transcribe the walk''s Ambiguous verdict (require candidates = 1, as the column-match classifier does), offer every candidate (as an editor does, since each is a table the author might mean), or report the ambiguity, without any of them re-spelling the resolution. The reference as written and the application''s position are one join back to graphitron_table, which holds both.';
+COMMENT ON COLUMN intent_bound_table.graph_name IS 'the owning graph''s partition, carried from graphitron_table';
+COMMENT ON COLUMN intent_bound_table.type_name IS 'the @table-bearing type whose binding this row resolves';
+COMMENT ON COLUMN intent_bound_table.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_bound_table.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one name apart';
+COMMENT ON COLUMN intent_bound_table.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts (its jOOQ name, its generated class, its comment) are one join away, per the referenced-side discipline sql_referential_constraint states';
+COMMENT ON COLUMN intent_bound_table.candidates IS 'how many tables the reference resolves to, this row being one of them; 1 on an unambiguous binding. Stated as a column rather than left to each reader''s own count, because whether a binding is ambiguous decides the reading (a claim declines, an editor offers every candidate) and a reader that counted for itself would be re-deriving the resolution''s own arity';
+
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
    source_name, source_line, source_column) AS
-WITH bound_table AS (
-  SELECT t.graph_name, t.type_name,
-         st.source_name, st.table_schema, st.table_name,
-         COUNT(*) OVER (PARTITION BY t.graph_name, t.type_name) AS candidates
-    FROM graphitron_table t
-    JOIN store_graph_source m ON m.graph_name = t.graph_name
-    JOIN sql_table st ON st.source_name = m.source_name
-     AND CASE WHEN POSITION('.' IN COALESCE(t.table_ref, t.type_name)) > 0
-          THEN UPPER(st.table_schema) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
-                 FROM 1 FOR POSITION('.' IN COALESCE(t.table_ref, t.type_name)) - 1))
-           AND UPPER(st.table_name) = UPPER(SUBSTRING(COALESCE(t.table_ref, t.type_name)
-                 FROM POSITION('.' IN COALESCE(t.table_ref, t.type_name)) + 1))
-          ELSE UPPER(st.table_name) = UPPER(COALESCE(t.table_ref, t.type_name))
-          END
-)
 SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_by,
        table_source_name, table_schema, table_name, column_name,
        source_name, source_line, source_column
@@ -2816,7 +2830,7 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
                COALESCE(fb.name_ref, f.field_name) AS matched_name,
                CASE WHEN UPPER(c.jooq_name) = UPPER(COALESCE(fb.name_ref, f.field_name))
                     THEN 'JOOQ_NAME' ELSE 'SQL_NAME' END AS matched_by,
-               bt.source_name AS table_source_name, bt.table_schema, bt.table_name,
+               bt.table_source_name, bt.table_schema, bt.table_name,
                c.column_name,
                f.source_name, f.source_line, f.source_column,
                ROW_NUMBER() OVER (
@@ -2828,20 +2842,19 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
           JOIN graphql_type leaf
             ON leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
            AND leaf.kind IN ('SCALAR', 'ENUM')
-          JOIN bound_table bt
+          JOIN intent_bound_table bt
             ON bt.graph_name = f.graph_name AND bt.type_name = f.type_name
            AND bt.candidates = 1
           LEFT JOIN graphitron_field_binding fb
             ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name
            AND fb.field_name = f.field_name
           JOIN sql_column c
-            ON c.source_name = bt.source_name AND c.table_schema = bt.table_schema
+            ON c.source_name = bt.table_source_name AND c.table_schema = bt.table_schema
            AND c.table_name = bt.table_name
            AND (UPPER(c.jooq_name) = UPPER(COALESCE(fb.name_ref, f.field_name))
-                OR UPPER(c.column_name) = UPPER(COALESCE(fb.name_ref, f.field_name)))
-         WHERE f.type_name NOT IN ('Query', 'Mutation', 'Subscription')) matched
+                OR UPPER(c.column_name) = UPPER(COALESCE(fb.name_ref, f.field_name)))) matched
  WHERE rn = 1;
-COMMENT ON VIEW intent_column_match_claim IS 'The column-match structural classifier: a field whose name resolves against its parent''s bound table claims TABLE_COLUMN, no directive involved. One view per structural classifier, so the row''s columns are exactly this classifier''s join witnesses. The reading transcribes the classification walk''s fall-through arm: the field''s named type has kind SCALAR or ENUM, the parent''s @table reference (or the type name where the argument was omitted) resolves against the catalog (a qualified reference splits on its first dot, an unqualified one matches its table name case-insensitively across the graph''s member sources, and a non-unique candidate set yields no claim, transcribing the walk''s Ambiguous verdict; distinguishing that decline from a name not in the catalog at all is a future resolution-stratum detection over graphitron_table, not something this view''s absence encodes), and the effective name matches a column, generated-Java-name tier before SQL-name tier, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The effective name is the @field binding where one decoded, else the field name; the arm needs no undecoded presence fallback because a declined @field decode leaves the COALESCE on the field name, which is the walk''s own fallback. The catalog side scopes through store_graph_source, so a sibling graph''s tables never resolve here. Deliberately mask-light: only the three root names are excluded (roots classify before any table binding is read). No parent-kind gate and no directive knowledge: masking against authored claims is the reduction''s job, and the raw structural reading surviving here is what lets a diagnostic say "would classify as a table column; @service overrides it".';
+COMMENT ON VIEW intent_column_match_claim IS 'The column-match structural classifier: a field whose name resolves against its parent''s bound table claims TABLE_COLUMN, no directive involved. One view per structural classifier, so the row''s columns are exactly this classifier''s join witnesses. The reading transcribes the classification walk''s fall-through arm: the field''s named type has kind SCALAR or ENUM, the parent''s table binding resolves to exactly one candidate (the resolution is intent_bound_table''s, joined here at candidates = 1, which is how this arm transcribes the walk''s Ambiguous verdict; distinguishing that decline from a name not in the catalog at all is a future resolution-stratum detection over graphitron_table, not something this view''s absence encodes), and the effective name matches a column, generated-Java-name tier before SQL-name tier, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The effective name is the @field binding where one decoded, else the field name; the arm needs no undecoded presence fallback because a declined @field decode leaves the COALESCE on the field name, which is the walk''s own fallback. Deliberately mask-light: the only exclusion is the three root names, and it arrives through the binding view rather than being restated here, roots classifying before any table binding is read. No parent-kind gate and no directive knowledge: masking against authored claims is the reduction''s job, and the raw structural reading surviving here is what lets a diagnostic say "would classify as a table column; @service overrides it".';
 COMMENT ON COLUMN intent_column_match_claim.graph_name IS 'the owning graph''s partition, carried from graphql_field';
 COMMENT ON COLUMN intent_column_match_claim.type_name IS 'the claimed field''s owning type';
 COMMENT ON COLUMN intent_column_match_claim.field_name IS 'the claimed field''s name within the owning type';
@@ -3588,7 +3601,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
   ('java_', 'The consumer''s Java sources', 5, 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
   ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
   ('walk_', 'The legacy walk''s reach', 7, 'What the legacy classification walk registered, transcribed as membership rows in the walk''s own vocabulary (its registries'' reach). Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent.'),
-  ('intent_', 'Derived intent', 8, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
+  ('intent_', 'Derived intent', 8, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
   ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 10, 'The linter''s vocabulary (lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
   ('build_warning_', 'The advisory arm', 11, 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the jvm_scalar_type_field precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not walk_, because a family may not be named for its producer and both of the arm''s producers outlive the walk.'),

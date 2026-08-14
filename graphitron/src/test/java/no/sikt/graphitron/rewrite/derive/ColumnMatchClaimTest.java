@@ -36,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -50,7 +51,10 @@ import static org.jooq.impl.DSL.selectOne;
 /**
  * The shadow reader of the column-match classifier view: {@code intent_column_match_claim} is the
  * first structural classifier reified as a derivation, and this test is its registered agreement
- * anchor (with {@code intent_resolved_field_claim}, the reduction it feeds). The acceptance is
+ * anchor (with {@code intent_resolved_field_claim}, the reduction it feeds, and
+ * {@code intent_bound_table}, the table resolution it stands on: the claim's table witness comes
+ * through that view, so the sweep pins it wherever a coordinate classified, and the pins at the tail
+ * cover what a column claim cannot reach). The acceptance is
  * agreement with the legacy arm, the fall-through of
  * {@code FieldBuilder.classifyChildFieldOnTableType}, whose product is the only
  * {@code ColumnBackedField} carrying {@code CallSiteCompaction.Direct}, over the spec-by-example
@@ -397,6 +401,89 @@ class ColumnMatchClaimTest {
             }
             vocabulary.add("TABLE_COLUMN");
             assertThat(classifiers).isSubsetOf(vocabulary);
+        });
+    }
+
+    // ===== Targeted pins: the table resolution the classifier stands on =====
+
+    /**
+     * The resolution's own row: which catalog table the type's {@code @table} binds to, named by the
+     * whole {@code sql_table} key, with the arity that says the binding is unambiguous. A binding
+     * under which no field matches a column is still a binding, which is the case a column claim
+     * cannot speak for and the reason this view is not the classifier's private CTE.
+     */
+    @Test
+    void theBindingNamesTheResolvedCatalogTable() {
+        var sdl = """
+            type Film @table(name: "film") { unmatched: String }
+            type Query { films: [Film] }
+            """;
+        withCapturedStore(sdl, dsl -> {
+            var rows = dsl.selectFrom(INTENT_BOUND_TABLE)
+                .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(GRAPH)).fetch();
+            assertThat(rows).hasSize(1);
+            var row = rows.getFirst();
+            assertThat(row.getTypeName()).isEqualTo("Film");
+            assertThat(row.getTableName()).isEqualToIgnoringCase("film");
+            assertThat(row.getCandidates()).isEqualTo(1);
+            assertThat(dsl.fetchExists(SQL_TABLE,
+                SQL_TABLE.SOURCE_NAME.eq(row.getTableSourceName())
+                    .and(SQL_TABLE.TABLE_SCHEMA.eq(row.getTableSchema()))
+                    .and(SQL_TABLE.TABLE_NAME.eq(row.getTableName()))))
+                .as("the three witness columns are a sql_table key")
+                .isTrue();
+            assertThat(dsl.fetchCount(INTENT_COLUMN_MATCH_CLAIM,
+                INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq(GRAPH)))
+                .as("no field of the bound table matched, so no claim, and still one binding")
+                .isZero();
+        });
+    }
+
+    /** The omitted argument's fallback, which {@code graphitron_table} defers: the type's own name. */
+    @Test
+    void anOmittedNameResolvesFromTheTypeName() {
+        var sdl = """
+            type Film @table { title: String }
+            type Query { films: [Film] }
+            """;
+        withCapturedStore(sdl, dsl -> {
+            var names = dsl.select(INTENT_BOUND_TABLE.TABLE_NAME).from(INTENT_BOUND_TABLE)
+                .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(GRAPH)).fetch(0, String.class);
+            assertThat(names).hasSize(1);
+            assertThat(names.getFirst()).isEqualToIgnoringCase("film");
+        });
+    }
+
+    /**
+     * The population the column-match arm declines on, kept as data rather than dropped: two
+     * candidates are two rows, each saying there were two, which is what lets one reader refuse the
+     * binding and another offer both without either re-deriving the resolution.
+     */
+    @Test
+    void anAmbiguousReferenceYieldsEveryCandidateWithItsArity() {
+        withSeededStore(dsl -> {
+            seedTable(dsl, "g", "Dup", "dup", "pkg.a", "public", "dup");
+            seedSource(dsl, "pkg.b");
+            dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg.b").execute();
+            seedSchema(dsl, "pkg.b", "legacy");
+            dsl.insertInto(SQL_TABLE)
+                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup", null)
+                .execute();
+            var rows = dsl.selectFrom(INTENT_BOUND_TABLE)
+                .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq("g"))
+                .orderBy(INTENT_BOUND_TABLE.TABLE_SCHEMA).fetch();
+            assertThat(rows.map(r -> r.getTableSchema())).containsExactly("legacy", "public");
+            assertThat(rows.map(r -> r.getCandidates())).containsExactly(2, 2);
+        });
+    }
+
+    /** A root's binding is masked, the walk classifying a root before it reads one. */
+    @Test
+    void aRootTypesBindingIsMasked() {
+        withSeededStore(dsl -> {
+            seedTable(dsl, "g", "Query", "film", "pkg.a", "public", "film");
+            assertThat(dsl.fetchCount(INTENT_BOUND_TABLE, INTENT_BOUND_TABLE.GRAPH_NAME.eq("g")))
+                .isZero();
         });
     }
 

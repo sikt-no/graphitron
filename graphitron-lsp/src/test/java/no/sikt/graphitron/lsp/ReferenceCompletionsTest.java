@@ -8,8 +8,6 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,15 +15,20 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Coverage for {@code @reference(path: [{key: "..."}, {table: "..."}])}. The candidates are the
- * {@code sql_referential_constraint} rows touching the enclosing type's table, in either direction;
- * which table that is stays the snapshot's answer, so the fixtures pair a real captured catalog with
- * a hand-built type classification.
+ * {@code sql_referential_constraint} rows touching the enclosing type's table, in either direction,
+ * and both halves of that are store reads: the enclosing type's binding resolves through
+ * {@code intent_bound_table} and the keys through the catalog census.
+ *
+ * <p>Both halves are captured, so the binding is one a build would produce. The incumbent's fixtures
+ * paired a real census with a hand-built type classification, which is how they came to assert an
+ * answer for a binding the classifier could not have reached: an unqualified name two schemas both
+ * declare is its {@code Ambiguous} verdict and therefore no table at all, so the arm those fixtures
+ * described as offering both schemas' keys would have offered none.
  *
  * <p>The census comes from the fixture modules' real generated jOOQ models, so a constraint name here
  * is one an author could actually have typed, and the multi-schema model supplies the two shapes a
@@ -35,14 +38,10 @@ class ReferenceCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
-    private static final String SDL = "type Query { placeholder: Int }\n";
-
     @Test
     void keyCompletionReturnsForeignKeysTouchingTheEnclosingTable(@TempDir Path tmp) {
-        String source = keySite("film");
-
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            var items = items(fixture, source, "film");
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            var items = items(fixture, keySite());
 
             assertThat(labels(items))
                 // The keys film declares...
@@ -64,10 +63,8 @@ class ReferenceCompletionsTest {
      */
     @Test
     void theGeneratedConstantIsDocumented(@TempDir Path tmp) {
-        String source = keySite("film");
-
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            assertThat(documentationOf(items(fixture, source, "film"), "film_language_id_fkey"))
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            assertThat(documentationOf(items(fixture, keySite()), "film_language_id_fkey"))
                 .isEqualTo(
                     "Also resolves under the generated constant FILM__FILM_LANGUAGE_ID_FKEY.");
         }
@@ -80,10 +77,8 @@ class ReferenceCompletionsTest {
      */
     @Test
     void aSelfReferencingKeyIsOfferedOnce(@TempDir Path tmp) {
-        String source = keySite("category");
-
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            var items = items(fixture, source, "category");
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("category"))) {
+            var items = items(fixture, keySite());
 
             assertThat(labels(items))
                 .filteredOn("category_parent_category_id_fkey"::equals).hasSize(1);
@@ -92,16 +87,16 @@ class ReferenceCompletionsTest {
     }
 
     /**
-     * A constraint name two schemas both declare is offered once per schema, qualified. The qualifier
-     * is grammar {@code key:} accepts and treats as stated intent, so each label resolves to exactly
-     * the key it came from; a name only one schema declares stays bare, as the manual writes it.
+     * An unqualified reference two schemas both answer binds to both tables, and each contributes its
+     * own keys. A constraint name they both declare is then offered once per schema, qualified: the
+     * qualifier is grammar {@code key:} accepts and treats as stated intent, so each label resolves to
+     * exactly the key it came from, while a name only one schema declares stays bare as the manual
+     * writes it.
      */
     @Test
-    void aNameTwoSchemasDeclareIsOfferedQualified(@TempDir Path tmp) {
-        String source = keySite("event");
-
-        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp, SDL)) {
-            assertThat(labels(items(fixture, source, "event")))
+    void anAmbiguousBindingOffersEachCandidatesKeys(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp, bound("event"))) {
+            assertThat(labels(items(fixture, keySite())))
                 .contains("multischema_a.note_event_fk", "multischema_b.note_event_fk")
                 .doesNotContain("note_event_fk")
                 .contains("event_log_event_id_fkey");
@@ -116,13 +111,30 @@ class ReferenceCompletionsTest {
      */
     @Test
     void oneSpellingCoveringTwoKeysNamesBothJoins(@TempDir Path tmp) {
-        String source = keySite("gizmo");
-
-        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp, SDL)) {
-            var items = items(fixture, source, "gizmo");
+        try (var fixture = StoreFixture.ofMultiSchemaCatalog(tmp, bound("gizmo"))) {
+            var items = items(fixture, keySite());
 
             assertThat(labels(items)).containsExactly("dup_gizmo_fk");
             assertThat(detailOf(items, "dup_gizmo_fk")).isEqualTo("← dup_one, ← dup_two");
+        }
+    }
+
+    /**
+     * The binding is keyed on the declared type name, so an {@code extend type} site resolves through
+     * the base declaration's {@code @table} in another file. That is what the incumbent's name-keyed
+     * projection existed for, and it survives the move to a name-keyed relation.
+     */
+    @Test
+    void anExtensionSiteResolvesThroughTheTypesBinding(@TempDir Path tmp) {
+        String buffer = """
+            extend type Foo {
+                extra: Int @reference(path: [{key: ""}])
+            }
+            """;
+
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            assertThat(labels(items(fixture, buffer)))
+                .contains("film_language_id_fkey", "film_actor_film_id_fkey");
         }
     }
 
@@ -131,43 +143,66 @@ class ReferenceCompletionsTest {
         // ReferenceCompletions narrows to the FK (CatalogFkBinding) arm. Table completion at
         // @reference(path: [{table:}]) is the ReferenceElement.table coordinate's
         // CatalogTableBinding, served by TableCompletions. ReferenceCompletions returns empty here.
-        String source = """
+        String buffer = """
             type Foo @table(name: "film") {
                 bar: Int @reference(path: [{table: ""}])
             }
             """;
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            assertThat(items(fixture, source, "film")).isEmpty();
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            assertThat(items(fixture, buffer)).isEmpty();
         }
     }
 
     @Test
     void cursorOutsideNestedValueReturnsEmpty(@TempDir Path tmp) {
         // Cursor on the nested field's key name, not on its value.
-        String source = """
+        String buffer = """
             type Foo @table(name: "film") {
                 bar: Int @reference(path: [{key: "film_language_id_fkey"}])
             }
             """;
-        var cursor = new Point(1, source.split("\n")[1].indexOf("key:") + 1);
+        var cursor = new Point(1, buffer.split("\n")[1].indexOf("key:") + 1);
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            assertThat(items(fixture.handle(), source, cursor, snapshotBinding("film"))).isEmpty();
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            assertThat(items(fixture.handle(), buffer, cursor)).isEmpty();
         }
     }
 
     /**
-     * The snapshot is the source of truth for the type-to-table binding. A type the classifier maps
-     * to a table no capture recorded has no keys to offer, which the census answers by holding no
-     * rows for it rather than by any lookup the arm has to make first.
+     * A reference the census cannot answer is a binding with no candidates, which the view reports by
+     * holding no rows for the type rather than by any lookup the arm has to make first.
      */
     @Test
-    void unknownTableReturnsEmptyForKey(@TempDir Path tmp) {
-        String source = keySite("missing");
+    void aReferenceNoTableAnswersOffersNothing(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("missing"))) {
+            assertThat(items(fixture, keySite())).isEmpty();
+        }
+    }
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            assertThat(items(fixture, source, "missing")).isEmpty();
+    /** A type carrying no {@code @table} at all has no binding to read keys around. */
+    @Test
+    void aTypeWithNoTableDirectiveOffersNothing(@TempDir Path tmp) {
+        String sdl = """
+            type Foo { bar: Int }
+            type Query { foo: Foo }
+            """;
+
+        try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
+            assertThat(items(fixture, keySite())).isEmpty();
+        }
+    }
+
+    /**
+     * The binding is one graph's, and the rows are there to be missed: the same store holds
+     * {@code Foo}'s binding under the captured graph, and a handle scoped to another graph reads none
+     * of it.
+     */
+    @Test
+    void aSiblingGraphReadsNoneOfTheBinding(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            assertThat(items(fixture.handle(), keySite(), keyCursor(keySite()))).isNotEmpty();
+            assertThat(items(fixture.handleFor("other"), keySite(), keyCursor(keySite()))).isEmpty();
         }
     }
 
@@ -175,30 +210,40 @@ class ReferenceCompletionsTest {
     void unknownNestedFieldReturnsEmpty(@TempDir Path tmp) {
         // 'condition' is a real field on ReferenceElement but autocomplete for it is not plugged in;
         // the dispatcher returns empty.
-        String source = """
+        String buffer = """
             type Foo @table(name: "film") {
                 bar: Int @reference(path: [{condition: ""}])
             }
             """;
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
-            assertThat(items(fixture, source, "film")).isEmpty();
+        try (var fixture = StoreFixture.ofCatalog(tmp, bound("film"))) {
+            assertThat(items(fixture, buffer)).isEmpty();
         }
     }
 
-    /** A key site whose enclosing type is bound to {@code tableName}, cursor inside the empty value. */
-    private static String keySite(String tableName) {
+    /** The captured schema: {@code Foo} bound to {@code tableName}, which is the arm's whole input. */
+    private static String bound(String tableName) {
         return """
-            type Foo @table(name: "%s") {
-                bar: Int @reference(path: [{key: ""}])
-            }
+            type Foo @table(name: "%s") { bar: Int }
+            type Query { foo: Foo }
             """.formatted(tableName);
     }
 
-    private static List<CompletionItem> items(StoreFixture fixture, String source, String tableName) {
-        var lines = source.split("\n");
-        var cursor = new Point(1, lines[1].indexOf("\"\"") + 1);
-        return items(fixture.handle(), source, cursor, snapshotBinding(tableName));
+    /** A key site inside {@code Foo}, cursor going in the empty value. */
+    private static String keySite() {
+        return """
+            type Foo {
+                bar: Int @reference(path: [{key: ""}])
+            }
+            """;
+    }
+
+    private static Point keyCursor(String buffer) {
+        return new Point(1, buffer.split("\n")[1].indexOf("\"\"") + 1);
+    }
+
+    private static List<CompletionItem> items(StoreFixture fixture, String buffer) {
+        return items(fixture.handle(), buffer, keyCursor(buffer));
     }
 
     private static List<String> labels(List<CompletionItem> items) {
@@ -219,24 +264,16 @@ class ReferenceCompletionsTest {
             .orElseThrow(() -> new AssertionError("no candidate labelled " + label));
     }
 
-    private static List<CompletionItem> items(
-        StoreHandle handle, String source, Point cursor, LspSchemaSnapshot snapshot
-    ) {
+    private static List<CompletionItem> items(StoreHandle handle, String buffer, Point cursor) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
-        var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser.parse(source).orElseThrow();
+        var bytes = buffer.getBytes(StandardCharsets.UTF_8);
+        var tree = parser.parse(buffer).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
         return VOCAB.locateAt(directive, cursor, bytes)
-            .map(location -> ReferenceCompletions.generate(VOCAB, handle, snapshot,
+            .map(location -> ReferenceCompletions.generate(VOCAB, handle,
                 CompletionContext.from(location, bytes), directive, bytes))
             .orElseGet(List::of);
-    }
-
-    private static LspSchemaSnapshot snapshotBinding(String tableName) {
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(), Map.of(), Map.of(),
-            Map.of(), Map.of("Foo", new TypeClassification.Table(tableName)));
     }
 }

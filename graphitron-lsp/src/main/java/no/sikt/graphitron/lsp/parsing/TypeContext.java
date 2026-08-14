@@ -15,17 +15,14 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 
 /**
- * Resolves the surrounding GraphQL-type-declaration context for a node. Per-directive completion
- * providers use this to figure out which {@code @table}-bound type a {@code @field(name:)} or
- * {@code @reference(...)} sits inside, so column / FK suggestions can be filtered by the
- * relevant table.
+ * Resolves the surrounding GraphQL-type-declaration context for a node: which declaration a
+ * directive sits inside, what it is called, and which field of it the cursor is in. Every method
+ * here reads the tree in hand and nothing else, which is what a surface needs before it can ask a
+ * fact question keyed on a coordinate.
  *
  * <p>The enclosing-declaration walk delegates to {@link DeclarationKind#enclosing(Node)}
  * so both {@code *_type_definition} ("type X { ... }") and {@code *_type_extension}
- * ("extend type X { ... }") nodes resolve uniformly. {@link #tableNameOf} is snapshot-routed
- * (asks the classifier's name-keyed projection rather than reading {@code @table(name:)} off the
- * AST node) so an extension whose definition lives in another file still resolves to the
- * authoritative table name.
+ * ("extend type X { ... }") nodes resolve uniformly.
  */
 public final class TypeContext {
 
@@ -112,6 +109,13 @@ public final class TypeContext {
      * classification has no {@code tableName} (e.g. plain object, scalar, enum). Works
      * uniformly for definition and extension nodes because the projection is keyed on the
      * declared type name, not on the AST node.
+     *
+     * <p>The projection-reading residue of a question the store now answers:
+     * {@link no.sikt.graphitron.lsp.facts.BoundTables} resolves a type's binding against the
+     * catalog census, and the surfaces that ask it that way get the whole candidate set rather
+     * than one name. What still routes here is goto-definition's column arm, whose next hop is
+     * the same projection for the table's generated class, so pointing its first hop at the store
+     * would leave one arm reading both.
      */
     public static Optional<String> tableNameOf(
         Node typeDecl, byte[] source, LspSchemaSnapshot snapshot

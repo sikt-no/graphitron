@@ -14,8 +14,6 @@ import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -28,7 +26,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -55,7 +52,8 @@ class CompletionTextEditTest {
 
     /**
      * One capture for every store-backed arm below: a service class, a scalar holder, a @node type,
-     * and the fixture module's catalog for the table and column arms.
+     * a table-bound type for the arms that read a binding, and the fixture module's catalog for the
+     * table and column arms.
      */
     private static StoreFixture store;
 
@@ -64,6 +62,7 @@ class CompletionTextEditTest {
         store = StoreFixture.ofCatalog(tmp, """
             type Query { x: Int }
             type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
+            type Foo @table(name: "film") { bar: Int }
             """,
             List.of(
                 StoreFixture.jarClass("com.example.FilmService",
@@ -152,12 +151,9 @@ class CompletionTextEditTest {
         int innerStart = lines[line].indexOf("\"film_lang\"") + 1;
         Point cursor = new Point(line, innerStart + 2);
 
-        var fooFilmSnapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(), Map.of(), Map.of(),
-            Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
         var items = runValueProvider(source, cursor,
             (ctx, dir, bytes) -> ReferenceCompletions.generate(
-                VOCAB, store.handle(), fooFilmSnapshot, ctx, dir, bytes));
+                VOCAB, store.handle(), ctx, dir, bytes));
 
         // The candidate is the SQL constraint name, the namespace key: resolves first and the manual
         // teaches; the edit still covers the whole partial value the author typed.

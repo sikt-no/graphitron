@@ -116,7 +116,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       to {@code LookupFacts.triggersFor} and the routine arm to its base relation's distinct
  *       coordinates; {@code no.sikt.graphitron.rewrite.derive.ColumnMatchClaimTest} binds the
  *       column-match view and the reduction over it to the classification walk's fall-through arm
- *       over the spec-by-example corpus;
+ *       over the spec-by-example corpus, and the table resolution that arm stands on
+ *       ({@code intent_bound_table}) through the claim's own table witness, with pins for the
+ *       bindings a column claim cannot speak for;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
@@ -207,6 +209,7 @@ class FactCaptureAgreementTest {
         registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
+        registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);

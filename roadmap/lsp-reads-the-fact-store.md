@@ -399,14 +399,13 @@ The work list. Every capability the language server serves today, with what trig
 fact-based implementation gets its answer. `†` marks a capability that returns nothing today, so it
 is a gap to close rather than a behaviour to reproduce.
 
-Every fact source below must be a relation or a view. Four rows say "classification", which is not
-one: it names `FieldClassification` and `TypeClassification`, the Java projections retired above,
-and leaving the word there is how a port smuggles them back in. They resolve against the
-claim stratum (`intent_resolved_field_claim` and its siblings; see
-`docs/architecture/explanation/fact-model.adoc`), and pinning down which view answers which row is
-the first thing the substrate work settles. Which view, not how many queries: four rows projecting
-four different things off one view is a fine outcome, and collapsing them because they share a
-source would be the same error as sharing a type because they share a subject.
+Every fact source below must be a relation or a view. The rows that said "classification" are not
+one: the word named `FieldClassification` and `TypeClassification`, the Java projections retired
+above, and leaving it there is how a port smuggles them back in. Each now names the view that
+answers it, settled in "the substrate, named view by view" below, with the ones not yet built marked
+as such. Which view, not how many queries: several rows projecting different things off one view is
+a fine outcome, and collapsing them because they share a source would be the same error as sharing a
+type because they share a subject.
 
 The bundled directive vocabulary is not a second source either, though the incumbent treats it as
 one: capture parses the bundled `directives.graphqls` like any schema file and its definitions are
@@ -430,8 +429,8 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `ClassNameBinding` | `ClassNameCompletions` | `jvm_class` |
 | `MethodNameBinding` | `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
 | `CatalogTableBinding` | `TableCompletions` | `sql_table` |
-| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; enclosing table via classification |
-| `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; enclosing table via classification |
+| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table` (unbuilt) |
+| `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; the enclosing type's binding via `intent_bound_table` |
 | `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter`; the GraphQL side off the buffer's own field definition, whose arguments are the ones being edited |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
 | `NodeTypeBinding` | `NodeTypeCompletions` | `graphitron_node` |
@@ -454,13 +453,13 @@ around it.
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
 | `MethodNameBinding` | A signature per overload + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family, joined on arity |
 | `CatalogTableBinding` | Description, column and key counts | `sql_table`, `sql_column`, `sql_referential_constraint`; Javadoc via the `java_` source family |
-| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The member arms still read the classification snapshot's slots |
+| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table` and the member arms via `intent_type_backing_class` joined to the `jvm_` census, both unbuilt |
 | `CatalogFkBinding` | FK direction and endpoints, under any spelling the resolver accepts | `sql_referential_constraint`, `sql_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column`, `graphitron_table` + `sql_column` for the types |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
 | Any coordinate, no richer arm | SDL docstring | `graphql_directive_argument` for a directive argument, `graphql_field` for a nested input field |
 | Directive argument name | Arg docstring | `graphql_directive_argument`, bundled and author-declared alike |
-| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | classification for the block; `sql_table`, `sql_column` and the `java_` source family for the description |
+| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | the verdict views for the block, their classifier vocabularies grown to the whole taxonomy; `sql_table`, `sql_column` and the `java_` source family for the description |
 
 **Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
 
@@ -475,10 +474,10 @@ around it.
 
 | Toggle | Collector | Fact source |
 |---|---|---|
-| `classification` | `collectClassificationHints` | classification |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `graphitron_table`, `graphitron_field_binding`, `graphitron_field_reference*` |
+| `classification` | `collectClassificationHints` | the verdict views, both grains, their classifier vocabularies grown to the whole taxonomy |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `graphitron_field_binding` and `intent_reference_step_target` (unbuilt) for the other two |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
-| `hoverClassification` | gates `DeclarationHovers` (see hover) | classification |
+| `hoverClassification` | gates `DeclarationHovers` (see hover) | the verdict views, as the `classification` toggle above |
 
 **Code actions.** Two branches, deliberately not sharing a path.
 
@@ -1266,6 +1265,59 @@ What this leaves is a clean line. Every capability that does not need a classifi
 reads the store: completion, hover, goto-definition, code actions. What remains is that substrate and
 the four arms the inventory marks as reading "classification", plus diagnostics, whose own migration
 carries the cadence change and `DirectiveResolution`'s deletion.
+
+## Settled while building: the substrate, named view by view
+
+The substrate is what the inventory hid behind the word "classification", and the first thing it owed
+was a name per row. Here they are, so the remaining arms are a build order rather than an open
+question. None of these is a new family: the resolutions live in `intent_`, beside the claim views
+that already ask them.
+
+| What an arm needs | The view that answers it | State |
+|---|---|---|
+| Which catalog table a type's `@table` binds to | `intent_bound_table` | built, this increment |
+| Which table a *field site's* columns come from | `intent_field_column_table`: the parent's binding for a plain column, the path's terminal table for a `@reference` field, the navigated element table for the order-by sites | unbuilt |
+| What a `@reference` step lands on, authored or auto-discovered | `intent_reference_step_target`, over `graphitron_field_reference_step` and `sql_referential_constraint` | unbuilt |
+| Which Java class a type is backed by, and its member slots | `intent_type_backing_class`, joined to `jvm_record_component` for components and `jvm_method` for bean accessors | unbuilt |
+| The verdict label for a declaration | `intent_resolved_field_claim` and a type-grain sibling, their `classifier` vocabularies grown from today's seven and two to the whole taxonomy | partly built |
+
+Two things fall out of writing that down. The label rows do not want a new view at all: they want the
+reduction that already exists to answer for every classifier, so what looked like the substrate's
+biggest unknown is arms in an existing view rather than a relation nobody has designed. And the column
+rows are not one question but three, which is why the column arm could not move with the key arm
+despite the inventory giving them the same words: the key arm needs the enclosing type's binding and
+nothing else, and it moved.
+
+* **A CTE with a second reader is a relation.** The binding resolution was written once already, inside
+  `intent_column_match_claim`, because the column classifier asks it on the way to a claim. The
+  language server asks the same question with no claim in view. Extracting it is not tidying: the
+  alternative was the reader re-spelling a resolution with a qualifier split, a case-insensitive
+  fallback and a membership scope in it, and two spellings agree exactly until one changes. The claim
+  view reads the view now, so there is one.
+* **The binding names a table by its whole key.** Three columns, the `sql_table` key, not a name. The
+  incumbent's answer was a bare table name, which is all a classifier's `tableName` slot ever held, so
+  every reader downstream had to match it case-insensitively across every schema and hope. With the key
+  in hand the key census is filtered on all three columns, and a same-named table in another schema
+  stops being a looser match on this one.
+* **Ambiguity is rows plus an arity.** Two candidate tables are two rows, each saying there were two.
+  That single decision is what lets the classifier keep transcribing the walk's `Ambiguous` verdict
+  (join at `candidates = 1`) while the editor offers both, off the same rows, with neither re-deriving
+  the resolution. An arity computed by whoever counted first is the thing a column exists to prevent.
+* **The incumbent's own test asserted an answer the build cannot produce.** The FK arm's multi-schema
+  case paired a real census with a hand-built `TypeClassification.Table("event")`, and `event` is
+  declared in two schemas, which is exactly the classifier's `Ambiguous` verdict and therefore no
+  binding at all. So the case that documented the arm offering both schemas' keys described behaviour
+  the arm never had: a real snapshot would have carried nothing for the type and the popup would have
+  been empty. Capturing the binding is what makes the fixture unable to lie, and the behaviour the test
+  claimed is now the behaviour it gets.
+* **The root mask has one home.** `@table` on `Query` binds nothing, the walk classifying a root before
+  it reads a table reference. The mask sat on the column classifier's field grain; it belongs on the
+  resolution, where every reader inherits it, and the classifier's own copy went with the move.
+* **What is left on the projection here is one arm, and deliberately.** `TypeContext.tableNameOf`
+  survives with a single caller, goto-definition's column arm, whose next hop is the same projection
+  for the table's generated class. Pointing its first hop at the store would leave one arm reading both
+  models, so it moves when the definition capability's catalog arms do, which is its own inventory row
+  and not this one.
 
 ## Retired vocabulary
 
