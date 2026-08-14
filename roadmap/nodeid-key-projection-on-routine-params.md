@@ -79,13 +79,51 @@ None of them is the one the author wants, and the worst of them is silent.
 
 ## Design
 
-### The segment names an SQL key column, and `typeName:` must be explicit
+### The rule: a dot opens the thing at that position
 
-The trailing segment names a key column of the node type **by SQL name**, matching
-`columnMapping`'s right-hand side, which already names columns by SQL name at the same
-directive. `@node(keyColumns:)` is likewise an SQL-name list, so an author who pinned the key
-columns writes the same spelling in both places. Matching is case-insensitive, the way every
-other SQL-name comparison in the classifier is.
+The grammar does not gain a second form. It gains a second *openable thing*, under a rule the
+existing form was already a case of:
+
+> A dot opens the thing at that position. What it opens depends on what the thing is.
+
+An input object opens into its fields. A node id opens into the key columns of the type it
+refers to. Nothing else opens, and a segment on something that does not open is the same
+rejection it is today, restated at this grain: "this thing has nothing to open" rather than
+"only input-object types may be traversed". So the rejection stays permanent rather than
+becoming conditional on a lookup, which is the property that matters about it.
+
+This is worth stating in the item because the alternative reading, that the dot separator now
+carries two vocabularies (GraphQL field names and SQL column names) sharing one separator, is
+the reading that makes the form look expensive. It is the wrong reading. There is one
+vocabulary, "what can I open here", and the answer has always depended on the thing being
+opened; today only one kind of thing opens, so the dependence has never been visible. The rule
+also extends: whatever the next openable thing is, it slots in without a new separator, and
+`roadmap/nested-argmapping-syntax.md` (R249) composes with the rule rather than negotiating
+against it.
+
+The LSP inherits this directly, and favourably. Completion after a dot asks one question, "what
+does the thing at this position open into", and answers it per kind: input-object fields, or the
+node type's key columns. That is a uniform trigger rather than a special case, and the node-id
+arm is answerable *today* without the nested-input-field projection the general arm is waiting
+on (see "Relationship to other items").
+
+A lexically disjoint form was considered and rejected: a sigil, or a call form such as
+`key(input.organisasjonId, organisasjonskode)`. It was proposed in order to keep the two
+vocabularies separable at the lexer, and it is unnecessary once the rule above is stated, because
+there are not two vocabularies to separate. It would also cost the property it was meant to buy:
+a separate form gives the LSP a second trigger to implement and an author a second syntax to
+learn, for the thing the dot already means.
+
+### What the key-column segment names, and why `typeName:` must be explicit
+
+The segment names a column of the referenced type's **node key**: what
+`@node(keyColumns: [...])` declares when the author pinned it, and the catalog's key metadata
+otherwise, reconciled into `NodeType.nodeKeyColumns` by `TypeBuilder` (SDL wins on order). The
+authority is therefore the `@node` declaration on the type the `@nodeId` refers to, which is the
+same place an author already looks to know what a node id encodes.
+
+The spelling is the SQL column name, because that is what `@node(keyColumns:)` itself is a list
+of. Matching is case-insensitive, the way every other SQL-name comparison in the classifier is.
 
 `@nodeId` without `typeName:` is rejected at this position. `NodeIdLeafResolver.inferTypeName`
 infers a bare `@nodeId`'s target from the *containing table*, and a routine parameter has no
@@ -94,30 +132,6 @@ messages for this same underlying fact ("cannot infer a node type here", both en
 `typeName:` explicitly"). The routine-site rejection belongs in that owner as a third message
 rather than freshly composed at the detection site, so authors meet one vocabulary for one
 condition.
-
-#### The one open fork on the authoring surface
-
-Reusing the dot separator makes one right-hand side carry two vocabularies: every segment
-today names a *GraphQL* input field, and this one names a *SQL* column, disambiguated only by
-looking up `@nodeId(typeName:)` on the field the previous segment named. The alternative is a
-lexically disjoint form (a sigil, or a `key(input.organisasjonId, organisasjonskode)` call
-form) that the lexer separates, which would leave `ArgBindingMap.of`'s "only input-object types
-may be traversed" rejection permanent instead of conditional, and would give the LSP a
-decidable completion trigger without a nested-input projection.
-
-**Recommendation: keep the dot form**, on the grounds that `@routine` already asks authors to
-switch vocabulary between two arguments of the same directive: `argMapping`'s right-hand side
-is GraphQL-named and `columnMapping`'s is SQL-named. A key column appearing where the node id
-sits is the same SQL vocabulary the author is already using one line down, and the
-disambiguation is local and deterministic (the walk is already tracking the type at each
-depth), not an ambiguity. The costs are real but bounded, and each is named where it lands: the
-conditional traversal rejection below, the capture-comment widening in "Fact capture", and the
-LSP note under "Relationship to other items".
-
-Settle this jointly with `roadmap/nested-argmapping-syntax.md` (R249), which varies the same
-separator from the other end. This is the one decision in the item where the reviewer should
-expect to be asked to disagree; a disjoint form is defensible and the argument against the dot
-form is a real one, not a strawman.
 
 ### It is not a `NodeIdLeafResolver` reuse
 
@@ -188,9 +202,12 @@ parameter type and `@routine` against a catalog IN-parameter type, and those wan
 gates (see below). So:
 
 * **Grammar, one owner.** `of` admits the trailing segment when the preceding leaf is an `ID`
-  carrying `@nodeId`, and records it as an unresolved projection candidate. This is the one
-  place today's "only input-object types may be traversed" rejection becomes conditional, which
-  is the dot form's price.
+  carrying `@nodeId`, and records it as an unresolved projection candidate. Its traversal
+  rejection is restated at the rule's grain ("this thing has nothing to open", naming what the
+  thing is), so it covers both openable kinds and stays permanent rather than becoming
+  conditional on a node lookup. `of` decides *openability*, which is a grammar fact it can see
+  from the directive's presence alone; it does not decide *which* key column, which is
+  resolution.
 * **Admission, one predicate.** `ArgMappingSigil` is the precedent: it already owns the literal
   set, the parse fork, the per-`Site` admission predicate and the canonical messages, precisely
   so parse, diagnostics and completions cannot drift. A sibling `Site.admitsNodeKeyProjection()`
@@ -316,17 +333,19 @@ and the correlated `Field` overload wraps it in the existing `DSL.val(...)`.
 An `argMapping` grammar change is a capture-relation change, and the Backlog draft was silent on
 the store. `graphitron_routine_arg_mapping_pair.argument_path` is commented "the right side as
 written: a GraphQL argument name or dotted input path", and the same comment sits on the sibling
-`*_arg_mapping_pair` relations. A key-column segment silently widens what that column holds
-without any DDL change, making the comment false while the comment-coverage gate still passes:
-that gate checks presence, not truth.
+`*_arg_mapping_pair` relations.
 
-The dot form's price here is that the widening is invisible unless someone writes it down, so
-this item writes it down. Update the comment on the `@routine` pair relation (and on whichever
-siblings the admitted-site set covers) to say the right side may end in a node key column.
-Whether the projection also deserves its own column or child relation is the reviewer's call:
-capture records the right side verbatim today, and a verbatim record of the new form is still
-faithful, so the minimal honest change is the comment. The raw `arg_mapping` column is
-unaffected either way; it is the verbatim twin.
+Under the rule above the column's *contents* do not change shape: it holds the right side as
+written, it is still a dotted path, and capture still records it verbatim. What changes is that
+the comment enumerates what a segment can name and now enumerates it incompletely. That is a
+comment the coverage gate cannot catch, because the gate checks presence rather than truth, so
+the item fixes it explicitly: restate the comment at the rule's grain ("a GraphQL argument name,
+or a dotted path whose segments open input fields or a node id's key columns") on the `@routine`
+pair relation and on whichever siblings the admitted-site set covers.
+
+No new column or child relation is proposed. The verbatim record stays faithful, and a resolved
+projection is a derived fact whose home is the classifier, not the capture twin. The raw
+`arg_mapping` column is unaffected either way.
 
 ## Implementation
 
@@ -388,9 +407,12 @@ small and lands in three places:
 
 * `docs/manual/reference/directives/service.adoc#arg-mapping` is the shared home of the
   right-hand-side path form, cross-referenced by `@service`, `@condition`, `@routine` and
-  `@tableMethod`. The rule list there gains one bullet: a segment following a `@nodeId` leaf
-  names one of the node type's key columns by SQL name, and decodes the id rather than walking
-  an input field. Note in the same bullet that only `@routine` emits it today.
+  `@tableMethod`. Its rule list currently reads "each subsequent segment must name a field on the
+  input-object type at that depth", which is the openability rule stated for the only kind that
+  existed. Generalise that bullet rather than appending a special case: a segment opens the thing
+  at that position, an input object opens into its fields, a `@nodeId` leaf opens into the key
+  columns of the type it refers to. Note in the same bullet that only `@routine` binds the second
+  kind today.
 * `docs/manual/reference/directives/routine.adoc`: a short subsection after the existing
   wrapper-input example, showing the `@nodeId` input field and the projected binding. The
   Constraints list gains the bare-form rejection and the explicit-`typeName:` requirement.
@@ -419,9 +441,11 @@ Draft of the `routine.adoc` subsection:
 > }
 > ```
 >
-> `inventory_id` is a key column of the `Inventory` node type, named by its SQL name the same way
-> `columnMapping` names columns. A node type with a composite key exposes each column, so two
-> parameters can be bound from one id. The id is decoded once per call.
+> A dot opens the thing to its left. An input object opens into its fields, which is what
+> `input.customerId` does; a node id opens into the key columns of the type it refers to, which
+> is what `input.inventoryId.inventory_id` does. `inventory_id` is a key column of `Inventory`,
+> spelled the way `@node(keyColumns:)` spells it. A node type with a composite key opens into
+> each of its key columns, so two parameters can be bound from one id.
 >
 > A malformed id, or a well-formed id of the wrong type, fails the field with a client error;
 > it is never passed through. Binding a `@nodeId` field without naming a key column is a build
@@ -438,21 +462,22 @@ Draft of the `routine.adoc` subsection:
   stopped being true when the design moved onto the extraction slot. If R625 is already in
   flight, coordinate on who writes the switch rather than both writing it.
 * `roadmap/lsp-argmapping-routine-coordinate.md` (R626) gives `@routine(argMapping:)` completions
-  and diagnostics at all. Completing key columns after a `@nodeId` leaf is a *further* step: R626
-  explicitly leaves dot-path expansion unmodelled ("offer nothing rather than a misleading flat
-  list") because the LSP snapshot carries no nested-input-field projection. Key columns are a
-  smaller and better-defined completion source than general nested input fields, so they may be
-  reachable ahead of the general case, but that is its own item and must not ride this one.
+  and diagnostics at all. R626 explicitly leaves dot-path expansion unmodelled ("offer nothing
+  rather than a misleading flat list") because the LSP snapshot carries no nested-input-field
+  projection. Under the openability rule that limitation splits by kind rather than being uniform:
+  the input-object arm still waits on the snapshot projection, while the node-id arm is answerable
+  from `NodeType.nodeKeyColumns`, which the snapshot can carry cheaply. So key-column completion
+  is reachable *ahead* of the general case rather than after it. It is still its own item and must
+  not ride this one, but R626's "offer nothing" note should be narrowed to the input-object arm
+  when either item lands, so it does not read as a blanket bar on a case that is no longer blocked.
 * `roadmap/nested-argmapping-syntax.md` (R249) extends the right-hand side with a nested object
-  form. It varies the same grammar from the other end. Neither item's grammar change should land
-  without the other's author confirming the two compose; the shared owner is
+  form. It varies the same grammar from the other end and composes with the openability rule
+  rather than negotiating against it, so the two no longer need a joint decision on the
+  separator. They still share an owner, so coordinate on edits to
   `ArgBindingMap.parseArgMapping` plus `ArgBindingMap.of`.
 
 ## Open questions
 
-* **The dot form versus a lexically disjoint form** (see "The one open fork on the authoring
-  surface"). The recommendation is the dot form, but this is the decision most worth a
-  reviewer's disagreement, and it should be settled together with R249.
 * Whether `emitCall` lifts to `(statements, expression)` so a composite key decodes once rather
   than once per projected column. Recommendation is to accept the double decode; the counter is
   the duplicated throw site in the generated source.
