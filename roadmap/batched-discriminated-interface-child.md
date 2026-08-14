@@ -119,9 +119,9 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   **Mirror the polymorphic sibling's components, not its `implements` clause.**
   `BatchedInterfaceField` is `ChildField, BatchKeyField, ParentRowDemand`; this leaf's unbatched
   twin is `TableTargetField, ParentRowDemand`, and the clause to write is `TableTargetField,
-  BatchKeyField, ParentRowDemand`, which is what `BatchedTableField` (`TableTargetField,
-  BatchKeyField`) already is for the plain table child. Three things ride on the seal rather than
-  on the record shape, so getting the clause wrong sends the edits to the wrong places:
+  BatchKeyField`, exactly what `BatchedTableField` already is for the plain table child. Three
+  things ride on the seal rather than on the record shape, so getting the clause wrong sends the
+  edits to the wrong places:
   * `ChildField`'s own `permits` list routes the whole table-target family through the
     `TableTargetField` intermediate seal and never names its members, so the sealed edit is
     `TableTargetField`'s `permits` clause, not `ChildField`'s.
@@ -134,12 +134,26 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
     the parent-projection contribution fall out instead of needing a fresh arm beside the
     polymorphic ones.
 
+  `ParentRowDemand` drops off the clause, and that is deliberate rather than an oversight to
+  correct back. The batched arm of `tableTargetContribution` precedes its `ParentRowDemand` arm and
+  casts `(BatchKeyField) ttf` to read `sourceKey().columns()`, so the demand accessor is never
+  reached on a leaf that is both; the two answer the same column list here anyway, since this arm's
+  key *is* the FK hop's source side. `ProjectionMembershipTest`'s minting census takes
+  `BatchKeyField` or `ParentRowDemand`, so `BatchKeyField` alone satisfies it. Declaring the
+  capability would therefore buy nothing and would falsify the live comment above that arm ("within
+  the table-target seal, exactly the twin declares one"), which no gate catches. If a later reason
+  to declare it appears, that comment joins the sweep.
+
   Mirror the component list, not the key
   derivation: `BatchedInterfaceField` keys on the parent's *primary key*, with a `pkCols.isEmpty()`
   rejection, because each participant holds its own FK back to the parent. This arm's key is the
   single FK hop's source side, the columns `TableInterfaceField.parentRowColumns()` already
   reports, which is what `deriveSplitQuerySource` derives for the plain table child's
   `BatchedTableField`. That is also why the sibling's empty-PK rejection has no analogue here.
+  `deriveSplitQuerySource` is likely the mint call rather than merely the precedent: it returns the
+  `SourceKey`, the `KeyLift` and the `LoaderRegistration` together off a `ParentCorrelation`, and
+  both the plain table child and the batched pivot mint through it. That also settles the loader's
+  container and dispatch, which this bullet otherwise leaves unstated.
   Whether this is a new record or a delivery slot on the existing one is the implementer's call;
   the sibling family uses separate records, and matching that keeps the sealed switches reading
   uniformly.
@@ -224,7 +238,8 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   `sourceKey()` contract has no absent arm. The scatter-helper emission gates in
   `TypeFetcherGenerator` also name a leaf by class identity and are not census-enforced, but they
   fail loudly rather than quietly (a rows method calling an unemitted helper does not compile);
-  whether they need widening at all is the scatter question under "Open for the implementer".
+  whether they need widening at all is the scatter question under "Open for the implementer". The
+  launcher payload dispatch is loud in the same way and is not optional; the bullet below owns it.
 
   **The edit here is a new positive arm, not a flip of the existing negative one.** Read `mint`
   before touching it: its only arms that answer `Batched` are the polymorphic fan-in (keyed on
@@ -264,6 +279,54 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   edited into, is a defect in its own right, and
   `roadmap/delivery-verdict-derives-from-the-store.md` owns it. This item is not the place to
   restructure the site; it is one of the two reasons that item exists.
+* **`LauncherCommands`, the second consumer of the `Batched` fact.** Exactly two sites in main
+  sources read `DeliveryFact.Batched`. One is `ProjectionCommands.tableTargetContribution`, which
+  the seal bullet above already answers. The other is `LauncherCommands.verdictOf`, and this item
+  has to answer it too, because the relation edit above reaches it whether or not anything else in
+  the plan changes.
+
+  `verdictOf` computes its `anchored` conjunction as a `SELECT` member on a `TargetShape.Table`
+  target, and this leaf satisfies both halves already: `OperationMembers` declares `Kind.SELECT`
+  required for `TableInterfaceField`, and `ChildField.target()` gives it `TargetShape.Table`, the
+  same two facts the relation analysis above turns on. Today the coordinate's delivery is `Inline`,
+  so the verdict is `Launch.NONE` and no launcher row is minted. The moment the relation answers
+  `Batched`, the verdict becomes `Launch.BATCHED_CHILD_CATALOG` and `batchedChildRow`, whose arms
+  are `BatchedTableField` and `BatchedPivotField`, falls through to its `default` and throws
+  ("received a batched child catalog launch verdict but has no payload arm here; the membership
+  predicate and this payload dispatch have drifted"). The schema-free walk,
+  `produceWithoutSchema`, has the same shape and the same throw. Both walks run on every
+  generation, from `EmitPlan` and from `TypeFetcherGenerator`. The polymorphic batched pair escapes
+  this only because its target shape is `Interface`, which is exactly the exclusion `verdictOf`'s
+  javadoc states; the discriminated child, carrying `TargetShape.Table`, lands inside the family
+  rather than beside it.
+
+  So the edit is a payload arm plus a `LaunchSource` for it, and which source arm is a fork worth
+  settling here rather than at the keyboard:
+  * `INVOCATION_BY_SOURCE` maps `LaunchSource.DiscriminatedTable` to `Invocation.Direct`, and the
+    map is keyed by source class, so the discriminated root's own arm cannot also carry a batched
+    child. That map is census-enforced against `LaunchSource`'s sealed leaves by
+    `LauncherMembershipTest.invocationDeterminationIsTotalOverTheSourceArms`, and every produced
+    row is checked against the declaration by
+    `LauncherAxisPins.assertInvocationMatchesDeclaredDetermination`, so a new arm cannot be added
+    without declaring its invocation. This is the one part of the launcher edit that is
+    census-caught rather than throw-caught.
+  * **Reuse `LaunchSource.CorrelatedChain`,** the plain batched child's arm: the table, the type
+    class, the `joinPath` and a `ParentCorrelation`, paired with `Invocation.Batched(sourceKey,
+    loaderRegistration)`. This is the cheap route and it is what the shared-scatter branch of the
+    open question below implies. It carries a consequence back into the record bullet above:
+    `CorrelatedChain` demands a `ParentCorrelation`, a component `BatchedTableField` carries and
+    `BatchedInterfaceField` does not, so on this branch "mirror the sibling's component list" is
+    not sufficient and the correlation component comes along too.
+  * **Mint a discriminated batched source arm of its own.** This keeps the re-projection's assembly
+    reachable from the launcher, which is what `LaunchSource.DiscriminatedTable` exists to carry, at
+    the cost of a new sealed leaf and the renderer arm that goes with it.
+
+  This revises the rows-method bullet above rather than sitting beside it.
+  `buildTableInterfaceFieldFetcher` is one of the two discriminated consumers that
+  `DiscriminatedTableFragments` names as not yet migrated onto the launcher seam, so "start from its
+  body" reads as staying off that seam. A `Batched` delivery mints a launcher row whichever assembly
+  emits the statement, so staying off the seam is no longer free. Settle the source arm first; how
+  much of the legacy body survives falls out of it.
 * **The author-facing directive page.** `docs/manual/reference/directives/splitQuery.adoc`'s
   Constraints list is where an author learns what the directive does on each shape, and it already
   carries the redundancy population this arm is joining: the class-backed-parent bullet ("redundant
@@ -277,9 +340,11 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 
   Also regenerate `docs/manual/_generated/supported-schema-shapes.adoc`, which is keyed per sealed
   leaf and so gains a row for the batched leaf. `roadmap/root-connection-over-discriminated-interface.md`
-  names this item as where that row arrives. It regenerates from the model sources
-  (`roadmap-tool leaf-coverage --mode=migration`, via `mvn verify -Pleaf-coverage`) and its drift
-  check is a manual `--verify`, not a build step, so a stale file will not fail anything.
+  names this item as where that row arrives. It regenerates by running
+  `roadmap-tool leaf-coverage . --mode=migration` over the classifier traces a prior `mvn verify`
+  leaves behind (the `leaf-coverage` profile that emits them is on by default, activated by
+  negation on `-Dleaf-coverage.skip`, so no `-P` is needed to get them). Its drift check is a manual
+  `--verify`; CI runs only the non-migration variant, so a stale file will not fail anything.
 * The javadoc that lists the `@splitQuery`-half readers. There are three sites, not one.
   `DeliveryFacts`' *class* javadoc carries the list in prose (naming the pivot gate and the
   nesting-projection deferral) and `{@link}`s `Row#splitQuery`, which is a bare record component
@@ -316,7 +381,10 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   rather than an inherited default; neither gate is census-enforced, though a rows method calling a
   helper that was never emitted fails to compile, so this is discoverable at the compile tier rather
   than silent. On the inlined machinery neither edit applies and that item's child half is planned
-  against the wrong seam.
+  against the wrong seam. Settle it together with the launcher source arm above: the launcher's
+  batched-child family *is* the shared machinery, so picking `CorrelatedChain` there is close to
+  picking the shared scatter here, and picking a discriminated source arm there is close to picking
+  the inlined one. Answering the two independently is how they end up contradicting each other.
 * Whether the ordering the unbatched fetcher applies (`buildOrderByCode` off `tif.orderBy()`)
   survives the loader boundary unchanged, or needs the per-key windowing the batched connection uses.
   Unpaginated batching may be able to order globally and group by key; confirm rather than assume.
@@ -344,6 +412,12 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   corpus that is thin on markers), and it keeps the redundancy warning out of the corpus, where a
   marked coordinate would have to be reconciled with the `@classified` verdict rows. The test's
   per-trigger floors should gain nothing; `PolymorphicFanIn`'s floor already covers the new arm.
+* **The launcher relation.** `LauncherMembershipTest` already gates the census in both directions
+  and `LauncherAxisPins` gates the invocation determination, so the list-cardinality coordinate
+  added for the delivery pin above carries the launcher edit into those gates for free, provided
+  the coordinate reaches the fixtures those tests classify. Check that it does rather than assuming
+  the delivery-pin corpus addition is enough; if the two tests read different fixture sets, the
+  launcher gate needs its own coordinate.
 * **The redundancy warning.** Its own case asserting the `LintFinding`, the rule constant and the
   delete fix, modelled on whatever pins `SPLITQUERY_REDUNDANT_ON_RECORD_PARENT` today.
 * **Tenant partitioning.** Assert the emitted loader name, not just that a loader exists: a
@@ -382,6 +456,12 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   the cardinality fork stated. The two code sites sit in code the change touches anyway, so they are
   sweep targets rather than stragglers; the published doc is the one a reader outside the change
   would hit, and nothing renders or drift-guards these two passages, so only the sweep catches them.
+
+  A third passage in that same file is a leaf mapping rather than prose, and needs the same fork:
+  the child-field table's row `Return @table+@discriminate interface | TableInterfaceField | Fetcher
+  method` names one leaf for a coordinate that now has two. The row immediately above it already
+  forks `BatchedTableField` off `@splitQuery` with its own row, so the table's own convention is to
+  name the batched leaf separately; follow it rather than widening the existing row.
 
   `roadmap/root-connection-over-discriminated-interface.md` carries none of this vocabulary and is
   not a sweep target: its child section is already written forward ("R661 gives the child arm
