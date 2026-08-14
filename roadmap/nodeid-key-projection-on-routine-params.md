@@ -215,6 +215,48 @@ Two further caveats the view's comment must own:
   already states arity as a column rather than leaving each reader to count (`intent_spelled_table.
   candidates`).
 
+**The arms are a fork plus a basis, and that shape is already shipped next door.**
+`intent_field_column_table` answers the same kind of question this view does, which table a name
+written at a site resolves against, over `@reference` paths rather than `argMapping` paths. It
+carries two columns for it: a closed two-value `disposition` (`RESOLVE` / `SILENT`) that every
+consumer switches on, and a `basis` naming which of its five rules fired. Its own comment argues
+for carrying both even though the first is determined by the second, because the fork is "the
+reading every consumer needs and re-deriving it from a five-value vocabulary at each of them is how
+the two would drift". This view has three consumers (the detection stratum, `EmitPlan`, the
+editor), so the argument applies with more force here. Take the same shape:
+
+* `RESOLVE`, with basis `ARGUMENT_PATH`, `BARE_HEAD` or `INPUT_FIELD_PATH`, one per resolving arm
+  above.
+* `SILENT`, with basis `NO_SLOT_IN_SCOPE` (a path-step site, where nothing is in scope to resolve
+  against), `UNREACHED_INPUT_TYPE` (an input-field-rooted head whose input type no argument
+  reaches), or `UNRESOLVED_PATH` (a segment naming no input field, which is the typo). The last is
+  not a nicety: `leafTypeGate` is already silent on a path that descends through a non-input-object
+  for exactly the reason it is silent on the motivating path, so the store is the only place that
+  case can be caught at all.
+
+**A silence is a row, and absence means one thing.** The sibling view states this outright
+("Absence therefore means 'the parent's own scope answers'"), and it is what stops the three
+unresolvable shapes above from sharing one indistinguishable gap with the ordinary case. Under it,
+absence from this view means exactly "the pair row's path resolves to a leaf carrying no
+`@nodeId`", which is the ordinary binding and rightly needs no row. That is also what keeps the
+bare-form rejection an anti-join over a positive population rather than negative space maintained
+by hand.
+
+**Arity is distinct answers, not rows**, which is the same reading
+`intent_field_reference_step_target.targets` already carries ("how many distinct tables this
+element reaches ... a table element with three foreign keys connecting the two tables reaches one
+table by three routes"). The input-field-rooted arm is one-to-many in *rows*, one per use site that
+reaches the input type, and it must require one distinct *leaf* rather than one row. Those rows
+cannot disagree: the leaf is fixed by walking input-field types down from the head, a definition-side
+fact independent of which argument reached the type. So the constraint is a guard against writing
+the view wrong, not a real fork, and saying which of the two it is belongs in the comment.
+
+**One thing not to copy from that view: it collapses to one row per field coordinate**, taking
+`MIN(ordinal)` over the applications and then the last element. This view must not. `@routine` and
+`@reference` are repeatable and each application carries its own `argMapping`, so the grain here is
+the pair's own key with `ordinal` intact; collapsing would resolve one application's path and drop
+its siblings silently.
+
 **The key-column resolution has three arms, not two.** `BuildContext.resolveTargetKeys` prefers the
 `NodeIndex` entry (which `TypeBuilder` already reconciled against the table's metadata, SDL winning
 on `typeId` outright and on `keyColumns` order), falls back to the table's own
@@ -231,7 +273,15 @@ The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suf
 * **`intent_resolved_node_key_column (graph_name, type_name, position, column_name, tier)`.** The
   three-arm reduction above. Worth naming on its own terms, and not only for this item: the LSP
   wants exactly this list for completion, and an editor reading the store is the second reader that
-  turns a derivation into a relation.
+  turns a derivation into a relation. The first-tier-that-answers pick is the
+  `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY precedence)` with `WHERE rn = 1` that
+  `intent_field_column_table` ships, so the mechanism is borrowed rather than invented. **Partition
+  by the type, not by the (type, position) coordinate.** The tiers carry *ordered lists*, not
+  independent facts per position, so a per-position pick would splice one tier's column into
+  another tier's order. That is exactly the transposition `resolveTargetKeys`' own comment warns
+  about, "a `@node(keyColumns:)` that pins a different order than the metadata would project
+  columns transposed against the order its own decode helper returns values in". One tier wins for
+  a type and its whole list is taken.
 * **`intent_argmapping_binding_leaf`.** The keying over `intent_input_occurrence_path` described
   above, unioned across the **seven** `*_arg_mapping_pair` relations
   (`graphitron_routine`, `graphitron_service`, `graphitron_field_condition`,
@@ -530,9 +580,12 @@ unrecoverable afterwards").
   `captureRoutineParameters` and `captureNodeMetadata` beside `captureColumns` /
   `captureConstraints` / `captureIndexes`, the first guarded on the function arm.
 * **Views**, house style per `intent_bound_table` (declared column list, full comment coverage,
-  closed vocabularies as `CHECK` or as stated column comments): `intent_resolved_node_key_column`
-  (three tiers, `tier` column), `intent_argmapping_binding_leaf` (the keying over
-  `intent_input_occurrence_path`, `site` literal per union arm, unconsumed-segment count), and
+  closed vocabularies as `CHECK` or as stated column comments), and structurally per
+  `intent_field_column_table`, the sibling path-resolution view whose `disposition` / `basis` shape
+  and precedence pick both apply directly here: `intent_resolved_node_key_column` (three tiers,
+  `tier` column, the pick partitioned by type so a tier's column order survives),
+  `intent_argmapping_binding_leaf` (the four-arm keying over `intent_input_occurrence_path`, `site`
+  literal per union arm, `disposition` plus `basis`, unconsumed-segment count), and
   `intent_resolved_node_key_projection`, plus the detection views for the rejections including
   the site-keyed `deferred` arm.
 * **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: records built from
@@ -564,9 +617,19 @@ unrecoverable afterwards").
 * **A test that pins the `-parameters` dependency**, since `jooq_name` is the join key and is
   `arg0` without it. This repo already compiles one test package deliberately without
   `-parameters`, so the precedent for covering both sides exists.
-* **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view.
+* **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view, and
+  for the binding-leaf view specifically in `FieldColumnTableTest`'s, which is the closest match in
+  the tree: a path-resolution view with silences, anchored by twelve cases. Two habits to take from
+  it. It asserts on `disposition` and `basis` rather than only on the value resolved, so a case pins
+  *which rule fired* and not merely that the answer came out right. And it pins absence explicitly,
+  with a third of its cases asserting no row at the coordinate, which is how the boundary of the
+  relation gets tested rather than assumed. It also asserts at most one row per coordinate in its
+  read helper; the analogue here is per pair-row key, since this view keeps `ordinal` rather than
+  collapsing it.
   `intent_resolved_node_key_column` needs all three tiers populated, not two, plus a composite-key
-  type (`bar` in the `nodeidfixture` catalog is the one `NodeIdPipelineTest` already uses).
+  type (`bar` in the `nodeidfixture` catalog is the one `NodeIdPipelineTest` already uses), and a
+  case pinning that a tier's key column *order* survives the pick rather than being spliced across
+  tiers.
 * **The binding-leaf view wants each of its four arms pinned, not just its happy path**: a
   bare-scalar argument head, a bare `@nodeId` head (the arm the whole silent-`TEXT` case runs
   through), an input-field-level `@condition` whose head names the input field, one whose input
@@ -670,6 +733,18 @@ Draft of the `routine.adoc` subsection:
   is the ordinary one about editing `argExpression` at the same time. Worth noting for R625's own
   reviewer: this item's shape is an argument that R625's capability may also belong in the store
   rather than in a wider switch on the drained surface.
+* `roadmap/lsp-reads-the-fact-store.md` (R638) is the nearest *shipped* precedent, and the one to
+  read first. Its `intent_field_column_table` resolves an authored `@reference` path to the table a
+  name written at that site means, which is the same problem this item has with `argMapping` paths:
+  a written path of unbounded length, resolved relationally, with several ways to reach no answer.
+  Four of its rulings are imported above and marked where they land: the `disposition` / `basis`
+  pair over a bare arm literal, a silence being a row so that absence means exactly one thing,
+  arity read as distinct answers rather than rows, and the `ROW_NUMBER` precedence pick for a
+  first-tier-wins reduction. Two of its moves deliberately are not: it collapses a repeatable
+  directive's applications to one row per field coordinate, which this view must not do, and its
+  `path_terminal` resolution lives as a CTE inside its only reader rather than as a named relation.
+  The relationship is one-way and needs no coordination: R638 has landed the parts this item reads,
+  and nothing here changes anything it owns.
 * `roadmap/delivery-verdict-derives-from-the-store.md` (R666) is the nearest structural sibling and
   the model this item now follows: a verdict computed by a walk-side switch, restated as an
   `intent_` view over captured base relations, landed in shadow with residues before any consumer
