@@ -197,6 +197,12 @@ narrow, and each absence below is a stated one rather than a silent one:
   starts partway down: one row per use site that reaches the input type, so this arm is
   one-to-many where the others are one-to-one, and an input type no argument reaches yields no rows
   at all. That last absence is the arm's own caveat and owes a sentence in the view's comment.
+  The suffix must be anchored relationally, not by string alone: a bare suffix on `/<field>` matches
+  any occurrence path ending in a field of that name whatever input type owns it, so the arm joins
+  the pair row's `type_name` to `intent_input_occurrence_path_step.container_type_name` at the
+  matching ordinal. The step child exists for exactly this ("the step child carries the same data
+  relationally so no consumer parses the key"), and the use-keyed rejection below depends on the
+  arm naming the right consuming coordinate.
 * **Path-step heads resolve no leaf, by construction.** The three step-site pair relations (two
   `*_reference_step_*`, one `*_reference_for_step_*`) carry rows, but `BuildContext` resolves a
   path-step
@@ -219,10 +225,12 @@ Two further caveats the view's comment must own:
 `intent_field_column_table` answers the same kind of question this view does, which table a name
 written at a site resolves against, over `@reference` paths rather than `argMapping` paths. It
 carries two columns for it: a closed two-value `disposition` (`RESOLVE` / `SILENT`) that every
-consumer switches on, and a `basis` naming which of its five rules fired. Its own comment argues
+consumer switches on, and a `basis` naming which of its four rules fired (`PATH_TERMINAL`,
+`NAMED_TYPE_TABLE`, `UNRESOLVED_PATH`, `CONFLICTED`; the column's own comment says "five-value",
+which is stale against its four union arms and should not be copied forward). Its own comment argues
 for carrying both even though the first is determined by the second, because the fork is "the
-reading every consumer needs and re-deriving it from a five-value vocabulary at each of them is how
-the two would drift". This view has three consumers (the detection stratum, `EmitPlan`, the
+reading every consumer needs and re-deriving it from a [multi]-value vocabulary at each of them is
+how the two would drift". This view has three consumers (the detection stratum, `EmitPlan`, the
 editor), so the argument applies with more force here. Take the same shape:
 
 * `RESOLVE`, with basis `ARGUMENT_PATH`, `BARE_HEAD` or `INPUT_FIELD_PATH`, one per resolving arm
@@ -320,10 +328,12 @@ query rows. Those records are the item's new Java types, and they are the only o
 
 ### What this item does not add
 
-**No new `CallSiteExtraction` arm, no `NodeIdRecordColumn`, no `BoundPath`, no new sealed variant
-anywhere, no walk-side registry.** The sealed leaf model is the strangler migration's transitional
-producer surface, drained rather than extended, and a capability is added by adding a fact
-relation. An earlier draft of this item did the opposite: it proposed a new top-level
+**No new `CallSiteExtraction` arm, no `NodeIdRecordColumn`, no `BoundPath`, no new sealed variant on
+the walk surface, no walk-side registry.** The sealed leaf model is the strangler migration's
+transitional producer surface, drained rather than extended, and a capability is added by adding a
+fact relation. The routine-write command this item mints is not a counter-example: a command arm is
+plan-side vocabulary assembled *from* the drained surface, which is the direction of travel, and it
+is what lets the emitters stop reading the leaves at all (see "The emitters move onto commands"). An earlier draft of this item did the opposite: it proposed a new top-level
 `CallSiteExtraction` arm wrapping `NodeIdDecodeRecord`, a `BoundPath` type in `ArgBindingMap`, a
 widened `resolvePathLeaf` producer, and a new render-side registry. Every one of those is
 walk-side, and the reasoning that produced them, that the arm's compile errors in each exhaustive
@@ -347,9 +357,16 @@ non-event:
   `PathExpr` is *consumed*: `RoutineCallEmitter.nestedSlotRead` registers a descent helper that
   walks every tail segment over the raw argument map and casts at the leaf. An admitted but
   uninterpreted key-column segment therefore emits `get("organisasjonskode")` against a `String`,
-  which is this item's own failure mode relocated. So the widening must be gated on the projection
-  resolving, or every consumer of the widened shape must be taught in the same commit. "Admits the
-  segment and carries it without interpreting it" is not a safe halfway house.
+  which is this item's own failure mode relocated. The walk cannot gate itself on the projection:
+  `GraphQLRewriteGenerator.runPipeline` builds the schema before it captures, so the store is empty
+  when `ArgBindingMap.of` runs, and a walk-local re-check would be a second spelling of the
+  resolution the view computes. What closes it instead is the pipeline order: capture and validate
+  both run before `EmitPlan` and the renderers, so once stage 3's detections are in, an
+  unresolved trailing segment fails the build before any emitter runs. The obligation the widening
+  carries is therefore a test obligation, one case per `ArgBindingMap.of` call site proving the
+  detection fires, and not a gate on the walk. "Admits the segment and carries it without
+  interpreting it" is safe exactly to the degree those detections are complete, which is why stage 3
+  precedes the widening rather than shipping beside it.
 * `RoutineDirectiveResolver.leafTypeGate` needs **no** change. Trace the motivating path:
   `ServiceCatalog.resolvePathLeafType` returns `null` as soon as a segment descends through a
   non-input-object, so the gate hits its `if (leafType == null) return null; // unresolvable leaf:
@@ -368,18 +385,67 @@ decides what each can do.
   detection views in the `intent_authored_claim_conflict` mould, decoded into located
   `ValidationError`s by a sibling of that class. Rejection stays a typed value; what changes is
   that the rule lives in SQL and the Java decodes a closed verdict vocabulary.
-* **Planning joins it onto the command, and the grain matters.** `RoutineRef.ArgBinding` and
-  `RoutineChain` live in `rewrite/model`, the walk surface this item may not touch.
-  `LauncherCommand` and `LaunchSource.RoutineChain` live in `command/`, the plan surface, which is
-  where a complete command row is assembled. So the projection is read by `EmitPlan` into a
-  plan-local relation keyed by the pair's natural key and joined into the command row that
-  `LauncherCommands` already mints. Nothing in `rewrite/model` changes, the command reaching the
-  renderer is complete by construction, and no new committed command relation is minted for
-  something that renders no unit (which would owe the render fold a closure obligation it cannot
-  discharge).
+* **Planning joins it onto the command, and every routine-call emitter reads it there.**
+  `RoutineRef.ArgBinding` and `RoutineChain` live in `rewrite/model`, the walk surface this item may
+  not touch. `LauncherCommand` and `LaunchSource.RoutineChain` live in `command/`, the plan surface,
+  which is where a complete command row is assembled. So the projection is read by `EmitPlan` into a
+  plan-local relation keyed by the pair's natural key and joined into the command row. Nothing in
+  `rewrite/model` changes and the command reaching the renderer is complete by construction.
 
 The distinction is worth stating plainly because "a projection map on the routine-call command"
 reads either way, and that ambiguity is where the ruling gets broken by accident.
+
+### The emitters move onto commands
+
+**The launcher command is not the only carrier, and it is not the one the motivating case uses.**
+`LaunchSource.RoutineChain` is minted at exactly one site, in `LauncherCommands`, off a
+`QueryField.QueryTableField`: the query-side root read. A `@routine` on a `Mutation` field is
+classified by `FieldBuilder.classifyMutationRoutineChain` into
+`MutationField.MutationRoutineWriteField`, or by its hop-less carrier-payload fork into
+`MutationField.MutationRoutineWriteRecordField`, and both emit from `TypeFetcherGenerator`
+(`buildMutationRoutineWriteFetcher`, `buildMutationRoutineWriteRecordFetcher`) reading the model leaf
+directly. That is the shape the manual already documents as the canonical `argMapping` example
+(`rentFilmPayloadNested` in `docs/manual/reference/directives/routine.adoc`), the shape of this
+item's motivating case, and the shape its pipeline-tier test binds. Of the four
+`RoutineCallEmitter.emitCall` call sites, only `RootLauncherRenderer`'s reads a command row: the two
+in `TypeFetcherGenerator` read `MutationField` leaves, and `PathFragments.emitTableExpression` takes
+a `JoinStep`.
+
+**So the emitters stop seeing leaves, and that is scoped into this item.** An emitter may not reach
+into the leaf zoo for the projection, because an emitter may not reach into the leaf zoo at all.
+That a routine-call emitter *can* read `MutationField.MutationRoutineWriteRecordField` is what let
+"join it onto the command row" be written against the wrong carrier without anything catching it.
+The rule already exists and is already enforced, just not over this package:
+`PackageImportDirectionTest` pins that `no.sikt.graphitron.render` interprets commands, holds no
+`GraphitronSchema` and no fact hierarchy, and borrows from the legacy tree only the named pure-data
+refs on its dial. `TypeFetcherGenerator` sits in `rewrite/generators`, outside that guard, which is
+why the leaf read is reachable there and nowhere in `render`.
+
+Concretely, for the routine-write family:
+
+* **`plan` mints a routine-write command**, one row per routine-write coordinate, carrying what the
+  two fetchers read off their leaves today and nothing more: the routine call and its result table,
+  the captured column pairs, the target table, the data field's arity, the error channel, the hop
+  chain on the hopful arm, and this item's projection joined on. Every one of those is already a
+  pure-data ref (`RoutineRef`, `TableRef`, `ColumnRef`, `Arity`, `ErrorChannel`) or a plain string,
+  so the row needs no new model vocabulary and the two arms mirror the two leaves rather than
+  inventing a shape.
+* **`render` hosts the two emitters, reading only that command.** `TypeFetcherGenerator`'s two
+  `case` arms delegate to the command relation the way its `MutationField.DmlTableField` arm already
+  reads `launchers.rowFor(...)`, and stop reading the leaf.
+* **`PackageImportDirectionTest`'s borrow dial grows by exactly the refs the new command carries.**
+  That test is the point: once the emitters are in `render`, "an emitter sees only commands" is a
+  build gate rather than a convention, and the dial's own comment records why each entry is there.
+
+This is a structural pivot on a surface two emitters pin, so it lands additive-then-cutover per
+`roadmap/workflow.adoc`: mint the command relation and the render-side emitters alongside the
+existing ones, cut the two `TypeFetcherGenerator` arms over, then delete the leaf-reading bodies.
+The execution tier holds at each step.
+
+**What this does not do.** It dissolves no leaf. `MutationField.MutationRoutineWriteField` and its
+record sibling stay exactly as they are; what changes is that `plan` reads them and `render` does
+not. That is the same move the `facts-and-commands` programme made family by family, not the leaf
+zoo's dissolution, which stays with `roadmap/coordinate-lowers-to-datafetcher-queryparts.md`.
 
 **One rejection arm this design needs and an earlier draft lacked.** The view resolves a projection
 at every `site` its `UNION` covers, but the emitters land site by site. A projection that resolves
@@ -443,8 +509,9 @@ existing as the "table-scoped overload without a (potentially ambiguous) SQL-nam
 `columnFactsOf(Table<?>)`. So the reader is a new `Table<?>`-scoped method on `JooqCatalog`
 returning a value record beside `ColumnFacts`.
 
-It must also return values, not emit vocabulary. `RoutineResolution.Resolved` carries javapoet
-(`RoutineParam(String name, TypeName type)`, `ClassName routinesClass`), and reading capture
+It must also return values, not emit vocabulary. `JooqCatalog.RoutineResolution.Resolved` carries
+javapoet (`JooqCatalog.RoutineParam(String name, TypeName type)`, `ClassName routinesClass`), and
+reading capture
 through it would land a `TypeName.toString()` in `binding_type`. `ColumnFacts`' own javadoc already
 rules on this: the javapoet form is "a code-emission representation with no meaning in a relation".
 
@@ -597,9 +664,19 @@ unrecoverable afterwards").
 * **`ArgBindingMap.of`**: widen the traversal rejection to admit one trailing segment after an
   `ID`-typed leaf, *with* the six-call-site audit and the `RoutineCallEmitter.nestedSlotRead`
   consequence handled in the same commit (see "What this item does not add").
-* **`EmitPlan` / `LauncherCommands`**: read the projection view into a plan-local relation keyed by
-  the pair's natural key and join it into the `LaunchSource.RoutineChain` command row. Nothing in
-  `rewrite/model` changes.
+* **`EmitPlan`**: read the projection view into a plan-local relation keyed by the pair's natural
+  key and join it into every command row that carries a routine call: `LaunchSource.RoutineChain`
+  in `LauncherCommands`, and the new routine-write command below. Nothing in `rewrite/model`
+  changes.
+* **A routine-write command** in `command/`, two arms mirroring `MutationRoutineWriteField` and
+  `MutationRoutineWriteRecordField`, minted in `plan` from those leaves and carrying the facts the
+  two fetchers read today plus the projection (see "The emitters move onto commands").
+* **`render`**: the two routine-write emitters, reading only that command.
+  `TypeFetcherGenerator`'s two `case` arms cut over to it, following the
+  `MutationField.DmlTableField` arm's existing `launchers.rowFor(...)` shape, and the leaf-reading
+  bodies are deleted once the cutover holds.
+* **`PackageImportDirectionTest`**: extend the borrow dial by the refs the routine-write command
+  carries, each with the one-line justification the dial's comment convention asks for.
 * **`RoutineCallEmitter`**: emit the decode-and-read from the command row; `emitCall` yields
   pre-statements alongside its expression and the four call sites add them.
 * **`ConditionGlueRenderer`** and the `@service` pair, when their sites land: the same read, with
@@ -622,7 +699,7 @@ unrecoverable afterwards").
   the tree: a path-resolution view with silences, anchored by twelve cases. Two habits to take from
   it. It asserts on `disposition` and `basis` rather than only on the value resolved, so a case pins
   *which rule fired* and not merely that the answer came out right. And it pins absence explicitly,
-  with a third of its cases asserting no row at the coordinate, which is how the boundary of the
+  with five of its twelve cases asserting no row at the coordinate, which is how the boundary of the
   relation gets tested rather than assumed. It also asserts at most one row per coordinate in its
   read helper; the analogue here is per pair-row key, since this view keeps `ordinal` rather than
   collapsing it.
@@ -643,9 +720,20 @@ unrecoverable afterwards").
 * **Cross-site parity**: one test over `@routine`, `@service` and both `@condition` sites. The
   `UNION` arms are seven hand-written `SELECT`s over relations whose key arities differ, and a typo
   in one is exactly the drift it catches.
+* **The carrier move is pinned as a refactor, not as a feature.** Stage 4 changes no output, so the
+  assertion is that it changes no output: the routine-write pipeline-tier fixtures that exist today
+  keep their expected sources verbatim across the cutover. Beside that, a command-relation test in
+  the launcher family's mould pinning one row per routine-write coordinate with the facts the
+  emitter needs, and `PackageImportDirectionTest` covering the emitters' new home, which is what
+  turns "an emitter sees only commands" into a gate. The motivating case is a
+  `MutationRoutineWriteRecordField`, so at least one fixture must be that arm and not only the
+  hopful one.
 * **Pipeline tier**: the `rent_film` fixture binding `pInventoryId` from
   `ID! @nodeId(typeName: "Inventory")` through the projected key column, asserting the emitted call
-  materialises the record once and reads the column off it, plus the rejection cases.
+  materialises the record once and reads the column off it, plus the rejection cases. The fixture
+  has to be a shape that actually emits: a hop-less `Mutation @routine` classifies as a typed
+  `Deferred` unless its return scans as a routine carrier payload, so mirror the manual's
+  `rentFilmPayloadNested` shape rather than the bare payload return the motivating example sketches.
 * **Validate-time tests** that the build fails, not only that a `Rejection` is produced.
 * **The widening's blast radius**: a test at each of the six `ArgBindingMap.of` call sites that a
   trailing segment which resolves to no projection cannot reach `nestedSlotRead` and emit a raw
@@ -658,9 +746,18 @@ unrecoverable afterwards").
 
 ## Risks
 
-* **The widening at `ArgBindingMap.of` is the sharp edge**, not the views. Six call sites, and a
-  consumer (`RoutineCallEmitter.nestedSlotRead`) that will happily emit a raw map read for a
-  segment nobody interpreted. Gate it or teach every consumer in the same commit.
+* **The widening at `ArgBindingMap.of` is the sharp edge among the views.** Six call sites, and a
+  consumer (`RoutineCallEmitter.nestedSlotRead`) that will happily emit a raw map read for a segment
+  nobody interpreted. The pipeline order contains it (see "What this item does not add"), but only
+  if stage 3's detections actually cover every site the widening admits; a site with no detection is
+  a silent raw map read.
+* **The carrier move is the largest single piece of this item, and it is a re-platforming slice
+  rather than a feature.** Two emitters change package, a command relation is minted, and a guard
+  test's dial grows. It is bounded (the facts the two fetchers read are enumerable and already
+  pure-data) and it lands additive-then-cutover with output held identical, but it is the stage most
+  likely to want its own item if the schedule tightens. Lifting it out is fine; threading the
+  projection through a `MutationField` leaf to avoid it is not, because that re-creates the
+  emitter-reads-the-leaf coupling this item exists to stop relying on.
 * **Whether the parameters' SQL-side vocabulary is worth reaching.** They are `Field<?>` values on
   the protected `TableImpl.parameters`; the Java side, which is what the join and the gate need,
   comes off the generated `Routines` method with no such problem. Settle before the DDL is written
@@ -752,7 +849,11 @@ Draft of the `routine.adoc` subsection:
   shadow-versus-flip discipline rather than inventing two.
 * `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` (R333) owns the leaf zoo's dissolution.
   This item must not anticipate it or depend on it: it neither extends the sealed model nor
-  retires any of it, which is what lets the two proceed without a joint decision.
+  retires any of it, which is what lets the two proceed without a joint decision. Stage 4's carrier
+  move is not an exception. It leaves both routine-write leaves standing and only changes who reads
+  them, moving one family's emission from the leaf to a command exactly as the `facts-and-commands`
+  programme did family by family before R333's dissolution begins. If anything it shortens R333's
+  work, since a leaf with no emitter-side reader is easier to dissolve than one with two.
 * `roadmap/lsp-argmapping-routine-coordinate.md` (R626) gives `@routine(argMapping:)` completions
   and diagnostics at all. R626 explicitly leaves dot-path expansion unmodelled ("offer nothing
   rather than a misleading flat list") because the LSP snapshot carries no nested-input-field
@@ -774,10 +875,11 @@ Draft of the `routine.adoc` subsection:
 
 ## Stages
 
-One item, four stages in dependency order. The numbering is a real seam rather than bookkeeping:
+One item, five stages in dependency order. The numbering is a real seam rather than bookkeeping:
 each stage's result is observable on its own (rows in the store, a view a test can query, a
-rejection the build emits, generated source), so there is something to verify between them. The
-plan tracks what is next by collapsing a shipped stage into a one-line note.
+rejection the build emits, a refactor that holds output identical, generated source), so there is
+something to verify between them. The plan tracks what is next by collapsing a shipped stage into a
+one-line note.
 
 1. **Capture.** `sql_table.table_type`, `sql_routine_parameter` with its call surface, and the node
    metadata population. Registered under `FactCaptureAgreementTest`, transcription twins, comment
@@ -791,19 +893,33 @@ plan tracks what is next by collapsing a shipped stage into a one-line note.
    the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
    the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that
    closes the silent-base64 hole.
-4. **Grammar and emit.** The `ArgBindingMap.of` widening with its six-call-site audit, the planning
-   join into `LaunchSource.RoutineChain`, `RoutineCallEmitter`'s pre-statement change, and the
-   `@condition` helper hosting. Exit: the projection emits and executes.
+4. **The carrier move.** The routine-write command relation, the two render-side emitters, the
+   `TypeFetcherGenerator` cutover and the borrow-dial extension. A pure refactor: no author-facing
+   behaviour changes and no generated output moves, which is exactly what makes it verifiable on
+   its own. Exit: the routine-write fetchers render byte-identical output from a command row, no
+   emitter imports a `MutationField` arm, and `PackageImportDirectionTest` covers the new package
+   placement.
+5. **Grammar and emit.** The `ArgBindingMap.of` widening with its six-call-site audit, the planning
+   join into the routine-carrying command rows, `RoutineCallEmitter`'s pre-statement change, and
+   the `@condition` helper hosting. Exit: the projection emits and executes.
 
-**Why this lands as one item rather than three.** Stages 3 and 4 are two halves of one author-facing
-change: stage 3 rejects a spelling and stage 4 makes the replacement spelling work. Shipping 3
-alone would leave an author told to write something the generator does not yet accept, which is a
-worse state than either end. The staging exists so the work is verifiable in order, not so the
-stages ship to consumers separately.
+**Why this lands as one item rather than several.** Stages 3 and 5 are two halves of one
+author-facing change: stage 3 rejects a spelling and stage 5 makes the replacement spelling work.
+Shipping 3 alone would leave an author told to write something the generator does not yet accept,
+which is a worse state than either end. The staging exists so the work is verifiable in order, not
+so the stages ship to consumers separately.
 
-The site-keyed `deferred` arm from stage 3 is what keeps that honest while stage 4 is in flight and
-afterwards: a projection that resolves at a site whose emitter is not wired says so, rather than
-emitting nothing or emitting the raw base64. When stage 4 lands the `@routine`, `@service` and
+Stage 4 is the one stage that would survive being split out, since it is a refactor with no
+author-facing edge and no dependency on stages 1 to 3. It is kept here because it is the reason
+stage 5 has a carrier at all: split out, it becomes a refactor with no stated client, and the next
+session to route a routine-call fact would face the same wrong-carrier fork this item already hit
+once. If it has to be lifted later for scheduling, lift it as its own item and make stage 5 depend
+on it, rather than letting stage 5 thread the projection through a leaf.
+
+The site-keyed `deferred` arm from stage 3 is what keeps that honest while stages 4 and 5 are in
+flight and afterwards: a projection that resolves at a site whose emitter is not wired says so,
+rather than emitting nothing or emitting the raw base64. When stage 5 lands the `@routine`,
+`@service` and
 output-field `@condition` sites, the arm shrinks to the `site` values that carry pair rows but no
 emitter: the input-field `@condition`, and the three path-step sites (which resolve no leaf today
 and so can only ever defer). It stays as the standing enforcer for whichever site is wired next.
@@ -812,13 +928,21 @@ declare, so it has no relation, no `site` value and nothing to defer.
 
 ## Open questions
 
-* **What the plan-local projection relation looks like** in `EmitPlan`, and whether
-  `LauncherCommands` is the only command that needs the join or `ProjectionCommands` does too.
-  Bounded, but it decides how much of stage 4 is plumbing.
+* **What the plan-local projection relation looks like** in `EmitPlan`. The carriers are now
+  settled (the launcher command and the new routine-write command), so what is left is the
+  relation's own shape and where the join happens.
+* **How the projection reaches the child-side routine hop.** `PathFragments.emitTableExpression`
+  renders a `TableExpr.RoutineCall` reached through a `JoinStep`, not through a command row of its
+  own, so a projected binding on a child-side routine hop rides whichever command owns the join
+  path. `PathFragments` is already in `render` and `JoinStep` is already on the borrow dial, so this
+  is a routing question rather than a placement one, but it should be answered before stage 5 and it
+  shares an answer with the pre-statement question below. Whether any shipped shape reaches it is
+  worth measuring first: if none does, the honest move is a `deferred` `site` value rather than
+  speculative plumbing.
 * Whether `PathFragments.emitTableExpression` takes the pre-statement change (which propagates to
   its callers, since it returns a bare expression consumed inside alias-declaration loops) or keeps
   a per-read call as a documented site-local exception. A signature question one level up, not an
-  implementation detail, and it belongs to stage 4.
+  implementation detail, and it belongs to stage 5.
 * Whether a `@nodeId` input field that nothing consumes should warn. Today it is silently
   ignored wherever no consumer reads it, which is how the `TEXT` case above stays invisible;
   the bare-form rejection closes it at the `argMapping` sites only. A general "declared and
