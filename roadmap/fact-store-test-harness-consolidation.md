@@ -79,25 +79,30 @@ sibling cannot. Writing those notes is the work: if the note for the middle shap
 Resolving the `new NodeDeclaration(null)` versus `TestSchemaHelper.nodeDeclaration()` split is in
 scope and must not be preserved silently on the grounds that it is what the copies did.
 
-### Resource handle only, no closure wrapper
+### Two layers: a closure convenience over a resource primitive
 
 `capture/` uses `try (var store = CapturedStore.of(tmp, FIXTURE))`; `derive/` uses
-`withCapturedStore(sdl, dsl -> {...})`. Carrying both was considered and is rejected: they are two
-spellings of one thing that agree exactly until one changes, and the callback form is the one that
-cannot grow.
+`withCapturedStore(sdl, dsl -> {...})`. Ship both, layered, with the closure form as the one most
+tests reach for.
 
-Every axis on the table is really "and then also write X after capture" (`ClaimDomainRows.write`, a
-second graph's capture, the rejection and warning facts in `diagnostics/`). Against an open store
-that is a call inside the `try` block and costs the utility nothing. Against a callback it is a new
-parameter or a new overload every time, which is exactly how `FieldColumnTableTest` acquired its
-boolean flag. The tree already shows the end state: `AuthoredClaimConflictsTest.detectionAgainstWalk`
-needs capture, then `ClaimDomainRows.write`, then `AuthoredClaimConflicts.detect`, could not express
-that through its own `withCapturedStore`, and re-opens the store by hand instead;
-`siblingGraphConflictsDoNotLeak` does the same inline.
+The goal here is good common tools, not a single sanctioned way to open a store. The closure form is
+genuinely the nicer call site for the common case, which is most of the seven classes: hand it SDL,
+get a `DSLContext`, assert. It should stay, and it should be the shortest thing to type. The
+resource handle sits underneath it as the primitive, for the tests that need more than one step
+against the open store.
 
-So: one resource handle. `withCapturedStoreAndClaimDomain` becomes `ClaimDomainRows.write(...)` at
-the call site, and the two hand-rolled re-opens collapse onto the handle rather than staying as
-exceptions to it.
+That layering is what keeps the convenience form from accreting. The pressure is real: every extra
+axis is "and then also write X after capture" (`ClaimDomainRows.write`, a second graph's capture, the
+rejection and warning facts in `diagnostics/`), and today those arrive as a new parameter or overload
+because there is nowhere else for them to go. `FieldColumnTableTest` grew its boolean flag that way,
+and `AuthoredClaimConflictsTest.detectionAgainstWalk` gave up and re-opened the store by hand, as
+does `siblingGraphConflictsDoNotLeak` inline. With a primitive available, those stop being deformations
+of the closure form and become ordinary calls in a `try` block, and the closure form gets to stay
+simple because it no longer has to be the only door.
+
+So: keep `with(...)` narrow and do not grow it past the named shapes above. Anything wanting a second
+step against the store drops to the handle. `withCapturedStoreAndClaimDomain` and the two hand-rolled
+re-opens are the first three callers of the handle.
 
 ### The graph identity is caller-supplied
 
@@ -117,6 +122,19 @@ load-bearing is that the *caller* names the graph, for two populations:
 
 Migrating without lifting the name to a parameter would either leave the sweeps hand-rolled, which
 is where the duplication is largest, or flatten the partition they assert on.
+
+The directory cannot be dropped either, and for a reason worth stating because it fails silently.
+`RewriteSchemaLoader.load` takes `Collection<SchemaSource.File>`, the file arm specifically, so SDL
+held as a string literal has to be materialized before anything can parse it. The path it is written
+to then *is* its identity downstream: `SchemaSource.File.sourceName()` is the absolute normalized
+path, which is the string handed to the parser, the string graphql-java echoes back as
+`SourceLocation.getSourceName()`, and the key `SchemaInputAttribution`'s map and capture's stamp
+lookup are both read on. Since `fixtureFile` hardcodes the name `fixture.graphqls`, the directory is
+the whole of a fixture's identity: one directory, one fixture, one graph. A handle that took a graph
+name but reused one directory would have each capture overwrite the previous fixture with no error,
+because the load would still succeed against whatever text landed there last. So the entry points
+take a `(name, directory)` pair, or mint per-graph subdirectories themselves the way the sweeps
+already do by hand (`Files.createDirectories(tmp.resolve(example.id()))`).
 
 ### Make the registry source an explicit arm
 
