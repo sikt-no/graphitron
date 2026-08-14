@@ -43,7 +43,12 @@ public final class MethodCompletions {
     /** Directive whose method slot narrows to the lifter shape. */
     private static final String EXTERNAL_FIELD_DIRECTIVE = "externalField";
 
-    /** Erased display name of a jOOQ {@code Field<X>} return type. */
+    /**
+     * Erased display name of a jOOQ {@code Field<X>} return type. Matched against
+     * {@link ClasspathMethods.Method#returnType()} and deliberately not against the declared form
+     * beside it: this is a question about the type's identity, and every {@code Field<X>} answers it
+     * the same way while the declared spellings all differ.
+     */
     private static final String FIELD_RETURN_TYPE = "Field";
 
     private MethodCompletions() {}

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.MethodSignature;
+import java.lang.classfile.attribute.SignatureAttribute;
 import java.lang.constant.ClassDesc;
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -251,6 +253,125 @@ class ClasspathScannerTest {
                 org.assertj.core.api.Assertions.tuple("filmId", "Integer"),
                 org.assertj.core.api.Assertions.tuple("title", "String")
             );
+    }
+
+    @Test
+    void declaredTypesComeOffTheSignatureAttribute(@TempDir Path classes) throws IOException {
+        // The descriptor erases List<Film> to List, which is what a hover used to show. The
+        // Signature attribute is where the element type survives, and it is the only place a walk
+        // following an accessor hop can read what the hop yields.
+        var fqn = "com.example.MyService";
+        var listDesc = ClassDesc.of("java.util.List");
+        var integerDesc = ClassDesc.of("java.lang.Integer");
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod(
+                "films",
+                java.lang.constant.MethodTypeDesc.of(listDesc, integerDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "(Ljava/lang/Integer;)Ljava/util/List<Lcom/example/Film;>;")))
+            )
+            .withMethod(
+                "title",
+                java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.lang.String")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> {}
+            )
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var methods = ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods();
+
+        assertThat(methods).filteredOn(m -> m.name().equals("films")).singleElement()
+            .satisfies(m -> {
+                assertThat(m.returnType()).as("the erasure the descriptor carries").isEqualTo("List");
+                assertThat(m.declaredReturnType()).isEqualTo("List<Film>");
+            });
+        assertThat(methods).filteredOn(m -> m.name().equals("title")).singleElement()
+            .as("no Signature attribute means the descriptor already is the declared form")
+            .satisfies(m -> {
+                assertThat(m.returnType()).isEqualTo("String");
+                assertThat(m.declaredReturnType()).isEqualTo("String");
+            });
+    }
+
+    @Test
+    void declaredParameterTypesAreReadPositionAndWildcardIncluded(@TempDir Path classes) throws IOException {
+        var fqn = "com.example.MyService";
+        var listDesc = ClassDesc.of("java.util.List");
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod(
+                "count",
+                java.lang.constant.MethodTypeDesc.of(
+                    ClassDesc.of("java.lang.Integer"), listDesc, ClassDesc.of("java.lang.String")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "(Ljava/util/List<+Lcom/example/Film;>;Ljava/lang/String;)Ljava/lang/Integer;")))
+            )
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var method = ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods().get(0);
+
+        assertThat(method.parameters())
+            .extracting(CompletionData.Parameter::type, CompletionData.Parameter::declaredType)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("List", "List<? extends Film>"),
+                org.assertj.core.api.Assertions.tuple("String", "String"));
+    }
+
+    @Test
+    void aTypeVariableDeclaresLessThanItErasesTo(@TempDir Path classes) throws IOException {
+        // The case that earns the census both columns rather than one and a derivation: T erases to
+        // its bound, which the declared form does not name, while List<Film> declares an element
+        // type the erasure does not. Neither column is a function of the other.
+        var fqn = "com.example.MyService";
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod(
+                "pick",
+                java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.lang.Object")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "<T:Ljava/lang/Object;>()TT;")))
+            )
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var method = ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods().get(0);
+
+        assertThat(method.returnType()).isEqualTo("Object");
+        assertThat(method.declaredReturnType()).isEqualTo("T");
+    }
+
+    @Test
+    void recordComponentDeclaredTypeComesFromItsOwnSignature(@TempDir Path classes) throws IOException {
+        var fqn = "com.example.FilmCard";
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL)
+            .withSuperclass(ClassDesc.of("java.lang.Record"))
+            .with(java.lang.classfile.attribute.RecordAttribute.of(java.util.List.of(
+                java.lang.classfile.attribute.RecordComponentInfo.of(
+                    "actors", ClassDesc.of("java.util.List"),
+                    SignatureAttribute.of(java.lang.classfile.Signature.parseFrom(
+                        "Ljava/util/List<Lcom/example/Actor;>;"))
+                ),
+                java.lang.classfile.attribute.RecordComponentInfo.of(
+                    "title", ClassDesc.of("java.lang.String")
+                )
+            )))
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).get(0).recordComponents())
+            .extracting(CompletionData.RecordComponent::name,
+                CompletionData.RecordComponent::displayType,
+                CompletionData.RecordComponent::declaredType)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("actors", "List", "List<Actor>"),
+                org.assertj.core.api.Assertions.tuple("title", "String", "String"));
     }
 
     @Test

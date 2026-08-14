@@ -58,4 +58,13 @@ public class TestSlotPojo {
     public String isTitle() {
         return null;
     }
+
+    /**
+     * A generic accessor: its descriptor erases to {@code List} and only the method's
+     * {@code Signature} attribute names the element type, so the slot's rendered type says which of
+     * the two the census reads.
+     */
+    public java.util.List<String> getTags() {
+        return null;
+    }
 }

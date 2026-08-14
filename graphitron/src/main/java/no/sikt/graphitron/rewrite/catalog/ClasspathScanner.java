@@ -8,8 +8,11 @@ import java.lang.classfile.ClassFile;
 import java.lang.classfile.ClassModel;
 import java.lang.classfile.FieldModel;
 import java.lang.classfile.MethodModel;
+import java.lang.classfile.MethodSignature;
+import java.lang.classfile.Signature;
 import java.lang.classfile.attribute.MethodParametersAttribute;
 import java.lang.classfile.attribute.RecordAttribute;
+import java.lang.classfile.attribute.SignatureAttribute;
 import java.lang.constant.ClassDesc;
 import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
@@ -47,8 +50,11 @@ import java.util.zip.ZipFile;
  * row needed), never through {@code @service}. Admitting the routine surface
  * would grow the {@code jvm_} fact relations for no present consumer.
  *
- * <p>Method type information comes off the erased JVM descriptor, enough for
- * hover signatures and unknown-method diagnostics. Parameter names follow the
+ * <p>Method and record-component type information is read in both forms: the erasure the JVM
+ * descriptor carries, and the declared form the {@code Signature} attribute carries where the
+ * compiler emitted one. A surface spelling a signature for an author wants the declared form,
+ * a check on a type's identity wants the erasure, and a walk following an accessor into a
+ * container's element type can only use the declared one. Parameter names follow the
  * {@link CompletionData.Parameter#name()} null-when-unavailable contract; see
  * {@link #readParameterNames}.
  */
@@ -266,7 +272,13 @@ public final class ClasspathScanner {
             String name = info.name().stringValue();
             String descriptor = info.descriptor().stringValue();
             String displayType = displayName(ClassDesc.ofDescriptor(descriptor));
-            components.add(new CompletionData.RecordComponent(name, displayType));
+            // A record component carries its own Signature attribute, so the declared form is read
+            // per component rather than off the record's accessor method.
+            String declaredType = info.findAttribute(Attributes.signature())
+                .map(SignatureAttribute::asTypeSignature)
+                .map(ClasspathScanner::declaredName)
+                .orElse(displayType);
+            components.add(new CompletionData.RecordComponent(name, displayType, declaredType));
         }
         return List.copyOf(components);
     }
@@ -293,19 +305,36 @@ public final class ClasspathScanner {
             // methods taking com.foo.Result and com.bar.Result render identically once the package
             // is gone, and the store keys the method on this.
             String descriptor = desc.descriptorString();
+            // The declared forms come off the Signature attribute where the classfile carries one,
+            // and fall back to the erasure where it does not, which is what absence means. The
+            // signature's argument list is used only when it is the same length as the descriptor's:
+            // a compiler-synthesised parameter appears in one list and not the other, and there is
+            // no position-wise correction for that, so a length mismatch falls back wholesale rather
+            // than pairing a declared form with the wrong parameter.
+            var signature = methodSignature(m);
+            String declaredReturnType = signature
+                .map(s -> declaredName(s.result()))
+                .orElse(returnType);
+            var declaredParams = signature
+                .map(MethodSignature::arguments)
+                .filter(args -> args.size() == desc.parameterList().size())
+                .orElse(List.of());
             var paramNames = readParameterNames(m, desc.parameterList().size());
             var parameters = new ArrayList<CompletionData.Parameter>();
             for (int i = 0; i < desc.parameterList().size(); i++) {
                 ClassDesc paramType = desc.parameterList().get(i);
+                String erased = displayName(paramType);
                 parameters.add(new CompletionData.Parameter(
                     paramNames.get(i),
-                    displayName(paramType),
+                    erased,
                     null,
-                    ""
+                    "",
+                    i < declaredParams.size() ? declaredName(declaredParams.get(i)) : erased
                 ));
             }
             methods.add(new CompletionData.Method(
-                name, returnType, "", List.copyOf(parameters), returnsCondition, descriptor));
+                name, returnType, "", List.copyOf(parameters), returnsCondition, descriptor,
+                declaredReturnType));
         }
         return List.copyOf(methods);
     }
@@ -342,5 +371,51 @@ public final class ClasspathScanner {
 
     private static String displayName(ClassDesc desc) {
         return desc.displayName();
+    }
+
+    /**
+     * The declared form of one type as a signature spells it: package-less like
+     * {@link #displayName}, with type arguments kept. {@code List<Film>} rather than the
+     * {@code List} its descriptor erases to, which is the whole reason the signature is read.
+     *
+     * <p>A wildcard renders as the author wrote it ({@code ?}, {@code ? extends X},
+     * {@code ? super X}) and a type variable as the variable's own identifier, which is the one
+     * place this form carries strictly less than the erasure: {@code T} does not say what
+     * {@code T} erases to. Neither form subsumes the other, which is why the census keeps both.
+     */
+    private static String declaredName(Signature signature) {
+        return switch (signature) {
+            case Signature.BaseTypeSig base ->
+                displayName(ClassDesc.ofDescriptor(String.valueOf(base.baseType())));
+            case Signature.ArrayTypeSig array -> declaredName(array.componentSignature()) + "[]";
+            case Signature.TypeVarSig variable -> variable.identifier();
+            case Signature.ClassTypeSig cls -> {
+                if (cls.typeArgs().isEmpty()) yield displayName(cls.classDesc());
+                var args = new ArrayList<String>(cls.typeArgs().size());
+                for (var arg : cls.typeArgs()) args.add(declaredArg(arg));
+                yield displayName(cls.classDesc()) + "<" + String.join(", ", args) + ">";
+            }
+        };
+    }
+
+    /** One type argument in the form the author wrote it, wildcard bound included. */
+    private static String declaredArg(Signature.TypeArg arg) {
+        return switch (arg) {
+            case Signature.TypeArg.Unbounded ignored -> "?";
+            case Signature.TypeArg.Bounded bounded -> switch (bounded.wildcardIndicator()) {
+                case NONE -> declaredName(bounded.boundType());
+                case EXTENDS -> "? extends " + declaredName(bounded.boundType());
+                case SUPER -> "? super " + declaredName(bounded.boundType());
+            };
+        };
+    }
+
+    /**
+     * The generic signature a method declares, or empty where the classfile carries none. Absent
+     * is the common case and means the descriptor already is the declared form: the compiler emits
+     * the attribute only where erasure loses something.
+     */
+    private static java.util.Optional<MethodSignature> methodSignature(MethodModel m) {
+        return m.findAttribute(Attributes.signature()).map(SignatureAttribute::asMethodSignature);
     }
 }

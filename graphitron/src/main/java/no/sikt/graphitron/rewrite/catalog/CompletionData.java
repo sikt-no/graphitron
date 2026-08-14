@@ -238,8 +238,22 @@ public record CompletionData(
      * a rendered display type for hover. Source: the JVM
      * {@link java.lang.classfile.attribute.RecordAttribute} attribute on the
      * class file, read by {@link ClasspathScanner}.
+     *
+     * <p>{@code displayType} is the erased form the component descriptor carries;
+     * {@code declaredType} is what the source declared, type arguments kept. The two
+     * differ only for a generic component, and neither derives from the other: erasure
+     * maps a type variable to its bound, which the declared form does not name.
      */
-    public record RecordComponent(String name, String displayType) {}
+    public record RecordComponent(String name, String displayType, String declaredType) {
+
+        /**
+         * A component whose declared form is its erased one, which is every non-generic
+         * component and the reading a caller that saw no {@code Signature} attribute gets.
+         */
+        public RecordComponent(String name, String displayType) {
+            this(name, displayType, displayType);
+        }
+    }
 
     /**
      * One {@code public static GraphQLScalarType} field on an
@@ -275,6 +289,12 @@ public record CompletionData(
      * {@code returnType} and {@code parameters} lose: both render erased simple names, so two
      * methods taking same-named types from different packages are indistinguishable through them.
      * Empty for a caller that read no classfile.
+     *
+     * <p>{@code declaredReturnType} is what the source declared, type arguments kept, where
+     * {@code returnType} is the erasure the descriptor carries. A surface rendering a signature
+     * wants the first and a surface testing a type's identity wants the second, so both are
+     * carried: erasure maps a type variable to its bound, which the declared form does not name,
+     * and the declared form names a container's element type, which the erasure does not.
      */
     public record Method(
         String name,
@@ -282,7 +302,8 @@ public record CompletionData(
         String description,
         List<Parameter> parameters,
         boolean returnsCondition,
-        String descriptor
+        String descriptor,
+        String declaredReturnType
     ) {
         /**
          * Back-compat constructor defaulting {@code returnsCondition} to
@@ -304,6 +325,15 @@ public record CompletionData(
                       List<Parameter> parameters, boolean returnsCondition) {
             this(name, returnType, description, parameters, returnsCondition, "");
         }
+
+        /**
+         * A method whose declared return form is its erased one, which is every method returning
+         * a non-generic type and the reading a caller that saw no {@code Signature} attribute gets.
+         */
+        public Method(String name, String returnType, String description,
+                      List<Parameter> parameters, boolean returnsCondition, String descriptor) {
+            this(name, returnType, description, parameters, returnsCondition, descriptor, returnType);
+        }
     }
 
     /**
@@ -311,8 +341,21 @@ public record CompletionData(
      * {@code ParamSource} taxonomy (Arg, Context, Sources, DslContext,
      * Table, SourceTable). {@code name} is {@code null} when the class was
      * compiled without {@code -parameters}.
+     *
+     * <p>{@code type} is the erasure the descriptor carries and {@code declaredType} what the
+     * source declared, on the same terms as {@link Method#declaredReturnType()}.
      */
-    public record Parameter(String name, String type, String source, String description) {}
+    public record Parameter(String name, String type, String source, String description,
+                            String declaredType) {
+
+        /**
+         * A parameter whose declared form is its erased one, which is every parameter of a
+         * non-generic type and the reading a caller that saw no {@code Signature} attribute gets.
+         */
+        public Parameter(String name, String type, String source, String description) {
+            this(name, type, source, description, type);
+        }
+    }
 
     /**
      * Source position: editor URI + line + column. Used for

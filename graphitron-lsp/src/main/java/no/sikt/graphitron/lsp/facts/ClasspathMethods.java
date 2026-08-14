@@ -56,7 +56,8 @@ public final class ClasspathMethods {
         var rows = store.dsl()
             .selectDistinct(JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR, JVM_METHOD.RETURN_TYPE,
                 JVM_METHOD_PARAMETER.POSITION, JVM_METHOD_PARAMETER.PARAMETER_NAME,
-                JVM_METHOD_PARAMETER.PARAMETER_TYPE)
+                JVM_METHOD_PARAMETER.PARAMETER_TYPE, JVM_METHOD.DECLARED_RETURN_TYPE,
+                JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE)
             .from(JVM_METHOD)
             .leftJoin(JVM_METHOD_PARAMETER)
             .on(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME))
@@ -73,12 +74,12 @@ public final class ClasspathMethods {
         for (var row : rows) {
             String key = row.value1() + row.value2();
             if (!key.equals(currentKey)) {
-                current = new Method(row.value1(), row.value3(), new ArrayList<>());
+                current = new Method(row.value1(), row.value3(), row.value7(), new ArrayList<>());
                 methods.add(current);
                 currentKey = key;
             }
             if (row.value6() != null) {
-                current.parameters().add(new Parameter(row.value5(), row.value6()));
+                current.parameters().add(new Parameter(row.value5(), row.value6(), row.value8()));
             }
         }
         return methods;
@@ -88,8 +89,13 @@ public final class ClasspathMethods {
      * One method as an editor surface needs it. The LSP's own vocabulary: the store carries the
      * declaration, and how a signature reads to an author is this language server's business rather
      * than a fact anything else should inherit.
+     *
+     * <p>Both type forms are carried because the surfaces want different ones. Rendering wants the
+     * declared form; a check on whether a method returns a particular type wants the erasure, which
+     * is the form that answers the identity question without a spelling in it.
      */
-    public record Method(String name, String returnType, List<Parameter> parameters) {
+    public record Method(String name, String returnType, String declaredReturnType,
+                         List<Parameter> parameters) {
 
         /** How many parameters the method declares, which is what joins the source-side Javadoc. */
         public int arity() {
@@ -102,20 +108,31 @@ public final class ClasspathMethods {
             return parameters.stream().anyMatch(p -> p.name() == null);
         }
 
-        /** Erased Java signature, {@code ReturnType name(Type arg0, ...)}. A parameter with no name
-         * falls back to {@code arg<i>}. */
+        /**
+         * Java signature as the author declared it, {@code ReturnType name(Type arg0, ...)}, type
+         * arguments kept. A parameter with no name falls back to {@code arg<i>}.
+         *
+         * <p>The declared form, not the erasure: an author looking at a signature is reading their
+         * own source back, and {@code List} where they wrote {@code List<Film>} is the one place
+         * this surface could show less than the editor beside it. The erasure stays reachable for
+         * the checks that want a type's identity rather than its spelling.
+         */
         public String signature() {
             var sb = new StringBuilder();
-            sb.append(returnType).append(' ').append(name).append('(');
+            sb.append(declaredReturnType).append(' ').append(name).append('(');
             for (int i = 0; i < parameters.size(); i++) {
                 if (i > 0) sb.append(", ");
                 var p = parameters.get(i);
-                sb.append(p.type()).append(' ').append(p.name() != null ? p.name() : "arg" + i);
+                sb.append(p.declaredType()).append(' ')
+                  .append(p.name() != null ? p.name() : "arg" + i);
             }
             return sb.append(')').toString();
         }
     }
 
-    /** One parameter: its declared type, and its name where the classfile kept one. */
-    public record Parameter(String name, String type) {}
+    /**
+     * One parameter: its type in both forms, and its name where the classfile kept one.
+     * {@code type} is the erasure, {@code declaredType} what the source declared.
+     */
+    public record Parameter(String name, String type, String declaredType) {}
 }

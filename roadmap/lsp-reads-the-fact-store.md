@@ -1281,7 +1281,7 @@ that already ask them.
 | Which table a *field site's* columns come from | `intent_field_column_table`: the chain's terminal arrival for a `@reference` field, the navigated element table for the order-by sites. The parent's own binding is deliberately absent, being what a reader already holds | built |
 | What an *omitted* `@reference` path infers | foreign-key discovery between the parent's binding and the field's named type's binding; both bindings are built, the discovery is not | unbuilt |
 | What member names a backing class offers | `intent_class_member_slot`: a record's components, or the bean accessors of anything else, the rule chosen by the class's declared form. Keyed by the census, not by a graph | built |
-| Which Java class a type is backed by | `intent_type_backing_class`, the reflective binding walk's own answer. Blocked on the census: a classfile's erased return type loses a container's element type, so the walk's accessor hops have nothing to follow | unbuilt |
+| Which Java class a type is backed by | `intent_type_backing_class`, the reflective binding walk's own answer. The census blocker is gone: it now carries the declared return type beside the erasure, so an accessor hop names its element type. What is unbuilt is the walk over those hops, its grounding and its gates | unbuilt |
 | The verdict label for a declaration | `intent_resolved_field_claim` and a type-grain sibling, their `classifier` vocabularies grown from today's seven and two to the whole taxonomy | partly built |
 
 Two things fall out of writing that down. The label rows do not want a new view at all: they want the
@@ -1530,6 +1530,48 @@ the same rules ran through for the declaration-name half.
   dead and cannot be: `CatalogFacts` takes it as capture's *input*, the same relationship the class
   census has with `ClasspathScanner`'s output, which is why `FixtureCatalogTest` now asserts on both
   sides of that capture rather than dropping the projection half.
+
+## Settled while building: the verdict labels are blocked, and the block is one column
+
+The next increment was going to be the verdict-label arms, on the finding above that they want no new
+relation, only the claim views' `classifier` vocabulary grown to the whole taxonomy. Costing that out
+first is what found the wall: the label an arm renders is the classified variant's own name, so a grain
+does not move until every one of its variants can be named, and eight of the twenty-two type variants
+(`JavaRecord`, `JavaRecordInput`, `JooqRecord`, `JooqRecordInput`, `JooqTableRecord`,
+`JooqTableRecordInput`, `PojoResult`, `PojoInput`) are decided by which Java class backs the type.
+The field grain has the same dependency through its record-read arms. So both grains sit behind the
+backing-class relation, which sat behind the census, and the honest next increment was the census
+rather than the labels.
+
+* **Partial coverage is not an option for these arms, which is what makes the order forced.** The
+  incumbent has a verdict at every coordinate and the inlay arm skips a coordinate with none. A
+  half-populated verdict view is therefore invisible: hints quietly stop appearing for some
+  declarations, with no error anywhere. That is why the vocabulary cannot be grown a few arms at a
+  time behind a live reader, and why "grow the vocabulary" is one increment per grain and not per arm.
+* **The blocker was one column, twice over.** The census recorded only the erasure the JVM descriptor
+  carries, so an accessor returning `List<Film>` said `List` and a walk following the hop had nothing
+  to follow. Reading the classfile `Signature` attribute is what the accessor walk was missing; it is
+  not a new relation and not a new family, it is a column beside one that was already there.
+* **The erasure stays, and the reason is a type variable.** The tempting shape is one column holding
+  the declared form with the erasure derived from it, and it is wrong: `T` erases to its bound, which
+  the declared form does not name. Neither form is a function of the other, so both are base columns.
+  The direction each reader wants is a property of its question, not a preference: a signature spelled
+  for an author wants the declared form, and `@externalField`'s "does this return a jOOQ `Field`"
+  check wants the erasure, because every `Field<X>` answers that the same way.
+* **A pair of parameter lists is not a pair of positions.** The signature attribute's argument list
+  and the descriptor's differ in length where the compiler synthesised a parameter, and there is no
+  position-wise correction for that. So a length mismatch falls back to the erasure for the whole
+  method rather than pairing a declared form with the wrong parameter, which is the failure that would
+  have shipped silently and shown an author a type their source does not contain.
+* **The reader arrived with the fact, and it was a defect.** `intent_class_member_slot.display_type`
+  and the method-signature hover were both showing the erasure, so a hover on a `List<Film>` accessor
+  said `List` where the editor line beside it said otherwise. The member slot's column is display-only
+  and now carries the declared form; its own DDL comment used to argue that being erased was why the
+  binding walk could not be derived from it, and that sentence is gone with the reason for it.
+* **The fixtures compile rather than declare.** The member-slot cases read a real classfile scan of
+  this package's fixture types, so a generic component and a generic accessor are the compiler's own
+  `Signature` attributes rather than strings a fixture wrote. A fixture that declared the attribute
+  itself could assert a census no compiler produces, which is the whole reason that test scans.
 
 ## Retired vocabulary
 

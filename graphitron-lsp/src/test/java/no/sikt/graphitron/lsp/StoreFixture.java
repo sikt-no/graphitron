@@ -353,6 +353,27 @@ final class StoreFixture implements AutoCloseable {
         return new CompletionData.Parameter(name, type, null, "");
     }
 
+    /**
+     * A method whose declared return form differs from the erasure beside it, which is what a
+     * generic return looks like in the census: the descriptor says {@code List} and the classfile's
+     * signature says {@code List<Film>}. Separate from {@link #method} so a fixture that means the
+     * two forms to differ has to say so.
+     */
+    static CompletionData.Method genericMethod(
+        String name, String returnType, String declaredReturnType,
+        CompletionData.Parameter... parameters
+    ) {
+        var erased = method(name, returnType, parameters);
+        return new CompletionData.Method(
+            erased.name(), erased.returnType(), erased.description(), erased.parameters(),
+            erased.returnsCondition(), erased.descriptor(), declaredReturnType);
+    }
+
+    /** A parameter whose declared form differs from its erasure, on {@link #genericMethod}'s terms. */
+    static CompletionData.Parameter genericParameter(String name, String type, String declaredType) {
+        return new CompletionData.Parameter(name, type, null, "", declaredType);
+    }
+
     @Override
     public void close() {
         store.close();

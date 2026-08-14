@@ -423,6 +423,7 @@ final class CatalogFactCapture {
                 row.setMethodName(method.name());
                 row.setDescriptor(descriptor);
                 row.setReturnType(method.returnType());
+                row.setDeclaredReturnType(method.declaredReturnType());
                 row.setReturnsCondition(method.returnsCondition());
                 sink.add(row);
                 int position = 0;
@@ -435,6 +436,7 @@ final class CatalogFactCapture {
                     parameterRow.setPosition(position++);
                     parameterRow.setParameterName(parameter.name());
                     parameterRow.setParameterType(parameter.type());
+                    parameterRow.setDeclaredParameterType(parameter.declaredType());
                     sink.add(parameterRow);
                 }
             }
@@ -451,6 +453,7 @@ final class CatalogFactCapture {
                 row.setComponentName(component.name());
                 row.setPosition(position++);
                 row.setDisplayType(component.displayType());
+                row.setDeclaredType(component.declaredType());
                 sink.add(row);
             }
 

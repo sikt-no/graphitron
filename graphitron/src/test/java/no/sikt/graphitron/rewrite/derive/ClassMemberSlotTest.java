@@ -53,7 +53,7 @@ class ClassMemberSlotTest {
         withCapturedStore(dsl -> {
             var slots = slots(dsl, TestSlotRecord.class);
             assertThat(slots).extracting(r -> r.get(INTENT_CLASS_MEMBER_SLOT.SLOT_NAME))
-                .containsExactly("filmId", "title");
+                .containsExactly("filmId", "tags", "title");
             assertThat(slots).allSatisfy(r ->
                 assertThat(r.get(INTENT_CLASS_MEMBER_SLOT.ORIGIN)).isEqualTo("RECORD_COMPONENT"));
             assertThat(slot(dsl, TestSlotRecord.class, "filmId")
@@ -145,6 +145,28 @@ class ClassMemberSlotTest {
             assertThat(rows(dsl, TestSlotPojo.class, "title"))
                 .extracting(r -> r.get(INTENT_CLASS_MEMBER_SLOT.ACCESSOR_METHOD_NAME))
                 .containsExactlyInAnyOrder("getTitle", "isTitle"));
+    }
+
+    // ===== The rendered type is the declared one =====
+
+    /**
+     * The slot's type is what the source declared, not what the descriptor erases to, and both arms
+     * agree on that. An author reading {@code List} learns nothing about what the member holds;
+     * {@code List<String>} is the answer they are looking at in their own source. This is also the
+     * fact an accessor walk needs, a container's element type being exactly what erasure drops.
+     */
+    @Test
+    void aSlotRendersTheDeclaredTypeRatherThanTheErasure() {
+        withCapturedStore(dsl -> {
+            assertThat(slot(dsl, TestSlotRecord.class, "tags")
+                .get(INTENT_CLASS_MEMBER_SLOT.DISPLAY_TYPE))
+                .as("the record arm reads the component's own signature")
+                .isEqualTo("List<String>");
+            assertThat(slot(dsl, TestSlotPojo.class, "tags")
+                .get(INTENT_CLASS_MEMBER_SLOT.DISPLAY_TYPE))
+                .as("the bean arm reads the accessor's signature")
+                .isEqualTo("List<String>");
+        });
     }
 
     /** The arm is chosen by "not a record", so an interface answers with accessors like any class. */

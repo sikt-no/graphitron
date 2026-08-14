@@ -70,7 +70,7 @@ class HoversTest {
         store = StoreFixture.ofCatalog(tmp, SDL, Stream.concat(
             Stream.of(
                 StoreFixture.jarClass(SERVICE, List.of(
-                    StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
+                    StoreFixture.genericMethod("list", "List", "List<Film>", StoreFixture.parameter("limit", "int")),
                     StoreFixture.method("raw", "List", StoreFixture.parameter(null, "int")),
                     StoreFixture.method("page", "Object", StoreFixture.parameter("film", "Object")),
                     StoreFixture.method("page", "Object",
@@ -491,7 +491,26 @@ class HoversTest {
         var md = markdownAt(file, pointAt(file, 1, "list"));
         assertThat(md).contains("**Method** `list`");
         assertThat(md).contains("Returns the first N films.");
-        assertThat(md).contains("List list(int limit)");
+        assertThat(md).contains("List<Film> list(int limit)");
+    }
+
+    /**
+     * The signature is spelled the way the author wrote it. A hover that said {@code List} where the
+     * source says {@code List<Film>} was showing the erasure the descriptor carries, which tells an
+     * author less than the line they are hovering over; the census carries the declared form beside
+     * it for exactly this.
+     */
+    @Test
+    void methodHoverSpellsTheDeclaredReturnTypeRatherThanItsErasure() {
+        var file = file("""
+            type Query {
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+            }
+            """);
+
+        var md = markdownAt(file, pointAt(file, 1, "list"));
+        assertThat(md).contains("List<Film> list(int limit)");
+        assertThat(md).doesNotContain("List list(int limit)");
     }
 
     @Test
@@ -505,7 +524,7 @@ class HoversTest {
         var md = markdownAt(file, pointAt(file, 1, "list"));
         assertThat(md).contains("**Method** `list`");
         assertThat(md).contains("`com.example.FilmService`");
-        assertThat(md).contains("List list(int limit)");
+        assertThat(md).contains("List<Film> list(int limit)");
     }
 
     @Test
