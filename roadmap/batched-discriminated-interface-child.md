@@ -99,16 +99,42 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   connection half in the same commit that lifts the deferral. Do not touch the guard here. The participant precondition the sibling applies (at
   least one `TableBound` participant) has no analogue here: a discriminated interface rejects
   non-table members at the parse boundary (`TypeBuilder.buildParticipantList`, the
-  `interfaceTable != null` arm, errors on any classified non-table implementor), so every
-  participant is table-bound by construction. State that as the reason the guard is absent rather
-  than omitting it silently. `GraphitronType.TableInterfaceType`'s own javadoc currently claims the
+  `interfaceTable != null` arm, errors on any classified non-table implementor, and the same arm's
+  fall-through errors on a directiveless one), so every participant is
+  `ParticipantRef.TableBacked` by construction. **State the invariant at that name, not the
+  sibling's.** `TableBacked` has two arms and the sibling's guard reads only one of them:
+  a joined-table discriminated interface populates `ParticipantRef.JoinedTableBound` exclusively
+  (the `joined-table-interface` corpus shape, where `Individual` and `Company` each carry a detail
+  `@table`), so "every participant is `TableBound`" is false exactly there. Porting the sibling's
+  `anyMatch(p -> p instanceof ParticipantRef.TableBound)` verbatim would therefore leave the
+  joined-table child unbatched, which is the concrete reason the guard is absent rather than
+  restated. `GraphitronType.TableInterfaceType`'s own javadoc currently claims the
   opposite ("Unbound participants (e.g. `@error` types) are recorded as `ParticipantRef.Unbound`",
   copied from the `InterfaceType` / `UnionType` siblings); correct it while stating the invariant,
   since it is the first place a reader would check.
 * A batched sibling leaf for `ChildField.TableInterfaceField`. It carries what the unbatched leaf
   carries plus the parent `SourceKey`, the `KeyLift`, the parent table and result type, and the
-  `LoaderRegistration`, mirroring `BatchedInterfaceField`'s component list (including its
-  `BatchKeyField, ParentRowDemand` implements clause). Mirror the component list, not the key
+  `LoaderRegistration`, mirroring `BatchedInterfaceField`'s component list.
+
+  **Mirror the polymorphic sibling's components, not its `implements` clause.**
+  `BatchedInterfaceField` is `ChildField, BatchKeyField, ParentRowDemand`; this leaf's unbatched
+  twin is `TableTargetField, ParentRowDemand`, and the clause to write is `TableTargetField,
+  BatchKeyField, ParentRowDemand`, which is what `BatchedTableField` (`TableTargetField,
+  BatchKeyField`) already is for the plain table child. Three things ride on the seal rather than
+  on the record shape, so getting the clause wrong sends the edits to the wrong places:
+  * `ChildField`'s own `permits` list routes the whole table-target family through the
+    `TableTargetField` intermediate seal and never names its members, so the sealed edit is
+    `TableTargetField`'s `permits` clause, not `ChildField`'s.
+  * `TableTargetField extends SqlGeneratingField`, which is what
+    `GraphitronSchemaValidator.validatePaginationRequiresOrdering` keys on.
+    `roadmap/root-connection-over-discriminated-interface.md` consumes that keying for its child
+    half, so a leaf outside the seal escapes the one check its connection form is about to need.
+  * `ProjectionCommands.tableTargetContribution` already answers the batched correlation-key arm
+    for any `TableTargetField` whose delivery fact is `Batched`, so joining the seal is what makes
+    the parent-projection contribution fall out instead of needing a fresh arm beside the
+    polymorphic ones.
+
+  Mirror the component list, not the key
   derivation: `BatchedInterfaceField` keys on the parent's *primary key*, with a `pkCols.isEmpty()`
   rejection, because each participant holds its own FK back to the parent. This arm's key is the
   single FK hop's source side, the columns `TableInterfaceField.parentRowColumns()` already
@@ -142,7 +168,20 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   encoding (`DeliveryFact.leafDerivedOf`) and the materialized relation (`DeliveryFactRelation.mint`,
   read through `GraphitronSchema.deliveryOf`), and `DeliveryFactPinTest` requires the two to agree.
   The crosswalk side is compile-forced, its switch being total with no default, so adding the
-  batched leaf there cannot be missed; the relation side can.
+  batched leaf there cannot be missed; the relation side can. It is also the *only* site that can.
+  The other three places that name leaves by class identity are each census-enforced, so a leaf
+  missing from them fails the build rather than generating quietly:
+  `TypeFetcherGenerator.IMPLEMENTED_LEAVES` by
+  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`,
+  `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` by
+  `ProjectionMembershipTest.everyParentRowReadingLeafIsDeclaredMinting` (which derives the
+  demanding population from the seal, so a `BatchKeyField` / `ParentRowDemand` leaf cannot sit
+  outside it), and `OperationMembers.DECLARED_SHAPES` by
+  `OperationMemberProjectionTest.declaredShapesCoverExactlyTheSealedLeaves`. The
+  `LoaderRegistration`-iff-`BatchKeyField` biconditional in `ProjectionMembershipTest` is the
+  reason the "delivery slot on the existing record" option above is the harder of the two: a
+  nullable registration on `TableInterfaceField` puts it inside `BatchKeyField`, whose
+  `sourceKey()` contract has no absent arm.
 
   **The edit here is a new positive arm, not a flip of the existing negative one.** Read `mint`
   before touching it: its only arms that answer `Batched` are the polymorphic fan-in (keyed on
@@ -195,10 +234,13 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 ## Open for the implementer
 
 * Whether single cardinality should batch too. The sibling leaves it inline and this item follows,
-  but the argument there is that a single-cardinality inline child folds into the parent statement,
-  which is not true on this arm. Worth a look before assuming the sibling's boundary transfers; if
-  it does not, single cardinality batching is a strictly larger change and belongs in its own item
-  rather than being absorbed here.
+  but check what that boundary rests on before assuming it transfers, because the obvious
+  justification is not available. It is *not* that a single-cardinality inline child folds into its
+  parent's statement: `ChildField.InterfaceField`'s javadoc says the inline arm "fetches per parent
+  (no DataLoader)", and `ProjectionCommands` gives it a `correlationKeyArm` rather than a
+  `Multiset` call, so the sibling's single-cardinality delivery is per-parent exactly as this arm's
+  is. Neither leaf records a rationale for the boundary. If there is none, single cardinality
+  batching is a strictly larger change and belongs in its own item rather than being absorbed here.
 * Whether the ordering the unbatched fetcher applies (`buildOrderByCode` off `tif.orderBy()`)
   survives the loader boundary unchanged, or needs the per-key windowing the batched connection uses.
   Unpaginated batching may be able to order globally and group by key; confirm rather than assume.
@@ -244,13 +286,17 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 ## Retired vocabulary
 
 * Prose asserting that the discriminated interface child is N+1 by construction, that it registers
-  no `DataLoader`, or that its only delivery is inline. Four live sites:
+  no `DataLoader`, or that its only delivery is inline. Five live sites:
   `roadmap/root-connection-over-discriminated-interface.md`'s child section; this item's own problem
   statement; `ClassifiedCorpus`'s polymorphic preamble comment, which calls the per-parent query "a
-  known defect" the corpus deliberately does not assert; and
+  known defect" the corpus deliberately does not assert;
   `DeliveryFactRelation.singleTableBackedVerdict`'s javadoc, which names "the single-table interface
-  child, whose only delivery is inline" as the discriminating fact for its `false` case. The last
-  two sit in code the change touches anyway, so they are sweep targets rather than stragglers.
+  child, whose only delivery is inline" as the discriminating fact for its `false` case; and
+  `docs/architecture/reference/code-generation-triggers.adoc`, whose polymorphic-rule section
+  parenthesises the child as "`TableInterfaceField`, inline, target shape `Table`". The middle two
+  sit in code the change touches anyway, so they are sweep targets rather than stragglers; the
+  published doc is the one a reader outside the change would hit, and it needs the cardinality fork
+  stated rather than the word deleted.
 * Nothing in main sources retires by name: `buildTableInterfaceFieldFetcher` survives for single
   cardinality unless the open question above moves it.
 
