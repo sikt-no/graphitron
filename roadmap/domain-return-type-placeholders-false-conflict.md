@@ -43,7 +43,7 @@ The `DomainReturnType` arms keep a sparse jOOQ `Record` projection, a typed jOOQ
 
 ## Root cause: neither participant reports its real source type
 
-Two sites answer with something other than the class they hand down.
+Two sites answer with something other than the class they hand down. Both participants in the reported shape are one of them.
 
 `ChildField.ServiceRecordField.domainReturnType()` answers `Plain(OutputField.peelToClassName(method.returnType()))`. `peelToClassName` unwraps `Optional`, `CompletableFuture`, `List`, `Set`, `Collection` and `org.jooq.Result`, but not `Map`, and otherwise falls through to the raw type. A batch function's `Map<K, V>` therefore collapses to `java.util.Map`, which is a type that never reaches `env.getSource()` at all: the DataLoader resolves the map to one `V` per key, and `V` is what graphql-java sees. The correct answer already exists one method above, as `ServiceRecordField.elementType()` (via `RowsMethodShape.strictPerKeyType`, which returns the leaf's backing class for a `ReturnTypeRef.ResultReturnType`).
 
@@ -56,6 +56,14 @@ The consequence is that three producers of one Java class report three different
 | root `@service` returning the class directly | `Plain(...OversatteTekster)` |
 | batched child `@service` returning `Map<K, OversatteTekster>` | `Plain(java.util.Map)` |
 | record component read through the `navn()` accessor | `Plain(java.lang.Object)` |
+
+### The same defect one arm over: the mutation root producer
+
+A further site misreports, and it is worth fixing here because it is the same defect in a different register: not a placeholder value, but a mislabeled arm. `QueryField.QueryServiceRecordField` and `MutationField.MutationServiceRecordField` are structural twins: both are root `@service` producers over a payload result type, and both derive their answer from the same reflected `serviceMethodCall.javaReturnType()` through the same `peelToClassName`. They disagree on the arm. The query twin answers `Plain`, the mutation twin answers `TableRecord` unconditionally, including for the plain-POJO payloads its own javadoc describes ("the service method returns the SDL payload class (or scalar / pojo) directly"). One Java class, two arms, so the two producers of one payload type can never agree.
+
+`MutationServiceRecordField`'s javadoc asserts the gap away: "Non-carrier service shapes also answer `TableRecord` ... other arrangements either agree or are filtered by upstream classifier rejections." Against the query twin they do not agree. The assertion holds only for the population the leaf was reasoned about on, the carrier shape whose conflict against the DML `Record(table)` arm is the case anyone had exercised.
+
+The mutation twin's `TableRecord` answer is right for exactly one of its populations. The carrier shape (the `@service` mutation whose reflected return element is the payload's single `@table`-typed data field's record class, its payload SDL type unbacked) really does put a typed `XRecord` at `env.getSource()`, and `ReturnTypeRef.ResultReturnType.fqClassName()` is null there. A class-backed payload puts the payload object there, and `fqClassName` is non-null. The two populations are already separated by the same `fqClassName` fork this plan uses on the record-read leaf, so the fix costs a fork rather than a redesign.
 
 ## Evidence that the conflict is false
 
@@ -75,7 +83,7 @@ Restructure `DomainReturnType` as `sealed interface DomainReturnType permits Cla
 
 ### One mint for backing-class claims
 
-Three spellings of "the backing class as a `TypeName`" exist today, and two of them disagree on nested classes: `ClassName.bestGuess` (used by `ChildField.RecordCompositeField.domainReturnType()`) keeps the binary `Outer$Nested` as one simple name, while `RowsMethodShape.fromBinaryName` splits it into `Outer.Nested`; the two `TypeName`s are unequal, which is a fresh instance of the exact bug this item retires. Introduce a single factory (`DomainReturnType.claimForBacking(ReturnTypeRef)` or similar, routing through the `fromBinaryName` splitting) and answer every class-backed producer through it: the sharpened `RecordReadField` and `ServiceRecordField` below, plus `RecordCompositeField` (migrating it off `bestGuess`) and `QueryField.QueryServiceRecordField` (migrating its object-return case off reflected `peelToClassName`, which stays only for the scalar returns that never enter the grouping).
+Three spellings of "the backing class as a `TypeName`" exist today, and two of them disagree on nested classes: `ClassName.bestGuess` (used by `ChildField.RecordCompositeField.domainReturnType()`) keeps the binary `Outer$Nested` as one simple name, while `RowsMethodShape.fromBinaryName` splits it into `Outer.Nested`; the two `TypeName`s are unequal, which is a fresh instance of the exact bug this item retires. Introduce a single factory (`DomainReturnType.claimForBacking(ReturnTypeRef)` or similar, routing through the `fromBinaryName` splitting) and answer every class-backed producer through it: the sharpened `RecordReadField` and `ServiceRecordField` below, plus `RecordCompositeField` (migrating it off `bestGuess`) and the root-`@service` twins `QueryField.QueryServiceRecordField` and `MutationField.MutationServiceRecordField` (migrating their object-return case off reflected `peelToClassName`, which stays only for the scalar returns that never enter the grouping, and for the mutation twin's carrier shape, where the reflected typed record is the truth).
 
 ### Producer answers
 
@@ -85,6 +93,10 @@ Three spellings of "the backing class as a `TypeName`" exist today, and two of t
   * `ResultReturnType` with null `fqClassName` (the `JooqTableRecordType` stand-in population; the null is a stand-in marker, not a designed contract, and this consumer joins its reader set): `NoClaim`.
   * `ScalarReturnType` under a `ValueLocator.TypedColumn` locator: the column type, as today. Under the other locator arms: `NoClaim`.
   * `TableBoundReturnType` / `PolymorphicReturnType` do not reach this leaf.
+* `MutationField.MutationServiceRecordField.domainReturnType()` answers whatever its query twin `QueryServiceRecordField` answers for the same return shape, except in the carrier shape. The rule is one fork on `returnType()`:
+  * `ResultReturnType` with non-null `fqClassName` (a class-backed payload; the payload object itself reaches `env.getSource()`): the factory's backing-class claim. Same shape, same answer as the query twin, which is the point.
+  * `ResultReturnType` with null `fqClassName` (the carrier shape: the reflected return element is the payload's single `@table`-typed data field's record class, and the typed `XRecord` is what reaches `env.getSource()`): `TableRecord` over the reflected peel, unchanged. This is the arm `SingleRecordTableFieldServiceProducerPipelineTest` pins against the DML `Record(film)` producer, and confining `TableRecord` to this fork is what keeps that pinning intact rather than incidentally true.
+  * Non-object returns: the query twin's `Plain` over the reflected peel, so the mislabeled `TableRecord` arm does not survive on a population that is not a table record. Behaviour-neutral (`sdlReturnTypeName` filters these out of the grouping); the arm is simply no longer a false statement in the one surface it can reach, the rejection rendering.
 * Migrate the remaining placeholder `Plain(Object)` answers to `NoClaim`: `ErrorsField` (its SDL return *is* an object type, so it does enter the grouping, and it genuinely hands down a heterogeneous list of developer exception classes), plus the never-grouped polymorphic and pivot answerers (`QueryNodeField`, `QueryNodesField`, `QueryInterfaceField`, `QueryUnionField`, `QueryServicePolymorphicField`, `QueryServiceTableInterfaceField`, their mutation analogues, `ChildField.InterfaceField` / `UnionField` / `BatchedInterfaceField` / `BatchedUnionField`, `PivotSlotField`). The never-grouped migrations are behaviour-neutral by construction (their SDL returns are interfaces, unions or scalars, which `sdlReturnTypeName` filters out); the only surface their answers reach is the rejection rendering, where `NoClaim` is honest and `Plain(java.lang.Object)` was a false statement. After this sweep, `Plain(Object)` as a placeholder is retired; `OutputField.OBJECT_CLASS` survives only as `peelToClassName`'s structural fallback.
 
 ### Grouping site
@@ -93,13 +105,14 @@ Three spellings of "the backing class as a `TypeName`" exist today, and two of t
 
 ### What the check still enforces, stated honestly
 
-After this change, every class-backed producer in a group derives its `Plain` claim from the same type-grain fact (`GraphitronType.ResultType.fqClassName()`, copied onto each leaf's `ReturnTypeRef`), so the `Plain`-vs-`Plain` comparison over class-backed types agrees by construction. Class identity for class-backed SDL types is enforced upstream, by `RecordBindingResolver`'s per-type binding fold (`RecordBindingMultiProducer`); the reduction's remaining teeth are cross-arm (`Record` vs `TableRecord` vs `Plain`), which is exactly the projection-vs-typed-record-vs-domain-object axis the arms were built to separate. The reduction's javadoc must say so and carry a `{@link}` to `RecordBindingResolver`, so the reference gate pins the linkage instead of two sites asserting the same invariant with one real enforcer.
+After this change, every class-backed producer in a group derives its `Plain` claim from the same type-grain fact (`GraphitronType.ResultType.fqClassName()`, copied onto each leaf's `ReturnTypeRef`), so the `Plain`-vs-`Plain` comparison over class-backed types agrees by construction. Class identity for class-backed SDL types is enforced upstream, by `RecordBindingResolver`'s per-type binding fold (`RecordBindingMultiProducer`); the reduction's remaining teeth are cross-arm (`Record` vs `TableRecord` vs `Plain`), which is exactly the projection-vs-typed-record-vs-domain-object axis the arms were built to separate. Those teeth get sharper here, not blunter: confining the mutation twin's `TableRecord` to the carrier fork means a carrier-shape `@service` mutation reached alongside a class-backed producer of the same payload still reads as the cross-arm disagreement it genuinely is (an `XRecord` and a payload object really do arrive at `env.getSource()` from the two), where before the fork every non-carrier mutation payload wore the same arm and the distinction was unavailable. The reduction's javadoc must say so and carry a `{@link}` to `RecordBindingResolver`, so the reference gate pins the linkage instead of two sites asserting the same invariant with one real enforcer.
 
 The change deliberately loosens accidental rejections: today `Plain(Object)` never equals a real class, so any placeholder-answering producer conflicted with any real claimant. Each newly-accepted population maps to the enforcer that still covers its genuinely-broken variant:
 
 | newly accepted | still rejected when broken | enforcer |
 |---|---|---|
 | class-backed type produced by batched/root `@service` and read as a record component | producers grounding different Java classes for one SDL type | `RecordBindingResolver` binding fold (`RecordBindingMultiProducer`) |
+| class-backed payload produced by a `@service` mutation and by anything else (its query twin, a record-component read) | same: producers grounding different Java classes | `RecordBindingResolver` binding fold (`RecordBindingMultiProducer`) |
 | object type produced through a `ValueLocator.ByName` / `DefaultRead` read | locator arm incompatible with the parent's source-object shape | `GraphitronSchemaValidator`'s record-read arm-admissibility rule (see `ValueLocator` javadoc) |
 | class-backed type also reached as a nesting projection | the unsupported jOOQ-record-carrier + nesting combination | the validator's shape-set rule over `MixedSourceReachIndex` (already exempted via `isSupportedMixedSourceReach`) |
 
@@ -114,7 +127,8 @@ Pipeline tier: the reported shape, asserted positively (the coordinate classifie
 * `@table` parent with a batched child `@service` (`Map<XRecord, Pojo>` via a new batch method on `TestFilmService` / `TestServiceStub`) plus a class-backed parent reading the same `Pojo` as a record component: both producers classify, no `MultiProducerDomainTypeDisagreement`, and the producers' `domainReturnType()` values are the identical backing-class claim.
 * Root `@service` producer plus record-component read: same assertions, pinning that the fix is not batching-specific.
 * A nested backing class produced through both `RecordCompositeField` and a record-component read: pins the single-mint factory (the `bestGuess`-vs-`fromBinaryName` divergence).
-* Existing cross-arm conflict tests (`SingleRecordTableFieldServiceProducerPipelineTest`'s DML `Record(film)` vs service `TableRecord(FilmRecord)` pair) keep passing unchanged: the check keeps its cross-arm teeth.
+* The root-`@service` twins over one class-backed payload: a `@service` query and a `@service` mutation both returning the same payload class classify, agree, and produce no `MultiProducerDomainTypeDisagreement`. This is the arm-level half of the same defect and fails today; assert both `domainReturnType()` values are the identical backing-class claim, not merely that no diagnostic fired.
+* Existing cross-arm conflict tests (`SingleRecordTableFieldServiceProducerPipelineTest`'s DML `Record(film)` vs service `TableRecord(FilmRecord)` pair, whose `FilmListPayload` is an unbacked carrier payload and so takes the null-`fqClassName` fork) keep passing unchanged: the check keeps its cross-arm teeth. Add the fork's other side as a new case in the same class: a *class-backed* payload produced by a `@service` mutation answers the `Plain` backing-class claim rather than `TableRecord`, so the fork is pinned from both directions and a future collapse back to an unconditional arm fails a test.
 
 Compile backstop: this flips a build-rejecting shape into a build-emitting one, so the newly-admitted schema reaches the emitters for the first time. Add the shared-type shape (batched `@service` producer + record-component read of one class-backed type) to the `graphitron-sakila-example` fixture surface so the emitted fetchers must compile at Java 17. No execution tier: both producers already put the same object at `env.getSource()` at run time, so runtime behaviour is not what changed.
 
@@ -122,11 +136,12 @@ Masked-conflict sweep: full `mvn install -Plocal-db`; any fixture newly firing t
 
 ## Docs
 
-`docs/architecture/explanation/typed-rejection.adoc` names `MultiProducerDomainTypeDisagreement` in the taxonomy tree; check whether any prose there describes the `Plain` placeholder semantics and adjust. `DomainReturnType`'s javadoc gains the `Claim`/`NoClaim` split description. The `QueryServiceTableInterfaceField` and `MutationServiceTableInterfaceField` javadoc sentences describing their answer as "`Plain` over `Object`" are rewritten with the migration.
+`docs/architecture/explanation/typed-rejection.adoc` names `MultiProducerDomainTypeDisagreement` in the taxonomy tree; check whether any prose there describes the `Plain` placeholder semantics and adjust. `DomainReturnType`'s javadoc gains the `Claim`/`NoClaim` split description. The `QueryServiceTableInterfaceField` and `MutationServiceTableInterfaceField` javadoc sentences describing their answer as "`Plain` over `Object`" are rewritten with the migration. `MutationServiceRecordField`'s javadoc paragraph claiming non-carrier shapes "either agree or are filtered by upstream classifier rejections" is replaced by the `fqClassName` fork it now implements, with a `{@link}` to the query twin so the reference gate pins the symmetry the two leaves are supposed to hold.
 
 ## Retired vocabulary
 
 * `Plain(Object)` / `Plain(java.lang.Object)` as a placeholder domain-return answer (the value survives only where it is a genuine `peelToClassName` structural fallback, never as "this producer doesn't know").
+* `MutationServiceRecordField`'s unconditional `TableRecord` answer, and the javadoc claim that non-carrier `@service` mutation shapes "either agree or are filtered by upstream classifier rejections". The arm survives only on the carrier fork, where the producer really does hand down a typed record.
 
 ## Adjacent, not in scope
 
