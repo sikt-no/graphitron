@@ -136,7 +136,11 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
   batched leaf. Update the case, the connection sub-clause and that javadoc rationale alongside the
   classifier fork, and decide which `DeliveryFact.Trigger` the leaf declares: the sibling pair uses
   `Trigger.PolymorphicFanIn` for the same cardinality-plus-participants rule, and both sides have to
-  name the same one.
+  name the same one. Fix it in place and stop there. That the relation encodes delivery as
+  negative space, an enumeration of what does not batch that every new batched shape has to be
+  edited into, is a defect in its own right, and
+  `roadmap/delivery-verdict-derives-from-the-store.md` owns it. This item is not the place to
+  restructure the site; it is one of the two reasons that item exists.
 * The `DeliveryFacts` javadoc that lists the `@splitQuery`-half readers. It is the record's *class*
   javadoc plus `Row#splitQuery` / `splitQuery(GraphQLFieldDefinition)`, which name the pivot and
   nesting-deferral halves; `forcesSplitDelivery`'s own javadocs are one-liners about the union and
