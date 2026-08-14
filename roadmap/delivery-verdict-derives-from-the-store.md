@@ -102,7 +102,10 @@ runs), then `captureFactsAndDetect` (where the store is filled), then `validateA
 * **Classifier-internal reads happen before capture and cannot use a view.** Which leaf record the
   walk mints (`BatchedInterfaceField` versus `InterfaceField`) is decided while the store is still
   empty. That read is leaf-zoo business and dissolves with the leaf zoo under
-  `roadmap/coordinate-lowers-to-datafetcher-queryparts.md`, not here.
+  `roadmap/coordinate-lowers-to-datafetcher-queryparts.md`, not here. Note that this is a fact about
+  today's stage order, not about delivery:
+  `roadmap/capture-precedes-the-classification-walk.md` proposes reversing it, and if that lands the
+  classifier read stops being out of reach on ordering grounds. This item still should not absorb it.
 * **Planning-stage reads happen after capture and are eligible today.** `ProjectionCommands` and
   `LauncherCommands` reach delivery through `GraphitronSchema.deliveryOf`, and both run inside
   `EmitPlan.produce`, downstream of the capture transaction.
