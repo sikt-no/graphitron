@@ -202,9 +202,13 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         return CompletableFuture.supplyAsync(() -> {
             try (var span = LspTrace.span("inlayHint")) {
                 span.detail("uri", params.getTextDocument().getUri());
-                var hints = workspace.withView(params.getTextDocument().getUri(), List.<InlayHint>of(), file ->
-                    InlayHints.compute(
-                        workspace.inlayHintConfig(), file, workspace.snapshot(), params.getRange()));
+                String uri = params.getTextDocument().getUri();
+                // One read transaction around the whole region, as hover takes: two declarations
+                // annotated from either side of a capture would disagree about the same schema.
+                var hints = workspace.withView(uri, List.<InlayHint>of(), file ->
+                    workspace.answering(uri, store ->
+                        InlayHints.compute(workspace.inlayHintConfig(), file, store,
+                            workspace.snapshot(), params.getRange())));
                 span.detail("hints", hints.size());
                 return hints;
             }

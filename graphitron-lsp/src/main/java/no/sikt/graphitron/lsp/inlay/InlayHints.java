@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.inlay;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -13,14 +14,17 @@ import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
+import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.InlayHintKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DIRECTIVE;
@@ -37,20 +41,21 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *   <li><b>Inferred-directive arm</b>: at {@code @table} / {@code @field} / {@code @reference}
  *       sites where the author omitted the canonical argument ({@code name:} for the first two,
  *       {@code path:} for the third), renders the resolved value as a ghost annotation.</li>
- *   <li><b>Classification arm</b>: at every field declaration and every object / interface /
- *       input / union type declaration, renders a compact label naming the classified
- *       variant, via {@link LspClassificationLabels#projectionLabel(FieldClassification)} /
- *       {@link LspClassificationLabels#projectionTypeLabel(TypeClassification)}.</li>
+ *   <li><b>Classification arm</b>: at a field or type declaration the claim stratum has an
+ *       opinion about, renders the classifiers claiming it, read from
+ *       {@link ClaimClassifiers}.</li>
  * </ul>
  *
  * <p>The inferred-directive arm asks the tree-sitter AST whether the canonical argument is
  * present and consults the {@link FieldClassification} / {@link TypeClassification} projections
- * on the snapshot for the resolved value when absent. The classification arm dispatches over
- * the projection entries directly.
+ * on the snapshot for the resolved value when absent.
  *
- * <p>Stale-snapshot behaviour mirrors the existing hover arms: hints render under
+ * <p>The two arms therefore run off different sources and different cadences. The classification
+ * arm needs the store and no snapshot, and renders whatever the last capture wrote; the
+ * inferred-directive arm needs the snapshot, rendering under
  * {@link LspSchemaSnapshot.Built.Current} and {@link LspSchemaSnapshot.Built.Previous}
- * indistinguishably. Under {@link LspSchemaSnapshot.Unavailable}, no hints render.
+ * indistinguishably and not at all under {@link LspSchemaSnapshot.Unavailable}. Each arm is
+ * silent when what it reads is absent, so a session with one of the two answers still gets it.
  */
 public final class InlayHints {
 
@@ -90,18 +95,18 @@ public final class InlayHints {
     }
 
     public static List<InlayHint> compute(
-        InlayHintConfig config, FileSnapshot file, LspSchemaSnapshot snapshot, Range visibleRange
+        InlayHintConfig config, FileSnapshot file, Optional<StoreHandle> store,
+        LspSchemaSnapshot snapshot, Range visibleRange
     ) {
         if (config == null || !config.anyEnabled()) return List.of();
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return List.of();
         if (file == null || file.tree() == null) return List.of();
 
         var hints = new ArrayList<InlayHint>();
         Node root = file.tree().getRootNode();
-        if (config.classification()) {
-            collectClassificationHints(hints, file, built, root, visibleRange);
+        if (config.classification() && store.isPresent()) {
+            collectClassificationHints(hints, file, store.get(), root, visibleRange);
         }
-        if (config.inferredDirectives()) {
+        if (config.inferredDirectives() && snapshot instanceof LspSchemaSnapshot.Built built) {
             collectInferredDirectiveHints(hints, file, built, root, visibleRange);
         }
         return hints;
@@ -109,49 +114,67 @@ public final class InlayHints {
 
     // ===== Classification arm =====
 
+    /**
+     * One visible declaration name the arm may annotate: a type when {@code fieldName} is null,
+     * a field otherwise. Collected before any query so the two store reads are asked once for the
+     * region rather than once per declaration in it.
+     */
+    private record ClaimSite(String typeName, String fieldName, Node nameNode) {}
+
+    /**
+     * Renders the classifiers claiming each visible declaration, one label per site, the
+     * classifiers comma-joined where more than one claims a coordinate. A declaration no
+     * classifier claims gets no hint: the arm marks where graphitron has an opinion about a
+     * declaration, and silence is the honest reading of a plain SDL object or a field nothing
+     * bound.
+     *
+     * <p>The label is the store's own classifier vocabulary and nothing else. The facts the
+     * incumbent single-word label folded in (which table, which column, which join path, whether a
+     * fetch batches) are what the hover renders, each from the relation that owns it, because a
+     * word naming their combinations would be a taxonomy this arm had to keep in step with the
+     * generator by hand.
+     */
     private static void collectClassificationHints(
-        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
-        Node root, Range visibleRange
+        List<InlayHint> out, FileSnapshot file, StoreHandle store, Node root, Range visibleRange
     ) {
+        var sites = new ArrayList<ClaimSite>();
         DeclarationKind.walkAll(root, typeDef -> {
             if (!intersects(typeDef, visibleRange)) return;
-            TypeContext.declaredNameOf(typeDef, file.source()).ifPresent(typeName -> {
-                var classification = built.typeClassificationsByName().get(typeName);
-                if (classification == null) return;
-                Node nameNode = Nodes.childOfKind(typeDef, NAME);
-                if (nameNode == null) return;
-                out.add(makeHint(
-                    file, nameNode,
-                    LspClassificationLabels.projectionTypeLabel(classification),
-                    InlayHintKind.Type));
-            });
-            // Walk field-definition children for this type
+            String typeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
+            if (typeName == null) return;
+            Node typeNameNode = Nodes.childOfKind(typeDef, NAME);
+            if (typeNameNode != null) {
+                sites.add(new ClaimSite(typeName, null, typeNameNode));
+            }
             Node fieldsContainer = Nodes.childOfKind(typeDef, FIELDS_DEFINITION);
             if (fieldsContainer == null) {
                 fieldsContainer = Nodes.childOfKind(typeDef, INPUT_FIELDS_DEFINITION);
             }
-            if (fieldsContainer != null) {
-                String parentTypeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
-                if (parentTypeName != null) {
-                    for (int i = 0; i < fieldsContainer.getChildCount(); i++) {
-                        Node child = fieldsContainer.getChild(i).orElse(null);
-                        if (child == null) continue;
-                        if (!FIELD_DEFINITION.matches(child) && !INPUT_VALUE_DEFINITION.matches(child)) continue;
-                        if (!intersects(child, visibleRange)) continue;
-                        Node nameNode = Nodes.childOfKind(child, NAME);
-                        if (nameNode == null) continue;
-                        String fieldName = Nodes.text(nameNode, file.source());
-                        var classification = built.fieldClassificationsByCoord()
-                            .get(parentTypeName + "." + fieldName);
-                        if (classification == null) continue;
-                        out.add(makeHint(
-                            file, nameNode,
-                            LspClassificationLabels.projectionLabel(classification),
-                            InlayHintKind.Type));
-                    }
-                }
+            if (fieldsContainer == null) return;
+            for (int i = 0; i < fieldsContainer.getChildCount(); i++) {
+                Node child = fieldsContainer.getChild(i).orElse(null);
+                if (child == null) continue;
+                if (!FIELD_DEFINITION.matches(child) && !INPUT_VALUE_DEFINITION.matches(child)) continue;
+                if (!intersects(child, visibleRange)) continue;
+                Node nameNode = Nodes.childOfKind(child, NAME);
+                if (nameNode == null) continue;
+                sites.add(new ClaimSite(typeName, Nodes.text(nameNode, file.source()), nameNode));
             }
         });
+        if (sites.isEmpty()) return;
+
+        var typeNames = new LinkedHashSet<String>();
+        for (var site : sites) typeNames.add(site.typeName());
+        var byType = ClaimClassifiers.ofTypes(store, typeNames);
+        var byCoordinate = ClaimClassifiers.ofFields(store, typeNames);
+
+        for (var site : sites) {
+            var classifiers = site.fieldName() == null
+                ? byType.get(site.typeName())
+                : byCoordinate.get(site.typeName() + "." + site.fieldName());
+            if (classifiers == null || classifiers.isEmpty()) continue;
+            out.add(makeHint(file, site.nameNode(), String.join(", ", classifiers), InlayHintKind.Type));
+        }
     }
 
     // ===== Inferred-directive arm =====

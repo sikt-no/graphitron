@@ -2,7 +2,7 @@
 :description: Reference for the Graphitron LSP's inlay-hint surface and the classification-hover content, plus the three editor-side config keys that gate them.
 :keywords: graphitron, lsp, inlay hints, hover, classification, configuration
 
-The Graphitron LSP surfaces two layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it) and classification (the sealed-variant identity the classifier assigns to every field and type, fully determining the generated code). Both layers are off by default and light up through editor-side config.
+The Graphitron LSP surfaces two layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it) and classification (what Graphitron takes a declaration to be, which is what decides the code generated for it). Both layers are off by default and light up through editor-side config.
 
 == Three config keys
 
@@ -18,7 +18,7 @@ All three live under the `graphitron.inlayHints` (and `graphitron.hover`) namesp
 
 | `graphitron.inlayHints.classification`
 | `false`
-| Renders a compact classification label at every field declaration and every object / interface / input / union / scalar / enum type declaration. Labels include `"column"`, `"table field"`, `"query node field"`, `"insert mutation"`, `"node type"`, and the rest of the closed vocabulary.
+| Renders the classifier claiming a field or type declaration, at the declarations something claims. The field vocabulary is `SERVICE`, `EXTERNAL_FIELD`, `NODE_ID`, `LOOKUP_KEY`, `ROUTINE`, `MUTATION` and `TABLE_COLUMN`; the type vocabulary is `TABLE` and `ERROR`.
 
 | `graphitron.hover.classification`
 | `false`
@@ -39,23 +39,33 @@ Adding the canonical argument to the directive removes the hint immediately on n
 
 == Classification hints
 
-Renders on every field declaration and every type declaration. Labels are 1:1 with the generator-side sealed permits and are stable across renames of the underlying types; the user-facing label vocabulary is owned by the LSP module, not by the generator-side type names.
+Renders the classifier a declaration is claimed by: the directive that named it (`@service` shows `SERVICE`, `@table` shows `TABLE`) or, on a field the author bound nothing to, the structural reading Graphitron fell back on (`TABLE_COLUMN`, when the field's name resolves to a column of the parent's bound table).
+
+A declaration nothing claims gets no hint. That is the point of the surface: a hint marks where Graphitron has an opinion about a declaration, and a plain SDL object or a field with no binding gets silence rather than a word for "nothing in particular".
+
+An authored claim hides the structural one, so a `@service` field of a `@table` type shows `SERVICE` even where its name would have matched a column. Where two directives claim the same declaration, both classifiers render, comma-separated: that is a schema error, and naming the two claims says more than a single word for "conflicted" would.
+
+The label is the classifier and only the classifier. Which table, which column, which foreign-key path, whether a fetch batches: those are facts of their own and the hover is where they are unpacked.
 
 == Classification hover
 
 Renders the projection's load-bearing payload as markdown when the cursor is on a field-declaration or type-declaration name token (outside any directive). The hover content includes:
 
-* The friendly label (matching the inlay hint).
+* The classified variant's name. This is still the generator-side sealed-permit name (`FieldClassification.Column`, `TypeClassification.Table`), so it does not currently match the classifier the inlay hint shows.
 * The qualified coordinate (`ParentType.fieldName` for fields; the type name for types).
 * Per-permit payload: target table, column name, FK chain, participant set, discriminator column, DML verb, error-channel constant, input type name, accessor / column duality for class-backed-parent fields, and so on.
 
 Hover stays distinct from the directive-argument-keyed dispatch (`@table(name:)`, `ExternalCodeReference.method`, ...): the existing directive-arg hovers keep firing when the cursor sits inside a directive, and the classification hover fires only as a fallback on declaration coordinates.
 
-== Stale-snapshot behaviour
+== Freshness
 
-Mirroring the existing `userArgHover` and `columnHover` arms, hints render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away.
+The two inlay arms read different things and go stale differently.
 
-Under `LspSchemaSnapshot.Unavailable` (pre-build), no hints render. The editor simply does not see the inlay-hint kind, and the classification hover is empty.
+Classification hints come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
+
+Inferred-directive hints and the classification hover come from the classification snapshot the generator pass ships. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
+
+Each surface is silent when what it reads is missing, so a session that has one of the two answers still gets it.
 
 == Editor configuration
 

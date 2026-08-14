@@ -474,7 +474,7 @@ around it.
 
 | Toggle | Collector | Fact source |
 |---|---|---|
-| `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry |
+| `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
 | `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations |
@@ -1592,6 +1592,44 @@ section rules out in as many words, and the inventory rows that asked for it hav
   this package's fixture types, so a generic component and a generic accessor are the compiler's own
   `Signature` attributes rather than strings a fixture wrote. A fixture that declared the attribute
   itself could assert a census no compiler produces, which is the whole reason that test scans.
+
+## Settled while building: the inlay's label is the classifier, and silence is an answer
+
+The first of the two label surfaces moved. `collectClassificationHints` reads `ClaimClassifiers`, a
+new pair of readers over `intent_resolved_field_claim` and `intent_authored_type_claim`, and renders
+the classifier as the label. `LspSchemaSnapshot`'s two classification maps have one reader left in
+this arm's place: the hover, which is the next increment and the one where the fact list has to be
+chosen.
+
+* **The surface got smaller, and that was the finding rather than the cost.** The incumbent arm
+  labelled every field and every type, because every field and every type had a projection variant.
+  The claim stratum answers about fewer of them: a plain SDL object, an enum, a Relay wrapper and a
+  field nothing bound have no claim, and now get no hint. What is left is a hint at exactly the
+  declarations graphitron has an opinion about, which is a better surface than one whose label at a
+  plain object was a word for having nothing to say. The structural readings the old labels also
+  carried (that a type is a connection, that a field nests) are each a relation away if a later arm
+  wants them, and each would be its own arm rather than a widened vocabulary.
+* **A conflict renders as its claims.** More than one classifier at a coordinate is what a conflict
+  *is*, so the reader answers with a list and the label is the classifiers comma-joined. `Conflicted`
+  named the fact that there were two; `NODE_ID, SERVICE` names which two. The reader is where the
+  distinct lives, so a claim arm's collapse rule is that arm's business rather than something every
+  consumer has to know held.
+* **The two arms now run off different sources, and the gate had been shared.** `compute` used to
+  return nothing at all unless a classification snapshot existed, which after the move would have
+  hidden store-backed labels from a session that had captured but not generated. Each arm is now
+  gated on what it reads, and the freshness section of the manual page says so: the classification
+  arm rides the capture cadence, the inferred-directive arm the generator's.
+* **The region is bounded before the query, not after it.** The arm collects the visible declaration
+  sites first and asks the store once per grain for exactly those type names. The alternative, a
+  whole-graph fetch filtered while rendering, pays per keystroke for declarations nobody is looking
+  at, and the walk was already visiting the sites it needed.
+* **Where the tests live follows what they read.** `InlayHintsTest` keeps the snapshot-reading arm
+  and passes an empty handle at every call, which is also its assertion that the arms are
+  independent; the new `ClassificationHintsTest` captures a real store and asserts under an
+  unavailable snapshot, which is the same assertion from the other side. Its fixture schema is one
+  coordinate per shape the arm answers: claimed type, structurally claimed field, authored claim
+  masking a structural one at a coordinate whose name *does* match a column, two claims at one
+  coordinate, and declarations nothing claims.
 
 ## Retired vocabulary
 

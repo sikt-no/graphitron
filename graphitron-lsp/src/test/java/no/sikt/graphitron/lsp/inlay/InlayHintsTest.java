@@ -14,22 +14,22 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * LSP-tier unit tests for the inlay-hint provider. Two scopes:
- * <ul>
- *   <li>The inferred-directive arm — given an authored vs bare {@code @table} /
- *       {@code @field} / {@code @reference} site and a fixed snapshot, asserts that
- *       only the bare site emits a hint with the resolved value.</li>
- *   <li>The classification arm — given a fixed snapshot, asserts that hints fire at
- *       the right declaration coordinates with the expected labels, and that config
- *       gating short-circuits when toggles are off.</li>
- * </ul>
+ * LSP-tier unit tests for the inlay-hint provider's snapshot-reading arm: given an authored vs
+ * bare {@code @table} / {@code @field} / {@code @reference} site and a fixed snapshot, only the
+ * bare site emits a hint with the resolved value. Config gating and the empty cases live here too,
+ * because they are properties of {@code compute} rather than of either arm.
  *
  * <p>Stale-snapshot behaviour is exercised via {@link LspSchemaSnapshot.Built.Previous}
  * to confirm hints continue to render under the freshness-degraded arm.
+ *
+ * <p>The classification arm reads the store instead, so its coverage lives with the fixtures that
+ * can capture one, in {@code no.sikt.graphitron.lsp.ClassificationHintsTest}. Every call here
+ * passes an empty handle, which is also the assertion that the two arms are independent.
  */
 class InlayHintsTest {
 
@@ -44,7 +44,7 @@ class InlayHintsTest {
             Map.of("Film.title", new FieldClassification.Column("film", "title")),
             Map.of("Film", new TypeClassification.Table("film"))
         );
-        var hints = InlayHints.compute(InlayHintConfig.defaults(), file, snapshot, fullRange(file));
+        var hints = InlayHints.compute(InlayHintConfig.defaults(), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).isEmpty();
     }
 
@@ -58,13 +58,17 @@ class InlayHintsTest {
         var hints = InlayHints.compute(
             new InlayHintConfig(true, true, false),
             file,
+            Optional.empty(),
             LspSchemaSnapshot.unavailable(),
             fullRange(file));
         assertThat(hints).isEmpty();
     }
 
     @Test
-    void classificationHintsLabelFieldDeclarations() {
+    void classificationHintsNeedTheStoreRatherThanTheSnapshot() {
+        // The classification arm's toggle is on and the snapshot carries the projections the
+        // incumbent arm read; with no store there is nothing to render, which is what makes the
+        // arm's source the store and not the snapshot.
         var file = file("""
             type Film @table(name: "film") {
                 title: String
@@ -75,9 +79,8 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(false, true, false), file, snapshot, fullRange(file));
-        var labels = hints.stream().map(h -> labelOf(h)).toList();
-        assertThat(labels).contains("Table", "Column");
+            new InlayHintConfig(false, true, false), file, Optional.empty(), snapshot, fullRange(file));
+        assertThat(hints).isEmpty();
     }
 
     @Test
@@ -92,7 +95,7 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
             .contains("name: \"film\"");
     }
@@ -109,7 +112,7 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         // Neither the present-but-bare arm (canonical arg present) nor the absent
         // arm (the directive node itself is present) should produce a @table hint.
         assertThat(hints).extracting(InlayHintsTest::labelOf)
@@ -129,7 +132,7 @@ class InlayHintsTest {
             Map.of("Customer", new TypeClassification.Table("customer"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
             .contains("@table(name: \"customer\")");
     }
@@ -146,7 +149,7 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         // The present-but-bare arm renders "name: \"film\"" docked at the @table node;
         // the absent arm must not also render a full @table(...) hint on the type name.
         assertThat(hints).extracting(InlayHintsTest::labelOf)
@@ -166,7 +169,7 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
             .contains("name: \"title\"");
     }
@@ -185,7 +188,7 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
             .anySatisfy(label -> assertThat(label)
                 .startsWith("path: [")
@@ -194,25 +197,6 @@ class InlayHintsTest {
     }
 
     // ===== extend type X { ... } parity =====
-
-    @Test
-    void classificationHintsRenderOnTypeExtensionTypeName() {
-        // extend type Query is the dominant root-organisation pattern; the classification label
-        // must render on the extension's type-name token regardless of which file is open.
-        var file = file("""
-            extend type Query {
-                allFilms: [Film!]
-            }
-            """);
-        var snapshot = snapshotWith(
-            Map.of("Query.allFilms", new FieldClassification.QueryTable("film", false)),
-            Map.of("Query", new TypeClassification.Root("QUERY"))
-        );
-        var hints = InlayHints.compute(
-            new InlayHintConfig(false, true, false), file, snapshot, fullRange(file));
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("Root", "QueryTable");
-    }
 
     @Test
     void inferredFieldHintRendersInsideTypeExtension() {
@@ -230,7 +214,7 @@ class InlayHintsTest {
             Map.of("Customer", new TypeClassification.Table("customer"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
             .contains("name: \"full_name\"");
     }
@@ -250,7 +234,7 @@ class InlayHintsTest {
             Map.of("Customer", new TypeClassification.Table("customer"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+            new InlayHintConfig(true, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
             .contains("@table(name: \"customer\")");
     }
@@ -270,10 +254,11 @@ class InlayHintsTest {
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
-            new InlayHintConfig(true, true, false), file, previous, fullRange(file));
+            new InlayHintConfig(true, true, false), file, Optional.empty(), previous,
+            fullRange(file));
         assertThat(hints).isNotEmpty();
         assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"film\"", "Table", "Column");
+            .contains("name: \"film\"");
     }
 
     // ===== Test helpers =====
