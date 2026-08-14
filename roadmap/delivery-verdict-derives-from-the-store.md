@@ -68,9 +68,12 @@ a switch instead of as a view over keyed relations.
 ## What the shape would be
 
 `intent_field_batching_rule (graph_name, type_name, field_name, rule)` as a union of positive arms,
-one per trigger, and `intent_resolved_field_delivery (graph_name, type_name, field_name, verdict,
-rule)` as the reduction. `INLINE` becomes the complement, the absence of any arm, rather than an
-enumerated set of shapes somebody has to remember to keep current.
+one per trigger; `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` for
+the negatives that are stated rather than absent; and `intent_resolved_field_delivery (graph_name,
+type_name, field_name, verdict, rule)` as the reduction under a declared precedence. Most `INLINE`
+is the complement, the absence of any arm, rather than an enumerated set of shapes somebody has to
+remember to keep current. The exceptions are the two populations below, and they are why the
+exemption relation exists rather than being a file-layout choice copied from the sibling.
 
 The property worth naming: **every arm is additive**. A new batched delivery is a new `SELECT`
 `UNION`ed in, joining the base relations that already witness it. Nothing elsewhere has to be
@@ -88,13 +91,55 @@ Integrity moves to the instruments the store already uses:
   matching two arms whose precedence is undeclared is a row to report, not a switch fallthrough to
   guess at. The current model cannot even ask this question.
 
+### Delivery's negative side is not pure complement, and the corpus already proves it
+
+An earlier draft asserted that it was, and left the shape of the view set open on that basis. It is
+wrong, in two places, and each has a coordinate in `ClassifiedCorpus` today that would disagree with
+a complement-only view. Both are short-circuits at the top of `DeliveryFactRelation.mint`, which is
+what makes them easy to read past: they return before the rules they override are ever evaluated.
+
+* **The `@service` claim, reason `SERVICE_CALL`.** `mint` returns `Inline` for a `@service`
+  coordinate before any other rule, on the stated ground that the call is the delivery and the
+  serviceCall member owns it. That precedence is load-bearing rather than defensive. Take
+  `Aggregated.filmsViaService: [Film!]!` from the `service-child-class-backed-parent` example: its
+  parent is a class-backed producer payload, so `sourceShape()` is `Record`, and its target `Film`
+  is a plain `@table` type, so `tableAnchoredChild` holds. Delete the short-circuit and that
+  coordinate mints `Batched(RecordHandedParent)`. A `RecordHandedParent` arm written from the
+  captured facts alone matches it for exactly the same two reasons, so a view without the exemption
+  reports `BATCHED` where the walk reports `INLINE`.
+* **The root coordinate, reason `ROOT_COORDINATE`.** `mint`'s first line returns `Inline` for
+  anything that is not a `ChildField`, because nothing arrives at a root so nothing splits. The
+  store has no notion of leaf identity, so "is a child" has to be said out loud, and the fan-in arm
+  is where it bites: `Query.people(firstName: [String!]): [Person!]!` in the `polymorphic-filter`
+  example is a list-valued union root whose members are both `@table`, which is the fan-in arm's
+  store-side predicate met in full. Scoping by `intent_type_domain` does not remove it, since the
+  domain contains root types by construction and the demand sibling registers their fields under its
+  own `ROOT_OPERATION` arm.
+
+Three consequences, and together they settle what the open questions used to ask.
+
+The relation set is the sibling's, rung for rung: a positive rule view, an exemption view whose
+negatives are positive statements about a captured population, and a reduction that declares the
+precedence between them. That is now a structural conclusion rather than a layout preference.
+
+The alternative, folding each exemption into the arm it overrides as a `NOT EXISTS`, is available
+and should be declined. It is negative space inside an arm, which is the pattern this item exists to
+kill; it also spreads one rule across every arm it defeats, so the `@service` claim would have to be
+restated in each future batching arm, which is the additivity property gone.
+
+And both exemption arms are witnessed on landing, by the two coordinates named above, which is worth
+contrasting with the `@tenantFanOut` literal the Implementation section flags as reaching no
+coordinate at all. The exemption view cannot ship vacuous.
+
 **Every input is already captured.** This is the finding that makes the item view-only rather than
 a capture project, and it survives a relation-by-relation check, but the inventory is wider than a
 first read suggests. The arms need `graphitron_split_query`, `graphitron_tenant_fan_out`,
 `graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (through
 `intent_bound_table`, see below), `graphitron_service` / `graphitron_external_field` /
 `graphitron_mutation`, `graphitron_connection`, `graphql_field.is_list`, `graphql_type.kind`,
-`graphql_implements`, and `graphql_union_member`. All exist, all are keyed
+`graphql_implements`, `graphql_union_member`, and `graphql_root_operation` (the root exemption arm,
+keyed the way the demand sibling's `ROOT_OPERATION` arm already keys it, by the binding rather than
+by the conventional names). All exist, all are keyed
 at the coordinate or type grain the arms would join on, and the marker relations already carry the
 `graphql_field` FK. The `sql_` catalog family is deliberately absent; the second predicate below is
 where that is established.
@@ -120,7 +165,10 @@ independently, as the reason it must not copy this guard's shape.
 Two consequences. The arm's store-side gate is that the target is an interface or union that is
 *not* `@discriminate`-bearing, with at least one table-bound participant: `graphql_implements` /
 `graphql_union_member` joined to `graphitron_table`, anti-joined against `graphitron_discriminate`
-on the target type. Every input is in the inventory above and every hop is single. And the `sql_`
+on the target type. Every input is in the inventory above and every hop is single. The arm stays
+unmasked against the root exemption, which is the sibling's discipline (its rule views let
+overlapping readings survive as rows and give the reduction the meet), so this arm does carry
+`Query.people` and the reduction is where that row becomes `INLINE`. And the `sql_`
 catalog family is not needed by any arm, which is why it is absent from that inventory: no arm's
 predicate reaches a foreign key or a primary key. If an implementer finds one that does, that is a
 finding worth recording rather than a gap to fill quietly.
@@ -190,11 +238,20 @@ set acquiring an enforcer that is not another switch.**
 
 ## Implementation
 
-* The two views in the DDL, in the demand stratum's shape:
+* The three views in the DDL, in the demand stratum's shape:
   `intent_field_batching_rule (graph_name, type_name, field_name, rule)` as a `UNION` of one arm per
-  trigger, and `intent_resolved_field_delivery (graph_name, type_name, field_name, verdict, rule)`
-  as the reduction under a declared precedence. `CHECK` on both closed vocabularies, `FOREIGN KEY`
-  to `graphql_field`, full comment coverage per `FactSchemaGateTest.commentCoverageIsTotal`.
+  trigger, `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` with the
+  two arms established above, and `intent_resolved_field_delivery (graph_name, type_name,
+  field_name, verdict, rule)` as the reduction. `CHECK` on all three closed vocabularies,
+  `FOREIGN KEY` to `graphql_field`, full comment coverage per
+  `FactSchemaGateTest.commentCoverageIsTotal`.
+* The reduction's precedence runs exemption before rule, which is the opposite of the demand
+  sibling's and has to be stated as such in the view comment rather than inherited by analogy.
+  `intent_resolved_field_demand` lets demand beat exemption because a `@table` type shaped like a
+  connection still classifies its fields; here `mint` returns on the exemption before the rules run,
+  so a coordinate carrying both readings is `INLINE`. Getting this backwards makes both witnessed
+  coordinates above disagree, which the shadow test will catch, but the reason it is inverted
+  belongs in the comment where the next reader meets it.
 * Scope the resolved view's domain by joining `intent_type_domain`, the same anchor the demand
   reduction uses. `DeliveryFactRelation`'s domain is the flat classified index and explicitly
   excludes a nesting type's fields; the comparison has to be over one domain or it is measuring the
@@ -213,7 +270,7 @@ set acquiring an enforcer that is not another switch.**
   single member of the record-handed population no producer relation witnesses. The joined-table
   participant is explicitly *not* a residue candidate, per the fan-in trace above.
 * `DeliveryShadowTest` in `DemandShadowTest`'s mould, registered in `FactCaptureAgreementTest` under
-  `Arm.DERIVED` for both views. Per that test's stated residue discipline: equality outside the
+  `Arm.DERIVED` for all three views. Per that test's stated residue discipline: equality outside the
   named residues, each disagreement direction pinned against a store-derived population rather than
   a Java-side coordinate list, and each residue asserted non-empty on the shapes that create it so
   no pin can go vacuous.
@@ -316,32 +373,40 @@ has left the question exactly where it was and reproduced the defect in a new pl
   this one, resolves to no. R557's deliverable is a validate-time rejection with a stated reason per
   inert position, and this item changes no production read and raises no diagnostic, so folding it
   in would drag a diagnostics surface into a shadow-only item. There is also a shape mismatch worth
-  recording: this item makes `INLINE` a pure complement carrying no reason, which is exactly right
-  for delivery and exactly what R557 cannot use, since its whole product is the reason. So R557
-  gains its *population* from the anti-join and still has to state its reason vocabulary itself. The
-  one real coupling is ordering: R557 should not be picked up before this lands, or it writes the
-  total switch this item exists to retire.
+  recording, and the negative-side section above sharpens rather than removes it. This item does
+  ship an exemption relation carrying reasons, but for exactly two populations that override a
+  matching batching rule, which is a different question from the one R557 asks: why a marker that
+  matched nothing is nonetheless not an error. So R557 gains its *population* from the anti-join,
+  gains the exemption view's shape as a model for stating its own inert reasons positively, and
+  still has to author that vocabulary itself. The one real coupling is ordering: R557 should not be
+  picked up before this lands, or it writes the total switch this item exists to retire.
 
 ## Open for the implementer
 
-* Whether the two views are the right split, or whether delivery is thin enough to be one view.
-  The demand stratum splits because demand and exemption are independently interesting populations
-  read by different consumers. Delivery's negative side is pure complement, so the exemption-view
-  analogue does not exist; whether the rule view still earns separation from the reduction is worth
-  deciding on the arm count rather than by copying the sibling's file layout. The arm count to
-  decide on, read off `DeliveryFactRelation.mint`: three triggers, but four `SELECT`s, because the
-  `Authored` trigger is two independent readings (the `@splitQuery` half on a table-anchored child
-  or a `@pivot` chain, and `@tenantFanOut` on a table-anchored non-`@routine` child) that mint the
-  same literal. Whether those stay two arms under one rule literal or become two literals is part of
-  the same decision, and the vocabulary the sibling uses (one literal per arm) argues for splitting
-  them. If they do split, the `@tenantFanOut` literal needs the coordinate the Implementation section
-  flags as missing, or it lands vacuous.
-* Whether `graphitron_service`'s claim ("the call is the delivery") is a rule arm or a domain
-  exclusion. `DeliveryFactRelation.mint` returns `Inline` for a `@service` coordinate before
-  reaching any other rule, which reads as precedence, but it may be cleaner as an anti-join in the
-  resolved view. Either encodes the same verdict; the precedence form matches the sibling.
+One question is genuinely open, and it is narrower than the two the earlier draft carried.
 
-Settled at review rather than left open: **the resolved view needs no stored materialization.**
+* **Whether the `Authored` trigger keeps one rule literal or becomes two.** The arm count, read off
+  `DeliveryFactRelation.mint`: three triggers, but four `SELECT`s, because `Authored` is two
+  independent readings (the `@splitQuery` half on a table-anchored child or a `@pivot` chain, and
+  `@tenantFanOut` on a table-anchored non-`@routine` child) that mint the same literal. The
+  sibling's vocabulary is one literal per arm, which argues for splitting, and against it stands the
+  `@tenantFanOut` arm having no coordinate anywhere, so a split ships a literal nothing reaches.
+  Two observations for whoever decides. The vacuity is an argument for the fixture rather than
+  against the split, since the arm is equally unwitnessed under one literal and merely less visibly
+  so. And the decision is cheap now and expensive later: the rule vocabulary becomes R667's read
+  surface once that item lands, so splitting a literal afterwards is a consumer change rather than a
+  DDL change. That asymmetry, not the arm count, is the thing to weigh.
+
+Settled at review rather than left open, in the order the questions were retired.
+
+**Whether `graphitron_service`'s claim is a rule arm or a domain exclusion: it is neither.** It is an
+exemption arm with declared precedence, per the negative-side section above, which also establishes
+that the root coordinate is a second one. The complement-only reading the question presupposed is
+what turned out to be false, and both alternatives it offered inherited that reading. The same
+finding resolves the view-count question: three relations, the sibling's shape, for a structural
+reason rather than by copying a file layout.
+
+**The resolved view needs no stored materialization.**
 `intent_type_domain` is a table rather than a view because H2 cannot state a terminating closure over
 a cyclic type graph. Every arm in `mint` reads its own coordinate's markers, that coordinate's target
 type, and that type's participants or bound table, so nothing recurses and no arm needs a closure.
