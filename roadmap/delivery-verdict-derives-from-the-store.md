@@ -27,9 +27,15 @@ as **negative space**: it returns the batched-capable predicate by enumerating w
 qualify, with `case GraphitronType.TableInterfaceType _ -> false` and a matching exclusion inside
 its `ConnectionType` arm, justified in javadoc as "the single-table interface child, whose only
 delivery is inline". That is a closed-world claim about the whole shape space, maintained by hand,
-with nothing behind it. When `roadmap/batched-discriminated-interface-child.md` gives that very
-shape a batched delivery, the `false` does not fail; it silently disagrees with the leaf side, and
-the reviewer of that item had to find the site by reading.
+with nothing behind it.
+
+What `roadmap/batched-discriminated-interface-child.md` then had to establish is the exact cost.
+That item gives the discriminated interface child a batched delivery, and settling what the
+hardcoded `false` owed it took a full reading of `mint`'s arm order: the answer turned out to be
+that the `false` case stays correct as written, because the new delivery arrives as a positive arm
+placed ahead of the `tableAnchoredChild` computation, and only the javadoc rationale quoted above
+goes false. Nothing in the code said so. The site's correctness under a new batched shape was
+established by a reviewer reading arm order, which is the same as saying it was not established.
 
 The pin does not close this. `DeliveryFactPinTest` compares the two sides, but
 `DeliveryFactRelation`'s own javadoc states what the comparison is worth: "this production and the
@@ -88,24 +94,36 @@ first read suggests. The arms need `graphitron_split_query`, `graphitron_tenant_
 `graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (through
 `intent_bound_table`, see below), `graphitron_service` / `graphitron_external_field` /
 `graphitron_mutation`, `graphitron_connection`, `graphql_field.is_list`, `graphql_type.kind`,
-`graphql_implements`, `graphql_union_member`, and the `sql_` catalog family
-(`sql_referential_constraint`, `sql_constraint_column`, `sql_primary_key`). All exist, all are keyed
+`graphql_implements`, and `graphql_union_member`. All exist, all are keyed
 at the coordinate or type grain the arms would join on, and the marker relations already carry the
-`graphql_field` FK.
+`graphql_field` FK. The `sql_` catalog family is deliberately absent; the second predicate below is
+where that is established.
 
-Two predicates need real care, not one, and neither is a straight lookup.
+One predicate needs real care. A second looks like it does and does not, and the reason it does not
+is worth stating, because the obvious reading sends the arm at the catalog for nothing.
 
-**Participant table-boundness is narrower than the obvious join, provably.**
-`DeliveryFactRelation.anyTableBoundParticipant` tests `ParticipantRef.TableBound` specifically, not
-the `ParticipantRef.TableBacked` supertype, so a `JoinedTableBound` participant (joined-table
-inheritance) does *not* satisfy the fan-in's second conjunct. `graphql_implements` joined to
-`graphitron_table` catches both, so that join over-approximates and the disagreement is known in
-advance rather than something to discover. The discrimination is catalog-shaped: `TypeBuilder` mints
-`JoinedTableBound` only when a foreign key runs detail to base and the detail-side FK columns are
-exactly the detail table's own primary key. The `sql_` family carries both facts, so the arm stays
-view-expressible, but the predicate is an anti-join against that catalog shape rather than a
-membership test. Decide at implementation whether to express it or to name it a residue; do not
-ship the naive join.
+**The fan-in arm's gate is non-discrimination, not participant boundness.** The tempting reading is
+that the arm has to tell `ParticipantRef.TableBound` from `JoinedTableBound`, because
+`DeliveryFactRelation.anyTableBoundParticipant` tests `TableBound` specifically rather than the
+`TableBacked` supertype. That narrowing cannot change a verdict, and the trace is short. The arm is
+only entered when `unwrapped instanceof TargetShape.Interface || TargetShape.Union`, and
+`ChildField.target()` gives `TableInterfaceField` a `TargetShape.Table`, so no discriminated
+interface child, single-table or joined-table, reaches the arm at all. Underneath,
+`anyTableBoundParticipant` reads participants only from `GraphitronType.InterfaceType` and
+`UnionType`; a `TableInterfaceType` falls to its `default -> List.of()`. And `JoinedTableBound` is
+minted at one site in `TypeBuilder`, behind an `interfaceTable != null` guard that only the
+`TableInterfaceType` construction satisfies (the `InterfaceType` and `UnionType` constructions both
+pass null). So a `JoinedTableBound` participant cannot reach the predicate that would reject it.
+`roadmap/batched-discriminated-interface-child.md` states the same participant invariant
+independently, as the reason it must not copy this guard's shape.
+
+Two consequences. The arm's store-side gate is that the target is an interface or union that is
+*not* `@discriminate`-bearing, with at least one table-bound participant: `graphql_implements` /
+`graphql_union_member` joined to `graphitron_table`, anti-joined against `graphitron_discriminate`
+on the target type. Every input is in the inventory above and every hop is single. And the `sql_`
+catalog family is not needed by any arm, which is why it is absent from that inventory: no arm's
+predicate reaches a foreign key or a primary key. If an implementer finds one that does, that is a
+finding worth recording rather than a gap to fill quietly.
 
 **Record-handedness is not `@record`.** `graphitron_record` captures the deprecated, ignored
 `@record` directive and is the wrong base relation for the `RecordHandedParent` trigger.
@@ -191,9 +209,9 @@ set acquiring an enforcer that is not another switch.**
   express, each with a stated removal criterion. Predicted from reading, to confirm at
   implementation: the nesting-field domain boundary above, and any arm whose predicate depends on
   classifier-internal route resolution (`resolveChildPolymorphicJoinPaths`) rather than on a
-  captured fact. The two predicates named above are the first residue candidates: the joined-table
-  participant, if the catalog-shaped anti-join proves not worth writing, and the pivot-slot record
-  parent, which is the one member of the record-handed population no producer relation witnesses.
+  captured fact. The one predicate-driven residue candidate is the pivot-slot record parent, the
+  single member of the record-handed population no producer relation witnesses. The joined-table
+  participant is explicitly *not* a residue candidate, per the fan-in trace above.
 * `DeliveryShadowTest` in `DemandShadowTest`'s mould, registered in `FactCaptureAgreementTest` under
   `Arm.DERIVED` for both views. Per that test's stated residue discipline: equality outside the
   named residues, each disagreement direction pinned against a store-derived population rather than
@@ -201,23 +219,38 @@ set acquiring an enforcer that is not another switch.**
   no pin can go vacuous.
 * Corpus population for every arm the view declares. A shadow test over a corpus that does not
   exercise an arm is vacuous in exactly the way the R661 review found `DeliveryFactPinTest` to be,
-  so each declared rule needs a coordinate that reaches it. Two coordinates are missing today, both
-  checked against `ClassifiedCorpus` rather than assumed:
+  so each declared rule needs a coordinate that reaches it. Two populations are missing today, both
+  counted against `ClassifiedCorpus` rather than assumed:
   * The list-cardinality discriminated interface child that review named. The `table-interface`
     example's `Inventory.media` is the only discriminated interface *child* in the corpus and it is
-    `target: Single`, so the shape whose hardcoded `false` started this item is genuinely unwitnessed.
-  * A list-cardinality child returning a joined-table-inheritance interface, for the
-    `TableBound`-versus-`JoinedTableBound` seam above. The corpus has `joined-table-interface` and
-    its paginated sibling, but both reach the shape only through `Query` roots, and a root mints
-    `Inline` before the fan-in conjunct is ever evaluated. So the arm's one known over-approximation
-    has no coordinate that would catch it, in either the pin or the shadow test.
+    `target: Single`; `joined-table-interface` and its paginated sibling reach the shape only through
+    `Query` roots, and a root mints `Inline` before any child rule is evaluated. So the shape whose
+    hardcoded `false` started this item is genuinely unwitnessed.
+    `roadmap/batched-discriminated-interface-child.md` reaches the same conclusion and asks for
+    **three** coordinates rather than one, because the marker arms read `@splitQuery` independently
+    of cardinality: a list child, a list child carrying `@splitQuery`, and a single child carrying
+    `@splitQuery`. Take that count, not this bullet's original one.
+  * **The `@tenantFanOut` arm has no witness anywhere in the corpus.** `@tenantFanOut` occurs zero
+    times in `ClassifiedCorpus` (against eight `@splitQuery`, seven `@routine`, four `@pivot`), and
+    `DeliveryFactPinTest`'s own `MARKER_FIXTURE` covers only the split-query half, by its comment
+    "an authored split child riding a table parent". This is the arm the open question below
+    proposes to promote to its own rule literal, so on the split-literal answer the view would ship
+    a vocabulary entry that no coordinate can reach: vacuous on landing, in exactly the class this
+    item exists to kill. Fixtures for the marker do exist outside the corpus
+    (`TenantFanOutClassificationTest`, `TenantFanOutFetcherPipelineTest`,
+    `TriggerFactPopulationPinTest`), so this is a choice to make rather than a blocker: either add a
+    corpus example, or carry a beside-the-corpus fixture the way `MARKER_FIXTURE` already does.
+    `TriggerFactPopulationPinTest` is the mould for the latter, being pipeline-tier and pinning each
+    gather slot's rows by coordinate so that an empty relation fails as loudly as an over-gathering
+    one.
 
 ## The exit criterion, and the successor
 
 The successor slice flips `ProjectionCommands` and `LauncherCommands` onto
 `intent_resolved_field_delivery`. It is filed: `roadmap/emit-plan-reads-the-store.md` (R667, Spec)
-declares this item as its dependency, and its measured read surface names `deliveryOf()` as two of
-the thirteen accessors it converts. So the successor is not a slice to write later but a plan
+declares this item as its dependency, and its measured read surface counts `deliveryOf()` as one of
+the accessors it converts, at two call sites, which are exactly the two consumers named above (a
+whole-tree check confirms there is no third production reader). So the successor is not a slice to write later but a plan
 already specified, and this item's job is to leave that plan a view it can read. Its precondition is
 checkable rather than a judgement call: **the shadow residues are empty over the coordinates those
 two consumers actually read.** Residues elsewhere (a nesting boundary the planning consumers never
@@ -235,8 +268,10 @@ pins two duplicate readers, and afterwards it either becomes a store-versus-cons
 goes away with the crosswalk it compares.
 
 **One test of whether this item succeeded:** the discriminated interface child must not appear in
-`DeliveryResidue` as a standing exemption. If the view cannot express the shape whose hardcoded
-`false` started the item, the item has reproduced the defect in a new place.
+`DeliveryResidue` as a standing exemption. The reason is not that the hardcoded `false` is wrong;
+per the Problem statement it survives its own sibling item intact. The reason is that this shape is
+the one whose delivery nobody could settle without reading arm order, so a view that cannot state it
+has left the question exactly where it was and reproduced the defect in a new place.
 
 ## Out of scope
 
@@ -268,7 +303,8 @@ goes away with the crosswalk it compares.
   is deliberately no dependency in either direction: an N+1 defect should not block on a structural
   item, and this item models the delivery rules as they are rather than as R661 will leave them.
   Either landing order works. If R661 lands first, this item's view gains one more arm to express
-  and one more corpus coordinate to cover. If this item lands first, R661's relation-side edit
+  and the three corpus coordinates that item specifies (its own delivery-agreement bullet enumerates
+  them; they subsume the first coordinate this item asks for). If this item lands first, R661's relation-side edit
   becomes additive, a `UNION` arm rather than a negative-space switch case, which is strictly the
   better shape for that implementer. Whoever goes second reads the other's landing note.
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
@@ -298,17 +334,20 @@ goes away with the crosswalk it compares.
   or a `@pivot` chain, and `@tenantFanOut` on a table-anchored non-`@routine` child) that mint the
   same literal. Whether those stay two arms under one rule literal or become two literals is part of
   the same decision, and the vocabulary the sibling uses (one literal per arm) argues for splitting
-  them.
+  them. If they do split, the `@tenantFanOut` literal needs the coordinate the Implementation section
+  flags as missing, or it lands vacuous.
 * Whether `graphitron_service`'s claim ("the call is the delivery") is a rule arm or a domain
   exclusion. `DeliveryFactRelation.mint` returns `Inline` for a `@service` coordinate before
   reaching any other rule, which reads as precedence, but it may be cleaner as an anti-join in the
   resolved view. Either encodes the same verdict; the precedence form matches the sibling.
-* Whether the resolved view needs a stored materialization. `intent_type_domain` is a table rather
-  than a view because H2 cannot state a terminating closure over a cyclic type graph. Every arm in
-  `mint` reads its own coordinate's markers, that coordinate's target type, and that type's
-  participants or bound table, so nothing recurses and no arm needs a closure; a plain view should
-  hold. The one place to re-check is the joined-table anti-join, which reaches the `sql_` family and
-  is the only arm whose predicate is not a single hop.
+
+Settled at review rather than left open: **the resolved view needs no stored materialization.**
+`intent_type_domain` is a table rather than a view because H2 cannot state a terminating closure over
+a cyclic type graph. Every arm in `mint` reads its own coordinate's markers, that coordinate's target
+type, and that type's participants or bound table, so nothing recurses and no arm needs a closure.
+The joined-table anti-join was the one candidate exception, and the fan-in trace above removes it:
+with no arm reaching the `sql_` family, every predicate is a single hop and a plain view holds
+unconditionally.
 
 ## Coverage
 
