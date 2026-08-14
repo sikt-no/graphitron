@@ -41,12 +41,12 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * for plain {@link GraphitronType.InterfaceType} (multi-table) participants.
      *
      * <p>{@code crossTableFields} lists the participant's fields whose value lives on a different
-     * table than the participant's own ({@code @reference}-traversed). Used by the
-     * {@code TableInterfaceType} fetcher to emit conditional LEFT JOINs gated by the participant's
-     * discriminator value, so non-matching rows carry NULL for the cross-table columns. Empty for
-     * participants without cross-table fields, and always empty for {@link GraphitronType.InterfaceType}
-     * / {@link GraphitronType.UnionType} participants (multi-table polymorphism does not project
-     * cross-table fields through this path).
+     * table than the participant's own ({@code @reference}-traversed). The launcher producer
+     * lowers each into the discriminated arm's select list as a capped correlated subselect gated
+     * by the participant's discriminator value, so a row of another participant's type projects
+     * NULL. Empty for participants without cross-table fields, and always empty for
+     * {@link GraphitronType.InterfaceType} / {@link GraphitronType.UnionType} participants
+     * (multi-table polymorphism does not project cross-table fields through this path).
      */
     record TableBound(String typeName, TableRef table, String discriminatorValue,
                       List<CrossTableField> crossTableFields)
@@ -63,15 +63,14 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
 
         /**
          * A participant field whose value lives on a different table than the participant's own.
-         * The {@code TableInterfaceType} fetcher emits a conditional LEFT JOIN gated by the
-         * participant's discriminator value, projects {@link #column} aliased as {@link #aliasName},
-         * and a per-field fetcher reads it back from the result {@code Record} by that alias.
+         * The {@code TableInterfaceType} query projects {@link #column} as a correlated
+         * subselect over {@link #hop}, aliased {@link #aliasName}, and a per-field fetcher reads
+         * it back from the result {@code Record} by that alias.
          *
          * <p>{@code hop} is the single-hop {@code @reference} from the interface table to
          * the cross table (exposed via {@link #targetTable()}). Its {@code sourceColumns} sit on
          * the interface table (FK holder) and its {@code targetColumns} sit on the referenced
-         * side; the generator builds the JOIN ON condition by equating the two arity-1 column
-         * lists.
+         * side; the generator correlates the subselect by equating the two arity-1 column lists.
          */
         public record CrossTableField(
             String fieldName,
@@ -87,11 +86,8 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
             }
             /** The FK-derived column pairs of the single cross-table hop. */
             public On.ColumnPairs pairs() { return (On.ColumnPairs) hop.on(); }
-            /** The cross table joined to project this field; equivalent to {@code hop().targetTable()}. */
+            /** The cross table this field is read from; equivalent to {@code hop().targetTable()}. */
             public TableRef targetTable() { return hop.targetTable(); }
-
-            /** Java variable name used in the generated interface fetcher to hold the aliased target table. */
-            public String aliasVarName() { return aliasName + "_alias"; }
         }
     }
 
@@ -119,7 +115,10 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * reference path reads it as {@code detail -> base} while the interface fetcher reads the same slot
      * pair as {@code base.pk = detail.fk} for the discriminator-gated {@code base LEFT JOIN detail},
      * carrying NULL through for non-matching rows. The PK=FK invariant (the detail's FK columns to the
-     * base are the detail's own primary key) is checked by the validator, not encoded here.
+     * base are the detail's own primary key) is checked where the participant resolves
+     * ({@link no.sikt.graphitron.rewrite.TypeBuilder#resolveJoinedTableParticipant}), not encoded
+     * here; it is what makes this the one join the discriminated assembly may put in a paginating
+     * statement.
      *
      * <p>There is no residence list on this record: the interface fetcher emits a <em>detail-only</em>
      * projection (the participant's detail-resident {@link ChildField.ColumnBackedField}s against the detail

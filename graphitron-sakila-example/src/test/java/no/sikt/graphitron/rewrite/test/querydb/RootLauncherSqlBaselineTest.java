@@ -217,20 +217,22 @@ class RootLauncherSqlBaselineTest {
     }
 
     @Test
-    void interfaceRoot_crossTableParticipantField_gatedLeftJoinArm() {
+    void interfaceRoot_crossTableParticipantField_gatedCappedSubselect() {
         execute("{ allContent { title ... on FilmContent { rating } } }");
         assertThat(SQL_LOG)
-            .as("single-table interface root with a cross-table participant field: the "
-                + "selection declares the aliased FK-target and fires its discriminator-gated "
-                + "LEFT JOIN arm")
+            .as("single-table interface root with a cross-table participant field: the selection "
+                + "drives a correlated subselect over the FK target in the select list, gated on "
+                + "the participant's discriminator value and capped at one row, so the hop cannot "
+                + "multiply the statement's own rows")
             .containsExactly(
                 "select \"content\".\"content_type\" as \"__discriminator__\", "
                     + "\"public\".\"content\".\"title\", "
-                    + "\"filmcontent_rating\".\"rating\" as \"filmcontent_rating\" "
-                    + "from \"public\".\"content\" "
-                    + "left outer join \"public\".\"film\" as \"filmcontent_rating\" "
-                    + "on (\"filmcontent_rating\".\"film_id\" = \"public\".\"content\".\"film_id\" "
+                    + "(select \"content_f0\".\"rating\" "
+                    + "from \"public\".\"film\" as \"content_f0\" "
+                    + "where (\"content_f0\".\"film_id\" = \"public\".\"content\".\"film_id\" "
                     + "and \"content\".\"content_type\" = ?) "
+                    + "fetch next ? rows only) as \"filmcontent_rating\" "
+                    + "from \"public\".\"content\" "
                     + "where \"content\".\"content_type\" in (?, ?) "
                     + "order by \"public\".\"content\".\"content_id\" asc");
     }

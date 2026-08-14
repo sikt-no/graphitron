@@ -381,7 +381,7 @@ public final class LauncherCommands {
             new LaunchSource.DiscriminatedTable(correlation.targetTable(),
                 discriminatorColumn, knownDiscriminatorValues,
                 reprojection.baseSlice(),
-                discriminatedBranches(participants, reprojection, units)),
+                discriminatedBranches(participants, discriminatorColumn, reprojection, units)),
             correlation);
     }
 
@@ -567,7 +567,8 @@ public final class LauncherCommands {
             new LaunchSource.DiscriminatedTable(qtif.returnType().table(),
                 qtif.discriminatorColumn(), qtif.knownDiscriminatorValues(),
                 reprojection.baseSlice(),
-                discriminatedBranches(qtif.participants(), reprojection, units)),
+                discriminatedBranches(qtif.participants(), qtif.discriminatorColumn(),
+                    reprojection, units)),
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
@@ -583,16 +584,22 @@ public final class LauncherCommands {
      * projection-ref minting have one home. Total over the table-backed variants; a non-table
      * participant cannot reach here (the parse boundary rejects non-table members of a
      * discriminated interface).
+     *
+     * <p>{@code discriminatorColumn} is read only to build the single-table branches' cross-table
+     * gates: the lowering happens here, not in the renderer, so every consumer of the assembly
+     * inherits one SQL shape for a participant scalar one {@code @reference} hop off the base.
      */
     public static List<LaunchSource.DiscriminatedTable.Branch> discriminatedBranches(
             List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
+            String discriminatorColumn,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection, GeneratedUnits units) {
         var branches = new ArrayList<LaunchSource.DiscriminatedTable.Branch>(participants.size());
         for (var participant : participants) {
             branches.add(switch (participant) {
                 case no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb ->
                     new LaunchSource.DiscriminatedTable.Branch.SingleTable(tb,
-                        units.typeClass(tb.typeName()));
+                        units.typeClass(tb.typeName()),
+                        crossTableTerms(tb, discriminatorColumn));
                 case no.sikt.graphitron.rewrite.model.ParticipantRef.JoinedTableBound jtb ->
                     new LaunchSource.DiscriminatedTable.Branch.JoinedDetail(jtb,
                         reprojection.detailFieldsOf(jtb.typeName()));
@@ -604,6 +611,34 @@ public final class LauncherCommands {
             });
         }
         return branches;
+    }
+
+    /**
+     * A single-table participant's cross-table fields, lowered to capped correlated subselects:
+     * one hop, the participant's fixed alias as the projected name (what the per-field fetcher
+     * reads back), and the branch's discriminator equality as the gate, so a row of another
+     * participant's type projects NULL. A participant carrying no {@code @discriminator} value
+     * contributes no terms: an ungated subselect would resolve the reference for every row
+     * regardless of type, which is the same reason the assembly skips that participant's join
+     * arms today.
+     */
+    private static List<LaunchSource.DiscriminatedTable.Branch.SingleTable.CrossTableTerm>
+            crossTableTerms(no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb,
+                    String discriminatorColumn) {
+        if (tb.discriminatorValue() == null) {
+            return List.of();
+        }
+        return tb.crossTableFields().stream()
+            .map(ctf -> new LaunchSource.DiscriminatedTable.Branch.SingleTable.CrossTableTerm(
+                ctf.fieldName(),
+                new no.sikt.graphitron.command.SelectTerm.ScalarSubselect(
+                    List.of(ctf.hop()),
+                    new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(ctf.hop()),
+                    ctf.column(),
+                    ctf.aliasName(),
+                    new no.sikt.graphitron.command.SelectTerm.ScalarSubselect.ParentColumnEquals(
+                        discriminatorColumn, tb.discriminatorValue()))))
+            .toList();
     }
 
     /**

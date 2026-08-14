@@ -1143,10 +1143,11 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The shared read/projection body of the discriminated-interface consumers that have not
-     * migrated onto the launcher seam ({@link #buildTableInterfaceFieldFetcher}, the service
-     * single-table-interface fetcher in {@link MultiTablePolymorphicEmitter}, and the two DML
-     * discriminated follow-ups): a thin delegate that derives the
+     * The shared read/projection body of the two discriminated-interface consumers that have not
+     * migrated onto the launcher seam ({@link #buildTableInterfaceFieldFetcher} and the service
+     * single-table-interface fetcher in {@link MultiTablePolymorphicEmitter}; the DML
+     * discriminated follow-ups reach the same assembly through the launcher's reentry arm): a
+     * thin delegate that derives the
      * {@link no.sikt.graphitron.command.LaunchSource.DiscriminatedTable} arm's data (the
      * residence split off the schema's joined-table reprojection fold, the branches through the
      * launcher producer's one assembly) and renders it through the relocated fragment
@@ -1170,7 +1171,8 @@ public class TypeFetcherGenerator {
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         var source = new no.sikt.graphitron.command.LaunchSource.DiscriminatedTable(
             tableRef, discriminatorColumn, knownDiscriminatorValues, reprojection.baseSlice(),
-            no.sikt.graphitron.plan.LauncherCommands.discriminatedBranches(participants, reprojection, units));
+            no.sikt.graphitron.plan.LauncherCommands.discriminatedBranches(
+                participants, discriminatorColumn, reprojection, units));
         return no.sikt.graphitron.render.DiscriminatedTableFragments.assembly(
             source, alwaysProject, tableLocal);
     }

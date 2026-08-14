@@ -878,7 +878,7 @@ class TypeBuilder {
     /**
      * Walks the participant type's GraphQL field definitions and collects each scalar field
      * whose {@code @reference} traverses a single-hop FK to a table other than {@code interfaceTable}.
-     * The interface fetcher emits a conditional LEFT JOIN (gated by the participant's discriminator
+     * The interface query projects one correlated subselect (gated by the participant's discriminator
      * value) per field returned here; the per-field DataFetcher reads the projected value back
      * from the result {@code Record} by the {@code aliasName} we choose now.
      *

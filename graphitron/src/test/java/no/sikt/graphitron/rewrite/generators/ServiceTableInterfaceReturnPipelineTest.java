@@ -56,14 +56,14 @@ class ServiceTableInterfaceReturnPipelineTest {
     }
 
     @Test
-    void queryFetcher_projectsDiscriminatorCrossTableJoinAndByPkWhere() {
+    void queryFetcher_projectsDiscriminatorCrossTableSubselectAndByPkWhere() {
         var body = queryFetcherBody("contentSearch");
         // The discriminated TypeResolver routes off the synthetic __discriminator__ alias.
         assertThat(body).contains("__discriminator__");
         // The discriminator IN filter restricts to known participant values.
         assertThat(body).contains("\"FILM\"").contains("\"SHORT\"");
-        // FilmContent.rating rides a discriminator-gated cross-table LEFT JOIN.
-        assertThat(body).contains("leftJoin");
+        // FilmContent.rating rides a discriminator-gated cross-table subselect.
+        assertThat(body).contains("FilmContent_rating").contains(".limit(1)");
         // The WHERE source is a by-PK row-value IN off the service-returned records, not an FK correlation.
         assertThat(body).contains("pkRows").contains(".in(");
         // The service developer method is invoked.

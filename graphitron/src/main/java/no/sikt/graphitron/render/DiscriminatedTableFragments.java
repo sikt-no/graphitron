@@ -20,10 +20,17 @@ import java.util.List;
  * {@code IN} restriction ANDed into the caller's {@code condition} local; the
  * {@code LinkedHashSet<Field<?>> fields} projection (the {@link ReservedAliases#DISCRIMINATOR}
  * routing alias first, each single-table branch's {@code $project}, the arm's base slice, plus
- * {@code alwaysProject}); the cross-table and joined-detail alias declarations; the
- * {@code SelectJoinStep<Record> step} declaration; and the discriminator-gated {@code LEFT JOIN}
- * chains. The caller finishes the chain ({@code step.where(condition)...}); this class knows
- * nothing about the fetch cardinality.
+ * {@code alwaysProject}); the cross-table subselect terms and the joined-detail alias
+ * declarations; the {@code SelectJoinStep<Record> step} declaration; and the
+ * discriminator-gated joined-detail {@code LEFT JOIN} chain. The caller finishes the chain
+ * ({@code step.where(condition)...}); this class knows nothing about the fetch cardinality.
+ *
+ * <p>Every join the assembly emits is proven single-valued: the joined-detail edge is the
+ * pattern's own 1:0..1 hop (the detail's FK columns to the base <em>are</em> the detail's
+ * primary key, per {@link no.sikt.graphitron.rewrite.TypeBuilder#resolveJoinedTableParticipant}).
+ * A participant scalar reached one {@code @reference} hop off the base rides the select list as
+ * a capped correlated subselect instead, so one base row stays one entity whatever that hop's
+ * cardinality.
  *
  * <p>Preconditions: the caller has declared {@code condition} ({@code Condition}), {@code dsl}
  * ({@code DSLContext}) and the {@code tableLocal} holding the base {@code @table}'s jOOQ
@@ -42,9 +49,10 @@ import java.util.List;
  * SELECT alias).
  *
  * <p>A branch whose participant carries no {@code @discriminator} value renders its projection
- * contribution but skips its gated JOIN arms (an unconstrained join would multiply rows); that
- * shape classifies unrejected today, and this is deliberately the one gate that mirrors it (see
- * {@link LaunchSource.DiscriminatedTable.Branch}).
+ * contribution but nothing that would need a type gate: no joined-detail JOIN arm here, and no
+ * cross-table term at all (the producer contributes none, an ungated one resolving the reference
+ * for rows of every type). That shape classifies unrejected today, and this is deliberately the
+ * one gate that mirrors it (see {@link LaunchSource.DiscriminatedTable.Branch}).
  */
 public final class DiscriminatedTableFragments {
 
@@ -67,13 +75,12 @@ public final class DiscriminatedTableFragments {
         for (var col : alwaysProject) {
             b.addStatement("fields.add($L.$L)", tableLocal, col.javaName());
         }
-        b.add(crossTableAliasDeclarations(source, tableLocal));
+        b.add(crossTableProjections(source, tableLocal));
         b.add(joinedDetailAliasDeclarations(source, tableLocal));
         var selectJoinStepOfRecord = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "SelectJoinStep"), RECORD);
         b.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
             selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        b.add(crossTableJoinChain(source, tableLocal));
         b.add(joinedDetailJoinChain(source, tableLocal));
         return b.build();
     }
@@ -154,28 +161,36 @@ public final class DiscriminatedTableFragments {
     }
 
     /**
-     * Per-single-table-branch cross-table alias declarations plus the selection-set-gated
-     * {@code fields.add(alias.<col>.as(<alias>))} per cross-table field. The null-defaulted
-     * variable lets {@link #crossTableJoinChain} gate the LEFT JOIN on the field's presence.
-     * The selection-set pattern is {@code <Type>.<field>} (dot, not slash): graphql-java
+     * Per-single-table-branch cross-table projections: one selection-set-gated
+     * {@code fields.add(DSL.field(<capped correlated subselect>).as(<alias>))} per lowered term,
+     * rendered through the same fragment the projection unit's scalar {@code @reference} arm
+     * calls ({@link PathFragments#scalarInnerSelect}), parameterized on this assembly's base
+     * table local. The hop alias is declared inside the gate, so the term contributes nothing at
+     * all to a query whose selection never asked for the field, and nothing to the statement's
+     * row count when it did.
+     *
+     * <p>The selection-set pattern is {@code <Type>.<field>} (dot, not slash): graphql-java
      * flattens type-conditioned fields under inline fragments as {@code "<Type>.<fieldName>"};
      * the slash is reserved for parent/child path nesting.
      */
-    private static CodeBlock crossTableAliasDeclarations(LaunchSource.DiscriminatedTable source, String tableLocal) {
+    private static CodeBlock crossTableProjections(LaunchSource.DiscriminatedTable source, String tableLocal) {
         var b = CodeBlock.builder();
         for (var branch : source.branches()) {
             if (!(branch instanceof LaunchSource.DiscriminatedTable.Branch.SingleTable single)) continue;
-            var tb = single.participant();
-            if (tb.discriminatorValue() == null) continue;
-            for (var ctf : tb.crossTableFields()) {
-                String aliasVar = ctf.aliasVarName();
-                b.addStatement("$T $L = null", ctf.targetTable().tableClass(), aliasVar);
+            for (var ct : single.crossTableTerms()) {
+                var term = ct.term();
+                var aliases = PathFragments.generateAliases(term.path());
                 b.beginControlFlow("if (env.getSelectionSet().contains($S))",
-                    tb.typeName() + "." + ctf.fieldName());
-                b.addStatement("$L = $T.$L.as($S)", aliasVar, ctf.targetTable().constantsClass(),
-                    ctf.targetTable().javaFieldName(), ctf.aliasName());
-                b.addStatement("fields.add($L.$L.as($S))", aliasVar,
-                    ctf.column().javaName(), ctf.aliasName());
+                    single.participant().typeName() + "." + ct.fieldName());
+                for (int i = 0; i < term.path().size(); i++) {
+                    var target = ((no.sikt.graphitron.rewrite.model.JoinStep.HasTargetTable)
+                        term.path().get(i)).targetTable();
+                    b.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
+                        target.tableClass(), aliases.get(i), target.constantsClass(),
+                        target.javaFieldName(), tableLocal, "_" + aliases.get(i));
+                }
+                b.addStatement("fields.add($T.field($L).as($S))",
+                    DSL, PathFragments.scalarInnerSelect(term, aliases, tableLocal), term.asName());
                 b.endControlFlow();
             }
         }
@@ -204,34 +219,6 @@ public final class DiscriminatedTableFragments {
                 b.addStatement("$L = $T.$L.as($S)", aliasVar, jtb.detailTable().constantsClass(),
                     jtb.detailTable().javaFieldName(), jtb.detailAliasName());
                 b.addStatement("fields.add($L.$L)", aliasVar, df.column().javaName());
-                b.endControlFlow();
-            }
-        }
-        return b.build();
-    }
-
-    /**
-     * The conditional {@code step = step.leftJoin(alias).on(...)} block per cross-table field:
-     * the FK equality (direction-blind slot orientation, see
-     * {@link JoinFragments#emitCorrelationWhere}) plus the branch's discriminator equality,
-     * qualified to the base (see the class javadoc), so non-matching rows carry NULL through.
-     */
-    private static CodeBlock crossTableJoinChain(LaunchSource.DiscriminatedTable source, String tableLocal) {
-        var b = CodeBlock.builder();
-        for (var branch : source.branches()) {
-            if (!(branch instanceof LaunchSource.DiscriminatedTable.Branch.SingleTable single)) continue;
-            var tb = single.participant();
-            if (tb.discriminatorValue() == null) continue;
-            for (var ctf : tb.crossTableFields()) {
-                String aliasVar = ctf.aliasVarName();
-                var fkOn = JoinFragments.emitCorrelationWhere(ctf.pairs(), aliasVar, tableLocal);
-                var onCondition = CodeBlock.builder()
-                    .add("$L.and($T.field($L.getQualifiedName().append($T.name($S)), $T.class).eq($S))",
-                        fkOn, DSL, tableLocal, DSL, source.discriminatorColumn(), Object.class,
-                        tb.discriminatorValue())
-                    .build();
-                b.beginControlFlow("if ($L != null)", aliasVar);
-                b.addStatement("step = step.leftJoin($L).on($L)", aliasVar, onCondition);
                 b.endControlFlow();
             }
         }

@@ -1,10 +1,12 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 
 import java.util.ArrayList;
@@ -24,6 +26,8 @@ import java.util.List;
 public final class PathFragments {
 
     private PathFragments() {}
+
+    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
 
     /**
      * The single synthesized alias for the pre-keyed lifted shape's target table: hop-less, so
@@ -118,6 +122,90 @@ public final class PathFragments {
                 "a lateral routine hop cannot appear in a " + pathKindLabel + " path; "
                 + "multi-node routine chains classify as typed Deferred");
         };
+    }
+
+    /**
+     * The whole correlated single-column subselect of a {@link SelectTerm.ScalarSubselect}: JOIN
+     * chain walked terminal-first, step-0 correlation off the borrowed {@link ParentCorrelation},
+     * per-hop filters, the term's optional parent gate, {@code .limit(1)}. The cap is what makes
+     * the term row-neutral: however many rows the hop reaches, the projecting statement keeps
+     * exactly its own, so a subselect may sit in the select list of a paginating query where a
+     * join of unproven cardinality may not.
+     *
+     * <p>{@code parentLocal} is the enclosing statement's parent table local, the one thing that
+     * differs between the two consumers: the projection unit's {@code $project} parameter, or the
+     * discriminated assembly's base-table local.
+     */
+    public static CodeBlock scalarInnerSelect(SelectTerm.ScalarSubselect s, List<String> aliases,
+            String parentLocal) {
+        var path = s.path();
+        String terminalAlias = aliases.get(aliases.size() - 1);
+        var sel = CodeBlock.builder();
+        sel.add("$T.select($L.$L)", DSL, terminalAlias, s.terminal().javaName());
+        sel.add("\n        .from($L)", terminalAlias);
+        for (int i = path.size() - 1; i >= 1; i--) {
+            switch (path.get(i)) {
+                case JoinStep.Hop hop -> sel.add("\n        $L",
+                    emitBackwardBridging(hop, aliases.get(i - 1), aliases.get(i), "column-reference"));
+            }
+        }
+        var where = CodeBlock.builder();
+        where.add("$L", correlationWhere(s.correlation(), aliases.get(0), parentLocal, "column-reference"));
+        appendHopFilters(where, path, aliases, parentLocal, ".and($L)");
+        if (s.gate() != null) {
+            where.add(".and($L)", parentColumnEquals(s.gate(), parentLocal));
+        }
+        sel.add("\n        .where($L)", where.build());
+        sel.add("\n        .limit(1)");
+        return sel.build();
+    }
+
+    /**
+     * {@code DSL.field(<parent>.getQualifiedName().append(DSL.name("<col>")), Object.class)
+     * .eq("<value>")}: a {@link SelectTerm.ScalarSubselect.ParentColumnEquals} rendered off the
+     * parent table local's own jOOQ instance, so the qualifier matches the enclosing statement's
+     * FROM clause exactly (see {@link DiscriminatedTableFragments}'s class javadoc for why the
+     * qualified-name idiom, not the {@code @table} directive string, is the reference).
+     */
+    private static CodeBlock parentColumnEquals(SelectTerm.ScalarSubselect.ParentColumnEquals gate,
+            String parentLocal) {
+        return CodeBlock.of("$T.field($L.getQualifiedName().append($T.name($S)), $T.class).eq($S)",
+            DSL, parentLocal, DSL, gate.column(), Object.class, gate.value());
+    }
+
+    /**
+     * Step-0 correlation against the parent: the sealed dispatch on the borrowed
+     * {@link ParentCorrelation}. A filtered or condition-join first hop folds its correlation
+     * into the two-argument condition-method call; a lateral routine first hop correlates
+     * through its call arguments (the step-0 WHERE contributes nothing).
+     */
+    public static CodeBlock correlationWhere(ParentCorrelation correlation, String firstAlias,
+            String parentLocal, String pathKindLabel) {
+        return switch (correlation) {
+            case ParentCorrelation.OnFkSlots fk ->
+                JoinFragments.emitCorrelationWhere(fk.slots(), firstAlias, parentLocal);
+            case ParentCorrelation.OnParentJoin pj -> switch (pj.firstHop().on()) {
+                case On.ColumnPairs cp -> JoinFragments.emitCorrelationWhere(cp, firstAlias, parentLocal);
+                case On.Predicate pred -> emitTwoArgMethodCall(pred.condition(), parentLocal, firstAlias);
+                case On.Lateral ignored -> throw new IllegalStateException(
+                    "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
+            };
+            case ParentCorrelation.OnLateralArgs ignored -> CodeBlock.of("$T.noCondition()", DSL);
+            case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
+                "ParentCorrelation.OnLiftedSlots never reaches a " + pathKindLabel + " projection "
+                + "arm; the pre-keyed lifted shape is DataLoader-batched through the rows methods");
+        };
+    }
+
+    /** Per-hop {@code filter()} condition-method calls appended to the enclosing WHERE. */
+    public static void appendHopFilters(CodeBlock.Builder where, List<JoinStep> path,
+            List<String> aliases, String parentLocal, String andFormat) {
+        for (int i = 0; i < path.size(); i++) {
+            if (path.get(i) instanceof JoinStep.Hop hop && hop.filter() != null) {
+                String srcAlias = i == 0 ? parentLocal : aliases.get(i - 1);
+                where.add(andFormat, emitTwoArgMethodCall(hop.filter(), srcAlias, aliases.get(i)));
+            }
+        }
     }
 
     /**

@@ -519,7 +519,7 @@ The direct-return `DmlTableField` permit is guaranteed never to carry a class-ba
 
 | `@field(name:)` or matching column name | `ColumnBackedField` (arity 1, `compaction = Direct`) | Wiring value (`ColumnFetcher`)
 | `@reference` on scalar | `ColumnBackedReferenceField` (arity 1, `compaction = Direct`) | Inline projection in `$project` + `ColumnFetcher` wiring value
-| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Wiring value ; materialised by the enclosing `TableInterfaceField` fetcher's conditional LEFT JOIN and read back via `FetcherEmitter` (participant-side FK, not the interface-side resolver)
+| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Wiring value ; materialised by the enclosing `TableInterfaceField` fetcher's discriminator-gated correlated subselect (the same capped shape a plain scalar `@reference` takes) and read back via `FetcherEmitter` (participant-side FK, not the interface-side resolver)
 | `@nodeId`, no typeName | `ColumnBackedField` (`compaction = NodeIdEncodeKeys`; arity = the node key's column count) | Wiring value (`ColumnFetcher`); the projected column(s) are wrapped positionally in the per-Node `encode<TypeName>` helper
 | `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet ; rooted-at-parent NodeId reference, rejected at validate time as deferred (any arity), pending `nodeidreferencefield-join-projection-form`
 |===

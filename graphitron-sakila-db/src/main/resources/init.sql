@@ -427,6 +427,30 @@ INSERT INTO party_individual (party_id, birth_date) VALUES
 INSERT INTO party_company (party_id, org_number) VALUES
     (2, 'NO-919477822');
 
+-- Fan-out fixture for a discriminated interface's cross-table participant field. fan_detail holds
+-- MANY rows per fan_base row, and the FanAlpha participant's @reference traverses the FK in the
+-- reverse orientation (base -> detail), which the direction-blind slot model accepts. Reading that
+-- value through a join into the row-producing statement would multiply each base row by its detail
+-- count; the generator projects it as a capped correlated subselect instead, so one base row stays
+-- one entity under the list shape and the single fetch returns a row rather than raising
+-- TooManyRowsException. Row counts are deliberately uneven (3 and 2) so a multiplied result would
+-- differ from the entity count in more than one way.
+CREATE TABLE fan_base (
+    fan_base_id serial      PRIMARY KEY,
+    fan_kind    varchar(10) NOT NULL,
+    label       varchar(50) NOT NULL
+);
+INSERT INTO fan_base (fan_kind, label) VALUES ('ALPHA', 'Alpha one'), ('BETA', 'Beta one');
+
+CREATE TABLE fan_detail (
+    fan_detail_id serial      PRIMARY KEY,
+    fan_base_id   integer     NOT NULL REFERENCES fan_base(fan_base_id),
+    note          varchar(50) NOT NULL
+);
+INSERT INTO fan_detail (fan_base_id, note) VALUES
+    (1, 'alpha-note-1'), (1, 'alpha-note-2'), (1, 'alpha-note-3'),
+    (2, 'beta-note-1'),  (2, 'beta-note-2');
+
 -- R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
 -- paged_a + paged_b share a (Integer, Integer) composite PK shape so the polymorphic emitter
 -- can project DSL.jsonbArray(k1, k2) as the synthetic __sort__ column and type it as JSONB;

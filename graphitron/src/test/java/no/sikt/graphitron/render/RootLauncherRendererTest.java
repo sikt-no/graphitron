@@ -181,7 +181,7 @@ class RootLauncherRendererTest {
         return new LaunchSource.DiscriminatedTable.Branch.SingleTable(
             new no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound("FilmContent",
                 filmTable(List.of()), "FILM"),
-            UNITS.typeClass("FilmContent"));
+            UNITS.typeClass("FilmContent"), List.of());
     }
 
     @Test

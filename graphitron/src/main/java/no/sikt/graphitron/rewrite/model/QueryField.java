@@ -303,8 +303,8 @@ public sealed interface QueryField extends RootField
      * class (distinct-table participants); here every returned record is the same shared-table record,
      * so class dispatch cannot tell the subtypes apart. Instead the emitted fetcher collects the
      * shared table's PKs off the service records, runs one by-PK SELECT projecting the read-side
-     * {@code __discriminator__} (plus the unified participant field set and discriminator-gated
-     * cross-table {@code LEFT JOIN}s), and lets the per-{@code TableInterfaceType} {@code TypeResolver}
+     * {@code __discriminator__} (plus the unified participant field set and the discriminator-gated
+     * cross-table subselects), and lets the per-{@code TableInterfaceType} {@code TypeResolver}
      * route each row off the live discriminator value.
      *
      * <p>Carries the same read-side single-table discrimination data as

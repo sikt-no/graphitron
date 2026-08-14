@@ -4146,11 +4146,11 @@ class GraphQLQueryTest {
 
     // ===== TableInterfaceType cross-table participant fields =====
     //
-    // FilmContent.rating lives on the joined film table (FK content.film_id → film.film_id).
-    // ShortContent.description lives on the content table itself but is populated only on
-    // SHORT rows. The interface fetcher emits a discriminator-gated LEFT JOIN per cross-table
-    // participant field; the per-field DataFetcher reads the projected value back from the
-    // result Record by alias.
+    // FilmContent.rating lives on the film table one @reference hop away (FK content.film_id →
+    // film.film_id). ShortContent.description lives on the content table itself but is populated
+    // only on SHORT rows. The interface query projects a discriminator-gated correlated subselect
+    // per cross-table participant field, the same shape a plain scalar @reference takes; the
+    // per-field DataFetcher reads the projected value back from the result Record by alias.
 
     @Test
     @SuppressWarnings("unchecked")
@@ -4158,7 +4158,7 @@ class GraphQLQueryTest {
         // FilmContent.rating reaches into the joined film row via content_film_id_fkey. The
         // film rows seeded in init.sql carry ratings, so requesting the inline-fragment field
         // must return a non-null value for every FilmContent and a null for every ShortContent
-        // (whose discriminator-gated JOIN never matches).
+        // (whose discriminator gate never matches).
         Map<String, Object> data = execute("""
             { allContent {
                 __typename
@@ -4176,27 +4176,26 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void allContent_crossTableField_leftJoinOmittedWhenNotRequested() {
-        // When the cross-table field is not selected, the conditional LEFT JOIN must be skipped
-        // so no over-fetching occurs. The SQL_LOG capture lets us assert no `left join film`
-        // appears when only same-table columns are projected.
+    void allContent_crossTableField_subselectOmittedWhenNotRequested() {
+        // When the cross-table field is not selected, its subselect must be skipped so no
+        // over-fetching occurs. The SQL_LOG capture lets us assert no reference to film appears
+        // when only same-table columns are projected.
         SQL_LOG.clear();
         execute("{ allContent { __typename contentId title } }");
         var contentSql = SQL_LOG.stream()
             .filter(s -> s.contains("from \"content\"") || s.contains("from content"))
             .toList();
         assertThat(contentSql)
-            .as("content fetcher SQL must not LEFT JOIN film when no cross-table field is selected")
-            .allSatisfy(sql -> assertThat(sql).doesNotContain("left join \"film\"")
-                                              .doesNotContain("left join film"));
+            .as("content fetcher SQL must not reach film when no cross-table field is selected")
+            .allSatisfy(sql -> assertThat(sql).doesNotContain("film"));
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void allContent_crossTableField_leftJoinPresentWhenRequested() {
-        // Inverse of the previous test: requesting the cross-table field must drive the LEFT JOIN.
-        // Relaxed to match either {LEFT JOIN, LEFT OUTER JOIN} (jOOQ for Postgres typically
-        // renders the latter) and either quoted or unquoted table names.
+    void allContent_crossTableField_cappedSubselectPresentWhenRequested() {
+        // Inverse of the previous test: requesting the cross-table field must drive the
+        // correlated subselect, and it must be the capped shape rather than a join into the
+        // row-producing statement, which is what keeps one content row one entity.
         SQL_LOG.clear();
         execute("""
             { allContent {
@@ -4204,11 +4203,18 @@ class GraphQLQueryTest {
                 ... on FilmContent { rating }
             } }
             """);
-        var joinedFilm = SQL_LOG.stream()
-            .anyMatch(s -> s.contains("join") && s.contains("film") && s.contains("content"));
-        assertThat(joinedFilm)
-            .as("content fetcher SQL must JOIN film when FilmContent.rating is selected; captured: " + SQL_LOG)
-            .isTrue();
+        var contentSql = SQL_LOG.stream()
+            .filter(s -> s.contains("from \"public\".\"content\""))
+            .toList();
+        assertThat(contentSql)
+            .as("captured: " + SQL_LOG)
+            .isNotEmpty()
+            .allSatisfy(sql -> assertThat(sql)
+                .as("the rating rides a subselect over film in the select list")
+                .contains("select \"content_f0\".\"rating\"")
+                .contains("as \"filmcontent_rating\"")
+                .as("and no join brings film into the statement's own row set")
+                .doesNotContain("join \"public\".\"film\""));
     }
 
     @Test
@@ -4246,12 +4252,63 @@ class GraphQLQueryTest {
                 .as("ShortContent rows do not surface FilmContent.length").isFalse());
     }
 
+    // ===== the cross-table participant field over a fanning hop =====
+    //
+    // FanAlpha.note reaches fan_detail, which holds several rows per fan_base row. Nothing in the
+    // schema, the classifier or the producer rejects that hop; the emission is what answers it,
+    // by projecting the value as a capped correlated subselect instead of joining fan_detail into
+    // the statement that produces the entities. Only this tier can observe row semantics, so this
+    // is where the property is pinned.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fanItems_fanningCrossTableHop_oneEntityPerBaseRow() {
+        // fan_base holds 2 rows; fan_detail holds 3 rows for the first and 2 for the second. A
+        // join would hand back 5 entities with the ALPHA row repeated three times.
+        Map<String, Object> data = execute("""
+            { allFanItems {
+                __typename
+                fanBaseId
+                label
+                ... on FanAlpha { note }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allFanItems");
+        assertThat(items)
+            .as("one entity per fan_base row, whatever each row's fan_detail count")
+            .hasSize(2);
+        assertThat(items).extracting(i -> i.get("__typename"))
+            .containsExactly("FanAlpha", "FanBeta");
+        var alpha = items.get(0);
+        assertThat(alpha.get("note"))
+            .as("the subselect resolves the reference to one of the detail rows")
+            .isEqualTo("alpha-note-1");
+        assertThat(items.get(1).containsKey("note"))
+            .as("FanBeta declares no cross-table field, so the gated term contributes nothing to it")
+            .isFalse();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fanItem_singleFetchOverFanningCrossTableHop_returnsTheRow() {
+        // The single-cardinality shape fetchOne()s the same statement. Under a join the fanning
+        // hop would make it raise TooManyRowsException; the subselect keeps it one row.
+        Map<String, Object> data = execute(
+            "{ fanItem(fanBaseId: 1) { __typename label ... on FanAlpha { note } } }");
+        Map<String, Object> item = (Map<String, Object>) data.get("fanItem");
+        assertThat(item).isNotNull();
+        assertThat(item.get("__typename")).isEqualTo("FanAlpha");
+        assertThat(item.get("label")).isEqualTo("Alpha one");
+        assertThat(item.get("note")).isEqualTo("alpha-note-1");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void allContent_allParticipantFieldsTogether_routePerType() {
         // Triple-axis projection: FilmContent.length (same-table), ShortContent.description
-        // (same-table, different column), and FilmContent.rating (cross-table via LEFT JOIN to
-        // film). Each row carries the field appropriate to its type and not the others.
+        // (same-table, different column), and FilmContent.rating (cross-table, via the gated
+        // subselect over film). Each row carries the field appropriate to its type and not the
+        // others.
         Map<String, Object> data = execute("""
             { allContent {
                 __typename

@@ -574,6 +574,14 @@ type Query {
     # column so the TypeResolver can route to FilmContent or ShortContent at runtime.
     allContent: [Content!]!
 
+    # Fan-out fixture for the cross-table participant field: FanAlpha.note lives one @reference
+    # hop away over a FK whose other end is non-unique (many fan_detail rows per fan_base row).
+    # Both shapes are queried at the execution tier: the list must yield one entity per base row,
+    # and the single fetch must return that row rather than raising TooManyRowsException. Both
+    # would fail if the value were read through a join into the row-producing statement.
+    allFanItems: [FanItem!]!
+    fanItem(fanBaseId: Int! @field(name: "fan_base_id")): FanItem
+
     # R389 composite-shared-key joined-table inheritance interface (composite counterpart of
     # allParties). Each participant declares its own detail @table (jti_app_account / jti_person)
     # joined to the base jti_subject on the composite key (jti_subject_id, subject_kind). That key
@@ -2571,6 +2579,28 @@ input FilmIdListFilter {
 interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
     contentId: Int!    @field(name: "CONTENT_ID")
     title:     String! @field(name: "TITLE")
+}
+
+# Fan-out counterpart of Content: FanAlpha.note is a cross-table participant field whose single
+# @reference hop lands on the MANY side of its FK (fan_detail holds several rows per fan_base
+# row). Nothing rejects that hop, and nothing needs to: a cross-table participant field is
+# projected as a capped correlated subselect, which cannot multiply the enclosing statement's
+# rows. FanBeta declares no cross-table field, so the same query mixes a gated participant with
+# an ungated one.
+interface FanItem @table(name: "fan_base") @discriminate(on: "fan_kind") {
+    fanBaseId: Int!    @field(name: "fan_base_id")
+    label:     String! @field(name: "label")
+}
+
+type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: "ALPHA") {
+    fanBaseId: Int!    @field(name: "fan_base_id")
+    label:     String! @field(name: "label")
+    note:      String  @reference(path: [{key: "fan_detail_fan_base_id_fkey"}]) @field(name: "note")
+}
+
+type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "BETA") {
+    fanBaseId: Int!    @field(name: "fan_base_id")
+    label:     String! @field(name: "label")
 }
 
 # R389 COMPOSITE-shared-key discriminated joined-table inheritance fixture (the composite counterpart

@@ -413,7 +413,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * ({@code @table @discriminate}). Single-table sibling of {@link MutationServicePolymorphicField}
      * (route (a)); the service hands back records of the one shared table, and the emitted fetcher
      * collects their PKs, runs one by-PK SELECT projecting {@code __discriminator__} plus the
-     * participant field set and discriminator-gated cross-table {@code LEFT JOIN}s, and lets the
+     * participant field set and the discriminator-gated cross-table subselects, and lets the
      * per-{@code TableInterfaceType} {@code TypeResolver} route each row off the live discriminator
      * value (rather than route (a)'s runtime-class dispatch, which cannot distinguish same-table
      * subtypes). Carries the read-side single-table discrimination data plus the service binding; the

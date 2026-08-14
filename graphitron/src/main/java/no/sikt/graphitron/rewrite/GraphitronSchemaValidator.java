@@ -420,7 +420,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // Same structural pinning as MutationDmlRecordField plus the list-input + Upsert-rejecting invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the walkers
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField f       -> validateColumnBackedField(f, types, nestedAnchor, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField f -> validateColumnBackedReferenceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's LEFT JOIN materialises and aliases the value
+            case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's subselect materialises and aliases the value
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f      -> validateBatchedTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);

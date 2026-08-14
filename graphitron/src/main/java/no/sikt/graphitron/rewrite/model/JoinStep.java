@@ -33,8 +33,11 @@ import java.util.List;
  *
  *   <li><b>No unintended row multiplication.</b> Fan-out is only valid when the referencing
  *       field returns a list or connection, where it is the intended result, collected and
- *       grouped by the DataLoader. For a single-value field any fan-out is a schema error; the
- *       validator rejects one-to-many navigation on a single-value field.</li>
+ *       grouped by the DataLoader. Nothing rejects a fanning hop under a single-value field:
+ *       the emission answers it instead, by never putting such a hop in the row-producing
+ *       statement. A single-value {@code @reference} lowers to a capped correlated subselect
+ *       ({@link no.sikt.graphitron.command.SelectTerm.ScalarSubselect}), which picks one row
+ *       whatever the hop's cardinality.</li>
  * </ol>
  */
 public sealed interface JoinStep permits JoinStep.Hop {

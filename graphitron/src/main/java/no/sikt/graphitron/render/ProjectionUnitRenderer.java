@@ -14,9 +14,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
@@ -206,38 +204,16 @@ public final class ProjectionUnitRenderer {
             case SelectTerm.ScalarSubselect s -> {
                 var aliases = PathFragments.generateAliases(s.path());
                 declareHopAliases(argHelpers, preamble, s.path(), aliases, "            ");
-                yield CodeBlock.of("$T.field($L).as($S + entry.getKey())",
-                    DSL, scalarInnerSelect(s, aliases), RESERVED_RK_ALIAS_PREFIX);
+                var inner = PathFragments.scalarInnerSelect(s, aliases, "table");
+                yield s.asName() == null
+                    ? CodeBlock.of("$T.field($L).as($S + entry.getKey())",
+                        DSL, inner, RESERVED_RK_ALIAS_PREFIX)
+                    : CodeBlock.of("$T.field($L).as($S)", DSL, inner, s.asName());
             }
             case SelectTerm.Aggregate a ->
                 CodeBlock.of("$T.max(table.$L).filterWhere(table.$L.eq($T.inline($S))).as($S)",
                     DSL, a.value().javaName(), a.discriminator().javaName(), DSL, a.token(), a.asName());
         };
-    }
-
-    /**
-     * The correlated single-column subselect of a {@link SelectTerm.ScalarSubselect}: JOIN chain
-     * walked terminal-first, step-0 correlation off the borrowed {@link ParentCorrelation},
-     * per-hop filters, {@code .limit(1)}.
-     */
-    private static CodeBlock scalarInnerSelect(SelectTerm.ScalarSubselect s, List<String> aliases) {
-        var path = s.path();
-        String terminalAlias = aliases.get(aliases.size() - 1);
-        var sel = CodeBlock.builder();
-        sel.add("$T.select($L.$L)", DSL, terminalAlias, s.terminal().javaName());
-        sel.add("\n        .from($L)", terminalAlias);
-        for (int i = path.size() - 1; i >= 1; i--) {
-            switch (path.get(i)) {
-                case JoinStep.Hop hop -> sel.add("\n        $L",
-                    PathFragments.emitBackwardBridging(hop, aliases.get(i - 1), aliases.get(i), "column-reference"));
-            }
-        }
-        var where = CodeBlock.builder();
-        where.add("$L", correlationWhere(s.correlation(), aliases.get(0), "column-reference"));
-        appendHopFilters(where, path, aliases, ".and($L)");
-        sel.add("\n        .where($L)", where.build());
-        sel.add("\n        .limit(1)");
-        return sel.build();
     }
 
     // ------------------------------------------------------------------------------------------
@@ -306,9 +282,9 @@ public final class ProjectionUnitRenderer {
         if (path.isEmpty()) {
             where.add("$T.noCondition()", DSL);
         } else {
-            where.add("$L", correlationWhere(m.correlation(), aliases.get(0), "inline table"));
+            where.add("$L", PathFragments.correlationWhere(m.correlation(), aliases.get(0), "table", "inline table"));
         }
-        appendHopFilters(where, path, aliases, "\n        .and($L)");
+        PathFragments.appendHopFilters(where, path, aliases, "table", "\n        .and($L)");
         if (m.filter() != null) {
             // The glue call reads the argument map off the inline field's own SelectedField
             // (the ancestor env has no such arguments); a context-reading coordinate appends
@@ -424,9 +400,9 @@ public final class ProjectionUnitRenderer {
         if (path.isEmpty()) {
             where.add("$T.noCondition()", DSL);
         } else {
-            where.add("$L", correlationWhere(lm.correlation(), aliases.get(0), "lookup"));
+            where.add("$L", PathFragments.correlationWhere(lm.correlation(), aliases.get(0), "table", "lookup"));
         }
-        appendHopFilters(where, path, aliases, "\n        .and($L)");
+        PathFragments.appendHopFilters(where, path, aliases, "table", "\n        .and($L)");
         if (lm.filter() != null) {
             where.add("\n        .and($L)", glueExpression(lm.filter(), terminalAlias,
                 CodeBlock.of("sf.getArguments()")));
@@ -539,42 +515,6 @@ public final class ProjectionUnitRenderer {
                     new PreviousNodeRef.TypedAlias(previousAlias),
                     new ArgumentValueSource.FromSelectedField("sf"), argHelpers),
                 "table", "_" + aliases.get(i));
-        }
-    }
-
-    /**
-     * Step-0 correlation against the parent: the sealed dispatch on the borrowed
-     * {@link ParentCorrelation}. A filtered or condition-join first hop folds its correlation
-     * into the two-argument condition-method call; a lateral routine first hop correlates
-     * through its call arguments (the step-0 WHERE contributes nothing).
-     */
-    private static CodeBlock correlationWhere(ParentCorrelation correlation, String firstAlias,
-            String pathKindLabel) {
-        return switch (correlation) {
-            case ParentCorrelation.OnFkSlots fk ->
-                JoinFragments.emitCorrelationWhere(fk.slots(), firstAlias, "table");
-            case ParentCorrelation.OnParentJoin pj -> switch (pj.firstHop().on()) {
-                case On.ColumnPairs cp -> JoinFragments.emitCorrelationWhere(cp, firstAlias, "table");
-                case On.Predicate pred -> PathFragments.emitTwoArgMethodCall(pred.condition(), "table", firstAlias);
-                case On.Lateral ignored -> throw new IllegalStateException(
-                    "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
-            };
-            case ParentCorrelation.OnLateralArgs ignored -> CodeBlock.of("$T.noCondition()", DSL);
-            case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
-                "ParentCorrelation.OnLiftedSlots never reaches a " + pathKindLabel + " projection "
-                + "arm; the pre-keyed lifted shape is DataLoader-batched through the rows methods");
-        };
-    }
-
-    /** Per-hop {@code filter()} condition-method calls appended to the enclosing WHERE. */
-    private static void appendHopFilters(CodeBlock.Builder where, List<JoinStep> path,
-            List<String> aliases, String andFormat) {
-        for (int i = 0; i < path.size(); i++) {
-            if (path.get(i) instanceof JoinStep.Hop hop && hop.filter() != null) {
-                String srcAlias = i == 0 ? "table" : aliases.get(i - 1);
-                where.add(andFormat,
-                    PathFragments.emitTwoArgMethodCall(hop.filter(), srcAlias, aliases.get(i)));
-            }
         }
     }
 

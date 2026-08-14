@@ -621,8 +621,8 @@ class FetcherPipelineTest {
             .as("each implementer's participant field set projected via its $project")
             .contains("FilmContent.$project(")
             .contains("ShortContent.$project(")
-            .as("discriminator-gated cross-table LEFT JOIN for FilmContent.rating")
-            .contains(".leftJoin(")
+            .as("discriminator-gated cross-table subselect for FilmContent.rating")
+            .contains("FilmContent_rating")
             .as("follow-up SELECT keyed by the RETURNING PK (single-column .eq(keys.value1())), not a rescan")
             .contains("keys.value1()");
         assertThat(createContent.returnType().toString())
@@ -648,7 +648,7 @@ class FetcherPipelineTest {
             .contains("__discriminator__")
             .contains("FilmContent.$project(")
             .contains("ShortContent.$project(")
-            .contains(".leftJoin(")
+            .contains("FilmContent_rating")
             .contains("keys.value1()");
     }
 

@@ -15,9 +15,9 @@ import java.util.Objects;
  * {@link Column} does is {@link Column}, whatever fact motivated it.
  *
  * <p>Aliasing is a slot, not an arm: {@link Column} carries {@link TermAlias} (both cases occur
- * on that shape today); the subselect-shaped arms are result-key-aliased structurally and
- * {@link Aggregate} carries its fixed projected name, since an aggregate has no column identity
- * and the pivot read side addresses it by that name across every occurrence.
+ * on that shape today); {@link ScalarSubselect} and {@link Aggregate} carry a fixed projected
+ * name or fall back to the runtime result key, since neither has a column identity and their
+ * read sides address them by the name the producer decided.
  */
 public sealed interface SelectTerm {
 
@@ -34,16 +34,24 @@ public sealed interface SelectTerm {
 
     /**
      * A correlated single-column subselect over a {@code @reference} path:
-     * {@code DSL.field(DSL.select(<terminal>.<COL>)...).as("__rk_" + key)}. A scalar
-     * {@code @reference} is not a call: it names no callee unit, so it is a term whose
+     * {@code DSL.field(DSL.select(<terminal>.<COL>)...).as(<asName, or "__rk_" + key>)}, capped
+     * {@code .limit(1)} so it cannot multiply the rows of the statement that projects it. A
+     * scalar {@code @reference} is not a call: it names no callee unit, so it is a term whose
      * expression happens to be a subselect. The empty-path standalone shape is not this term
      * (it collapses to {@link Column} with {@link TermAlias#BY_RESULT_KEY}); {@code path} is
      * therefore non-empty and {@code correlation} non-null, mirroring the carrier invariant.
+     *
+     * <p>{@code asName} is the fixed projected name, or {@code null} to alias by the runtime
+     * result key (the projection-unit shape, where aliased duplicate selections must stay
+     * distinct). {@code gate} is an optional extra WHERE conjunct on the parent row, {@code null}
+     * for a term whose correlation is its whole parent-side restriction.
      */
     record ScalarSubselect(
         List<JoinStep> path,
         ParentCorrelation correlation,
-        ColumnRef terminal
+        ColumnRef terminal,
+        String asName,
+        ParentColumnEquals gate
     ) implements SelectTerm {
         public ScalarSubselect {
             path = List.copyOf(path);
@@ -54,6 +62,30 @@ public sealed interface SelectTerm {
             }
             Objects.requireNonNull(correlation, "correlation");
             Objects.requireNonNull(terminal, "terminal");
+            if (asName != null && asName.isBlank()) {
+                throw new IllegalArgumentException(
+                    "ScalarSubselect.asName must be non-blank when present; null is the "
+                    + "alias-by-result-key shape");
+            }
+        }
+
+        /** The result-key-aliased, ungated shape: the plain scalar {@code @reference}. */
+        public ScalarSubselect(List<JoinStep> path, ParentCorrelation correlation, ColumnRef terminal) {
+            this(path, correlation, terminal, null, null);
+        }
+
+        /**
+         * An equality between a column of the <em>parent</em> row and a literal, ANDed into the
+         * subselect's WHERE beside the correlation and the per-hop filters. Qualified off the
+         * parent table local's own jOOQ instance by SQL name (the qualifier jOOQ renders for the
+         * FROM clause), so the reference matches the enclosing statement's FROM by construction
+         * and stays unambiguous when a joined table re-declares the column.
+         */
+        public record ParentColumnEquals(String column, String value) {
+            public ParentColumnEquals {
+                Objects.requireNonNull(column, "column");
+                Objects.requireNonNull(value, "value");
+            }
         }
     }
 

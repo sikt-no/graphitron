@@ -354,7 +354,7 @@ public final class MultiTablePolymorphicEmitter {
      * is the same shared-table record, so class dispatch cannot tell the subtypes apart. Instead
      * the single emitted fetcher collects the shared table's PKs off the service records and runs
      * one by-PK SELECT reusing the read-side single-table discrimination projection
-     * ({@code __discriminator__} + participant fields + discriminator-gated cross-table LEFT JOINs,
+     * ({@code __discriminator__} + participant fields + discriminator-gated cross-table subselects,
      * via {@link TypeFetcherGenerator#buildTableInterfaceReprojection}); the per-
      * {@code TableInterfaceType} {@code TypeResolver} routes each row off the live discriminator value.
      */

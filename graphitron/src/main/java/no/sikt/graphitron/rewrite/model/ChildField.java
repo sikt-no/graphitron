@@ -317,15 +317,15 @@ public sealed interface ChildField extends OutputField
     /**
      * A scalar field on a {@link GraphitronType.TableInterfaceType} participant that
      * resolves to a column on a different table than the participant's own (i.e. via a
-     * single-hop {@code @reference}). The interface fetcher emits a conditional LEFT JOIN
-     * gated by the participant's discriminator value and projects the column aliased as
-     * {@link #aliasName}; the per-field DataFetcher reads it back from the result
-     * {@code Record} by that alias.
+     * single-hop {@code @reference}). The interface query projects the column as a correlated
+     * subselect gated by the participant's discriminator value, aliased {@link #aliasName}; the
+     * per-field DataFetcher reads it back from the result {@code Record} by that alias.
      *
      * <p>Distinct from {@link ColumnBackedReferenceField} (the broader
-     * scalar-{@code @reference} story): this variant exists specifically
-     * for the {@code TableInterfaceType} cross-table participant-field case where the
-     * interface fetcher (not a per-field method) materialises the value.
+     * scalar-{@code @reference} story) in <em>who</em> materialises the value, not in what SQL
+     * shape: this variant exists for the {@code TableInterfaceType} cross-table
+     * participant-field case, where the interface fetcher rather than a per-field method
+     * resolves it. Both lower to the same capped subselect.
      */
     record ParticipantColumnReferenceField(
         String parentTypeName,

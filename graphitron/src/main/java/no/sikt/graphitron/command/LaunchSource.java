@@ -298,14 +298,43 @@ public sealed interface LaunchSource {
 
             /**
              * A single-table participant: its data lives on the shared base, projected through
-             * the one {@link #projection} unit's {@code $project}; cross-table fields (on the
-             * borrowed ref) render as discriminator-gated LEFT JOIN arms.
+             * the one {@link #projection} unit's {@code $project}, plus its
+             * {@link #crossTableTerms} for the fields whose value lives one {@code @reference}
+             * hop off the base.
              */
-            record SingleTable(ParticipantRef.TableBound participant, UnitRef projection)
-                    implements Branch {
+            record SingleTable(ParticipantRef.TableBound participant, UnitRef projection,
+                    List<CrossTableTerm> crossTableTerms) implements Branch {
                 public SingleTable {
                     Objects.requireNonNull(participant, "participant");
                     Objects.requireNonNull(projection, "projection");
+                    crossTableTerms = List.copyOf(crossTableTerms);
+                }
+
+                /**
+                 * One cross-table participant field, lowered to the SELECT-list term that
+                 * resolves it. {@link #fieldName} is what the runtime selection gate tests
+                 * ({@code <Type>.<fieldName>}); the term carries the hop, the fixed projected
+                 * alias the participant's per-field fetcher reads back, and the branch's
+                 * discriminator gate, which makes a non-matching row project NULL.
+                 *
+                 * <p>The term is a capped correlated subselect, the generator's standing shape
+                 * for a scalar one hop away, rather than a join into the row-producing
+                 * statement: a subselect cannot multiply the enclosing statement's rows whatever
+                 * the hop's cardinality, which is what lets the assembly's statement be
+                 * paginated and keeps the participant's entity grain intact on every other
+                 * shape.
+                 */
+                public record CrossTableTerm(String fieldName, SelectTerm.ScalarSubselect term) {
+                    public CrossTableTerm {
+                        Objects.requireNonNull(fieldName, "fieldName");
+                        Objects.requireNonNull(term, "term");
+                        if (term.asName() == null) {
+                            throw new IllegalArgumentException(
+                                "CrossTableTerm.term must carry a fixed projected name: the "
+                                + "interface fetcher reads the value back by that alias, and the "
+                                + "assembly has no result-key loop to alias against");
+                        }
+                    }
                 }
             }
 

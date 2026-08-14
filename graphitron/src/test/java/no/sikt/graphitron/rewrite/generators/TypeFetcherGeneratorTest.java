@@ -1250,7 +1250,7 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryTableInterfaceField_crossTableField_emitsLeftJoinWithDiscriminatorGate() {
+    void queryTableInterfaceField_crossTableField_emitsGatedCorrelatedSubselect() {
         var returnType = tableBoundFilm(nonNullList());
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
@@ -1262,13 +1262,16 @@ class TypeFetcherGeneratorTest {
             DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
-            .as("LEFT JOIN to the cross table is gated by the alias-presence check")
-            .contains("step = step.leftJoin(FilmContent_rating_alias).on(");
+            .as("the cross table is read through a correlated subselect capped at one row, so the "
+                + "hop cannot multiply the statement's rows whatever its cardinality")
+            .contains("org.jooq.impl.DSL.select(f0.RATING)")
+            .contains(".limit(1)");
         assertThat(code)
-            .as("ON clause includes the FK equality (target.eq(source))")
-            .contains("FilmContent_rating_alias.FILM_ID.eq(filmTable.FILM_ID)");
+            .as("the subselect correlates on the FK equality (target.eq(source))")
+            .contains("f0.FILM_ID.eq(filmTable.FILM_ID)");
         assertThat(code)
-            .as("ON clause includes the participant's discriminator value so non-matching rows NULL")
+            .as("the WHERE carries the participant's discriminator value, so a row of another "
+                + "participant's type projects NULL exactly as the gated join made it do")
             .contains("eq(\"FILM\")");
     }
 
@@ -1285,8 +1288,10 @@ class TypeFetcherGeneratorTest {
             DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
-            .as("cross-table column is projected with the alias so the per-field DataFetcher reads it back by name")
-            .contains("fields.add(FilmContent_rating_alias.RATING.as(\"FilmContent_rating\"))");
+            .as("the subselect is projected under the participant alias so the per-field "
+                + "DataFetcher reads it back by name")
+            .contains("fields.add(org.jooq.impl.DSL.field(org.jooq.impl.DSL.select(f0.RATING)")
+            .contains(".limit(1)).as(\"FilmContent_rating\"))");
     }
 
     @Test
@@ -1307,7 +1312,7 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void tableInterfaceField_crossTableField_emitsLeftJoinAtChildSite() {
+    void tableInterfaceField_crossTableField_emitsGatedSubselectAtChildSite() {
         // Both interface consumers (the Query launcher and the ChildField-rooted legacy
         // fetcher) share the relocated DiscriminatedTableFragments assembly; this asserts the
         // emission applies at the child site too.
@@ -1324,7 +1329,8 @@ class TypeFetcherGeneratorTest {
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "content").code().toString();
         assertThat(code).contains("env.getSelectionSet().contains(\"FilmContent.rating\")");
-        assertThat(code).contains("step = step.leftJoin(FilmContent_rating_alias).on(");
+        assertThat(code).contains("org.jooq.impl.DSL.select(f0.RATING)");
+        assertThat(code).contains(".limit(1)).as(\"FilmContent_rating\"))");
     }
 
     // ===== discriminator qualifies off the FROM table instance, not the @table directive =====
