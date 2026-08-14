@@ -12,7 +12,7 @@ At a root field, the output list is the same length as the input key list; unmat
 
 A child `@lookupKey` coordinate is a different animal, and none of the paragraph above reaches it. The same `VALUES` join runs, but it narrows each parent's child list rather than filling positions: there is no scatter, an unmatched key contributes no element instead of a `null`, and the element type stays whatever the list needs, so `[Actor!]!` is both correct and accepted there. The `@splitQuery` and class-backed-parent sections below cover those shapes.
 
-Adding xref:../reference/directives/asConnection.adoc[`@asConnection`] on top of a `@lookupKey` field is rejected by the classifier (`@asConnection on @lookupKey fields is invalid`), on root and child fields alike. At a root field the reason is the contract above, since pagination would shift positions; the rejection is not narrowed for children, which have no positions to shift, so reach for `@splitQuery` + `@asConnection` when a paginated child list is what you want.
+Adding xref:../reference/directives/asConnection.adoc[`@asConnection`] on top of a `@lookupKey` field is rejected on root and child fields alike, though not by the same check, so the error text differs. A child field is rejected by the classifier with `@asConnection on @lookupKey fields is invalid`. A root field never reaches that check: promoting the return type to a connection makes it a generated wrapper type rather than a `@table`-annotated one, so `@lookupKey`'s root invariant rejects first, with `@lookupKey requires a @table-annotated return type`. Either way the composition is unavailable; reach for `@splitQuery` + `@asConnection` when a paginated child list is what you want.
 
 The Sakila example schema's root lookups exercise the common shapes. The simplest is a single-scalar key:
 
@@ -139,7 +139,7 @@ The same VALUES-pair join applies; the difference is purely on the parent side, 
 
 == Constraints and pitfalls
 
-* `@asConnection` on a `@lookupKey` field is rejected, root and child alike. At a root field pagination would shift positions, breaking the positional contract; children have no positions to shift, but the rejection is not narrowed for them, so use `@splitQuery` + `@asConnection` for a paginated child list.
+* `@asConnection` on a `@lookupKey` field is rejected, root and child alike, but by different checks: a child hits the classifier's `@asConnection on @lookupKey fields is invalid`, while a root field is rejected earlier by `@lookupKey`'s `@table`-annotated-return-type invariant, since the connection type is not `@table`-annotated. Use `@splitQuery` + `@asConnection` for a paginated child list.
 * Single-cardinality `@lookupKey` is rejected. Pass a list-returning field, or drop `@lookupKey`.
 * Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected. The lookup operates over a flat keyset; flatten the input or drop the inner list.
 * Multiple `@lookupKey` arguments at the same call site must have the same length; values at the same index are correlated. A scalar argument broadcasts to every position. Wrap correlated keys in an input type when the schema should enforce the pairing.

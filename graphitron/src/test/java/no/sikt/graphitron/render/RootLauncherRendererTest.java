@@ -290,7 +290,7 @@ class RootLauncherRendererTest {
     }
 
     @Test
-    void keyedLookupSource_valuesJoinInputOrderedAndTheEmptyInputShortCircuit() {
+    void keyedLookupSource_valuesJoinAndTheEmptyInputShortCircuit() {
         var body = body(lookupRow(null));
         assertThat(body)
             .as("the input-rows helper is a same-class call through the minted ref")
@@ -304,12 +304,6 @@ class RootLauncherRendererTest {
             .as("the WHERE stays the condition local")
             .contains(".where(condition)")
             .contains(".fetch();");
-        assertThat(body)
-            .as("input order and the per-key slot both come from the scatter, so the derived "
-                + "table's idx rides the select list and no ORDER BY is emitted")
-            .contains("selectFields.add(input.field(\"idx\").as(\"__idx__\"))")
-            .contains("return scatterLookupByIdx(flat, rows.length)")
-            .doesNotContain(".orderBy(");
     }
 
     @Test

@@ -1,7 +1,7 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: Ready
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
@@ -112,6 +112,8 @@ Two passes, each green on `mvn install -Plocal-db`:
   with the fixture-warnings line re-pin at `fc93d75`.
 - The second Done gate's blocking finding and all three of its non-blocking notes shipped in the
   pass recorded below.
+- The third Done gate's two blocking findings and its one actionable note shipped in the pass
+  recorded at the end.
 
 ## The second In Review gate, and what it changed
 
@@ -197,11 +199,11 @@ constant moves with it.
 
 Full reactor build green after the change (`mvn clean install -Plocal-db`, all 14 modules, exit 0).
 
-## The third In Review gate, and what it holds open
+## The third In Review gate, and what it changed
 
 The gate re-verified the delivery end to end and found the emit, the tiered coverage and the
-root-versus-child doc scoping sound. `mvn install -Plocal-db` is green (all 14 modules, exit 0).
-Two findings block, both cheap.
+root-versus-child doc scoping sound. Two findings blocked, both cheap, and both are answered here.
+Each was re-derived from the code before acting on it, and both held up exactly as reported.
 
 ### The `@asConnection` sentence now over-quantifies in the other direction
 
@@ -228,10 +230,13 @@ wrong edit. But a reader who hits the root error and searches the manual for the
 finds nothing that matches, and the sentence names a mechanism that does not fire at the arm it
 claims.
 
-**Suggested fix.** State the rejection as universal and stop attributing one message to both arms:
-name the child message where it applies, and say that a root field is rejected earlier, on the
-`@table` invariant, because the promoted connection type is not `@table`-annotated. Keep the
-`@splitQuery` + `@asConnection` remedy as written; it verified clean.
+**Fixed as suggested.** Confirmed first: `resolveAtRoot` tests only for
+`ReturnTypeRef.TableBoundReturnType` and never inspects the wrapper, and the quoted message has one
+emitter, `resolveAtChild`'s `FieldWrapper.Connection` arm. Both the prose sentence and the
+constraints bullet now state the rejection as universal and the *checks* as two: the child message
+named where it fires, and the root field rejected earlier on the `@table`-annotated-return-type
+invariant, since a connection return is a generated wrapper type rather than a `@table` one. The
+`@splitQuery` + `@asConnection` remedy is unchanged.
 
 ### The pass added code-string body assertions, which the ban does not permit
 
@@ -262,29 +267,44 @@ its sanctioned-tier twin and every one is covered:
   `GraphQLQueryTest.languageByKey_repeatedAndUnorderedKeys_areNeverDeduplicatedOrReordered`
   (`[2, 1, 2, 99, 1]` → `2, 1, 2, null, 1`).
 
-**Suggested fix.** Delete the three assertions; the `.as(...)` description that explains the scatter
-can stay on the surviving assertions. Nothing is lost. The file's other ~30 such assertions are
-pre-existing and out of scope here, filed separately as `roadmap/renderer-test-code-string-sweep.md`
-(R669). Honest limitation on this finding: this branch's history is squashed below `0bf512d`, so the
-pre-item diff of that file is not recoverable; the three assertions name mechanisms this item
-introduced, which is what places them with this item.
+**Fixed as suggested.** The three assertions and the `.as(...)` clause that only described them are
+deleted; the surviving assertions in that test are the pre-existing ones. The reviewer's reading of
+the two documents is the right one: a structural assertion on a `MethodSpec` is not a code-string
+match on its rendered body, so the renderer-arm paragraph never licensed these and there was no
+document conflict for this item to decline to settle. Coverage is unchanged, each of the three
+having a sanctioned-tier twin as listed above. The file's other pre-existing assertions of this kind
+are out of scope here and carry their own item.
 
 ### Two non-blocking notes
 
-- `RootLauncherRendererTest`'s test method is still named
-  `keyedLookupSource_valuesJoinInputOrderedAndTheEmptyInputShortCircuit` while asserting
-  `.doesNotContain(".orderBy(")`. This is the same stale-name species the second gate's first note
-  fixed on the SQL baseline, and its sibling was missed. Defensible as written, since the launcher
-  does still deliver input order, just not by ordering; rename if the assertions move anyway.
+- The gate offered the rename of `RootLauncherRendererTest`'s lookup method conditionally, "if the
+  assertions move anyway". They did, so it is renamed to
+  `keyedLookupSource_valuesJoinAndTheEmptyInputShortCircuit`: with the ordering assertion gone the
+  old name promised something the test no longer looks at.
 - The root diagnostic for `@lookupKey` + `@asConnection` is poor on its own terms: the author gets
   "requires a `@table`-annotated return type" pointing at a connection type they never wrote by
-  hand. Not this item's contract; filed as `roadmap/root-lookup-connection-diagnostic.md` (R670).
+  hand. Not this item's contract, and the gate filed it separately.
+
+### Filed rather than fixed
+
+Verifying the first finding surfaced a third instance of the same species, one layer down.
+`LookupKeyDirectiveResolver.resolveAtChild`'s rejection message justifies itself with "@lookupKey
+establishes a positional correspondence between the input key list and the output list", which is
+the root contract, at the one site that only ever fires on a child. The same language sits on
+`GraphitronSchemaBuilderTest`'s `AS_CONNECTION_LOOKUP_REJECTED` prose (whose assertion pins the
+phrase, so the two move together) and on `ClassifiedCorpus`'s `split-lookup` comment. It predates
+this item, it is a different consumer surface from the manual this item contracted to fix, and
+untangling it means choosing a replacement rationale, which is spec work rather than a rewording.
+Filed as `roadmap/child-lookup-positional-rationale.md` rather than folded in here.
+
+Full reactor build green after the change (`mvn clean install -Plocal-db`, all 14 modules, exit 0).
 
 ### Reviewed clean, for the record
 
-The record below is the *second* gate's. The third gate re-ran both checks and confirms the
-user-facing-doc and retirement-sweep lines; its code-string paragraph is superseded by the blocking
-finding above, which reads `testing.adoc` differently and finds no document conflict to decline.
+The record below is the *second* gate's, kept as written. The third gate re-ran both checks and
+confirms the user-facing-doc and retirement-sweep lines; its code-string paragraph is superseded by
+the blocking finding above, which reads `testing.adoc` differently and finds no document conflict to
+decline.
 
 The user-facing-doc marker check (no roadmap vocabulary, `Phase <n>`, TODO or slug reference in the
 item's `docs/` diff). The retirement sweep, which this item skips: it declares no retired vocabulary,
