@@ -68,6 +68,8 @@ Do not write em dashes (—) into prose you author. Use a comma, semicolon, colo
 
 In `.adoc` files, use AsciiDoc table syntax (`[cols="..."]` + `|===` block) for tables; the markdown form (`| col | col |` header followed by a `|---|---|` separator) renders as paragraph text with literal pipes. The roadmap-tool `check-adoc-tables` step fails the build on any such row outside a structural block.
 
+When writing roadmap items use a top-down writing approach. Don't use complex jargon without defining it first.
+
 ## Javadoc conventions
 
 Comments and javadoc name live things, never transient ones. A roadmap item id (`R<n>`) or a `roadmap/<slug>` path is transient: items get renumbered, ship and leave a numbering gap, or get discarded, so a comment that leans on one is stale the moment the item moves. Do not cite roadmap items in javadoc or implementation comments. Instead, reference a live symbol with `{@link}` (compiler- and javadoc-checked, so it cannot silently rot), reference the published docs (the user manual for author-facing behavior, `docs/architecture/` for contributor-facing rationale), or just state the fact and drop the citation. Prefer terse over verbose. The three permanent roadmap artifacts (`roadmap/changelog.md`, `roadmap/workflow.adoc`, `roadmap/README.md`) are not transient items and may be cited by path.
