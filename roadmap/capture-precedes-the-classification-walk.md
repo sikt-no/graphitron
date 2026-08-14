@@ -1,7 +1,7 @@
 ---
 id: R667
 title: "Capture runs before the classification walk, so the walk can read the store"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
