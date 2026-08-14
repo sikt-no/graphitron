@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: []
+depends-on: [capture-expands-facet-synthesis]
 created: 2026-08-14
 last-updated: 2026-08-14
 ---
@@ -65,19 +65,19 @@ The shim is worth doing because it inverts the burden of proof. Today the store 
 for the same facts, so every relation must be held equal to the walk forever; that is what
 `FactCaptureAgreementTest` and the shadow tests exist to do, and the obligation grows with every
 relation added. With the leaf model projected from the store there is one producer, and agreement
-stops being a standing obligation and becomes a one-time correctness argument per tranche. A
-consumer still reading the leaf model is then already reading the store transitively, and its own
-drain becomes an optimization (remove the projection hop) rather than a prerequisite for anything.
+stops being a standing obligation and becomes a one-time correctness argument. A consumer still
+reading the leaf model is then already reading the store transitively, and its own drain becomes an
+optimization (remove the projection hop) rather than a prerequisite for anything.
 
-## Why this is smaller than it looks
+## Why this is tractable
 
-Four facts in the tree, each checkable, make the first slice cheap.
+The change is wide, but it is not deep. Five facts in the tree, each checkable, are why.
 
 **1. The classifying visitor is traversal-context-free.** Every callback on
 `GraphitronSchemaBuilder.ClassifyingVisitor` takes a `TraverserContext` and ignores it. The bodies
 are `typeBuilder.classifyAndRegister(node)`, plus `classifyFieldsOfObject(...)` on the object arm.
 The traversal contributes a *set* of nodes and nothing else; no verdict reads a parent edge from the
-traverser. Replacing the traversal with a store-derived worklist therefore touches no classification
+traverser. Driving classification from a store worklist instead therefore touches no classification
 decision.
 
 **2. The store's reach already equals the walk's reach, under test, today.**
@@ -85,8 +85,17 @@ decision.
 `SchemaReachability.reachableTypeNames` with `containsExactlyInAnyOrderElementsOf` over every
 `ClassifiedCorpus` example. That is plain equality, not a residue-tolerant diff, with exactly one
 named subtraction: the walk's own facet verdicts, because capture records the `@asFacet` marker but
-does not synthesize the facet types. So the population the worklist would iterate is already pinned
-against the population the traversal produces.
+does not synthesize the facet types. Closing that hole is this item's one dependency
+(`roadmap/capture-expands-facet-synthesis.md`).
+
+**2b. The read surface the walk needs from graphql-java is narrow, and all of it is captured.**
+File size is a poor proxy for coupling here. Across `TypeBuilder` and `FieldBuilder` there are 56
+`ctx.schema` read sites, and the accessor profile is short: name, type reference and its unwrapping,
+field list, applied directives, arguments, description, interface implementations, union members.
+Every one of those is a `graphql_` or `graphitron_` relation today. The walk's own javadoc already
+states the property that makes this hold: field classification is registry-read-free, because a
+field's output target and argument input types are resolved through the look-ahead and fixed-point
+indices rather than a registry lookup.
 
 **3. Base capture is already walk-free and already standalone.** `FactCapture.capture(dsl, ...)` is
 public and takes a `DSLContext`; `DemandShadowTest` already calls it that way. `FactCapture.run`
@@ -110,7 +119,7 @@ migrate. This item deliberately does not wait for that.
 
 ## Scope
 
-Three deliverables, in order.
+Four deliverables, in order.
 
 ### 1. Capture runs above the walk
 
@@ -134,30 +143,49 @@ comes from `CatalogBuilder.build(jooq, bundle.assembled(), ctx)`, where the buil
 bundle-free `CatalogBuilder.buildExternalReferences(ctx)`. `bundle.assembled()` is the schema handed
 *into* `buildBundle` (`read.assembled()`), so the hoist looks cosmetic; confirm rather than assume.
 
-### 2. The walk's enumeration comes from the store
+### 2. Reachability belongs to capture, not to the walk
 
-`SchemaReachability.walk` stops driving a `SchemaTraverser`. The classification worklist becomes a
-store query, and the walk iterates it: for each name the store reports in the classification domain,
-dispatch on the captured kind to the same `classifyAndRegister` / `classifyFieldsOfObject` calls the
-visitor makes today, resolving the `GraphQLObjectType` / `GraphQLInterfaceType` / `GraphQLUnionType`
-off the already-assembled schema.
+`SchemaReachability` moves into capture and its walk-side form is deleted. Reachability is already a
+capture-cadence derivation (`ReachabilityRows` writing `intent_type_domain`); a second Java
+computation of the same closure over graphql-java objects is the two-producer anti-pattern in
+miniature, and keeping it as a shadow would preserve the very thing this item exists to remove. So
+`ReachabilityRows` becomes the sole producer, `SchemaReachability.reachableTypeNames` and
+`SchemaReachability.walk` both go, and the seeds (root bindings, `NodeDeclaration` nodehood, `@key`
+carriers, survivor directive argument types) live where they are derived rather than in two places
+that must be kept equal.
 
-This is the shim's first tranche, and the reason it is the right first tranche: it is the part of the
-walk that is literally a second traversal, it is provably equal to what the store already holds, and
-it is the part with no classification content. Reads of per-node *structure* (field types, wrapping,
-directives) stay on the assembled schema; moving those is a later tranche.
+### 3. `GraphitronSchemaBuilder` reads the store and nothing else
 
-The declared boundary is walk-side synthesis. Connection promotion and facet synthesis mint types
-that are not in the authored SDL and therefore not in the store, so they stay walk-side and layer on
-top of the store-derived worklist exactly as they layer on the traversal today. That is the same
-subtraction the reach agreement already names, so the boundary is stated by an existing test rather
-than by prose.
+The builder loses its `GraphQLSchema` and its `TypeDefinitionRegistry`. Its inputs become the store
+and the `RewriteContext`, and it produces the classified model by querying relations. This is the
+point of the item rather than an eventual consequence of it: a builder that enumerates relationally
+and then reads structure off a `GraphQLSchema` is a worse resting state than either end, because it
+adds a store dependency without removing a graphql-java one and leaves the two-producer obligation
+fully intact.
 
-### 3. The order becomes load-bearing
+Concretely, that means:
 
-With the worklist coming from the store, a build that walks before capturing cannot produce a model
-at all. The ordering constraint stops being a comment in `runPipeline` and becomes structural. Add
-the test that says so directly, so the reason is legible rather than merely emergent.
+* `BuildContext.schema` goes. The narrow read surface measured above is supplied from the store,
+  either as a thin reader over `DSLContext` or as store-shaped record inputs, and the 56 read sites
+  move onto it.
+* The assembled schema stops flowing through `Bundle`. Emitters do read raw type structure off it,
+  which is why `Bundle` carries it today, but the pipeline already holds it (`read.assembled()` is
+  passed *into* `buildBundle`), so it is handed to the emitters directly instead of laundered through
+  the classifier.
+* The reductions currently run inside `buildSchema` against `ctx.schema` move out of the builder or
+  onto store reads: `ArrivalIndex.compute`, `OperationMemberRelation.compute`,
+  `DeliveryFactRelation.compute`, `EntityResolutionBuilder.build`, and
+  `recordSdlScalarDirectives`/`validateDirectiveSchema`. `DeliveryFactRelation` is
+  `roadmap/delivery-verdict-derives-from-the-store.md`'s subject, so the two items meet here.
+* `ConnectionPromoter` is the walk-side twin of `MacroCapture.expandConnections` and retires with the
+  schema rebuild it exists to perform. Once capture expands facets too, no synthesis is
+  walk-side and there is nothing left for a rebuild to produce.
+
+### 4. The order becomes load-bearing
+
+With the model derived from the store, a build that walks before capturing cannot produce a model at
+all. The ordering constraint stops being a comment in `runPipeline` and becomes structural. Add the
+test that says so directly, so the reason is legible rather than merely emergent.
 
 ## Risks the implementer has to decide, not discover
 
@@ -168,8 +196,12 @@ the test that says so directly, so the reason is legible rather than merely emer
   order. Pick the store's own ordinal, state it, and expect `GeneratorDeterminismTest` plus the
   compile and execution tiers to be the gate. If any emitted output ordering follows registration
   order, that surfaces as a diff, which is the outcome to want.
+* **This is a wide diff, and it lands at once.** The builder cannot hold half a schema: as long as
+  `BuildContext.schema` exists, every read site is free to use it, so the field's removal is what
+  makes the change real and the 56 read sites move together. There is no partial resting state worth
+  shipping, which is the honest cost of doing it the right way round rather than in tranches.
 * **There is no longer a no-store path.** Today `storeDirectory == null` and the in-memory fallback
-  are cost decisions that cannot change verdicts. Once the walk reads the store, a run without a
+  are cost decisions that cannot change verdicts. Once the builder reads the store, a run without a
   store produces no model. The in-memory fallback already covers this, but the consequence has to be
   made explicit rather than inherited.
 * **The warm-store arm can skip capture.** `runInternal` runs capture only when
@@ -182,25 +214,24 @@ the test that says so directly, so the reason is legible rather than merely emer
 
 * **Re-sourcing the conflict detection's gate** onto the demand relation. Blocked on
   `DemandResidue`; needs its own item.
-* **Migrating any classification decision onto a view.** The decisions stay in Java, fed by store
-  rows. Doing one as a proof is a reasonable separate item; picking the first arm belongs to whoever
-  owns the drain sequence.
-* **Moving the walk's per-node structure reads** (field types, list wrapping, directive decoding)
-  off the assembled schema. That is the shim's second tranche.
-* **Capture-side synthesis expansion** (connection and facet types), which is what would close the
-  last enumeration hole and retire the reach agreement's named subtraction.
-* **Draining any leaf-model consumer.** The census above is the argument for the shim, not work this
-  item takes on.
+* **Migrating any classification decision onto a view.** The decisions stay in Java; only their
+  inputs change. Sourcing a verdict from SQL is a reasonable separate item, and this is what makes
+  one possible; picking the first arm belongs to whoever owns the drain sequence.
+* **Capture-side facet expansion**, which is `roadmap/capture-expands-facet-synthesis.md` and lands
+  first.
+* **Draining any leaf-model consumer.** The census above is the argument for projecting the leaf
+  model from the store, not work this item takes on.
+* **The emitters' reads of the assembled schema.** They keep reading it; this item only stops routing
+  it through the classifier.
 
 ## Open for the implementer
 
-* Whether tranche 1 moves the field-grain enumeration too or only the type grain. The field grain
-  has a resolved store relation already (`intent_resolved_field_demand`), but it carries the demand
-  residues that the type-grain reach comparison does not, so type-grain-only is the conservative
-  read and field-grain is a judgement call on the evidence.
-* Whether `SchemaReachability.reachableTypeNames` survives as the shadow side of the reach agreement
-  or is deleted along with `walk`. Keeping it costs a traversal per test run and buys a second
-  opinion for one release; deleting it makes the store the only answer immediately.
+* The shape of the store read surface: a thin reader over `DSLContext` that the walk queries as it
+  goes, or store-shaped record inputs assembled up front and handed in. The first keeps the query
+  close to the decision, the second keeps the walk testable without a store.
+* Whether the field-grain worklist comes from `intent_resolved_field_demand` or from `graphql_field`
+  under the type-grain domain. The resolved relation is the more derived answer but carries the
+  demand residues that the type-grain reach comparison does not.
 * Whether the callback shape or an explicitly-scoped handle reads better at the `runPipeline` call
   site, given that the pipeline between capture and detect is most of the generator.
 
@@ -217,26 +248,44 @@ the test that says so directly, so the reason is legible rather than merely emer
 
 ## Retired vocabulary
 
-* `SchemaReachability.walk`, and the traverser drive behind it (the `SchemaTraverser`, the
-  `childrenOf` descent function, and the `ClassifyingVisitor`'s unused `TraverserContext`
-  parameters), if deliverable 2 lands as written.
-* `reachableTypeNames`, conditionally, per the open question above.
+* `SchemaReachability`, whole: both `walk` and `reachableTypeNames`, the `SchemaTraverser` drive, the
+  `childrenOf` descent function, the seed scan, and the `ClassifyingVisitor` with its unused
+  `TraverserContext` parameters. Reachability's only home becomes `ReachabilityRows`.
+* `BuildContext.schema`, and `GraphitronSchemaBuilder`'s `TypeDefinitionRegistry` parameter and
+  `AttributedRegistry` overloads.
+* `GraphitronSchemaBuilder.Bundle`'s `assembled` component, once the pipeline hands the assembled
+  schema to the emitters directly.
+* `ConnectionPromoter`, including `rebuildAssembledForConnections`, once `roadmap/capture-expands-facet-synthesis.md` puts facet expansion
+  in capture beside `MacroCapture.expandConnections`.
 
 ## Coverage
 
-* The reach agreement in `DemandShadowTest` changes character: today it pins a shadow relation
-  against the production traversal, and after this it pins the production worklist. Keep the
-  assertion and say so at the call site.
-* `GeneratorDeterminismTest` plus the compile and execution tiers are the registration-order gate.
+* The reach agreement in `DemandShadowTest` loses its second side. Today it diffs
+  `intent_type_domain` against a walk-side traversal; when the traversal is gone there is nothing to
+  diff, and the agreement becomes the corpus-wide assertion that the domain relation is the
+  population the classifier actually classified. Restate it in those terms rather than deleting it.
+* `GeneratorDeterminismTest` plus the compile and execution tiers are the registration-order gate,
+  and the broadest signal that a store-sourced read surface returns what the graphql-java one did.
 * A pipeline-tier test that the store holds this run's rows before the model exists, so the ordering
   is asserted rather than inferred from the fact that the build passes.
-* A test covering the warm-store-not-owned arm, which is the branch where a walk could read rows the
-  run did not write.
+* A test covering the warm-store-not-owned arm, which is the branch where the builder could read rows
+  the run did not write.
+* The unit-tier classifier tests currently hand-craft a `TypeDefinitionRegistry` through
+  `GraphitronSchemaBuilder.build(TypeDefinitionRegistry, RewriteContext)`. That overload retires with
+  the registry parameter, so those tests need a store-backed equivalent; whichever seam they get is
+  also the seam that answers the read-surface question above.
 
 ## Provenance
 
 Asked directly during the delivery-verdict item's Spec pass: why not move `captureFactsAndDetect`
 above `buildBundle`. The investigation found no structural obstacle, one isolated coupling, and a
-removal criterion already committed to `ClaimDomain`'s javadoc. The scope was then set by the item's
-owner to include the leaf shim, and narrowed to its first tranche after a census of the leaf model's
-consumers showed that draining them directly is the drain itself rather than an alternative to it.
+removal criterion already committed to `ClaimDomain`'s javadoc.
+
+The scope was then set by the item's owner: capture runs first, and the classified model is built by
+querying the store rather than by a second walk. A census of the leaf model's consumers ruled out the
+alternative of re-sourcing them directly, which is the drain itself rather than a way around it. A
+first draft of this plan proposed taking only the enumeration onto the store while structure reads
+stayed on the assembled schema; the owner rejected that split on the grounds that reachability
+belongs to capture and the builder should hold no schema at all. That is the version specified here,
+and it is the stronger target: the intermediate state would have added a store dependency without
+removing a graphql-java one, and left the two-producer obligation fully intact.
