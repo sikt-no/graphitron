@@ -1,12 +1,13 @@
 package no.sikt.graphitron.lsp.definition;
 
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import org.eclipse.lsp4j.Location;
 
 import java.util.Optional;
@@ -34,25 +35,33 @@ import java.util.Optional;
  * empty-resolution contract ({@code Located} jumps, {@code SourceAbsent} stays
  * put).
  *
- * <p>The source index is this provider's alone now. Hover reads the same
- * declarations out of the fact store's java-source family, so the arity-then-name
- * resolution {@link Definitions#methodLocation} performs on the index is mirrored
- * by a query rather than shared with it; both are refreshed off one parse of the
- * file, and this provider is what the index still exists for.
+ * <p>Hover's overlay and this jump now read one substrate again: both ask the fact
+ * store's java-source family about the declaration the shared {@link DeclTarget}
+ * names, one for its doc comment and one for its position. The parity between them
+ * is therefore back to being a property of the family rather than of two readers
+ * agreeing, with one asymmetry left standing: a declaration the parse positioned but
+ * wrote no doc comment for jumps without overlaying anything.
  */
 public final class DeclarationDefinitions {
 
     private DeclarationDefinitions() {}
 
     public static Optional<Location> compute(
-        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        FileSnapshot file, CompletionData catalog, Optional<StoreHandle> store,
+        LspSchemaSnapshot snapshot, Point pos
+    ) {
+        return store.flatMap(handle -> compute(file, catalog, handle, snapshot, pos));
+    }
+
+    public static Optional<Location> compute(
+        FileSnapshot file, CompletionData catalog, StoreHandle store,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (file == null || file.tree() == null) return Optional.empty();
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, file.source()), sourceIndex);
+        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, file.source()), store);
     }
 
     /**
@@ -61,19 +70,19 @@ public final class DeclarationDefinitions {
      * that this jump is present exactly when the declaration-name hover overlay is
      * (the parity property), without a tree-sitter round-trip.
      */
-    public static Optional<Location> locate(DeclTarget target, SourceWalker.Index sourceIndex) {
+    public static Optional<Location> locate(DeclTarget target, StoreHandle store) {
         return switch (target) {
             case DeclTarget.CatalogTable t ->
-                Definitions.resolve(Definitions.classTarget(t.classFqn(), sourceIndex), t.classFqn());
+                Definitions.resolve(Definitions.classTarget(t.classFqn(), store), t.classFqn());
             case DeclTarget.CatalogColumn c ->
                 Definitions.resolve(
-                    Definitions.fieldTarget(c.classFqn(), c.columnName(), sourceIndex), c.classFqn());
+                    Definitions.fieldTarget(c.classFqn(), c.columnName(), store), c.classFqn());
             case DeclTarget.SourceClass s ->
-                Definitions.resolve(Definitions.classTarget(s.fqClassName(), sourceIndex), s.fqClassName());
+                Definitions.resolve(Definitions.classTarget(s.fqClassName(), store), s.fqClassName());
             case DeclTarget.SourceMethod m ->
-                Definitions.methodLocation(sourceIndex, m.fqClassName(), m.methodName(), m.paramCount());
+                SourceDeclarations.methodLocation(store, m.fqClassName(), m.methodName(), m.paramCount());
             case DeclTarget.SourceField f ->
-                Definitions.resolve(Definitions.fieldTarget(f.fqClassName(), f.memberName(), sourceIndex), f.fqClassName());
+                Definitions.resolve(Definitions.fieldTarget(f.fqClassName(), f.memberName(), store), f.fqClassName());
             case DeclTarget.None ignored -> Optional.empty();
         };
     }

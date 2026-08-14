@@ -6,7 +6,6 @@ import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,25 +19,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The declaration-name hover overlay and its agreement with goto-definition. Both falsifiable pieces
  * are separable: the shared {@link DeclTarget} resolver is pure (a function over the {@code Built}
- * backing projection and the catalog), and the two projections of it read two substrates,
- * {@link DeclarationHovers#overlay} querying the store and {@link DeclarationDefinitions#locate}
- * looking up the source index. The only tree-sitter-bound step, the {@code @field(name:)} trigger, is
- * shared with goto and covered by the live {@code DeclarationHoversTest}.
+ * backing projection and the catalog), and the two projections of it,
+ * {@link DeclarationHovers#overlay} and {@link DeclarationDefinitions#locate}, are queries against one
+ * store. The only tree-sitter-bound step, the {@code @field(name:)} trigger, is shared with goto and
+ * covered by the live {@code DeclarationHoversTest}.
  *
  * <p>The overlay cases stand up a real store: real capture of the fixture module's generated jOOQ
  * catalog for the two catalog arms, and a real parse of {@code .java} files on disk for the arms that
  * answer about Java. No row is inserted by hand, so a fixture cannot claim a state capture never
- * writes, and every doc comment in an assertion came from parsing source.
+ * writes, and every doc comment and position in an assertion came from parsing source.
  *
- * <p>The drift guard is what survives of the old structural parity claim. Both projections switch
- * exhaustively over the <em>same</em> resolved target, so neither can point at a different declaration
- * and a new backing permit breaks both at compile time; what they no longer share is the read. They
- * cannot disagree about a declaration's <em>text</em>, since one walk feeds the store's java-source
- * family and the index alike, so what the guard pins is the remaining asymmetry: goto jumps for every
- * declaration the walk positioned, hover overlays only those the walk read a doc comment for. Where
- * the source carries one, both fire; where nothing is parsed, neither does. A session holding only one
- * of the two substrates answers on only one surface, deliberately and only until goto-definition reads
- * the store too.
+ * <p>The drift guard is the parity claim, and it is structural in both halves again. Both projections
+ * switch exhaustively over the <em>same</em> resolved target, so neither can point at a different
+ * declaration and a new backing permit breaks both at compile time; and both read the same row of the
+ * java-source family, one for its doc comment and one for its position, so neither can be answering
+ * about a state of the source the other has not seen. One asymmetry is left, and the guard is what
+ * pins it: goto jumps for every declaration the parse positioned, hover overlays only those it read a
+ * doc comment for. Where the source carries one, both fire; where nothing is parsed, neither does.
  */
 class DeclarationHoverOverlayParityTest {
 
@@ -146,12 +143,11 @@ class DeclarationHoverOverlayParityTest {
     }
 
     /**
-     * A record component is where the two surfaces genuinely part, and not because they read
-     * different substrates: one walk feeds both, and it reads the component as a field declaration and
-     * positions it, so goto jumps, but the doc comment written in the record's header is not retained
-     * for that declaration, so there is nothing to overlay. Pinned rather than fixed here, since it is
-     * a property of the parse; the incumbent overlay had the same gap, masked by a hand-built index
-     * that asserted a component Javadoc no parse produces.
+     * A record component is where the two surfaces genuinely part, and not because they read different
+     * substrates: they read one row, and the parse positioned that declaration but did not retain for
+     * it the doc comment written in the record's header, so goto jumps and there is nothing to overlay.
+     * Pinned rather than fixed here, since it is a property of the parse; the incumbent overlay had the
+     * same gap, masked by a hand-built index that asserted a component Javadoc no parse produces.
      */
     @Test
     void aRecordComponentJumpsButHasNoDocCommentToOverlay(@TempDir Path root) {
@@ -159,7 +155,7 @@ class DeclarationHoverOverlayParityTest {
             writeSources(store, root);
             var target = new DeclTarget.SourceField(RECORD_CLASS, "firstName");
 
-            assertThat(DeclarationDefinitions.locate(target, new SourceWalker().walk(List.of(root))))
+            assertThat(DeclarationDefinitions.locate(target, store.handle()))
                 .as("the component is positioned, so goto jumps")
                 .isPresent();
             assertThat(DeclarationHovers.overlay(target, store.handle()))
@@ -189,8 +185,6 @@ class DeclarationHoverOverlayParityTest {
         try (var store = StoreFixture.ofCatalog(parsed, PLACEHOLDER_SDL);
              var bare = StoreFixture.ofCatalog(unparsed, PLACEHOLDER_SDL)) {
             String filmFqn = writeSources(store, parsed);
-            // The index reads the same tree the store's java-source family just parsed.
-            var index = new SourceWalker().walk(List.of(parsed));
 
             for (DeclTarget target : List.of(
                 new DeclTarget.CatalogTable("film", filmFqn),
@@ -200,13 +194,13 @@ class DeclarationHoverOverlayParityTest {
                 new DeclTarget.SourceMethod(POJO_CLASS, "getFirstName", 0),
                 new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1)
             )) {
-                // One parse behind both: goto jumps AND hover overlays.
-                assertThat(DeclarationDefinitions.locate(target, index))
+                // One parsed declaration behind both: goto jumps AND hover overlays.
+                assertThat(DeclarationDefinitions.locate(target, store.handle()))
                     .as("goto jump for %s when parsed", target).isPresent();
                 assertThat(DeclarationHovers.overlay(target, store.handle()))
                     .as("hover overlay for %s when parsed", target).isNotEmpty();
-                // Nothing parsed on either side: neither fires.
-                assertThat(DeclarationDefinitions.locate(target, SourceWalker.Index.EMPTY))
+                // A store whose catalog was captured but whose sources never were: neither fires.
+                assertThat(DeclarationDefinitions.locate(target, bare.handle()))
                     .as("goto jump for %s when unparsed", target).isEmpty();
                 assertThat(DeclarationHovers.overlay(target, bare.handle()))
                     .as("hover overlay for %s when unparsed", target).isEmpty();
@@ -219,7 +213,7 @@ class DeclarationHoverOverlayParityTest {
         try (var store = StoreFixture.ofCatalog(root, PLACEHOLDER_SDL)) {
             writeSources(store, root);
             var none = new DeclTarget.None();
-            assertThat(DeclarationDefinitions.locate(none, new SourceWalker().walk(List.of(root)))).isEmpty();
+            assertThat(DeclarationDefinitions.locate(none, store.handle())).isEmpty();
             assertThat(DeclarationHovers.overlay(none, store.handle())).isEmpty();
         }
     }

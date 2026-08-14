@@ -54,8 +54,8 @@ public final class Workspace {
     private volatile CatalogFacts catalogFacts = CatalogFacts.empty();
     // The source-position index, handed in rather than walked here: the language server's inputs
     // are the live buffer and the store, and the walk belongs to the dev session that owns both the
-    // watcher triggering it and the store it writes. What survives here is the projection the
-    // surfaces that have not migrated still read.
+    // watcher triggering it and the store it writes. What survives here is the projection the MCP
+    // code tools still read; every language-server surface asks the store.
     private volatile SourceWalker.Index sourceIndex = SourceWalker.Index.EMPTY;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
@@ -250,15 +250,18 @@ public final class Workspace {
     }
 
     /**
-     * The source-position index goto-definition joins service-half
-     * class / method references against. Distinct from {@link #catalog()}: it
-     * refreshes on the {@code .java} (source) cadence through
-     * {@link #setSourceIndex}, driven by the dev goal's source-root watcher,
-     * not on the generator / {@code .class} build cadence the catalog rides.
-     * That decoupling is the point: a declaration position becomes
-     * available the instant its source is parsed, without waiting for a catalog
-     * rebuild. {@code volatile} so the swap is observable on the next request
-     * without taking the file lock, mirroring {@link #catalog}.
+     * The source-position index, refreshed on the {@code .java} (source) cadence
+     * through {@link #setSourceIndex}, driven by the dev goal's source-root watcher,
+     * not on the generator / {@code .class} build cadence the catalog rides. That
+     * decoupling is the point: a declaration position becomes available the instant
+     * its source is parsed, without waiting for a catalog rebuild. {@code volatile}
+     * so the swap is observable on the next request without taking the file lock,
+     * mirroring {@link #catalog}.
+     *
+     * <p>The MCP code tools are its readers. The language-server surfaces read the
+     * same declarations out of the fact store's {@code java_} family, written from the
+     * same walk that produces this index, so this projection retires when those tools
+     * do rather than for want of a substrate.
      */
     public SourceWalker.Index sourceIndex() {
         return sourceIndex;
@@ -267,10 +270,11 @@ public final class Workspace {
     /**
      * Atomic swap of the source-position index. Called by the dev goal on
      * startup (initial walk) and from the source-root watcher on every
-     * {@code .java} change. Independent of {@link #setBuildOutput}: a source
+     * {@code .java} change, alongside the same walk's write into the store's
+     * {@code java_} family. Independent of {@link #setBuildOutput}: a source
      * edit refreshes positions without touching the catalog, snapshot, or
      * validator report, and does not enqueue a diagnostic recalculation
-     * (positions feed goto-definition, not diagnostics).
+     * (positions feed navigation, not diagnostics).
      */
     public void setSourceIndex(SourceWalker.Index index) {
         this.sourceIndex = index == null ? SourceWalker.Index.EMPTY : index;

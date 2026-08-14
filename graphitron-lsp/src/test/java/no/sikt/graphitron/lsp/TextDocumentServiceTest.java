@@ -222,42 +222,51 @@ class TextDocumentServiceTest {
         }
     }
 
+    /**
+     * The definition request end to end, over the wire and through the read transaction the document
+     * service opens for it. The catalog carries the table's {@code classFqn} and the store's
+     * java-source family the declaration that FQN names, so the document is opened under the captured
+     * file's URI for the same reason hover's is: that is what resolves an open buffer to the graph
+     * whose facts answer for it.
+     */
     @Test
-    void definitionRequestRoundTripsCatalogUri() throws Exception {
-        // Goto-definition joins the table's classFqn against the LSP-owned source
-        // index at request time; the catalog carries the FQN, the index the position.
+    void definitionRequestRoundTripsToTheParsedDeclaration(@TempDir Path tmp) throws Exception {
         String filmFqn = "fake.jooq.tables.Film";
         var catalog = new CompletionData(
-            List.of(new CompletionData.Table(
-                "film", "", filmFqn, List.of(), List.of()
-            )),
+            List.of(new CompletionData.Table("film", "", filmFqn, List.of(), List.of())),
             List.of(),
             List.of()
         );
-        var workspace = new no.sikt.graphitron.lsp.state.Workspace(catalog);
-        workspace.setSourceIndex(new no.sikt.graphitron.rewrite.catalog.SourceWalker.Index(
-            java.util.Map.of(filmFqn, new no.sikt.graphitron.rewrite.catalog.SourceWalker.Decl(
-                new CompletionData.SourceLocation("file:///fake/jooq/Film.java", 0, 0), "")),
-            java.util.Map.of(), java.util.Map.of(), java.util.Set.of()));
-        var server = new GraphitronLanguageServer(workspace);
-        var proxy = startServer(server);
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-        String uri = "file:///def.graphqls";
-        String source = "type Foo @table(name: \"film\") { bar: Int }\n";
-        proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-            new TextDocumentItem(uri, "graphql", 1, source)));
+        try (var fixture = StoreFixture.of(tmp, "type Query { x: Int }\n");
+             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+            fixture.withJavaSource(tmp, filmFqn, """
+                public class Film {
+                }
+                """);
+            var workspace = new no.sikt.graphitron.lsp.state.Workspace(catalog);
+            workspace.setStore(access);
+            var proxy = startServer(new GraphitronLanguageServer(workspace));
+            proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
-        int filmStart = source.indexOf("film");
-        var defParams = new org.eclipse.lsp4j.DefinitionParams(
-            new TextDocumentIdentifier(uri),
-            new Position(0, filmStart + 1)
-        );
-        var result = proxy.getTextDocumentService().definition(defParams).get(5, TimeUnit.SECONDS);
+            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String source = "type Foo @table(name: \"film\") { bar: Int }\n";
+            proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+                new TextDocumentItem(uri, "graphql", 1, source)));
 
-        assertThat(result.isLeft()).isTrue();
-        assertThat(result.getLeft()).hasSize(1);
-        assertThat(result.getLeft().get(0).getUri()).isEqualTo("file:///fake/jooq/Film.java");
+            var defParams = new org.eclipse.lsp4j.DefinitionParams(
+                new TextDocumentIdentifier(uri),
+                new Position(0, source.indexOf("film") + 1)
+            );
+            var result = proxy.getTextDocumentService().definition(defParams).get(5, TimeUnit.SECONDS);
+
+            assertThat(result.isLeft()).isTrue();
+            assertThat(result.getLeft()).hasSize(1);
+            // The class is declared on the second line of the source written above, the package
+            // declaration taking the first.
+            assertThat(result.getLeft().get(0).getUri()).endsWith("Film.java");
+            assertThat(result.getLeft().get(0).getRange().getStart().getLine()).isEqualTo(1);
+        }
     }
 
     @Test

@@ -1,11 +1,12 @@
 package no.sikt.graphitron.lsp.definition;
 
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import org.eclipse.lsp4j.Location;
 
 /**
- * Typed outcome of resolving a service-half goto-definition request (a
- * {@code @service} / {@code @condition} / {@code @externalField} class or
- * method reference) against the LSP-owned source-position index.
+ * Typed outcome of resolving a goto-definition request for a named Java
+ * declaration (a {@code @service} / {@code @condition} / {@code @externalField}
+ * class or method, a generated table class or column, or the declaration an SDL
+ * name binds to) against the fact store's java-source family.
  *
  * <p>Replaces the former {@code CompletionData.SourceLocation.UNKNOWN}
  * sentinel, which collapsed distinct outcomes behind one empty value
@@ -16,22 +17,26 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
  * of these arms once; the consumer switches on it exhaustively rather than
  * re-testing {@code uri().isEmpty()}.
  *
- * <p>A same-arity overload collision is no longer an outcome here: rather than
- * declining, {@link Definitions#methodTarget} falls back to the never-dropped
- * name-level view and resolves to {@link Located} on a declaration adjacent to
- * the overload set.
+ * <p>A same-arity overload collision is not an outcome here, and no longer even a
+ * case to handle: the family holds every declaration under its own ordinal, so
+ * {@link no.sikt.graphitron.lsp.facts.SourceDeclarations#methodLocation} picks one
+ * of a same-arity pair rather than having to fall back from a key it could not form.
  */
 public sealed interface DefinitionTarget {
 
-    /** A resolved declaration position to jump to. */
-    record Located(CompletionData.SourceLocation location) implements DefinitionTarget {}
+    /**
+     * A resolved declaration position to jump to, in the editor's own coordinates.
+     * Converted from the parse's convention by the store reader, so nothing
+     * downstream of here has a coordinate base to get wrong.
+     */
+    record Located(Location location) implements DefinitionTarget {}
 
     /**
-     * The reference is known (the catalog carries it) but no source position
-     * is indexed for it: a binary-only dependency with no {@code .java}, or a
-     * module whose source root the LSP is not walking. A correct no-jump, but
-     * one worth signalling rather than swallowing, since the recoverable
-     * "source exists but isn't on a watched root" case lands here too.
+     * The reference is known (the catalog carries it) but the java-source family
+     * positions no declaration for it: a binary-only dependency with no
+     * {@code .java}, or a module whose source root the dev session is not walking.
+     * A correct no-jump, but one worth signalling rather than swallowing, since the
+     * recoverable "source exists but isn't on a watched root" case lands here too.
      */
     record SourceAbsent() implements DefinitionTarget {}
 }

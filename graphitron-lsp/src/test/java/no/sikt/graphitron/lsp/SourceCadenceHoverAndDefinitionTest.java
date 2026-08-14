@@ -9,7 +9,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
@@ -27,18 +26,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end coverage of the source-cadence decoupling through the real pieces: real {@code .java}
- * files on disk, a real {@link SourceWalker} parse behind the index a dev session hands a
- * {@link Workspace}, a real capture of the same files into the store's {@code java_} family, and the
- * real {@link Hovers} and {@link Definitions} entry points resolving against them. Nothing here is
- * mocked: the positions and Javadoc come from parsing actual source on disk.
+ * files on disk, a real capture of them into the store's {@code java_} family, and the real
+ * {@link Hovers} and {@link Definitions} entry points resolving against it. Nothing here is mocked:
+ * the positions and Javadoc come from parsing actual source on disk.
  *
- * <p>The two surfaces read two different things during the migration, and that is what these cases
- * are for. Hover's method arm reads the store; goto-definition still reads the index. Both are
- * refreshed from one file by one edit, so the property the earlier shared index gave for free now has
- * to be asserted: a source edit moves the doc comment hover renders and the position definition jumps
- * to, together, with no catalog rebuild in between. The catalog fixtures carry only the
- * build-derivable structure ({@code FQN}s, method signatures, empty descriptions), so any Javadoc or
- * position in an assertion came from a parse.
+ * <p>The cadence is the subject. A {@code .java} edit moves the doc comment hover renders and the
+ * position definition jumps to, together and with no catalog rebuild in between, because one walk
+ * writes the family both surfaces read and neither of them consults the catalog for a position. The
+ * catalog fixtures carry only the build-derivable structure ({@code FQN}s, method signatures, empty
+ * descriptions), so any Javadoc or position in an assertion came from a parse.
  */
 class SourceCadenceHoverAndDefinitionTest {
 
@@ -61,7 +57,6 @@ class SourceCadenceHoverAndDefinitionTest {
             }
             """);
         var workspace = workspaceWithServiceCatalog();
-        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
         var file = file("""
             type Query {
@@ -78,7 +73,7 @@ class SourceCadenceHoverAndDefinitionTest {
 
             // Goto-definition jumps to the same method declaration in the same file.
             var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow();
+                store.handle(), workspace.snapshot(), methodPos).orElseThrow();
             assertThat(loc.getUri()).endsWith("PriceService.java");
             // The method is declared on the 6th line (0-based line 5) of the source above.
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(5);
@@ -101,7 +96,6 @@ class SourceCadenceHoverAndDefinitionTest {
                 }
                 """);
             var workspace = workspaceWithTableCatalog(filmFqn);
-            workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
             // Hover's description is the generated class's Javadoc, reached from the store's
             // catalog census through the FQN into its java-source family; the fixture database
@@ -109,7 +103,7 @@ class SourceCadenceHoverAndDefinitionTest {
             assertThat(hoverText(workspace, store, file, tablePos)).contains("The film table.");
 
             var loc = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                workspace.sourceIndex(), workspace.snapshot(), tablePos).orElseThrow();
+                store.handle(), workspace.snapshot(), tablePos).orElseThrow();
             assertThat(loc.getUri()).endsWith("Film.java");
             // The class is declared on line 3 (0-based line 2).
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
@@ -127,7 +121,6 @@ class SourceCadenceHoverAndDefinitionTest {
             """);
         var workspace = workspaceWithServiceCatalog();
         var catalogBefore = workspace.catalog();
-        workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
 
         var file = file("""
             type Query {
@@ -138,7 +131,7 @@ class SourceCadenceHoverAndDefinitionTest {
 
         try (var store = priceServiceStore(srcRoot)) {
             int lineBefore = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow()
+                store.handle(), workspace.snapshot(), methodPos).orElseThrow()
                 .getRange().getStart().getLine();
             assertThat(hoverText(workspace, store, file, methodPos)).contains("First doc.");
 
@@ -155,34 +148,31 @@ class SourceCadenceHoverAndDefinitionTest {
             Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(
                 Files.getLastModifiedTime(source).toMillis() + 5000));
 
-            // Both readers of the edited file are refreshed, and nothing else is; the catalog is the
-            // same instance it was before.
-            workspace.setSourceIndex(new SourceWalker().walk(List.of(srcRoot)));
+            // The edited file is re-read, and nothing else is; the catalog is the same instance it
+            // was before.
             store.refreshJavaSources(srcRoot);
             assertThat(workspace.catalog())
                 .as("source-cadence refresh must not rebuild the catalog")
                 .isSameAs(catalogBefore);
 
             int lineAfter = Definitions.compute(LspVocabulary.load(), file, workspace.catalog(),
-                workspace.sourceIndex(), workspace.snapshot(), methodPos).orElseThrow()
+                store.handle(), workspace.snapshot(), methodPos).orElseThrow()
                 .getRange().getStart().getLine();
 
-            // Hover and goto move together off one edit: the new doc comment comes from the store's
-            // parse of the file and the new line from the index's, and the two cannot disagree about
-            // a declaration they both just read.
+            // Hover and goto move together off one edit: the new doc comment and the new line come
+            // out of one re-read of the file, so the two cannot disagree about the declaration.
             assertThat(lineAfter).isGreaterThan(lineBefore);
             assertThat(hoverText(workspace, store, file, methodPos)).contains("Second doc, moved down.");
         }
     }
 
     /**
-     * The declaration-name arm, whose two halves now read two substrates: hover overlays the doc
-     * comment out of the store's java-source family, goto jumps to the position the index holds, and
-     * one parse of one file is behind both. The type name is the only handle either surface has here,
-     * the coordinate being a declaration rather than a directive argument.
+     * The declaration-name arm, whose two halves ask one parsed declaration two questions: hover
+     * overlays its doc comment, goto jumps to its position. The type name is the only handle either
+     * surface has here, the coordinate being a declaration rather than a directive argument.
      */
     @Test
-    void declarationNameHoverOverlaysTheStoreWhileGotoJumpsFromTheIndex(@TempDir Path srcRoot) {
+    void declarationNameHoverAndGotoBothReadTheParsedDeclaration(@TempDir Path srcRoot) {
         var file = file("type Film @table(name: \"film\") { title: String }");
         // Cursor on the 'i' of the Film declaration's own name token.
         var namePos = new Point(0, "type Fi".length());
@@ -196,7 +186,6 @@ class SourceCadenceHoverAndDefinitionTest {
                 }
                 """);
             var workspace = workspaceWithTableCatalog(filmFqn);
-            var index = new SourceWalker().walk(List.of(srcRoot));
             var snapshot = new LspSchemaSnapshot.Built.Current(
                 List.of(), Map.of("Film", new TypeBackingShape.TableBacking("film")),
                 Map.of(), Map.of(), Map.of());
@@ -204,7 +193,8 @@ class SourceCadenceHoverAndDefinitionTest {
             assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
                 .contains("The film table.");
 
-            var loc = DeclarationDefinitions.compute(file, workspace.catalog(), index, snapshot, namePos)
+            var loc = DeclarationDefinitions
+                .compute(file, workspace.catalog(), store.handle(), snapshot, namePos)
                 .orElseThrow();
             assertThat(loc.getUri()).endsWith("Film.java");
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
@@ -246,7 +236,7 @@ class SourceCadenceHoverAndDefinitionTest {
         return new Workspace(new CompletionData(List.of(), List.of(), List.of(ref)));
     }
 
-    /** The projection goto-definition still reads: a table and the FQN it was captured under. */
+    /** The census half both surfaces still read: a table and the FQN it was captured under. */
     private static Workspace workspaceWithTableCatalog(String filmFqn) {
         var film = new CompletionData.Table(
             "film", "", filmFqn,

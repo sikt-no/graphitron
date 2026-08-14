@@ -1105,6 +1105,68 @@ feeds both.
   either surface has. That is where the property belongs while both readers exist, and the case keeps
   passing unchanged once definition reads the store too.
 
+## Settled while building: goto-definition's positions
+
+Goto-definition answers "where is this declared". Three providers share the request, keyed on
+disjoint syntax: one for a cursor inside a directive argument (`@table(name:)`, `@service(method:)`
+and the rest), one for a cursor on an SDL declaration name, and one for a cursor on a reference to
+another SDL type. The first two jump into the consumer's Java tree, and this increment is theirs. The
+third jumps within the schema and moves with the SDL families.
+
+Every such jump answers two questions from two populations on two cadences. Whether a name is a
+reference at all is the classpath census's answer, which the catalog projection still carries and
+each provider guards on; that guard is what keeps an unknown name an empty answer rather than a
+"declared nowhere" one. Where its declaration sits is a `.java` parse's answer, and that half is what
+moved. It used to come from the source index, an in-memory map of positions the language server kept
+beside the store; it now comes from the store's java-source family, the same rows hover reads doc
+comments out of.
+
+* **Both providers moved in one commit, because they share the join.** The directive-argument arm and
+  the declaration-name arm do not merely resemble each other, they call the same three helpers
+  (`classTarget`, `fieldTarget`, and a method resolution). Moving one would have meant either
+  parameterising those helpers over two substrates or duplicating them, so the substrate changes once
+  underneath and both arms follow. What is left in the `definition` package that still reads a
+  projection is the census guard, on the same footing as everywhere else.
+* **A relation needs no ambiguity set.** The index could not hold two same-arity overloads under one
+  key, so it dropped the pair into `ambiguousMethods` and kept a never-dropped name-level view to fall
+  back to. The family holds both declarations under their own ordinals, so the arity tier resolves and
+  the first of the pair wins the slot. That whole tri-state, and the second map that existed to
+  recover from it, is not a thing the store's reader has to model.
+* **The two tiers that remain are the census disagreeing with the source, and they are tried in that
+  order.** An arity a consumer holds is itself a resolution, so the source may declare the name at
+  some other arity; jumping to the declaration beats declining. The census arities are therefore all
+  tried against the declared ones before any fallback runs, not one at a time through it: a
+  per-arity fallback answers the first census overload with some other overload's position while a
+  later census arity matches exactly. The fixture now has a method overloaded across two arities and
+  a census that names one of them, so that ordering is falsifiable rather than asserted in a comment.
+* **`DefinitionTarget.Located` carries the editor's own coordinates.** It used to carry a
+  `CompletionData.SourceLocation`, so the projection this item deletes lived on inside its own
+  replacement, and the 1-based-to-0-based conversion sat on the projection side. The store keeps the
+  parse's convention, as its schema says it does, and the LSP's own reader converts at its edge. One
+  consequence worth stating: a declaration the parse could not position now reads as absent, so it
+  lands on the logged no-jump arm instead of silently producing an empty location.
+* **Hover and goto are structurally parallel again, and the parity test says so in both halves.** They
+  switch exhaustively over one resolved target, so a new backing permit breaks both at compile time,
+  and they now read one row of one family, so neither can answer about a state of the source the other
+  has not seen. The one asymmetry left is the one the family's shape implies: goto jumps for every
+  declaration the parse positioned, hover overlays only those it read a doc comment for. A record
+  component is the case that separates them, and it is pinned.
+* **Every position asserted in a definition test is a parse's now.** Both provider tests were built on
+  hand-written index maps, which is how they came to assert a class declaration at line 0 (no file
+  that opens with a package declaration has one) and a record component's doc comment (no parse
+  retains one). They write real `.java` files and read the positions back, which is the same
+  correction the hover overlay's fixture took an increment earlier, for the same reason: a fabricated
+  substrate can assert a declaration the parse would never produce.
+* **The index survives for one consumer, and it is not the language server.** `graphitron-mcp`'s code
+  tools read it through `Workspace.sourceIndex()`, so the projection and its setter stay until the
+  sibling item repoints them. Nothing in the LSP calls it, and the dev goal's watcher already writes
+  the family and the index from one walk, so the two cannot disagree while both exist.
+* **A definition request now needs the buffer to name a captured source, exactly as hover does.** The
+  request opens one read transaction around the whole chain, so a fall-through cannot decline on a
+  declaration an earlier read positioned; and a session nobody handed store access to jumps nowhere,
+  declining once at the top rather than per arm. Both are the shape hover took, and the round-trip
+  test now opens its document under the captured file's URI for the same reason hover's does.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1113,6 +1175,7 @@ Provisional until the cutover lands; the Done-gate sweep greps for these. `Compl
 path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
 `dependsOnDeclarations`, `SourceWalker.Index` with its `ambiguousMethods` and `methodsByName`, and
 `Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`. Gone already:
-`LspVocabulary.descriptionOf`, `Workspace.resolveDirective` and the whole of `Descriptions`
-(`ofTable`, `ofColumn`, `classJavadoc`); `DirectiveResolution` follows when diagnostics moves, and the
-source index when the four definition providers do.
+`LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
+(`ofTable`, `ofColumn`, `classJavadoc`) and `Definitions.methodLocation`; `DirectiveResolution`
+follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
+language-server surface having asked it anything since goto-definition's positions moved.
