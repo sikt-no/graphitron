@@ -7,7 +7,7 @@ priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-08-13
-last-updated: 2026-08-13
+last-updated: 2026-08-14
 ---
 
 # Batch the discriminated table interface child through a DataLoader
@@ -91,11 +91,12 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
 
 * `FieldBuilder`, the `TableInterfaceType` arm of `classifyObjectReturnChildField`: fork on
   cardinality the way the `InterfaceType` arm does. List cardinality mints the batched leaf with a
-  `LoaderRegistration`; single cardinality keeps `TableInterfaceField`. Mirroring the sibling's
-  `wrapper instanceof FieldWrapper.Connection || wrapper.isList()` clause is fine, but the
-  connection half is unreachable and must stay so: this arm rejects `FieldWrapper.Connection` at its
-  head with the `Rejection.deferred` that `roadmap/root-connection-over-discriminated-interface.md`
-  owns lifting. Do not touch that guard here. The participant precondition the sibling applies (at
+  `LoaderRegistration`; single cardinality keeps `TableInterfaceField`. Mint on `wrapper.isList()` alone rather than
+  mirroring the sibling's `wrapper instanceof FieldWrapper.Connection || wrapper.isList()` clause:
+  this arm rejects `FieldWrapper.Connection` at its head with the `Rejection.deferred` that
+  `roadmap/root-connection-over-discriminated-interface.md` owns lifting, so the connection half of
+  the clause would be a present-but-unreachable branch with no enforcer. That item adds the
+  connection half in the same commit that lifts the deferral. Do not touch the guard here. The participant precondition the sibling applies (at
   least one `TableBound` participant) has no analogue here: a discriminated interface rejects
   non-table members at the parse boundary (`TypeBuilder.buildParticipantList`, the
   `interfaceTable != null` arm, errors on any classified non-table implementor), so every

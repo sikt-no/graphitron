@@ -7,7 +7,7 @@ priority: 3
 theme: interface-union
 depends-on: [batched-discriminated-interface-child]
 created: 2026-08-13
-last-updated: 2026-08-13
+last-updated: 2026-08-14
 ---
 
 # Support @asConnection on a field returning a discriminated table interface
@@ -15,262 +15,301 @@ last-updated: 2026-08-13
 ## Scope: both coordinates, one route
 
 Covers the root field and the child field. The child half was
-`child-connection-over-discriminated-interface` (R651), discarded into this item: keeping them
-apart only made sense while the root was a contained emission fix and the child was the one with an
-unsettled delivery story. Once the root's route is the same split-query question the child was
-already blocked on, they are one design with two coordinates, and specifying them separately would
-answer that question twice.
+`child-connection-over-discriminated-interface` (R651), discarded into this item: once the root's
+route became the same statement-composition question the child was already blocked on, they are one
+design with two coordinates. This body is the respec the reopen asked for; the superseded plan (the
+`targetAtMostOnePerSource` cardinality invariant on the hop) is retired wholesale and survives only
+in Considered-and-rejected below and in git history at the reopen commit.
 
-Depends on `roadmap/batched-discriminated-interface-child.md`, which gives this arm the batched
-delivery the child half's pagination rides on. That item is a defect on its own terms, the child
-being N+1 with no way to opt out, and is not absorbed here.
-
-## Reopened: the plan below answers the fan-out question the wrong way round
-
-Signed off Spec to Ready and reopened in the same session. Every claim in the body was checked
-against source and holds; that turned out to be necessary and not sufficient. The plan keeps the
-participant cross-table `@reference` join inside the paginating statement and adds a build-time
-cardinality invariant so `.limit()` over it is safe. The codebase's standing answer to the same
-question points elsewhere: the plain table child rejects inline `@asConnection` outright and names
-the remedy, "@asConnection on inline (non-`@splitQuery`) TableField is not supported; add
-`@splitQuery` for batched connection semantics". Pagination rides a split query, not a join welded
-into the paginating statement.
-
-`@discriminate` is an opt-in to subtyping where one base row is one entity, so the base table is a
-stable ordering and pagination surface by construction. The joined-detail join is part of that
-pattern and is already proven single-valued. The participant cross-table `@reference` is not part of
-the pattern; it is ordinary navigation this arm happens to emit as a gated LEFT JOIN. Framing its
-cardinality as an invariant to enforce, rather than as a join that does not belong there, would also
-make the discriminated root strictly more permissive than the plain child on the same authoring
-surface, which the child sibling already names as unprincipled.
-
-The body below is retained as verified research, not as a plan: the mechanism descriptions, the
-`DiscriminatedTableFragments` seam analysis, the `pageRequest` contract and the "what needs no work"
-evidence all survive a change of route. The fan-out resolution and the implementation list do not.
-Everything below this note was written when the item covered the root alone, so read "this item"
-there as "the root half"; the child material is under "The child half" near the end.
+Depends on `roadmap/batched-discriminated-interface-child.md` (R661), which gives the child arm the
+batched delivery its pagination rides. Only the child half depends on it; the root half is
+implementable first.
 
 ## Problem
 
-A root query field returning a discriminated table interface (`@table` + `@discriminate`, with
-implementer types pinned by `@discriminator(value:)`) cannot be paginated. The `TableInterfaceType`
-arm of `FieldBuilder`'s root classifier rejects the pair with a typed deferral, "`@asConnection` on
-a root field returning a single-table discriminated interface ('X') is not yet supported; return the
-list shape instead", so a consumer wanting a paginated `ContentConnection` has to fall back to an
+A field returning a discriminated table interface (`@table` + `@discriminate`, implementers pinned
+by `@discriminator(value:)`) cannot be paginated at either coordinate. The root classifier's
+`TableInterfaceType` arm rejects the pair with a typed deferral ("`@asConnection` on a root field
+returning a single-table discriminated interface ('X') is not yet supported; return the list shape
+instead"), and the `TableInterfaceType` arm of `classifyObjectReturnChildField` opens with the same
+deferral minus "root". A consumer wanting a paginated `ContentConnection` falls back to an
 unbounded `[Content!]!`. Reported by a consumer.
 
-The list shape works, so the deferral is a missing emission rather than a missing design. But it is
-not merely a missing emission: this would be the first connection arm to apply `.limit()` over a
-joined FROM clause (the plain table root selects from a bare table, and the batched child slices with
-`row_number()` rather than `limit`), and one of the two join families the assembly emits is not
-currently guaranteed single-valued. That is the substance of the item, and it is settled below.
+The scope is the whole `TableInterfaceType` arm at both coordinates, covering all three sakila
+roots and their child twins: `allContent` (participants share the base table, one cross-table
+`@reference` field), `allParties` (joined detail tables on a single-column shared primary key) and
+`allSubjects` (joined detail tables on a composite shared key).
 
-**Scope: the whole `TableInterfaceType` arm, not just the single-table subset.** The rejection fires
-for every discriminated table interface, and both participant shapes turn out to be paginable (see
-the fan-out section), so day one covers all three sakila roots: `allContent` (participants share the
-base table, one cross-table LEFT JOIN arm), `allParties` (joined detail tables on a single-column
-shared primary key) and `allSubjects` (joined detail tables on a composite shared key). The title has
-been widened to match; the rejection message's narrower "single-table" wording is retired here.
+Pinned state:
 
-**The rejection is pinned, contrary to this item's earlier draft.** Two tests assert it and both
-must change:
+* `GraphitronSchemaBuilderTest`'s `TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED` enum row pins the root
+  deferral. Per the `classified-corpus` skill it is a pure-verdict row subsumed by the new corpus
+  example, so it is deleted rather than rewritten.
+* `RootLauncherRendererTest.discriminatedSource_connectionAndFannedPairsAreUnrepresentable` pins
+  the `LauncherCommand` constructor's "never paginates" throw on the `(DiscriminatedTable,
+  Connection)` pair, alongside a "runs single-tenant" assertion that survives unchanged.
+* The child deferral is unpinned: no test asserts its message.
 
-* `GraphitronSchemaBuilderTest`'s `InterfaceUnionFieldCase.TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED`
-  enum row asserts an `UnclassifiedField` carrying a `Rejection.Deferred` whose reason contains
-  "@asConnection on a root field", "single-table discriminated interface" and "not yet supported".
-  Per the `classified-corpus` skill this is a pure-verdict row subsumed by the new corpus example,
-  so it is deleted rather than rewritten.
-* `RootLauncherRendererTest.discriminatedSource_connectionAndFannedPairsAreUnrepresentable` asserts
-  the `LauncherCommand` constructor throws "never paginates" on the `(DiscriminatedTable,
-  Connection)` pair. Its sibling assertion pins "runs single-tenant" and survives unchanged; the
-  paginating assertion is replaced rather than dropped, per the restated backstop below.
+## Why the pair was deferred, and what the reopen settled
 
-The *child* deferral (the `TableInterfaceType` arm of `classifyObjectReturnChildField`, no "root" in
-the text) is unpinned: no test asserts that message. It lifts here too, and its lift needs no test
-change.
+`DiscriminatedTableFragments.assembly` is the shared body of every query over a discriminated
+table interface (root launcher, child twin, service fetcher, the two DML re-fetch follow-ups). It
+populates a `LinkedHashSet<Field<?>> fields` (the `__discriminator__` routing alias, each
+single-table branch's `$project`, the base slice, then the selection-gated cross-table and
+joined-detail aliases) and, in the same fragment, declares `SelectJoinStep<Record> step =
+dsl.select(new ArrayList<>(fields)).from(base)` before chaining the gated LEFT JOINs; the caller
+finishes the chain. Two things block a connection arm:
 
-## Why the emission is missing
+* Mechanically, `ConnectionHelper.pageRequest(...)` takes the selection as an argument and returns
+  the merged `selectFields()` that `dsl.select(...)` must receive, so the page request has to be
+  emitted *between* the field-list population and the `step` declaration, and those two are welded
+  into one fragment.
+* Substantively, the assembly emits two join families and only one of them may share a statement
+  with `.limit()`. `.limit()` slices rows, not entities, so every join in the paginating statement
+  must be proven single-valued, or the page contents, `hasNextPage` (a `pageSize + 1` over-fetch
+  that counts rows) and `totalCount` (a base-only count) all go silently wrong at once.
 
-`DiscriminatedTableFragments.assembly` populates a `LinkedHashSet<Field<?>> fields` (the
-`__discriminator__` routing alias, each single-table branch's `$project`, the joined-table
-participants' base slice, then the selection-gated cross-table and joined-detail aliases, which also
-append to `fields`) and then, in the same fragment, declares `SelectJoinStep<Record> step =
-dsl.select(new ArrayList<>(fields)).from(base)` before chaining the discriminator-gated LEFT JOINs.
-The caller finishes the chain.
+The two families are not peers:
 
-The connection arm cannot reuse that as-is. `ConnectionHelper.pageRequest(Integer first, Integer
-last, String after, String before, int defaultPageSize, List<SortField<?>> orderBy, List<Field<?>>
-extraFields, List<Field<?>> selection)` takes the selection list as an argument and returns a
-`PageRequest` whose `selectFields()` is `selection` plus any `extraFields` (the cursor columns) whose
-`getName()` is not already present. That merged list is what `dsl.select(...)` must receive, so the
-page request has to be emitted *between* the field-list population and the `step` declaration. Those
-two are currently welded into one fragment.
-
-Note the split point is after `crossTableAliasDeclarations` and `joinedDetailAliasDeclarations`, not
-merely after `fieldsList`: both of those emit selection-gated `fields.add(...)` calls.
-
-## The fan-out question, settled
-
-`.limit()` slices rows, not entities, so a gated LEFT JOIN that can match more than one row per base
-row corrupts page boundaries and `hasNextPage`. The two families differ:
-
-**Joined detail (`ParticipantRef.JoinedTableBound`): provably single-valued, already enforced.**
+**Joined detail (`ParticipantRef.JoinedTableBound`): proven, part of the pattern.**
 `TypeBuilder.resolveJoinedTableParticipant` requires the detail table's foreign-key columns to the
-base to *be* the detail's own primary key, and rejects otherwise with "joined-table participant 'X':
-the base->detail join is not single-valued." `JoinedTableInheritancePipelineTest`'s
-`detailJoinNotPkEqFk_rejected` pins it. `joinedDetailJoinChain` emits the ON clause over exactly
-those slots, so the relation is 1:0..1 by build-time construction. `allParties` and `allSubjects`
-paginate soundly with no new work.
+base to *be* the detail's own primary key and rejects otherwise ("the base->detail join is not
+single-valued", pinned by `JoinedTableInheritancePipelineTest.detailJoinNotPkEqFk_rejected`).
+`@discriminate` is an opt-in to subtyping where one base row is one entity; this join is the
+pattern's own 1:0..1 edge and may ride the paginating statement.
 
-**Cross-table (`ParticipantRef.TableBound.crossTableFields()`): not guaranteed, and this is a
-latent defect today.** `TypeBuilder.extractCrossTableFields` checks that the `@reference` path is a
-single FK-derived hop leaving the base, and that the resolved column lives only on the target. It
-checks nothing about direction or key uniqueness, and slot orientation is deliberately
-direction-blind (`BuildContext.resolveFkSlots` swaps the slot when the FK is not on the source, and
-`On.ColumnPairs` documents readers as direction-blind). So a reverse-orientation hop, where the
-target holds a non-unique FK back to the base, classifies green and reaches `crossTableJoinChain`.
-`DiscriminatorReferenceContradictionPipelineTest.referenceOnDetailOnlyColumn_staysValid` pins that
-orientation as valid over a live catalog FK; it happens not to fan out only because that detail
-table's FK columns are its composite primary key, which nothing on this path checks.
+**Cross-table (`ParticipantRef.TableBound.crossTableFields()`): unproven, and not part of the
+pattern.** A cross-table field is a participant scalar whose `@reference` resolves one FK-derived
+hop off the base (sakila: `FilmContent.rating`, hop `content.film_id -> film`). Nothing checks the
+hop's target-side uniqueness, and slot orientation is deliberately direction-blind
+(`On.ColumnPairs` documents its readers as direction-blind), so a reverse-orientation hop onto a
+non-unique FK classifies green and fans out. Today that is a latent defect on every shape:
+duplicate entities under the list, `TooManyRowsException` under the single fetch, last-row-wins
+under the service arm's by-PK re-map.
 
-A schema that does fan out: base `film` with `@discriminate(on: "rating")`, a participant
-`@table(name: "film") @discriminator(value: "PG")` carrying `actorId: Int @reference(path: [{key:
-"film_actor_film_id_fkey"}]) @field(name: "actor_id")`. `film_actor`'s primary key is `(actor_id,
-film_id)`, so its `film_id` is non-unique and every PG film multiplies by its cast size. Today that
-surfaces as duplicate entities under the list shape, a `TooManyRowsException` at request time under
-the single shape (`.fetchOne()`), and last-row-wins under the service arm's by-PK re-map. Note that
-`JoinStep`'s class javadoc claims "the validator rejects one-to-many navigation on a single-value
-field"; no such validator exists, so that paragraph is aspirational and must not be leaned on.
+The reopen settled how *not* to resolve this: not by enforcing the cross-table join's cardinality.
+The cross-table `@reference` is ordinary navigation this arm happens to emit as a gated LEFT JOIN;
+defending a misplaced join with a new invariant treats the accident as a contract, and would leave
+the discriminated coordinates strictly more permissive than the plain table child on the same
+authoring surface, which the codebase already names as unprincipled ("@asConnection on inline
+(non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics").
 
-Understating the damage would be easy: a fan-out breaks `hasNextPage` as well as the page contents,
-because the `pageSize + 1` over-fetch counts rows, and it makes `totalCount` (a base-only count)
-disagree with the page it annotates. Three silent wrongnesses, no runtime symptom.
+## The route: cross-table fields become the standing scalar-reference shape
 
-**Resolution: carry the cardinality fact on the hop, then state the missing invariant. Do not gate
-pagination.**
+The generator already has exactly one answer for "a scalar field whose value lives one `@reference`
+hop away", and it is not a join. `ChildField.ColumnBackedReferenceField` lowers to
+`SelectTerm.ScalarSubselect`, rendered by `ProjectionUnitRenderer.scalarInnerSelect` as a
+correlated scalar subquery in the parent's select list, capped `.limit(1)` (pinned structurally by
+`ColumnReferenceFieldPipelineTest`, behaviourally by
+`GraphQLQueryTest.films_languageName_resolvesViaScalarReference`). The subselect cannot multiply
+outer rows, whatever the hop's cardinality. The discriminated assembly's gated cross-table LEFT
+JOIN is the one place in the generator where an unproven-cardinality traversal is spliced into the
+row-producing statement itself; the classification fork (`lookupParticipantCrossTableField` ->
+`ChildField.ParticipantColumnReferenceField`) exists so the interface fetcher, not a per-field
+method, materialises the value; it does not require the SQL shape to differ.
 
-The fact already exists and is thrown away. `BuildContext.synthesizeFkJoin` computes `boolean
-fkOnSource = catalog.foreignKeyOnSource(...)`, uses it to orient the slots through `resolveFkSlots`,
-and drops it; `On.ColumnPairs(Keying, List<JoinSlot.FkSlot>)` carries the orientation baked into the
-slots and no statement about cardinality, and its javadoc says so ("readers are direction-blind").
-Re-deriving "can this hop fan out" from the catalog at each consumer is the model-field-predicate
-smell, and there are already two consumers: this item and the child sibling, which records that this
-item "settles the row-fan-out-under-`limit` question that applies identically here". So:
+**Resolution: emit cross-table participant fields as the same capped correlated subselect, at every
+coordinate.** Concretely:
 
-* **Land the fact at synthesis.** `On.ColumnPairs` gains a derived component, `targetAtMostOnePerSource`,
-  computed once in `synthesizeFkJoin` where the catalog is in scope: true when the hop's target-side
-  column set is a candidate key of the target table, that is when it equals some entry of
-  `catalog.candidateKeys(targetTable)` (which returns the primary key plus every unique key). Set
-  true unconditionally on the `Keying.NameMatchedKey` arm, whose target side is the target's primary
-  key by construction.
-* **Derive it as uniqueness, not as direction.** `fkOnSource` is only a fast path: the base-holds-FK
-  orientation always satisfies the uniqueness form because SQL requires the referenced side be
-  primary or unique. The two forms differ on exactly one reachable shape, the reverse orientation
-  where the target's FK columns happen to be its own key, which is
-  `DiscriminatorReferenceContradictionPipelineTest.referenceOnDetailOnlyColumn_staysValid`. That
-  fixture stays green under the uniqueness form and would break gratuitously under a direction
-  check. The uniqueness form therefore rejects exactly the schemas that are already silently broken
-  and no others, which is what makes this an invariant rather than a gate.
-* **Enforce it in `extractCrossTableFields`,** which reads the new fact rather than the catalog, and
-  surfaces a rejection through `ctx.addDiagnostic` the way it already does for the
-  base-resident-column contradiction. Use `Rejection.invalidSchema`, not `Rejection.deferred`: the
-  remedy is the author's (restructure the reference, or move the column), not ours, and `deferred`
-  promises work we are not planning.
+* **Lower at capture, not in the render shell.** `LauncherCommands.discriminatedBranches` lowers
+  each `CrossTableField` into the command vocabulary's existing subselect arm: a
+  `SelectTerm.ScalarSubselect` over the one hop, carried on `Branch.SingleTable`, plus the two
+  payloads the arm does not carry today, handled as slots rather than a new arm (per `SelectTerm`'s
+  own rule that arms are SQL shapes, never reasons): the fixed participant alias
+  (`FilmContent_rating`; `SelectTerm.Aggregate.asName` is the precedent for a subselect-shaped term
+  with a fixed projected name) and the branch's discriminator-gate predicate
+  (`base.<discCol> = '<value>'`), one extra predicate beside the hop filters `appendHopFilters`
+  already folds into the subselect's WHERE. The gate preserves today's exact per-row values: a
+  non-matching row projects NULL, as the LEFT JOIN's ON gate makes it do now.
+* **One renderer for one SQL shape.** Lift `scalarInnerSelect` to a fragment both renderers call,
+  parameterized on the parent table local (`ProjectionUnitRenderer` passes its own local, the
+  discriminated arm passes `tableLocal`), rather than hand-building a twin inside
+  `DiscriminatedTableFragments`. `crossTableAliasDeclarations` keeps its selection gate but its
+  body becomes `fields.add(<subselect>.as("<alias>"))`; `crossTableJoinChain` and the
+  null-defaulted alias-variable pattern (`CrossTableField.aliasVarName()`) retire.
+* **Everything downstream is untouched.** The classification fork, the
+  `ParticipantColumnReferenceField` leaf, the per-participant alias regime and the
+  `FetcherEmitter` by-alias read all survive; only what the alias names changes (a subselect
+  column instead of a joined column). `TypeBuilder.extractCrossTableFields` survives too, including
+  its base-resident-column contradiction rejection, which is about authoring sense, not
+  cardinality.
 
-Frame it in the code as one invariant on one branch arm, mirroring the invariant its sibling arm
-already carries and names an enforcer for. `Branch.JoinedDetail` is already proven; the unbounded
-population is exactly `Branch.SingleTable.crossTableFields`. Framed that way it is stable; framed as
-a connection-only gate it rots.
+The conversion is unconditional rather than pagination-scoped, because `assembly` is shared: the
+list, single, service and DML shapes all change SQL in the same commit, and the latent fan-out
+defect dissolves everywhere at once by inheriting the plain shape's semantics. Under fan-out the
+subselect picks one row, exactly as a plain-table scalar `@reference` does; if that semantics ever
+tightens, it tightens for both in `scalarInnerSelect`, one place.
 
-Both fact and rejection are definition-keyed, on the hop and on the participant field where the
-foreign key lives. Because the invariant is unconditional rather than pagination-conditional, no
-use-keyed "not paginatable" flag on the interface type is needed, and nothing has to be re-checked at
-the paginated coordinate.
+**No cardinality invariant, no schema newly rejected.** With the join gone there is nothing left to
+enforce; an invariant here alone would make this arm *stricter* than the plain one on the same
+authoring surface, the mirror image of the permissiveness argument that reopened the item. The old
+plan's `targetAtMostOnePerSource` fact on `On.ColumnPairs` leaves with it, together with its two
+recorded precision defects (equality-versus-containment over `candidateKeys`, and uniqueness backed
+by a bare unique index being invisible to `candidateKeys`), which are now moot. Every schema that
+classifies today keeps classifying;
+`DiscriminatorReferenceContradictionPipelineTest.referenceOnDetailOnlyColumn_staysValid` stays
+green untouched. The enforcer that replaces the invariant is an execution-tier pin over a genuinely
+fanning shape (Coverage), since only that tier can observe row semantics.
 
-With both families enforced single-valued, one base row is one entity, the seek is over base-table
-key columns, and the connection arm needs no floor of its own.
+**Why the paginating statement is then sound.** After the conversion it contains the base table,
+the joined-detail LEFT JOINs (proven 1:0..1 at build time) and select-list subselects (row-neutral
+by construction): one row is one entity, the seek runs over base-table ordering columns, and
+`totalCount`'s base-only count (`dsl.selectCount().from(cr.table()).where(cr.condition())`, with
+the discriminator `IN` ANDed into the condition before it reaches the carrier) agrees with the page
+by construction. Nor is the statement shape novel: the plain table root connection's selection *is*
+`$project`, and `$project` already renders scalar references as capped subselects, so "correlated
+subselect inside a paginating statement" is the standing emission there.
 
-Two things the landed fact also buys, worth noting but not worth widening scope for:
-`DiscriminatedTableFragments`'s class javadoc already admits an unmirrored row-multiplication gate
-(a branch with no `@discriminator` value skips its JOIN arms because "an unconstrained join would
-multiply rows"), which becomes readable off the model; and the `LauncherCommand` backstop stays
-restatable, per below.
+## The seam
 
-**Superseded by the reopen above. Do not implement this section as written.** It asked whether the
-cross-table invariant should be its own item and answered "keep it here, as its own commit". That
-answers the wrong question. The invariant is sound and the analysis above holds, but it defends a
-join that the split-query doctrine says should not share the paginating statement in the first
-place. If the redesign moves participant cross-table fields out of that statement, the fact on
-`On.ColumnPairs`, the enforcement in `extractCrossTableFields` and the non-local edit across every
-construction site all leave with it.
+`DiscriminatedTableFragments` splits on the fact boundary, with `assembly` kept as the composition
+so its existing call sites (`RootLauncherRenderer`, `ReentryRowsFragments` twice, and
+`TypeFetcherGenerator.buildTableInterfaceReprojection` serving the child twin and the service
+fetcher) are untouched, which also keeps `TypeFetcherGeneratorTest`'s shared-assembly pin
+meaningful:
 
-Two precision defects to carry forward if any form of the invariant survives. The predicate is
-stated as target-side columns *equal to* some entry of `catalog.candidateKeys(targetTable)`;
-containment is the correct form, since target-side `(a, b)` over a target with `UNIQUE(a)` is
-single-valued but fails equality. And "rejects exactly the schemas that are already silently broken
-and no others" overstates: `candidateKeys` reads `getPrimaryKey()` plus `getKeys()`, so uniqueness
-backed by a bare unique index rather than a constraint is invisible and would be rejected wrongly.
+* `projection(source, alwaysProject, tableLocal)`: the discriminator filter through the alias
+  declarations, everything that populates `fields`, subselect terms included.
+* `joinedStep(source, tableLocal, CodeBlock selectExpression)`: the `step` declaration over the
+  caller's select expression plus the joined-detail join chain, which after the conversion is the
+  fragment's *only* join chain. Its javadoc carries the pagination-safety argument as a `{@link}`
+  to `TypeBuilder#resolveJoinedTableParticipant` (the PK=FK check), so the reference gate keeps
+  "every join here is proven single-valued" auditable rather than restated.
+* `assembly` becomes the two composed with `new ArrayList<>(fields)`, with `{@link}`s to both
+  halves.
 
-**Why not the two-stage shape.** `MultiTablePolymorphicEmitter.buildStage1ConnectionBlock` paginates
-over a `UNION ALL` derived table of `(typename, pk, sort)` because the multi-table interface has *no
-base table*: there is no single relation with one row per entity, so stage one manufactures one. Here
-that relation exists by construction, one primary-key space and one discriminator column, and the
-only thing that can break rows-equals-entities is a fan-out join, which the model can forbid at build
-time. Importing a two-round-trip emission to defend at runtime against a state we can make
-unrepresentable is the wrong trade. Recording it as closed rather than deferred: should a two-stage
-ever become necessary, the carrier's `table()` slot already accepts any `Table<?>` (the multi-table
-sibling binds its derived table there), so the carrier contract does not move.
+Two named fragments beat one method with an optional select-expression parameter because the
+paginating callers differ in *order*, not in a value: the page request must observe the populated
+`fields` local before `select(...)` is composed. The `fields` local's name crosses the seam, so it
+is minted once, as a constant on `DiscriminatedTableFragments` that both halves and the paginating
+callers read.
 
-## Implementation
+The old plan left open whether the child shares this seam; the answer is yes. Both paginating
+callers consume `projection` -> `pageRequest(...)` -> `joinedStep(...)`; the child then chains its
+VALUES-table join onto the returned step (jOOQ's `SelectOnConditionStep` extends `SelectJoinStep`,
+and the gated chains already re-assign `step`, so the chaining composes).
 
-* `On.ColumnPairs` plus `BuildContext.synthesizeFkJoin`: the `targetAtMostOnePerSource` fact above,
-  derived once from `catalog.candidateKeys(targetTable)` and carried on the hop. Every existing
-  construction site of `On.ColumnPairs` has to supply it, which is the item's one non-local edit;
-  the compiler enumerates them.
-* `TypeBuilder.extractCrossTableFields`: reject a cross-table hop whose `targetAtMostOnePerSource` is
-  false, with an `invalidSchema` diagnostic naming the participant field, the target table, the hop's
-  target-side columns and the target's candidate keys, in the style of the sibling messages in
-  `resolveJoinedTableParticipant`.
-* `ParticipantRef.JoinedTableBound` javadoc: it says the PK=FK invariant "is checked by the
-  validator", but the check lives in `TypeBuilder.resolveJoinedTableParticipant` and surfaces through
-  the diagnostic channel. Fix while in the area. Same for `JoinStep`'s aspirational
-  cardinality-invariant paragraph, which should either name the new fact or stop claiming an
-  enforcer.
-* `DiscriminatedTableFragments`: add a two-part seam and keep `assembly` as the composed default, so
-  none of its call sites change. `projection(source, alwaysProject, tableLocal)` emits the
-  discriminator filter through the alias declarations; `joinedStep(source, tableLocal, CodeBlock
-  selectExpression)` emits the `step` declaration over the caller's select expression plus both join
-  chains; `assembly` becomes the two composed with `new ArrayList<>(fields)`. Split on the fact
-  boundary, not the statement boundary: `alwaysProject` is a select-list fact, so it stays on
-  `projection` and `joinedStep` is free of it. Give `assembly` `{@link}`s to both halves so the
-  javadoc reference gate keeps the linkage build-checked. Two named fragments beat one method with an
-  optional select-expression parameter because the two callers differ in *order*, not in a value: the
-  page request must observe the populated `fields` local before `select(...)` is composed, and two
-  fragments make that ordering visible in the caller's body instead of hiding it inside one fragment.
-  The four existing call sites (`RootLauncherRenderer`, `ReentryRowsFragments` twice for the DML
-  follow-ups, and `TypeFetcherGenerator.buildTableInterfaceReprojection`, the last serving three
-  consumers: the child twin, the service fetcher and the reprojection) are untouched, which also keeps
-  `TypeFetcherGeneratorTest`'s shared-assembly assertions meaningful.
-* `FieldBuilder`: delete the `FieldWrapper.Connection` deferral in the root `TableInterfaceType` arm
-  and let the coordinate classify as a `QueryTableInterfaceField` carrying the `Connection` wrapper.
-* `LauncherCommands.interfaceRow`: add the `FieldWrapper.Connection` fork `resultShapeOf` already
-  has for the plain table root, including its no-resolvable-ordering `IllegalStateException`. The
-  ordering comes from the same `orderingOf(qtif.orderBy(), ...)` call the list arm already makes.
-  Update the javadoc's "Never `ResultShape.Connection`" claim.
-* `LauncherCommand`: restate the `(DiscriminatedTable, Connection)` half of the constructor backstop
-  rather than deleting it. Today the pair is unrepresentable because the classifier defers every
-  connection on this arm; after the lift the newly-unrepresentable pair is "a discriminated connection
-  whose branches do not all join at-most-one", which the constructor can state now that
-  `targetAtMostOnePerSource` rides the hop. That keeps the source-by-result axis pair with an enforcer
-  instead of silently losing one, which is exactly what the file's own backstop comment says the
-  backstops are for. The single-tenant half stays untouched.
-* `RootLauncherRenderer`: replace the `DiscriminatedTable` arm's `ResultShape.Connection` throw with
-  a connection body. It mirrors `connectionBody` but over the split seam:
-  `OrderingBlock.declareBothViews`, the four fixed argument reads, `pageRequest(..., orderBy,
-  extraFields, new ArrayList<>(fields))`, then `joinedStep(source, tableLocal,
-  page.selectFields())`, then `step.where(condition).orderBy(page.effectiveOrderBy())
-  .seek(page.seekFields()).limit(page.limit()).fetch()`, then the carrier construction
-  `(result, page, tableLocal, condition[, dsl])`.
+## Root connection emission
+
+`RootLauncherRenderer`'s `DiscriminatedTable` arm replaces its `ResultShape.Connection` throw with
+a body mirroring `connectionBody` over the seam: `OrderingBlock.declareBothViews`, the four fixed
+argument reads, `pageRequest(first, last, after, before, <defaultPageSize>, orderBy, extraFields,
+new ArrayList<>(fields))`, then `joinedStep(source, tableLocal, page.selectFields())`, then
+`step.where(condition).orderBy(page.effectiveOrderBy()).seek(page.seekFields())
+.limit(page.limit()).fetch()`, then the carrier construction `(result, page, <tableLocal>,
+condition[, dsl])`.
+
+## Classifier, command and renderer lifts (root)
+
+* `FieldBuilder`: delete the `FieldWrapper.Connection` deferral in the root `TableInterfaceType`
+  arm; the coordinate classifies as `QueryTableInterfaceField` carrying the `Connection` wrapper.
+* `LauncherCommands`: extract `resultShapeOf`'s Connection derivation (the ordering lookup, the
+  no-resolvable-ordering `IllegalStateException`, `defaultPageSize`, the helper and carrier unit
+  refs) into one private helper both root arms call, rather than duplicating it into
+  `interfaceRow`; the interface arm supplies `orderingOf(qtif.orderBy(), ...)` and a `null` facet
+  plan. The `null` is legitimate for the same reason `batchedResultOf` hard-codes it, and
+  additionally because `GraphitronSchemaBuilder.unsupportedFacetCarrierReason` rejects
+  interface-element carriers at the SDL boundary; carry that producer-consumer fact as a `{@link}`
+  to the guard. Update `interfaceRow`'s javadoc claim "Never `ResultShape.Connection`".
+* `LauncherCommand`: delete the `(DiscriminatedTable, Connection)` half of the constructor backstop
+  outright. The backstop's own comment says each half mirrors a parse-boundary rejection; after the
+  lift there is no rejection to mirror on this axis, and restating a new invariant at the
+  constructor would invent one with no parse-boundary owner. The single-tenant half keeps its
+  mirror and survives untouched. The residual invariants on the pair live where they are enforced:
+  pagination-requires-ordering in `validatePaginationRequiresOrdering` (keyed on
+  `SqlGeneratingField`, which covers this leaf) and facet rejection in
+  `unsupportedFacetCarrierReason`.
+
+## The child half (rides R661)
+
+R661 gives the child arm batched delivery: list cardinality mints a batched leaf with a
+`LoaderRegistration`, keyed on the FK hop's source side, its rows method the unbatched fetcher's
+statement with the correlation re-keyed onto the loader's key set. Coordination, settled here and
+mirrored by an edit to R661's spec in this commit: R661 mints on `wrapper.isList()` alone, and
+*this* item adds the `FieldWrapper.Connection` half of the fork in the same commit that lifts the
+child deferral, so the connection branch is never present-but-unreachable. This item plans against
+R661's batched leaf being a separate sealed record (the sibling family's precedent, and what its
+component list implies); if its implementer picks a delivery slot on the existing leaf instead,
+this item's child fork reads one leaf plus a fact and moves accordingly.
+
+The connection tail: `BatchedRowsFragments.connectionTail` already owns the per-key windowing
+protocol for the plain batched child, five coupled facts (`rowNumber() over
+(partitionBy(__idx__).orderBy(page.effectiveOrderBy()))`, seek applied pre-rank on the inner
+select, `.asTable("ranked")`, the outer `__rn__ <= page.limit()` filter, and the cursor-independent
+count source feeding `scatterConnectionByIdx`). Do not mirror it; extract it the way `joinedStep`
+is extracted: one fragment taking the inner select's field list, the idx field and the page local,
+with the FROM topology supplied by the caller. The plain arm binds it over its bridge-and-parent
+join; the discriminated arm binds it over `projection` + `joinedStep` + the chained VALUES-table
+join. The multi-table polymorphic child
+(`MultiTablePolymorphicEmitter.buildBatchedConnectionRowsMethod`) is deliberately *not* the model:
+that shape stages a `UNION ALL` and synthesises `__sort__` / `__typename` because it has no base
+table; here one base table exists, ordering comes from it, and `__discriminator__` rides the select
+list, not the ordering.
+
+Downstream of the rows method, the loader plumbing is R661's, unchanged: `scatterConnectionByIdx`'s
+per-parent `ConnectionResult` carries the count source and the per-idx condition, and the emission
+gate for the scatter helper widens from "any `BatchedTableField` with a Connection wrapper" to
+include the interface leaf. `DeliveryFactRelation`: R661 owns the two-site delivery agreement for
+the list coordinate; this item verifies both sites answer `Batched` for the *connection* coordinate
+once the deferral lifts, and adds the corpus coordinate that makes `DeliveryFactPinTest` a gate
+over it.
+
+## Considered and rejected
+
+* **The invariant-defended join** (the plan this respec replaces): keep the cross-table LEFT JOIN
+  and land `targetAtMostOnePerSource` on the hop, enforced in `extractCrossTableFields`. Rejected
+  by the Spec review: it defends a join the generator's own vocabulary says should not exist, and
+  makes the discriminated coordinates more permissive than the plain child on the same authoring
+  surface. Its verified mechanism analysis fed this body; the rest is in git history.
+* **The two-stage shape.** `MultiTablePolymorphicEmitter.buildStage1ConnectionBlock` paginates over
+  a manufactured `UNION ALL` relation because the multi-table interface has no base table. Here the
+  pagination relation exists by construction; importing a two-round-trip emission to defend at
+  runtime against a state the emission no longer produces is the wrong trade. Recorded as closed
+  rather than deferred: the carrier's `table()` slot already accepts any `Table<?>` (the
+  multi-table sibling binds its derived table there), so the carrier contract would not move if a
+  two-stage ever became necessary.
+* **Rejecting `@asConnection` when a participant carries cross-table fields.** Leaves the latent
+  fan-out defect on the other shapes and makes the connection arm gratuitously narrower than the
+  list arm over the same schema.
+* **Full unification**: reclassify cross-table fields as ordinary `ColumnBackedReferenceField` so
+  they ride the participant's `$project` and the whole cross-table capture machinery retires. The
+  capture-time lowering above takes most of this idea's value; the remainder trips an
+  alias-collision hazard (BY_RESULT_KEY aliasing collides when two participants declare same-named
+  fields over different hops, where today's TypeName-prefixed aliases keep them apart) and is its
+  own item if anyone wants it.
+
+## Implementation (ordered; each numbered group is a commit)
+
+1. **The subselect conversion.**
+   * `LauncherCommands.discriminatedBranches`: lower `CrossTableField` to the subselect term with
+     the fixed alias and the gate predicate, carried on `Branch.SingleTable`.
+   * `ProjectionUnitRenderer.scalarInnerSelect` lifted to a shared fragment parameterized on the
+     parent table local; `DiscriminatedTableFragments`'s cross-table emission renders through it;
+     `crossTableJoinChain` and `CrossTableField.aliasVarName()` retire.
+   * Re-freeze
+     `RootLauncherSqlBaselineTest.interfaceRoot_crossTableParticipantField_gatedLeftJoinArm` to the
+     subselect shape and rename it; the existing `allContent` execution assertions stay green.
+   * The execution-tier fan-out pin (Coverage).
+   * Javadoc sweep of the LEFT JOIN vocabulary: `ParticipantRef.TableBound.crossTableFields` /
+     `CrossTableField`, `ChildField.ParticipantColumnReferenceField`, `LaunchSource`'s
+     `Branch.SingleTable`, the `DiscriminatedTableFragments` class javadoc, and any
+     `docs/architecture` row naming conditional LEFT JOINs for this leaf.
+   * While in the area: `JoinStep`'s class javadoc claims "the validator rejects one-to-many
+     navigation on a single-value field"; no such validator exists, and this item makes the claim
+     permanently false rather than aspirational, so delete or restate it.
+     `ParticipantRef.JoinedTableBound`'s "checked by the validator" misattribution points at
+     `TypeBuilder.resolveJoinedTableParticipant` instead.
+     `TypeFetcherGenerator.buildTableInterfaceReprojection`'s javadoc claims four callers; it has
+     two.
+2. **The seam split.** Pure refactor: `projection` / `joinedStep`, `assembly` as the composition,
+   the fields-local name constant, the `{@link}`s. No call site changes; `TypeFetcherGeneratorTest`
+   and `PolymorphicProjectionFilterPinTest` stay green as-is.
+3. **The root lift.** The classifier, `LauncherCommands` and `LauncherCommand` edits above; the
+   renderer connection body; the corpus example plus the deleted enum row; the SQL baselines and
+   execution page walks (Coverage).
+4. **The child lift** (after R661 lands). The child deferral deletes; `Connection` joins the
+   batched fork; the windowing-tail extraction and the discriminated binder; the scatter emission
+   gate; the delivery-fact verification; the child fixture, baseline and page walks (Coverage).
 
 ## What needs no work, with the evidence
 
@@ -278,133 +317,126 @@ Checked, so the implementer does not re-derive it:
 
 * **Connection type synthesis.** `ConnectionPromoter.promotionFor`'s directive arm gates only on
   `@asConnection` plus a list return and reads the element type name whatever its kind, so
-  `[Content!]! @asConnection` already mints `ContentConnection` / `ContentEdge` with `node: Content`.
+  `[Content!]! @asConnection` already mints `ContentConnection` / `ContentEdge` with `node:
+  Content`.
 * **The entry point.** `TypeFetcherGenerator.buildQueryTableFetcher` reads
-  `RootLauncherRenderer.valueTypeOf(row)`, whose `Connection` arm already yields the carrier ref.
-  Both root arms already route through it.
+  `RootLauncherRenderer.valueTypeOf(row)`, whose `Connection` arm already yields the carrier ref;
+  both root arms route through it.
 * **Field registration.** `FetcherRegistrationsEmitter` binds `edges` / `nodes` / `pageInfo` /
   `totalCount` per connection *type*, and `FetcherEdgeCommands.rowOf` returns null for
   `QueryTableInterfaceField` exactly as it does for `QueryTableField`.
 * **Ordering.** The base table's primary key gives `OrderBySpec.Fixed` by default, `@orderBy` on
   this coordinate already lowers, and `TypeFetcherGenerator` already emits the order-by helper for
-  `QueryTableInterfaceField` into the same generated class the launcher lands in, so
-  `declareBothViews`'s unqualified helper call resolves. `validatePaginationRequiresOrdering` covers
-  the leaf through `SqlGeneratingField`.
+  `QueryTableInterfaceField` into the same generated class the launcher lands in (it closed that
+  gap when the launcher migrated), so `declareBothViews`'s unqualified helper call resolves.
+  `validatePaginationRequiresOrdering` covers the leaf through `SqlGeneratingField`.
 * **Type resolution.** The existing `TypeResolver` routes off `__discriminator__`, which the
-  assembly projects unconditionally, so no new resolver and no selection-set dependency.
-* **`totalCount`.** Needs no new emission, but it is correct *because of* the fan-out floor, not
-  independently of it. The generated resolver runs `dsl.selectCount().from(cr.table())
-  .where(cr.condition())`: base table, no joins. It agrees with the page because both apply the same
-  `condition` (the assembly ANDs the discriminator `IN` in before the caller binds it onto the
-  carrier) and, given the floor, the joins do not change the row count. Do not justify this by the
-  condition glue's signature: `Conditions.<method>(baseTable, env.getArguments()[, env])` bounds what
-  the *call site* expression can name, and `conditionStatement` does run before any join alias local
-  exists, so the composed expression cannot reference one; but a hand-written condition method body
-  can name any `Tables.*` constant it likes, so the signature is not the enforcer. An authored
-  condition referencing an unjoined table is a pre-existing hazard on every shape, not something
-  pagination introduces.
-* **Facets.** Already rejected, not silently ignored. `GraphitronSchemaBuilder`'s
-  `unsupportedFacetCarrierReason` requires the carrier's element be a `@table`-backed
-  `GraphQLObjectType`, so an interface element trips `facetMisuseReason` with a message naming
-  interface/union connections as a follow-up. That guard is keyed on SDL, not on classification, so
-  it fires today and keeps firing after the deferral lifts. Optional nicety: its trailing "or move
-  the connection to the root" reads oddly for a carrier that is already at the root.
+  assembly projects unconditionally; no new resolver, no selection-set dependency.
+* **Facets.** Already rejected, not silently ignored: `unsupportedFacetCarrierReason` requires the
+  carrier's element be a `@table`-backed object type, keyed on SDL rather than classification, so
+  it fires today and keeps firing after the lift. Optional nicety: its trailing "or move the
+  connection to the root" reads oddly for a carrier already at the root.
 * **Corpus exemptions.** `ExemptionRegistry.MEMBER_KNOWN_GAPS` is keyed per `OperationMember`, and
-  the launcher obligation covers `LaunchSource` and `ResultShape` arms individually, both of which
-  are already reached. Nothing to remove.
+  the launcher obligation covers `LaunchSource` and `ResultShape` arms individually, both already
+  reached. Nothing to remove.
 
 ## Coverage
 
 * **Corpus.** One `ClassifiedCorpus` example crossing `joined-table-interface`'s root row with
   `catalog`'s `films`: `@asConnection` with `@classified(source: Query, operations: [OrderBy,
   Paginate, Select], target: Single, targetShape: Connection)` and `@commits(source:
-  DiscriminatedTable, result: Connection)`, a pair no example carries today because the
-  `LauncherCommand` constructor currently makes it unrepresentable. Give it a `query` so it renders,
-  which puts the drift guard on `docs/architecture/reference/code-generation-triggers.adoc`. Delete
-  the subsumed `TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED` enum row in the same commit.
+  DiscriminatedTable, result: Connection)`, a pair no example carries today. Give it a `query` so
+  it renders, which puts the drift guard on
+  `docs/architecture/reference/code-generation-triggers.adoc`. Delete the subsumed
+  `TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED` enum row in the same commit.
   `docs/manual/_generated/supported-schema-shapes.adoc` is keyed per sealed leaf and already lists
-  `QueryTableInterfaceField` unmarked, so it does not change.
-* **The cardinality fact.** Unit coverage on `synthesizeFkJoin`'s derivation over both orientations
-  and the `NameMatchedKey` arm, so the fact is pinned where it is decided rather than only through
-  the rejection that reads it.
-* **Cross-table invariant.** A pipeline-tier rejection test on the `film` / `film_actor` shape above,
-  plus a green case pinning that `referenceOnDetailOnlyColumn_staysValid`'s orientation still
-  classifies. The rejection test is the one that would have caught today's defect, and the pair of
-  them is what stops a later hand from "simplifying" the uniqueness form into a direction check.
-* **The restated backstop.** Extend
-  `RootLauncherRendererTest.discriminatedSource_connectionAndFannedPairsAreUnrepresentable` to pin the
-  new pair (a discriminated connection carrying a fanning branch) alongside the surviving
-  single-tenant assertion, replacing the "never paginates" assertion it loses.
-* **Exact SQL.** New `RootLauncherSqlBaselineTest` cases, modelled on the mechanical cross of
+  `QueryTableInterfaceField` unmarked, so the root does not change it; the child's batched leaf
+  arrives via R661.
+* **The lowering.** The capture-time subselect term is pinned where it is decided: an assertion
+  that `Branch.SingleTable` carries the subselect term with the participant alias and the gate
+  predicate, at whatever tier pins `discriminatedBranches`'s output today.
+* **The fan-out pin (the invariant's replacement).** An execution-tier fixture with a genuinely
+  fanning cross-table hop: a small discriminated interface over `film` whose participant carries
+  `@reference` through `film_actor_film_id_fkey` (`film_actor.film_id` is non-unique, so every
+  film multiplies by its cast size), or an equivalent dedicated fixture-table pair per the
+  `paged_a` / `paged_b` precedent. Assert one entity per base row under the list shape and that the
+  single fetch no longer throws. Only this tier can observe row semantics; the code-string ban
+  means no other tier should try.
+* **Exact SQL.** The re-frozen cross-table baseline (commit 1). New `RootLauncherSqlBaselineTest`
+  cases modelled on the mechanical cross of
   `interfaceRoot_singleTable_projectsTheDiscriminatorRoutingAlias` with
   `connectionRootPageQuery_seekLimitChainWithCursorKeyInSelectList`: one page query over
   `allContent`, one `totalCount` twin asserting the second statement counts over `content` with the
   discriminator `IN` predicate, and one over `allParties` or `allSubjects` pinning that the gated
-  detail LEFT JOIN composes with seek and limit. The class javadoc's shape enumeration needs
-  extending.
-* **Execution tier.** Page walks in `GraphQLQueryTest` beside the existing `allContent_*` /
-  `allParties_*` / `allSubjects_*` cases. Seed volume is thin: `content` has 4 rows, `jti_subject` 4,
-  `party` 3. Either seed more rows the way the multi-table polymorphic connection fixture seeded
-  dedicated `paged_a` / `paged_b` tables, or accept `first: 1` / `first: 2` walks and skip asserting
-  a page boundary landing mid-participant-group. Prefer seeding; a backward (`before`) page and a
-  boundary inside a participant group are the two cases most likely to expose a cursor bug.
-
-## The child half
-
-Absorbed from the discarded child item. Verified at that item's filing, not re-verified in this
-pass, so re-read before leaning on it.
-
-`ChildField.TableInterfaceField` is emitted by `TypeFetcherGenerator.buildTableInterfaceFieldFetcher`,
-an unbatched per-parent SELECT correlated off `env.getSource()`. It is not on the launcher seam and
-registers no `DataLoader`, so it is N+1 by construction today. That is why the child was the harder
-half under the old framing, and why it is the *same* half under the new one: both coordinates now
-turn on whether the paginating statement is a split query.
-
-Two routes were open for the child, and the reopen settles the choice by settling it for the root
-too:
-
-* **Per-parent paginated fetch.** Cheap, mirrors what the leaf already does, keeps the N+1. Rejected:
-  the plain table child rejects inline `@asConnection` outright, so this would make the discriminated
-  child strictly more permissive than the plain child on the same authoring surface, for no
-  principled reason. This is the argument that came back to bite the root plan.
-* **Batched.** Consistent with the plain child and with
-  `MultiTablePolymorphicEmitter.buildBatchedConnectionRowsMethod`, the windowed-CTE shape the
-  multi-table polymorphic child already uses. Needs the dependency item first.
-
-Open for the respec: whether the child arm shares whatever select-list seam the root takes in
-`DiscriminatedTableFragments`, or whether the batched shape needs its own assembly. The old plan's
-`projection` / `joinedStep` split was designed for a per-parent paginated child to consume directly,
-which is the route now rejected, so the seam is an open question rather than a settled one.
+  detail LEFT JOIN composes with seek and limit. The class javadoc's shape enumeration extends. For
+  the child, a `BatchedChildSqlBaselineTest` case beside
+  `connectionBatchedChild_rowNumberPartitionedByIdx` pinning the discriminated windowed shape,
+  which also pins that the extracted windowing fragment serves both binders.
+* **The backstop test.** `discriminatedSource_connectionAndFannedPairsAreUnrepresentable` loses the
+  "never paginates" assertion and keeps the single-tenant one; rename to match what it still pins.
+* **Execution tier, root.** Page walks in `GraphQLQueryTest` beside the existing `allContent_*` /
+  `allParties_*` / `allSubjects_*` cases. Seed volume is thin (`content` 4 rows, `jti_subject` 4,
+  `party` 3): either seed more rows the way the multi-table connection seeded dedicated `paged_a` /
+  `paged_b` tables, or accept `first: 1` / `first: 2` walks. Prefer seeding; a backward (`before`)
+  page and a page boundary landing between rows of the same participant type are the two cases most
+  likely to expose a cursor bug. The `party` fixture's detached base row (no detail row) should
+  appear mid-walk, pinning that LEFT JOIN NULL-through survives pagination.
+* **Execution tier, child.** A parent-to-interface connection coordinate (for example a `Film`
+  field returning `[Content!]! @asConnection` over the reversed `content_film_id_fkey` hop; R661's
+  execution coverage wants the same fixture shape at list cardinality, so coordinate rather than
+  duplicate). Assert the page walk and the statement count (one child statement for all parents,
+  via the `SQL_LOG` idiom).
+* **Delivery-fact agreement.** The connection coordinate joins the corpus / marker fixtures so
+  `DeliveryFactPinTest` gates the leaf-versus-relation answer for it (R661 does the same for the
+  list coordinate).
 
 ## Retired vocabulary
 
 * The root deferral message "@asConnection on a root field returning a single-table discriminated
   interface ... is not yet supported; return the list shape instead".
-* The child deferral message "@asConnection on a field returning a single-table discriminated
-  interface ... is not yet supported; return the list shape instead". Unpinned, so nothing asserts
-  it; it still needs the sweep.
-* The `LauncherCommand` backstop message "a discriminated-interface launcher never paginates" and its
-  "the classifier defers @asConnection on the single-table-interface root" comment. The backstop
-  itself survives in restated form, so what retires is this wording, not the check.
+* The child deferral message, same text minus "root". Unpinned, so nothing asserts it; it still
+  needs the sweep.
+* The `LauncherCommand` backstop message "a discriminated-interface launcher never paginates" and
+  its "the classifier defers @asConnection on the single-table-interface root" comment; this time
+  the check itself goes, not just the wording.
 * The `RootLauncherRenderer` throw "a discriminated-interface launcher never paginates; the command
   constructor rejects the pair before rendering".
 * `LauncherCommands.interfaceRow`'s javadoc sentence "Never `ResultShape.Connection`".
 * The enum constant name `TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED`.
-* Prose asserting that no paginating emission exists over the discriminated re-projection.
+* `crossTableJoinChain`, `crossTableAliasDeclarations` (as a join-arm concept; the projection-side
+  gate survives under whatever name the subselect emission takes) and
+  `CrossTableField.aliasVarName()`.
+* "Gated LEFT JOIN" / "conditional LEFT JOIN" as the description of cross-table participant fields,
+  wherever it appears: model javadocs, fragment javadocs, the baseline test name
+  `interfaceRoot_crossTableParticipantField_gatedLeftJoinArm`, docs rows.
+* `JoinStep`'s javadoc paragraph claiming "the validator rejects one-to-many navigation on a
+  single-value field".
+* Prose asserting the `(DiscriminatedTable, Connection)` pair is unrepresentable, that no
+  paginating emission exists over the discriminated re-projection, or that the discriminated child
+  never paginates.
+* `targetAtMostOnePerSource`: never landed; this file was its only habitat and this rewrite is the
+  sweep.
 
 ## Out of scope
 
-* **Batched delivery for the child arm.** `roadmap/batched-discriminated-interface-child.md` owns it.
-  This item depends on it rather than absorbing it: the child's N+1 is worth fixing whether or not
-  the connection work proceeds, and that item's spec resolves the `@splitQuery` question this one
-  does not need to reopen.
+* **Batched delivery for the child arm.** R661 owns it; this item consumes it and adds only the
+  connection tail.
+* **The full cross-table reclassification** (Considered and rejected, last bullet).
+* **A schema-quality lint on fan-out-able scalar `@reference` hops.** After the conversion the
+  question belongs to the plain shape and this arm equally; if wanted, it is one lint over
+  `ScalarSubselect` producers, not a discriminated-interface concern.
 * **Facets on these coordinates.** Already rejected with a message naming it a follow-up; lifting
   that is a separate item if a consumer asks.
-* **Multi-table interface and union ordering.** `R382`'s axis, unrelated.
+* **Multi-table interface and union ordering.** R382's axis, unrelated.
 
 ## Provenance
 
-Both `R405` (root `@service` return) and `R406` (DML return) recorded `@asConnection` as out of scope
+Both R405 (root `@service` return) and R406 (DML return) recorded `@asConnection` as out of scope
 for this interface family; this item picks up the read half at both coordinates. Distinct axis from
-`R382`. The child half arrives from the discarded `child-connection-over-discriminated-interface`;
-the split-query framing that merged the two came out of this item's Spec review.
+R382. The child half arrived from the discarded `child-connection-over-discriminated-interface`
+(R651); the statement-composition framing that merged the two came out of this item's first Spec
+review, which reopened a signed-off plan (the cardinality-invariant route). This body is the
+respec, drafted with the architecture consult; the superseded analysis survives in git history at
+the reopen commit.
+
+
