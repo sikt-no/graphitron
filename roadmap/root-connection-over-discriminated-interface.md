@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a field returning a discriminated table interface"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: interface-union
@@ -416,6 +416,39 @@ Checked, so the implementer does not re-derive it:
   never paginates.
 * `targetAtMostOnePerSource`: never landed; this file was its only habitat and this rewrite is the
   sweep.
+
+## What shipped, and what is left
+
+The root half is implemented; the child half is not, and cannot be until R661 lands. Four commits:
+
+1. **The subselect conversion.** Cross-table participant fields lower at capture into
+   `SelectTerm.ScalarSubselect` (fixed alias, discriminator gate), rendered through the fragment
+   lifted out of `ProjectionUnitRenderer` into `PathFragments` and parameterized on the parent
+   table local. `crossTableJoinChain` and `CrossTableField.aliasVarName()` are gone. Coverage: the
+   `fan_base` / `fan_detail` fixture pair (a participant reference landing on the many side of its
+   FK) with execution-tier pins on both the list and single shapes, plus the re-frozen cross-table
+   SQL baseline.
+2. **The seam split**, exactly as specified, plus the lowering pin at the capture tier.
+3. **The root lift.** Classifier, producer, command backstop, renderer, the
+   `paginated-joined-table-interface` corpus example (rendered into the page) replacing the deleted
+   enum row, three SQL baselines and four execution page walks.
+
+Two things the plan did not anticipate, both settled in commit 3:
+
+* **The type-conditioned selection gates were depth-blind.** `env.getSelectionSet().contains(
+  "<Type>.<field>")` matches only at the top of the selection, so under a connection (where the
+  coordinate sits below `edges/node`) a participant's detail column and its cross-table field were
+  silently dropped from the page. The gate now offers both the bare pattern and its `**/` form.
+  This was latent for every non-root coordinate, not only the connection.
+* **Backward pagination needs author-declared arguments.** `@asConnection` synthesises `first`
+  carrying the default page size, and the helper rejects a request specifying both ends, so a
+  `last:` page over an `@asConnection` shorthand coordinate requires `first: null` unless the
+  author declares the argument themselves. Not a defect of this item; recorded because the
+  execution fixture had to work around it.
+
+The child half (implementation group 4) is untouched and stays specified above. Nothing in the
+root work forecloses it: the seam both paginating callers were designed to share is in place, and
+`BatchedRowsFragments.connectionTail` is still the extraction the child arm needs.
 
 ## Out of scope
 
