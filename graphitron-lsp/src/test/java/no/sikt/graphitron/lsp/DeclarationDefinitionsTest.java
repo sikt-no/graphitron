@@ -72,7 +72,12 @@ class DeclarationDefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.of(sourceRoot, PLACEHOLDER_SDL);
+        // The classpath census carries the two class-backed fixtures: a member name resolves to its
+        // declaration through the store's member-slot rule, and where that declaration is written
+        // comes from the parsed sources below.
+        store = StoreFixture.of(sourceRoot, PLACEHOLDER_SDL, List.of(
+            StoreFixture.jarRecord(RECORD_FQN, StoreFixture.component("firstName", "String")),
+            StoreFixture.jarClass(POJO_FQN, List.of(StoreFixture.method("getFirstName", "String")))));
         bare = StoreFixture.of(bareRoot, PLACEHOLDER_SDL);
         store.withJavaSource(sourceRoot, FILM_FQN, """
             public class Film {
@@ -354,10 +359,8 @@ class DeclarationDefinitionsTest {
     private static LspSchemaSnapshot snapshot() {
         Map<String, TypeBackingShape> types = Map.of(
             "FilmTable", new TypeBackingShape.TableBacking("film"),
-            "FilmRecord", new TypeBackingShape.RecordBacking(RECORD_FQN,
-                List.of(new TypeBackingShape.MemberSlot("firstName", "String", "firstName"))),
-            "FilmPojo", new TypeBackingShape.PojoBacking(POJO_FQN,
-                List.of(new TypeBackingShape.MemberSlot("firstName", "String", "getFirstName"))),
+            "FilmRecord", new TypeBackingShape.RecordBacking(RECORD_FQN),
+            "FilmPojo", new TypeBackingShape.PojoBacking(POJO_FQN),
             "FilmStd", new TypeBackingShape.JooqRecordBacking.Standalone(STD_FQN),
             "Query", new TypeBackingShape.NoBacking.Root());
         // Method-backed field classifications, one per named variant. Each takes precedence over the

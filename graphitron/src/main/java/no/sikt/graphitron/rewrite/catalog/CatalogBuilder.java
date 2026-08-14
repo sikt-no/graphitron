@@ -128,7 +128,7 @@ public final class CatalogBuilder {
         }
         var typesByName = (schema == null || catalog == null)
             ? Map.<String, TypeBackingShape>of()
-            : projectTypesByName(schema, catalog);
+            : projectTypesByName(schema);
         var payloadDataFieldByType = (schema == null)
             ? Map.<String, String>of()
             : projectPayloadDataFields(schema);
@@ -849,28 +849,26 @@ public final class CatalogBuilder {
      * Walks the lifted {@link GraphitronSchema} and projects each typed
      * variant into a {@link TypeBackingShape}. The dispatch is exhaustive on
      * the {@code GraphitronType} sealed permits, so any future variant trips
-     * a compile error here. Catalog-side data ({@link CompletionData#externalReferences})
-     * supplies the record-component / accessor-method lists; the projector
-     * itself does no class-file reading.
+     * a compile error here. Each shape names what backs the type and nothing else: what a class
+     * offers a member name is a fact about the class, which its consumers read from the store's
+     * member-slot relation, so no member list is projected here and the bean rule has one home.
      */
-    private static Map<String, TypeBackingShape> projectTypesByName(
-        GraphitronSchema schema, CompletionData catalog
-    ) {
+    private static Map<String, TypeBackingShape> projectTypesByName(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, TypeBackingShape>();
         for (var entry : schema.types().entrySet()) {
-            out.put(entry.getKey(), projectType(entry.getValue(), catalog));
+            out.put(entry.getKey(), projectType(entry.getValue()));
         }
         return Map.copyOf(out);
     }
 
-    private static TypeBackingShape projectType(GraphitronType type, CompletionData catalog) {
+    private static TypeBackingShape projectType(GraphitronType type) {
         return switch (type) {
-            case GraphitronType.JavaRecordType t -> projectRecord(t.fqClassName(), catalog);
-            case GraphitronType.JavaRecordInputType t -> projectRecord(t.fqClassName(), catalog);
-            case GraphitronType.PojoResultType.Backed t -> projectPojo(t.fqClassName(), catalog);
+            case GraphitronType.JavaRecordType t -> new TypeBackingShape.RecordBacking(t.fqClassName());
+            case GraphitronType.JavaRecordInputType t -> new TypeBackingShape.RecordBacking(t.fqClassName());
+            case GraphitronType.PojoResultType.Backed t -> new TypeBackingShape.PojoBacking(t.fqClassName());
             case GraphitronType.PojoInputType t -> t.fqClassName() == null
                 ? new TypeBackingShape.NoBacking.UnbackedResult()
-                : projectPojo(t.fqClassName(), catalog);
+                : new TypeBackingShape.PojoBacking(t.fqClassName());
             case GraphitronType.JooqRecordType t -> new TypeBackingShape.JooqRecordBacking.Standalone(t.fqClassName());
             case GraphitronType.JooqRecordInputType t -> new TypeBackingShape.JooqRecordBacking.Standalone(t.fqClassName());
             case GraphitronType.JooqTableRecordType t -> jooqRecordWithTable(t.fqClassName(), t.table());
@@ -903,50 +901,6 @@ public final class CatalogBuilder {
         return tableName == null
             ? new TypeBackingShape.JooqRecordBacking.Standalone(fqClassName)
             : new TypeBackingShape.JooqRecordBacking.WithTable(fqClassName, tableName);
-    }
-
-    private static TypeBackingShape projectRecord(String fqClassName, CompletionData catalog) {
-        var slots = catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(fqClassName))
-            .findFirst()
-            .map(r -> r.recordComponents().stream()
-                .map(rc -> new TypeBackingShape.MemberSlot(rc.name(), rc.displayType(), rc.name()))
-                .toList())
-            .orElse(List.of());
-        return new TypeBackingShape.RecordBacking(fqClassName, slots);
-    }
-
-    private static TypeBackingShape projectPojo(String fqClassName, CompletionData catalog) {
-        var ref = catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(fqClassName))
-            .findFirst();
-        if (ref.isEmpty()) {
-            return new TypeBackingShape.PojoBacking(fqClassName, List.of());
-        }
-        var accessors = new ArrayList<TypeBackingShape.MemberSlot>();
-        for (var method : ref.get().methods()) {
-            if (!method.parameters().isEmpty()) continue;
-            var slot = beanAccessorSlot(method);
-            if (slot != null) accessors.add(slot);
-        }
-        return new TypeBackingShape.PojoBacking(fqClassName, accessors);
-    }
-
-    private static TypeBackingShape.MemberSlot beanAccessorSlot(CompletionData.Method method) {
-        String name = method.name();
-        String field;
-        if (name.startsWith("get") && name.length() > 3 && Character.isUpperCase(name.charAt(3))) {
-            field = lowercaseFirst(name.substring(3));
-        } else if (name.startsWith("is") && name.length() > 2 && Character.isUpperCase(name.charAt(2))) {
-            field = lowercaseFirst(name.substring(2));
-        } else {
-            return null;
-        }
-        return new TypeBackingShape.MemberSlot(field, method.returnType(), method.name());
-    }
-
-    private static String lowercaseFirst(String s) {
-        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     /**

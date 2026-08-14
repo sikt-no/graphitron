@@ -20,6 +20,7 @@ import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -662,16 +663,17 @@ public final class Diagnostics {
                 }
             }
         }
-        // The parent's own scope, which is still the projection's to answer: a class-backed parent's
-        // member slots have no relation yet, and the arm reads one dispatch rather than two.
+        // The parent's own scope. What the parent is backed by is still the projection's to answer,
+        // the binding being a reflective walk no relation reproduces yet; what a backing then offers
+        // is the store's, whether that is a table's columns or a class's member slots.
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return;
         switch (backing) {
             case TypeBackingShape.RecordBacking r ->
-                validateMemberSlot(r.components(), memberName, "component", r.fqClassName(), valueNode, file, out);
+                validateMemberSlot(store, r.fqClassName(), memberName, valueNode, file, out);
             case TypeBackingShape.PojoBacking p ->
-                validateMemberSlot(p.accessors(), memberName, "property", p.fqClassName(), valueNode, file, out);
+                validateMemberSlot(store, p.fqClassName(), memberName, valueNode, file, out);
             case TypeBackingShape.JooqRecordBacking.WithTable j ->
                 validateColumnOnTable(catalog, j.tableName(), memberName, valueNode, file, out);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> { /* no actionable diagnostic */ }
@@ -721,16 +723,29 @@ public final class Diagnostics {
         }
     }
 
+    /**
+     * The member name must be one the backing class offers. A class the census holds nothing for is
+     * not a class with no members: it is a class nobody has compiled yet, so the arm stays silent
+     * rather than calling every name unknown mid-build.
+     *
+     * <p>The word the message uses for the member is the slots' own origin, not the permit that
+     * routed the arm here. Every slot of one class shares it, the relation choosing its arm by the
+     * class's declared form, so the first slot speaks for the class.
+     */
     private static void validateMemberSlot(
-        List<TypeBackingShape.MemberSlot> slots, String memberName, String kind,
-        String fqClassName, Node valueNode, FileSnapshot file, List<Diagnostic> out
+        Optional<StoreHandle> store, String fqClassName, String memberName,
+        Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
+        if (store.isEmpty()) return;
+        var slots = ClassMemberSlots.of(store.get(), fqClassName);
         if (slots.isEmpty()) return;
-        boolean matched = slots.stream().anyMatch(s -> s.name().equals(memberName));
-        if (!matched) {
-            out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
-                "Unknown " + kind + " '" + memberName + "' on backing class '" + fqClassName + "'."));
-        }
+        if (slots.stream().anyMatch(slot -> slot.name().equals(memberName))) return;
+        String kind = switch (slots.getFirst().origin()) {
+            case RECORD_COMPONENT -> "component";
+            case BEAN_ACCESSOR -> "property";
+        };
+        out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
+            "Unknown " + kind + " '" + memberName + "' on backing class '" + fqClassName + "'."));
     }
 
     private static void validateCatalogFk(

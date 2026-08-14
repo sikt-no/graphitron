@@ -82,10 +82,12 @@ public final class DeclarationHovers {
         var hoverDecl = toDeclarationHover(declaration);
         String classification = classificationMarkdown(built, hoverDecl);
         // The overlay shares goto-definition's binding resolution, then reads the graph's own facts
-        // about what it resolved to. No store is no overlay, leaving the classification block exactly
-        // as the classification arm renders it.
-        var target = DeclTarget.resolve(declaration, built, catalog, file.source());
-        String overlay = store.map(handle -> overlay(target, handle)).orElse("");
+        // about what it resolved to. The resolution itself needs the store now, a member name's
+        // declaration being one of those facts, so it happens inside the read; no store is still no
+        // overlay, leaving the classification block exactly as the classification arm renders it.
+        String overlay = store
+            .map(handle -> overlay(DeclTarget.resolve(declaration, built, catalog, handle, file.source()), handle))
+            .orElse("");
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
     }

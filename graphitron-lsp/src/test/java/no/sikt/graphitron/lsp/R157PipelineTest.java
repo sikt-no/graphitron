@@ -22,6 +22,7 @@ import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
 
@@ -31,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -55,6 +57,9 @@ class R157PipelineTest {
 
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
+    @TempDir
+    static Path tmp;
+
     @Test
     void recordBackedTypeSurfacesComponentsThroughSnapshot() {
         var artefacts = build("""
@@ -67,12 +72,11 @@ class R157PipelineTest {
             }
             """);
 
-        var backing = artefacts.snapshot().typesByName().get("FilmCard");
-        assertThat(backing).isInstanceOfSatisfying(TypeBackingShape.RecordBacking.class, r -> {
-            assertThat(r.fqClassName()).isEqualTo("no.sikt.graphitron.lsp.fixtures.R157FilmRecord");
-            assertThat(r.components()).extracting(TypeBackingShape.MemberSlot::name)
-                .containsExactly("filmId", "title");
-        });
+        // The projection names the class; that its components are filmId and title is the store's
+        // answer, which the completion and diagnostic legs below read.
+        assertThat(artefacts.snapshot().typesByName().get("FilmCard"))
+            .isEqualTo(new TypeBackingShape.RecordBacking(
+                "no.sikt.graphitron.lsp.fixtures.R157FilmRecord"));
 
         var completions = completionsAt(artefacts,
             "type FilmCard {\n"
@@ -102,12 +106,17 @@ class R157PipelineTest {
             }
             """);
 
-        var backing = artefacts.snapshot().typesByName().get("FilmPojoView");
-        assertThat(backing).isInstanceOfSatisfying(TypeBackingShape.PojoBacking.class, p -> {
-            assertThat(p.fqClassName()).isEqualTo("no.sikt.graphitron.lsp.fixtures.R157FilmPojo");
-            assertThat(p.accessors()).extracting(TypeBackingShape.MemberSlot::name)
-                .contains("filmId", "title");
-        });
+        assertThat(artefacts.snapshot().typesByName().get("FilmPojoView"))
+            .isEqualTo(new TypeBackingShape.PojoBacking(
+                "no.sikt.graphitron.lsp.fixtures.R157FilmPojo"));
+        // The bean rule itself is the store's; that this class's accessors reach the author as member
+        // names is what the completion leg of the record case pins, over the same census.
+        assertThat(completionsAt(artefacts,
+            "type FilmPojoView {\n"
+                + "    filmId: Int @field(name: \"\")\n"
+                + "}\n", 1))
+            .extracting(CompletionItem::getLabel)
+            .contains("filmId", "title");
     }
 
     @Test
@@ -228,19 +237,30 @@ class R157PipelineTest {
         var locOpt = vocab.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        // The member arms answer off the snapshot's backing shape and read no facts, so an empty
-        // store is both the honest stand-in and a pin: a change that routed record components
-        // through the column census would answer nothing here.
-        try (var store = no.sikt.graphitron.model.boot.GraphitronModelStore.open()) {
-            return FieldCompletions.generate(vocab,
-                new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), "R157PipelineTest"),
-                artefacts.snapshot(), context, directive, bytes);
+        // The snapshot names the backing class and the store says what it offers, so both halves of
+        // the arm come from the one scan this test ran: the projection got it as a reference list,
+        // and the store got the same list through capture.
+        try (var store = storeOver(artefacts)) {
+            return FieldCompletions.generate(
+                vocab, store.handle(), artefacts.snapshot(), context, directive, bytes);
         }
     }
 
     private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {
         var file = WorkspaceFileTestSupport.snapshot(source);
-        return Diagnostics.compute("", file, artefacts.catalog(), artefacts.snapshot(),
-            ValidationReport.empty());
+        try (var store = storeOver(artefacts)) {
+            return Diagnostics.compute(LspVocabulary.load(), "", file, artefacts.catalog(),
+                artefacts.snapshot(), ValidationReport.empty(), Optional.of(store.handle()));
+        }
+    }
+
+    /**
+     * A store holding the same class census the projection was built from. Taking the list off the
+     * catalog rather than re-scanning is what makes this one pipeline: the classifier, the projection
+     * and the store all answer about the classes this test's own scan read.
+     */
+    private static StoreFixture storeOver(Artefacts artefacts) {
+        return StoreFixture.of(tmp, "type Query { placeholder: Int }\n",
+            artefacts.catalog().externalReferences());
     }
 }

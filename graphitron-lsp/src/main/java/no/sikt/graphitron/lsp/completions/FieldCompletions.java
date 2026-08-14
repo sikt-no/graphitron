@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
@@ -32,18 +33,18 @@ import java.util.List;
  *       {@link TypeBackingShape.JooqRecordBacking} with a known table — the column census of
  *       {@code sql_column}, with the generated field's Javadoc joined in on the {@code .java}
  *       cadence.</li>
- *   <li>{@link TypeBackingShape.RecordBacking} — record-component names off
- *       the backing class's {@code Record} attribute.</li>
- *   <li>{@link TypeBackingShape.PojoBacking} — bean-accessor names off the
- *       backing class's public method set.</li>
+ *   <li>{@link TypeBackingShape.RecordBacking} or {@link TypeBackingShape.PojoBacking} — the member
+ *       slots the backing class offers, from {@link ClassMemberSlots}; which of the two permits
+ *       routed the arm here no longer decides anything, the relation choosing components or bean
+ *       accessors by the class's own declared form.</li>
  *   <li>{@link TypeBackingShape.NoBacking} or snapshot miss — empty list
  *       (matches today's "no info" behaviour).</li>
  * </ul>
  *
- * <p>Which table a site's columns come from stays a classification question, so the enclosing
- * type's backing and the field's own classification are read from the snapshot; only the column
- * census itself is a store read, and that read is {@link CatalogColumns}, shared with hover's
- * column arm.
+ * <p>Which class or table a type is backed by stays a classification question the snapshot answers,
+ * as does the field's own classification; what a backing then offers is a store read, shared with
+ * the other surfaces that ask it ({@link CatalogColumns} for a table, {@link ClassMemberSlots} for
+ * a class).
  */
 public final class FieldCompletions {
 
@@ -108,16 +109,17 @@ public final class FieldCompletions {
                 }
             }
         }
-        // The parent's own scope, which is still the projection's to answer: a class-backed parent's
-        // member slots have no relation yet, and the arm reads one dispatch rather than two.
+        // The parent's own scope. What the parent is backed by is still the projection's to answer,
+        // the binding being a reflective walk no relation reproduces yet; what a backing then offers
+        // is the store's, whether that is a table's columns or a class's member slots.
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
             return sigilItems;
         }
         var backing = built.typesByName().get(typeName);
         if (backing == null) return sigilItems;
         var rest = switch (backing) {
-            case TypeBackingShape.RecordBacking r -> memberSlotItems(r.components(), context);
-            case TypeBackingShape.PojoBacking p -> memberSlotItems(p.accessors(), context);
+            case TypeBackingShape.RecordBacking r -> memberSlotItems(store, r.fqClassName(), context);
+            case TypeBackingShape.PojoBacking p -> memberSlotItems(store, p.fqClassName(), context);
             case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(store, j.tableName(), context);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.<CompletionItem>of();
             case TypeBackingShape.TableBacking t -> tableColumnItems(store, t.tableName(), context);
@@ -178,10 +180,17 @@ public final class FieldCompletions {
         return items;
     }
 
+    /**
+     * The member names the backing class offers, by name. The bean rule that decides what a
+     * non-record class offers is the relation's, so this arm no longer depends on which of the two
+     * class permits routed it here.
+     */
     private static List<CompletionItem> memberSlotItems(
-        List<TypeBackingShape.MemberSlot> slots, CompletionContext context
+        StoreHandle store, String fqClassName, CompletionContext context
     ) {
-        return slots.stream().map(s -> toMemberSlotItem(s, context)).toList();
+        return ClassMemberSlots.of(store, fqClassName).stream()
+            .map(slot -> toMemberSlotItem(slot, context))
+            .toList();
     }
 
     /**
@@ -206,7 +215,9 @@ public final class FieldCompletions {
         return item;
     }
 
-    private static CompletionItem toMemberSlotItem(TypeBackingShape.MemberSlot slot, CompletionContext context) {
+    private static CompletionItem toMemberSlotItem(
+        ClassMemberSlots.Slot slot, CompletionContext context
+    ) {
         return CompletionItems.replacing(
             slot.name(), CompletionItemKind.Field, context.replaceRange(), slot.displayType());
     }

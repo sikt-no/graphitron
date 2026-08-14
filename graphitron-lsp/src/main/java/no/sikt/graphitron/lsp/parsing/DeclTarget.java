@@ -1,12 +1,13 @@
 package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
+import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -57,13 +58,16 @@ public sealed interface DeclTarget {
 
     /**
      * Resolves the declaration {@code declaration} binds to against the backing
-     * projection on {@code built} and the catalog. The only tree-sitter-bound step
+     * projection on {@code built}, the catalog, and the store. The only tree-sitter-bound step
      * is reading a field's {@code @field(name:)} override off its node; the backing
-     * switch itself is the pure {@link #ofType} / {@link #ofField} core, so the
-     * source-index read is left to the per-consumer projection.
+     * switch itself is the {@link #ofType} / {@link #ofField} core, so the
+     * source-index read is left to the per-consumer projection. The store answers what a
+     * class-backed type's members are, which is what decides whether a member name resolves to a
+     * field or to a method; where the declaration <em>is</em> is still the consumer's own read.
      */
     static DeclTarget resolve(
-        SdlDeclaration declaration, LspSchemaSnapshot.Built built, CompletionData catalog, byte[] source
+        SdlDeclaration declaration, LspSchemaSnapshot.Built built, CompletionData catalog,
+        StoreHandle store, byte[] source
     ) {
         return switch (declaration) {
             case SdlDeclaration.TypeName t -> ofType(t.typeName(), built, catalog);
@@ -75,7 +79,7 @@ public sealed interface DeclTarget {
                 String memberName = fieldDef == null
                     ? f.fieldName()
                     : effectiveMemberName(fieldDef, f.fieldName(), source);
-                yield ofField(f.parentTypeName(), memberName, built, catalog);
+                yield ofField(f.parentTypeName(), memberName, built, catalog, store);
             }
         };
     }
@@ -97,12 +101,14 @@ public sealed interface DeclTarget {
     }
 
     /**
-     * Pure resolver core for a field-name coordinate, given the already-resolved
+     * Resolver core for a field-name coordinate, given the already-resolved
      * member name ({@code @field(name:)} override or SDL field name). No
-     * tree-sitter, no source index.
+     * tree-sitter, no source index; the store read is the member-slot relation, which names the
+     * declaration a member binds to without saying where it is written.
      */
     static DeclTarget ofField(
-        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, CompletionData catalog
+        String parentTypeName, String memberName, LspSchemaSnapshot.Built built,
+        CompletionData catalog, StoreHandle store
     ) {
         // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
@@ -114,8 +120,8 @@ public sealed interface DeclTarget {
         return switch (shapeOpt.get()) {
             case TypeBackingShape.TableBacking t -> columnTarget(t.tableName(), memberName, catalog);
             case TypeBackingShape.JooqRecordBacking.WithTable j -> columnTarget(j.tableName(), memberName, catalog);
-            case TypeBackingShape.PojoBacking p -> accessorTarget(p.accessors(), p.fqClassName(), memberName);
-            case TypeBackingShape.RecordBacking r -> componentTarget(r.components(), r.fqClassName(), memberName);
+            case TypeBackingShape.PojoBacking p -> memberTarget(store, p.fqClassName(), memberName);
+            case TypeBackingShape.RecordBacking r -> memberTarget(store, r.fqClassName(), memberName);
             // A standalone jOOQ record has no table (no column join) and no
             // member-key projection, so a field cursor degrades to the backing
             // class, the same target as its type name.
@@ -193,23 +199,18 @@ public sealed interface DeclTarget {
             .orElseGet(None::new);
     }
 
-    private static DeclTarget accessorTarget(
-        List<TypeBackingShape.MemberSlot> accessors, String fqClassName, String memberName
-    ) {
-        return accessors.stream()
-            .filter(s -> s.name().equals(memberName))
-            .findFirst()
-            .<DeclTarget>map(s -> new SourceMethod(fqClassName, s.accessorMethodName(), 0))
-            .orElseGet(None::new);
-    }
-
-    private static DeclTarget componentTarget(
-        List<TypeBackingShape.MemberSlot> components, String fqClassName, String memberName
-    ) {
-        return components.stream()
-            .filter(s -> s.name().equals(memberName))
-            .findFirst()
-            .<DeclTarget>map(s -> new SourceField(fqClassName, s.name()))
+    /**
+     * The declaration behind a member name on a class-backed type. Which of the two it is follows the
+     * slot the store answered with rather than the permit that routed the arm here: a record
+     * component is written as a field, a bean accessor as a method, and the relation says which kind
+     * the name came from. A name the class offers no slot for resolves to no target, as before.
+     */
+    private static DeclTarget memberTarget(StoreHandle store, String fqClassName, String memberName) {
+        return ClassMemberSlots.named(store, fqClassName, memberName)
+            .<DeclTarget>map(slot -> switch (slot.origin()) {
+                case RECORD_COMPONENT -> new SourceField(fqClassName, slot.name());
+                case BEAN_ACCESSOR -> new SourceMethod(fqClassName, slot.accessorMethodName(), 0);
+            })
             .orElseGet(None::new);
     }
 

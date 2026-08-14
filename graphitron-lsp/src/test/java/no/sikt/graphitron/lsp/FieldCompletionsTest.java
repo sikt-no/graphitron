@@ -37,6 +37,10 @@ class FieldCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
+    /** The captured census's record and POJO, whose members the class-backed arms resolve against. */
+    private static final String RECORD_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
+    private static final String POJO_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmPojo";
+
     @TempDir
     static Path sharedDirectory;
 
@@ -44,7 +48,8 @@ class FieldCompletionsTest {
 
     @BeforeAll
     static void captureTheCatalog() {
-        STORE = StoreFixture.ofCatalog(sharedDirectory, "type Query { placeholder: Int }\n");
+        STORE = StoreFixture.ofCatalog(sharedDirectory, "type Query { placeholder: Int }\n",
+            StoreFixture.backingClasses());
     }
 
     @AfterAll
@@ -174,6 +179,11 @@ class FieldCompletionsTest {
             .contains("LANGUAGE_ID");
     }
 
+    /**
+     * The snapshot names the backing class and the store answers what it offers, which is why the
+     * permit's own slot list is empty here: the arm no longer reads it. The class is a real fixture
+     * in the captured census, so the candidates are the components a compiler recorded.
+     */
     @Test
     void recordBackingCompletionReturnsRecordComponents() {
         // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
@@ -189,10 +199,7 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("FilmInput", new TypeBackingShape.RecordBacking("com.example.FilmDto", List.of(
-                new TypeBackingShape.MemberSlot("filmId", "Integer", "filmId"),
-                new TypeBackingShape.MemberSlot("title", "String", "title")
-            ))),
+            Map.of("FilmInput", new TypeBackingShape.RecordBacking(RECORD_FIXTURE)),
         Map.of());
         var items = run(STORE.handle(), snapshot, source, cursor);
 
@@ -213,10 +220,7 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("FilmPojo", new TypeBackingShape.PojoBacking("com.example.FilmPojo", List.of(
-                new TypeBackingShape.MemberSlot("filmId", "Integer", "getFilmId"),
-                new TypeBackingShape.MemberSlot("title", "String", "getTitle")
-            ))),
+            Map.of("FilmPojo", new TypeBackingShape.PojoBacking(POJO_FIXTURE)),
         Map.of());
         var items = run(STORE.handle(), snapshot, source, cursor);
 

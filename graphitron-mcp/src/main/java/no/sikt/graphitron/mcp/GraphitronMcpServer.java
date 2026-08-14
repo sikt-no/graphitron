@@ -207,7 +207,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             statusTool(workspace),
             catalogTablesTool(workspace), catalogDescribeTool(workspace),
             servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
-            schemaTool(workspace), diagnosticsTool(workspace, storeHandle),
+            schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
             diagnosticsAggregateTool(workspace, storeHandle), edgesTool(workspace),
             docsSearchTool.specification(), catalogSearchTool()));
         if (executeConfig != null) {
@@ -645,9 +645,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * {@code schema}: the current SDL types, their classifications, backing shapes, field
      * classifications, and definition locations off {@link Workspace#snapshot()}, joined with
      * {@code @node} metadata off {@link Workspace#catalog()} (same build cadence). Both reads are
-     * live on every call.
+     * live on every call. The session's {@link StoreHandle} answers one field the projection no
+     * longer carries: what a class-backed type's members are, which is a fact about a class on the
+     * classpath rather than about this snapshot.
      */
-    private static McpServerFeatures.SyncToolSpecification schemaTool(Workspace workspace) {
+    private static McpServerFeatures.SyncToolSpecification schemaTool(
+        Workspace workspace, StoreHandle storeHandle
+    ) {
         var tool = McpSchema.Tool.builder("schema", Map.of(
                 "type", "object",
                 "properties", Map.of(
@@ -667,7 +671,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
             .callHandler((exchange, request) -> SchemaView.schemaResult(
-                workspace.snapshot(), workspace.catalog().nodeMetadata(), request.arguments()))
+                workspace.snapshot(), workspace.catalog().nodeMetadata(), storeHandle,
+                request.arguments()))
             .build();
     }
 

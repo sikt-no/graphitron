@@ -162,67 +162,39 @@ class CatalogBuilderSnapshotTest {
                 t -> assertThat(t.tableName()).isEqualTo("film"));
     }
 
+    /**
+     * The shape names the backing class and nothing else. What the class offers a member name is a
+     * fact about the class, so the components no longer ride the projection and the rule that reads
+     * them is pinned where it lives, over real classfiles, by
+     * {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotTest}.
+     */
     @Test
-    void javaRecordTypeProjectsToRecordBackingFromExternalReferences() {
+    void javaRecordTypeProjectsToRecordBackingNamingTheClass() {
         var registry = new SchemaParser().parse("type Query { x: Int }");
         var schema = schemaOf("FilmCard",
             new GraphitronType.JavaRecordType("FilmCard", SourceLocation.EMPTY, "com.example.FilmCard"));
-        var catalog = new CompletionData(
-            List.of(), List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmCard", "com.example.FilmCard", "", List.of(),
-                List.of(
-                    new CompletionData.RecordComponent("filmId", "Integer"),
-                    new CompletionData.RecordComponent("title", "String")
-                )
-            )),
-            Map.of()
-        );
 
-        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, catalog);
+        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
 
         assertThat(snapshot.typesByName().get("FilmCard"))
-            .isInstanceOfSatisfying(TypeBackingShape.RecordBacking.class, r -> {
-                assertThat(r.fqClassName()).isEqualTo("com.example.FilmCard");
-                assertThat(r.components()).extracting(TypeBackingShape.MemberSlot::name)
-                    .containsExactly("filmId", "title");
-            });
+            .isEqualTo(new TypeBackingShape.RecordBacking("com.example.FilmCard"));
     }
 
+    /**
+     * The same for a plain class, and the same reason: the bean rule that turns its public methods
+     * into member names is the member-slot relation's, not this projection's, so no classpath census
+     * is needed to project the shape at all.
+     */
     @Test
-    void pojoResultTypeBackedProjectsToPojoBackingWithBeanAccessors() {
+    void pojoResultTypeBackedProjectsToPojoBackingNamingTheClass() {
         var registry = new SchemaParser().parse("type Query { x: Int }");
         var schema = schemaOf("FilmDto",
             new GraphitronType.PojoResultType.Backed("FilmDto", SourceLocation.EMPTY, "com.example.FilmDto"));
-        var catalog = new CompletionData(
-            List.of(), List.of(),
-            List.of(new CompletionData.ExternalReference(
-                "com.example.FilmDto", "com.example.FilmDto", "",
-                List.of(
-                    new CompletionData.Method("getFilmId", "Integer", "", List.of()),
-                    new CompletionData.Method("getTitle", "String", "", List.of()),
-                    new CompletionData.Method("isAvailable", "boolean", "", List.of()),
-                    // Not a bean accessor — filtered out:
-                    new CompletionData.Method("setFilmId",  "void", "",
-                        List.of(new CompletionData.Parameter("id", "Integer", null, ""))),
-                    new CompletionData.Method("toString", "String", "", List.of()),
-                    // Bean-shape but argful — filtered out:
-                    new CompletionData.Method("getOption", "String", "",
-                        List.of(new CompletionData.Parameter("k", "String", null, "")))
-                ),
-                List.of()
-            )),
-            Map.of()
-        );
 
-        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, catalog);
+        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
 
         assertThat(snapshot.typesByName().get("FilmDto"))
-            .isInstanceOfSatisfying(TypeBackingShape.PojoBacking.class, p -> {
-                assertThat(p.fqClassName()).isEqualTo("com.example.FilmDto");
-                assertThat(p.accessors()).extracting(TypeBackingShape.MemberSlot::name)
-                    .containsExactly("filmId", "title", "available");
-            });
+            .isEqualTo(new TypeBackingShape.PojoBacking("com.example.FilmDto"));
     }
 
     @Test

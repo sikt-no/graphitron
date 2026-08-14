@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
+import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
@@ -18,6 +19,7 @@ import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -52,6 +54,12 @@ final class StoreFixture implements AutoCloseable {
      * twice inside a single schema on two tables.
      */
     private static final String MULTI_SCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
+
+    /** The package holding the record and POJO the class-backed member arms resolve against. */
+    private static final String FIXTURE_PACKAGE = "no.sikt.graphitron.lsp.fixtures.";
+
+    /** Scanned once; see {@link #backingClasses()}. */
+    private static List<CompletionData.ExternalReference> backingClassCensus;
 
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
@@ -122,6 +130,30 @@ final class StoreFixture implements AutoCloseable {
         var store = GraphitronModelStore.open();
         capture(store, file, directory, graphName, classpath);
         return new StoreFixture(store, graphName, file, directory);
+    }
+
+    /**
+     * The census of the backing-class fixtures in {@code no.sikt.graphitron.lsp.fixtures}, as a real
+     * classfile scan produced it. The arms that resolve a member name on a class-backed type read the
+     * store's own rule over this census, and that rule reads a class's declared form, so a hand-built
+     * reference could hand it a record whose classfile says otherwise. Scanned once per JVM: the scan
+     * reads every class this module compiled, and the answer does not change between tests.
+     */
+    static synchronized List<CompletionData.ExternalReference> backingClasses() {
+        if (backingClassCensus == null) {
+            backingClassCensus = ClasspathScanner.scan(testClassesRoot(), JOOQ_PACKAGE).stream()
+                .filter(reference -> reference.className().startsWith(FIXTURE_PACKAGE))
+                .toList();
+        }
+        return backingClassCensus;
+    }
+
+    private static Path testClassesRoot() {
+        try {
+            return Path.of(StoreFixture.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("test classes root is not a file path", e);
+        }
     }
 
     /** Captures a second graph, over a schema file of its own, into this same store. */
@@ -273,6 +305,24 @@ final class StoreFixture implements AutoCloseable {
         return new CompletionData.ExternalReference(
             className.substring(className.lastIndexOf('.') + 1), className, "",
             methods, List.of(), scalarConstants, "CLASS", sourceName);
+    }
+
+    /**
+     * A record class the scan found inside a jar, named by its components. Its declared form is what
+     * decides whether a member name resolves against components or against bean accessors, so a
+     * fixture standing in for a record has to say so.
+     */
+    static CompletionData.ExternalReference jarRecord(
+        String className, CompletionData.RecordComponent... components
+    ) {
+        return new CompletionData.ExternalReference(
+            className.substring(className.lastIndexOf('.') + 1), className, "",
+            List.of(), List.of(components), List.of(), "RECORD", "/nonexistent/lib.jar");
+    }
+
+    /** One record component: the name an author writes, and the type a hover renders. */
+    static CompletionData.RecordComponent component(String name, String displayType) {
+        return new CompletionData.RecordComponent(name, displayType);
     }
 
     /** A method whose descriptor is synthesised from its parameter types, enough to key it apart. */

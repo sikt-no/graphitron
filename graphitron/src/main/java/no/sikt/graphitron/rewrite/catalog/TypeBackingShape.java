@@ -1,15 +1,14 @@
 package no.sikt.graphitron.rewrite.catalog;
 
-import java.util.List;
-
 /**
  * LSP-facing projection of a {@link no.sikt.graphitron.rewrite.model.GraphitronType}'s
  * backing shape: what the {@code @field(name:)} validator and completion arm
  * resolves the SDL author's component name against. Carried alongside
  * {@link DirectiveShape} on {@link LspSchemaSnapshot.Built}.
  *
- * <p>Five permits, one per distinguishable downstream behaviour; each permit's javadoc
- * describes its member projection and lookup path.
+ * <p>Five permits, one per distinguishable downstream behaviour. Each names what backs the type and
+ * nothing more: what a backing then offers a member name is a fact about a class or a table, read
+ * from the store by whoever asks, so no permit carries a projected member list.
  */
 public sealed interface TypeBackingShape
     permits TypeBackingShape.RecordBacking,
@@ -19,46 +18,21 @@ public sealed interface TypeBackingShape
             TypeBackingShape.NoBacking {
 
     /**
-     * One member of a record- or POJO-backed type. {@code name} is the
-     * component / accessor name the SDL author writes into
-     * {@code @field(name:)}; {@code displayType} is the rendered Java type
-     * (e.g. {@code "String"}, {@code "Integer"}, {@code "List<String>"}) used
-     * in hover output; {@code accessorMethodName} is the arity-0 Java accessor
-     * the member resolves to in source.
-     *
-     * <p>{@code name} and {@code accessorMethodName} coincide for record
-     * components but diverge for POJO bean accessors: {@code getFirstName()}
-     * projects to {@code name = "firstName"} with
-     * {@code accessorMethodName = "getFirstName"}. Goto-definition is the only
-     * consumer of {@code accessorMethodName}; completion / hover / diagnostic
-     * arms read only {@code name} / {@code displayType}. The split is projected
-     * here rather than re-derived by the LSP from {@code name}, so the bean rule
-     * has exactly one home ({@link CatalogBuilder}).
+     * Type backed by a Java {@code record} class, named by its binary class name. What the class
+     * offers a member name is not carried here: the record's components are a fact about the class,
+     * which the store answers from the classpath census (the {@code intent_class_member_slot}
+     * relation), so a consumer holding this name reads them there rather than off a list projected
+     * per build.
      */
-    record MemberSlot(String name, String displayType, String accessorMethodName) {}
+    record RecordBacking(String fqClassName) implements TypeBackingShape {}
 
     /**
-     * Type backed by a Java {@code record} class. {@code fqClassName} is the
-     * binary class name; {@code components} is the record's component list in
-     * declaration order.
+     * Type backed by a plain Java class, named by its binary class name. Its members are the bean
+     * accessors the store's member-slot relation derives from the census, on the same terms as
+     * {@link RecordBacking}'s components; the bean rule itself lives in that relation and nowhere
+     * else.
      */
-    record RecordBacking(String fqClassName, List<MemberSlot> components) implements TypeBackingShape {
-        public RecordBacking {
-            components = List.copyOf(components);
-        }
-    }
-
-    /**
-     * Type backed by a plain Java class. {@code accessors} is the bean-shape
-     * projection of the public method set: each {@code get<X>} / {@code is<X>}
-     * no-arg method yields a slot named {@code x} (first letter lowercased) of
-     * the method's return type.
-     */
-    record PojoBacking(String fqClassName, List<MemberSlot> accessors) implements TypeBackingShape {
-        public PojoBacking {
-            accessors = List.copyOf(accessors);
-        }
-    }
+    record PojoBacking(String fqClassName) implements TypeBackingShape {}
 
     /**
      * Type backed by a jOOQ {@code Record<?>} subclass. Sealed over whether

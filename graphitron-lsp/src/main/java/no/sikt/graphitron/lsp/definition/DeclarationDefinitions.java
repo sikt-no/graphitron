@@ -61,7 +61,7 @@ public final class DeclarationDefinitions {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, file.source()), store);
+        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, store, file.source()), store);
     }
 
     /**

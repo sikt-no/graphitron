@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -63,14 +64,20 @@ class HoversTest {
      */
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, SDL, List.of(
-            StoreFixture.jarClass(SERVICE, List.of(
-                StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
-                StoreFixture.method("raw", "List", StoreFixture.parameter(null, "int")),
-                StoreFixture.method("page", "Object", StoreFixture.parameter("film", "Object")),
-                StoreFixture.method("page", "Object",
-                    StoreFixture.parameter("film", "Object"), StoreFixture.parameter("limit", "int")))),
-            StoreFixture.jarClass("com.example.FooDto", List.of())));
+        // The hand-built references stand in for a consumer's jar; the scanned ones are the
+        // backing-class fixtures, whose member slots the store's own rule reads off a real
+        // classfile's declared form rather than off a list a fixture wrote.
+        store = StoreFixture.ofCatalog(tmp, SDL, Stream.concat(
+            Stream.of(
+                StoreFixture.jarClass(SERVICE, List.of(
+                    StoreFixture.method("list", "List", StoreFixture.parameter("limit", "int")),
+                    StoreFixture.method("raw", "List", StoreFixture.parameter(null, "int")),
+                    StoreFixture.method("page", "Object", StoreFixture.parameter("film", "Object")),
+                    StoreFixture.method("page", "Object",
+                        StoreFixture.parameter("film", "Object"),
+                        StoreFixture.parameter("limit", "int")))),
+                StoreFixture.jarClass("com.example.FooDto", List.of())),
+            StoreFixture.backingClasses().stream()).toList());
         // A second graph over a schema of its own: it captured the same bundled directive
         // definitions and none of this graph's classes, which is what a sibling module looks like.
         store.andGraph(tmp, OTHER_GRAPH, "type Query { placeholder: Int }\n", List.of());
@@ -218,10 +225,35 @@ class HoversTest {
         assertThat(markdownAt(file, stale, pos)).contains("**Column** `title` on `film`");
     }
 
+    /**
+     * The parent's record-backing comes from the snapshot's name-keyed projection, not from any SDL
+     * directive, so the member hover resolves without an applied {@code @record}. What the class
+     * offers is the census's, so the rendered type is the one a compiler recorded for the component
+     * rather than one this fixture chose; the permit's own slot list is empty because the arm no
+     * longer reads it.
+     */
     @Test
     void fieldHoverOnRecordBackingShowsComponentMetadata() {
-        // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
-        // from any SDL directive, so the member hover resolves without an applied @record.
+        var file = file("""
+            input FilmInput {
+                bar: Int @field(name: "title")
+            }
+            """);
+        var pos = pointAt(file, 1, "title");
+        var snapshot = recordBackedFilmInput();
+
+        var md = markdownAt(file, snapshot, pos);
+
+        assertThat(md).contains("**title**").contains("`String`");
+    }
+
+    /**
+     * Without a store the member hover renders nothing, which is the same posture every other
+     * census-backed arm takes: the class's members are a fact, and a surface with no access to the
+     * facts declines rather than guessing from the projection that named the class.
+     */
+    @Test
+    void fieldHoverOnRecordBackingIsSilentWithoutAStore() {
         var file = file("""
             input FilmInput {
                 bar: Int @field(name: "title")
@@ -229,18 +261,15 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
+        assertThat(hoverWithoutStore(file, recordBackedFilmInput(), pos)).isEmpty();
+    }
+
+    /** A type the projection binds to the fixture record, whose members the census answers for. */
+    private static LspSchemaSnapshot.Built.Current recordBackedFilmInput() {
+        return new LspSchemaSnapshot.Built.Current(
             List.of(),
-            java.util.Map.of("FilmInput", new TypeBackingShape.RecordBacking(
-                "com.example.FilmDto",
-                List.of(new TypeBackingShape.MemberSlot("title", "String", "title"))
-            )),
-        Map.of());
-        // No store: a record-backed member is the classification snapshot's own answer, and the
-        // arm must not fall silent for want of a census it does not read.
-        var hover = hoverWithoutStore(file, snapshot, pos).orElseThrow();
-        var md = hover.getContents().getRight().getValue();
-        assertThat(md).contains("**title**").contains("`String`");
+            java.util.Map.of("FilmInput", new TypeBackingShape.RecordBacking("no.sikt.graphitron.lsp.fixtures.R157FilmRecord")),
+            Map.of());
     }
 
     @Test

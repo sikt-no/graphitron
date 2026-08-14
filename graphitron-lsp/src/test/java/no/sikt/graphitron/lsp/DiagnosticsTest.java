@@ -115,26 +115,20 @@ class DiagnosticsTest {
     void unknownRecordComponentProducesError() {
         // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
         // from any SDL directive, so the @field member validation fires without an applied @record.
+        // What the class offers is the census's, so the accept line is the compiler's record header
+        // rather than a list this fixture wrote, and the word the message uses for the member comes
+        // from the arm the relation chose for the class.
         var file = file("""
             input FilmInput {
                 bar: Int @field(name: "TYPO")
             }
             """);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
-                "com.example.FilmDto",
-                java.util.List.of(
-                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("filmId", "Integer", "filmId"),
-                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String", "title")
-                )
-            )),
-        Map.of());
-        var diags = compute(file, filmCatalog(), snapshot);
+        var diags = computeWithBackingClasses(file, filmCatalog(), recordBackedFilmInput());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("TYPO").contains("component").contains("com.example.FilmDto");
+        assertThat(diags.get(0).getMessage())
+            .contains("TYPO").contains("component").contains(RECORD_FIXTURE);
     }
 
     @Test
@@ -145,16 +139,18 @@ class DiagnosticsTest {
             }
             """);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
-                "com.example.FilmDto",
-                java.util.List.of(new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String", "title"))
-            )),
-        Map.of());
-        var diags = compute(file, filmCatalog(), snapshot);
+        var diags = computeWithBackingClasses(file, filmCatalog(), recordBackedFilmInput());
 
         assertThat(diags).isEmpty();
+    }
+
+    /** A type the projection binds to the fixture record, whose members the census answers for. */
+    private static LspSchemaSnapshot recordBackedFilmInput() {
+        return new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("FilmInput",
+                new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(RECORD_FIXTURE)),
+            Map.of());
     }
 
     private static LspSchemaSnapshot fooTableBacking(String tableName) {
@@ -229,8 +225,7 @@ class DiagnosticsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             java.util.List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
-                "com.example.FooDto", java.util.List.of())),
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking("com.example.FooDto")),
             java.util.Map.of()
         );
         var diags = compute(file, filmCatalog(), snapshot);
@@ -1236,6 +1231,21 @@ class DiagnosticsTest {
     }
 
     /**
+     * The store-bearing form for a snapshot the caller built, over a store holding the
+     * backing-class census. A class-backed member arm needs both: the projection names the class,
+     * and the store says what it offers.
+     */
+    private List<org.eclipse.lsp4j.Diagnostic> computeWithBackingClasses(
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot
+    ) {
+        try (var fixture = StoreFixture.ofCatalog(
+            tmp, "type Query { placeholder: Int }\n", StoreFixture.backingClasses())) {
+            return Diagnostics.compute(LspVocabulary.load(), "", file, catalog, snapshot,
+                ValidationReport.empty(), java.util.Optional.of(fixture.handle()));
+        }
+    }
+
+    /**
      * Runs the walk against a store that captured this very document, with no projection behind it.
      * The column arm resolves a site's scope from the facts of the schema the directive sits in, so a
      * case about that resolution captures the schema it is validating rather than describing it twice.
@@ -1249,6 +1259,9 @@ class DiagnosticsTest {
                 ValidationReport.empty(), java.util.Optional.of(fixture.handle()));
         }
     }
+
+    /** The census's record, whose components the class-backed member cases resolve against. */
+    private static final String RECORD_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
 
     private static CompletionData filmCatalog() {
         var film = new CompletionData.Table(

@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.hover;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
+import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.facts.SdlDescriptions;
@@ -423,14 +424,17 @@ public final class Hovers {
                 }
             }
         }
-        // The parent's own scope, which is still the projection's to answer: a class-backed parent's
-        // member slots have no relation yet, and the arm reads one dispatch rather than two.
+        // The parent's own scope. What the parent is backed by is still the projection's to answer,
+        // the binding being a reflective walk no relation reproduces yet; what a backing then offers
+        // is the store's, whether that is a table's columns or a class's member slots.
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return Optional.empty();
         return switch (backing) {
-            case TypeBackingShape.RecordBacking r -> slotHover(r.components(), memberName, file, valueNode);
-            case TypeBackingShape.PojoBacking p -> slotHover(p.accessors(), memberName, file, valueNode);
+            case TypeBackingShape.RecordBacking r ->
+                slotHover(store, r.fqClassName(), memberName, file, valueNode);
+            case TypeBackingShape.PojoBacking p ->
+                slotHover(store, p.fqClassName(), memberName, file, valueNode);
             case TypeBackingShape.JooqRecordBacking.WithTable j ->
                 tableColumnHover(store, j.tableName(), memberName, file, valueNode);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> Optional.empty();
@@ -476,12 +480,16 @@ public final class Hovers {
             : Optional.of(hover(file, valueNode, formatColumn(tableName, matches)));
     }
 
+    /**
+     * The named member of a backing class, under the one spelling the classifier would accept. The
+     * slot's own type is what the hover renders, and the class's declared form decides whether the
+     * name came from a component or an accessor, both of which the relation settles.
+     */
     private static Optional<Hover> slotHover(
-        List<TypeBackingShape.MemberSlot> slots, String memberName, FileSnapshot file, Node valueNode
+        Optional<StoreHandle> store, String fqClassName, String memberName,
+        FileSnapshot file, Node valueNode
     ) {
-        return slots.stream()
-            .filter(s -> s.name().equals(memberName))
-            .findFirst()
+        return store.flatMap(handle -> ClassMemberSlots.named(handle, fqClassName, memberName))
             .map(slot -> hover(file, valueNode, "**" + slot.name() + "**: `" + slot.displayType() + "`"));
     }
 

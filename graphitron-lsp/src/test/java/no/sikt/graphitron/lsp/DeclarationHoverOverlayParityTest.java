@@ -67,32 +67,43 @@ class DeclarationHoverOverlayParityTest {
         assertThat(DeclTarget.ofType("Unknown", built, catalog)).isInstanceOf(DeclTarget.None.class);
     }
 
+    /**
+     * The class-backed arms read the store: which of a record's components or a class's accessors a
+     * member name resolves to, and therefore whether the declaration behind it is a field or a
+     * method, is the member-slot relation's answer rather than the permit's.
+     */
     @Test
-    void fieldNameResolvesPerBacking() {
+    void fieldNameResolvesPerBacking(@TempDir Path root) {
         var catalog = catalog();
         var built = built();
-        // Case-insensitive column match yields the canonical (uppercase) column name.
-        assertThat(DeclTarget.ofField("Film", "title", built, catalog))
-            .isEqualTo(new DeclTarget.CatalogColumn("film", FILM_CLASS, "TITLE"));
-        // A standalone-jOOQ field degrades to its backing class, where goto jumps.
-        assertThat(DeclTarget.ofField("Standalone", "anything", built, catalog))
-            .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
-        // Record component and POJO accessor field arms.
-        assertThat(DeclTarget.ofField("Person", "firstName", built, catalog))
-            .isEqualTo(new DeclTarget.SourceField(RECORD_CLASS, "firstName"));
-        assertThat(DeclTarget.ofField("PersonPojo", "firstName", built, catalog))
-            .isEqualTo(new DeclTarget.SourceMethod(POJO_CLASS, "getFirstName", 0));
-        // A method-backed (@service) field name resolves to its bound method, with
-        // the arity read off the catalog, taking precedence over the parent backing.
-        assertThat(DeclTarget.ofField("Priced", "price", built, catalog))
-            .isEqualTo(new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1));
-        // Unknown column / unknown member / no backing all yield no target.
-        assertThat(DeclTarget.ofField("Film", "no_such_column", built, catalog))
-            .isInstanceOf(DeclTarget.None.class);
-        assertThat(DeclTarget.ofField("Person", "noSuchMember", built, catalog))
-            .isInstanceOf(DeclTarget.None.class);
-        assertThat(DeclTarget.ofField("Query", "whatever", built, catalog))
-            .isInstanceOf(DeclTarget.None.class);
+        try (var store = StoreFixture.of(root, PLACEHOLDER_SDL, List.of(
+            StoreFixture.jarRecord(RECORD_CLASS, StoreFixture.component("firstName", "String")),
+            StoreFixture.jarClass(POJO_CLASS, List.of(
+                StoreFixture.method("getFirstName", "String")))))) {
+            var handle = store.handle();
+            // Case-insensitive column match yields the canonical (uppercase) column name.
+            assertThat(DeclTarget.ofField("Film", "title", built, catalog, handle))
+                .isEqualTo(new DeclTarget.CatalogColumn("film", FILM_CLASS, "TITLE"));
+            // A standalone-jOOQ field degrades to its backing class, where goto jumps.
+            assertThat(DeclTarget.ofField("Standalone", "anything", built, catalog, handle))
+                .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
+            // Record component and POJO accessor field arms.
+            assertThat(DeclTarget.ofField("Person", "firstName", built, catalog, handle))
+                .isEqualTo(new DeclTarget.SourceField(RECORD_CLASS, "firstName"));
+            assertThat(DeclTarget.ofField("PersonPojo", "firstName", built, catalog, handle))
+                .isEqualTo(new DeclTarget.SourceMethod(POJO_CLASS, "getFirstName", 0));
+            // A method-backed (@service) field name resolves to its bound method, with
+            // the arity read off the catalog, taking precedence over the parent backing.
+            assertThat(DeclTarget.ofField("Priced", "price", built, catalog, handle))
+                .isEqualTo(new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1));
+            // Unknown column / unknown member / no backing all yield no target.
+            assertThat(DeclTarget.ofField("Film", "no_such_column", built, catalog, handle))
+                .isInstanceOf(DeclTarget.None.class);
+            assertThat(DeclTarget.ofField("Person", "noSuchMember", built, catalog, handle))
+                .isInstanceOf(DeclTarget.None.class);
+            assertThat(DeclTarget.ofField("Query", "whatever", built, catalog, handle))
+                .isInstanceOf(DeclTarget.None.class);
+        }
     }
 
     // ===== overlay: named declaration -> the text the store holds for it =====
@@ -295,10 +306,8 @@ class DeclarationHoverOverlayParityTest {
         Map<String, TypeBackingShape> backings = Map.of(
             "Film", new TypeBackingShape.TableBacking("film"),
             "Standalone", new TypeBackingShape.JooqRecordBacking.Standalone(STANDALONE_CLASS),
-            "Person", new TypeBackingShape.RecordBacking(
-                RECORD_CLASS, List.of(new TypeBackingShape.MemberSlot("firstName", "String", "firstName"))),
-            "PersonPojo", new TypeBackingShape.PojoBacking(
-                POJO_CLASS, List.of(new TypeBackingShape.MemberSlot("firstName", "String", "getFirstName"))),
+            "Person", new TypeBackingShape.RecordBacking(RECORD_CLASS),
+            "PersonPojo", new TypeBackingShape.PojoBacking(POJO_CLASS),
             "Query", new TypeBackingShape.NoBacking.Root());
         // "Priced.price" is a field-level @service field; its classification names the
         // bound method, which the field-name resolution prefers over any backing.

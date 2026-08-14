@@ -129,6 +129,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
  *       is what the relation claims;
+ *       {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotTest} binds
+ *       {@code intent_class_member_slot}, the member names a backing class offers, over a real
+ *       classfile scan of its own fixtures rather than seeded census rows, because a rule that
+ *       reads a class's declared form cannot be pinned against a fixture that declares its own;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
@@ -225,6 +229,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
+        registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);

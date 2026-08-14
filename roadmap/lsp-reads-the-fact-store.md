@@ -429,7 +429,7 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `ClassNameBinding` | `ClassNameCompletions` | `jvm_class` |
 | `MethodNameBinding` | `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
 | `CatalogTableBinding` | `TableCompletions` | `sql_table` |
-| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table`. The parent's own scope still falls through to the backing projection, whose member-slot arms wait on `intent_type_backing_class` |
+| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table`; a class-backed parent's members via `intent_class_member_slot`. Which class or table backs the parent still comes from the projection, that binding being the one piece with no relation |
 | `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; the enclosing type's binding via `intent_bound_table` |
 | `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter`; the GraphQL side off the buffer's own field definition, whose arguments are the ones being edited |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
@@ -453,7 +453,7 @@ around it.
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
 | `MethodNameBinding` | A signature per overload + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family, joined on arity |
 | `CatalogTableBinding` | Description, column and key counts | `sql_table`, `sql_column`, `sql_referential_constraint`; Javadoc via the `java_` source family |
-| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table`; the member arms wait on `intent_type_backing_class` joined to the `jvm_` census, still unbuilt |
+| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table`, a class-backed parent's members via `intent_class_member_slot`; which class backs the parent is the projection's, that binding being the one piece with no relation |
 | `CatalogFkBinding` | FK direction and endpoints, under any spelling the resolver accepts | `sql_referential_constraint`, `sql_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column`, `graphitron_table` + `sql_column` for the types |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
@@ -468,14 +468,14 @@ around it.
 | `Definitions` | Directive arg: `ClassName`, `MethodName`, `CatalogTable`, `CatalogColumn`, `CatalogFk` | `jvm_`/`sql_` joined to the `java_` source family's positions |
 | `Definitions` † | `ArgMapping`, `ScalarType`, `NodeType` return empty | — |
 | `IntraSchemaDefinitions` | Type reference to its declaring SDL site | `graphql_type_declaration`; a declaring file that has moved since capture re-anchors through its live tree |
-| `DeclarationDefinitions` | SDL declaration name to its bound Java | `jvm_class`, `jvm_record_component` + the `java_` source family |
+| `DeclarationDefinitions` | SDL declaration name to its bound Java | `intent_class_member_slot` for which declaration a member name binds to, a field or a method; the `java_` source family for where it is written |
 
 **Inlay hints.** Three independent toggles, all default off (`InlayHintConfig`); two collectors.
 
 | Toggle | Collector | Fact source |
 |---|---|---|
 | `classification` | `collectClassificationHints` | the verdict views, both grains, their classifier vocabularies grown to the whole taxonomy |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_type_backing_class` (unbuilt) where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the verdict views, as the `classification` toggle above |
 
@@ -1280,7 +1280,8 @@ that already ask them.
 | What an authored `@reference` element lands on | `intent_field_reference_step_hop` for the element's local resolution, `intent_field_reference_step_target` for the chain over it | built |
 | Which table a *field site's* columns come from | `intent_field_column_table`: the chain's terminal arrival for a `@reference` field, the navigated element table for the order-by sites. The parent's own binding is deliberately absent, being what a reader already holds | built |
 | What an *omitted* `@reference` path infers | foreign-key discovery between the parent's binding and the field's named type's binding; both bindings are built, the discovery is not | unbuilt |
-| Which Java class a type is backed by, and its member slots | `intent_type_backing_class`, joined to `jvm_record_component` for components and `jvm_method` for bean accessors. The one thing the three column arms still fall through to the projection for | unbuilt |
+| What member names a backing class offers | `intent_class_member_slot`: a record's components, or the bean accessors of anything else, the rule chosen by the class's declared form. Keyed by the census, not by a graph | built |
+| Which Java class a type is backed by | `intent_type_backing_class`, the reflective binding walk's own answer. Blocked on the census: a classfile's erased return type loses a container's element type, so the walk's accessor hops have nothing to follow | unbuilt |
 | The verdict label for a declaration | `intent_resolved_field_claim` and a type-grain sibling, their `classifier` vocabularies grown from today's seven and two to the whole taxonomy | partly built |
 
 Two things fall out of writing that down. The label rows do not want a new view at all: they want the
@@ -1436,6 +1437,48 @@ survivable, which it was, because the two silences worth keeping are structural.
   already takes on a snapshot it cannot trust, and it is what keeps the thirty-odd existing call sites
   unchanged rather than churned.
 
+## Settled while building: a class's members are a relation, and the binding is not
+
+`intent_class_member_slot` landed: what member names a backing class offers an SDL author, a record's
+components or the bean accessors of anything else. Five readers, which is every surface that asked the
+question: completion offers the slots, hover names one, the field-member diagnostic reports a name that
+matches none, goto-definition jumps to the declaration behind one, and the MCP schema resource lists
+them. The projection's member lists are gone with `TypeBackingShape.MemberSlot`, and the two class
+permits now name a class and nothing else.
+
+* **The bean rule was a rule, not a projection.** `get`/`is` plus an upper-case letter, first letter
+  lowered, no parameters: that ran per build in `CatalogBuilder` to hand the same list to five
+  readers, and it is a function of the classpath census with no graph in it. In the DDL it is one
+  relation with the two prefixes joined as data. The projection decided which population a type had by
+  its permit, one list per type; a relation over the census has both populations available at once, so
+  it has to say which one a class answers with, and it says the class's declared form does: a record
+  offers its components, and a record that also declares `getTitle()` still offers `title` once. That
+  is the one place the relation had to decide something the projection got for free from its own shape,
+  and it is pinned by a fixture record carrying exactly that accessor.
+* **Keying follows the question, not the family.** Every other `intent_` resident leads with
+  `graph_name`, and this one leads with the census's `source_name`, because the question is about a
+  class. Keying it by graph would have stored one copy of the answer per graph that reads the class,
+  which is a claim about the graph the rule never makes. The stratum is chosen by what produces a
+  row, a rule rather than a transcription; the family header now says so.
+* **An origin column that is a function of the class, carried anyway.** Every slot of one class
+  shares its origin, so the column is redundant per row. It is carried because the two readers that
+  fork on it hold a slot and not a class: the diagnostic picks the word it calls the member, and the
+  jump lands on a field for a component and on a method for an accessor. That second one is an
+  improvement rather than a transcription, the target now following the slot the store answered with
+  instead of the permit that routed the arm.
+* **The MCP schema resource moved too, because the alternative was two spellings of the rule.**
+  Leaving its member lists on the projection would have kept `beanAccessorSlot` alive beside the
+  view, and two spellings of a rule agree exactly until one changes. It is a reader of the relation
+  now, on the same terms as the language server's four; the resource's own vocabulary is unchanged.
+* **What did not move, and why the estimate was wrong.** The naming table had one row for the class
+  binding and its member slots together. They are two questions, and only the second is derivable:
+  which class backs a type is a reflective walk that grounds at `@service` returns and `@table`
+  resolutions and extends through parent-accessor return types, and the census records those types
+  *erased*, so a list-valued accessor hop has no element type to follow. Deriving the binding needs
+  the census widened with un-erased element types first, and then the walk's own folds and gates
+  besides. The table now carries the two rows separately with that blocker named, and the four arms
+  keep reading the binding off the projection.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1447,7 +1490,9 @@ path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declare
 `LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
 (`ofTable`, `ofColumn`, `classJavadoc`), `Definitions.methodLocation`, and
 `FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
-switched on; `DirectiveResolution`
+switched on, and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
+`PojoBacking.accessors` payloads and `CatalogBuilder`'s `projectRecord`, `projectPojo`,
+`beanAccessorSlot` and `lowercaseFirst`; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
 `typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's

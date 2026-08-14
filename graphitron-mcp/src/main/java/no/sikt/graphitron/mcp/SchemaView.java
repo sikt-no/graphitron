@@ -1,6 +1,8 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -32,7 +34,8 @@ final class SchemaView {
     static final int DEFAULT_LIMIT = 100;
 
     static McpSchema.CallToolResult schemaResult(
-        LspSchemaSnapshot snapshot, Map<String, CompletionData.NodeMetadata> nodeMetadata, Map<String, Object> args
+        LspSchemaSnapshot snapshot, Map<String, CompletionData.NodeMetadata> nodeMetadata,
+        StoreHandle store, Map<String, Object> args
     ) {
         var fields = new LinkedHashMap<String, Object>();
         return switch (snapshot) {
@@ -41,15 +44,15 @@ final class SchemaView {
                 fields.put("types", List.of());
                 yield result("schema: snapshot Unavailable (no successful build yet).", fields);
             }
-            case LspSchemaSnapshot.Built.Current c -> built(c, "Current", nodeMetadata, args, fields);
-            case LspSchemaSnapshot.Built.Previous p -> built(p, "Previous", nodeMetadata, args, fields);
+            case LspSchemaSnapshot.Built.Current c -> built(c, "Current", nodeMetadata, store, args, fields);
+            case LspSchemaSnapshot.Built.Previous p -> built(p, "Previous", nodeMetadata, store, args, fields);
         };
     }
 
     private static McpSchema.CallToolResult built(
         LspSchemaSnapshot.Built b, String freshness,
-        Map<String, CompletionData.NodeMetadata> nodeMetadata, Map<String, Object> args,
-        LinkedHashMap<String, Object> fields
+        Map<String, CompletionData.NodeMetadata> nodeMetadata, StoreHandle store,
+        Map<String, Object> args, LinkedHashMap<String, Object> fields
     ) {
         fields.put("availability", "Built");
         fields.put("freshness", freshness);
@@ -66,14 +69,14 @@ final class SchemaView {
                 fields.put("notFound", name);
                 return result("schema: type '" + name + "' not found in the current snapshot.", fields);
             }
-            fields.put("types", List.of(typeEntry(name, b, nodeMetadata)));
+            fields.put("types", List.of(typeEntry(name, b, nodeMetadata, store)));
             return result("schema: type '" + name + "'.", fields);
         }
 
         var paged = McpWire.page(typeNames, args, DEFAULT_LIMIT);
         var list = new ArrayList<Map<String, Object>>(paged.items().size());
         for (var name : paged.items()) {
-            list.add(typeEntry(name, b, nodeMetadata));
+            list.add(typeEntry(name, b, nodeMetadata, store));
         }
         fields.put("types", list);
         paged.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
@@ -83,13 +86,15 @@ final class SchemaView {
     }
 
     private static Map<String, Object> typeEntry(
-        String name, LspSchemaSnapshot.Built b, Map<String, CompletionData.NodeMetadata> nodeMetadata
+        String name, LspSchemaSnapshot.Built b,
+        Map<String, CompletionData.NodeMetadata> nodeMetadata, StoreHandle store
     ) {
         var entry = new LinkedHashMap<String, Object>();
         entry.put("typeRef", name);
         var classification = b.typeClassificationsByName().get(name);
         if (classification != null) entry.put("typeClassification", mapTypeClassification(classification));
-        b.typeBacking(name).ifPresent(backing -> entry.put("backingShape", mapBackingShape(backing)));
+        b.typeBacking(name)
+            .ifPresent(backing -> entry.put("backingShape", mapBackingShape(backing, store)));
 
         var node = nodeMetadata.get(name);
         if (node != null) {
@@ -213,18 +218,18 @@ final class SchemaView {
 
     // ---- backing shape (exhaustive over TypeBackingShape permits, leaves matched directly) ----
 
-    private static Map<String, Object> mapBackingShape(TypeBackingShape s) {
+    private static Map<String, Object> mapBackingShape(TypeBackingShape s, StoreHandle store) {
         var m = new LinkedHashMap<String, Object>();
         switch (s) {
             case TypeBackingShape.RecordBacking r -> {
                 m.put("kind", "RecordBacking");
                 McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-                m.put("members", members(r.components()));
+                m.put("members", members(store, r.fqClassName()));
             }
             case TypeBackingShape.PojoBacking p -> {
                 m.put("kind", "PojoBacking");
                 McpWire.putIfNotNull(m, "fqClassName", p.fqClassName());
-                m.put("members", members(p.accessors()));
+                m.put("members", members(store, p.fqClassName()));
             }
             case TypeBackingShape.JooqRecordBacking.WithTable w -> {
                 m.put("kind", "JooqRecordBacking.WithTable");
@@ -247,7 +252,14 @@ final class SchemaView {
         return m;
     }
 
-    private static List<Map<String, Object>> members(List<TypeBackingShape.MemberSlot> slots) {
+    /**
+     * The member names the backing class offers, read from the store's member-slot relation. The
+     * projection used to carry them, which meant the bean rule ran per build in one place and was
+     * written out again wherever else a member list was needed; the relation is the one home for it,
+     * and this resource is a reader of it like every other surface that asks.
+     */
+    private static List<Map<String, Object>> members(StoreHandle store, String fqClassName) {
+        var slots = ClassMemberSlots.of(store, fqClassName);
         var out = new ArrayList<Map<String, Object>>(slots.size());
         for (var slot : slots) {
             var sm = new LinkedHashMap<String, Object>();
