@@ -70,11 +70,29 @@ Expose `registryOf` / `attributionOf` / `fixtureFile` publicly alongside the fac
 sweeps drive `FactCapture.capture` themselves, per example, and need the primitives without a
 factory arm for every combination.
 
+### The governing rule: `CapturedStore` is where these utilities gather
+
+`CapturedStore` is the home for fact-store test utilities. A test that needs a store shape no
+existing factory produces adds a factory *there*, rather than hand-rolling a helper in its own class.
+That is the rule this item establishes, and it outranks the individual shape decisions below.
+
+The failure mode being designed against is fragmentation, not accretion. Eight private copies that
+have quietly diverged is the expensive state, and it is expensive because nothing points a new test
+author at the existing answer. A `CapturedStore` carrying more factories than any one reader needs is
+the cheap state: the factories are in one file, visible together, and consolidating two that turned
+out to be the same is a mechanical afternoon. Growth is expected and fine. If the set gets unwieldy,
+clean it then, with the whole set in view, which is exactly the vantage point the current eight
+copies deny.
+
+So the shape set below is a starting point, not a closed taxonomy, and a later item adding a ninth
+factory is the design working rather than failing.
+
 ### Name the three shapes; do not flag them
 
-Give the handle a closed set of named factories, one per shape above, rather than nullable arguments
-or a `boolean`. Each factory carries a one-line javadoc note saying what its shape carries that its
-sibling cannot. Writing those notes is the work: if the note for the middle shape turns out to read
+Give the handle named factories, one per shape above, rather than nullable arguments or a `boolean`.
+Named entry points are what make the set legible enough to prune later; a growing pile of flags is
+not. Each factory carries a one-line javadoc note saying what its shape carries that its sibling
+cannot. Writing those notes is the work: if the note for the middle shape turns out to read
 "nothing, these tests just never needed nodes," that is the finding, and the set collapses to two.
 Resolving the `new NodeDeclaration(null)` versus `TestSchemaHelper.nodeDeclaration()` split is in
 scope and must not be preserved silently on the grounds that it is what the copies did.
@@ -100,9 +118,10 @@ does `siblingGraphConflictsDoNotLeak` inline. With a primitive available, those 
 of the closure form and become ordinary calls in a `try` block, and the closure form gets to stay
 simple because it no longer has to be the only door.
 
-So: keep `with(...)` narrow and do not grow it past the named shapes above. Anything wanting a second
-step against the store drops to the handle. `withCapturedStoreAndClaimDomain` and the two hand-rolled
-re-opens are the first three callers of the handle.
+So: reach for the closure form first, drop to the handle when a test needs a second step against the
+open store. `withCapturedStoreAndClaimDomain` and the two hand-rolled re-opens are the first three
+callers of the handle. Neither layer is capped; per the rule above, a genuinely common new shape
+earns a `with(...)` arm rather than being pushed down to the handle on principle.
 
 ### The graph identity is caller-supplied
 
@@ -150,28 +169,32 @@ implicit claim about which registry these views are derived from. No current der
 federation-shaped, so nothing is broken; name it as an explicit arm now while the decision is cheap,
 rather than leaving a default nobody revisits when the first federation-shaped derive fixture lands.
 
-### Keep the seeding seam separate and differently named
+### Seeding gathers here too, and stays legible by naming
 
 `ColumnMatchClaimTest` carries `withSeededStore` plus `seedGraph` / `seedSource` / `seedField` /
 `seedTable` / `seedSchema` / `seedColumn`; `ReferenceStepTargetTest` carries `withCollidingKeySeed`
 plus `seedTable` / `seedRootType` / `seedStep`. These insert store rows directly and bypass capture,
-because they construct states capture cannot reach. The governing rule is already written twice in
-class javadoc (`ReferenceStepTargetTest`: "a fixture is free to seed a chain the catalog cannot
+because they construct states capture cannot reach. The rule governing them is already written twice
+in class javadoc (`ReferenceStepTargetTest`: "a fixture is free to seed a chain the catalog cannot
 connect, and the case then documents behaviour no build can produce"; `FieldColumnTableTest`
 likewise), and each seeded case carries its own escape note.
 
-Fold these onto the capture handle and `store.seedTable(...)` reads as the same species as
-`store.capture(...)`, while the per-case justification becomes a shared paragraph nobody re-reads.
-The failure mode is a test pinning a store state production cannot reach, with no signal at the call
-site. So: two seams, differently named (`CapturedStore` versus a `SeededStore`), so the reach for
-the unreachable-state one is greppable, and the "only reachable by seeding" note becomes a
-per-method requirement rather than a class-level paragraph.
+An earlier draft put these in a separate `SeededStore` type, to keep the reach for an
+unreachable-by-production store state visible at the call site. That is the wrong trade under the
+gathering rule: a second type is a second thing to fail to discover, and seeding is exactly the
+capability a test author is most likely to hand-roll if they do not find it. Seeding lives on
+`CapturedStore` with everything else.
 
-The consolidation inside the seeded seam is deliberately narrow. `ColumnMatchClaimTest` and
+The call-site signal comes from naming instead, which is cheaper and does the same job. Seeded entry
+points say so in their names (`seeded...` rather than a neutral `of...`), so a reviewer scanning a
+diff and a `grep` over the tree both still separate the two populations. The "only reachable by
+seeding" justification becomes a per-method javadoc requirement rather than the class-level paragraph
+it would become if the methods sat anonymously beside the capture-backed ones.
+
+One concrete consolidation inside the seeded set is worth calling out: `ColumnMatchClaimTest` and
 `ReferenceStepTargetTest` each spell a full minimal `graphql_type` / `graphql_field` /
 `graphql_type_declaration` row by hand, differently. Those are hand-written twins of what capture
-writes, and a DDL change adding a non-null column should break one place rather than two. Share
-those base-row spellings; do not promote seeding to a peer of capture.
+writes, and a DDL change adding a non-null column should break one place rather than two.
 
 ### Update the agreement anchors
 
@@ -201,6 +224,8 @@ grep-based ratchet would add a maintenance surface to enforce what discoverabili
 ## Out of scope
 
 * Changing what any of the seven classes asserts.
-* Promoting the direct row-seeding helpers to a general-purpose store-construction API.
 * Reshaping `FactCapture`'s own overload set. The 5-arg overload is a reasonable public default and
   this item consumes it.
+* Pruning the factory set to some minimal basis. Per the gathering rule, arriving with more factories
+  than strictly necessary is the acceptable outcome; consolidating them is a later, cheap pass to be
+  taken once the whole set is visible in one file.
