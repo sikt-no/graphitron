@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a field returning a discriminated table interface"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: interface-union
@@ -449,6 +449,54 @@ Two things the plan did not anticipate, both settled in commit 3:
 The child half (implementation group 4) is untouched and stays specified above. Nothing in the
 root work forecloses it: the seam both paginating callers were designed to share is in place, and
 `BatchedRowsFragments.connectionTail` is still the extraction the child arm needs.
+
+## Review feedback (In Review -> Ready, first cycle)
+
+Independent review of the root half. The build is green (full reactor under `-Plocal-db`), the
+delivery matches the spec's mechanism at every load-bearing point (capture-time lowering with the
+alias invariant on `CrossTableTerm`, one shared `PathFragments.scalarInnerSelect`, the seam split
+with untouched call sites, the shared `connectionShape` helper, the backstop halved with its
+rationale, the corpus example replacing the enum row), and the coverage design is strong: the
+lowering pin sits at the tier that decides it, the totalCount baseline has a twin, and the fan-out
+fixture pins the invariant's replacement where only the execution tier can see it. The root half
+is in good shape; the item stays open because its contract is both coordinates and the child half
+waits on R661 (still Spec). Fix the following in the next pass, alongside or before the child
+work:
+
+1. **Code-string body assertions were re-authored rather than retired.** Four
+   `TypeFetcherGeneratorTest` tests (`..._selectionGateMatchesAtAnyDepth`'s gate assertion,
+   `queryTableInterfaceField_crossTableField_emitsGatedCorrelatedSubselect`, the projection-alias
+   sibling, and `tableInterfaceField_crossTableField_emitsGatedSubselectAtChildSite`) assert
+   `method(spec, ...).code().toString().contains(...)` on generated method bodies.
+   `docs/architecture/how-to/testing.adoc` bans code-string body matching in exactly this file's
+   family, and the delivery's own SQL baselines and execution walks already pin every fact these
+   strings pin. Updating the legacy strings kept the build green but re-authored the violation;
+   retire these assertions (or reduce them to sanctioned signature/shape assertions) in favor of
+   the baselines.
+2. **The declared retirement of "gated/conditional LEFT JOIN" as the cross-table description is
+   incomplete.** Surviving habitats, all describing the cross-table mechanism (the joined-detail
+   join legitimately keeps the phrase): `TypeFetcherGenerator` (the
+   `ParticipantColumnReferenceField` arm comment, near line 670), `TypeBuilder`
+   (`buildParticipantList`'s `interfaceTable` param javadoc, near line 825), `FieldBuilder` (the
+   `lookupParticipantCrossTableField` comment, near line 7607), `TypeFetcherGeneratorTest`
+   (section comment near line 1218), `GraphitronSchemaBuilderTest` (section comment near line
+   458), `ClassifiedCorpus` (the `participant-reference` example comment),
+   `QualifiedParticipantCrossTableReferencePipelineTest` (class javadoc), and
+   `DmlTableInterfaceReturnExecutionTest` (the rating comment, near line 119). Historical
+   `changelog.md` entries stay as they are.
+3. **Collapse the shipped groups to "shipped at <sha>" one-liners** per the Done-gate
+   precondition: group 1 is `348f914`, group 2 is `0c55288` plus the lowering pin at `cd46fe9`,
+   group 3 is `3201386`.
+
+Improvements, not gate-blocking, take them if cheap while in the area:
+
+* `fanItems_fanningCrossTableHop_oneEntityPerBaseRow` pins `note == "alpha-note-1"`, but the
+  capped subselect carries no ORDER BY, so which detail row it returns is not SQL-determined; the
+  pin rides Postgres heap order. Loosen to membership in the seeded set (or non-null) unless the
+  subselect gains deterministic pick semantics.
+* The backward-page walk uses `last: 2` with no `before` cursor; the Coverage section named the
+  before-cursor page one of the two most cursor-bug-prone cases. Add a `before` walk when the
+  child work touches the same fixtures.
 
 ## Out of scope
 

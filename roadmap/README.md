@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-14 | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R671` | Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check | Spec | 2026-08-14 | [plan](domain-return-type-placeholders-false-conflict.md) |
+| `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | In Review | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R57` | FK-target @nodeId JOIN-with-translation filter emission (argument + input field) | Spec | 2026-08-14 | [plan](nodeid-fk-target-arg-join-translation.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -343,7 +343,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R661` [**Batch the discriminated table interface child through a DataLoader**](batched-discriminated-interface-child.md) — Spec, bug
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
-- `R650` [**Support @asConnection on a field returning a discriminated table interface**](root-connection-over-discriminated-interface.md) — In Review, feature, blocked by [batched-discriminated-interface-child](batched-discriminated-interface-child.md)
+- `R650` [**Support @asConnection on a field returning a discriminated table interface**](root-connection-over-discriminated-interface.md) — Ready, feature, blocked by [batched-discriminated-interface-child](batched-discriminated-interface-child.md)
 - `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
 - `R393` [**Declare the joined-table base-to-detail join on @discriminator(reference:)**](joined-table-base-detail-fk-override.md) — Spec, feature
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
