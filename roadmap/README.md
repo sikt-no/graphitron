@@ -16,11 +16,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | Spec | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
-| `R667` | Capture runs before the classification walk, so the walk can read the store <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | Spec | 2026-08-14 | [plan](capture-precedes-the-classification-walk.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-14 | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R671` | Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check | Spec | 2026-08-14 | [plan](domain-return-type-placeholders-false-conflict.md) |
+| `R667` | The emit plan is built from the store, not from the leaf model <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-14 | [plan](emit-plan-reads-the-store.md) |
 | `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -263,10 +263,10 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
-- `R667` [**Capture runs before the classification walk, so the walk can read the store**](capture-precedes-the-classification-walk.md) — Spec, architecture, blocked by [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)
 - `R666` [**Delivery verdict derives from the store, not from a hand-maintained negative-space switch**](delivery-verdict-derives-from-the-store.md) — Spec, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
+- `R667` [**The emit plan is built from the store, not from the leaf model**](emit-plan-reads-the-store.md) — Spec, architecture, blocked by [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
