@@ -40,11 +40,11 @@ public sealed interface ResultShape {
      * three populations: the schema-free unit-tier assemblies; classified root {@code @routine}
      * chains, whose lists are unordered by classification (the chain defers the {@code @orderBy}
      * surface, and the deterministic-order validation keys on a capability the routine leaf does
-     * not implement, a gap recorded on the launcher item's hand-off); and keyed lookups, whose
-     * input ordering is source-entailed ({@link LaunchSource.KeyedLookup}) rather than
-     * classifier-derived. The renderer renders the absent arm with no ORDER BY clause (the same
-     * SQL an empty sort list produces) unless the source arm entails its own, the lookup's
-     * {@code idx} order.
+     * not implement, a gap recorded on the launcher item's hand-off); and keyed lookups
+     * ({@link LaunchSource.KeyedLookup}), which carry input order by scattering the fetched rows
+     * onto their keys' slots rather than by sorting, so there is no order for the classifier to
+     * derive. The renderer renders the absent arm with no ORDER BY clause, the same SQL an empty
+     * sort list produces.
      */
     record RecordList(Ordering ordering) implements ResultShape {}
 

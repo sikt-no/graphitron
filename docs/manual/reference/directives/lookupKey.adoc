@@ -6,6 +6,8 @@ Promotes a query into a Relay https://graphql.org/learn/global-object-identifica
 
 The contract is per key, not per row. Each key is answered independently of the others, so keys are never deduplicated, reordered, or collapsed: asking for the same id five times returns five results, one at each of the five positions. A caller can therefore read the answer for key `i` at index `i` without matching anything up.
 
+That contract is the root field's. The same directive is admitted on a child field with arguments, where it narrows each parent's child list by the caller's keys instead of answering positions; the constraints below say which of them stop at the root. xref:../../how-to/batch-lookups.adoc[How-to: Batch lookups] covers the child shapes.
+
 == SDL signature
 
 [source,graphql]
@@ -57,11 +59,11 @@ returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`,
 * `@lookupKey` on an input type (the argument itself) applies to every leaf scalar field of that input. `@lookupKey` on an individual input field applies only to that field; the rest of the input behaves normally.
 * A key must identify at most one row, because it is answered in one output slot. This is a property of the *columns* the key binds to, not of the values a caller sends: repeating a value is always fine, while binding a key to a non-unique column is not. If several rows do match one key, one of them is returned and the rest are dropped, which is a schema mistake rather than a filter. Use xref:condition.adoc[`@condition`] for narrowing on a non-identifying column.
 * Repeated keys are not deduplicated. Five occurrences of the same id produce five results, one per position, and each is resolved on its own. Key order is likewise never normalised.
-* The list elements must be nullable, because an unmatched key holds `null` at its position. `[Film]!` and `[Film]` are accepted; `[Film!]!` and `[Film!]` are rejected with a build error, since GraphQL would propagate that `null` out of the list and one unmatched key would discard every matched one.
+* A root lookup's list elements must be nullable, because an unmatched key holds `null` at its position. `[Film]!` and `[Film]` are accepted; `[Film!]!` and `[Film!]` are rejected with a build error, since GraphQL would propagate that `null` out of the list and one unmatched key would discard every matched one. The requirement and its rejection are root-only: a child coordinate narrows a list rather than filling positions, so its elements may stay non-null.
 * Non-key filterable arguments compose beside the lookup. An argument that is not a key becomes an ordinary predicate in the `WHERE`, alongside the lookup join, whether it comes from the implicit xref:field.adoc[`@field(name:)`] path or from an authored xref:condition.adoc[`@condition`] method. The key argument itself never appears there: it rides the `VALUES` join and is not restated as a column predicate.
 * A key whose row fails a non-key predicate is indistinguishable from an unmatched key. Both hold `null` at their position, so a filter narrows which positions are populated rather than which positions exist.
 * An empty or absent key list returns no rows, short-circuiting before SQL rather than degrading into an unfiltered read. Worth knowing when migrating from a generator that returned everything for an empty key list.
-* Only arguments on root-level fields (or on their referenced input types) may be keys. The xref:mutation.adoc[`@mutation`] directive uses `@lookupKey` separately to identify the row to `UPDATE`, `DELETE`, or `UPSERT`; that's a distinct use of the same directive on `INPUT_FIELD_DEFINITION`.
+* Only arguments on root-level fields (or on their referenced input types) and on child fields with arguments may be keys. The xref:mutation.adoc[`@mutation`] directive uses `@lookupKey` separately to identify the row to `UPDATE`, `DELETE`, or `UPSERT`; that's a distinct use of the same directive on `INPUT_FIELD_DEFINITION`.
 
 == See also
 

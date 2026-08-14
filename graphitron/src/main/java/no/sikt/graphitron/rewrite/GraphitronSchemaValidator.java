@@ -836,8 +836,8 @@ public class GraphitronSchemaValidator {
                     && !list.itemNullable()) {
                 errors.add(new ValidationError(
                     field.qualifiedName(),
-            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': a lookup field's list "
-                + "elements must be nullable, since an unmatched key yields null at its output "
+            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': a root lookup field's "
+                + "list elements must be nullable, since an unmatched key yields null at its output "
                 + "position; declare the element type without '!'"),
                     field.location()
                 ));

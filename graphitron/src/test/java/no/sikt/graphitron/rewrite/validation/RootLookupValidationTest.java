@@ -53,7 +53,7 @@ class RootLookupValidationTest {
     private static final String CARDINALITY_MISMATCH =
         "Field 'Query.filmById': result type does not match input cardinality";
     private static final String NONNULL_ITEM =
-        "Field 'Query.filmById': a lookup field's list elements must be nullable, since an "
+        "Field 'Query.filmById': a root lookup field's list elements must be nullable, since an "
             + "unmatched key yields null at its output position; declare the element type without '!'";
 
     /** One cube cell: a lookup field varying key list-ness, return list-ness and filter list-ness. */

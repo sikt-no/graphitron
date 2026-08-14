@@ -8,8 +8,9 @@ import java.util.List;
  * the standard VALUES + JOIN derived-table path. Lookup-key NodeId args fold onto
  * {@link ColumnMapping.LookupArg.ScalarLookupArg} (single-key NodeType) or
  * {@link ColumnMapping.LookupArg.DecodedRecord} (composite-key NodeType) carrying a
- * {@link CallSiteExtraction.NodeIdDecodeKeys} arm (Throw on synthesised lookup-key paths, Skip
- * on the same-table {@code @nodeId} filter path).
+ * {@link CallSiteExtraction.NodeIdDecodeKeys} arm, whose sole
+ * {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch ThrowOnMismatch} applies to the
+ * synthesised lookup-key path and the same-table {@code @nodeId} filter path alike.
  *
  * <p>The sealed interface is retained for shape-locality (a {@link LookupResolution.Keyed}
  * always carries a {@code LookupMapping}); a future "rooted at parent via correlated subquery"
@@ -22,12 +23,16 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
 
     /**
      * Standard column-based lookup mapping. Represents the N × M positional contract described in
-     * {@code docs/code-generation-triggers.adoc}: given M input rows (each row being a tuple of the
-     * declared lookup keys), the field returns N results per input row, preserving input order.
+     * {@code docs/architecture/reference/code-generation-triggers.adoc}: given M input rows (each
+     * row being a tuple of the declared lookup keys), the field returns N results per input row,
+     * preserving input order.
      *
      * <p>The generator materialises this as a {@code VALUES(idx, col1, col2, …)} derived table
-     * joined against the target table by equality on each key column, ordered by {@code input.idx}
-     * to preserve input ordering.
+     * joined against the target table by equality on each key column. How input order is carried
+     * differs by arm: a root launcher projects {@code idx} out and scatters the fetched rows onto
+     * one slot per key, which is also what puts a {@code null} in an unmatched key's slot, so it
+     * emits no {@code ORDER BY}; a child coordinate orders by {@code input.idx} instead and returns
+     * only the rows that matched.
      *
      * <p>{@code args} carries each top-level GraphQL argument that contributes one or more lookup
      * key slots, sealed on the source-shape axis: {@link LookupArg.ScalarLookupArg} for one slot,

@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R617` | Lookup misses drop rows instead of holding their position | Ready | 2026-08-10 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
+| `R617` | Lookup misses drop rows instead of holding their position | In Review | 2026-08-14 <sub>created 2026-08-09</sub> | [plan](lookup-positional-contract-unimplemented.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-13 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | Spec | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-14 | [plan](delivery-verdict-derives-from-the-store.md) |
@@ -426,7 +426,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R617` [**Lookup misses drop rows instead of holding their position**](lookup-positional-contract-unimplemented.md) — Ready, bug
+- `R617` [**Lookup misses drop rows instead of holding their position**](lookup-positional-contract-unimplemented.md) — In Review, bug
 - `R663` [**@defaultOrder on a @splitQuery child list is dropped at emit**](split-query-child-list-drops-default-order.md) — Backlog, bug
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness

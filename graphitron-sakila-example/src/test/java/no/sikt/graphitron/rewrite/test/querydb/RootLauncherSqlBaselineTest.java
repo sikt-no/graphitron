@@ -258,11 +258,12 @@ class RootLauncherSqlBaselineTest {
     }
 
     @Test
-    void lookupRoot_valuesJoinKeyedAndInputOrdered() {
+    void lookupRoot_valuesJoinKeyedAndIdxProjectedForTheScatter() {
         execute("{ languageByKey(language_id: [1, 2]) { name } }");
         assertThat(SQL_LOG)
             .as("lookup root: the anchor joined to the input VALUES table over the key columns, "
-                + "input-ordered by the derived table's idx column")
+                + "with the derived table's idx projected as __idx__ for the scatter to read back. "
+                + "No ORDER BY: the scatter is what carries input order")
             .containsExactly(
                 "select \"public\".\"language\".\"name\", \"languagebykeyinput\".\"idx\" as \"__idx__\" "
                     + "from \"public\".\"language\" "

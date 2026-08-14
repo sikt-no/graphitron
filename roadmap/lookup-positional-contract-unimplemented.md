@@ -1,13 +1,13 @@
 ---
 id: R617
 title: "Lookup misses drop rows instead of holding their position"
-status: Ready
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-09
-last-updated: 2026-08-10
+last-updated: 2026-08-14
 ---
 
 # Lookup misses drop rows instead of holding their position
@@ -110,20 +110,22 @@ Two passes, each green on `mvn install -Plocal-db`:
   the repeated/unordered-key execution pins at `bce87ad`.
 - The first Done gate's two blocking findings and its three non-blocking notes shipped at `ed79266`,
   with the fixture-warnings line re-pin at `fc93d75`.
+- The second Done gate's blocking finding and all three of its non-blocking notes shipped in the
+  pass recorded below.
 
-## Rework from the second In Review gate
+## The second In Review gate, and what it changed
 
-Full reactor build green (`mvn install -Plocal-db`, all 14 modules, exit 0). Everything the first
-gate held is closed and verified. `RootLookupValidationTest`'s six new nullability cells make the
-rejection load-bearing (delete it and the cube goes red); `ScatterLookupByIdxTest` pins the
-first-wins tie-break that PostgreSQL cannot observe on uniquely-keyed fixtures; the scatter alias
-runs through `ReservedAliases.IDX` at writer and reader alike; and the NodeId section now splits on
-whether an arm is a lookup at all, with `filmsByNodeIdArgWithLookupKey` a real fixture pinned at the
-execution tier. The emit itself reviews clean. One finding blocks.
+The gate found everything the first one held closed and verified: `RootLookupValidationTest`'s six
+new nullability cells make the rejection load-bearing (delete it and the cube goes red);
+`ScatterLookupByIdxTest` pins the first-wins tie-break that PostgreSQL cannot observe on
+uniquely-keyed fixtures; the scatter alias runs through `ReservedAliases.IDX` at writer and reader
+alike; and the NodeId section splits on whether an arm is a lookup at all, with
+`filmsByNodeIdArgWithLookupKey` a real fixture pinned at the execution tier. The emit itself
+reviewed clean. One finding blocked, and it is the one this pass answers.
 
-### The manual states the positional contract, and its build rejection, as universal over `@lookupKey`
+### The manual stated the positional contract, and its build rejection, as universal over `@lookupKey`
 
-Three claims added by this item quantify over every `@lookupKey` shape, but describe only the root
+Three claims added by this item quantified over every `@lookupKey` shape, but described only the root
 arm:
 
 - `batch-lookups.adoc:9` — "Every `@lookupKey` shape compiles to the same generator pattern ... The
@@ -134,48 +136,66 @@ arm:
 - `lookupKey.adoc`'s matching constraint bullet, "The list elements must be nullable ... `[Film!]!`
   and `[Film!]` are rejected with a build error."
 
-None of that is true of a child lookup coordinate. `GraphitronSchemaValidator.java:719` is the only
-`itemNullable` check in the validator; it sits inside `validateRootLookup`, whose single caller is
-`validateQueryTableField` at `:682`, so a child `@lookupKey` field never reaches it. The example
+None of that is true of a child lookup coordinate. The validator's only `itemNullable` check sits
+inside `GraphitronSchemaValidator.validateRootLookup`, whose single caller is
+`validateQueryTableField`, so a child `@lookupKey` field never reaches it. The example
 schema declares five child lookups with non-null elements and the full build is green with all of
 them: `schema.graphqls:1434` (`FilmDetails.actorsByLookup`), `:1604` (`Film.actors`), `:1619`
 (`Film.actorsBySplitLookup`), `:1850` (`FilmInfo.castByKey`), `:1877` (`Film.actorsByKey`), every one
-`[Actor!]!`. The behaviour differs too, not just the validation: `GraphQLQueryTest.java:2380`,
-`splitLookupTableField_filterExcludesActorsNotInFilm`, pins `actorsBySplitLookup(actor_id: [3])`
-returning `[]` for film 1 rather than one slot holding null, and `ProjectionUnitRenderer.java:432`
-shows the inline child arm still emitting `.orderBy(input.field("idx"))` with no scatter. So the
-"same generator pattern" clause is false in the mechanism it names as well as in its consequence.
+`[Actor!]!`. The behaviour differs too, not just the validation:
+`GraphQLQueryTest.splitLookupTableField_filterExcludesActorsNotInFilm` pins
+`actorsBySplitLookup(actor_id: [3])` returning `[]` for film 1 rather than one slot holding null, and
+`ProjectionUnitRenderer`'s inline child arm still emits `.orderBy(input.field("idx"))` with no
+scatter. So the "same generator pattern" clause was false in the mechanism it named as well as in its
+consequence.
 
-The page says the right thing 137 lines later, at `batch-lookups.adoc:109`: "absence of an actor in a
+The page said the right thing 137 lines later, in the `@splitQuery` section: "absence of an actor in a
 film yields no row (not `null`) at the child position, since this is a list output, not a positional
 one." And this item's own scope section says it: child coordinates stay a plain list, correctly
 documented as such.
 
-This blocks rather than becoming a follow-up for the same reason the first gate's manual finding did.
-Making the manual's positional claims true is the deliverable, and the claim is consumer-actionable in
-the wrong direction: a consumer with `actorsBySplitLookup: [Actor!]!` reads the bullet, is told to
-edit their schema for a build error that will never fire, and the edit hands them a nullable element
-type that never holds null. Note also that the pre-change text at `:9` was a *true* universal ("a key
-matching no row contributes no element" held on both arms); the delivery replaced it with a false one.
+It blocked rather than becoming a follow-up for the same reason the first gate's manual finding did.
+Making the manual's positional claims true is the deliverable, and the claim was consumer-actionable
+in the wrong direction: a consumer with `actorsBySplitLookup: [Actor!]!` read the bullet, was told to
+edit their schema for a build error that will never fire, and the edit would hand them a nullable
+element type that never holds null. The pre-change text at `:9` was a *true* universal ("a key
+matching no row contributes no element" held on both arms); the delivery had replaced it with a
+false one.
 
-Worth scoping in the same pass, same root cause: the `@asConnection` rationale at `:9` and `:136`
-("pagination would shift positions and break the positional contract") is also root-only, since
-`:115` extends that rejection to `@splitQuery` children which have no positions to shift.
+**The fix.** The positional-contract section now says up front that the contract it describes is the
+root field's, then gives the child arm its own paragraph: same `VALUES` join, no scatter, an
+unmatched key contributing no element rather than a `null`, and a non-null element type that is both
+correct and accepted. The two nullable-element bullets are scoped to root lookups and say so; the
+`@splitQuery` section closes the loop from the other side, explaining why the `[Actor!]!` in its own
+example is right. `lookupKey.adoc` gets the same scoping on its constraint bullet plus a lead
+paragraph saying the contract is the root field's, since the page had no other mention that child
+coordinates exist; its "only root-level arguments may be keys" bullet was stale on that same point
+and now matches `batch-lookups.adoc`. The `@asConnection` rationale, root-only for the same reason,
+now states the rejection as uniform and gives the root reason as the root reason.
 
-### Not blocking, worth doing while here
+The rejection message carried the same unqualified claim ("a lookup field's list elements must be
+nullable") and is now "a root lookup field's"; `RootLookupValidationTest`'s expected-message
+constant moves with it.
 
-- `RootLauncherSqlBaselineTest.java:261` is named `lookupRoot_valuesJoinKeyedAndInputOrdered` and its
-  `.as(...)` at `:264` still says "input-ordered by the derived table's idx column", against a
-  baseline the same commit stripped the `ORDER BY` from. Same stale-prose class the delivery already
-  swept out of `GraphQLQueryTest`'s composite-PK section header.
-- `LookupMapping.java:29` — "ordered by `input.idx` to preserve input ordering" — and
-  `ResultShape.java:46` — "unless the source arm entails its own, the lookup's `idx` order" — both
-  describe the `ORDER BY` this item removed from the root arm.
-- `LookupMapping.java:11` carries the same `Skip`-arm inversion the rework just corrected at
-  `batch-lookups.adoc:129`: "carrying a `NodeIdDecodeKeys` arm (Throw on synthesised lookup-key
-  paths, Skip on the same-table `@nodeId` filter path)". `CallSiteExtraction.java:140` seals the
-  interface to `ThrowOnMismatch` alone, and `LookupMapping.java:147` states it correctly 136 lines
-  below. Pre-existing, not introduced here; a follow-up item is fine if it does not fit this pass.
+### The three non-blocking notes, all taken in this pass
+
+- `RootLauncherSqlBaselineTest`'s lookup baseline was named `..._valuesJoinKeyedAndInputOrdered` with
+  an `.as(...)` claiming "input-ordered by the derived table's idx column", against a baseline the
+  same commit stripped the `ORDER BY` from. Renamed to `..._valuesJoinKeyedAndIdxProjectedForTheScatter`,
+  with a description that names what the SQL actually shows and why there is no `ORDER BY`.
+- `LookupMapping.ColumnMapping` — "ordered by `input.idx` to preserve input ordering" — and
+  `ResultShape.RecordList` — "unless the source arm entails its own, the lookup's `idx` order" —
+  both described the `ORDER BY` this item removed. `ColumnMapping` now splits the two arms (the root
+  launcher scatters and emits none, a child coordinate still orders by `input.idx`), and
+  `RecordList` says the ordering slot is absent because the scatter carries order, not because a
+  sort is entailed. `ColumnMapping`'s doc-path citation was also stale and now points at
+  `docs/architecture/reference/code-generation-triggers.adoc`.
+- `LookupMapping`'s type-level javadoc carried the same `Skip`-arm inversion the first rework
+  corrected in the manual. `CallSiteExtraction.NodeIdDecodeKeys` permits `ThrowOnMismatch` alone, so
+  the parenthetical now says the one arm applies to the lookup-key and filter paths alike, which is
+  what the nested javadoc 130 lines below already said.
+
+Full reactor build green after the change (`mvn clean install -Plocal-db`, all 14 modules, exit 0).
 
 ### Reviewed clean, for the record
 
