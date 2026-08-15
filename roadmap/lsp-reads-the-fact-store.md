@@ -1758,16 +1758,34 @@ out to have been covering a case no capture can produce.
   a `@table` type is a nesting type, and its fields resolve against the parent's own table row, so
   `type Inner { title: String }` under `Film.inner` is bound to `film` as surely as `Film` is. That
   is the ghost's most useful case and neither surface has ever rendered it.
-* **The nesting binding is a relation nobody has written, and it is the same one the `@field`
-  renderer wants.** `intent_bound_table` is keyed on `@table` applications, so it cannot carry a
-  binding whose source is a consuming field. The missing derivation is the type grain of the question
-  `intent_field_column_table` answers at the field grain: which table a type's fields resolve their
-  columns against, unioning the `@table`-bound arm with a nesting arm that walks from a scoped type
-  through its directiveless-object-typed fields, recursively, since nesting nests. It is rows and not
-  a decline for the same reason every binding is: one nesting type reached from two parents on two
-  tables resolves against both, and a surface that must pick one reads the arity rather than guessing.
-  That relation serves the absent ghost, and it is the upstream half of the site-resolved column match
-  the `@field` renderer needs, so the two gaps named above are one piece of work.
+* **What a type's fields resolve against is a family, and the store carries one arm of it.** The
+  question is the type grain of what `intent_field_column_table` answers at the field grain, and it
+  has at least three answers. A `@table` type resolves against its catalog table, which is
+  `intent_bound_table` and the only arm built. A directiveless object reached from a field of a
+  scoped type is a nesting type and resolves against the parent's own row, recursively, since nesting
+  nests. A type produced by a class-returning field, a `@service` return or an `@externalField` lift's
+  element type, resolves against that Java class's members, and the class threads down its child
+  types along the accessor chain, so that arm is recursive too. A jOOQ table record is both arms at
+  once, carrying a class and a table. Every arm but the first is consumer-derived, which is why
+  `intent_bound_table` cannot be widened to hold them: it is keyed on `@table` applications, and
+  these are keyed on the producing field. Rows and not a decline, as every binding is: one nesting
+  type reached from two parents on two tables resolves against both, and a surface that must pick one
+  reads the arity rather than guessing.
+* **The class arm is the keystone, and four separately-tracked gaps are waiting on it.** Nothing
+  authored declares a class backing any more: `@record` is deprecated and ignored, and the binding is
+  reflection on the producing field's Java signature. So the class arm is not a view over facts the
+  store holds, it is the unbuilt `intent_type_backing_class` walk, the one
+  `intent_class_member_slot`'s comment already defers to. That same walk is what
+  `Diagnostics.validateFieldMember` needs, what lets `DeclTarget` retire `TypeBackingShape`, and what
+  the class-backed-parent arm of `intent_field_separate_fetch` is missing. The nesting arm is
+  buildable on facts the store already has; the class arm is not, and the two together are what makes
+  the absent `@table` ghost and the site-resolved column match the `@field` renderer wants land as
+  one piece rather than four.
+* **A class-bound type is silent on all three surfaces this item has shipped, for one reason.** The
+  type-grain claim vocabulary is `TABLE` and `ERROR`, so a `@service` payload type gets no classifier
+  label, no hover facts beyond its description, and no ghost. That is the same missing walk showing
+  up as three silences rather than a hole in any one surface, and it is the strongest argument for
+  taking the walk before another surface arm.
 * **What the arm is for today is the `extend type` site**, whose base declaration carries the binding
   in another file, and that case is now pinned against a real capture. The arm's javadoc and the
   manual say that plainly, and both name the nesting case as absent rather than as impossible.

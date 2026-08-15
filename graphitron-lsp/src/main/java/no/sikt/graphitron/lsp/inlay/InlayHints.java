@@ -282,13 +282,13 @@ public final class InlayHints {
      * present directive omitted. What it reaches today is the {@code extend type} site, a binding
      * being a property of the type rather than of the declaration in front of the cursor.
      *
-     * <p>It does not yet reach the other kind of undirected binding, and that absence is a missing
-     * relation rather than a missing case. A directiveless object reached from a field of a
-     * table-bound type resolves its fields against the parent's own row, so it is bound without
-     * ever naming a table; the binding relation this pass reads is keyed on {@code @table}
-     * applications and cannot carry a binding whose source is a consuming field. Until the
-     * consumer-derived binding is a relation, read a ghost that appears and do not read its absence
-     * as "this type is not table-bound".
+     * <p>It does not reach the undirected bindings, and that absence is a missing relation rather
+     * than a missing case. A directiveless object reached from a field of a scoped type resolves
+     * its fields against the parent's own row; a type produced by a class-returning field resolves
+     * them against that class's members, with no directive naming either. The relation this pass
+     * reads is keyed on {@code @table} applications and cannot carry a binding whose source is the
+     * producing field. Until those are relations, read a ghost that appears and do not read its
+     * absence as "this type is unbound".
      *
      * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
      * null. {@code @field} would put a ghost on every column-bound field in the file, and
