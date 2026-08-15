@@ -1798,31 +1798,78 @@ out to have been covering a case no capture can produce.
   Adding a third is writing a pass and arguing for it, which is what it should have been: the permit
   made a judgement call about what is worth showing look like a type-safety property.
 
-## Decided before building: the backing-class fact is derived, and the census grows to carry it
+## Decided before building: the backing class is a join over facts, not a fact
 
-The keystone relation named above is `intent_type_backing_class`, and the shape it takes was settled
-by reading what the resolution actually needs rather than by what the store already holds.
+The keystone named above was `intent_type_backing_class`, and the first plan for it was wrong in a
+way worth recording, because the mistake is reachable from any consumer-driven item and it does not
+announce itself while you are inside it.
 
-**It is a materialized `intent_` table, not a view.** The SDL type graph is cyclic, so the closure has
-the same no-safe-view-form problem `intent_type_domain`'s comment states: a recursive UNION does not
-terminate, and the path-guarded form enumerates simple paths. H2 does accept a path-guarded recursive
-CTE inside a view, so the constraint is cost and not syntax, and the existing judgement stands.
-`ReachabilityRows` is the template: a capture-cadence writer clearing its own graph partition and
-re-deriving with a semi-naive fixpoint under a monotonicity bound that fails loudly rather than
-hanging a build. It registers `DERIVED` with an anchor test under `no.sikt.graphitron.rewrite.derive`.
+**The relation was named for a question, and the rest followed from that.** "What class backs this
+type" is one caller's need, not something anyone observed. A relation named for a question takes the
+question's shape. Its grain becomes whatever the caller's return value was. Its derivation absorbs
+every special case the caller had. And because no independent source states the answer, the only
+oracle available is the caller's predecessor. The first draft of this section had all three symptoms
+and read as though they were separate concerns. One relation was to carry the root producer
+grounding, the accessor hop, the cardinality agreement, the two-level carrier fork, the `@table`
+shadow and the root mask, which is six clauses: a procedure with a return value rather than a fact
+with a grain. Its anchor was to be total agreement with `RecordBindingResolver`, which makes the leaf
+zoo normative and pins whatever bugs it has as invariants. That is transcription, not normalization,
+and it would have landed the substrate as a copy of the thing this item exists to dissolve.
 
-**The values are derived from facts, and where a fact is missing the census grows.** Three of
-`RecordBindingResolver`'s rules looked at first like they forced live reflection. Two of them do not.
-Overload resolution is a count: the census keys a method on its descriptor precisely so overloads are
-distinguishable, and "the unique method of this name" is an arity test over `jvm_method`. The
-two-level carrier's accessor probe is a join, not a reflection call: `intent_class_member_slot`
-already answers what slots a class offers, and `jvm_method_parameter` carries the shapes the probe
-gates on; it is intricate to transcribe and that is not the same thing as impossible, which is what
-the first reading conflated. The third rule, container detection, is `isAssignableFrom`, and it is a
-genuinely missing fact rather than a missing capability: a classfile declares its own superclass and
-interfaces, the scanner holds the `ClassModel` that exposes both and records neither, and once those
-names are captured, assignability is a transitive closure over them. So the census gains declared
-supertypes and the rule becomes a derivation like every other.
+**The check that catches it costs one sentence.** Before the DDL, say what one row asserts, without
+naming a consumer, a generator pass, or an existing class. `jvm_class_supertype` passes: this
+classfile declares this supertype through this clause. `intent_class_member_slot` passes: this class
+offers this slot under this name. "The class the resolver would bind to this type" fails out loud,
+before any code is written. The census commits already shipped pass it, which is why they survive
+this rewrite untouched; the plan for what came after them did not.
+
+**Decomposed on grain, the six clauses are five facts and a filter.** Each stands alone, each is
+anchored against its own source, and the keystone survives as the thin one:
+
+- *The producer binding.* One row per field coordinate to the method producing its value, resolved
+  from the `@service` and `@externalField` references against the census. A use-keyed derived join,
+  which is the shape an authored coordinate resolving into a class-side one always takes here. The
+  "unique method of this name" rule is an arity test over `jvm_method`, and a name that fails it is a
+  validation rejection rather than a walk that silently picks one.
+- *The type reference.* One row per position in a declared type, naming the class at that position.
+  A census fact, and the finding below is that it does not exist yet.
+- *The accessor hop.* One row per field coordinate and standing class to the class the hop lands on:
+  a local join over `intent_class_member_slot` and the type reference, with no recursion in it.
+- *The backing itself.* Reachability from the producer-grounded seeds over the hop relation. One rule
+  rather than six, and its row now asserts something observable: this graph's type is backed by this
+  class.
+- *The cardinality reading.* Not a step in a walk. `graphql_field.is_list` and the producer's
+  declared type either agree or they do not, and the disagreement is a detection the store does not
+  have today. Burying it as a clause inside the walk is what hid it.
+- *The `@table` shadow* is `intent_bound_table`, which exists. Two independently walked populations
+  coalesced by a view is the provenance rule, not an arm of somebody's resolution.
+- *The root mask* is a filter one consumer applies. It has no business inside a relation.
+
+**The keystone still materializes, and now for a reason that fits in a sentence.** The SDL type graph
+is cyclic, so the closure has the same no-safe-view-form problem `intent_type_domain`'s comment
+states: a recursive UNION does not terminate, and the path-guarded form enumerates simple paths. H2
+accepts a path-guarded recursive CTE inside a view, so the constraint is cost rather than syntax, and
+the existing judgement stands. What changed is that with the clauses lifted out, the writer is the
+`ReachabilityRows` template unmodified, a capture-cadence writer clearing its graph partition and
+re-deriving under a monotonicity bound, rather than a walk transcribed into SQL wearing that
+template's clothes. It registers `DERIVED` with an anchor under `no.sikt.graphitron.rewrite.derive`.
+
+**A conflict becomes visible instead of resolved in passing.** A type reachable from two seeds
+carrying different classes is two rows, and a view detects the contradiction the way
+`intent_authored_claim_conflict` already does for claims. The walk's first-wins arm made that case
+unobservable. So the decomposition does not merely preserve behaviour; it surfaces a population
+nobody could previously ask about, which is the usual dividend and the reason grain is worth the
+argument.
+
+**Where a fact is missing the census grows, and none of the three rules needs reflection.** Overload
+resolution is a count, per the producer binding above: the census keys a method on its descriptor
+precisely so overloads are distinguishable. The two-level carrier's accessor probe is a join, not a
+reflection call, `intent_class_member_slot` answering what slots a class offers and
+`jvm_method_parameter` carrying the shapes the probe gates on; intricate to transcribe is not the
+same as impossible, which is what the first reading conflated. Container detection is
+`isAssignableFrom`, and it was a genuinely missing fact rather than a missing capability: a classfile
+declares its own superclass and interfaces, and the scanner held the `ClassModel` exposing both and
+recorded neither. That gap is what the first step closed.
 
 **Why not run the real reflection inside capture, which would be less work.** Because it would write
 a row the store cannot account for. The binding would be readable and not re-derivable: no consumer
@@ -1832,10 +1879,14 @@ layer below where that failure usually gets caught. The store is the model, so a
 applies is a rule the store can state, and where it cannot, the census is short a fact and the answer
 is to capture the fact.
 
-**One of the two new derivations can be a view.** A class hierarchy is acyclic, so the assignability
-closure terminates without a path guard and states itself as a recursive view. The backing-class walk
-is over the SDL type graph, which is cyclic, so it takes the materialized form above. The difference
-is worth stating because it is the whole of why one is a table and the other is not.
+**The assignability closure is a view, and it is smaller than the first plan made it look.** A class
+hierarchy is acyclic, so the closure terminates without a path guard and states itself as a recursive
+view, where the backing reachability is over the cyclic SDL type graph and takes the materialized
+form above. That difference is the whole of why one is a table and the other is not. Worth stating
+too that the closure is not load-bearing: the container question is closed over a handful of named
+classes, so a general transitive relation is capability nobody asked for. It stays because it is a
+cheap view over a census relation that had to exist anyway, not because anything waits behind it, and
+it is sequenced accordingly rather than second.
 
 **Found while building the first step: a type reference in the census is a display name, and the
 walk needs a resolvable one.** Every type the census records outside `jvm_class.class_name` is
@@ -1849,17 +1900,20 @@ is precisely the collision `jvm_method.descriptor` exists to avoid, one package'
 another's. So the closure landing first is necessary and not sufficient: assignability becomes
 answerable, and what a hop would feed it still does not identify a class.
 
-The fix has two candidate shapes and the choice belongs to the walk's own commit, where the reader
-that decides it exists. A qualified twin beside each display column is the smaller change and
+The fix had two candidate shapes and the decomposition above settles which, so what was deferred to
+the walk's own commit is decided here. A qualified twin beside each display column is the smaller
+change and
 answers the outer question only: an erasure's binary name is one field off the descriptor, and it
 says nothing about the `Film` inside `List<Film>`. A type-reference relation is the larger one and
 answers both: a declared type is a tree, `Map<String, List<Film>>` names three classes at three
 positions, and a relation keyed by the owning coordinate and a position path records what the
 Signature attribute already spells. The peel rule then descends by position instead of re-parsing a
 rendered string, and the same relation serves parameters and record components, which peel by the
-same rule. The recommendation is the second, because the first leaves the walk holding an
-unresolvable name at exactly the depth the element type lives at, which is the whole of what the
-walk is after.
+same rule. It is the second, because the first leaves a reader holding an unresolvable name at
+exactly the depth the element type lives at, which is the whole of what the hop is after, and because
+the type reference is a named member of the decomposition rather than a means to one relation's end:
+a position in a declared type is a thing the classfile states, so it passes the row-assertion check
+on its own and is worth having whatever reads it.
 
 **The closure ends where the scan does, and that is a disclosed limit rather than a bug.** Nothing
 puts the JDK on a classpath entry, so a chain reaching `java.util.ArrayList` has a row naming it and
@@ -1871,33 +1925,43 @@ rather than as not-assignable, and the corpus anchor is where it would surface i
 one. Closing it would mean capturing supertypes for names the scan never reached, which is a
 capture-side question (a fact the store is short) and not a reason to hold the closure.
 
+**The differential is a fact, not a test.** The `walk_` family is the precedent the first plan
+ignored. Instrumenting the legacy resolver to write what it binds makes the comparison a shadow
+between two relations in one store: runnable over any corpus rather than only the examples an
+agreement test enumerates, checkable while the derivation is half built rather than only once it is
+finished, and self-deleting, because the family header carries a removal criterion and the rows drain
+when the resolver retires. A total agreement test does none of that and leaves the predecessor
+normative with no expiry. Where the two disagree, each case is adjudicated on its own and the outcome
+is either a fix to the derivation or a recorded behaviour change with its reason. Fidelity to the
+walk is evidence here, not the specification.
+
 **The sequence, in order, each commit green and none changing generator behaviour on faith.**
 
-1. The census carries declared supertypes. The scanner reads `superclass()` and `interfaces()` off
-   the `ClassModel` it already holds, the reference gains the component, and `jvm_class_supertype`
-   lands as a census relation registered on the `EQUALITY` arm with its siblings. A supertype name
-   the scan never reached is still a row: what the closure needs is the name a classfile declares,
-   and the JDK interface at the end of a chain is exactly the name nobody scans.
-2. `intent_class_assignable`, the transitive closure over those declarations, as a recursive view.
-   The hierarchy is acyclic, so this one needs no path guard and no materialization.
-3. The census names types resolvably, in whichever of the two shapes above the walk's reader
-   justifies, registered on the `EQUALITY` arm like its siblings. Without this the closure has
-   nothing to answer about.
-4. The backing-class walk as a derivation over the store: the root producer grounding (the unique
-   method of a `@service` or `@externalField` reference, its declared return type, the container peel
-   through the closure, the element class), the accessor hop through `intent_class_member_slot`, the
-   cardinality agreement through `graphql_field.is_list`, the two-level carrier fork through the slot
-   relation, the `@table` shadow, and the root mask. Materialized, written by the capture-cadence
-   writer above.
-5. The anchor: agreement with `RecordBindingResolver` over the spec-by-example corpus, total in both
-   directions, so a type the resolver binds and the relation does not is a failure rather than a
-   footnote. This is the step that decides whether the transcription is faithful, and nothing depends
-   on the fact until it passes.
-6. Have the generator read the fact. The resolver's copy of the walk retires only here, once the
-   anchor has held.
-7. The consumers follow, each its own commit: the class arm of the type-scope question, then
-   `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the class-backed-parent
-   arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
+1. The census carries declared supertypes. Done: the scanner reads `superclass()` and `interfaces()`
+   off the `ClassModel` it already holds and `jvm_class_supertype` lands on the `EQUALITY` arm with
+   its census siblings. A supertype name the scan never reached is still a row, the JDK interface at
+   the end of a chain being exactly the name nobody scans.
+2. The census names types resolvably, in the type-reference shape settled above, on the `EQUALITY`
+   arm. First of the remaining steps because it is the actual blocker: nothing below can identify a
+   class without it.
+3. The legacy walk writes what it binds, as a `walk_` relation on the `ORACLE` arm with its removal
+   criterion in the family header. Before the derivations rather than after them, so every step below
+   has a differential to check itself against as it lands.
+4. `intent_class_assignable`, the closure over step 1's declarations, as a recursive view.
+5. The producer binding: the field coordinate to its producing method, with the non-unique name a
+   rejection rather than a silent pick.
+6. The accessor hop: the field coordinate and standing class to the class the hop lands on.
+7. `intent_type_backing_class` as reachability from step 5's seeds over step 6's edges, materialized
+   on the `ReachabilityRows` pattern, beside the conflict view over types two seeds answer
+   differently. The shadow against step 3 reaches agreement here, one adjudicated disagreement at a
+   time.
+8. The two facts that were clauses: the cardinality disagreement as a detection, and the `@table`
+   population coalesced with the derived one by a view.
+9. Have the generator read the fact. The resolver's copy of the walk retires here, which drains step
+   3's relation and retires the `walk_` addition with it.
+10. The consumers follow, each its own commit: the class arm of the type-scope question, then
+    `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the
+    class-backed-parent arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
 
 ## Retired vocabulary
 

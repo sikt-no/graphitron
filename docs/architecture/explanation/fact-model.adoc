@@ -28,6 +28,18 @@ Each fact is an independent functional dependency of its coordinate, found by it
 
 *Enforced by:* `FactCaptureAgreementTest.everyRelationIsRegistered`, whose driver enumerates every generated relation and fails on one with no registered agreement source, with a reverse leg failing on a registration the DDL no longer declares, so a fact relation can neither arrive unchecked nor linger as a phantom.
 
+== Name the row, not the question
+
+A relation named for a consumer's question inherits that question's shape, and the damage is not visible from inside the work. Its grain becomes whatever the caller's return value was. Its derivation absorbs every special case the caller had, arriving as one relation with a procedure behind it rather than a fact with a grain. And because no independent source states the answer, the only available oracle is the code being replaced, so a migration's own predecessor becomes normative and whatever bugs it has become pinned invariants. The three symptoms travel together, and each one looks like a local modelling choice on its own.
+
+The check runs before the DDL and costs one sentence: say what a single row asserts, without naming a consumer, a generator pass, or an existing class. "This classfile declares this supertype through this clause" passes. "This class offers this slot under this name" passes. "The class the resolver would bind to this type" fails, and it fails while the fix is still free.
+
+What survives the check is usually several facts where the question suggested one, each anchorable against its own source and composable by the next consumer, which wanted a different combination. The relation the question asked for often survives too, radically thinner, once the clauses that were really separate observations have moved out beside it. Watch for the ones that were never facts at all: a filter one caller applies, and an agreement between two facts, which is a detection rather than a step.
+
+The corollary is about oracles. Fidelity to a predecessor is evidence, not a specification. Where a migration needs the comparison, the predecessor writes facts and the comparison is a shadow between two relations, which runs over any corpus, answers while the replacement is half built, and drains when the predecessor retires. The `walk_` family is the shipped case, with its removal criterion in its own family header. A test asserting equality with old behaviour has none of those properties and quietly installs the leaf zoo as the standard the fact model is held to.
+
+*Not mechanically enforced:* the check is a sentence said out loud before the DDL exists. The gates catch downstream shapes (an unregistered relation, a derivation with no anchor, a stored value that should be a view), never the naming that produced them.
+
 == Provenance: pick the shape per fact
 
 Do not assume a fact's origin is a column on the fact. Authored and inferred values often come from independent walks (the directive decode versus the catalog or classpath), and when they do the natural form is separate relations coalesced by a view, not one relation with a provenance tag. When one value fills one slot, a sparse authored column plus a default rule suffices. Either way the resolved value is always a view over the populations, never a stored merge.
