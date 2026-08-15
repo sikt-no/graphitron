@@ -21,9 +21,10 @@ store-side reads here, apart from the LSP work, because the MCP catalog tools ha
 acceptance surface (tool output, paging) that has nothing to do with cursors and buffers, and
 because folding them into the LSP item would credit their `rewrite/catalog` lines to that item's
 simplification measurement. Two constraints bind the siblings: `CatalogFacts` deletes in the same
-commit as its last reader's migration, and both consumers read one shared store-side catalog view,
-never a narrowing made for one of them (the `FactCapture.capture` javadoc already states this).
-`TenantScopes` and `McpWire` cite the type only in javadoc and just repoint.
+commit as its last reader's migration, and both consumers read one shared store-side *base*, never a
+narrowing made for one of them (the `FactCapture.capture` javadoc already states this). The base is
+the relation. What each consumer writes over it is its own, which is the subject of the next
+section. `TenantScopes` and `McpWire` cite the type only in javadoc and just repoint.
 
 ## The census is already captured
 
@@ -50,142 +51,171 @@ more honest than the projection:
   dropped constraint would point at nothing. The store keeps what the database declares, so
   "the unique keys other than the primary key" is a query.
 
-## One reader family, read by both consumers
+## The MCP writes its own queries
 
-The LSP's migration landed its store reads as small static readers over `StoreHandle` in
-`graphitron-lsp`'s `facts` package: `CatalogTable` (the census key: source package, schema, table),
-`CatalogColumns`, `CatalogKeys`. The catalog reads this item needs join that family rather than
-starting a second one, and `graphitron-mcp` already compiles against `graphitron-lsp`, so the
-direction works: MCP reads the same readers, unchanged, and the readers it needs beyond them are
-added there.
+The obvious move is to reuse the LSP's readers. `graphitron-lsp`'s `facts` package already holds
+`CatalogTable`, `CatalogColumns` and `CatalogKeys` over `StoreHandle`, and `graphitron-mcp` compiles
+against `graphitron-lsp` today, so the imports would resolve. This item does not do that, and the
+reason is the whole point of having built a store.
 
-That is deliberately not a claim that `graphitron-lsp` is the right long-term home for facts two
-modules read. It is not, but the risk is worth naming precisely, because it is not the package name.
-What crosses the module boundary is a *row vocabulary*: `CatalogColumns.Column`, `CatalogKeys.Key`,
-`CatalogTable`. "One model, many views" is satisfied while both modules read the base; it is
-strained when one module reads the other's Java view of it, and `CatalogDescriptors` in particular
-would go from composing over one consumer's projection type to composing over another's. So the
-constraint this item accepts in exchange for deferring the move is that no MCP-only component lands
-on those records: a read one consumer wants and the other does not becomes its own entry point, and
-a derivation a second consumer asks for becomes a store view.
+The shared thing is the *relation*, not a Java class over it. `ClassMemberSlots` says so in its own
+javadoc: the bean rule "used to be re-run per build to hand the same list to all four" surfaces and
+"now has one home in the DDL and this is the read of it". Once the rule lives in the view, a reader
+is a query plus a row shape, and which module it sits in is incidental. What is not incidental is
+what crosses the module boundary when one consumer imports another's: a Java row vocabulary, which
+"one model, many views" is satisfied by neither module owning. Both modules reading the base is the
+arrangement the doctrine describes; one module reading the other's view of the base is not.
 
-The relocation itself covers four families (SDL, catalog, `jvm_`, java-source), is answered once for
-all of them or not at all, and moving a package the sibling item is actively rewriting buys no
-behaviour, so it goes to its own item. One constraint on that item is worth recording now, while it
-is cheap: `graphitron-model` has no test sources and cannot acquire them cheaply, because a store
-fixture needs `FactCapture`, which lives downstream of it. Readers homed beside `StoreHandle` are
-therefore testable only from a consumer module, and whoever answers the home question has to weigh
-that rather than rediscover it.
+The two consumers also want different queries. The LSP asks whether a spelling lands anywhere, to
+decide a squiggle. `catalog.describe` assembles five relations into a wire response. Those overlap
+in `FROM` clause and nowhere else, and a shared reader serving both accumulates entry points that
+one caller never uses. Where a rule genuinely must be shared, this model already has an escalation
+and it is not a Java class: it graduates to a store view, which is where the qualifier split and the
+case-insensitive match went when the sibling item stopped them acquiring a third copy.
 
-The one wrinkle is `CatalogColumns`, which overlays the generated field's Javadoc through
-`SourceDeclarations`. That overlay is a correlated `Field<String>` and stays; MCP passes none and
-reads the Javadoc component as empty, which is the same "absence is a fact" reading the LSP gets on
-a source tree nobody has parsed.
+So the catalog reads this item needs are written in `graphitron-mcp`, against
+`no.sikt.graphitron.model.Tables`, scoped through `store.reads(...)` like every other read, shaped by
+what the wire wants rather than by what a second consumer might one day want. The LSP keeps its
+readers unchanged; nothing in `graphitron-lsp` is touched by this item.
 
-## What the readers must answer
+That also removes the constraint the shared-reader arrangement needed to make itself safe (no
+MCP-only component on the shared records), the deferred relocation item it was paying for, and the
+argument about `graphitron-model` having no test sources. A query written in the module that runs it
+is tested by that module's own fixture.
 
-Per consumer read, with the reader that answers it:
+`CatalogColumns`'s Javadoc overlay through `SourceDeclarations` is a case in point rather than a
+wrinkle: it is a correlated `Field<String>` the LSP wants and MCP passes nothing for. Under a shared
+reader that is a component one caller reads as permanently empty. Written separately, it simply is
+not in the MCP query.
 
-* **The table census, ordered and filtered.** Every table of this graph's sources, optionally
+## The dependency this item is paying down
+
+`graphitron-mcp` imports exactly two things from `graphitron-lsp`: `Workspace`, and
+`ClassMemberSlots`. Nothing else, and the four projections MCP reads through `Workspace`
+(`snapshot`, `catalog`, `sourceIndex`, `catalogFacts`) are generator types from `graphitron`, not LSP
+types. The edge is one state holder plus one misplaced reader, and it dates from before the store:
+MCP had no way to reach generator output except through the object the LSP already held it in.
+
+The target state is no edge at all. It is not reachable here, and saying which part blocks is worth
+more than a deferral:
+
+* `catalogFacts` is this item.
+* `ClassMemberSlots` is this item too. It is already a store read, so nothing migrates; MCP writes
+  its own query over `intent_class_member_slot` and the LSP keeps its own for the four surfaces its
+  javadoc names. Leaving the one existing instance of a coupling while declaring the rule against it
+  would make the rule weaker than the exception.
+* `sourceIndex` and the external references are `mcp-code-tools-read-the-store.md`, whose relations
+  (`jvm_`, `java_`) are captured.
+* `snapshot` and `vocabulary` are blocked on substrate rather than on scoping. The sibling item's
+  own increment states it: the `@field` renderer needs a column match at a site whose table is not
+  the parent's own, which no relation answers yet, and `@reference` needs foreign-key discovery,
+  which is unbuilt. `graphitron_node`, `graphitron_node_key_column` and the `graphql_directive`
+  family are there for the rest, but classification is not migratable until those two land.
+
+One preparatory step belongs here because it is cheap and makes the rest legible: `graphitron-mcp`
+declares only `graphitron-lsp` today and reaches `graphitron` and `graphitron-model` transitively
+through it. Declaring those two directly changes no bytecode and turns the LSP edge into what it
+actually is, two imports, rather than a dependency that appears to carry the module's whole
+substrate. The pom edge deletes in whichever of the items above lands last, with a test that fails
+if it comes back.
+
+## What the queries must answer
+
+Per consumer read:
+
+* **The table census, ordered, filtered and paged.** Every table of this graph's source, optionally
   narrowed by exact case-insensitive schema and case-insensitive substring on the SQL name, ordered
-  by schema then table name. New entry point on a `CatalogTables` reader; `catalog.tables` pages
-  over the result, `catalog.search` composes its corpus from it, `EdgeProducer` resolves bare names
-  against it.
+  by schema then table name, with the page bound applied in SQL. `catalog.tables` answers from it
+  directly, `catalog.search` composes its corpus from it, `EdgeProducer` resolves names against it.
 * **A spelling resolved to a table.** Bare (`film`) or inline-qualified (`public.film`), with a
   separate schema argument as the alternative to inline qualification (inline wins), all matching
-  case-insensitive. Same reader, same query, different filter. No sealed outcome type is minted for
+  case-insensitive. Same query, different filter. No sealed outcome type is minted for
   it: how many rows came back is the answer, per the sibling item's "sealed resolution outcomes",
   and the wire taxonomies that already exist (`EdgesTool.Selection`, `catalog.describe`'s
   `resolution` field) keep their arms and read the row count.
 
-  `CatalogTables` already carries one sealed answer, and this entry point deliberately does not
-  widen it. `CatalogTables.named` matches a spelling case-insensitively and returns `Match`, whose
-  third arm `NoCensus` separates "the census holds no table at all" from "no table spells this", so
-  that a catalog nobody has generated yet does not turn every `@table` in a schema red. That
-  distinction belongs to the LSP, and it is the reading the refusal delta below rejects for the
-  tools: absence of rows is absence of tables, so an MCP arm over `NoCensus` would report a
-  database the store cannot distinguish from an empty one. The new entry point therefore answers
-  with rows, and takes the schema qualifier `named` has no argument for. Two entry points on one
-  reader is exactly the rule this item already set for a read one consumer wants.
+  The LSP's `CatalogTables.named` answers the nearest question and is the clearest case for
+  separate queries rather than a shared one. It returns a sealed `Match` whose third arm `NoCensus`
+  separates "the census holds no table at all" from "no table spells this", so that a catalog nobody
+  has generated yet does not turn every `@table` in a schema red. The tools want the opposite
+  reading, stated in the refusal delta below: absence of rows is absence of tables. An MCP arm over
+  `NoCensus` would report a database the store cannot distinguish from an empty one. Sharing the
+  reader would mean either MCP ignoring an arm or the LSP losing a distinction it needs, which is
+  the shape of every reader serving two consumers with different meanings for the same rows.
 
   The qualifier split, the case-insensitive match and the membership scope are the rule
   `intent_spelled_table` owns for spellings an author wrote in a directive, and the sibling item
   spent an increment moving it there so it would not acquire a third copy. This is deliberately not
   a fourth: that view's population is authored SDL, and an MCP tool argument is not authored SDL, so
-  the view cannot answer for it. What the two owe each other is agreement, so the shared reader
-  states the rule once and its javadoc links the view as the site that must match it. If a tool
-  argument ever needs to resolve the way a directive does (a lookup by `@table` spelling, say), the
-  answer is to read the view, not to widen this reader.
-* **A table's columns**, in `ordinal` order. `CatalogColumns.of(store, CatalogTable)` today, plus a
-  census overload for the whole graph so the search corpus and the reverse index read columns in
-  one query rather than one per table.
+  the view cannot answer for it. What the two owe each other is agreement, so the MCP query's
+  javadoc links the view as the site that must match it. If a tool argument ever needs to resolve
+  the way a directive does (a lookup by `@table` spelling, say), the answer is to read the view.
+* **A table's columns**, in `ordinal` order, keyed by schema and table; plus a whole-graph form so
+  the search corpus and the reverse index read columns in one query rather than one per table.
 * **A table's uniqueness constraints**: the primary key, and the unique constraints other than it,
-  each with its constraint name and ordered columns. New reader over `sql_constraint` /
-  `sql_constraint_column` / `sql_primary_key`. Worth its own reader rather than a widening of
-  `CatalogKeys`, whose subject is referential constraints.
-* **A table's indexes** with their ordered columns. New reader, one query with its column join.
-* **A table's foreign keys in both directions, with column pairs.** `CatalogKeys.touching` already
-  answers both directions in one query and already carries the `Keys` constant the LSP hovers. The
-  column pairs are a second entry point on that reader, not extra components on its `Key` record:
-  only the wire wants them today, and a shared row record that grows a component one consumer
-  ignores is the intersection-cap the sibling item rejected in the other direction. The pairing
-  rule (the referencing constraint's own `sql_constraint_column` rows, matched on position against
-  the referenced constraint's) has its home in that relation's own DDL comment, and the reader
-  renders what the comment states. Should a second consumer ask for the pairing, it graduates to a
-  store view rather than to a second Java spelling, which is the doctrine's own escalation.
+  each with its constraint name and ordered columns. One query over `sql_constraint` /
+  `sql_constraint_column` / `sql_primary_key`.
+* **A table's indexes** with their ordered columns, one query with its column join.
+* **A table's foreign keys in both directions, with column pairs.** Both directions are predicates
+  on `sql_referential_constraint`, and the pairs are the referencing constraint's own
+  `sql_constraint_column` rows matched on position against the referenced constraint's. That rule is
+  stated by `sql_referential_constraint`'s DDL comment, which calls it guaranteed by SQL semantics
+  and never copied onto the referencing row; the query renders what the comment states rather than
+  restating it. The LSP's `CatalogKeys.touching` answers the same shape for the hover, carrying the
+  `Keys` constant instead of the column pairs, and the two stay separate for the reason the section
+  above gives.
+* **A backing class's member slots**, for `SchemaView`: one query over `intent_class_member_slot`,
+  ordered by slot name, replacing the `ClassMemberSlots` import. The bean rule the read depends on
+  is the view's, so there is nothing to duplicate but the projection of three columns.
 
 Every one of these is scoped through `store.reads(...)` on the relation's `source_name`, which is
-what keeps a sibling module's catalog out of the answer in a shared store.
-
-Two of the shared row records are keyed too loosely for what the MCP reads ask of them, and the
-lift lands here. `CatalogColumns.Column` carries `schema` and `tableName` but not the source
-package, so a whole-graph census cannot say which table a row belongs to when two sources carry one
-coordinate; `CatalogKeys.Key` carries `referencedTable` as a bare name, while the wire's
-`targetTable` field is schema-qualified. Both take `CatalogTable` (the census key the readers' own
-javadoc already argues for) in place of the loose names. That is a widening of the shared
-vocabulary toward the key the store actually has, not toward one consumer's rendering.
+what keeps a sibling module's catalog out of the answer in a shared store. That scoping also settles
+the key question: `RewriteContext.jooqPackage` is a single value, so one graph reads one generated
+package and every `sql_` row it owns carries the same `source_name`. Within a scoped read
+`(schema, table)` is therefore already unique, and the queries key on it. The store's own key leads
+with the source because the store is shared across graphs and modules, which is a fact about the
+store rather than about any one graph's answer. Should a graph ever read more than one package, the
+scoped reads become ambiguous in exactly one way and the queries acquire the source; nothing about
+the wire changes, since a wire ID has no slot for a source to begin with.
 
 ## The consumers
 
-**`catalog.tables`** takes the handle instead of the projection: one census query with the two
-filters applied in SQL, then the existing opaque-cursor paging over the result. The wire entry
-(`schema`, `name`, `comment`) is unchanged.
+**`catalog.tables`** answers from one query, and its paging becomes keyset. The wire entry
+(`schema`, `name`, `comment`) is unchanged and so is the opaque-cursor convention; what changes is
+what the cursor encodes. `McpWire` today base64-encodes an offset into an in-memory list, and its
+own javadoc states why that is safe to change: the encoding is "opaque so the wire contract does not
+promise offset semantics". So the cursor becomes the last `(schema, name)` a page emitted, the query
+becomes a `>` predicate on that pair with `ORDER BY schema, name` and the limit applied in SQL, and
+nothing on the wire has to move.
+
+That is worth doing for more than the round trip it saves. An offset is only meaningful against a
+result order that is stable between calls, which the projection's reflective field order never was;
+under keyset the ordering *is* the cursor, so the guarantee is structural rather than a property the
+census has to promise. It also keeps the paging state on the client where it already lives, and
+leaves the store answering questions rather than holding position.
+
+`McpWire.page` stays for the tools that page an in-memory list, since five of them still do. What
+this item adds is the keyset form beside it, not a replacement.
 
 **`catalog.describe`** resolves the spelling, then reads columns, constraints, indexes and keys for
-the resolved table. Five small queries where there was one map lookup, so a capture committing
-mid-call could otherwise leave the columns of one generation beside the keys of the next, and the
-answer has to assemble inside one read transaction. Wrapping `dsl.transaction` around the handle
-the server holds today does not give that: the handle carries the session writer's own connection,
-whose isolation level is whatever the writer left it at, and a wrapper on a connection a capture
-may itself be inside is a savepoint rather than a boundary. `StoreReader` is the substrate's own
-answer, setting H2's snapshot isolation at mint and stating that a second reader is a mint away, so
-the MCP server takes one (minted in `DevMojo` beside the handle, closed at `cleanup()`) and the catalog
-tools answer inside `reader.read(...)`, which is the shape `StoreAccess.answering` gives the LSP.
-The diagnostics tools' existing reads through the writer handle are left as they are: they are one
-query each, so they have nothing to straddle, and moving them is not this item's call to make.
+the resolved table. Five small queries where there was one map lookup, so the answer assembles
+inside one read transaction rather than risking the columns of one generation beside the keys of the
+next. H2 gives that directly; the only wrinkle is that it cannot come from the handle the server
+holds, which carries the session writer's own connection, where a nested transaction is a savepoint
+rather than a boundary. So the server takes a `StoreReader`, which is the substrate's existing
+answer: `DevMojo` mints it from `sessionStore.reader()`, the same call that already gives
+`StoreAccess` the LSP's reader, and closes it in `cleanup()` beside `lspStore`. The catalog tools
+answer inside `reader.read(...)`. One field, one line of teardown.
 
-Three things come with the server holding both. The reader is a second field beside `storeHandle`
-on a constructor chain whose forms this class names by arity in its own javadoc ("the six-arg form
-without a fact store handle"), so extending that chain and its prose is part of this change rather
-than a consequence of it. `DevMojo` mints it from `sessionStore.reader()`, the same call that
-already gives `StoreAccess` the LSP's reader, and closes it in `cleanup()` beside `lspStore`. That
-is its own lifetime rather than the handle's: a `StoreHandle` is a record over a connection the
-store owns and closes nothing, so the two are neighbours in the wiring and not in teardown. And the
-refusal gate is the
-reader rather than the handle. The two are wired together, so a server built without one is built
-without both and the distinction never shows at runtime, but the catalog tools check the thing they
-answer through, which keeps the refusal true by construction instead of by that coincidence.
-
-The full constructor's javadoc owes the split. It states today that sharing the writer's connection
-"is safe here only because this server is turn-based; a consumer answering concurrently mints a
-`StoreReader` instead", which stays exactly true of the diagnostics tools and stops being the whole
-story once the catalog tools mint one for a different reason: not concurrency, but an answer
-assembled from five queries. Turn-based is also what makes the one reader enough, its reads
-serializing on a single connection; `StoreReader` names a second reader as the remedy should that
-ever bite, and nothing here needs one.
+Two details come with it. The refusal gate is the reader rather than the handle, so the tools check
+the thing they answer through. And the full constructor's javadoc says today that sharing the
+writer's connection "is safe here only because this server is turn-based; a consumer answering
+concurrently mints a `StoreReader` instead", which stays true of the diagnostics tools and gains a
+second reason here: not concurrency, but an answer assembled from five queries. Those tools keep
+their single-query reads through the handle.
 
 **`catalog.search`** loses its `Supplier<CatalogFacts>` and composes the corpus from the census plus
-the column census. `CatalogDescriptors.descriptor` takes the shared reader's row shape and is
+the column census. `CatalogDescriptors.descriptor` takes the census query's row shape and is
 otherwise untouched, but the corpus is not: the composer folds column order into each descriptor
 and `corpusHash` digests the descriptors in table order, so the two ordering deltas below change
 the hash by construction. The first search after the migration pays one full re-embed and the hash
@@ -267,19 +297,12 @@ The tool output is the acceptance surface, so the deltas are named rather than d
   key-matching rule leaking into a discovery tool.
 * **Table order becomes schema then table name.** Today it is the generated `Tables` class's
   reflective field order, which the JDK does not promise is stable at all, and page cursors are
-  offsets into it. Alphabetic order is both stateable and stable, which is what a cursor needs.
+  offsets into it: a reordering between two calls silently skips or repeats entries. Under the
+  keyset paging above the order is the cursor, so this stops being an ordering the census has to
+  promise and becomes the one it is keyed by.
 * **Column order becomes the table definition's.** `sql_column.ordinal` is the position
   `Table.fields()` states; the projection carried the reflective field walk's order, which is
   documented as no order in particular.
-* **One coordinate answers once, and the tool is what collapses it.** The store's key is (source
-  package, schema, table), so a graph whose sources carry one `schema.table` coordinate twice has
-  two rows where the projection's map silently kept the last. The shared reader answers with the
-  full key, because that is what the store holds and a reader that collapsed it would be narrowed
-  for the consumer whose wire ID cannot name a source. The MCP mapping collapses, on the
-  coordinate, ordered by source package so the survivor is stated rather than whichever row the
-  engine returned first. It collapses *before* the resolution count is read, since
-  `catalog.describe`'s `Ambiguous` arm names candidate schemas and would otherwise report one
-  schema twice as an ambiguity no qualifier can resolve.
 * **An ambiguously bound type stops emitting an unqualified edge target.** `resolveTable` renders a
   degraded `TableNode` with an empty schema, and `wireId()` drops the qualifier entirely, so `edges`
   answers today with a bare `film` where every other table node is `schema.film`. Reading the type
@@ -298,6 +321,12 @@ The tool output is the acceptance surface, so the deltas are named rather than d
 `BuildArtifacts.catalogFacts` and the convenience constructor, `Workspace.catalogFacts` (field,
 accessor, and its assignment in `setBuildOutput`), `DevMojo`'s threading of the value, and
 `CatalogSearchIndex`'s facts supplier and `liveFactsRef` gate.
+
+Two imports also go, which is the dependency half. `SchemaView`'s `ClassMemberSlots` import is
+replaced by MCP's own query, leaving `Workspace` as the sole remaining `graphitron-lsp` import in
+the module. And `graphitron-mcp`'s pom gains direct declarations of `graphitron` and
+`graphitron-model`, which it reaches transitively through `graphitron-lsp` today. Neither changes
+what is on the classpath; together they make the remaining edge one import wide and visible as such.
 
 The `JooqCatalog` walk that fed the projection does not retire with it: classification reads the
 same catalog, and `CatalogBuilder.build` still runs. What goes is the second pass over it that
@@ -392,8 +421,12 @@ hand-building projection fixtures.
   captured store is chosen to carry at least two tables (the test jOOQ package does) while the five
   hand-built projections stay, or `catalog.tables`' paging agreement moves to a store-backed case of
   its own. Which of the two is the implementer's call; that the case exists is this item's to say.
-* A store-backed case per shared reader lands with the reader, in whichever module's fixture can
-  capture (the LSP's `StoreFixture` for the readers the LSP also reads).
+* The member-slot query gets `SchemaView`'s existing case pointed at it, unchanged. The read is the
+  same relation with the same ordering, so what the case pins is that the resource still renders the
+  slots, not that a new rule was introduced.
+* Every query this item writes is tested from `graphitron-mcp`'s own fixture, which is the practical
+  half of writing them here: a query lives in the module whose acceptance surface it serves, and is
+  pinned by the tests that assert that surface.
 
 No agreement test between projection and store is worth writing: it dies with the projection in the
 same commit, and what it would have asserted is exactly what the per-tool cases assert against a
@@ -414,12 +447,19 @@ real capture.
 
 ## Scope boundary
 
-`graphitron-mcp` reads four generator-side projections in all, and this item moves one of them.
-`LspSchemaSnapshot` and the classification types stay, but not because the substrate under them is
-deferred: `lsp-reads-the-fact-store.md` has since named it view by view and built most of it,
-including the claim views for the main classifier and the bindings this item's edge arms read. What
-stays is the projection, for the arms that still read it, and the type arm above is the one that
-stops. `CompletionData.ExternalReference` and `SourceWalker.Index` stay too, even
+`graphitron-mcp` reads four generator-side projections in all, and this item moves one of them. The
+other three are what keeps `Workspace` alive in the module, and the section above says which item
+each belongs to. Two are blocked on substrate rather than on scoping, which is the part worth
+repeating here so nobody re-litigates it: `lsp-reads-the-fact-store.md` has named the classification
+substrate view by view and built most of it, but its own increment records that the `@field`
+renderer needs a column match at a site whose table is not the parent's own, which no relation
+answers yet, and that `@reference` needs foreign-key discovery, which is unbuilt. Until those land,
+`LspSchemaSnapshot` cannot leave, and neither can `Workspace`.
+
+What this item does about that is refuse to add to it. The type arm above moves off the projection
+onto `intent_bound_table`; the field arms stay because there is nowhere for them to go. What
+`graphitron-mcp` does not do is acquire six new `graphitron-lsp` imports on the way past.
+`CompletionData.ExternalReference` and `SourceWalker.Index` stay too, even
 though the sibling item's "What retires" hands their MCP repoint to "the sibling item" and means
 this one: the code tools' Javadoc and location joins are a different family (`jvm_` and the
 java-source relations), a different acceptance surface (the `location` / `locationStatus` wire
@@ -434,5 +474,5 @@ failed sweep. The coupling runs that way and only that way: this item needs noth
 either sibling, so its `depends-on` stays empty, and the machine-visible edge belongs on the sibling
 whose Done gate is the one that waits.
 
-The relocation of the shared reader family out of `graphitron-lsp` is likewise not here; see "One
-reader family" above.
+The deletion of the pom edge itself is not here, since `Workspace` outlives this item. It belongs to
+whichever of the three named items lands last, along with the test that keeps it deleted.
