@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-14
+last-updated: 2026-08-15
 ---
 
 # Delivery verdict derives from the store, not from a hand-maintained negative-space switch
@@ -145,12 +145,22 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   domain contains root types by construction and the demand sibling registers their fields under its
   own `ROOT_OPERATION` arm.
 * **The discriminated target, reason `DISCRIMINATED_TARGET`.** `singleTableBackedVerdict` returns
-  `false` for a `@discriminate`-bearing target, with a matching exclusion inside its `ConnectionType`
+  `false` for a `TableInterfaceType` target, with a matching exclusion inside its `ConnectionType`
   arm, so a discriminated interface child reads `Inline` whatever its parent hands it and whatever
   markers it carries. `Inventory.media` in the `table-interface` example is the witness, a
-  discriminated interface child on a `@table` parent. The captured population is
-  `graphitron_discriminate`, keyed on the target type and projected onto the coordinates returning
-  it, which is the projection the root arm already makes. One seam to settle at the reduction: this
+  discriminated interface child on a `@table` parent. **The captured population is not
+  `graphitron_discriminate` alone**, which is the name-matching trap the two predicate entries below
+  record, met a third time. `@discriminate` is declared `on INTERFACE | UNION` and nothing rejects it
+  on a target carrying no `@table`, while `TypeBuilder` mints a `TableInterfaceType` only where an
+  interface carries both markers (its participant pass and its type dispatch state the conjunction
+  independently, and agree). So the arm is `graphitron_discriminate` joined to `graphitron_table` at
+  `graphql_type.kind = 'INTERFACE'`, keyed on the target type and projected onto the coordinates
+  returning it, which is the projection the root arm already makes. On the marker alone the arm would
+  also exempt a `@discriminate`-bearing union and a `@table`-less `@discriminate` interface, both of
+  which `mint` sends to the fan-in arm; since this exemption outranks every rule arm, the store would
+  report `INLINE` at a coordinate the walk reports `BATCHED`. No corpus coordinate carries either
+  shape, so the wide arm ships green, which is why the narrowing is stated here rather than left for
+  the shadow test to find. One seam to settle at the reduction: this
   exemption outranks every rule arm, whereas the `false` it replaces only defeats the readings that
   consult the target's binding, and the split reading's `@pivot` disjunct does not consult it. No
   coordinate is on both sides today (`@pivot` is rejected on root and record-backed parents, and no
@@ -211,9 +221,10 @@ pass null). So a `JoinedTableBound` participant cannot reach the predicate that 
 `roadmap/batched-discriminated-interface-child.md` states the same participant invariant
 independently, as the reason it must not copy this guard's shape.
 
-Two consequences. The arm's store-side gate is that the target is an interface or union with at least
-one table-bound participant: `graphql_implements` / `graphql_union_member` joined to
-`graphitron_table`. Every input is in the inventory above and every hop in this arm is single. It
+Two consequences. The arm's store-side gate is that the target is an interface or union, list-valued
+or connection-shaped, with at least one table-bound participant: `graphql_implements` /
+`graphql_union_member` joined to `graphitron_table`, over `graphql_field.is_list`. Every input is in
+the inventory above and every hop in this arm is single. It
 carries no `@discriminate` anti-join, because the exemption arm below outranks it and both readings
 say `INLINE`; the arm stays unmasked against that exemption exactly as it stays
 unmasked against the root one, which is the sibling's discipline (its rule views let
@@ -317,8 +328,8 @@ would have answered it silently.
 | `graphitron_service`
 
 | `DISCRIMINATED_TARGET` (exemption)
-| the target type carries `@discriminate`
-| `graphitron_discriminate`, projected onto the coordinates returning the type
+| the target is an interface carrying both `@discriminate` and `@table`, which is what `TableInterfaceType` means
+| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates returning the type
 
 | `POLYMORPHIC_FAN_IN`
 | the target is an interface or union, list-valued or connection-shaped, with at least one table-bound participant
@@ -424,7 +435,11 @@ set acquiring an enforcer that is not another switch.**
   already ships as a registered `Arm.DERIVED` relation, and it makes binding ambiguity rows instead
   of a silent pick: two candidate tables are two rows, so an arm that needs a settled binding states
   `candidates = 1` the way the column-match classifier does. A raw join re-spells a resolution the
-  store owns.
+  store owns. This governs the three rule arms that need a *binding*, and not the
+  `DISCRIMINATED_TARGET` arm, whose `graphitron_table` join is a presence test: what the walk reads
+  there is that the interface carries the marker at all, so routing that arm through the binding view
+  would drop an ambiguously-spelled discriminated interface out of the exemption and hand it back to
+  the rule arms it exists to defeat.
 * `DeliveryResidue` in `DemandResidue`'s mould: a record naming each population the store cannot yet
   express, each with a stated removal criterion. Predicted from reading, to confirm at
   implementation: the nesting-field domain boundary above, and any arm whose predicate depends on
