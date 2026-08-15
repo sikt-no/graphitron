@@ -2632,21 +2632,38 @@ COMMENT ON COLUMN javac_diagnostic.code IS 'Diagnostic.getCode(), the compiler''
 COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root locale); a transcribed fact because the oracle authored it, but display material: never a dimension, never an agreement anchor';
 
 -- ==== Walk reach facts ============================================================
--- What the legacy classification walk registered: the walked model's type and field
--- registries as membership rows, one relation per grain in the claim views' own mould so
--- neither relation carries a column that is NULL by kind. The writer is the capture-and-detect
--- pass, at capture cadence, inside the capture's graph-scoped ownership; a run without the
--- detection pass writes no rows, and the warm refresh clears the graph's partition with the
--- rest of its ownership scope. No foreign key into the graphql_ family on purpose: the writer
--- stands on the walked model, not on captured rows, and the walk's registries legitimately
--- hold coordinates capture spells differently (tombstones included). The rows exist so the
--- conflict detection's domain gate is a join instead of a Java membership test: the walk's
--- reach is narrower than capture's (capture is total, with no reachability pruning), and the
--- exemption populations the demand exemption census recorded never reached a legacy detector,
--- so an ungated detection would move the accept line exactly there. The gate dissolves when
--- the detection reads the resolved demand relation instead of the walk's reach (the gate-flip
--- follow-up's work), which drains these relations; the family retires with the walk whose
--- reach it transcribes.
+-- What the legacy classification walk registered and what it bound, in the walk's own
+-- vocabulary. The writer is the capture-and-detect pass, at capture cadence, inside the
+-- capture's graph-scoped ownership; a run without that pass writes no rows, and the warm
+-- refresh clears the graph's partition with the rest of its ownership scope. No foreign key
+-- into the graphql_ family on purpose: the writer stands on the walked model, not on captured
+-- rows, and the walk's registries legitimately hold coordinates capture spells differently
+-- (tombstones included).
+--
+-- The membership grains (walk_claim_domain_type, walk_claim_domain_field): the walked model's
+-- type and field registries, one relation per grain in the claim views' own mould so neither
+-- carries a column that is NULL by kind. They exist so the conflict detection's domain gate is
+-- a join instead of a Java membership test: the walk's reach is narrower than capture's
+-- (capture is total, with no reachability pruning), and the exemption populations the demand
+-- exemption census recorded never reached a legacy detector, so an ungated detection would move
+-- the accept line exactly there. The gate dissolves when the detection reads the resolved
+-- demand relation instead of the walk's reach (the gate-flip follow-up's work), which drains
+-- those two.
+--
+-- The binding grain (walk_type_backing_class): what the walk resolved each registered type's
+-- backing class to. It is here so the derivation that replaces the walk's backing resolution has
+-- a differential inside the store rather than a total-agreement test in Java: two relations in
+-- one store diff over any corpus a run touches, can be compared while the derivation is half
+-- built, and drain themselves. A total agreement test instead makes the walk normative and pins
+-- whatever bugs it has as invariants, which is the shape this relation exists to avoid.
+--
+-- The family retires with the walk whose reach it transcribes, but its relations drain on
+-- separate clocks, which is why none of them carries a foreign key into another even where one
+-- population is contained in another (every bound type is a registered type). A constraint
+-- across two clocks makes the earlier drainage impossible while a sibling still writes. The
+-- containment is asserted where both populations are projected from one walked model instead
+-- (no.sikt.graphitron.rewrite.derive.TypeBackingClassesTest), which is the only place it can be
+-- checked without the constraint.
 CREATE TABLE walk_claim_domain_type (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
@@ -2668,6 +2685,18 @@ COMMENT ON TABLE walk_claim_domain_field IS 'The field grain of the walk''s clai
 COMMENT ON COLUMN walk_claim_domain_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN walk_claim_domain_field.type_name IS 'the registered coordinate''s owning type';
 COMMENT ON COLUMN walk_claim_domain_field.field_name IS 'the registered coordinate''s field name within the owning type';
+
+CREATE TABLE walk_type_backing_class (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  class_name VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE walk_type_backing_class IS 'What the legacy classification walk resolved a type''s backing class to: one row per registered type the walk bound to a Java class, and no row for a type it left unbacked. The differential the store-native backing derivation checks itself against while it is built; see the family header for the writer, the cadence, and why the relation stands alone. Three populations are deliberately absent, each because another relation already owns it. A @table-bound type is absent: the walk answers it with a table rather than a class, and that population is intent_bound_table''s, so a second transcription here would be a duplicate with worse provenance. A type two producers bound to different classes is absent: the walk resolves that disagreement by refusing to bind at all, which is the population the derivation surfaces as two rows plus a conflict view, so the shadow''s silence there is a recorded behaviour difference and not a defect on either side. And the kind of backing (record, plain class, jOOQ record) is absent as a column, because it is a property of the class the census already states, and re-transcribing it would carry the leaf taxonomy this relation exists to dissolve into the relation replacing it.';
+COMMENT ON COLUMN walk_type_backing_class.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN walk_type_backing_class.type_name IS 'the SDL type the walk bound; always a member of walk_claim_domain_type, unconstrained for the reason the family header gives. One row per type rather than per type and axis: an SDL name is an output type or an input type and never both, so the walk''s two-axis bookkeeping is internal to it and not a dimension of the answer';
+COMMENT ON COLUMN walk_type_backing_class.class_name IS 'the binary name of the class the walk bound the type to, spelled as the jvm_ census spells a class name so the two join without normalising; a class the census never reached is still a row, since what the walk resolved is the fact here and whether the scan saw it is a separate question';
 
 -- ==== Derived stratum: claims =====================================================
 -- The intent_ family. A claim row says something claims a coordinate for a classification
@@ -4024,7 +4053,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
   ('jvm_', 'The compile classpath census', 4, 'What the classfiles on the compile classpath declare. Not extension_: naming a family for a presumed role is what this name replaces, because an ObjectMapper on the classpath extends nothing yet still earns a row.'),
   ('java_', 'The consumer''s Java sources', 5, 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
   ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
-  ('walk_', 'The legacy walk''s reach', 7, 'What the legacy classification walk registered, transcribed as membership rows in the walk''s own vocabulary (its registries'' reach). Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent.'),
+  ('walk_', 'The legacy walk''s reach', 7, 'What the legacy classification walk registered and what it bound, transcribed in the walk''s own vocabulary: its registries'' reach as membership rows, and its backing resolution as the differential a store-native derivation checks itself against. Naming the family for the retiring walk gives the name its own retirement clock: when the walk is gone, the family has no referent. Its relations retire on separate clocks under that one, each draining as its own consumer migrates.'),
   ('intent_', 'Derived intent', 8, 'The SDL strata stack''s third layer, graphql_ under graphitron_ under this name: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations whose table comments own why they cannot be views; that changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them and which layer among themselves on that same rule, a resolution keyed on a written name sitting under the ones keyed on a coordinate; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change.'),
   ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as walk_: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 10, 'The linter''s vocabulary (lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),

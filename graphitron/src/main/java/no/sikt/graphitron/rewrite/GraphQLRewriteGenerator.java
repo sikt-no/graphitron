@@ -15,7 +15,7 @@ import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
-import no.sikt.graphitron.rewrite.derive.ClaimDomain;
+import no.sikt.graphitron.rewrite.derive.WalkReach;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
@@ -389,7 +389,8 @@ public class GraphQLRewriteGenerator {
      * violations for the caller's error stream, and the field-conflict claims the LSP/MCP
      * snapshot's {@code Conflicted} projection overlay consumes. The detections are
      * the store's first read: the authored-claim conflict rule reports from the claim views,
-     * gated on the walked model's {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}. Every
+     * gated on the walked model's {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}, which
+     * arrives with the rest of the walk's reach as a {@link WalkReach}. Every
      * other relation still shadows the live pipeline unread, kept honest by the agreement tests
      * until its own consumer migrates.
      *
@@ -422,7 +423,7 @@ public class GraphQLRewriteGenerator {
             jooq,
             extensions,
             jooqNodes,
-            ClaimDomain.of(schema));
+            WalkReach.of(schema));
     }
 
     /**

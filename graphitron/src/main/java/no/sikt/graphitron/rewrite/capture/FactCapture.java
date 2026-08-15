@@ -6,10 +6,11 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
-import no.sikt.graphitron.rewrite.derive.ClaimDomain;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
+import no.sikt.graphitron.rewrite.derive.TypeBackingClassRows;
+import no.sikt.graphitron.rewrite.derive.WalkReach;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
@@ -197,7 +198,7 @@ public final class FactCapture {
     /**
      * {@link #run}, then the store-backed detections over the store the capture just filled,
      * before it closes. Returns the detections' typed {@link AuthoredClaimConflicts.Detection}
-     * product (gated on {@code domain}): every caller reads its
+     * product (gated on {@code reach}): every caller reads its
      * {@link AuthoredClaimConflicts.Detection#violations() violations} for the error stream, and
      * the LSP/MCP snapshot path additionally reads its
      * {@link AuthoredClaimConflicts.Detection#fieldConflicts() field conflicts} for the
@@ -212,10 +213,10 @@ public final class FactCapture {
                                                           Map<String, SchemaInput> attribution,
                                                           JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
-                                                          NodeDeclaration nodes, ClaimDomain domain) {
-        Objects.requireNonNull(domain, "domain");
+                                                          NodeDeclaration nodes, WalkReach reach) {
+        Objects.requireNonNull(reach, "reach");
         return runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq,
-            extensions, nodes, domain);
+            extensions, nodes, reach);
     }
 
     private static AuthoredClaimConflicts.Detection runInternal(Path storeDirectory, GraphIdentity graph,
@@ -223,19 +224,19 @@ public final class FactCapture {
                                                      TypeDefinitionRegistry registry, SdlVerdicts verdicts,
                                                      Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
-                                                     NodeDeclaration nodes, ClaimDomain domain) {
+                                                     NodeDeclaration nodes, WalkReach reach) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
                     capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
                         extensions, nodes);
-                    return detect(store.dsl(), graph, domain);
+                    return detect(store.dsl(), graph, reach);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
                     if (captureWithRetry(store, graph, config, registry, verdicts, attribution, jooq,
                             extensions, nodes)) {
-                        return detect(store.dsl(), graph, domain);
+                        return detect(store.dsl(), graph, reach);
                     }
                 }
             }
@@ -243,21 +244,24 @@ public final class FactCapture {
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
             capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
                 extensions, nodes);
-            return detect(store.dsl(), graph, domain);
+            return detect(store.dsl(), graph, reach);
         }
     }
 
     /**
-     * The detection pass over a freshly captured store; a {@code null} domain is {@link #run}'s
-     * no-detection arm, which also writes no reach rows. The walk's reach lands as
-     * {@code walk_claim_domain} rows first, so the {@code intent_authored_claim_conflict} view's
-     * domain-gate join answers over exactly the domain this detection is gated on.
+     * The detection pass over a freshly captured store; a {@code null} reach is {@link #run}'s
+     * no-detection arm, which also writes no {@code walk_} rows. The whole of the walk's reach
+     * lands first: the {@code walk_claim_domain} rows so the {@code intent_authored_claim_conflict}
+     * view's domain-gate join answers over exactly the domain this detection is gated on, and the
+     * backing rows because the same pass is the family's one writer and its cadence, whether or
+     * not this detection reads them.
      */
-    private static AuthoredClaimConflicts.Detection detect(DSLContext dsl, GraphIdentity graph, ClaimDomain domain) {
-        if (domain == null) {
+    private static AuthoredClaimConflicts.Detection detect(DSLContext dsl, GraphIdentity graph, WalkReach reach) {
+        if (reach == null) {
             return AuthoredClaimConflicts.Detection.empty();
         }
-        ClaimDomainRows.write(dsl, graph.name(), domain);
+        ClaimDomainRows.write(dsl, graph.name(), reach.domain());
+        TypeBackingClassRows.write(dsl, graph.name(), reach.backingClasses());
         return AuthoredClaimConflicts.detect(dsl, graph.name());
     }
 

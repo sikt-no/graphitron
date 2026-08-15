@@ -852,8 +852,13 @@ public final class CatalogBuilder {
      * a compile error here. Each shape names what backs the type and nothing else: what a class
      * offers a member name is a fact about the class, which its consumers read from the store's
      * member-slot relation, so no member list is projected here and the bean rule has one home.
+     *
+     * <p>Public because it has a second reader: the walk's backing-class transcription
+     * ({@link no.sikt.graphitron.rewrite.derive.TypeBackingClasses}) reduces the same projection
+     * to the class each shape names. One switch rather than two, so the two readers cannot
+     * disagree about what the walk decided, and a new permit forces a decision in both.
      */
-    private static Map<String, TypeBackingShape> projectTypesByName(GraphitronSchema schema) {
+    public static Map<String, TypeBackingShape> projectTypesByName(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, TypeBackingShape>();
         for (var entry : schema.types().entrySet()) {
             out.put(entry.getKey(), projectType(entry.getValue()));

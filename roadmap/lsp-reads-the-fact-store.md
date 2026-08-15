@@ -1943,9 +1943,10 @@ walk is evidence here, not the specification.
    the end of a chain being exactly the name nobody scans.
 2. The census names types resolvably. Done: three type-reference relations on the `EQUALITY` arm,
    one beside each census relation that carries a declared type, per the section below.
-3. The legacy walk writes what it binds, as a `walk_` relation on the `ORACLE` arm with its removal
-   criterion in the family header. Before the derivations rather than after them, so every step below
-   has a differential to check itself against as it lands.
+3. The legacy walk writes what it binds. Done: `walk_type_backing_class` on the `ORACLE` arm, one
+   row per type the walk bound to a class, written at capture cadence beside the claim-domain rows.
+   Before the derivations rather than after them, so every step below has a differential to check
+   itself against as it lands. Its three deliberate absences are the section below.
 4. `intent_class_assignable`, the closure over step 1's declarations, as a recursive view.
 5. The producer binding: the field coordinate to its producing method, with the non-unique name a
    rejection rather than a silent pick.
@@ -2010,6 +2011,49 @@ decomposition decides rather than copies: every name is qualified, some row sits
 and a root row's class agrees with the erased display column once the package is dropped, which is
 what says the qualification names the same class the census already reported rather than another one
 of that name.
+
+## Settled while building: the shadow is thin because three of its columns belong to other relations
+
+The walk's differential landed as `walk_type_backing_class`, and what it took to write was mostly
+deciding what to leave out.
+
+**The shadow reads the walk's own answer, not the resolver's internals.** `RecordBindingResolver`
+holds observations, two axis memos, a fold and a rejection map, and none of that is the walk's
+answer. The answer is what the classified model says backs each type, which the LSP-facing
+projection already computes as an exhaustive switch over the sealed type hierarchy. The shadow
+reduces that same projection to the class each shape names, so there is one switch rather than two
+and the two readers cannot come to differ about what the walk decided. It also means the shadow and
+the consumers retire together, since both stand on the projection the class arm of step 10 dissolves.
+
+**Three populations are absent, each because another relation owns it.** A `@table`-bound type is
+absent: the walk answers it with a table rather than a class, and that population is
+`intent_bound_table`'s, so a second transcription would be a duplicate with worse provenance. A type
+two producers bound differently is absent, because the walk resolves that by refusing to bind at
+all; that is precisely the population the derivation surfaces as two rows plus a conflict view, so
+the silence is a recorded behaviour difference rather than a defect on either side, and it is a
+fixture rather than a footnote. And the kind of backing (record, plain class, jOOQ record) is absent
+as a column, because it is a property of the class the census already states, so carrying it would
+import the leaf taxonomy this item exists to dissolve into the relation that replaces it. What is
+left is three columns, which is the shape a differential should have.
+
+**The axis is not a dimension.** The resolver keeps a result memo and an input memo, so the obvious
+reading is a row per type and axis. An SDL name is an output type or an input type and never both,
+so the two memos are the walk's internal bookkeeping and the answer is keyed on the type alone. The
+axis would have been a column that never discriminates, which is the same failure as a column that
+is NULL by kind, one step further along.
+
+**The containment is real and is still not a foreign key.** Every bound type is a registered type,
+and both relations are written from one walked model in one pass, so the constraint would hold. It
+is declined because the family's relations drain on separate clocks: the claim-domain rows go when
+the conflict detection's gate flips to the demand relation, the backing rows when the generator
+reads the derived relation, and a foreign key across two clocks makes whichever drains first
+impossible while its sibling still writes. The containment is asserted by the projection's own test
+instead, where it can be checked against the walked model both values come from.
+
+**The seam got a name rather than an eleventh parameter.** The capture entry point already took ten
+arguments, and the family will grow another grain before it drains. `WalkReach` carries what the
+pass transcribes from the walked model, projected at one site, so a new grain is a component rather
+than a signature change at three call depths.
 
 ## Retired vocabulary
 
