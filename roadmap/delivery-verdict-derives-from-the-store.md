@@ -72,7 +72,7 @@ one per trigger; `intent_field_delivery_exemption (graph_name, type_name, field_
 the negatives that are stated rather than absent; and `intent_resolved_field_delivery (graph_name,
 type_name, field_name, verdict, rule)` as the reduction under a declared precedence. Most `INLINE`
 is the complement, the absence of any arm, rather than an enumerated set of shapes somebody has to
-remember to keep current. The exceptions are the two populations below, and they are why the
+remember to keep current. The exceptions are the three populations below, and they are why the
 exemption relation exists rather than being a file-layout choice copied from the sibling.
 
 Two shape decisions, both settled here because they land in R682's read surface rather than only in
@@ -122,9 +122,10 @@ and an earlier draft of this section asked for two that cannot be written:
 ### Delivery's negative side is not pure complement, and the corpus already proves it
 
 An earlier draft asserted that it was, and left the shape of the view set open on that basis. It is
-wrong, in two places, and each has a coordinate in `ClassifiedCorpus` today that would disagree with
-a complement-only view. Both are short-circuits at the top of `DeliveryFactRelation.mint`, which is
-what makes them easy to read past: they return before the rules they override are ever evaluated.
+wrong, in three places, and each has a coordinate in `ClassifiedCorpus` today that would disagree
+with a complement-only view. The first two are short-circuits at the top of
+`DeliveryFactRelation.mint`, which is what makes them easy to read past: they return before the rules
+they override are ever evaluated. The third is the hardcoded `false` this item was filed over.
 
 * **The `@service` claim, reason `SERVICE_CALL`.** `mint` returns `Inline` for a `@service`
   coordinate before any other rule, on the stated ground that the call is the delivery and the
@@ -143,6 +144,18 @@ what makes them easy to read past: they return before the rules they override ar
   store-side predicate met in full. Scoping by `intent_type_domain` does not remove it, since the
   domain contains root types by construction and the demand sibling registers their fields under its
   own `ROOT_OPERATION` arm.
+* **The discriminated target, reason `DISCRIMINATED_TARGET`.** `singleTableBackedVerdict` returns
+  `false` for a `@discriminate`-bearing target, with a matching exclusion inside its `ConnectionType`
+  arm, so a discriminated interface child reads `Inline` whatever its parent hands it and whatever
+  markers it carries. `Inventory.media` in the `table-interface` example is the witness, a
+  discriminated interface child on a `@table` parent. The captured population is
+  `graphitron_discriminate`, keyed on the target type and projected onto the coordinates returning
+  it, which is the projection the root arm already makes. One seam to settle at the reduction: this
+  exemption outranks every rule arm, whereas the `false` it replaces only defeats the readings that
+  consult the target's binding, and the split reading's `@pivot` disjunct does not consult it. No
+  coordinate is on both sides today (`@pivot` is rejected on root and record-backed parents, and no
+  corpus example pivots to a polymorphic target), so this is a precedence choice rather than a live
+  disagreement; make it deliberately and let the shadow test arbitrate.
 
 Three consequences, and together they settle what the open questions used to ask.
 
@@ -153,10 +166,12 @@ precedence between them. That is now a structural conclusion rather than a layou
 The alternative, folding each exemption into the arm it overrides as a `NOT EXISTS`, is available
 and should be declined. It is negative space inside an arm, which is the pattern this item exists to
 kill; it also spreads one rule across every arm it defeats, so the `@service` claim would have to be
-restated in each future batching arm, which is the additivity property gone.
+restated in each future batching arm, which is the additivity property gone. That argument governs
+`@discriminate` too, and two earlier drafts exempted it from its own rule: they spent the
+discriminated target as an anti-join carried into every rule arm rather than as a row. It is a row.
 
-And both exemption arms are witnessed on landing, by the two coordinates named above, which is worth
-contrasting with the `@tenantFanOut` literal the Implementation section flags as reaching no
+And all three exemption arms are witnessed on landing, by the three coordinates named above, which is
+worth contrasting with the `@tenantFanOut` literal the Implementation section flags as reaching no
 coordinate at all. The exemption view cannot ship vacuous.
 
 **Every input is already captured.** This is the finding that makes the item view-only rather than
@@ -196,11 +211,12 @@ pass null). So a `JoinedTableBound` participant cannot reach the predicate that 
 `roadmap/batched-discriminated-interface-child.md` states the same participant invariant
 independently, as the reason it must not copy this guard's shape.
 
-Two consequences. The arm's store-side gate is that the target is an interface or union that is
-*not* `@discriminate`-bearing, with at least one table-bound participant: `graphql_implements` /
-`graphql_union_member` joined to `graphitron_table`, anti-joined against `graphitron_discriminate`
-on the target type. Every input is in the inventory above and every hop in this arm is single. The arm stays
-unmasked against the root exemption, which is the sibling's discipline (its rule views let
+Two consequences. The arm's store-side gate is that the target is an interface or union with at least
+one table-bound participant: `graphql_implements` / `graphql_union_member` joined to
+`graphitron_table`. Every input is in the inventory above and every hop in this arm is single. It
+carries no `@discriminate` anti-join, because the exemption arm below outranks it and both readings
+say `INLINE`; the arm stays unmasked against that exemption exactly as it stays
+unmasked against the root one, which is the sibling's discipline (its rule views let
 overlapping readings survive as rows and give the reduction the meet), so this arm does carry
 `Query.people` and the reduction is where that row becomes `INLINE`. And the `sql_`
 catalog family is not needed by any arm, which is why it is absent from that inventory: no arm's
@@ -252,34 +268,41 @@ an order anybody writing the DDL can use. Collected, so the arm list has one pla
 against. Precedence runs down the table: every exemption arm beats every rule arm, and within each
 side the first matching arm names the row.
 
-One sub-predicate is shared, and naming it once is worth a paragraph because it is where this item's
-whole point lands. **Table-anchored target** means the coordinate's target base type is object-kinded
-(`graphql_type.kind = 'OBJECT'`) and binds one catalog table through `intent_bound_table`
-(`candidates = 1`), a connection-shaped target taking both tests on its element instead. Two inputs,
-not repeated per row below. Every rule arm but the fan-in gates on it, that arm's target being
-polymorphic rather than table-shaped.
+One fact is shared, and it is worth naming once as a relation rather than as a coined predicate:
+**the target's bound table**, `intent_bound_table` with `candidates = 1`, a connection-shaped target
+resolving its element first and binding through that. Three rule arms read it; the fan-in arm does
+not, its target being polymorphic rather than table-bound.
 
-`kind = 'OBJECT'` is the whole of what replaces `singleTableBackedVerdict`'s hand-written
-`case TableInterfaceType _ -> false`, and if one line of the DDL is the deliverable it is that one.
-It is the direct transcription of the gate `mint` reaches the predicate under,
-`unwrapped instanceof TargetShape.Table`, and it does three jobs with one clause: it excludes the
-discriminated interface child, it excludes the plain `@table` interface, and it supplies the
-polymorphic mask, since no interface or union is object-kinded. That last one is not optional.
-`mint`'s polymorphic arm returns in *both* branches, so an interface or union target never reaches
-the rules below it, and a `UNION` of positive arms does not mask; the kind test is what each lower
-arm says instead, which is why it factors out over the split reading's disjunction rather than
-sitting inside one side of it.
+Two earlier drafts coined a `table-anchored target` predicate here instead, folding four things into
+one hand-named concept: the target's kind, its binding arity, whether it carries `@discriminate`, and
+the connection element walk. `roadmap/lsp-reads-the-fact-store.md` retired exactly that shape at the
+classification label, and its reason transfers without translation. A name folding several
+independent facts into one word makes a relation enumerate the combinations, which is the monolith
+the fact model exists to take apart, so the store publishes each fact and a reader joins the relation
+that owns the one it wants. Here the binding arity is `intent_bound_table`, `@discriminate` is the
+exemption arm below, and the other two are not facts about the target at all.
 
-An earlier draft reached for an anti-join on `graphitron_discriminate` here instead, and that is the
-same negative-space move in miniature: a hand-picked exclusion standing in for the fact, and both
-redundant and incomplete. Redundant because `@discriminate` is declared `on INTERFACE | UNION` and so
-cannot land on an object-kinded anchor at all. Incomplete because `@table` is declared
-`on OBJECT | INPUT_OBJECT | INTERFACE` while `TypeBuilder` mints a `TableInterfaceType` only when an
-interface carries `@discriminate` too, so a `@table`-only interface stays a plain `InterfaceType`
-holding an `intent_bound_table` binding that the anti-join waves through and `mint` never sees. The
-demand sibling states the kind test for the same reason, on the same base relation: its `TABLE_TYPE`
-arm joins `graphql_type` `AND t.kind = 'OBJECT'`. The anti-join is not deleted, it belongs to the
-fan-in arm, whose target is polymorphic by construction so the kind test cannot do the work there.
+**`@discriminate` is a row, not an anti-join, and that is where the hardcoded `false` actually
+lands.** The negative-side section above already declined the anti-join shape for `@service`, on the
+grounds that it is negative space inside an arm and spreads one rule across every arm it defeats; the
+discriminated target is the same case and takes the same treatment, a third arm in the exemption
+view. Read once instead of carried by every rule arm, reported with a reason literal a reader can
+count, and witnessed by `Inventory.media`. The fan-in arm needs no anti-join of its own either: the
+exemption outranks it and both say `INLINE`.
+
+**There is no polymorphic mask to write.** `mint`'s polymorphic arm returns in *both* branches
+because a switch has to pick an exit; a `UNION` of arms does not mask, and teaching it to would be
+the closed-world move again. Arms stay unmasked and the reduction owns the meet, which is the
+sibling's stated discipline (`intent_field_exemption_rule`: "overlapping readings survive as rows
+... one-reason-per-coordinate is the resolved view's job") and which this item already applies to
+`Query.people`. Where a mask has no exemption behind it the two sides genuinely disagree, and that is
+a `DeliveryResidue` entry with a stated removal criterion rather than a clause to hand-write. One
+such population is predictable from reading: `@table` is declared `on OBJECT | INPUT_OBJECT |
+INTERFACE` while `TypeBuilder` mints a `TableInterfaceType` only when an interface carries
+`@discriminate` as well, so an interface carrying `@table` alone binds a table the rule arms will
+read while `mint` sends it to the polymorphic arm and returns `Inline`. Whether that mask is a rule
+or an artefact of switch order is a real question; a residue asks it, where a hand-written exclusion
+would have answered it silently.
 
 [cols="2,4,2"]
 |===
@@ -293,20 +316,24 @@ fan-in arm, whose target is polymorphic by construction so the kind test cannot 
 | the coordinate carries `@service`
 | `graphitron_service`
 
+| `DISCRIMINATED_TARGET` (exemption)
+| the target type carries `@discriminate`
+| `graphitron_discriminate`, projected onto the coordinates returning the type
+
 | `POLYMORPHIC_FAN_IN`
-| the target is an interface or union carrying no `@discriminate`, list-valued or connection-shaped, with at least one table-bound participant
-| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`, `graphitron_discriminate` (anti-joined). The one arm inheriting nothing from the shared predicate, so its own joins are listed
+| the target is an interface or union, list-valued or connection-shaped, with at least one table-bound participant
+| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`
 
 | `RECORD_HANDED_PARENT`
-| the parent is a producer payload and the target is table-anchored
+| the parent is a producer payload and the target binds one table
 | the `PRODUCER_PAYLOAD` arm's own shape
 
 | `AUTHORED`, the split reading
-| the target is object-kinded, `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
+| `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
 | `graphitron_split_query`, `graphitron_pivot`
 
 | `AUTHORED`, the tenant reading
-| `@tenantFanOut` on the coordinate, the target is table-anchored, and the coordinate carries no `@routine`
+| `@tenantFanOut` on the coordinate, the target binds one table, and the coordinate carries no `@routine`
 | `graphitron_tenant_fan_out`, `graphitron_routine`
 |===
 
@@ -375,9 +402,9 @@ set acquiring an enforcer that is not another switch.**
 * The three views in the DDL, in the demand stratum's shape:
   `intent_field_delivery_rule (graph_name, type_name, field_name, rule)` as a `UNION` of one arm per
   trigger, `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` with the
-  two arms established above, and `intent_resolved_field_delivery (graph_name, type_name,
-  field_name, verdict, rule)` as the reduction. Six arms in total, and the table above is the
-  checklist: four rule arms under three literals, two exemption arms. The closed vocabularies are
+  three arms established above, and `intent_resolved_field_delivery (graph_name, type_name,
+  field_name, verdict, rule)` as the reduction. Seven arms in total, and the table above is the
+  checklist: four rule arms under three literals, three exemption arms. The closed vocabularies are
   declared in the column comments rather than in constraints a view cannot carry, per the integrity
   note above, with full comment coverage per `FactSchemaGateTest.commentCoverageIsTotal`; the
   vocabulary's *enforcement* is the shadow test's containment assertion, two bullets down.
@@ -484,7 +511,10 @@ goes away with the crosswalk it compares.
 `DeliveryResidue` as a standing exemption. The reason is not that the hardcoded `false` is wrong;
 per the Problem statement it survives its own sibling item intact. The reason is that this shape is
 the one whose delivery nobody could settle without reading arm order, so a view that cannot state it
-has left the question exactly where it was and reproduced the defect in a new place.
+has left the question exactly where it was and reproduced the defect in a new place. The
+`DISCRIMINATED_TARGET` exemption arm is what passes this test, which is why it is an arm and not a
+predicate folded into the others: a residue is silent and an anti-join is unreportable, while a row
+carries a reason literal and a count.
 
 ## Out of scope
 
@@ -520,9 +550,11 @@ has left the question exactly where it was and reproduced the defect in a new pl
   they subsume the first coordinate this item asks for). Only one of the three arrives in the corpus,
   though: that item homes the two `@splitQuery`-marked ones in `DeliveryFactPinTest`'s
   `MARKER_FIXTURE` on purpose, so the marked pair still needs a targeted fixture here, in the mould of
-  `DemandShadowTest`'s per-shape fixtures beside its corpus sweep. If this item lands first, R661's relation-side edit
-  becomes additive, a `UNION` arm rather than a negative-space switch case, which is strictly the
-  better shape for that implementer. Whoever goes second reads the other's landing note.
+  `DemandShadowTest`'s per-shape fixtures beside its corpus sweep. If this item lands first, R661's
+  relation-side edit becomes additive, a `UNION` arm rather than a negative-space switch case, which
+  is strictly the better shape for that implementer, and its second half is one clause: narrow the
+  `DISCRIMINATED_TARGET` exemption to single cardinality and the fan-in row already standing at the
+  list-cardinality coordinate wins the reduction. Whoever goes second reads the other's landing note.
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
   `@splitQuery`: every marker consumed, inert-by-construction, or rejected. Its spec proposes a
   total switch over the classified leaf. If delivery becomes a view, that sweep is an anti-join
@@ -546,8 +578,8 @@ One question is genuinely open, and it is narrower than the two the earlier draf
 
 * **Whether the `Authored` trigger keeps one rule literal or becomes two.** The arm count, read off
   `DeliveryFactRelation.mint`: three triggers, but four `SELECT`s, because `Authored` is two
-  independent readings (the `@splitQuery` half on a table-anchored child or a `@pivot` chain, and
-  `@tenantFanOut` on a table-anchored non-`@routine` child) that mint the same literal. The
+  independent readings (the `@splitQuery` half on a table-bound child or a `@pivot` chain, and
+  `@tenantFanOut` on a table-bound non-`@routine` child) that mint the same literal. The
   sibling's vocabulary is one literal per arm, which argues for splitting, and against it stands the
   `@tenantFanOut` arm having no coordinate anywhere, so a split ships a literal nothing reaches.
   Three observations for whoever decides. The vacuity is an argument for the fixture rather than
