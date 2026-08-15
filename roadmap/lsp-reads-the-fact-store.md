@@ -1947,7 +1947,9 @@ walk is evidence here, not the specification.
    row per type the walk bound to a class, written at capture cadence beside the claim-domain rows.
    Before the derivations rather than after them, so every step below has a differential to check
    itself against as it lands. Its three deliberate absences are the section below.
-4. `intent_class_assignable`, the closure over step 1's declarations, as a recursive view.
+4. `intent_class_assignable`, the closure over step 1's declarations, as a recursive view. Done:
+   one row per class and reachable supertype, on the `DERIVED` arm, with a path guard the plan did
+   not expect and the section below argues for.
 5. The producer binding: the field coordinate to its producing method, with the non-unique name a
    rejection rather than a silent pick.
 6. The accessor hop: the field coordinate and standing class to the class the hop lands on.
@@ -2054,6 +2056,54 @@ instead, where it can be checked against the walked model both values come from.
 arguments, and the family will grow another grain before it drains. `WalkReach` carries what the
 pass transcribes from the walked model, projected at one site, so a new grain is a component rather
 than a signature change at three call depths.
+
+## Settled while building: a hierarchy is acyclic in a program and not in a store
+
+`intent_class_assignable` landed as the plan's recursive view, and one line of the plan's reasoning
+turned out to be about the wrong subject.
+
+**The guard is not about class hierarchies, it is about the store holding many of them.** The
+argument above was that a class hierarchy is acyclic, so the recursion terminates without a path
+guard. That is true of one program's classpath and the relation is not one program's:
+`jvm_class.source_name`'s own comment already states that two runs' entries coexist as two
+partitions, and that one class name may legitimately appear under several of them. The hop has to
+join on the supertype's name across entries, because the ordinary chain crosses entries (a
+consumer's class implements an interface a jar declares, and that interface's own supertypes are the
+jar's rows), so a pair of names declared into each other by two entries is a cycle the census can
+hold with both classfiles valid. Measured rather than assumed: H2's recursive `UNION` does not
+deduplicate against rows earlier iterations produced, so such a cycle is not a wrong answer, it is a
+build that hangs with no diagnostic.
+
+**The guard is free on the shape a census actually has.** Over a synthetic census of 12,600 edges
+shaped like a real one (5,000 classes at depth four under a 300-interface lattice) the two forms
+produce the same 110,845 pairs, the unguarded one in about 300ms and the guarded one in about 330ms.
+The guard enumerates simple paths, which is the form the plan rejected for `intent_type_domain` on
+cost, and the reason it costs nothing here is the same acyclicity the plan was arguing from. So the
+conclusion stands unchanged and only its reason narrows: acyclicity is what makes the guard cheap,
+not what makes it unnecessary, and the view-versus-table split against `intent_type_domain` is
+still exactly where the plan put it.
+
+**Reflexivity is not omitted, it is unstateable.** A row saying `java.util.List` stands in for
+`java.util.List` needs a `source_name` for `java.util.List`, and the names this relation exists to
+reach are precisely the ones no classpath entry declares. Carrying the reflexive pair for scanned
+classes only would be worse than carrying none: a consumer's container test would then answer one
+way for a class on a scanned entry and another for a JDK interface, with nothing in the relation
+saying which case it was in. So identity is the reader's own name comparison, and the relation
+carries what a declaration asserts.
+
+**Two columns that look like they belong are facts about one edge.** `declared_via` and a distance
+both describe a hop, and the closure's row is a chain. A clause column would have to pick one hop's
+clause arbitrarily or report a set nobody asked for, and a pair reachable by two chains has no
+single distance. Both stay on `jvm_class_supertype`, which is where a reader wanting the
+declarations rather than what they reach already goes.
+
+**The anchor's census is hand-built, which is the opposite of the sibling's choice and the same
+test.** `ClassMemberSlotTest` scans compiled fixtures because its rule reads a class's declared
+form, and a fixture stating its own kind or descriptors could assert a census no compiler produces.
+This rule reads nothing but the supertype edges, and an edge is a name and a clause, which is all a
+hand-built reference states. What compiled fixtures cannot arrange is exactly what a closure has to
+get right: a chain continuing into another entry's declarations, a chain ending at a name no entry
+declares, and a type two chains reach.
 
 ## Retired vocabulary
 

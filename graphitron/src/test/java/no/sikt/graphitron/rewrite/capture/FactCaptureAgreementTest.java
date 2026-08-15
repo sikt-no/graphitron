@@ -138,6 +138,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_class_member_slot}, the member names a backing class offers, over a real
  *       classfile scan of its own fixtures rather than seeded census rows, because a rule that
  *       reads a class's declared form cannot be pinned against a fixture that declares its own;
+ *       {@code no.sikt.graphitron.rewrite.derive.ClassAssignableTest} binds
+ *       {@code intent_class_assignable}, the closure over those declarations, to a census built
+ *       reference by reference, the chains a closure has to get right (one crossing classpath
+ *       entries, one ending at a name no entry declares, one reaching a type two ways) being
+ *       ones a scan of compiled fixtures cannot arrange;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
@@ -238,6 +243,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);
+        registrations.put("intent_class_assignable", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);
