@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp.state;
 
 /**
- * Client-side toggles for the inlay-hint and classification-hover surfaces. Three
+ * Client-side toggles for the inlay-hint and classification-hover surfaces. Four
  * independent boolean axes, all defaulting to {@code false} so opt-in is explicit and
  * users who haven't asked for the surface see no behaviour change.
  *
@@ -16,26 +16,32 @@ package no.sikt.graphitron.lsp.state;
  *     {@code @reference} directive sites where the author omitted the canonical argument.
  *     The hint shows the resolved value as a ghost annotation.
  * @param classification enables classification inlay hints on field declarations and
- *     object / interface / input / union type declarations. Compact label naming the
- *     classified variant (e.g. {@code "joined column"}, {@code "query field"},
- *     {@code "node type"}).
+ *     object / interface / input / union type declarations. The label is the classifier
+ *     claiming the declaration ({@code SERVICE}, {@code TABLE_COLUMN}, {@code TABLE}, ...)
+ *     and nothing else.
+ * @param separateFetch enables the round-trip marker on field declarations whose rows are
+ *     fetched by a statement of their own rather than out of the enclosing SELECT. Its own
+ *     axis rather than part of {@code classification} because it is a delivery fact rather
+ *     than a classifier, and an author reading a schema for its query cost wants it without
+ *     a label on every declaration beside it.
  * @param hoverClassification enables the rich classification hover content on field /
- *     type declaration coordinates. Where the inlay hint shows a compact label, the
- *     hover unpacks the variant's load-bearing payload as markdown.
+ *     type declaration coordinates. Where the inlay hints show one word each, the hover
+ *     adds the facts behind them.
  */
 public record InlayHintConfig(
     boolean inferredDirectives,
     boolean classification,
+    boolean separateFetch,
     boolean hoverClassification
 ) {
 
     /** All toggles off. The default until the client opts in. */
     public static InlayHintConfig defaults() {
-        return new InlayHintConfig(false, false, false);
+        return new InlayHintConfig(false, false, false, false);
     }
 
     /** True when any axis is enabled, i.e. the LSP has any reason to compute hints. */
     public boolean anyEnabled() {
-        return inferredDirectives || classification || hoverClassification;
+        return inferredDirectives || classification || separateFetch || hoverClassification;
     }
 }

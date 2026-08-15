@@ -4,7 +4,10 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
@@ -76,20 +79,36 @@ public final class ClaimFacts {
     }
 
     /**
-     * Why {@code Type.field}'s rows are fetched by a statement of their own, one rule per reason, or
-     * empty where no rule reaches the field. Empty is not the claim that the field inlines: the
-     * implicit split on a class-backed parent's table-typed child is not in the relation yet, so a
-     * reader may report a rule it finds and must not report the absence of one.
+     * Why each field of {@code typeNames} is fetched by a statement of its own, keyed by
+     * {@code Type.field}, one rule per reason. A coordinate no rule reaches is absent.
+     *
+     * <p>Absence is not the claim that the field inlines. The implicit split on a class-backed
+     * parent's table-typed child is not in the relation yet, so a surface may report a rule it finds
+     * and must not report the absence of one. The relation's own comment carries the same
+     * prohibition, since it outlives this reader.
+     *
+     * <p>Bulk, like the classifier readers and for the same reason: the inlay arm annotates a whole
+     * visible region and a query per field would pay per declaration on the screen.
      */
-    public static List<String> separateFetchRules(StoreHandle store, String typeName, String fieldName) {
-        return store.dsl()
-            .select(INTENT_FIELD_SEPARATE_FETCH.RULE)
+    public static Map<String, List<String>> separateFetchRules(
+        StoreHandle store, Collection<String> typeNames
+    ) {
+        if (typeNames.isEmpty()) return Map.of();
+        var rows = store.dsl()
+            .select(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME, INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME,
+                INTENT_FIELD_SEPARATE_FETCH.RULE)
             .from(INTENT_FIELD_SEPARATE_FETCH)
-            .where(coordinate(INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq(store.graphName()),
-                INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME.eq(typeName),
-                INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME.eq(fieldName)))
-            .orderBy(INTENT_FIELD_SEPARATE_FETCH.RULE)
-            .fetch(INTENT_FIELD_SEPARATE_FETCH.RULE);
+            .where(INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq(store.graphName()))
+            .and(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME.in(typeNames))
+            .orderBy(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME, INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME,
+                INTENT_FIELD_SEPARATE_FETCH.RULE)
+            .fetch();
+        var byCoordinate = new LinkedHashMap<String, List<String>>();
+        for (var row : rows) {
+            byCoordinate.computeIfAbsent(row.value1() + "." + row.value2(), ignored -> new ArrayList<>())
+                .add(row.value3());
+        }
+        return byCoordinate;
     }
 
     /**

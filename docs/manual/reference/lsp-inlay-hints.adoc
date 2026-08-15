@@ -1,12 +1,12 @@
 = LSP inlay hints and classification hover
-:description: Reference for the Graphitron LSP's inlay-hint surface and the classification-hover content, plus the three editor-side config keys that gate them.
-:keywords: graphitron, lsp, inlay hints, hover, classification, configuration
+:description: Reference for the Graphitron LSP's inlay-hint surface and the classification-hover content, plus the four editor-side config keys that gate them.
+:keywords: graphitron, lsp, inlay hints, hover, classification, round trips, configuration
 
-The Graphitron LSP surfaces two layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it) and classification (what Graphitron takes a declaration to be, which is what decides the code generated for it, down to whether the field launches a query of its own). Both layers are off by default and light up through editor-side config.
+The Graphitron LSP surfaces three layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it), classification (what Graphitron takes a declaration to be, which is what decides the code generated for it) and delivery (whether reading a field costs a fetch of its own). All three are off by default and light up through editor-side config.
 
-== Three config keys
+== Four config keys
 
-All three live under the `graphitron.inlayHints` (and `graphitron.hover`) namespace and default to `false`. The LSP pulls them via `workspace/configuration` on initialisation and refreshes them on `workspace/didChangeConfiguration`. A client that does not implement `workspace/configuration` leaves the defaults in effect; no error is surfaced.
+All four live under the `graphitron.inlayHints` (and `graphitron.hover`) namespace and default to `false`. The LSP pulls them via `workspace/configuration` on initialisation and refreshes them on `workspace/didChangeConfiguration`. A client that does not implement `workspace/configuration` leaves the defaults in effect; no error is surfaced.
 
 [cols="1,1,3"]
 |===
@@ -20,12 +20,16 @@ All three live under the `graphitron.inlayHints` (and `graphitron.hover`) namesp
 | `false`
 | Renders the classifier claiming a field or type declaration, at the declarations something claims. The field vocabulary is `SERVICE`, `EXTERNAL_FIELD`, `NODE_ID`, `LOOKUP_KEY`, `ROUTINE`, `MUTATION` and `TABLE_COLUMN`; the type vocabulary is `TABLE` and `ERROR`.
 
+| `graphitron.inlayHints.separateFetch`
+| `false`
+| Renders `separate fetch` at each field whose rows come from a statement of its own rather than out of the enclosing `SELECT`. One marker word wherever it fires, whatever the reason; the reason is the hover's. Silent on root fields, where it would be true of every sibling.
+
 | `graphitron.hover.classification`
 | `false`
 | Enables rich hover content on field-declaration and type-declaration name tokens. Where the inlay hint shows the classifier alone, the hover popup adds the facts behind it (the column and the name it matched on, the service method, the join path, the DML verb, the error handlers) and whether the field costs a round-trip of its own.
 |===
 
-The three toggles are independent: a user who wants ghost annotations for inferred directives but not classification labels gets exactly that.
+The toggles are independent: a user who wants the round-trip markers but no classifier labels beside them gets exactly that.
 
 == Inferred-directive hints
 
@@ -56,40 +60,50 @@ Renders as markdown when the cursor is on a field-declaration or type-declaratio
 * One line per fact behind each claim, each read from the relation that owns it: the column and table a `TABLE_COLUMN` match resolved to plus which naming tier matched, the class and method behind a `SERVICE` or `EXTERNAL_FIELD`, the target type of a `NODE_ID`, the routines of a chained `ROUTINE` in application order, the verb and table of a `MUTATION`, the bound table of a `TABLE`, the handlers of an `ERROR`.
 * `Matched name`, on a field whose `@field(name:)` binding matched under a name other than the field's own. This is what tells "graphitron read my binding" from "graphitron ignored it".
 * The join path, where an authored `@reference` resolves to one: each element as the foreign key it joins on and the table it lands in.
-* `Launches its own query`, described below.
+* `Fetched separately`, described below.
 
 Two of those lines hold a hover open on their own. A child field returning a `@table` type is claimed by nothing (no directive names what it is, and the structural classifier only reaches leaf fields), so gating the block on a claim would silence it on exactly the fields whose round-trip cost an author wants to see.
 
 Hover stays distinct from the directive-argument-keyed dispatch (`@table(name:)`, `ExternalCodeReference.method`, ...): the existing directive-arg hovers keep firing when the cursor sits inside a directive, and the classification hover fires only as a fallback on declaration coordinates.
 
-== Which fields launch a query
+== Which fields are fetched separately
 
-A field's rows either come out of the enclosing `SELECT` or cost a trip to the database of their own. The hover says which, and why, for every field a rule reaches:
+A field's rows either come out of the enclosing `SELECT` or cost a fetch of their own. This is the round-trip question, and it is the one thing on these surfaces that is about cost rather than meaning.
 
-[cols="1,3"]
+The `separateFetch` inlay toggle marks the fields, one word each, so a type can be scanned at a glance. The hover names the reason, for every rule that reaches the field:
+
+[cols="2,3,1"]
 |===
-| Rule | What the hover says
+| Rule | What the hover says | Marked inline
 
 | xref:directives/splitQuery.adoc[`@splitQuery`]
 | the fetch is deferred to a batched DataLoader call
+| yes
 
 | `@tenantFanOut`
 | the fetch runs once per tenant, off the parent's statement
+| yes
 
 | xref:directives/service.adoc[`@service`] on a non-root field
 | the service fetches independently of the parent's `SELECT`
+| yes
 
 | A field of a root operation type
 | a root operation field is its own entry point
+| no
 |===
 
-A field several rules reach lists all of them. A field no rule reaches gets no line, and that silence is not yet the opposite claim: the implicit split on a `@table`-typed child of a class-backed parent is not reported here yet, so read a line that appears and do not read the absence of one.
+A root field is never marked inline. Every field of a root type is its own entry point, so the marker would repeat down the whole type without distinguishing anything; the hover still states it, because a reader who asked about one declaration should get the whole answer. A `@splitQuery` on a root field is likewise unmarked: the generator ignores the directive there, so marking the field would advertise a split that never happens.
+
+A field several rules reach lists all of them in the hover and still gets one marker inline: the marker is a signal, and which rules produced it is what the hover answers.
+
+A field no rule reaches gets neither, and that silence is not yet the opposite claim. The implicit split on a `@table`-typed child of a class-backed parent is not reported yet, so read a marker that appears and do not read the absence of one as "this inlines".
 
 == Freshness
 
-The three surfaces read different things and go stale differently.
+The surfaces read different things and go stale differently.
 
-Classification hints and the classification hover come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
+Classification hints, separate-fetch markers and the classification hover come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
 
 Inferred-directive hints come from the classification snapshot the generator pass ships, as does the description overlay beneath the hover's classification block. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
 
@@ -104,6 +118,7 @@ The keys live under the workspace's settings root. In a VS Code-style `settings.
 {
   "graphitron.inlayHints.inferredDirectives": true,
   "graphitron.inlayHints.classification": true,
+  "graphitron.inlayHints.separateFetch": true,
   "graphitron.hover.classification": true
 }
 ----

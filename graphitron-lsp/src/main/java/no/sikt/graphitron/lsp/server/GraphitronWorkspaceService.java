@@ -87,8 +87,9 @@ public class GraphitronWorkspaceService implements WorkspaceService {
         JsonObject hover = optObject(graphitron, "hover");
         boolean inferred = inlay != null && optBoolean(inlay, "inferredDirectives", false);
         boolean classification = inlay != null && optBoolean(inlay, "classification", false);
+        boolean separateFetch = inlay != null && optBoolean(inlay, "separateFetch", false);
         boolean hoverClassification = hover != null && optBoolean(hover, "classification", false);
-        return new InlayHintConfig(inferred, classification, hoverClassification);
+        return new InlayHintConfig(inferred, classification, separateFetch, hoverClassification);
     }
 
     private static JsonObject optObject(JsonObject parent, String key) {

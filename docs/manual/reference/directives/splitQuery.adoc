@@ -106,6 +106,6 @@ type Film @table(name: "film") {
 * xref:lookupKey.adoc[`@lookupKey`] narrows the per-parent batch to caller-provided keys.
 * Class-backed parents reachable from xref:service.adoc[`@service`] get implicit `@splitQuery` on `@table`-typed children.
 * xref:../../how-to/split-vs-inline.adoc[How-to: When to split queries] covers the round-trip-vs-fan-out trade-off, self-FK rules, and DataLoader caching behaviour.
-* xref:../lsp-inlay-hints.adoc[LSP inlay hints and classification hover] says which fields launch a query of their own, in the editor, for every reason a split happens.
+* xref:../lsp-inlay-hints.adoc[LSP inlay hints and classification hover] marks the separately fetched fields in the editor, for every reason a split happens, so a type's round-trip cost can be read off the schema.
 
 xref:../index.adoc[← Reference index]

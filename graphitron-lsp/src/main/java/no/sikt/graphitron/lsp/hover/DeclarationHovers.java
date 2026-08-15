@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
 import no.sikt.graphitron.lsp.facts.DeclarationFact;
+import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
@@ -219,7 +220,8 @@ public final class DeclarationHovers {
         var classifiers = ClaimClassifiers.ofFields(store, List.of(decl.parentTypeName()))
             .getOrDefault(decl.coordinate(), List.of());
         var joinPath = ClaimFacts.joinPath(store, decl.parentTypeName(), decl.fieldName());
-        var fetchRules = ClaimFacts.separateFetchRules(store, decl.parentTypeName(), decl.fieldName());
+        var fetchRules = ClaimFacts.separateFetchRules(store, List.of(decl.parentTypeName()))
+            .getOrDefault(decl.coordinate(), List.of());
         if (classifiers.isEmpty() && joinPath.isEmpty() && fetchRules.isEmpty()) return null;
         var sb = new StringBuilder();
         if (!classifiers.isEmpty()) sb.append("**").append(String.join(", ", classifiers)).append("**\n\n");
@@ -267,23 +269,19 @@ public final class DeclarationHovers {
      * The round-trip line: this field's rows come from a statement of its own, and why. Rendered
      * only where a rule reaches the field, never as its negation, because the relation does not yet
      * carry the implicit split a class-backed parent forces on its table-typed children.
+     *
+     * <p>Every rule renders, the universal one included: the inlay marker suppresses that case to
+     * keep a root type from repeating itself, but a reader who hovered one declaration asked about
+     * that declaration and gets the whole answer.
      */
     private static void appendSeparateFetch(StringBuilder sb, List<String> rules) {
         if (rules.isEmpty()) return;
-        sb.append("\n\nLaunches its own query:");
+        sb.append("\n\nFetched separately:");
         for (String rule : rules) {
-            sb.append("\n- ").append(separateFetchReason(rule));
+            sb.append("\n- ").append(SeparateFetchRule.of(rule)
+                .map(SeparateFetchRule::description)
+                .orElse(rule));
         }
-    }
-
-    private static String separateFetchReason(String rule) {
-        return switch (rule) {
-            case "SPLIT_QUERY" -> "`@splitQuery` defers the fetch to a batched DataLoader call";
-            case "TENANT_FAN_OUT" -> "`@tenantFanOut` runs the fetch once per tenant, off the parent's statement";
-            case "SERVICE" -> "the service fetches independently of the parent's SELECT";
-            case "ROOT_OPERATION" -> "a root operation field is its own entry point";
-            default -> rule;
-        };
     }
 
     private static Hover hover(FileSnapshot file, Node anchor, String markdown) {

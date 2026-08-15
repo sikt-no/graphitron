@@ -3,6 +3,8 @@ package no.sikt.graphitron.lsp.inlay;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
+import no.sikt.graphitron.lsp.facts.ClaimFacts;
+import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -36,7 +38,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINIT
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 
 /**
- * LSP inlay-hint provider. Two arms, each gated by an independent config toggle:
+ * LSP inlay-hint provider. Three arms, each gated by an independent config toggle:
  * <ul>
  *   <li><b>Inferred-directive arm</b>: at {@code @table} / {@code @field} / {@code @reference}
  *       sites where the author omitted the canonical argument ({@code name:} for the first two,
@@ -44,7 +46,16 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *   <li><b>Classification arm</b>: at a field or type declaration the claim stratum has an
  *       opinion about, renders the classifiers claiming it, read from
  *       {@link ClaimClassifiers}.</li>
+ *   <li><b>Separate-fetch arm</b>: at a field whose rows come from a statement of its own,
+ *       renders one marker word. Its own toggle rather than a second label on the classification
+ *       arm, because whether a field costs a round trip is a delivery fact rather than a
+ *       classifier, and an author auditing a schema for query cost wants that one signal without
+ *       a classifier beside every declaration.</li>
  * </ul>
+ *
+ * <p>The two store-backed arms share one walk of the visible region and one pass of bulk queries
+ * over the type names in it, so turning both on costs a query per grain rather than a query per
+ * declaration.
  *
  * <p>The inferred-directive arm asks the tree-sitter AST whether the canonical argument is
  * present and consults the {@link FieldClassification} / {@link TypeClassification} projections
@@ -103,8 +114,21 @@ public final class InlayHints {
 
         var hints = new ArrayList<InlayHint>();
         Node root = file.tree().getRootNode();
-        if (config.classification() && store.isPresent()) {
-            collectClassificationHints(hints, file, store.get(), root, visibleRange);
+        boolean storeArms = (config.classification() || config.separateFetch()) && store.isPresent();
+        if (storeArms) {
+            // One walk for both store-backed arms. They annotate the same declaration sites and
+            // differ only in what they ask about them, so a second walk would re-derive the region.
+            var sites = collectSites(file, root, visibleRange);
+            if (!sites.isEmpty()) {
+                var typeNames = new LinkedHashSet<String>();
+                for (var site : sites) typeNames.add(site.typeName());
+                if (config.classification()) {
+                    collectClassificationHints(hints, file, store.get(), sites, typeNames);
+                }
+                if (config.separateFetch()) {
+                    collectSeparateFetchHints(hints, file, store.get(), sites, typeNames);
+                }
+            }
         }
         if (config.inferredDirectives() && snapshot instanceof LspSchemaSnapshot.Built built) {
             collectInferredDirectiveHints(hints, file, built, root, visibleRange);
@@ -135,8 +159,51 @@ public final class InlayHints {
      * generator by hand.
      */
     private static void collectClassificationHints(
-        List<InlayHint> out, FileSnapshot file, StoreHandle store, Node root, Range visibleRange
+        List<InlayHint> out, FileSnapshot file, StoreHandle store,
+        List<ClaimSite> sites, Set<String> typeNames
     ) {
+        var byType = ClaimClassifiers.ofTypes(store, typeNames);
+        var byCoordinate = ClaimClassifiers.ofFields(store, typeNames);
+        for (var site : sites) {
+            var classifiers = site.fieldName() == null
+                ? byType.get(site.typeName())
+                : byCoordinate.get(site.typeName() + "." + site.fieldName());
+            if (classifiers == null || classifiers.isEmpty()) continue;
+            out.add(makeHint(file, site.nameNode(), String.join(", ", classifiers), InlayHintKind.Type));
+        }
+    }
+
+    // ===== Separate-fetch arm =====
+
+    /**
+     * Marks the visible fields whose rows are fetched by a statement of their own. One word, the
+     * same at every site, because the reason is the hover's business and a marker an author scans
+     * a schema with should read as one signal rather than four.
+     *
+     * <p>Silent at a field a universal rule reaches, which today is every field of a root type: a
+     * marker true of an entire type down its whole length is noise, and its absence there is not a
+     * claim that the field inlines. Silent at a field no rule reaches for the opposite reason and
+     * with the same caveat, the relation not yet carrying the implicit split a class-backed parent
+     * forces, so this arm marks what it can prove and never marks the complement.
+     */
+    private static void collectSeparateFetchHints(
+        List<InlayHint> out, FileSnapshot file, StoreHandle store,
+        List<ClaimSite> sites, Set<String> typeNames
+    ) {
+        var byCoordinate = ClaimFacts.separateFetchRules(store, typeNames);
+        for (var site : sites) {
+            if (site.fieldName() == null) continue;
+            var rules = byCoordinate.get(site.typeName() + "." + site.fieldName());
+            if (rules == null || !SeparateFetchRule.marksInline(rules)) continue;
+            out.add(makeHint(file, site.nameNode(), SEPARATE_FETCH_LABEL, InlayHintKind.Type));
+        }
+    }
+
+    /** The marker's whole text. Named here so the arm and its test cannot spell it differently. */
+    public static final String SEPARATE_FETCH_LABEL = "separate fetch";
+
+    /** Every declaration name in the visible region, types and their fields alike. */
+    private static List<ClaimSite> collectSites(FileSnapshot file, Node root, Range visibleRange) {
         var sites = new ArrayList<ClaimSite>();
         DeclarationKind.walkAll(root, typeDef -> {
             if (!intersects(typeDef, visibleRange)) return;
@@ -161,20 +228,7 @@ public final class InlayHints {
                 sites.add(new ClaimSite(typeName, Nodes.text(nameNode, file.source()), nameNode));
             }
         });
-        if (sites.isEmpty()) return;
-
-        var typeNames = new LinkedHashSet<String>();
-        for (var site : sites) typeNames.add(site.typeName());
-        var byType = ClaimClassifiers.ofTypes(store, typeNames);
-        var byCoordinate = ClaimClassifiers.ofFields(store, typeNames);
-
-        for (var site : sites) {
-            var classifiers = site.fieldName() == null
-                ? byType.get(site.typeName())
-                : byCoordinate.get(site.typeName() + "." + site.fieldName());
-            if (classifiers == null || classifiers.isEmpty()) continue;
-            out.add(makeHint(file, site.nameNode(), String.join(", ", classifiers), InlayHintKind.Type));
-        }
+        return sites;
     }
 
     // ===== Inferred-directive arm =====

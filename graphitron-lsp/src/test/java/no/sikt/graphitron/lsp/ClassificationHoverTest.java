@@ -89,7 +89,7 @@ class ClassificationHoverTest {
             .contains("`Film.title`")
             .contains("Column: `title`")
             .contains("Table: `film`")
-            .contains("Matched by: `");
+            .contains("Matched by: `generated name`");
     }
 
     @Test
@@ -127,7 +127,7 @@ class ClassificationHoverTest {
         assertThat(hoverAt(file, 1, "    rati".length()))
             .contains("**SERVICE**")
             .contains("Service: `com.example.FilmService#rating`")
-            .contains("Launches its own query:")
+            .contains("Fetched separately:")
             .contains("the service fetches independently of the parent's SELECT");
     }
 
@@ -147,7 +147,7 @@ class ClassificationHoverTest {
             .contains("`Film.language`")
             .contains("Join path:")
             .contains("`film_language_id_fkey` → `language`")
-            .contains("Launches its own query:")
+            .contains("Fetched separately:")
             .contains("`@splitQuery` defers the fetch to a batched DataLoader call");
     }
 

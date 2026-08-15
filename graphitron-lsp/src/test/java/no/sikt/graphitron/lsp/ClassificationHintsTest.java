@@ -166,7 +166,7 @@ class ClassificationHintsTest {
 
     /** The classification arm alone: the inferred-directive arm has a test class of its own. */
     private static InlayHintConfig config() {
-        return new InlayHintConfig(false, true, false);
+        return new InlayHintConfig(false, true, false, false);
     }
 
     private static List<String> labels(FileSnapshot file, Range visible) {

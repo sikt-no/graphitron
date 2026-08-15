@@ -18,10 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GraphitronWorkspaceServiceTest {
 
     @Test
-    void parsesAllThreeTogglesFromGraphitronNamespace() {
+    void parsesEveryToggleFromGraphitronNamespace() {
         var inlay = new JsonObject();
         inlay.add("inferredDirectives", new JsonPrimitive(true));
         inlay.add("classification", new JsonPrimitive(true));
+        inlay.add("separateFetch", new JsonPrimitive(true));
         var hover = new JsonObject();
         hover.add("classification", new JsonPrimitive(true));
         var graphitron = new JsonObject();
@@ -35,6 +36,7 @@ class GraphitronWorkspaceServiceTest {
         assertThat(config).isNotNull();
         assertThat(config.inferredDirectives()).isTrue();
         assertThat(config.classification()).isTrue();
+        assertThat(config.separateFetch()).isTrue();
         assertThat(config.hoverClassification()).isTrue();
     }
 
@@ -50,6 +52,7 @@ class GraphitronWorkspaceServiceTest {
         assertThat(config).isNotNull();
         assertThat(config.inferredDirectives()).isFalse();
         assertThat(config.classification()).isFalse();
+        assertThat(config.separateFetch()).isFalse();
         assertThat(config.hoverClassification()).isFalse();
     }
 

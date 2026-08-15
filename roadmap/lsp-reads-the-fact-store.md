@@ -477,6 +477,7 @@ around it.
 | `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
 | `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
+| `separateFetch` | `collectSeparateFetchHints` | `intent_field_separate_fetch`, the marked rules only (built: `ClaimFacts`, `SeparateFetchRule`) |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
 
 **Code actions.** Two branches, deliberately not sharing a path.
@@ -1683,6 +1684,48 @@ projection permits are gone with it.
   column match, a binding that matched under another name, a service, a conflict, a DML mutation, a
   split child claimed by nothing, a root field, a claimed type, an error type, and declarations
   nothing reaches.
+
+## Settled while building: the round-trip fact earns a surface, and a vocabulary in two artifacts needs a seal
+
+A second pass over the increment above, on three things it got wrong or left loose.
+
+* **The heading was imprecise, and the relation's own name said so.** The hover said "Launches its
+  own query" over a list whose service arm reads "the service fetches independently of the parent's
+  SELECT". A service call is not a query, and the relation is called `intent_field_separate_fetch`
+  for that reason. The heading is now "Fetched separately", which is what every arm actually
+  claims, and the manual's section leads with the round-trip framing so the plainer wording does not
+  cost the reader the point.
+* **The fact needed a surface that highlights, not one that answers.** A hover answers a question
+  the author already thought to ask; the question "which of these fields cost a round trip" is one
+  an author scans a whole type for. So the marker got its own inlay toggle,
+  `graphitron.inlayHints.separateFetch`, rendering one word at each marked field. Its own key rather
+  than a second label on the classification arm, whose contract is that its label is the classifier
+  and only the classifier: a delivery fact is not a classifier, and an author auditing cost should
+  not have to accept a label on every declaration to see it. The two store-backed arms now share one
+  walk of the visible region and one bulk query per grain, so both toggles on costs a query per
+  grain rather than per declaration.
+* **A universal rule is not worth marking.** Every field of a root type carries `ROOT_OPERATION`, so
+  an inline marker there repeats down the whole type and distinguishes nothing. The marker is silent
+  at any coordinate a universal rule reaches, the hover still states every rule, and the distinction
+  lives on the vocabulary rather than in either surface's rendering code. A `@splitQuery` on a root
+  field falls out correctly: the generator ignores the directive there, and marking the field would
+  advertise a split that never happens.
+* **A vocabulary in two artifacts needs a mechanism, not a convention.** The rule literals live in
+  SQL and their words live in Java, and the first cut had a `default -> rule` arm that would have
+  rendered a new rule to a user as a raw `SCREAMING_SNAKE` token with nothing failing.
+  `SeparateFetchRule` is now the single rendering home for both surfaces, and
+  `SeparateFetchVocabularyTest` reads the view's own stored definition back out of
+  `information_schema` and requires a constant per literal in it. The extraction asserts itself
+  non-empty first, so a definition it stops matching fails loudly instead of passing on an empty
+  vocabulary. This is the same shape as the inferred-directive arm's renderer-coverage test, and for
+  the same reason: the arm that reads a vocabulary and the artifact that declares it are in
+  different languages, so only a test can hold them together.
+* **A test comment claimed more than its fixture proved.** A case asserting the marker's silence was
+  written as though its fixture had a class-backed parent, which it did not: it was a plain object,
+  and whether the generator splits there is not something the case established. It is gone. The
+  known gap is documented where it binds every reader, in the relation's comment, and the test class
+  says plainly that pinning it needs a fixture nobody has built yet. An overstated test comment is
+  worse than a missing test, because the next reader believes it.
 
 ## Retired vocabulary
 
