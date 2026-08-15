@@ -6,7 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassSignature;
 import java.lang.classfile.MethodSignature;
+import java.lang.classfile.Signature;
 import java.lang.classfile.attribute.SignatureAttribute;
 import java.lang.constant.ClassDesc;
 import java.io.OutputStream;
@@ -774,6 +776,41 @@ class ClasspathScannerTest {
                 CompletionData.Supertype::declaredVia)
             .containsExactly(
                 org.assertj.core.api.Assertions.tuple("com.example.Timestamped", "EXTENDS"));
+    }
+
+    @Test
+    void aGenericSupertypeIsRecordedErased(@TempDir Path classes) throws IOException {
+        // The class carries both forms: the erased interface entry and a Signature attribute
+        // spelling the type argument. Only the erasure is read, which is what an assignability
+        // question wants and is why nothing downstream can ask what a List holds.
+        byte[] bytes = ClassFile.of().build(ClassDesc.of("com.example.FilmList"), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC)
+            .withInterfaceSymbols(ClassDesc.of("java.util.List"))
+            .with(SignatureAttribute.of(ClassSignature.of(
+                Signature.ClassTypeSig.of(ClassDesc.of("java.lang.Object")),
+                Signature.ClassTypeSig.of(ClassDesc.of("java.util.List"),
+                    Signature.TypeArg.of(
+                        Signature.ClassTypeSig.of(ClassDesc.of("com.example.Film"))))))));
+        writeRawClassBytes(classes, "com.example.FilmList", bytes);
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).getFirst().supertypes())
+            .extracting(CompletionData.Supertype::className)
+            .containsExactly("java.util.List");
+    }
+
+    @Test
+    void aNestedSupertypeKeepsTheDollarNameTheJvmWrites(@TempDir Path classes) throws IOException {
+        // A nested class is filtered out as a scan subject, so this is the only side of a
+        // supertype edge one appears on, and the spelling has to be the binary name both sides
+        // are written from for a closure over these edges to join at all.
+        byte[] bytes = ClassFile.of().build(ClassDesc.of("com.example.Handler"), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC)
+            .withInterfaceSymbols(ClassDesc.of("com.example.Outer$Inner")));
+        writeRawClassBytes(classes, "com.example.Handler", bytes);
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).getFirst().supertypes())
+            .extracting(CompletionData.Supertype::className)
+            .containsExactly("com.example.Outer$Inner");
     }
 
     private static Path jarWith(java.util.Map<String, byte[]> entries) throws IOException {

@@ -168,10 +168,15 @@ class ClassAssignableTest {
             reference(LIB, "lib.Timestamped", implementsOf("java.io.Serializable")));
     }
 
+    /**
+     * Every name here is the fully qualified one the scan would write, on both sides of a
+     * supertype edge and in the reference's own name, which a scan sets to the class name rather
+     * than the simple one. The closure joins a declared name against a declaring class's name, so
+     * a census spelling either differently would assert a hop no classfile offers.
+     */
     private static CompletionData.ExternalReference reference(
         String sourceName, String className, CompletionData.Supertype... supertypes) {
-        String simpleName = className.substring(className.lastIndexOf('.') + 1);
-        return new CompletionData.ExternalReference(simpleName, className, "",
+        return new CompletionData.ExternalReference(className, className, "",
             List.of(), List.of(), List.of(), "CLASS", sourceName, List.of(supertypes));
     }
 
