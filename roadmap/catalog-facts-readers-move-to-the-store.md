@@ -203,12 +203,30 @@ resolution would turn one index build into thousands of round trips. Holding tho
 is not a projection revival: it is a query result with a request lifetime, shaped by the query
 rather than by a builder pass, and it dies with the call.
 
-The rule applied to those rows is the weaker half, and worth naming as transitional rather than
-defending. `EdgeProducer` matches a bare name because its input is a *classifier* table name, and
-the store's answer to "which table does this type's binding resolve to" is `intent_bound_table` /
-`intent_field_column_table`, which the LSP already reads. The Java match survives here only as long
-as the classification projection this item does not touch does, and it retires with it rather than
-standing as a permanent second home for the resolution. Table-to-table FK edges
+The rule applied to those rows is the weaker half, and it does not survive contact with where the
+sibling item has gone. `EdgeProducer` matches a bare name because its input is a *classifier* table
+name, and `resolveTable` degrades an ambiguous or unfound one to a `TableNode` with an empty schema.
+That is the exact defect `lsp-reads-the-fact-store.md` names as removed under "the binding names a
+table by its whole key": a classifier's `tableName` slot only ever held a bare name, so every reader
+downstream matched it case-insensitively across every schema and hoped. Carrying it into a store
+read would re-instantiate downstream what that item just retired upstream, so the two arms split
+rather than sharing one transitional excuse.
+
+The **type arm** takes the keyed answer now. `intent_bound_table` resolves an `@table`-bearing type
+to the full `sql_table` key with a `candidates` arity beside it, `BoundTables.of(store, typeName)`
+already reads it into `CatalogTable`, and that is the same census key this item is widening the
+shared row records to carry. The type name is in hand at the call site, `EdgesTool` keying
+`typeClassificationsByName` by it before dispatching, so what the switch needs is that name threaded
+into `typeEdges` rather than a new resolution. Ambiguity stops degrading to an empty schema and
+becomes what the view already says it is: rows, with the count stated rather than recounted.
+
+The **field arms** stay on the bare name, and here transitional is the honest word.
+`intent_field_column_table` answers a field site's column table but deliberately omits the parent's
+own binding, being what a reader already holds, so there is no single view a field arm can read for
+the table its classification names. Those arms retire with the classification projection this item
+does not touch, and the note belongs on them rather than on `EdgeProducer` as a whole.
+
+Table-to-table FK edges
 (`outgoingFkEdges` / `incomingFkEdges`) read `CatalogKeys.touching` for the queried table, which is
 where the reverse FK direction was already a query rather than an index.
 
@@ -262,6 +280,12 @@ The tool output is the acceptance surface, so the deltas are named rather than d
   engine returned first. It collapses *before* the resolution count is read, since
   `catalog.describe`'s `Ambiguous` arm names candidate schemas and would otherwise report one
   schema twice as an ambiguity no qualifier can resolve.
+* **An ambiguously bound type stops emitting an unqualified edge target.** `resolveTable` renders a
+  degraded `TableNode` with an empty schema, and `wireId()` drops the qualifier entirely, so `edges`
+  answers today with a bare `film` where every other table node is `schema.film`. Reading the type
+  binding through `intent_bound_table` replaces that with the candidates the view carries, each a
+  full key. This is the one wire change in this item that is a fix rather than a translation: an
+  unqualified table ID is not a node any other tool can be handed back.
 * **A missing handle refuses instead of answering empty.** The server can be built without a store
   handle; the diagnostics tools already refuse per call there, on the grounds that an empty answer
   reads as a clean schema. An empty catalog reads as a database with no tables, so the catalog
@@ -330,6 +354,11 @@ hand-building projection fixtures.
 * `ConflictedReverseEdgeTest` follows `EdgeProducer.Context`'s new shape, and is the only test that
   constructs one. `EdgeCoverageTest` is not: it reads `EdgeProducer`'s four permit-set constants and
   never builds a context, so its partition over the classification permits is untouched by this item.
+* The type arm's move off the bare name gets a case of its own, since it is the one wire fix here: a
+  type bound to a name two schemas declare emits fully-keyed candidate targets rather than one
+  unqualified `TableNode`. The multi-schema tables the test jOOQ package carries are what make it
+  writable without a hand-built classification, which is the same reason the sibling item gives for
+  capturing the binding: a fixture that cannot lie about which table a spelling reaches.
 * `ServerInstructionsTest` is a seventh site and needs its own answer. Its `pagedWorkspace` fixture
   hand-builds a two-table `CatalogFacts` purely so a `limit=1` call on `catalog.tables` pages, beside
   hand-built projections giving five other tools two entries each, and the test boots a real server
@@ -362,8 +391,11 @@ real capture.
 ## Scope boundary
 
 `graphitron-mcp` reads four generator-side projections in all, and this item moves one of them.
-`LspSchemaSnapshot` and the classification types stay, being the substrate the sibling item
-explicitly defers. `CompletionData.ExternalReference` and `SourceWalker.Index` stay too, even
+`LspSchemaSnapshot` and the classification types stay, but not because the substrate under them is
+deferred: `lsp-reads-the-fact-store.md` has since named it view by view and built most of it,
+including the claim views for the main classifier and the bindings this item's edge arms read. What
+stays is the projection, for the arms that still read it, and the type arm above is the one that
+stops. `CompletionData.ExternalReference` and `SourceWalker.Index` stay too, even
 though the sibling item's "What retires" hands their MCP repoint to "the sibling item" and means
 this one: the code tools' Javadoc and location joins are a different family (`jvm_` and the
 java-source relations), a different acceptance surface (the `location` / `locationStatus` wire
