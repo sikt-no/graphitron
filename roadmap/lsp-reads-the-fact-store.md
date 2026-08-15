@@ -1798,7 +1798,7 @@ out to have been covering a case no capture can produce.
   Adding a third is writing a pass and arguing for it, which is what it should have been: the permit
   made a judgement call about what is worth showing look like a type-safety property.
 
-## Decided before building: the backing-class fact is captured, not re-derived
+## Decided before building: the backing-class fact is derived, and the census grows to carry it
 
 The keystone relation named above is `intent_type_backing_class`, and the shape it takes was settled
 by reading what the resolution actually needs rather than by what the store already holds.
@@ -1811,34 +1811,54 @@ CTE inside a view, so the constraint is cost and not syntax, and the existing ju
 re-deriving with a semi-naive fixpoint under a monotonicity bound that fails loudly rather than
 hanging a build. It registers `DERIVED` with an anchor test under `no.sikt.graphitron.rewrite.derive`.
 
-**The values come from the real reflection, at capture, not from the census.** The obvious path was a
-derivation over the `jvm_` census, since that family now carries declared return types and a hop is
-followable. Three of `RecordBindingResolver`'s rules defeat it, and each needs a classloader the
-census does not have: container detection is `isAssignableFrom`, so a custom collection subtype
-counts and the census carries no hierarchy; the two-level carrier fork calls an accessor probe on the
-reflected class, and it moves a binding rather than adding one, so skipping it makes the wrapper
-over-claim; overload resolution demands a unique method where the census keys on descriptor. A
-census-side derivation would disagree with the generator in exactly those places and would do it
-silently, which is a worse artifact than no relation. The narrowed variant, structural conditions
-excluding the reflective cases with an anchor partitioning by the resolver's own provenance, buys a
-fact that is approximate and still needs replacing; it is not the path.
+**The values are derived from facts, and where a fact is missing the census grows.** Three of
+`RecordBindingResolver`'s rules looked at first like they forced live reflection. Two of them do not.
+Overload resolution is a count: the census keys a method on its descriptor precisely so overloads are
+distinguishable, and "the unique method of this name" is an arity test over `jvm_method`. The
+two-level carrier's accessor probe is a join, not a reflection call: `intent_class_member_slot`
+already answers what slots a class offers, and `jvm_method_parameter` carries the shapes the probe
+gates on; it is intricate to transcribe and that is not the same thing as impossible, which is what
+the first reading conflated. The third rule, container detection, is `isAssignableFrom`, and it is a
+genuinely missing fact rather than a missing capability: a classfile declares its own superclass and
+interfaces, the scanner holds the `ClassModel` that exposes both and records neither, and once those
+names are captured, assignability is a transitive closure over them. So the census gains declared
+supertypes and the rule becomes a derivation like every other.
 
-**Capture already has the loader.** `FactCapture.capture` receives a `JooqCatalog`, which holds a
-`codegenLoader`, so a capture-cadence reflective walk needs no new plumbing to reach one. That is what
-makes the exact path the cheap one in the end, and it is what "decide once, at capture" means here.
+**Why not run the real reflection inside capture, which would be less work.** Because it would write
+a row the store cannot account for. The binding would be readable and not re-derivable: no consumer
+could check it, extend it, or ask a variant of the question without re-running reflection, and the
+substrate would carry a value whose derivation lives outside it. That is the private-model failure one
+layer below where that failure usually gets caught. The store is the model, so a rule the generator
+applies is a rule the store can state, and where it cannot, the census is short a fact and the answer
+is to capture the fact.
+
+**One of the two new derivations can be a view.** A class hierarchy is acyclic, so the assignability
+closure terminates without a path guard and states itself as a recursive view. The backing-class walk
+is over the SDL type graph, which is cyclic, so it takes the materialized form above. The difference
+is worth stating because it is the whole of why one is a table and the other is not.
 
 **The sequence, in order, each commit green and none changing generator behaviour on faith.**
 
-1. Extract the root-producer grounding and the accessor chain out of `RecordBindingResolver` into a
-   unit callable with a registry and a classloader, leaving the axes the fact does not need (the DML,
-   service and routine emitted bindings, producer arities, the multi-producer rejection) where they
-   are. Pure extraction, no behaviour change, the resolver still its own caller.
-2. Add the relation and its writer, called from capture, and the anchor test binding the written rows
-   to the resolver's own output over the spec-by-example corpus. The generator still reads its
-   resolver; the fact is proven equal to it before anything depends on that.
-3. Have the generator read the fact. The resolver's copy of the walk retires only here, once the
+1. The census carries declared supertypes. The scanner reads `superclass()` and `interfaces()` off
+   the `ClassModel` it already holds, the reference gains the component, and `jvm_class_supertype`
+   lands as a census relation registered on the `EQUALITY` arm with its siblings. A supertype name
+   the scan never reached is still a row: what the closure needs is the name a classfile declares,
+   and the JDK interface at the end of a chain is exactly the name nobody scans.
+2. `intent_class_assignable`, the transitive closure over those declarations, as a recursive view.
+   The hierarchy is acyclic, so this one needs no path guard and no materialization.
+3. The backing-class walk as a derivation over the store: the root producer grounding (the unique
+   method of a `@service` or `@externalField` reference, its declared return type, the container peel
+   through the closure, the element class), the accessor hop through `intent_class_member_slot`, the
+   cardinality agreement through `graphql_field.is_list`, the two-level carrier fork through the slot
+   relation, the `@table` shadow, and the root mask. Materialized, written by the capture-cadence
+   writer above.
+4. The anchor: agreement with `RecordBindingResolver` over the spec-by-example corpus, total in both
+   directions, so a type the resolver binds and the relation does not is a failure rather than a
+   footnote. This is the step that decides whether the transcription is faithful, and nothing depends
+   on the fact until it passes.
+5. Have the generator read the fact. The resolver's copy of the walk retires only here, once the
    anchor has held.
-4. The consumers follow, each its own commit: the class arm of the type-scope question, then
+6. The consumers follow, each its own commit: the class arm of the type-scope question, then
    `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the class-backed-parent
    arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
 
