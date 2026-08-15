@@ -29,6 +29,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the marker of where the answer comes from: these ghosts now appear in a session that has captured
  * a schema and has no successful generator pass behind it, where before they waited for one.
  *
+ * <p>One silence is deliberately not asserted, because it is not the arm's claim to make. A
+ * directiveless object reached from a field of a table-bound type resolves its fields against the
+ * parent's own row, which binds it as surely as {@code @table} binds anything, and the whole-directive
+ * ghost is exactly what such a type wants. The relation this arm reads is keyed on {@code @table}
+ * applications and carries no consumer-derived binding, so an unmarked nesting type here means "no
+ * relation answers yet" rather than "not bound", and pinning it would take the derivation that does
+ * not exist. The prohibition lives in the arm's own javadoc, where it outlives this test.
+ *
  * <p>The sibling {@code InlayHintsTest} holds the {@code @field} and {@code @reference} renderers,
  * which still read the snapshot and pass an empty handle for the same reason.
  */
@@ -136,7 +144,10 @@ class InferredTableHintsTest {
     }
 
     @Test
-    void aTypeNothingBindsGetsNeitherPass() {
+    void aTypeNoFieldEverReachesGetsNeitherPass() {
+        // Note is declared standing alone: no @table, and no field of a table-bound type returns
+        // it, so nothing gives its fields a row to resolve against. That is what makes this silence
+        // assertable, and it is narrower than it looks; see the class javadoc.
         var file = file("""
             type Note {
                 text: String

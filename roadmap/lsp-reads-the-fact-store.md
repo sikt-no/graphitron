@@ -1748,14 +1748,29 @@ out to have been covering a case no capture can produce.
   toggle therefore spans two cadences today. That is documented in the manual's freshness section
   rather than hidden, and each of the three renderers is silent when its own source is missing rather
   than holding the others back.
-* **The absent-directive arm's headline case could not happen.** The arm renders a whole
-  `@table(name: "...")` ghost at a declaration carrying no `@table`, and its unit test pinned that on
-  a plain `type Customer { ... }` against a hand-built snapshot saying `Customer` was table-bound.
-  Nothing binds a directiveless type: `graphitron_table` is a row per `@table` application, and the
-  classifier reads the directive too, so the snapshot in that test was a state no build produces. The
-  case is deleted. What the arm is actually for is the `extend type` site, whose base declaration
-  carries the binding in another file, and that case is now pinned against a real capture. The arm's
-  javadoc and the manual say so instead of the general claim they made before.
+* **The absent-directive arm's unit test pinned an unreachable state, and the case behind it is real
+  and unserved.** The arm renders a whole `@table(name: "...")` ghost at a declaration carrying no
+  `@table`, and its test pinned that on a plain `type Customer { ... }` against a hand-built snapshot
+  saying `Customer` was table-bound. The projector produces `PlainObject` for a directiveless object,
+  never `Table`, so that snapshot was a state no build ships and the ghost never appeared in a real
+  session. The test is deleted for that reason and not for the one first written here, which said
+  nothing binds a directiveless type. Something does: a directiveless object reached from a field of
+  a `@table` type is a nesting type, and its fields resolve against the parent's own table row, so
+  `type Inner { title: String }` under `Film.inner` is bound to `film` as surely as `Film` is. That
+  is the ghost's most useful case and neither surface has ever rendered it.
+* **The nesting binding is a relation nobody has written, and it is the same one the `@field`
+  renderer wants.** `intent_bound_table` is keyed on `@table` applications, so it cannot carry a
+  binding whose source is a consuming field. The missing derivation is the type grain of the question
+  `intent_field_column_table` answers at the field grain: which table a type's fields resolve their
+  columns against, unioning the `@table`-bound arm with a nesting arm that walks from a scoped type
+  through its directiveless-object-typed fields, recursively, since nesting nests. It is rows and not
+  a decline for the same reason every binding is: one nesting type reached from two parents on two
+  tables resolves against both, and a surface that must pick one reads the arity rather than guessing.
+  That relation serves the absent ghost, and it is the upstream half of the site-resolved column match
+  the `@field` renderer needs, so the two gaps named above are one piece of work.
+* **What the arm is for today is the `extend type` site**, whose base declaration carries the binding
+  in another file, and that case is now pinned against a real capture. The arm's javadoc and the
+  manual say that plainly, and both name the nesting case as absent rather than as impossible.
 * **A strategy interface with one implementation and no input left is not a mechanism.** The absent
   pass dispatched through a sealed `AbsentArm` permit per registry entry, whose whole content was a
   switch over the classification variants carrying a table name. With the value coming from a

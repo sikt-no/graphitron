@@ -279,9 +279,16 @@ public final class InlayHints {
     /**
      * The {@code @table} arm's second pass: a type bound to a table but carrying no {@code @table}
      * at all gets the whole directive as a ghost, where the first pass only fills in an argument a
-     * present directive omitted. A binding without a directive is the ordinary case, the reference
-     * defaulting to the type's own name, and this is where an author sees that graphitron read the
-     * type as table-bound.
+     * present directive omitted. What it reaches today is the {@code extend type} site, a binding
+     * being a property of the type rather than of the declaration in front of the cursor.
+     *
+     * <p>It does not yet reach the other kind of undirected binding, and that absence is a missing
+     * relation rather than a missing case. A directiveless object reached from a field of a
+     * table-bound type resolves its fields against the parent's own row, so it is bound without
+     * ever naming a table; the binding relation this pass reads is keyed on {@code @table}
+     * applications and cannot carry a binding whose source is a consuming field. Until the
+     * consumer-derived binding is a relation, read a ghost that appears and do not read its absence
+     * as "this type is not table-bound".
      *
      * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
      * null. {@code @field} would put a ghost on every column-bound field in the file, and
