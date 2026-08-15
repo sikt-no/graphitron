@@ -8,8 +8,8 @@ import io.github.treesitter.jtreesitter.Point;
  * recognises. Sibling to {@link no.sikt.graphitron.lsp.parsing.Behavior}, which carries
  * the directive-argument-binding shapes; this family carries the orthogonal axis of
  * <em>declaration positions</em> (a field-definition name token, a type-definition name
- * token) where the LSP's classification hover surfaces the {@code FieldClassification} /
- * {@code TypeClassification} projection.
+ * token) where the LSP's classification hover surfaces what the fact store's claim
+ * relations hold about the declaration.
  *
  * <p>Two permits at filing — {@link FieldDeclarationHover} and {@link TypeDeclarationHover}.
  * Further permits join only if new SDL declaration coordinates need hover content. The
@@ -29,13 +29,13 @@ public sealed interface DeclarationHover
     Node nameNode();
 
     /**
-     * The classified coordinate identifying which projection entry the renderer looks up.
+     * The declaration's coordinate: what the renderer keys its claim reads on.
      */
     String coordinate();
 
     /**
      * A field declaration ({@code field_definition} or {@code input_value_definition}).
-     * {@code coordinate} is {@code "ParentType.fieldName"} for projection lookup.
+     * {@code coordinate} is {@code "ParentType.fieldName"}.
      */
     record FieldDeclarationHover(Node nameNode, String parentTypeName, String fieldName)
         implements DeclarationHover {
@@ -44,7 +44,7 @@ public sealed interface DeclarationHover
 
     /**
      * A type declaration ({@code object_type_definition} and friends). {@code coordinate}
-     * is the type name for projection lookup.
+     * is the type name.
      */
     record TypeDeclarationHover(Node nameNode, String typeName) implements DeclarationHover {
         @Override public String coordinate() { return typeName; }

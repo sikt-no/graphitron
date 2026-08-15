@@ -3233,6 +3233,28 @@ COMMENT ON COLUMN intent_field_column_table.table_source_name IS 'the resolved t
 COMMENT ON COLUMN intent_field_column_table.table_schema IS 'the resolved table''s SQL schema; NULL on every SILENT row';
 COMMENT ON COLUMN intent_field_column_table.table_name IS 'the resolved table''s SQL name; NULL on every SILENT row. With the two columns above this is sql_table''s full key, so the columns themselves are one join away';
 
+CREATE VIEW intent_field_separate_fetch (graph_name, type_name, field_name, rule) AS
+SELECT s.graph_name, s.type_name, s.field_name, 'SPLIT_QUERY'
+  FROM graphitron_split_query s
+UNION
+SELECT t.graph_name, t.type_name, t.field_name, 'TENANT_FAN_OUT'
+  FROM graphitron_tenant_fan_out t
+UNION
+SELECT sv.graph_name, sv.type_name, sv.field_name, 'SERVICE'
+  FROM graphitron_service sv
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = sv.graph_name AND r.type_name = sv.type_name)
+UNION
+SELECT f.graph_name, f.type_name, f.field_name, 'ROOT_OPERATION'
+  FROM graphql_field f
+  JOIN graphql_root_operation r
+    ON r.graph_name = f.graph_name AND r.type_name = f.type_name;
+COMMENT ON VIEW intent_field_separate_fetch IS 'Which fields are fetched by a statement of their own rather than projected out of the enclosing SELECT, one rule literal per arm. The question a schema author asks about round-trips: a field with no row here that resolves against its parent''s table costs nothing beyond the parent''s own statement, while a field with one is a second trip to the database. The two marker arms are the delivery-forcing union the table-backed child arm reads (@splitQuery defers the fetch through a DataLoader; @tenantFanOut forces the same boundary because a fanned child runs once per tenant and cannot join into a parent statement running on one source), stated as separate rules rather than one DELIVERY_MARKER because which marker forced the split is what an author reads and the two are written for different reasons. The service arm is the non-root @service contract: the service fetches independently of the parent''s SELECT, which is why the split is required rather than optional there. The root arm is every field of a bound root operation type, whose fetch is the operation''s own entry point and never a projection of anything; keyed by the root operation binding rather than the conventional names, so it states the intended rule the way the demand rules do, today''s walk dispatching on the literal names being the same known difference recorded there. Deliberately absent, and the reason absence is not yet the complement''s claim: the implicit split on a @table-typed field of a class-backed parent, which needs the backing-class resolution the census does not yet carry. Until that arm lands a reader may say a field with a row is separately fetched, and may not say a field without one is inlined.';
+COMMENT ON COLUMN intent_field_separate_fetch.graph_name IS 'the owning graph''s partition, carried through from every arm''s base relation';
+COMMENT ON COLUMN intent_field_separate_fetch.type_name IS 'the separately fetched field''s owning type';
+COMMENT ON COLUMN intent_field_separate_fetch.field_name IS 'the separately fetched field''s name within the owning type';
+COMMENT ON COLUMN intent_field_separate_fetch.rule IS 'why the fetch is its own; a closed vocabulary (SPLIT_QUERY, TENANT_FAN_OUT, SERVICE, ROOT_OPERATION) the reading side decodes into a typed value. A coordinate several rules cover is several rows, the arity being the answer rather than a precedence this view picks; each rule''s witnesses live one join away in the arm''s base relation, so no arm''s witness columns go nullable on the others';
+
 CREATE VIEW intent_class_member_slot
   (source_name, class_name, origin, slot_name, display_type, accessor_method_name) AS
 SELECT rc.source_name, rc.class_name, 'RECORD_COMPONENT',

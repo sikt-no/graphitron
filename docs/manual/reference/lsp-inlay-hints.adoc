@@ -2,7 +2,7 @@
 :description: Reference for the Graphitron LSP's inlay-hint surface and the classification-hover content, plus the three editor-side config keys that gate them.
 :keywords: graphitron, lsp, inlay hints, hover, classification, configuration
 
-The Graphitron LSP surfaces two layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it) and classification (what Graphitron takes a declaration to be, which is what decides the code generated for it). Both layers are off by default and light up through editor-side config.
+The Graphitron LSP surfaces two layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it) and classification (what Graphitron takes a declaration to be, which is what decides the code generated for it, down to whether the field launches a query of its own). Both layers are off by default and light up through editor-side config.
 
 == Three config keys
 
@@ -22,7 +22,7 @@ All three live under the `graphitron.inlayHints` (and `graphitron.hover`) namesp
 
 | `graphitron.hover.classification`
 | `false`
-| Enables rich hover content on field-declaration and type-declaration name tokens. Where the inlay hint shows a compact label, the hover popup unpacks the variant's load-bearing payload (table, column, FK path, target type, error channel, DML verb, ...) as markdown.
+| Enables rich hover content on field-declaration and type-declaration name tokens. Where the inlay hint shows the classifier alone, the hover popup adds the facts behind it (the column and the name it matched on, the service method, the join path, the DML verb, the error handlers) and whether the field costs a round-trip of its own.
 |===
 
 The three toggles are independent: a user who wants ghost annotations for inferred directives but not classification labels gets exactly that.
@@ -45,25 +45,53 @@ A declaration nothing claims gets no hint. That is the point of the surface: a h
 
 An authored claim hides the structural one, so a `@service` field of a `@table` type shows `SERVICE` even where its name would have matched a column. Where two directives claim the same declaration, both classifiers render, comma-separated: that is a schema error, and naming the two claims says more than a single word for "conflicted" would.
 
-The label is the classifier and only the classifier. Which table, which column, which foreign-key path, whether a fetch batches: those are facts of their own and the hover is where they are unpacked.
+The label is the classifier and only the classifier. Which table, which column, which foreign-key path, whether the field launches a query of its own: those are facts of their own and the hover is where they are unpacked.
 
 == Classification hover
 
-Renders the projection's load-bearing payload as markdown when the cursor is on a field-declaration or type-declaration name token (outside any directive). The hover content includes:
+Renders as markdown when the cursor is on a field-declaration or type-declaration name token (outside any directive). The block is:
 
-* The classified variant's name. This is still the generator-side sealed-permit name (`FieldClassification.Column`, `TypeClassification.Table`), so it does not currently match the classifier the inlay hint shows.
+* The classifiers claiming the declaration, in the same vocabulary the inlay hint shows. A conflicted coordinate names all of its claims, comma-separated.
 * The qualified coordinate (`ParentType.fieldName` for fields; the type name for types).
-* Per-permit payload: target table, column name, FK chain, participant set, discriminator column, DML verb, error-channel constant, input type name, accessor / column duality for class-backed-parent fields, and so on.
+* One line per fact behind each claim, each read from the relation that owns it: the column and table a `TABLE_COLUMN` match resolved to plus which naming tier matched, the class and method behind a `SERVICE` or `EXTERNAL_FIELD`, the target type of a `NODE_ID`, the routines of a chained `ROUTINE` in application order, the verb and table of a `MUTATION`, the bound table of a `TABLE`, the handlers of an `ERROR`.
+* `Matched name`, on a field whose `@field(name:)` binding matched under a name other than the field's own. This is what tells "graphitron read my binding" from "graphitron ignored it".
+* The join path, where an authored `@reference` resolves to one: each element as the foreign key it joins on and the table it lands in.
+* `Launches its own query`, described below.
+
+Two of those lines hold a hover open on their own. A child field returning a `@table` type is claimed by nothing (no directive names what it is, and the structural classifier only reaches leaf fields), so gating the block on a claim would silence it on exactly the fields whose round-trip cost an author wants to see.
 
 Hover stays distinct from the directive-argument-keyed dispatch (`@table(name:)`, `ExternalCodeReference.method`, ...): the existing directive-arg hovers keep firing when the cursor sits inside a directive, and the classification hover fires only as a fallback on declaration coordinates.
 
+== Which fields launch a query
+
+A field's rows either come out of the enclosing `SELECT` or cost a trip to the database of their own. The hover says which, and why, for every field a rule reaches:
+
+[cols="1,3"]
+|===
+| Rule | What the hover says
+
+| xref:directives/splitQuery.adoc[`@splitQuery`]
+| the fetch is deferred to a batched DataLoader call
+
+| `@tenantFanOut`
+| the fetch runs once per tenant, off the parent's statement
+
+| xref:directives/service.adoc[`@service`] on a non-root field
+| the service fetches independently of the parent's `SELECT`
+
+| A field of a root operation type
+| a root operation field is its own entry point
+|===
+
+A field several rules reach lists all of them. A field no rule reaches gets no line, and that silence is not yet the opposite claim: the implicit split on a `@table`-typed child of a class-backed parent is not reported here yet, so read a line that appears and do not read the absence of one.
+
 == Freshness
 
-The two inlay arms read different things and go stale differently.
+The three surfaces read different things and go stale differently.
 
-Classification hints come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
+Classification hints and the classification hover come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
 
-Inferred-directive hints and the classification hover come from the classification snapshot the generator pass ships. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
+Inferred-directive hints come from the classification snapshot the generator pass ships, as does the description overlay beneath the hover's classification block. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
 
 Each surface is silent when what it reads is missing, so a session that has one of the two answers still gets it.
 

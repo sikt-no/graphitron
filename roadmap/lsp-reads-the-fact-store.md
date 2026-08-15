@@ -459,7 +459,7 @@ around it.
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
 | Any coordinate, no richer arm | SDL docstring | `graphql_directive_argument` for a directive argument, `graphql_field` for a nested input field |
 | Directive argument name | Arg docstring | `graphql_directive_argument`, bundled and author-declared alike |
-| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | the claim views for the classifier, then one relation per further fact the block shows; `sql_table`, `sql_column` and the `java_` source family for the description |
+| SDL declaration name (`hoverClassification` toggle) | `DeclarationHovers`: classification block + the bound declaration's description | the claim views for the classifier, then one relation per fact the block shows (built: `ClaimFacts` over `intent_column_match_claim`, `graphitron_service`, `graphitron_external_field`, `graphitron_field_node_id`, `graphitron_routine`, `graphitron_mutation`, `intent_bound_table`, `graphitron_error_handler`, `intent_field_reference_step_target`, `intent_field_separate_fetch`); `sql_table`, `sql_column` and the `java_` source family for the description |
 
 **Definition.** Three providers chained with `.or()` in this order, keyed on disjoint syntax.
 
@@ -477,7 +477,7 @@ around it.
 | `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
 | `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
-| `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations |
+| `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
 
 **Code actions.** Two branches, deliberately not sharing a path.
 
@@ -1631,6 +1631,59 @@ chosen.
   masking a structural one at a coordinate whose name *does* match a column, two claims at one
   coordinate, and declarations nothing claims.
 
+## Settled while building: the hover's fact list, and the round-trip fact the store did not have
+
+The second label surface moved, and with it the two classification maps left the language server's
+declaration arms entirely. `DeclarationHovers` renders a heading of the classifiers claiming the
+declaration and a list of labelled values behind them, read through the new `ClaimFacts` from the
+relation that owns each. `LspClassificationLabels` is gone; the 29-arm and 22-arm switches over the
+projection permits are gone with it.
+
+* **The block is a heading and a list, not a variant with a payload.** The reader answers with
+  `DeclarationFact(label, value)` pairs. A typed per-classifier payload would have been the sealed
+  taxonomy again in a second home, and it would have gone mostly null at every coordinate for the
+  same reason the projection records did. A claim growing a fact is now a query in `ClaimFacts`, not
+  an arm in a switch that every other claim's reader has to keep compiling against.
+* **Which facts made the cut, and the rule that decided.** A fact is in when the relation that owns
+  it is one join from the coordinate and the value answers a question an author asks at the
+  declaration: the matched column and its table, which naming tier matched, the `@field` binding's
+  name where it differs from the field's own, the class and method behind a service or external
+  field, the node target, the routines in application order, the DML verb and table, the bound
+  table, the error handlers, the resolved join path. Out: `splitBatched`, `batched`, `isList`,
+  `isLookup`, `override`, `tableBound`, the participant lists and the discriminator column. Each of
+  those is real; none of them is asked for at a declaration name today, and each is one arm away the
+  day someone asks.
+* **The round-trip fact is the one the store did not have, and it is now a relation.**
+  "Does this field launch a query of its own" is the question the trimmed list would otherwise have
+  dropped, and it is a derivation over four independent transcriptions, so it is a view:
+  `intent_field_separate_fetch`, one row per (coordinate, rule), rules `SPLIT_QUERY`,
+  `TENANT_FAN_OUT`, `SERVICE` and `ROOT_OPERATION`. Rows rather than a precedence, on the claim
+  views' own discipline: a coordinate several rules reach is several rows and the arity is the
+  answer. The root arm keys on the root operation binding rather than the three conventional names,
+  which is `intent_field_demand_rule`'s precedent and the same known difference from today's walk.
+* **The view owns what its absence does not mean.** The implicit split on a `@table`-typed child of
+  a class-backed parent needs the backing-class resolution the census does not carry yet, so the
+  relation is incomplete in a way a reader could misread as "this field inlines". The DDL comment
+  states the prohibition directly (report a rule you find; do not report the absence of one) and the
+  reader's javadoc and the manual page repeat it, because an unstated hole in a relation whose whole
+  point is a cost estimate is the kind of thing a consumer assumes away.
+* **A claim-independent fact has to hold the block open.** Gating the block on there being a claim
+  hid the round-trip line on exactly the field that most needs it: a `@splitQuery` child returning a
+  table type is claimed by nothing, no directive naming what it is and the structural classifier
+  reaching only leaf fields. The block now opens when the classifiers are empty but a join path or a
+  fetch rule is not, and renders with no heading in that case, the coordinate standing on its own.
+* **The gate split again, the same way the inlay's did.** The classification block needs the store
+  only, the description overlay beneath it still needs the snapshot for its binding resolution, and
+  `compute` no longer refuses the whole hover when the snapshot is unavailable. The one-argument
+  convenience entry, which meant "classification only, no store", is gone: with the block reading the
+  store, that combination renders nothing at all.
+* **The test moved to where its substrate is.** `DeclarationHoversTest` is replaced by
+  `ClassificationHoverTest`, beside the other store-backed LSP tests, asserting under an unavailable
+  snapshot exactly as `ClassificationHintsTest` does. Its fixture is one coordinate per shape:
+  column match, a binding that matched under another name, a service, a conflict, a DML mutation, a
+  split child claimed by nothing, a root field, a claimed type, an error type, and declarations
+  nothing reaches.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1642,7 +1695,8 @@ path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declare
 `LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
 (`ofTable`, `ofColumn`, `classJavadoc`), `Definitions.methodLocation`, and
 `FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
-switched on, and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
+switched on, and `LspClassificationLabels` with `projectionLabel` and `projectionTypeLabel`,
+and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
 `PojoBacking.accessors` payloads and `CatalogBuilder`'s `projectRecord`, `projectPojo`,
 `beanAccessorSlot` and `lowercaseFirst`, and `TypeContext.tableNameOf` with
 `Diagnostics.collectAllFkNames` and `ArgMappingSupport.resolveMethod`; `DirectiveResolution`

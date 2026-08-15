@@ -14,21 +14,17 @@ import java.util.List;
  * Collapse permits only where the hover payload is genuinely identical.
  *
  * <p>The producer-side exhaustive switch in
- * {@link CatalogBuilder#projectTypeClassification} enforces coverage; the label switch in
- * {@code LspClassificationLabels} dispatches over this projection's own sealed permit set.
+ * {@link CatalogBuilder#projectTypeClassification} enforces coverage.
  *
  * <p>{@link TypeBackingShape} covers what is resolvable as a member name inside a type;
  * this projection covers the orthogonal axis, what kind of type the SDL author declared.
  * Both live on the snapshot so the LSP arms can read either without re-running the
  * classifier.
  *
- * <p><b>Projection-record simple names are user-visible.</b> {@code
- * LspClassificationLabels.projectionTypeLabel} returns each permit's simple name
- * verbatim, {@code DeclarationHovers} prints {@code TypeClassification.<name>} in hover
- * headers, and {@code InlayHints} anchors its synthetic ghost on the {@code Table} /
- * {@code Node} / {@code TableInterface} projection records. Renaming
- * a permit is a user-visible-string change touching docs, screenshots, and tutorials,
- * not a purely internal refactor.
+ * <p>The permit names are no longer user-visible: the language server's declaration surfaces read
+ * the fact store's own classifier vocabulary. What remains user-visible here is the payload
+ * {@code InlayHints} renders as a ghost annotation, anchored on the {@code Table} / {@code Node} /
+ * {@code TableInterface} records.
  */
 public sealed interface TypeClassification
     permits TypeClassification.Table,

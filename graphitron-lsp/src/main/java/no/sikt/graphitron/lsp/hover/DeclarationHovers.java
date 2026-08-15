@@ -3,23 +3,23 @@ package no.sikt.graphitron.lsp.hover;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
+import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
+import no.sikt.graphitron.lsp.facts.ClaimFacts;
+import no.sikt.graphitron.lsp.facts.DeclarationFact;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
-import no.sikt.graphitron.lsp.inlay.LspClassificationLabels;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Range;
 
+import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 
@@ -32,6 +32,13 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * <p>The exhaustive switch over {@link DeclarationHover} permits enforces that any new
  * SDL declaration coordinate added to the sealed family fails to compile until its
  * hover content lands here in the same commit.
+ *
+ * <p>The classification block is the classifier a claim carries ({@link ClaimClassifiers}) and the
+ * facts behind it ({@link ClaimFacts}), each read from the relation that owns it. There is no
+ * variant name here and no per-variant payload: the block is a heading and a list of labelled
+ * values, so a claim growing a fact is a query in the reader rather than a new arm in a switch. A
+ * declaration nothing claims gets no block, which is the same silence the inlay hint keeps at an
+ * unclaimed declaration.
  *
  * <p>Beneath the classification block, the hover overlays what the graph's own facts say about the
  * declaration the coordinate binds to: a table's database comment, a column's or member's doc
@@ -51,42 +58,35 @@ public final class DeclarationHovers {
     private DeclarationHovers() {}
 
     /**
-     * Classification-only entry: no store, so the block the classification
-     * snapshot renders is the whole hover. What a session in that state can say about a declaration
-     * name, and no less.
-     */
-    public static Optional<Hover> compute(
-        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
-    ) {
-        return compute(file, Optional.empty(), snapshot, pos);
-    }
-
-    /**
-     * Computes the declaration-name hover for {@code pos}: the classification
-     * projection, and, when the coordinate binds to a jOOQ table / column or a Java
-     * declaration, what the store holds about it overlaid beneath. Returns
-     * {@link Optional#empty()} when the cursor is not on a recognised SDL declaration
-     * name token, the snapshot is unavailable, or neither a classification nor an
-     * overlay is available.
+     * Computes the declaration-name hover for {@code pos}: the declaration's claims and their
+     * facts, and, when the coordinate binds to a jOOQ table / column or a Java declaration, what
+     * the store holds about it overlaid beneath. Returns {@link Optional#empty()} when the cursor
+     * is not on a recognised SDL declaration name token, or when neither block has anything to say.
+     *
+     * <p>The two blocks are gated separately, on what each reads. The classification block needs
+     * the store and nothing else, so it renders in a session that has captured but not generated;
+     * the overlay additionally needs the snapshot, its binding resolution still going through the
+     * classifier's projection.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, Optional<StoreHandle> store,
         LspSchemaSnapshot snapshot, Point pos
     ) {
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         if (file == null || file.tree() == null) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
         var declaration = declOpt.get();
         var hoverDecl = toDeclarationHover(declaration);
-        String classification = classificationMarkdown(built, hoverDecl);
+        String classification = store
+            .map(handle -> classificationMarkdown(handle, hoverDecl))
+            .orElse(null);
         // The overlay shares goto-definition's binding resolution, then reads the graph's own facts
         // about what it resolved to. The resolution itself needs the store now, a member name's
         // declaration being one of those facts, so it happens inside the read; no store is still no
         // overlay, leaving the classification block exactly as the classification arm renders it.
-        String overlay = store
-            .map(handle -> overlay(DeclTarget.resolve(declaration, built, handle, file.source()), handle))
-            .orElse("");
+        String overlay = store.isPresent() && snapshot instanceof LspSchemaSnapshot.Built built
+            ? overlay(DeclTarget.resolve(declaration, built, store.get(), file.source()), store.get())
+            : "";
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
     }
@@ -111,17 +111,11 @@ public final class DeclarationHovers {
         };
     }
 
-    /** The classification block, or {@code null} when no projection entry exists. */
-    private static String classificationMarkdown(LspSchemaSnapshot.Built built, DeclarationHover declaration) {
+    /** The classification block, or {@code null} when nothing claims the declaration. */
+    private static String classificationMarkdown(StoreHandle store, DeclarationHover declaration) {
         return switch (declaration) {
-            case DeclarationHover.FieldDeclarationHover f -> {
-                var classification = built.fieldClassificationsByCoord().get(f.coordinate());
-                yield classification == null ? null : renderFieldMarkdown(f, classification);
-            }
-            case DeclarationHover.TypeDeclarationHover t -> {
-                var classification = built.typeClassificationsByName().get(t.typeName());
-                yield classification == null ? null : renderTypeMarkdown(t, classification);
-            }
+            case DeclarationHover.FieldDeclarationHover f -> renderFieldMarkdown(store, f);
+            case DeclarationHover.TypeDeclarationHover t -> renderTypeMarkdown(store, t);
         };
     }
 
@@ -207,297 +201,90 @@ public final class DeclarationHovers {
         return sb.toString();
     }
 
-    private static String renderFieldMarkdown(
-        DeclarationHover.FieldDeclarationHover decl, FieldClassification classification
-    ) {
-        var sb = new StringBuilder();
-        sb.append("**").append(FieldClassification.class.getSimpleName()).append(".")
-          .append(LspClassificationLabels.projectionLabel(classification)).append("**");
-        sb.append("\n\n`").append(decl.coordinate()).append("`");
-        switch (classification) {
-            case FieldClassification.Column c ->
-                sb.append("\n\nColumn `").append(nullSafe(c.columnName())).append("`")
-                  .append(c.tableName() != null ? " on `" + c.tableName() + "`" : "");
-            case FieldClassification.ColumnReference c -> {
-                sb.append("\n\nColumn `").append(nullSafe(c.columnName())).append("`")
-                  .append(c.tableName() != null ? " on `" + c.tableName() + "`" : "");
-                appendJoinPath(sb, c.joinPath());
-            }
-            case FieldClassification.ParticipantCrossTable c ->
-                sb.append("\n\nColumn `").append(nullSafe(c.columnName())).append("` on `")
-                  .append(nullSafe(c.targetTableName())).append("` (FK `")
-                  .append(nullSafe(c.fkName())).append("`, alias `")
-                  .append(nullSafe(c.alias())).append("`)");
-            case FieldClassification.CompositeColumn c ->
-                sb.append("\n\nColumns `").append(String.join("`, `", c.columnNames()))
-                  .append("` on `").append(nullSafe(c.tableName())).append("`");
-            case FieldClassification.CompositeColumnReference c -> {
-                sb.append("\n\nColumns `").append(String.join("`, `", c.columnNames()))
-                  .append("` on `").append(nullSafe(c.tableName())).append("`");
-                appendJoinPath(sb, c.joinPath());
-            }
-            case FieldClassification.TableTarget t -> {
-                sb.append("\n\nTarget table: `").append(nullSafe(t.tableName())).append("`");
-                appendJoinPath(sb, t.joinPath());
-                if (t.splitBatched()) sb.append("\n- batched via DataLoader");
-                if (t.hasLookupKey()) sb.append("\n- lookup-key mapping");
-            }
-            case FieldClassification.RecordTableTarget t -> {
-                sb.append("\n\nTarget table: `").append(nullSafe(t.tableName())).append("`");
-                appendJoinPath(sb, t.joinPath());
-                if (t.hasLookupKey()) sb.append("\n- lookup-key mapping");
-            }
-            case FieldClassification.TableInterface t -> {
-                sb.append("\n\nInterface table: `").append(nullSafe(t.tableName())).append("`");
-                sb.append("\n\nDiscriminator: `").append(nullSafe(t.discriminatorColumn())).append("`");
-                appendParticipants(sb, t.participantTypeNames());
-            }
-            case FieldClassification.Polymorphic p ->
-                appendParticipants(sb, p.participantTypeNames());
-            case FieldClassification.Nesting ignored ->
-                sb.append("\n\nNested projection on parent table.");
-            case FieldClassification.Pivot p ->
-                sb.append("\n\nPivot over `").append(nullSafe(p.tableName()))
-                  .append("`: one aggregate of `").append(nullSafe(p.valueColumn()))
-                  .append("` per `").append(nullSafe(p.onColumn())).append("` token")
-                  .append(p.batched() ? "\n- batched via DataLoader" : "");
-            case FieldClassification.ServiceBacked s ->
-                sb.append("\n\nService method `").append(nullSafe(s.methodClassName())).append("#")
-                  .append(nullSafe(s.methodName())).append("`")
-                  .append(s.tableBound() ? " → `" + nullSafe(s.tableName()) + "`" : "")
-                  .append(errorChannelSuffix(s.errorChannelMappingName()));
-            case FieldClassification.RecordOrProperty r ->
-                sb.append(r.columnName() != null ? "\n\nColumn: `" + r.columnName() + "`" : "")
-                  .append(r.accessorName() != null ? "\n\nAccessor: `" + r.accessorName() + "`" : "");
-            case FieldClassification.Computed c ->
-                sb.append("\n\nComputed via `").append(nullSafe(c.methodClassName())).append("#")
-                  .append(nullSafe(c.methodName())).append("`");
-            case FieldClassification.InputUnbound c -> {
-                if (c.methodClassName() != null) {
-                    sb.append("\n\nUnbound input field via `")
-                      .append(nullSafe(c.methodClassName())).append("#")
-                      .append(nullSafe(c.methodName())).append("`")
-                      .append(c.override() ? " (override:true)" : " (override:false)");
-                } else {
-                    sb.append("\n\nUnbound input field (no column binding, no @condition)");
-                }
-            }
-            case FieldClassification.Errors e -> {
-                sb.append("\n\nError types:");
-                for (String name : e.errorTypeNames()) sb.append("\n- `").append(name).append("`");
-            }
-            case FieldClassification.SingleRecordIdFromReturning ignored ->
-                sb.append("\n\nEncoded PK echo from RETURNING.");
-            case FieldClassification.SingleRecordId s ->
-                sb.append("\n\nEncoded node id off the @service producer's record")
-                  .append(s.tableName() != null ? " (table `" + s.tableName() + "`)" : "")
-                  .append("; no re-fetch.");
-            case FieldClassification.QueryTable q ->
-                sb.append("\n\nQuery table: `").append(nullSafe(q.tableName())).append("`")
-                  .append(q.isLookup() ? "\n\nLookup helper." : "");
-            case FieldClassification.RoutineBacked q ->
-                sb.append("\n\nMethod `").append(nullSafe(q.methodClassName())).append("#")
-                  .append(nullSafe(q.methodName())).append("` → `")
-                  .append(nullSafe(q.tableName())).append("`");
-            case FieldClassification.QueryNode q ->
-                sb.append("\n\nRelay node fetcher (").append(q.isList() ? "list" : "single").append(")");
-            case FieldClassification.QueryTableInterface q -> {
-                sb.append("\n\nInterface table: `").append(nullSafe(q.tableName())).append("`");
-                sb.append("\n\nDiscriminator: `").append(nullSafe(q.discriminatorColumn())).append("`");
-                appendParticipants(sb, q.participantTypeNames());
-            }
-            case FieldClassification.QueryPolymorphic p ->
-                appendParticipants(sb, p.participantTypeNames());
-            case FieldClassification.QueryService s ->
-                sb.append("\n\nService method `").append(nullSafe(s.methodClassName())).append("#")
-                  .append(nullSafe(s.methodName())).append("`")
-                  .append(s.tableBound() ? " → `" + nullSafe(s.tableName()) + "`" : "")
-                  .append(errorChannelSuffix(s.errorChannelMappingName()));
-            case FieldClassification.DmlMutation dml ->
-                sb.append("\n\nKind: ").append(dml.kind())
-                  .append("\n\nTable: `").append(nullSafe(dml.tableName())).append("`")
-                  .append("\n\nInput type: `").append(nullSafe(dml.inputTypeName())).append("`")
-                  .append(errorChannelSuffix(dml.errorChannelMappingName()));
-            case FieldClassification.MutationService s ->
-                sb.append("\n\nService method `").append(nullSafe(s.methodClassName())).append("#")
-                  .append(nullSafe(s.methodName())).append("`")
-                  .append(s.tableBound() ? " → `" + nullSafe(s.tableName()) + "`" : " (record return)")
-                  .append(errorChannelSuffix(s.errorChannelMappingName()));
-            case FieldClassification.DmlRecord r ->
-                sb.append("\n\nKind: ").append(r.kind()).append(r.bulk() ? " (bulk)" : "")
-                  .append("\n\nTable: `").append(nullSafe(r.tableName())).append("`")
-                  .append("\n\nInput type: `").append(nullSafe(r.inputTypeName())).append("`")
-                  .append(errorChannelSuffix(r.errorChannelMappingName()));
-            case FieldClassification.Unresolvable u ->
-                sb.append("\n\nReason: ").append(u.reason());
-            case FieldClassification.Conflicted c -> {
-                sb.append("\n\nClaims:");
-                for (var claim : c.claims()) {
-                    sb.append("\n- ").append(claimLine(claim));
-                }
-                sb.append("\n\nViolation: ").append(c.violation());
-            }
-        }
-        return sb.toString();
-    }
-
     /**
-     * One conflicted-field claim as a hover line: the claim arm's simple name (the store's
-     * classifier vocabulary), its trigger, and its slot facts. Exhaustive over the sealed
-     * {@link FieldClassification.Claim} permits with no default.
+     * The field block: every classifier claiming the coordinate, the facts behind each, where an
+     * authored {@code @reference} path lands, and whether the field costs a round-trip of its own.
+     * {@code null} when nothing claims the coordinate.
+     *
+     * <p>Several classifiers at one coordinate is a conflict, and it renders as its claims: the
+     * heading names them all and each contributes its own facts, so the reader sees what the two
+     * directives each asked for rather than a word meaning "these disagree".
+     *
+     * <p>The two claim-independent facts hold a block open on their own. A {@code @splitQuery} child
+     * returning a table type is claimed by nothing (no directive names what it is, and the
+     * structural classifier only reaches leaf fields), and it is the field an author most wants the
+     * round-trip answer about; gating the block on a claim would silence it exactly there.
      */
-    private static String claimLine(FieldClassification.Claim claim) {
+    private static String renderFieldMarkdown(StoreHandle store, DeclarationHover.FieldDeclarationHover decl) {
+        var classifiers = ClaimClassifiers.ofFields(store, List.of(decl.parentTypeName()))
+            .getOrDefault(decl.coordinate(), List.of());
+        var joinPath = ClaimFacts.joinPath(store, decl.parentTypeName(), decl.fieldName());
+        var fetchRules = ClaimFacts.separateFetchRules(store, decl.parentTypeName(), decl.fieldName());
+        if (classifiers.isEmpty() && joinPath.isEmpty() && fetchRules.isEmpty()) return null;
         var sb = new StringBuilder();
-        switch (claim) {
-            case FieldClassification.Claim.Service s -> {
-                sb.append("Service (@").append(s.trigger()).append(")");
-                if (s.methodClassName() != null) {
-                    sb.append(": `").append(s.methodClassName()).append("#").append(nullSafe(s.methodName())).append("`");
-                }
-            }
-            case FieldClassification.Claim.ExternalField e -> {
-                sb.append("ExternalField (@").append(e.trigger()).append(")");
-                if (e.methodClassName() != null) {
-                    sb.append(": `").append(e.methodClassName()).append("#").append(nullSafe(e.methodName())).append("`");
-                }
-            }
-            case FieldClassification.Claim.NodeId n -> {
-                sb.append("NodeId (@").append(n.trigger()).append(")");
-                if (n.nodeTypeRef() != null) {
-                    sb.append(": `").append(n.nodeTypeRef()).append("`");
-                }
-            }
-            case FieldClassification.Claim.LookupKey l ->
-                sb.append("LookupKey (@").append(l.trigger()).append(")");
-            case FieldClassification.Claim.Routine r -> {
-                sb.append("Routine (@").append(r.trigger()).append(")");
-                if (r.routineRefs() != null && !r.routineRefs().isEmpty()) {
-                    // Comma, not a path arrow: the steps' order is a slot fact, their adjacency
-                    // is not (@reference hops may interleave, and the store's per-name ordinal
-                    // does not model cross-directive order).
-                    sb.append(": ").append(r.routineRefs().stream()
-                        .map(ref -> "`" + ref + "`")
-                        .collect(Collectors.joining(", ")));
-                }
-            }
-            case FieldClassification.Claim.Mutation m -> {
-                sb.append("Mutation (@").append(m.trigger()).append(")");
-                if (m.dmlKind() != null) {
-                    sb.append(": ").append(m.dmlKind());
-                }
-                if (m.tableName() != null) {
-                    sb.append(" → `").append(m.tableName()).append("`");
-                }
-            }
+        if (!classifiers.isEmpty()) sb.append("**").append(String.join(", ", classifiers)).append("**\n\n");
+        sb.append("`").append(decl.coordinate()).append("`");
+        for (String classifier : classifiers) {
+            appendFacts(sb, ClaimFacts.ofField(store, decl.parentTypeName(), decl.fieldName(), classifier));
         }
-        if (!claim.decoded()) {
-            sb.append(" (arguments did not decode)");
-        }
+        appendJoinPath(sb, joinPath);
+        appendSeparateFetch(sb, fetchRules);
         return sb.toString();
     }
 
-    private static String renderTypeMarkdown(
-        DeclarationHover.TypeDeclarationHover decl, TypeClassification classification
-    ) {
+    /** The type block, on the same shape as the field one. {@code null} when nothing claims the type. */
+    private static String renderTypeMarkdown(StoreHandle store, DeclarationHover.TypeDeclarationHover decl) {
+        var classifiers = ClaimClassifiers.ofTypes(store, List.of(decl.typeName()))
+            .getOrDefault(decl.typeName(), List.of());
+        if (classifiers.isEmpty()) return null;
         var sb = new StringBuilder();
-        sb.append("**").append(TypeClassification.class.getSimpleName()).append(".")
-          .append(LspClassificationLabels.projectionTypeLabel(classification)).append("**");
+        sb.append("**").append(String.join(", ", classifiers)).append("**");
         sb.append("\n\n`").append(decl.typeName()).append("`");
-        switch (classification) {
-            case TypeClassification.Table t ->
-                sb.append("\n\nTable: `").append(nullSafe(t.tableName())).append("`");
-            case TypeClassification.Node n -> {
-                sb.append("\n\nTable: `").append(nullSafe(n.tableName())).append("`");
-                if (n.typeId() != null) sb.append("\n\nTypeId: `").append(n.typeId()).append("`");
-                if (!n.keyColumnNames().isEmpty())
-                    sb.append("\n\nKey columns: `").append(String.join("`, `", n.keyColumnNames())).append("`");
-            }
-            case TypeClassification.TableInterface ti -> {
-                sb.append("\n\nTable: `").append(nullSafe(ti.tableName())).append("`");
-                sb.append("\n\nDiscriminator: `").append(nullSafe(ti.discriminatorColumn())).append("`");
-                appendParticipants(sb, ti.participantTypeNames());
-            }
-            case TypeClassification.Interface i ->
-                appendParticipants(sb, i.participantTypeNames());
-            case TypeClassification.Union u ->
-                appendParticipants(sb, u.participantTypeNames());
-            case TypeClassification.JavaRecord t ->
-                sb.append("\n\nBacking record: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.JavaRecordInput t ->
-                sb.append("\n\nBacking record: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.JooqRecord t ->
-                sb.append("\n\njOOQ record class: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.JooqRecordInput t ->
-                sb.append("\n\njOOQ record class: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.JooqTableRecord t ->
-                sb.append("\n\nClass: `").append(nullSafe(t.fqClassName())).append("`")
-                  .append("\n\nTable: `").append(nullSafe(t.tableName())).append("`");
-            case TypeClassification.JooqTableRecordInput t ->
-                sb.append("\n\nClass: `").append(nullSafe(t.fqClassName())).append("`")
-                  .append("\n\nTable: `").append(nullSafe(t.tableName())).append("`");
-            case TypeClassification.PojoResult t ->
-                sb.append("\n\nBacking class: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.PojoInput p -> {
-                if (p.fqClassName() != null) {
-                    sb.append("\n\nBacking class: `").append(p.fqClassName()).append("`");
-                }
-                if (!p.resolvedTables().isEmpty()) {
-                    sb.append("\n\nResolved table").append(p.resolvedTables().size() == 1 ? "" : "s")
-                      .append(": `").append(String.join("`, `", p.resolvedTables())).append("`");
-                }
-            }
-            case TypeClassification.Root r ->
-                sb.append("\n\nOperation: ").append(r.operation());
-            case TypeClassification.Connection c ->
-                sb.append("\n\nElement: `").append(nullSafe(c.elementTypeName())).append("`")
-                  .append("\n\nEdge: `").append(nullSafe(c.edgeTypeName())).append("`");
-            case TypeClassification.Edge e ->
-                sb.append("\n\nElement: `").append(nullSafe(e.elementTypeName())).append("`");
-            case TypeClassification.PageInfo ignored ->
-                sb.append("\n\nRelay page-info wrapper.");
-            case TypeClassification.Error e -> {
-                if (!e.handlerKinds().isEmpty())
-                    sb.append("\n\nHandlers: ").append(String.join(", ", e.handlerKinds()));
-            }
-            case TypeClassification.Enum ignored ->
-                sb.append("\n\nGraphQL enum.");
-            case TypeClassification.Scalar s ->
-                sb.append("\n\nJava type: `").append(nullSafe(s.javaType())).append("`");
-            case TypeClassification.PlainObject ignored ->
-                sb.append("\n\nPlain SDL object (no domain directive).");
-            case TypeClassification.Unclassified u ->
-                sb.append("\n\nReason: ").append(u.reason());
+        for (String classifier : classifiers) {
+            appendFacts(sb, ClaimFacts.ofType(store, decl.typeName(), classifier));
         }
         return sb.toString();
     }
 
-    private static void appendJoinPath(StringBuilder sb, java.util.List<FieldClassification.FkStep> path) {
-        if (path == null || path.isEmpty()) return;
+    /** One line per fact, in the order the reader produced them. */
+    private static void appendFacts(StringBuilder sb, List<DeclarationFact> facts) {
+        for (var fact : facts) {
+            sb.append("\n\n").append(fact.label()).append(": `").append(fact.value()).append("`");
+        }
+    }
+
+    private static void appendJoinPath(StringBuilder sb, List<ClaimFacts.JoinStep> path) {
+        if (path.isEmpty()) return;
         sb.append("\n\nJoin path:");
         for (var step : path) {
             sb.append("\n- ");
-            if (step.fkName() != null) sb.append("`").append(step.fkName()).append("` → ");
-            if (step.targetTableName() != null) sb.append("`").append(step.targetTableName()).append("`");
+            if (step.constraintName() != null) sb.append("`").append(step.constraintName()).append("` \u2192 ");
+            if (step.toTable() != null) sb.append("`").append(step.toTable()).append("`");
         }
     }
 
-    private static void appendParticipants(StringBuilder sb, java.util.List<String> names) {
-        if (names == null || names.isEmpty()) return;
-        sb.append("\n\nParticipants: ");
-        for (int i = 0; i < names.size(); i++) {
-            if (i > 0) sb.append(", ");
-            sb.append("`").append(names.get(i)).append("`");
+    /**
+     * The round-trip line: this field's rows come from a statement of its own, and why. Rendered
+     * only where a rule reaches the field, never as its negation, because the relation does not yet
+     * carry the implicit split a class-backed parent forces on its table-typed children.
+     */
+    private static void appendSeparateFetch(StringBuilder sb, List<String> rules) {
+        if (rules.isEmpty()) return;
+        sb.append("\n\nLaunches its own query:");
+        for (String rule : rules) {
+            sb.append("\n- ").append(separateFetchReason(rule));
         }
     }
 
-    private static String errorChannelSuffix(String name) {
-        return name == null ? "" : "\n\nError channel: `" + name + "`";
+    private static String separateFetchReason(String rule) {
+        return switch (rule) {
+            case "SPLIT_QUERY" -> "`@splitQuery` defers the fetch to a batched DataLoader call";
+            case "TENANT_FAN_OUT" -> "`@tenantFanOut` runs the fetch once per tenant, off the parent's statement";
+            case "SERVICE" -> "the service fetches independently of the parent's SELECT";
+            case "ROOT_OPERATION" -> "a root operation field is its own entry point";
+            default -> rule;
+        };
     }
-
-    private static String nullSafe(String s) {
-        return s == null ? "?" : s;
-    }
-
 
     private static Hover hover(FileSnapshot file, Node anchor, String markdown) {
         var content = new MarkupContent(MarkupKind.MARKDOWN, markdown);

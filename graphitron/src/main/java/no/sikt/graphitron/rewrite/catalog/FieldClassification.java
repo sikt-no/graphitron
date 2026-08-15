@@ -23,8 +23,7 @@ import java.util.List;
  * {@code InputField} fails the switch to compile until mapped. That switch and the
  * {@code @ProjectionFor} coverage pins are the two compile-checked homes of the
  * leaf-to-record mapping, so record javadoc below does not restate which permits reach
- * which record. The label switch in {@code LspClassificationLabels} dispatches over
- * this projection's own sealed permit set.
+ * which record.
  *
  * <p>Each record carries only LSP-renderable payload (table names, column names, FK
  * names, target type names, error-channel constants, primitive flags). No
@@ -32,12 +31,10 @@ import java.util.List;
  * Label strings are not on the projection record; rendering lives in the LSP module as
  * a sibling switch.
  *
- * <p><b>Projection-record simple names are also user-visible.</b> {@code
- * LspClassificationLabels.projectionLabel} returns each permit's simple name verbatim,
- * and {@code DeclarationHovers} prints {@code FieldClassification.<name>} in hover
- * headers. Renaming a permit is therefore <em>also</em> a user-visible-string change
- * touching docs and tutorials, not a purely internal refactor; the coupling is accepted
- * as the mechanism that lets the LSP teach the model.
+ * <p>The permit names are no longer user-visible. The language server's declaration surfaces read
+ * the fact store's own classifier vocabulary instead, so renaming a permit here is an internal
+ * refactor again; what still reaches a user from this projection is the resolved value the inferred
+ * directive hints render.
  */
 public sealed interface FieldClassification
     permits FieldClassification.Column,

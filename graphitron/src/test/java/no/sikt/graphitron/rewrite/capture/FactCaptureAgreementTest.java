@@ -229,6 +229,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
+        registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
