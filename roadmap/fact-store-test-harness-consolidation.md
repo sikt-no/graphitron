@@ -5,9 +5,9 @@ status: Spec
 bucket: cleanup
 priority: 3
 theme: testing
-depends-on: []
+depends-on: [lsp-reads-the-fact-store]
 created: 2026-08-14
-last-updated: 2026-08-14
+last-updated: 2026-08-15
 ---
 
 # Consolidate the hand-rolled fact-store test harnesses onto one shared utility
@@ -36,23 +36,31 @@ handle offering `of(Path, String)`, `ofPipeline(Path, String)`, `registryOf`, `a
 `fixtureFile`, and nine test classes inside `capture/` use it happily. It is package-private,
 so `derive/` and `diagnostics/` cannot see it at all. Each of them reinvented it independently.
 
-The inventory above is bounded rather than exhaustive: it counts the classes in this module that
-capture an SDL fixture into a store they then assert against. What sits just outside that boundary,
-including a further copy of the harness in `graphitron-lsp` and three classes here that open a store
-without capturing anything, is named under "The rule's boundary" below. Stating the edge is part of
-the item, because an inventory with no edge is the thing that rots.
+A ninth copy lives one module over: `no.sikt.graphitron.lsp.StoreFixture`, in `graphitron-lsp`'s test
+sources, read by 28 LSP test classes. It is in scope, and it is a different kind of entry on this
+list from the eight, because it is not a degraded copy: it is largely this item's target design,
+reached independently. "The cross-module copy, and what of it moves" below is about it.
 
-**But the duplication is the symptom, not the item.** The decision being re-made at nine sites is
-*which capture inputs the store under assertion is built from*, and the sites disagree without
+The inventory is bounded rather than exhaustive: it counts the classes that capture an SDL fixture
+into a store they then assert against. Three classes in this module open a store without capturing
+anything and are deliberately outside it: `compile/CompileFactsTest`,
+`capture/CommentRenderabilityGateTest` and `capture/JavaSourceFactsTest`. All three are `@UnitTier`,
+and none calls `FactCapture` at all; they open a store and write to it directly, which is not the
+harness this item consolidates. Stating the edge is part of the item, because an inventory with no
+edge is the thing that rots.
+
+**But the duplication is the symptom, not the item.** The decision being re-made at every site above
+is *which capture inputs the store under assertion is built from*, and the sites disagree without
 anything saying why. Past the 5-arg `FactCapture.capture` default (which fixes `jooq = null`,
-`extensions = List.of()`, `nodes = new NodeDeclaration(null)`), four shapes are live in the tree:
+`extensions = List.of()`, `nodes = new NodeDeclaration(null)`), these shapes are live in the tree:
 
 | Shape | Sites |
 |---|---|
-| bare | `AuthoredClaimConflictsTest.capture`, `DiagnosticFactsTest`, `CapturedStore.of` |
-| catalog, node inference off | `ColumnMatchClaimTest`, `ReferenceStepTargetTest`, `FieldColumnTableTest` |
+| bare | `AuthoredClaimConflictsTest.capture`, `DiagnosticFactsTest`, `CapturedStore.of`, `StoreFixture.of` |
+| bare, real classpath census | `StoreFixture.of(directory, sdl, classpath)`, `StoreFixture.ofClasspath` |
+| catalog, node inference off | `ColumnMatchClaimTest`, `ReferenceStepTargetTest`, `FieldColumnTableTest`, `StoreFixture.ofCatalog`, `StoreFixture.ofMultiSchemaCatalog` |
 | catalog, node inference on | `DemandShadowTest`, `InputOccurrenceShadowTest` |
-| catalog, node inference off, real classpath census | `ClassMemberSlotTest` |
+| catalog, node inference off, real classpath census | `ClassMemberSlotTest`, `StoreFixture.ofCatalog(directory, sdl, classpath)` |
 
 That split is not cosmetic. `NodeDeclaration` changes what capture writes, and `DemandShadowTest`'s
 own sweep comment says its equality is "also the enforcer for the node-inference seed's
@@ -61,13 +69,19 @@ is currently unstated and unasserted. A consolidation that silently picks one de
 question by accident; one that carries a boolean flag defers it forever. The item's job is to make
 the shape a named choice, and the deduplication follows from that.
 
-The fourth row is a different kind of axis from the first three, and saying so is part of the job.
-The `extensions` argument the 5-arg default fixes at `List.of()` is not a shape a factory should own:
-`ClassMemberSlotTest` hands capture the output of a real `ClasspathScanner.scan` filtered to its own
-three fixture classes, which is per-fixture data, as the SDL string is. So it is a caller of the
-handle rather than a fourth factory, and the axis it exercises is served by the exposed primitives
-(below) rather than by a `with(...)` arm. If a second census-carrying test ever appears, the
-gathering rule below covers minting an arm then.
+The census rows are a different kind of axis from the rest, and saying so is part of the job. The
+`extensions` argument the 5-arg default fixes at `List.of()` is per-fixture data, as the SDL string
+is: `ClassMemberSlotTest` hands capture a real `ClasspathScanner.scan` filtered to its own three
+fixture classes, and `StoreFixture` does the same over the LSP's own fixture package. So the census
+is an argument, not a factory axis, and the cross-product it would otherwise force is exactly why:
+it appears above beside both the bare and the catalog shapes, and pairing it with each of them as a
+named arm doubles the set to say nothing.
+
+An earlier draft of this item treated the census as a one-off, and said a second census-carrying test
+appearing later would be the trigger to mint an arm for it. The second one already exists, and it is
+`StoreFixture`; two independent fixtures reached for the same argument. That does not overturn the
+conclusion, it sharpens it: the census is settled as an argument on the factories that take one,
+carried the way `StoreFixture` already carries it, rather than as an axis the factory set forks on.
 
 ## Implementation
 
@@ -76,11 +90,16 @@ gathering rule below covers minting an arm then.
 Widen `CapturedStore` from package-private and move it beside the shared test support in
 `no.sikt.graphitron.rewrite`, which already hosts `TestSchemaHelper`, `TestFixtures` and the
 `*RenderTestSupport` classes. That package is also tier-neutral, which matters: the incoming
-consumers are all `@PipelineTier`, while the nine that already read the handle straddle both tiers
-(`FactCaptureAgreementTest`, `TaggedCaptureStampTest` and `WarmStartRefreshTest` are `@PipelineTier`,
-the other six `@UnitTier`). A home that reads as belonging to one tier's family invites the next
-reader to infer a tier rule that does not exist, and the mixed readership is already the status quo
-rather than something this item introduces.
+`graphitron` consumers are all `@PipelineTier`, while the nine that already read the handle straddle
+both tiers (`FactCaptureAgreementTest`, `TaggedCaptureStampTest` and `WarmStartRefreshTest` are
+`@PipelineTier`, the other six `@UnitTier`). A home that reads as belonging to one tier's family
+invites the next reader to infer a tier rule that does not exist, and the mixed readership is already
+the status quo rather than something this item introduces.
+
+The LSP readership settles it. The tier annotations are `graphitron`'s own test vocabulary, and
+`graphitron-lsp`'s tests carry none of them; the handle is about to be read from a module where the
+question does not arise. A tier-suggestive home would have been misleading before and would be
+plainly wrong after.
 
 Do **not** let this become a third shared-test home. `TestSchemaHelper` already owns the parse-side
 primitives (`attribution`, `nodeDeclaration`, `buildSchema`) and the derive tests already call it.
@@ -98,14 +117,15 @@ be the cross-product of catalog, nodes, registry source, extensions and verdicts
 
 ### The governing rule: `CapturedStore` is where these utilities gather
 
-`CapturedStore` is the home for fact-store test utilities in the `graphitron` module. A test that
-needs a store shape no existing factory produces adds a factory *there*, rather than hand-rolling a
-helper in its own class. That is the rule this item establishes, and it outranks the individual shape
-decisions below. The module qualifier is load-bearing; the next section says why.
+`CapturedStore` is the home for fact-store test utilities, across the reactor rather than within one
+module. A test that needs a store shape no existing factory produces adds a factory *there*, rather
+than hand-rolling a helper in its own class. That is the rule this item establishes, and it outranks
+the individual shape decisions below. Reaching across the module line is what the next section is
+about; the rule would be worth little if the largest reinvention in the tree sat outside it.
 
-The failure mode being designed against is fragmentation, not accretion. Eight private copies that
-have quietly diverged is the expensive state, and it is expensive because nothing points a new test
-author at the existing answer. A `CapturedStore` carrying more factories than any one reader needs is
+The failure mode being designed against is fragmentation, not accretion. A spread of private copies
+that have quietly diverged is the expensive state, and it is expensive because nothing points a new
+test author at the existing answer. A `CapturedStore` carrying more factories than any one reader needs is
 the cheap state: the factories are in one file, visible together, and consolidating two that turned
 out to be the same is a mechanical afternoon. Growth is expected and fine. If the set gets unwieldy,
 clean it then, with the whole set in view, which is exactly the vantage point the current eight
@@ -120,39 +140,69 @@ author this rule is aimed at is the one who never opens it. So the rule is state
 `CapturedStore`'s class javadoc, as the orientation note a reader meets first. That is the whole of
 the enforcement this item ships, deliberately; the Tests section says why no guard beyond it.
 
-### The rule's boundary, and the copy on the other side of it
+### The cross-module copy, and what of it moves
 
-The rule is scoped to the `graphitron` module because another copy of this harness lives outside it
-and is staying there: `no.sikt.graphitron.lsp.StoreFixture`, in `graphitron-lsp`'s test sources.
-`graphitron-lsp` does not depend on `graphitron`'s test-jar (`graphitron-sakila-example` is its only
-consumer), so an LSP test author cannot follow an unscoped version of the rule even if they wanted
-to, and an implementer who reads the rule as reactor-wide has no instruction for what to do on
-finding it.
-
-`StoreFixture` is not a near-miss of this item's target design; it is largely that design, reached
-independently. Its class javadoc opens on almost the same sentence as `CapturedStore`'s. It carries
+`StoreFixture` is the strongest evidence the gathering rule is right, because it is what happens
+without one. Its class javadoc opens on almost the same sentence as `CapturedStore`'s. It carries
 named factories rather than flags (`of`, `ofClasspath`, `ofCatalog`, `ofMultiSchemaCatalog`), each
 with the one-line note on what its shape carries that a sibling cannot that the section below
 prescribes. It takes a caller-supplied graph name over a shared default, captures a second graph into
 an already-open store (`andGraph`, `andGraphSharingTheFile`), and takes the classpath census as a
 factory argument rather than an axis. Its placeholder SDL constant is character-for-character
-`ClassMemberSlotTest`'s, and it makes the same unexamined `new NodeDeclaration(null)` choice.
+`ClassMemberSlotTest`'s, and it makes the same unexamined `new NodeDeclaration(null)` choice. Two
+files, no contact, converging on the same answers and disagreeing on the rest by accident: that is
+the state this item exists to end, and it does not stop at a module line.
 
-Read it before designing the factory set. On one question it reaches a different answer than the
-graph-identity section below: it keys the fixture filename on the graph name rather than taking a
-directory per graph, dissolving the one-directory-one-fixture constraint from the other side. Either
-answer is defensible; picking one without having seen the other is how a reactor ends up holding two.
+**The name and the call sites stay.** 28 LSP test classes call `StoreFixture`, so the move is not a
+migration of those call sites. `StoreFixture` remains, under its own name, as `graphitron-lsp`'s
+local layer: it keeps its factory signatures and delegates the store's lifetime, the fixture file and
+the capture call to the shared handle. Its own tests should not need editing, and the references to
+it in the LSP item's body stay live. If a call site has to change, that is a signal the shared handle
+cannot express a shape the LSP needs, which is the finding, not a licence to edit the test.
 
-Consolidating the two is nonetheless out of scope here, for a scheduling reason rather than a design
-one. The in-flight item moving the LSP onto the fact store is actively growing `StoreFixture`, so a
-merge now would land on top of live work, and it would need a test-jar dependency added to
-`graphitron-lsp` besides. That merge is a later item, to be filed once both sides have settled.
+**What moves** is the capture half: the store's lifetime, the fixture write, `registryOf` /
+`attributionOf` / `fixtureFile`, the named capture factories, the caller-supplied graph name, capture
+of a further graph into an open store, and the classpath-census argument.
 
-Three further classes in this module open a store by hand and are deliberately not in the inventory:
-`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest` and `capture/JavaSourceFactsTest`.
-All three are `@UnitTier`, and none calls `FactCapture` at all: they open a store and write to it
-directly, which is not the harness this item consolidates. Stating that here stops the next reader
-re-deriving it, and stops the inventory above reading as a census of everything that opens a store.
+**What stays in `graphitron-lsp`** is everything whose subject is the LSP's own read boundary rather
+than the store's shape: `handle()`, `handleFor()`, `reader()`, `tableClassFqn`, `keysClassFqn`, the
+`CompletionData.ExternalReference` builders (`jarClass`, `reactorClass`, `scalarHolder`), the
+`no.sikt.graphitron.lsp.fixtures` census and the jOOQ fixture-package constants.
+
+**What is deliberately not moved** is the post-capture writers: `withBuildWarnings`,
+`withJavaSource` and `refreshJavaSources`. They do qualify under the gathering rule, and there is a
+real consolidation waiting in them, since `capture/JavaSourceFactsTest` drives the same
+`JavaSourceFacts` writer by hand. They are also the exact surface the LSP item is still growing.
+Moving a target that is still moving is how a merge conflict turns into a design regression, so they
+stay put and the consolidation is named here as the follow-up rather than smuggled in.
+
+The mechanism is small. `graphitron` already publishes a test-jar; `graphitron-lsp` adds it at test
+scope, the way `graphitron-sakila-example` already consumes it. The jOOQ fixture packages
+`StoreFixture` captures against come from `graphitron-sakila-db`, which `graphitron-lsp` already
+depends on at test scope, so the catalog and multi-schema shapes need no new dependency at all.
+
+One objection deserves answering rather than ignoring, because the pom states it outright: the
+comment on `graphitron-lsp`'s `graphitron` dependency says the direction of travel is that this
+module sheds `graphitron` one type at a time. A test-jar edge appears to cut against that. It does
+not, and the distinction is worth being precise about. `StoreFixture` already imports `FactCapture`,
+`RewriteSchemaLoader`, `JooqCatalog`, `NodeDeclaration`, `ClasspathScanner`, `SourceWalker`,
+`BuildWarningFacts` and `JavaSourceFacts` from `graphitron`'s main sources. The edge this item adds
+is a second scope on a dependency that is already thick in exactly these files, not a new one, and
+capture lives in `graphitron`, so any fixture standing a store up by real capture depends on
+`graphitron` whatever module it sits in. What the pom comment is about is the *main*-source
+dependency, and this item does not touch it.
+
+### Sequencing against the LSP item
+
+The LSP item that is moving the LSP onto the fact store is In Progress and has touched
+`StoreFixture` in most of its recent commits, which is why this item declares it in `depends-on`.
+The expected case needs no special handling: this item is in Spec and that one is In Progress, so it
+should land first and this item picks up a settled file.
+
+If it has not landed when work starts here, take the two halves in order: the `graphitron` module
+half stands on its own and can go first, and the `StoreFixture` half follows once the other item is
+Done. What must not happen is the two halves landing as one commit on top of a file still being
+rewritten. This item does not reach Done until both halves are in.
 
 ### Name the shapes; do not flag them
 
@@ -206,6 +256,13 @@ and `ClassMemberSlotTest` are the first callers of the handle. Neither layer is 
 above, a genuinely common new shape earns a `with(...)` arm rather than being pushed down to the
 handle on principle.
 
+`StoreFixture` is a caller of the handle too, and the one that shows why the handle layer has to be
+public rather than an implementation detail of the closure form. It is itself a layer, holding a
+store open across a capture, a warning write, a Java-source refresh and a series of reads, which is
+the multi-step shape the closure form deliberately does not serve. A handle that only existed
+underneath `withCapturedStore` would have left it hand-rolling the store's lifetime exactly as it
+does today.
+
 ### The graph identity is caller-supplied
 
 `CapturedStore.graph(Path)` hardcodes the graph name to the literal `"CapturedStore"`. That is the
@@ -224,6 +281,8 @@ load-bearing is that the *caller* names the graph, for two populations:
 * The sibling-partition negatives in `FieldColumnTableTest`, `ReferenceStepTargetTest`,
   `ColumnMatchClaimTest` and `AuthoredClaimConflictsTest` need a second, distinct name to have
   anything to assert against.
+* `StoreFixture`'s `andGraph` and `andGraphSharingTheFile` capture a further graph into a store that
+  is already open, which is a third population and the one that decides the shape below.
 
 Migrating without lifting the name to a parameter would either leave the sweeps hand-rolled, which
 is where the duplication is largest, or flatten the partition they assert on.
@@ -235,11 +294,23 @@ to then *is* its identity downstream: `SchemaSource.File.sourceName()` is the ab
 path, which is the string handed to the parser, the string graphql-java echoes back as
 `SourceLocation.getSourceName()`, and the key `SchemaInputAttribution`'s map and capture's stamp
 lookup are both read on. Since `fixtureFile` hardcodes the name `fixture.graphqls`, the directory is
-the whole of a fixture's identity: one directory, one fixture, one graph. A handle that took a graph
-name but reused one directory would have each capture overwrite the previous fixture with no error,
-because the load would still succeed against whatever text landed there last. So the entry points
-take a `(name, directory)` pair, or mint per-graph subdirectories themselves the way the sweeps
-already do by hand (`Files.createDirectories(tmp.resolve(example.id()))`).
+today the whole of a fixture's identity: one directory, one fixture, one graph. A handle that took a
+graph name but reused one directory would have each capture overwrite the previous fixture with no
+error, because the load would still succeed against whatever text landed there last.
+
+Take `StoreFixture`'s answer to this: key the fixture filename on the graph name
+(`directory.resolve(graphName + ".graphqls")`), so the entry points take a `(name, directory)` pair
+and the name carries the identity the directory was standing in for. The alternative this item
+considered first, minting per-graph subdirectories the way the sweeps do by hand
+(`Files.createDirectories(tmp.resolve(example.id()))`), is the weaker answer, and the third
+population above is why: `andGraphSharingTheFile` captures two graphs from *one* schema file, one
+document with two memberships, both true. Subdirectory-per-graph cannot express that at all, because
+it makes the file's location a function of the graph. Filename-per-graph expresses it by letting a
+caller hand over a file it already has.
+
+Nothing asserts on the literal `fixture.graphqls`, in either module, so the rename is free. The
+sweeps then stop minting subdirectories, which is a small hand-rolled step deleted rather than
+moved.
 
 One line of the eight copies has to survive the merge: each of them calls `Files.createDirectories`
 before writing and `CapturedStore.write` does not, because every `capture/` caller hands it a
@@ -250,17 +321,17 @@ subdirectory.
 ### Make the registry source an explicit arm
 
 All seven `derive/` helpers feed capture a bare `RewriteSchemaLoader.load` registry, as does
-`DiagnosticFactsTest` in each of its own capture calls. Production capture reads the attribution
-pipeline's pre-synthesis registry, and `CapturedStore.ofPipeline` already exists for that, with
-javadoc stating the hazard: a bare parse lets capture's macro expansion mint
-what the rewrite has already put there in the pipeline, so the store agrees with the model for the
-wrong reason.
+`DiagnosticFactsTest` in each of its own capture calls, and as does every `StoreFixture` factory.
+Production capture reads the attribution pipeline's pre-synthesis registry, and
+`CapturedStore.ofPipeline` already exists for that, with javadoc stating the hazard: a bare parse
+lets capture's macro expansion mint what the rewrite has already put there in the pipeline, so the
+store agrees with the model for the wrong reason.
 
-Today that choice is invisible because it is made identically eight times by accident. After
-consolidation it is one line, and whichever arm the factory defaults to becomes the pipeline tier's
-implicit claim about which registry these views are derived from. No current derive fixture is
+Today that choice is invisible because every copy makes it identically, by accident rather than
+agreement. After consolidation it is one line, and whichever arm the factory defaults to becomes the
+implicit claim about which registry these views are derived from. No current derive or LSP fixture is
 federation-shaped, so nothing is broken; name it as an explicit arm now while the decision is cheap,
-rather than leaving a default nobody revisits when the first federation-shaped derive fixture lands.
+rather than leaving a default nobody revisits when the first federation-shaped fixture lands.
 
 "Explicit arm" here means the existing naming convention carries it, not that every call site passes
 an argument: bare parse is the unmarked name (`of...`, `withCapturedStore`) and the pipeline registry
@@ -312,25 +383,48 @@ so any class rename in this item must update both surfaces by hand.
 
 ## Tests
 
-This item changes test-support code only, so its acceptance is the existing suite: the eight migrated
-classes and the nine `capture/` classes that already read `CapturedStore` pass with their assertion
+This item changes test-support code only, so its acceptance is the existing suite, across both
+modules: the eight migrated classes, the nine `capture/` classes that already read `CapturedStore`,
+and the 28 `graphitron-lsp` classes that read `StoreFixture`, all passing with their assertion
 content unchanged. An assertion that has to change to accommodate the shared harness is the signal
 that an axis was load-bearing after all and must stay expressible, not that the assertion should be
 relaxed. The node-inference axis is the one to watch here.
 
-`mvn install -Plocal-db` is the gate; the inner loop is
-`mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution`.
+The LSP half carries a second, sharper acceptance, because its call sites are not being migrated:
+`StoreFixture`'s own consumers should be untouched by this item. A diff that edits LSP test classes
+is reporting that the shared handle cannot express a shape the LSP needs. Treat that as the finding
+and widen the handle, rather than adjusting the test to suit it.
+
+`mvn install -Plocal-db` is the gate, and it has to be the full reactor build here rather than a
+`-pl :graphitron` run, since the LSP half is downstream of the module the handle moves in. The inner
+loop for the first half stays `mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution`; for
+the second, `mvn test -pl :graphitron-lsp -am -Plocal-db`.
 
 No new test tier and no new meta-test. A guard forbidding future hand-rolled copies was considered
 and rejected: the failure mode is a test author not knowing the utility exists, and a public handle
 sitting next to `TestSchemaHelper` in a package they already import addresses that directly. A
 grep-based ratchet would add a maintenance surface to enforce what discoverability already buys.
 
+The LSP author reaches the handle by a different route, and it is worth being honest that it is a
+longer one: they meet `StoreFixture` first, and the shared handle only behind it. That is the right
+layering anyway, since what an LSP test wants is usually the reader-side surface `StoreFixture`
+keeps. The discoverability this item buys them is narrower than for a `graphitron` author: not
+"here is the utility", but "the shape you need is one delegation away, and adding it there serves
+both modules." `StoreFixture`'s class javadoc should say so, which is the same carrier requirement
+the gathering rule takes on `CapturedStore`.
+
 ## Out of scope
 
-* Changing what any of the eight classes asserts.
+* Changing what any of the nine classes asserts, and editing `StoreFixture`'s 28 call sites at all.
 * Reshaping `FactCapture`'s own overload set. The 5-arg overload is a reasonable public default and
   this item consumes it.
 * Pruning the factory set to some minimal basis. Per the gathering rule, arriving with more factories
   than strictly necessary is the acceptable outcome; consolidating them is a later, cheap pass to be
   taken once the whole set is visible in one file.
+* Moving the post-capture writers `withBuildWarnings`, `withJavaSource` and `refreshJavaSources` off
+  `StoreFixture`, and the consolidation with `capture/JavaSourceFactsTest`'s hand-rolled driver of
+  the same writer. Named as the follow-up in "The cross-module copy" above; deferred because the LSP
+  item is still growing that surface.
+* Touching `graphitron-lsp`'s main-source dependency on `graphitron`. This item adds a test-scoped
+  edge on an artifact the module already depends on, and leaves the shedding direction the pom
+  records exactly where it is.
