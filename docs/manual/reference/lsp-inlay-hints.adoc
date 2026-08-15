@@ -14,7 +14,7 @@ All four live under the `graphitron.inlayHints` (and `graphitron.hover`) namespa
 
 | `graphitron.inlayHints.inferredDirectives`
 | `false`
-| Renders a ghost annotation at `@table` / `@field` / `@reference` sites where the author wrote the directive bare. The annotation shows the resolved value the classifier produced (`name: "customer"`, `path: [{key: "film_language_id_fkey"}]`, etc.).
+| Renders a ghost annotation at `@table` / `@field` / `@reference` sites where the author wrote the directive bare, showing the value Graphitron resolved (`name: "customer"`, `path: [{key: "film_language_id_fkey"}]`, etc.), plus a whole-directive `@table(name: "...")` ghost at an `extend type` site whose base declaration carries the binding.
 
 | `graphitron.inlayHints.classification`
 | `false`
@@ -33,13 +33,17 @@ The toggles are independent: a user who wants the round-trip markers but no clas
 
 == Inferred-directive hints
 
-Renders only when the canonical argument is _absent_ from the SDL source. The LSP asks the live tree-sitter parse tree whether the argument node exists in the buffer; when it does not, the LSP looks up the resolved value on the classification projection the build pipeline shipped to it. Three sites today:
+Renders only when the canonical argument is _absent_ from the SDL source. The LSP asks the live tree-sitter parse tree whether the argument node exists in the buffer; when it does not, it looks up the value Graphitron resolved. Three sites today:
 
-* `@table` without `name:` — shows `name: "<table>"` (the table name the classifier resolved).
-* `@field` without `name:` — shows `name: "<column>"` (the column name the classifier resolved).
-* `@reference` without `path:` — shows `path: [{key: "..."}]` or `path: [{table: "..."}]` for each step in the resolved FK chain.
+* `@table` without `name:` shows `name: "<table>"`, the table the type is bound to.
+* `@field` without `name:` shows `name: "<column>"`, the column name the classifier resolved.
+* `@reference` without `path:` shows `path: [{key: "..."}]` or `path: [{table: "..."}]`, one entry per step in the resolved FK chain.
 
 Adding the canonical argument to the directive removes the hint immediately on next paint, without waiting for a regenerate cycle.
+
+An `extend type` site additionally gets the whole directive as a ghost. A type's binding belongs to the type rather than to the declaration in front of you, so `extend type Film { ... }` in a file that never mentions `@table` is still table-bound, and the hint reads `@table(name: "film")` on the extension's type name. Where the base declaration is what you are looking at, the directive is already there and only its argument can be filled in.
+
+Where two schemas declare a table of the same name, nothing renders: the binding is ambiguous, so there is no value Graphitron filled in, and showing either candidate would claim a resolution that did not happen. Root operation types never get a `@table` ghost.
 
 == Classification hints
 
@@ -103,9 +107,11 @@ A field no rule reaches gets neither, and that silence is not yet the opposite c
 
 The surfaces read different things and go stale differently.
 
-Classification hints, separate-fetch markers and the classification hover come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
+Classification hints, separate-fetch markers, the `@table` inferred-directive hints and the classification hover come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
 
-Inferred-directive hints come from the classification snapshot the generator pass ships, as does the description overlay beneath the hover's classification block. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
+The `@field` and `@reference` inferred-directive hints come from the classification snapshot the generator pass ships, as does the description overlay beneath the hover's classification block. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
+
+So the `inferredDirectives` toggle spans both cadences today: its `@table` half answers from a capture alone, and its other two halves wait for a generator pass. Each of the three is silent when its own source is missing rather than holding the others back.
 
 Each surface is silent when what it reads is missing, so a session that has one of the two answers still gets it.
 

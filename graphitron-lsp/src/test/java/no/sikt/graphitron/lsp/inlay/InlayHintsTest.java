@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.Position;
@@ -19,17 +18,18 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * LSP-tier unit tests for the inlay-hint provider's snapshot-reading arm: given an authored vs
- * bare {@code @table} / {@code @field} / {@code @reference} site and a fixed snapshot, only the
- * bare site emits a hint with the resolved value. Config gating and the empty cases live here too,
- * because they are properties of {@code compute} rather than of either arm.
+ * LSP-tier unit tests for the inlay-hint renderers that still read the snapshot: given an authored
+ * vs bare {@code @field} / {@code @reference} site and a fixed snapshot, only the bare site emits a
+ * hint with the resolved value. Config gating and the empty cases live here too, because they are
+ * properties of {@code compute} rather than of any one arm.
  *
  * <p>Stale-snapshot behaviour is exercised via {@link LspSchemaSnapshot.Built.Previous}
  * to confirm hints continue to render under the freshness-degraded arm.
  *
- * <p>The classification arm reads the store instead, so its coverage lives with the fixtures that
- * can capture one, in {@code no.sikt.graphitron.lsp.ClassificationHintsTest}. Every call here
- * passes an empty handle, which is also the assertion that the two arms are independent.
+ * <p>Every call here passes an empty handle, which is how each case states that its renderer's
+ * source is the snapshot. The arms that read the store instead are covered where a fixture can
+ * capture one: {@code ClassificationHintsTest}, {@code SeparateFetchHintsTest} and, for the
+ * {@code @table} half of this same inferred-directive arm, {@code InferredTableHintsTest}.
  */
 class InlayHintsTest {
 
@@ -49,10 +49,10 @@ class InlayHintsTest {
     }
 
     @Test
-    void noHintsUnderUnavailableSnapshot() {
+    void noSnapshotBackedHintsUnderUnavailableSnapshot() {
         var file = file("""
             type Film @table(name: "film") {
-                title: String
+                title: String @field
             }
             """);
         var hints = InlayHints.compute(
@@ -84,61 +84,9 @@ class InlayHintsTest {
     }
 
     @Test
-    void inferredTableHintRendersResolvedName() {
-        var file = file("""
-            type Film @table {
-                title: String
-            }
-            """);
-        var snapshot = snapshotWith(
-            Map.of("Film.title", new FieldClassification.Column("film", "title")),
-            Map.of("Film", new TypeClassification.Table("film"))
-        );
-        var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"film\"");
-    }
-
-    @Test
-    void inferredTableHintSuppressedWhenAuthored() {
-        var file = file("""
-            type Film @table(name: "film") {
-                title: String
-            }
-            """);
-        var snapshot = snapshotWith(
-            Map.of("Film.title", new FieldClassification.Column("film", "title")),
-            Map.of("Film", new TypeClassification.Table("film"))
-        );
-        var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
-        // Neither the present-but-bare arm (canonical arg present) nor the absent
-        // arm (the directive node itself is present) should produce a @table hint.
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .doesNotContain("name: \"film\"")
-            .noneMatch(label -> label.startsWith("@table"));
-    }
-
-    @Test
-    void absentTableHintRendersOnObjectTypeWithoutDirective() {
-        var file = file("""
-            type Customer {
-                name: String
-            }
-            """);
-        var snapshot = snapshotWith(
-            Map.of(),
-            Map.of("Customer", new TypeClassification.Table("customer"))
-        );
-        var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("@table(name: \"customer\")");
-    }
-
-    @Test
-    void absentTableHintSuppressedWhenDirectivePresent() {
+    void tableGhostsNeedTheStoreRatherThanTheSnapshot() {
+        // Both @table passes moved onto the binding relation. The snapshot here carries exactly the
+        // classification the incumbent renderer read, and with no store there is nothing to render.
         var file = file("""
             type Film @table {
                 title: String
@@ -150,11 +98,7 @@ class InlayHintsTest {
         );
         var hints = InlayHints.compute(
             new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
-        // The present-but-bare arm renders "name: \"film\"" docked at the @table node;
-        // the absent arm must not also render a full @table(...) hint on the type name.
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"film\"")
-            .noneMatch(label -> label.startsWith("@table"));
+        assertThat(hints).isEmpty();
     }
 
     @Test
@@ -220,30 +164,10 @@ class InlayHintsTest {
     }
 
     @Test
-    void absentTableHintRendersOnTypeExtensionWithoutDirective() {
-        // The absent-arm rides the broadened walk: extend type Customer whose definition
-        // lives in another file (declared @table there) should still show the inferred
-        // @table(...) ghost on the extension's type-name token.
-        var file = file("""
-            extend type Customer {
-                fullName: String
-            }
-            """);
-        var snapshot = snapshotWith(
-            Map.of(),
-            Map.of("Customer", new TypeClassification.Table("customer"))
-        );
-        var hints = InlayHints.compute(
-            new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("@table(name: \"customer\")");
-    }
-
-    @Test
     void hintsRenderUnderPreviousSnapshotForStaleness() {
         var file = file("""
-            type Film @table {
-                title: String
+            type Film @table(name: "film") {
+                title: String @field
             }
             """);
         var previous = new LspSchemaSnapshot.Built.Previous(
@@ -258,7 +182,7 @@ class InlayHintsTest {
             fullRange(file));
         assertThat(hints).isNotEmpty();
         assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"film\"");
+            .contains("name: \"title\"");
     }
 
     // ===== Test helpers =====

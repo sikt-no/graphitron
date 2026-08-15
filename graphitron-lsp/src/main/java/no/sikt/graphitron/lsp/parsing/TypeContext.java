@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 
 import java.util.Optional;
 
@@ -99,20 +98,6 @@ public final class TypeContext {
         Node nameNode = Nodes.childOfKind(fieldDef, NAME);
         if (nameNode == null) return Optional.empty();
         return Optional.of(Nodes.text(nameNode, source));
-    }
-
-    /**
-     * Switches over the {@link TypeClassification} arms that carry a {@code tableName}. The four
-     * Table-bearing arms (Table, Node, TableInterface) lift here so the inlay /
-     * hover / completion / definition / diagnostic surfaces share a single switch.
-     */
-    public static Optional<String> tableNameFromClassification(TypeClassification classification) {
-        return switch (classification) {
-            case TypeClassification.Table t -> Optional.ofNullable(t.tableName());
-            case TypeClassification.Node n -> Optional.ofNullable(n.tableName());
-            case TypeClassification.TableInterface ti -> Optional.ofNullable(ti.tableName());
-            default -> Optional.empty();
-        };
     }
 
     /**

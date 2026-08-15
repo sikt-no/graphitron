@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.inlay;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
 import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
@@ -15,7 +16,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.InlayHintKind;
@@ -53,24 +53,41 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *       a classifier beside every declaration.</li>
  * </ul>
  *
- * <p>The two store-backed arms share one walk of the visible region and one pass of bulk queries
+ * <p>The two claim-reading arms share one walk of the visible region and one pass of bulk queries
  * over the type names in it, so turning both on costs a query per grain rather than a query per
  * declaration.
  *
- * <p>The inferred-directive arm asks the tree-sitter AST whether the canonical argument is
- * present and consults the {@link FieldClassification} / {@link TypeClassification} projections
- * on the snapshot for the resolved value when absent.
+ * <p>The inferred-directive arm always asks the tree-sitter AST whether the canonical argument is
+ * present in the buffer, and differs by directive in where it reads the value the author omitted.
+ * {@code @table} reads {@link no.sikt.graphitron.lsp.facts.BoundTables the binding relation}, so
+ * both its passes ride the capture cadence and answer with no generator pass behind them at all.
+ * {@code @field} and {@code @reference} still read the {@link FieldClassification} projection on
+ * the snapshot, each because the relation it would need is not built: a column match at a site
+ * whose table is not the parent's own, and the foreign-key discovery an omitted path resolves
+ * through.
  *
- * <p>The two arms therefore run off different sources and different cadences. The classification
- * arm needs the store and no snapshot, and renders whatever the last capture wrote; the
- * inferred-directive arm needs the snapshot, rendering under
- * {@link LspSchemaSnapshot.Built.Current} and {@link LspSchemaSnapshot.Built.Previous}
- * indistinguishably and not at all under {@link LspSchemaSnapshot.Unavailable}. Each arm is
- * silent when what it reads is absent, so a session with one of the two answers still gets it.
+ * <p>Three cadences result, and each surface is silent when what it reads is absent, so a session
+ * holding one of the sources still gets its answers. Store-backed hints render whatever the last
+ * capture wrote. Snapshot-backed hints render under {@link LspSchemaSnapshot.Built.Current} and
+ * {@link LspSchemaSnapshot.Built.Previous} indistinguishably and not at all under
+ * {@link LspSchemaSnapshot.Unavailable}.
  */
 public final class InlayHints {
 
     private InlayHints() {}
+
+    /**
+     * Where a renderer looks up the value the author omitted. Both sources travel together because
+     * the registry is keyed by directive and the directives differ in which one they read; a
+     * renderer takes what it needs and returns without a hint when that source is absent.
+     */
+    private record InferenceSources(Optional<StoreHandle> store, LspSchemaSnapshot snapshot) {
+
+        /** The built snapshot, or null under {@link LspSchemaSnapshot.Unavailable}. */
+        LspSchemaSnapshot.Built built() {
+            return snapshot instanceof LspSchemaSnapshot.Built b ? b : null;
+        }
+    }
 
     /**
      * Renderer for the present-directive inlay arm: emits the inferred canonical
@@ -80,7 +97,7 @@ public final class InlayHints {
      */
     @FunctionalInterface
     private interface InferredDirectiveRenderer {
-        void render(List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
+        void render(List<InlayHint> out, FileSnapshot file, InferenceSources sources,
                     Directives.Directive directive, String canonicalArgName);
     }
 
@@ -130,8 +147,9 @@ public final class InlayHints {
                 }
             }
         }
-        if (config.inferredDirectives() && snapshot instanceof LspSchemaSnapshot.Built built) {
-            collectInferredDirectiveHints(hints, file, built, root, visibleRange);
+        if (config.inferredDirectives()) {
+            collectInferredDirectiveHints(
+                hints, file, new InferenceSources(store, snapshot), root, visibleRange);
         }
         return hints;
     }
@@ -234,7 +252,7 @@ public final class InlayHints {
     // ===== Inferred-directive arm =====
 
     private static void collectInferredDirectiveHints(
-        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, InferenceSources sources,
         Node root, Range visibleRange
     ) {
         var directives = Directives.findAll(root);
@@ -243,56 +261,58 @@ public final class InlayHints {
             String directiveName = Nodes.text(directive.nameNode(), file.source());
             // Dispatch is keyed by the canonical-arg table (single source of truth in
             // InferredDirectiveArgs); the entry's argName tells the renderer which buffer
-            // arg to check, the directive name tells the renderer which projection to read.
+            // arg to check, the directive name tells the renderer where the value comes from.
             var entry = InferredDirectiveArgs.findByDirective(directiveName).orElse(null);
             if (entry == null) continue;
             var renderer = INFERRED_RENDERERS.get(entry.directiveName());
             // Completeness is asserted by InlayHintRendererCoverageTest, not by a
             // silent default arm; the guard is the belt to that test's suspenders.
             if (renderer != null) {
-                renderer.render(out, file, built, directive, entry.argName());
+                renderer.render(out, file, sources, directive, entry.argName());
             }
         }
-        collectAbsentDirectiveHints(out, file, built, root, visibleRange);
+        sources.store().ifPresent(store -> collectAbsentTableHints(out, file, store, root, visibleRange));
     }
 
     // ===== Absent-directive arm =====
 
     /**
-     * Second pass for entries with a non-null {@link InferredDirectiveArgs.Entry#absentArm()}.
-     * Walks type-definition nodes (parallel to the classification arm) and, for each
-     * absent-eligible entry, delegates to the entry's {@link InferredDirectiveArgs.AbsentArm}
-     * strategy for the resolved value, emitting a synthetic full-directive hint when the
-     * type carries no directive of that name and the strategy returns a value for the
-     * classification.
+     * The {@code @table} arm's second pass: a type bound to a table but carrying no {@code @table}
+     * at all gets the whole directive as a ghost, where the first pass only fills in an argument a
+     * present directive omitted. A binding without a directive is the ordinary case, the reference
+     * defaulting to the type's own name, and this is where an author sees that graphitron read the
+     * type as table-bound.
+     *
+     * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
+     * null. {@code @field} would put a ghost on every column-bound field in the file, and
+     * {@code @reference} has no fact to render. Both are decisions about what is worth showing, so
+     * a future third arm is a pass someone writes and argues for, not a flag flipped on an entry.
      */
-    private static void collectAbsentDirectiveHints(
-        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
-        Node root, Range visibleRange
+    private static void collectAbsentTableHints(
+        List<InlayHint> out, FileSnapshot file, StoreHandle store, Node root, Range visibleRange
     ) {
-        boolean anyAbsentEligible = false;
-        for (var entry : InferredDirectiveArgs.ENTRIES) {
-            if (entry.absentArm() != null) { anyAbsentEligible = true; break; }
-        }
-        if (!anyAbsentEligible) return;
+        // Collected before the query for the reason the claim arms collect theirs: the pass
+        // annotates a region, and the binding relation should be asked about it once.
+        var undirected = new ArrayList<ClaimSite>();
         DeclarationKind.walkAll(root, typeDef -> {
             if (!intersects(typeDef, visibleRange)) return;
             String typeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
             if (typeName == null) return;
-            var classification = built.typeClassificationsByName().get(typeName);
-            if (classification == null) return;
+            if (typeCarriesDirective(typeDef, "table", file.source())) return;
             Node nameNode = Nodes.childOfKind(typeDef, NAME);
             if (nameNode == null) return;
-            for (var entry : InferredDirectiveArgs.ENTRIES) {
-                var arm = entry.absentArm();
-                if (arm == null) continue;
-                if (typeCarriesDirective(typeDef, entry.directiveName(), file.source())) continue;
-                arm.resolveAbsentValue(classification).ifPresent(value ->
-                    out.add(makeHint(file, nameNode,
-                        "@" + entry.directiveName() + "(" + entry.argName() + ": \"" + value + "\")",
-                        InlayHintKind.Type)));
-            }
+            undirected.add(new ClaimSite(typeName, null, nameNode));
         });
+        if (undirected.isEmpty()) return;
+        var typeNames = new LinkedHashSet<String>();
+        for (var site : undirected) typeNames.add(site.typeName());
+        var byType = BoundTables.unambiguousByType(store, typeNames);
+        for (var site : undirected) {
+            var table = byType.get(site.typeName());
+            if (table == null) continue;
+            out.add(makeHint(file, site.nameNode(),
+                "@table(name: \"" + table.tableName() + "\")", InlayHintKind.Type));
+        }
     }
 
     private static boolean typeCarriesDirective(Node typeDef, String directiveName, byte[] source) {
@@ -307,29 +327,35 @@ public final class InlayHints {
         return false;
     }
 
+    /**
+     * Keyed on the enclosing type's declared name rather than on the directive node in hand, so an
+     * {@code extend type} site resolves through the base declaration's binding the way every other
+     * reader of a type's binding does.
+     */
     private static void renderInferredTableNameHint(
-        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, InferenceSources sources,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
-        // Resolve the enclosing type and look up its classification for the resolved tableName.
+        var store = sources.store().orElse(null);
+        if (store == null) return;
         var enclosingType = DeclarationKind.enclosing(directive.outer()).orElse(null);
         if (enclosingType == null) return;
         String typeName = TypeContext.declaredNameOf(enclosingType, file.source()).orElse(null);
         if (typeName == null) return;
-        var classification = built.typeClassificationsByName().get(typeName);
-        if (classification == null) return;
-        String tableName = TypeContext.tableNameFromClassification(classification).orElse(null);
-        if (tableName == null) return;
+        var table = BoundTables.unambiguous(store, typeName).orElse(null);
+        if (table == null) return;
         out.add(makeHint(file, directive.nameNode(),
-            canonicalArgName + ": \"" + tableName + "\"", InlayHintKind.Type));
+            canonicalArgName + ": \"" + table.tableName() + "\"", InlayHintKind.Type));
     }
 
     private static void renderInferredFieldNameHint(
-        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, InferenceSources sources,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
+        var built = sources.built();
+        if (built == null) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
@@ -353,10 +379,12 @@ public final class InlayHints {
     }
 
     private static void renderInferredReferencePathHint(
-        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, InferenceSources sources,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
+        var built = sources.built();
+        if (built == null) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;

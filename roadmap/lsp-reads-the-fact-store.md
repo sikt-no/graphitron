@@ -475,8 +475,8 @@ around it.
 | Toggle | Collector | Fact source |
 |---|---|---|
 | `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer; `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
-| `inferredDirectives` | `collectAbsentDirectiveHints`, a second pass inside the inferred-directive collector | same, absence arm |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer (built: `BoundTables.unambiguous`); `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO, and a column match at a site whose table is not the parent's own, which no relation answers yet; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
+| `inferredDirectives` | `collectAbsentTableHints`, a second pass inside the inferred-directive collector | `intent_bound_table` (built: `BoundTables.unambiguousByType`) |
 | `separateFetch` | `collectSeparateFetchHints` | `intent_field_separate_fetch`, the marked rules only (built: `ClaimFacts`, `SeparateFetchRule`) |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
 
@@ -1727,6 +1727,44 @@ A second pass over the increment above, on three things it got wrong or left loo
   says plainly that pinning it needs a fixture nobody has built yet. An overstated test comment is
   worse than a missing test, because the next reader believes it.
 
+## Settled while building: the inferred `@table` ghost, and an arm whose absence case was fiction
+
+The inferred-directive arm splits by grain rather than moving whole, and one of its two passes turned
+out to have been covering a case no capture can produce.
+
+* **`@table` moves, `@field` and `@reference` stay, and the reason is per relation.** The `@table`
+  renderer wanted one thing: the table a type is bound to. That is `intent_bound_table`, the same
+  derivation the column-match classifier stands on, so the renderer now reads it through
+  `BoundTables` and the classification snapshot loses a reader. The other two cannot follow yet and
+  not for the same reason. `@field` fires at sites whose column resolves against a table that is not
+  the parent's own binding, and while `intent_field_column_table` names that table, no relation
+  answers which column an effective name matches *at* it; that derivation is the next slice, and it
+  generalises `intent_column_match_claim`'s matching tail over a site-resolved table.
+  `@reference` fires only on an omitted path, so its source is the foreign-key discovery between two
+  bindings, which is unbuilt.
+* **A partial move is worth shipping because the cadence change is the user-visible half.** The
+  `@table` ghosts now render off a capture alone, so an author who has never had a successful
+  generator pass sees them, where before the arm was silent under `Unavailable`. The `inferredDirectives`
+  toggle therefore spans two cadences today. That is documented in the manual's freshness section
+  rather than hidden, and each of the three renderers is silent when its own source is missing rather
+  than holding the others back.
+* **The absent-directive arm's headline case could not happen.** The arm renders a whole
+  `@table(name: "...")` ghost at a declaration carrying no `@table`, and its unit test pinned that on
+  a plain `type Customer { ... }` against a hand-built snapshot saying `Customer` was table-bound.
+  Nothing binds a directiveless type: `graphitron_table` is a row per `@table` application, and the
+  classifier reads the directive too, so the snapshot in that test was a state no build produces. The
+  case is deleted. What the arm is actually for is the `extend type` site, whose base declaration
+  carries the binding in another file, and that case is now pinned against a real capture. The arm's
+  javadoc and the manual say so instead of the general claim they made before.
+* **A strategy interface with one implementation and no input left is not a mechanism.** The absent
+  pass dispatched through a sealed `AbsentArm` permit per registry entry, whose whole content was a
+  switch over the classification variants carrying a table name. With the value coming from a
+  relation, that switch has nothing to switch on, and what remained was a null-checked loop over
+  three entries of which one was non-null. The pass is now the `@table` pass, named as such, with the
+  reasons `@field` and `@reference` have no absence arm stated where a reader will look for them.
+  Adding a third is writing a pass and arguing for it, which is what it should have been: the permit
+  made a judgement call about what is worth showing look like a type-safety property.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -1742,7 +1780,9 @@ switched on, and `LspClassificationLabels` with `projectionLabel` and `projectio
 and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
 `PojoBacking.accessors` payloads and `CatalogBuilder`'s `projectRecord`, `projectPojo`,
 `beanAccessorSlot` and `lowercaseFirst`, and `TypeContext.tableNameOf` with
-`Diagnostics.collectAllFkNames` and `ArgMappingSupport.resolveMethod`; `DirectiveResolution`
+`Diagnostics.collectAllFkNames` and `ArgMappingSupport.resolveMethod`, and
+`TypeContext.tableNameFromClassification` with the sealed `InferredDirectiveArgs.AbsentArm`
+and its `TableName` permit; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
 `typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's
