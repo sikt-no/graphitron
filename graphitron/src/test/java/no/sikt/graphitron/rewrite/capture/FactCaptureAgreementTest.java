@@ -86,6 +86,9 @@ import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -206,7 +209,9 @@ class FactCaptureAgreementTest {
             "sql_schema", "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "jvm_class", "jvm_class_supertype", "jvm_method",
-            "jvm_method_parameter", "jvm_record_component",
+            "jvm_method_return_type_ref", "jvm_method_parameter",
+            "jvm_method_parameter_type_ref", "jvm_record_component",
+            "jvm_record_component_type_ref",
             "jvm_scalar_type_field", "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
@@ -1147,6 +1152,118 @@ class FactCaptureAgreementTest {
                     + " joins on")
                 .anyMatch(row -> row.contains(" java.") || row.contains(" org.jooq."));
         }
+    }
+
+    /**
+     * The three type-reference relations against the scan. One test because they are one rule
+     * applied at three coordinates, and a mirror rather than containment for the reason the
+     * supertype census is one: a walk reads a dropped position as a type that names nothing there,
+     * which is indistinguishable from a position that genuinely names no class.
+     *
+     * <p>The reactor's own classes are the fixture, which lets this pin what the decomposition
+     * decides rather than copies. Every name is qualified, that being the entire reason the
+     * relations exist beside the display columns. Some row sits at a non-root path, so a generic
+     * type is descended into rather than recorded as its outer class alone. And a root row's class
+     * agrees with the erased display column once the package is dropped, which is what says the
+     * qualification names the same class the census already reported rather than some other one.
+     */
+    @Test
+    @DisplayName("the JVM type-reference census equals the scanner's, at every position")
+    void jvmTypeReferenceCensusEqualsTheScanner(@TempDir Path tmp) {
+        var ctx = testContext();
+        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions,
+                new NodeDeclaration(null));
+
+            var expectedReturns = new LinkedHashSet<String>();
+            var expectedParameters = new LinkedHashSet<String>();
+            var expectedComponents = new LinkedHashSet<String>();
+            for (var reference : extensions) {
+                for (var method : reference.methods()) {
+                    String owner = reference.className() + " " + method.name() + method.descriptor();
+                    method.returnTypeRefs().forEach(ref -> expectedReturns.add(render(owner, ref)));
+                    int position = 0;
+                    for (var parameter : method.parameters()) {
+                        String at = owner + " #" + position++;
+                        parameter.typeRefs().forEach(ref -> expectedParameters.add(render(at, ref)));
+                    }
+                }
+                for (var component : reference.recordComponents()) {
+                    String owner = reference.className() + " " + component.name();
+                    component.typeRefs().forEach(ref -> expectedComponents.add(render(owner, ref)));
+                }
+            }
+
+            var capturedReturns = new LinkedHashSet<String>();
+            store.dsl().selectFrom(JVM_METHOD_RETURN_TYPE_REF).fetch().forEach(row -> capturedReturns.add(
+                render(row.getClassName() + " " + row.getMethodName() + row.getDescriptor(),
+                    row.getTypePath(), row.getReferencedClass(), row.getVariance())));
+            var capturedParameters = new LinkedHashSet<String>();
+            store.dsl().selectFrom(JVM_METHOD_PARAMETER_TYPE_REF).fetch().forEach(row -> capturedParameters.add(
+                render(row.getClassName() + " " + row.getMethodName() + row.getDescriptor()
+                        + " #" + row.getPosition(),
+                    row.getTypePath(), row.getReferencedClass(), row.getVariance())));
+            var capturedComponents = new LinkedHashSet<String>();
+            store.dsl().selectFrom(JVM_RECORD_COMPONENT_TYPE_REF).fetch().forEach(row -> capturedComponents.add(
+                render(row.getClassName() + " " + row.getComponentName(),
+                    row.getTypePath(), row.getReferencedClass(), row.getVariance())));
+
+            assertThat(expectedReturns).as("the reactor declares return types, so this pins something")
+                .isNotEmpty();
+            assertThat(expectedParameters).as("and parameters").isNotEmpty();
+            assertThat(expectedComponents).as("and record components").isNotEmpty();
+            assertThat(capturedReturns).isEqualTo(expectedReturns);
+            assertThat(capturedParameters).isEqualTo(expectedParameters);
+            assertThat(capturedComponents).isEqualTo(expectedComponents);
+
+            var everyClass = store.dsl()
+                .select(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS).from(JVM_METHOD_RETURN_TYPE_REF)
+                .unionAll(store.dsl().select(JVM_METHOD_PARAMETER_TYPE_REF.REFERENCED_CLASS)
+                    .from(JVM_METHOD_PARAMETER_TYPE_REF))
+                .unionAll(store.dsl().select(JVM_RECORD_COMPONENT_TYPE_REF.REFERENCED_CLASS)
+                    .from(JVM_RECORD_COMPONENT_TYPE_REF))
+                .fetch(0, String.class);
+            assertThat(everyClass)
+                .as("a package-less name is what the display columns already carry; this relation"
+                    + " exists to resolve one")
+                .allMatch(name -> name.contains("."));
+
+            assertThat(capturedReturns.stream().anyMatch(row -> !row.contains(" @= ")))
+                .as("a generic return type is descended into, not recorded as its outer class alone")
+                .isTrue();
+
+            var rootDisagreements = store.dsl()
+                .select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.RETURN_TYPE,
+                    JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS)
+                .from(JVM_METHOD_RETURN_TYPE_REF)
+                .join(JVM_METHOD)
+                .on(JVM_METHOD.SOURCE_NAME.eq(JVM_METHOD_RETURN_TYPE_REF.SOURCE_NAME))
+                .and(JVM_METHOD.CLASS_NAME.eq(JVM_METHOD_RETURN_TYPE_REF.CLASS_NAME))
+                .and(JVM_METHOD.METHOD_NAME.eq(JVM_METHOD_RETURN_TYPE_REF.METHOD_NAME))
+                .and(JVM_METHOD.DESCRIPTOR.eq(JVM_METHOD_RETURN_TYPE_REF.DESCRIPTOR))
+                .where(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH.eq(""))
+                .fetch()
+                .stream()
+                .filter(row -> !row.value4().substring(row.value4().lastIndexOf('.') + 1)
+                    .equals(row.value3()))
+                .map(row -> row.value1() + "." + row.value2() + ": " + row.value3()
+                    + " vs " + row.value4())
+                .toList();
+            assertThat(rootDisagreements)
+                .as("the qualified root names the class the erased display column already reported")
+                .isEmpty();
+        }
+    }
+
+    /** One type reference as a comparable line; the root path renders as {@code @=}. */
+    private static String render(String owner, CompletionData.TypeRef ref) {
+        return render(owner, ref.path(), ref.referencedClass(), ref.variance());
+    }
+
+    private static String render(String owner, String path, String referencedClass, String variance) {
+        return owner + " @" + path + "= " + variance + " " + referencedClass;
     }
 
     /**

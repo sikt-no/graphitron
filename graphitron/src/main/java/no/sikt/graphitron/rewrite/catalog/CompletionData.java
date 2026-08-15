@@ -269,6 +269,27 @@ public record CompletionData(
     public record Supertype(String className, String declaredVia) {}
 
     /**
+     * One class a declared type names, at one position within it. A declared type is a tree rather
+     * than a name, so resolving one means recording every position: {@code Map<String, List<Film>>}
+     * names four classes, and the element type a walk follows is the innermost of them.
+     *
+     * <p>{@code path} is read outside in, the empty string being the type itself, a digit a 0-based
+     * type-argument index and {@code []} an array's component, joined by dots. {@code Film[]} names
+     * {@code Film} at {@code []}; {@code List<Film>} names it at {@code 0}.
+     *
+     * <p>{@code referencedClass} is a fully-qualified binary name, which is the whole point of the
+     * record: {@link Method#returnType()} and its siblings drop the package to render a signature,
+     * and a package-less name cannot be compared for identity. A position naming no class yields no
+     * {@code TypeRef} at all rather than one with a placeholder, which covers a primitive, an array
+     * (whose component is the next step down), a type variable, and an unbounded wildcard.
+     *
+     * <p>{@code variance} is {@code NONE}, {@code EXTENDS} or {@code SUPER}, distinguishing
+     * {@code Film} from {@code ? extends Film} from {@code ? super Film}, which name the same class
+     * and mean different things.
+     */
+    public record TypeRef(String path, String referencedClass, String variance) {}
+
+    /**
      * One entry in a Java {@code record} class's component list — name plus
      * a rendered display type for hover. Source: the JVM
      * {@link java.lang.classfile.attribute.RecordAttribute} attribute on the
@@ -278,8 +299,24 @@ public record CompletionData(
      * {@code declaredType} is what the source declared, type arguments kept. The two
      * differ only for a generic component, and neither derives from the other: erasure
      * maps a type variable to its bound, which the declared form does not name.
+     *
+     * <p>{@code typeRefs} resolves what the two display forms cannot: the qualified classes the
+     * declared type names, position by position. See {@link TypeRef}.
      */
-    public record RecordComponent(String name, String displayType, String declaredType) {
+    public record RecordComponent(String name, String displayType, String declaredType,
+                                  List<TypeRef> typeRefs) {
+
+        public RecordComponent {
+            typeRefs = List.copyOf(typeRefs);
+        }
+
+        /**
+         * A component read by a caller that resolved no qualified names, which is every caller
+         * outside the classfile scan.
+         */
+        public RecordComponent(String name, String displayType, String declaredType) {
+            this(name, displayType, declaredType, List.of());
+        }
 
         /**
          * A component whose declared form is its erased one, which is every non-generic
@@ -330,6 +367,9 @@ public record CompletionData(
      * wants the first and a surface testing a type's identity wants the second, so both are
      * carried: erasure maps a type variable to its bound, which the declared form does not name,
      * and the declared form names a container's element type, which the erasure does not.
+     *
+     * <p>{@code returnTypeRefs} resolves what neither display form can: the qualified classes the
+     * declared return type names, position by position. See {@link TypeRef}.
      */
     public record Method(
         String name,
@@ -338,8 +378,25 @@ public record CompletionData(
         List<Parameter> parameters,
         boolean returnsCondition,
         String descriptor,
-        String declaredReturnType
+        String declaredReturnType,
+        List<TypeRef> returnTypeRefs
     ) {
+        public Method {
+            parameters = List.copyOf(parameters);
+            returnTypeRefs = List.copyOf(returnTypeRefs);
+        }
+
+        /**
+         * A method read by a caller that resolved no qualified names, which is every caller outside
+         * the classfile scan.
+         */
+        public Method(String name, String returnType, String description,
+                      List<Parameter> parameters, boolean returnsCondition, String descriptor,
+                      String declaredReturnType) {
+            this(name, returnType, description, parameters, returnsCondition, descriptor,
+                declaredReturnType, List.of());
+        }
+
         /**
          * Back-compat constructor defaulting {@code returnsCondition} to
          * {@code false} (a non-condition method). Keeps existing LSP / test
@@ -379,9 +436,25 @@ public record CompletionData(
      *
      * <p>{@code type} is the erasure the descriptor carries and {@code declaredType} what the
      * source declared, on the same terms as {@link Method#declaredReturnType()}.
+     *
+     * <p>{@code typeRefs} resolves the qualified classes the declared type names, on the same terms
+     * as {@link Method#returnTypeRefs()}.
      */
     public record Parameter(String name, String type, String source, String description,
-                            String declaredType) {
+                            String declaredType, List<TypeRef> typeRefs) {
+
+        public Parameter {
+            typeRefs = List.copyOf(typeRefs);
+        }
+
+        /**
+         * A parameter read by a caller that resolved no qualified names, which is every caller
+         * outside the classfile scan.
+         */
+        public Parameter(String name, String type, String source, String description,
+                         String declaredType) {
+            this(name, type, source, description, declaredType, List.of());
+        }
 
         /**
          * A parameter whose declared form is its erased one, which is every parameter of a

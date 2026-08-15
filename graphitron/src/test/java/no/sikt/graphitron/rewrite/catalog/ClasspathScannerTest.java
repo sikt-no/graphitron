@@ -347,6 +347,187 @@ class ClasspathScannerTest {
     }
 
     @Test
+    void aDeclaredTypeNamesItsClassesByPosition(@TempDir Path classes) throws IOException {
+        // The display columns render a signature and drop the package, so neither can be compared
+        // for identity. A declared type is a tree, so resolving it means naming every position:
+        // Map<String, List<Film>> names four classes, and the element type a hop follows is the
+        // innermost of them.
+        var fqn = "com.example.MyService";
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod(
+                "index",
+                java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.util.Map")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "()Ljava/util/Map<Ljava/lang/String;Ljava/util/List<Lcom/example/Film;>;>;")))
+            )
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods().get(0).returnTypeRefs())
+            .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass,
+                CompletionData.TypeRef::variance)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("", "java.util.Map", "NONE"),
+                org.assertj.core.api.Assertions.tuple("0", "java.lang.String", "NONE"),
+                org.assertj.core.api.Assertions.tuple("1", "java.util.List", "NONE"),
+                org.assertj.core.api.Assertions.tuple("1.0", "com.example.Film", "NONE"));
+    }
+
+    @Test
+    void aPositionNamingNoClassGetsNoReference(@TempDir Path classes) throws IOException {
+        // A primitive, a type variable and a bare wildcard each name no class, so each is an
+        // absent row rather than a placeholder. The type variable is the one worth pinning: its
+        // erasure is Object, so the census's erased column reports a class where the declaration
+        // named none, and a consumer reading this relation must see the declaration.
+        var fqn = "com.example.MyService";
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod("count", java.lang.constant.MethodTypeDesc.of(ClassDesc.ofDescriptor("I")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, mb -> {})
+            .withMethod("pick", java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.lang.Object")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "<T:Ljava/lang/Object;>()TT;"))))
+            .withMethod("anything", java.lang.constant.MethodTypeDesc.of(ClassDesc.of("java.util.List")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "()Ljava/util/List<*>;"))))
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var methods = ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods();
+
+        assertThat(refsOf(methods, "count")).as("a primitive names no class").isEmpty();
+        assertThat(refsOf(methods, "pick")).as("nor does a type variable, whose erasure is Object")
+            .isEmpty();
+        assertThat(refsOf(methods, "anything"))
+            .as("a bare wildcard bounds at Object, which nothing here records as a declaration")
+            .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass)
+            .containsExactly(org.assertj.core.api.Assertions.tuple("", "java.util.List"));
+    }
+
+    @Test
+    void aWildcardBoundIsCarriedBesideTheClassItNames(@TempDir Path classes) throws IOException {
+        // Film, ? extends Film and ? super Film name one class and mean three things, and nothing
+        // else in the census tells them apart, so a consumer peeling an element type out of the
+        // third would read it as the first and be silently wrong about which way values flow.
+        var fqn = "com.example.MyService";
+        var listDesc = ClassDesc.of("java.util.List");
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod("out", java.lang.constant.MethodTypeDesc.of(listDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "()Ljava/util/List<+Lcom/example/Film;>;"))))
+            .withMethod("in", java.lang.constant.MethodTypeDesc.of(listDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "()Ljava/util/List<-Lcom/example/Film;>;"))))
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var methods = ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods();
+
+        assertThat(refsOf(methods, "out"))
+            .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass,
+                CompletionData.TypeRef::variance)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("", "java.util.List", "NONE"),
+                org.assertj.core.api.Assertions.tuple("0", "com.example.Film", "EXTENDS"));
+        assertThat(refsOf(methods, "in"))
+            .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass,
+                CompletionData.TypeRef::variance)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("", "java.util.List", "NONE"),
+                org.assertj.core.api.Assertions.tuple("0", "com.example.Film", "SUPER"));
+    }
+
+    @Test
+    void anArrayNamesItsComponentOneStepDown(@TempDir Path classes) throws IOException {
+        // An array type is itself no class the census could name, so it contributes a path step
+        // rather than a row. Both methods here carry no Signature attribute, which is the ordinary
+        // case rather than an edge one: the compiler emits it only where erasure loses something.
+        var fqn = "com.example.MyService";
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod("films",
+                java.lang.constant.MethodTypeDesc.of(ClassDesc.of("com.example.Film").arrayType()),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, mb -> {})
+            .withMethod("grid",
+                java.lang.constant.MethodTypeDesc.of(
+                    ClassDesc.of("java.lang.String").arrayType().arrayType()),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, mb -> {})
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var methods = ClasspathScanner.scan(classes, JOOQ_PKG).get(0).methods();
+
+        assertThat(refsOf(methods, "films"))
+            .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass)
+            .containsExactly(org.assertj.core.api.Assertions.tuple("[]", "com.example.Film"));
+        assertThat(refsOf(methods, "grid"))
+            .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass)
+            .containsExactly(org.assertj.core.api.Assertions.tuple("[].[]", "java.lang.String"));
+    }
+
+    @Test
+    void parametersAndRecordComponentsResolveByTheSameRule(@TempDir Path classes) throws IOException {
+        // One rule at three coordinates. A census that resolved a return type but not the other two
+        // would be reporting an accident rather than answering a question.
+        var service = "com.example.MyService";
+        byte[] serviceBytes = ClassFile.of().build(ClassDesc.of(service), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod(
+                "count",
+                java.lang.constant.MethodTypeDesc.of(
+                    ClassDesc.of("java.lang.Integer"), ClassDesc.of("java.util.List")),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> mb.with(SignatureAttribute.of(MethodSignature.parseFrom(
+                    "(Ljava/util/List<Lcom/example/Film;>;)Ljava/lang/Integer;"))))
+        );
+        writeRawClassBytes(classes, service, serviceBytes);
+
+        var card = "com.example.FilmCard";
+        byte[] cardBytes = ClassFile.of().build(ClassDesc.of(card), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL)
+            .withSuperclass(ClassDesc.of("java.lang.Record"))
+            .with(java.lang.classfile.attribute.RecordAttribute.of(java.util.List.of(
+                java.lang.classfile.attribute.RecordComponentInfo.of(
+                    "actors", ClassDesc.of("java.util.List"),
+                    SignatureAttribute.of(java.lang.classfile.Signature.parseFrom(
+                        "Ljava/util/List<Lcom/example/Actor;>;"))))))
+        );
+        writeRawClassBytes(classes, card, cardBytes);
+
+        var scanned = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(scanned).filteredOn(r -> r.className().equals(service)).singleElement()
+            .satisfies(r -> assertThat(r.methods().get(0).parameters().get(0).typeRefs())
+                .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass)
+                .containsExactly(
+                    org.assertj.core.api.Assertions.tuple("", "java.util.List"),
+                    org.assertj.core.api.Assertions.tuple("0", "com.example.Film")));
+        assertThat(scanned).filteredOn(r -> r.className().equals(card)).singleElement()
+            .satisfies(r -> assertThat(r.recordComponents().get(0).typeRefs())
+                .extracting(CompletionData.TypeRef::path, CompletionData.TypeRef::referencedClass)
+                .containsExactly(
+                    org.assertj.core.api.Assertions.tuple("", "java.util.List"),
+                    org.assertj.core.api.Assertions.tuple("0", "com.example.Actor")));
+    }
+
+    /** The type references of one named method, which several tests above read one at a time. */
+    private static java.util.List<CompletionData.TypeRef> refsOf(
+        java.util.List<CompletionData.Method> methods, String name) {
+        return methods.stream()
+            .filter(m -> m.name().equals(name))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no method named " + name))
+            .returnTypeRefs();
+    }
+
+    @Test
     void recordComponentDeclaredTypeComesFromItsOwnSignature(@TempDir Path classes) throws IOException {
         var fqn = "com.example.FilmCard";
         byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb

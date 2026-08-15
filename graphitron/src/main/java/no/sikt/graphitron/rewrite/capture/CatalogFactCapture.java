@@ -29,7 +29,10 @@ import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 
 /**
@@ -439,18 +442,42 @@ final class CatalogFactCapture {
                 row.setDeclaredReturnType(method.declaredReturnType());
                 row.setReturnsCondition(method.returnsCondition());
                 sink.add(row);
+                for (CompletionData.TypeRef ref : method.returnTypeRefs()) {
+                    var refRow = sink.dsl().newRecord(JVM_METHOD_RETURN_TYPE_REF);
+                    refRow.setSourceName(source);
+                    refRow.setClassName(className);
+                    refRow.setMethodName(method.name());
+                    refRow.setDescriptor(descriptor);
+                    refRow.setTypePath(ref.path());
+                    refRow.setReferencedClass(ref.referencedClass());
+                    refRow.setVariance(ref.variance());
+                    sink.add(refRow);
+                }
                 int position = 0;
                 for (CompletionData.Parameter parameter : method.parameters()) {
+                    int parameterPosition = position++;
                     var parameterRow = sink.dsl().newRecord(JVM_METHOD_PARAMETER);
                     parameterRow.setSourceName(source);
                     parameterRow.setClassName(className);
                     parameterRow.setMethodName(method.name());
                     parameterRow.setDescriptor(descriptor);
-                    parameterRow.setPosition(position++);
+                    parameterRow.setPosition(parameterPosition);
                     parameterRow.setParameterName(parameter.name());
                     parameterRow.setParameterType(parameter.type());
                     parameterRow.setDeclaredParameterType(parameter.declaredType());
                     sink.add(parameterRow);
+                    for (CompletionData.TypeRef ref : parameter.typeRefs()) {
+                        var refRow = sink.dsl().newRecord(JVM_METHOD_PARAMETER_TYPE_REF);
+                        refRow.setSourceName(source);
+                        refRow.setClassName(className);
+                        refRow.setMethodName(method.name());
+                        refRow.setDescriptor(descriptor);
+                        refRow.setPosition(parameterPosition);
+                        refRow.setTypePath(ref.path());
+                        refRow.setReferencedClass(ref.referencedClass());
+                        refRow.setVariance(ref.variance());
+                        sink.add(refRow);
+                    }
                 }
             }
 
@@ -468,6 +495,16 @@ final class CatalogFactCapture {
                 row.setDisplayType(component.displayType());
                 row.setDeclaredType(component.declaredType());
                 sink.add(row);
+                for (CompletionData.TypeRef ref : component.typeRefs()) {
+                    var refRow = sink.dsl().newRecord(JVM_RECORD_COMPONENT_TYPE_REF);
+                    refRow.setSourceName(source);
+                    refRow.setClassName(className);
+                    refRow.setComponentName(component.name());
+                    refRow.setTypePath(ref.path());
+                    refRow.setReferencedClass(ref.referencedClass());
+                    refRow.setVariance(ref.variance());
+                    sink.add(refRow);
+                }
             }
 
             for (CompletionData.ScalarConstant constant : reference.scalarConstants()) {

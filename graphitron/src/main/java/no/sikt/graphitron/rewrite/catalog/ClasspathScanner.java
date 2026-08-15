@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -307,14 +308,15 @@ public final class ClasspathScanner {
         for (var info : attr.components()) {
             String name = info.name().stringValue();
             String descriptor = info.descriptor().stringValue();
-            String displayType = displayName(ClassDesc.ofDescriptor(descriptor));
+            ClassDesc erased = ClassDesc.ofDescriptor(descriptor);
+            String displayType = displayName(erased);
             // A record component carries its own Signature attribute, so the declared form is read
             // per component rather than off the record's accessor method.
-            String declaredType = info.findAttribute(Attributes.signature())
-                .map(SignatureAttribute::asTypeSignature)
-                .map(ClasspathScanner::declaredName)
-                .orElse(displayType);
-            components.add(new CompletionData.RecordComponent(name, displayType, declaredType));
+            Optional<Signature> signature = info.findAttribute(Attributes.signature())
+                .map(SignatureAttribute::asTypeSignature);
+            String declaredType = signature.map(ClasspathScanner::declaredName).orElse(displayType);
+            components.add(new CompletionData.RecordComponent(
+                name, displayType, declaredType, typeRefs(signature, erased)));
         }
         return List.copyOf(components);
     }
@@ -360,17 +362,22 @@ public final class ClasspathScanner {
             for (int i = 0; i < desc.parameterList().size(); i++) {
                 ClassDesc paramType = desc.parameterList().get(i);
                 String erased = displayName(paramType);
+                Optional<Signature> declared = i < declaredParams.size()
+                    ? Optional.of(declaredParams.get(i))
+                    : Optional.empty();
                 parameters.add(new CompletionData.Parameter(
                     paramNames.get(i),
                     erased,
                     null,
                     "",
-                    i < declaredParams.size() ? declaredName(declaredParams.get(i)) : erased
+                    declared.map(ClasspathScanner::declaredName).orElse(erased),
+                    typeRefs(declared, paramType)
                 ));
             }
             methods.add(new CompletionData.Method(
                 name, returnType, "", List.copyOf(parameters), returnsCondition, descriptor,
-                declaredReturnType));
+                declaredReturnType,
+                typeRefs(signature.map(MethodSignature::result), desc.returnType())));
         }
         return List.copyOf(methods);
     }
@@ -407,6 +414,81 @@ public final class ClasspathScanner {
 
     private static String displayName(ClassDesc desc) {
         return desc.displayName();
+    }
+
+    /**
+     * The qualified classes a declared type names, one per position within it, as
+     * {@link CompletionData.TypeRef} states the path grammar and the omission rules.
+     *
+     * <p>Two entry points because the classfile has two encodings of one thing: a
+     * {@code Signature} where the compiler emitted one, and the descriptor where it did not, which
+     * for a non-generic type is always. They are not alternatives of differing quality; absence of
+     * the attribute means the erasure <em>is</em> the declared form, so both readings are the
+     * declaration and they agree wherever both exist.
+     */
+    private static List<CompletionData.TypeRef> typeRefs(Optional<Signature> signature, ClassDesc erased) {
+        var refs = new ArrayList<CompletionData.TypeRef>();
+        signature.ifPresentOrElse(
+            s -> collectRefs(s, "", "NONE", refs),
+            () -> collectRefs(erased, "", refs));
+        return List.copyOf(refs);
+    }
+
+    /** Walks a signature, emitting a reference for every position that names a class. */
+    private static void collectRefs(Signature signature, String path, String variance,
+                                    List<CompletionData.TypeRef> into) {
+        switch (signature) {
+            // A primitive and a type variable name no class. The variable is the case worth
+            // noting: its erasure is its bound (Object, absent a declared one), so the census's
+            // erased column reads a class here where the declaration named none, and this walk
+            // follows the declaration.
+            case Signature.BaseTypeSig ignored -> { }
+            case Signature.TypeVarSig ignored -> { }
+            case Signature.ArrayTypeSig array -> collectRefs(array.componentSignature(), step(path, "[]"), variance, into);
+            case Signature.ClassTypeSig cls -> {
+                into.add(new CompletionData.TypeRef(path, binaryName(cls.classDesc()), variance));
+                int index = 0;
+                for (var arg : cls.typeArgs()) {
+                    String argPath = step(path, String.valueOf(index++));
+                    switch (arg) {
+                        // A bare `?` bounds at Object, which no relation here records as a
+                        // declaration, so the position stays empty rather than naming it.
+                        case Signature.TypeArg.Unbounded ignored -> { }
+                        case Signature.TypeArg.Bounded bounded -> collectRefs(
+                            bounded.boundType(), argPath, bounded.wildcardIndicator().name(), into);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Walks a descriptor, for a type the compiler stored no signature for. A descriptor carries no
+     * type arguments and no wildcards, so the only structure to descend is array nesting and every
+     * position it does name is invariant.
+     */
+    private static void collectRefs(ClassDesc desc, String path, List<CompletionData.TypeRef> into) {
+        if (desc.isPrimitive()) return;
+        if (desc.isArray()) {
+            collectRefs(desc.componentType(), step(path, "[]"), into);
+            return;
+        }
+        into.add(new CompletionData.TypeRef(path, binaryName(desc), "NONE"));
+    }
+
+    /** One step deeper into a type; the root path is empty, so the first step carries no dot. */
+    private static String step(String path, String next) {
+        return path.isEmpty() ? next : path + "." + next;
+    }
+
+    /**
+     * The fully-qualified binary name of a class-typed descriptor: {@link ClassDesc#displayName}
+     * already spells a nested class with the {@code $} the JVM uses, so the package is all it is
+     * missing. Callers exclude arrays and primitives, for which no such name exists.
+     */
+    private static String binaryName(ClassDesc desc) {
+        String packageName = desc.packageName();
+        return packageName.isEmpty() ? desc.displayName() : packageName + "." + desc.displayName();
     }
 
     /**
@@ -451,7 +533,7 @@ public final class ClasspathScanner {
      * is the common case and means the descriptor already is the declared form: the compiler emits
      * the attribute only where erasure loses something.
      */
-    private static java.util.Optional<MethodSignature> methodSignature(MethodModel m) {
+    private static Optional<MethodSignature> methodSignature(MethodModel m) {
         return m.findAttribute(Attributes.signature()).map(SignatureAttribute::asMethodSignature);
     }
 }

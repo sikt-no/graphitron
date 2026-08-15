@@ -1941,9 +1941,8 @@ walk is evidence here, not the specification.
    off the `ClassModel` it already holds and `jvm_class_supertype` lands on the `EQUALITY` arm with
    its census siblings. A supertype name the scan never reached is still a row, the JDK interface at
    the end of a chain being exactly the name nobody scans.
-2. The census names types resolvably, in the type-reference shape settled above, on the `EQUALITY`
-   arm. First of the remaining steps because it is the actual blocker: nothing below can identify a
-   class without it.
+2. The census names types resolvably. Done: three type-reference relations on the `EQUALITY` arm,
+   one beside each census relation that carries a declared type, per the section below.
 3. The legacy walk writes what it binds, as a `walk_` relation on the `ORACLE` arm with its removal
    criterion in the family header. Before the derivations rather than after them, so every step below
    has a differential to check itself against as it lands.
@@ -1962,6 +1961,55 @@ walk is evidence here, not the specification.
 10. The consumers follow, each its own commit: the class arm of the type-scope question, then
     `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the
     class-backed-parent arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
+
+## Settled while building: a declared type is a tree, so resolving it is a relation per position
+
+The census now names classes resolvably, and the shape it took answers three questions the plan left
+open.
+
+**Three relations rather than one, because the owners are three keys.** A method return is keyed by
+a descriptor, a parameter adds a position, and a record component is named on its own. A single
+relation over all three would carry a column that is NULL by kind, which is the reading the walk
+reach relations already rejected for the same reason, and it could carry no foreign key at all,
+where each of the three can point structurally at the census row it decomposes. A reader whose
+question is uniform across the owners (the accessor hop, which stands on a member slot and does not
+care which arm produced it) unions them in a view, which is the layer a reader's question belongs
+in. That is the base-relations-follow-the-source, views-follow-the-reader split, applied where it
+was easy to get backwards.
+
+**A position, not a qualified twin.** The fork the previous section recorded resolves to the second
+shape once you write the rows out. `Map<String, List<Film>>` names four classes at four positions,
+and a twin column beside each display column answers for the outermost only, which is not the
+position anything is after. The path is read outside in: the empty string is the type itself, a
+digit is a 0-based type-argument index, `[]` is an array's component, joined by dots. So `List<Film>`
+names its element at `0`, the map above names `Film` at `1.0`, and `Film[]` names `Film` at `[]`.
+
+**A position naming no class has no row, rather than a row with a placeholder.** That covers a
+primitive, an array (whose component is the next step down), a type variable, and a bare `?`. The
+type-variable case is the one that earns its own test: a method returning `T` has an erased
+`return_type` of `Object`, so the census reports a class at a position where the declaration named
+none, and the relation follows the declaration. The bare wildcard is the same instinct as the
+supertype relation's absent `java.lang.Object`, an implicit bound being a thing the source did not
+write.
+
+**Variance is carried.** `Film`, `? extends Film` and `? super Film` name one class and mean three
+things, nothing else in the census tells them apart, and a consumer peeling an element type out of
+the third would read it as the first and be silently wrong about which direction values flow. Same
+argument that earned `declared_via` a column on the supertype relation: not recoverable, and wrong
+in silence if dropped.
+
+**Found while building: the descriptor reading is the common case, not a fallback.** A non-generic
+method carries no `Signature` attribute at all, so most rows in these relations come off the
+descriptor rather than off a signature. That is not a degraded reading. Absence of the attribute
+means the erasure is the declared form, so the two paths are both the declaration and agree wherever
+both exist, which is what lets one rule cover them. The parameter relation inherits its owner's
+length-mismatch fallback for free, decomposing whatever the parameter row itself reports.
+
+The anchor mirrors all three against the scan over the reactor's own classes, and pins what the
+decomposition decides rather than copies: every name is qualified, some row sits at a non-root path,
+and a root row's class agrees with the erased display column once the package is dropped, which is
+what says the qualification names the same class the census already reported rather than another one
+of that name.
 
 ## Retired vocabulary
 

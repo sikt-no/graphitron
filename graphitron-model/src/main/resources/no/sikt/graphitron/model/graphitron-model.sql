@@ -2340,7 +2340,8 @@ COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 
 -- ==== JVM classpath facts =========================================================
 -- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes, the
--- supertypes they name, methods and their parameters, record components, scalar-type fields.
+-- supertypes they name, methods and their parameters, record components, scalar-type fields, and
+-- the classes each declared type names at each of its positions.
 -- The rows are read by a
 -- bytecode-only scan, so nothing here is a class graphitron owns or a role it assigns; a jar
 -- class an author may name in @record / @service / @enum / @scalarType earns a row on the same
@@ -2396,6 +2397,28 @@ COMMENT ON COLUMN jvm_method.return_type IS 'erased source-form return type: wha
 COMMENT ON COLUMN jvm_method.declared_return_type IS 'the return type as the source declared it, package dropped and type arguments kept (List<Film>, Field<String>, T). Read from the classfile Signature attribute, and equal to return_type wherever the compiler emitted no attribute, which it does only where erasure loses nothing. Never NULL and never coalesced by a reader: whether a classfile stored the declared form separately is an encoding detail, not a fact about the method, so the census answers the question once. This is the column an accessor walk follows, a container''s element type being exactly what the erasure drops';
 COMMENT ON COLUMN jvm_method.returns_condition IS 'matched on the un-erased org.jooq.Condition descriptor, so a consumer''s own Condition type does not false-match';
 
+CREATE TABLE jvm_method_return_type_ref (
+  source_name      VARCHAR NOT NULL,
+  class_name       VARCHAR NOT NULL,
+  method_name      VARCHAR NOT NULL,
+  descriptor       VARCHAR NOT NULL,
+  type_path        VARCHAR NOT NULL,
+  referenced_class VARCHAR NOT NULL,
+  variance         VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, type_path),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES jvm_method (source_name, class_name, method_name, descriptor),
+  CHECK (variance IN ('NONE', 'EXTENDS', 'SUPER'))
+);
+COMMENT ON TABLE jvm_method_return_type_ref IS 'The classes a method''s declared return type names, one row per position in the type. The census''s other type columns are display forms with the package dropped, which is what they were added for and what makes them unusable for identity: a walk following a return type has to tell org.jooq.Result from another package''s Result, and that is the collision jvm_method.descriptor exists to avoid at the method level. This relation is where a declared type becomes resolvable. It decomposes rather than qualifies because a declared type is a tree and not a name: Map<String, List<Film>> names four classes at four positions, and a single qualified column could answer for the outermost only, leaving the element type (which is the position a walk is actually after) still unresolvable. The rows are read off the classfile Signature attribute where one is present and off the descriptor where it is not, which is the same rule the declared display columns follow; a non-generic method carries no Signature attribute at all, so the descriptor reading is the common case rather than a fallback. The path grammar and the omission rules are stated on the type_path and referenced_class columns and hold for all three type-reference relations.';
+COMMENT ON COLUMN jvm_method_return_type_ref.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
+COMMENT ON COLUMN jvm_method_return_type_ref.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_method_return_type_ref.method_name IS 'the owning method name';
+COMMENT ON COLUMN jvm_method_return_type_ref.descriptor IS 'the owning method''s raw JVM descriptor';
+COMMENT ON COLUMN jvm_method_return_type_ref.type_path IS 'the position within the declared type, as a dot-separated sequence of steps read outside in. The empty string is the type itself; a digit is a 0-based type-argument index; `[]` is an array''s component. So List<Film> names its element at `0`, Map<String, List<Film>> names Film at `1.0`, and Film[] names Film at `[]`. A path descends only through positions the source wrote, so it is stable against anything the erasure does';
+COMMENT ON COLUMN jvm_method_return_type_ref.referenced_class IS 'the fully-qualified binary name of the class named at this position, a nested one spelled with the $ the JVM uses. Deliberately not a foreign key, on the same terms as jvm_class_supertype.supertype_name: the scan drops nested classes and the generated jOOQ package and nothing ships the JDK, so a named class frequently has no census row and that is the ordinary case. A position naming no class has no row rather than a row with a placeholder, which covers a primitive, an array (whose component is the next step down), a type variable, and an unbounded wildcard. The type-variable case is the one worth stating twice: the erasure reads Object where the declaration names nothing, and this relation follows the declaration, so a method returning T has a return_type of Object and no row here';
+COMMENT ON COLUMN jvm_method_return_type_ref.variance IS 'NONE, EXTENDS or SUPER: the wildcard bound the position was written with, NONE where the source named the type directly. Carried rather than dropped because the three declare different things and the class name alone cannot tell them apart, so a consumer peeling an element type out of `? super Film` would otherwise read it as `Film` and be silently wrong about which direction the values flow. Always NONE at the root, a wildcard being a type-argument form';
+
 CREATE TABLE jvm_method_parameter (
   source_name    VARCHAR NOT NULL,
   class_name     VARCHAR NOT NULL,
@@ -2419,6 +2442,30 @@ COMMENT ON COLUMN jvm_method_parameter.parameter_name IS 'NULL when the consumer
 COMMENT ON COLUMN jvm_method_parameter.parameter_type IS 'erased source-form parameter type, on the same terms as jvm_method.return_type';
 COMMENT ON COLUMN jvm_method_parameter.declared_parameter_type IS 'the parameter type as the source declared it, on the same terms as jvm_method.declared_return_type. Falls back to the erasure for every parameter of the method, not just this one, where the signature''s argument list and the descriptor''s differ in length: a compiler-synthesised parameter appears in one and not the other, and pairing by position past that point would name the wrong type';
 
+CREATE TABLE jvm_method_parameter_type_ref (
+  source_name      VARCHAR NOT NULL,
+  class_name       VARCHAR NOT NULL,
+  method_name      VARCHAR NOT NULL,
+  descriptor       VARCHAR NOT NULL,
+  position         INT     NOT NULL,
+  type_path        VARCHAR NOT NULL,
+  referenced_class VARCHAR NOT NULL,
+  variance         VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position, type_path),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
+    REFERENCES jvm_method_parameter (source_name, class_name, method_name, descriptor, position),
+  CHECK (variance IN ('NONE', 'EXTENDS', 'SUPER'))
+);
+COMMENT ON TABLE jvm_method_parameter_type_ref IS 'The classes a parameter''s declared type names, one row per position, on exactly the terms jvm_method_return_type_ref states. Captured with its siblings rather than deferred to a first consumer, unlike the parameter-source question this relation''s owner defers: that one is decided per directive application and genuinely belongs to a later keying axis, where this is the same decomposition of the same declared form by the same rule, and a census that resolved a return type but not a parameter type would be answering an accident rather than a question. Where the method''s signature and descriptor disagree on argument count the parameter rows fall back to the erasure wholesale, and these rows follow that reading, so they decompose whatever the parameter row itself reports.';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.method_name IS 'the owning method name';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.descriptor IS 'the owning method''s raw JVM descriptor';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.position IS 'the owning parameter''s 0-based position, as on jvm_method_parameter; a parameter position, which type_path''s digits are not';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.type_path IS 'the position within the declared type; the grammar is stated on jvm_method_return_type_ref.type_path';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.referenced_class IS 'the fully-qualified binary name of the class named at this position; the omission rules are stated on jvm_method_return_type_ref.referenced_class';
+COMMENT ON COLUMN jvm_method_parameter_type_ref.variance IS 'NONE, EXTENDS or SUPER, as on jvm_method_return_type_ref.variance';
+
 CREATE TABLE jvm_record_component (
   source_name    VARCHAR NOT NULL,
   class_name     VARCHAR NOT NULL,
@@ -2436,6 +2483,26 @@ COMMENT ON COLUMN jvm_record_component.component_name IS 'the record component n
 COMMENT ON COLUMN jvm_record_component.position IS 'component position in the record header';
 COMMENT ON COLUMN jvm_record_component.display_type IS 'erased display form of the component type, on the same terms as jvm_method.return_type';
 COMMENT ON COLUMN jvm_record_component.declared_type IS 'the component type as the source declared it, on the same terms as jvm_method.declared_return_type. Read from the component''s own Signature attribute rather than from the accessor method the record generates, the component being where the declaration is';
+
+CREATE TABLE jvm_record_component_type_ref (
+  source_name      VARCHAR NOT NULL,
+  class_name       VARCHAR NOT NULL,
+  component_name   VARCHAR NOT NULL,
+  type_path        VARCHAR NOT NULL,
+  referenced_class VARCHAR NOT NULL,
+  variance         VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, class_name, component_name, type_path),
+  FOREIGN KEY (source_name, class_name, component_name)
+    REFERENCES jvm_record_component (source_name, class_name, component_name),
+  CHECK (variance IN ('NONE', 'EXTENDS', 'SUPER'))
+);
+COMMENT ON TABLE jvm_record_component_type_ref IS 'The classes a record component''s declared type names, one row per position, on exactly the terms jvm_method_return_type_ref states. Its own relation beside its owner rather than a shared one discriminated by a member-kind column, which is the same reading the walk reach relations take: the three owners are three keys, a method return being keyed by a descriptor, a parameter adding a position and a component named on its own, so one relation would carry a column that is NULL by kind and could carry no foreign key at all. A reader whose question is uniform across the owners (the accessor hop, which stands on a member slot and does not care which arm produced it) unions them in a view, which is the layer where a reader''s question belongs.';
+COMMENT ON COLUMN jvm_record_component_type_ref.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
+COMMENT ON COLUMN jvm_record_component_type_ref.class_name IS 'the fully-qualified Java class name as written';
+COMMENT ON COLUMN jvm_record_component_type_ref.component_name IS 'the owning record component''s name, as on jvm_record_component';
+COMMENT ON COLUMN jvm_record_component_type_ref.type_path IS 'the position within the declared type; the grammar is stated on jvm_method_return_type_ref.type_path';
+COMMENT ON COLUMN jvm_record_component_type_ref.referenced_class IS 'the fully-qualified binary name of the class named at this position; the omission rules are stated on jvm_method_return_type_ref.referenced_class';
+COMMENT ON COLUMN jvm_record_component_type_ref.variance IS 'NONE, EXTENDS or SUPER, as on jvm_method_return_type_ref.variance';
 
 CREATE TABLE jvm_scalar_type_field (
   source_name VARCHAR NOT NULL,
