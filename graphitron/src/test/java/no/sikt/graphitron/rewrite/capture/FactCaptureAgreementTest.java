@@ -84,6 +84,7 @@ import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_FIELD;
 import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -204,7 +205,7 @@ class FactCaptureAgreementTest {
         for (String relation : List.of(
             "sql_schema", "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
-            "sql_index_column", "jvm_class", "jvm_method",
+            "sql_index_column", "jvm_class", "jvm_class_supertype", "jvm_method",
             "jvm_method_parameter", "jvm_record_component",
             "jvm_scalar_type_field", "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
@@ -1103,6 +1104,48 @@ class FactCaptureAgreementTest {
                 .forEach(method -> expected.add(
                     reference.className() + "#" + method.name() + method.descriptor())));
             assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The supertype census against the scan, clause included. Compared as a mirror rather than by
+     * containment: the relation is the closure's only input, so a hop capture dropped is a
+     * hierarchy the store reads as ending early, which is indistinguishable from a class that
+     * genuinely declares nothing above it.
+     *
+     * <p>The reactor's own classes are the fixture, so this also pins the two things the projection
+     * decides rather than copies: that {@code java.lang.Object} is nowhere in the census (every
+     * plain class declares it and none should have a row), and that a supertype outside the census
+     * is recorded anyway (the JDK interfaces the reactor implements are exactly those names).
+     */
+    @Test
+    @DisplayName("the JVM supertype census equals the scanner's, declaring clause included")
+    void jvmSupertypeCensusEqualsTheScanner(@TempDir Path tmp) {
+        var ctx = testContext();
+        List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions,
+                new NodeDeclaration(null));
+
+            var captured = new LinkedHashSet<String>();
+            store.dsl().select(JVM_CLASS_SUPERTYPE.CLASS_NAME, JVM_CLASS_SUPERTYPE.DECLARED_VIA,
+                    JVM_CLASS_SUPERTYPE.SUPERTYPE_NAME)
+                .from(JVM_CLASS_SUPERTYPE).fetch()
+                .forEach(row -> captured.add(row.value1() + " " + row.value2() + " " + row.value3()));
+
+            var expected = new LinkedHashSet<String>();
+            extensions.forEach(reference -> reference.supertypes()
+                .forEach(supertype -> expected.add(reference.className() + " "
+                    + supertype.declaredVia() + " " + supertype.className())));
+            assertThat(expected).as("the reactor declares hierarchies, so this pins something")
+                .isNotEmpty();
+            assertThat(captured).isEqualTo(expected);
+            assertThat(captured).noneMatch(row -> row.endsWith(" java.lang.Object"));
+            assertThat(captured)
+                .as("a supertype the scan never reached is still a row; that is what the closure"
+                    + " joins on")
+                .anyMatch(row -> row.contains(" java.") || row.contains(" org.jooq."));
         }
     }
 

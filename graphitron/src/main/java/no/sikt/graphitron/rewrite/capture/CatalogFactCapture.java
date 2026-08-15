@@ -26,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
@@ -411,6 +412,18 @@ final class CatalogFactCapture {
             record.setClassKind(reference.classKind());
             record.setSourceName(source);
             sink.add(record);
+
+            for (CompletionData.Supertype supertype : reference.supertypes()) {
+                if (!sink.claim(JVM_CLASS_SUPERTYPE, className, supertype.className())) {
+                    continue;
+                }
+                var row = sink.dsl().newRecord(JVM_CLASS_SUPERTYPE);
+                row.setSourceName(source);
+                row.setClassName(className);
+                row.setSupertypeName(supertype.className());
+                row.setDeclaredVia(supertype.declaredVia());
+                sink.add(row);
+            }
 
             for (CompletionData.Method method : reference.methods()) {
                 String descriptor = method.descriptor();

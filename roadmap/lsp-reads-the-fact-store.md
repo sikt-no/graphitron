@@ -1837,6 +1837,40 @@ closure terminates without a path guard and states itself as a recursive view. T
 is over the SDL type graph, which is cyclic, so it takes the materialized form above. The difference
 is worth stating because it is the whole of why one is a table and the other is not.
 
+**Found while building the first step: a type reference in the census is a display name, and the
+walk needs a resolvable one.** Every type the census records outside `jvm_class.class_name` is
+package-less. `jvm_method.return_type` reads `List`, `declared_return_type` reads `List<Film>`, and
+`intent_class_member_slot.display_type` carries the same form because it is read off those columns.
+That is correct for what those columns were added for, which is rendering a signature to an author,
+and their comments say so plainly. It is also the reason the walk cannot start. Grounding a root
+producer means asking whether a method's return is a container, and the container test compares
+against `java.util.List`, `org.jooq.Result` and four others by qualified name; a simple-name compare
+is precisely the collision `jvm_method.descriptor` exists to avoid, one package's `Result` being
+another's. So the closure landing first is necessary and not sufficient: assignability becomes
+answerable, and what a hop would feed it still does not identify a class.
+
+The fix has two candidate shapes and the choice belongs to the walk's own commit, where the reader
+that decides it exists. A qualified twin beside each display column is the smaller change and
+answers the outer question only: an erasure's binary name is one field off the descriptor, and it
+says nothing about the `Film` inside `List<Film>`. A type-reference relation is the larger one and
+answers both: a declared type is a tree, `Map<String, List<Film>>` names three classes at three
+positions, and a relation keyed by the owning coordinate and a position path records what the
+Signature attribute already spells. The peel rule then descends by position instead of re-parsing a
+rendered string, and the same relation serves parameters and record components, which peel by the
+same rule. The recommendation is the second, because the first leaves the walk holding an
+unresolvable name at exactly the depth the element type lives at, which is the whole of what the
+walk is after.
+
+**The closure ends where the scan does, and that is a disclosed limit rather than a bug.** Nothing
+puts the JDK on a classpath entry, so a chain reaching `java.util.ArrayList` has a row naming it and
+no row under it. `org.jooq.Result` reaching `java.util.List` is one hop inside the census and
+resolves, which covers the container the generator actually meets; a service declared to return
+`ArrayList<Film>` rather than `List<Film>` would read as a non-container where reflection peels it.
+The relation's comment states this so a derivation reads a missing hop as not-known-to-be-assignable
+rather than as not-assignable, and the corpus anchor is where it would surface if a consumer writes
+one. Closing it would mean capturing supertypes for names the scan never reached, which is a
+capture-side question (a fact the store is short) and not a reason to hold the closure.
+
 **The sequence, in order, each commit green and none changing generator behaviour on faith.**
 
 1. The census carries declared supertypes. The scanner reads `superclass()` and `interfaces()` off
@@ -1846,19 +1880,22 @@ is worth stating because it is the whole of why one is a table and the other is 
    and the JDK interface at the end of a chain is exactly the name nobody scans.
 2. `intent_class_assignable`, the transitive closure over those declarations, as a recursive view.
    The hierarchy is acyclic, so this one needs no path guard and no materialization.
-3. The backing-class walk as a derivation over the store: the root producer grounding (the unique
+3. The census names types resolvably, in whichever of the two shapes above the walk's reader
+   justifies, registered on the `EQUALITY` arm like its siblings. Without this the closure has
+   nothing to answer about.
+4. The backing-class walk as a derivation over the store: the root producer grounding (the unique
    method of a `@service` or `@externalField` reference, its declared return type, the container peel
    through the closure, the element class), the accessor hop through `intent_class_member_slot`, the
    cardinality agreement through `graphql_field.is_list`, the two-level carrier fork through the slot
    relation, the `@table` shadow, and the root mask. Materialized, written by the capture-cadence
    writer above.
-4. The anchor: agreement with `RecordBindingResolver` over the spec-by-example corpus, total in both
+5. The anchor: agreement with `RecordBindingResolver` over the spec-by-example corpus, total in both
    directions, so a type the resolver binds and the relation does not is a failure rather than a
    footnote. This is the step that decides whether the transcription is faithful, and nothing depends
    on the fact until it passes.
-5. Have the generator read the fact. The resolver's copy of the walk retires only here, once the
+6. Have the generator read the fact. The resolver's copy of the walk retires only here, once the
    anchor has held.
-6. The consumers follow, each its own commit: the class arm of the type-scope question, then
+7. The consumers follow, each its own commit: the class arm of the type-scope question, then
    `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the class-backed-parent
    arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
 

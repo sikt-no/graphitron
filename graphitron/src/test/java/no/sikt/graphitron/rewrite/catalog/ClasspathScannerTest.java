@@ -551,6 +551,50 @@ class ClasspathScannerTest {
                 "(Lcom/bar/Result;)Ljava/lang/String;");
     }
 
+    @Test
+    void readsTheDeclaredSuperclassAndInterfaces(@TempDir Path classes) throws IOException {
+        byte[] bytes = ClassFile.of().build(ClassDesc.of("com.example.FilmRepository"), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC)
+            .withSuperclass(ClassDesc.of("com.example.AbstractRepository"))
+            .withInterfaceSymbols(ClassDesc.of("java.util.List"), ClassDesc.of("com.example.Audited")));
+        writeRawClassBytes(classes, "com.example.FilmRepository", bytes);
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).getFirst().supertypes())
+            .extracting(CompletionData.Supertype::className,
+                CompletionData.Supertype::declaredVia)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("com.example.AbstractRepository", "EXTENDS"),
+                // java.util.List is on no classpath entry this scan walks, and is recorded all the
+                // same: a name at the end of a chain is what an assignability closure joins on.
+                org.assertj.core.api.Assertions.tuple("java.util.List", "IMPLEMENTS"),
+                org.assertj.core.api.Assertions.tuple("com.example.Audited", "IMPLEMENTS"));
+    }
+
+    @Test
+    void leavesTheImplicitObjectSuperclassOut(@TempDir Path classes) throws IOException {
+        // The JVM writes java.lang.Object as the superclass of anything with no extends clause, so
+        // recording it would report a declaration the source never made.
+        writePublicClass(classes, "com.example.Plain");
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).getFirst().supertypes()).isEmpty();
+    }
+
+    @Test
+    void anInterfacesSuperInterfacesAreDeclaredViaExtends(@TempDir Path classes) throws IOException {
+        // The classfile stores these in the same array a class's implements list uses, so the
+        // clause follows the declaring class's own form rather than the slot the name sat in.
+        byte[] bytes = ClassFile.of().build(ClassDesc.of("com.example.Audited"), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withInterfaceSymbols(ClassDesc.of("com.example.Timestamped")));
+        writeRawClassBytes(classes, "com.example.Audited", bytes);
+
+        assertThat(ClasspathScanner.scan(classes, JOOQ_PKG).getFirst().supertypes())
+            .extracting(CompletionData.Supertype::className,
+                CompletionData.Supertype::declaredVia)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("com.example.Timestamped", "EXTENDS"));
+    }
+
     private static Path jarWith(java.util.Map<String, byte[]> entries) throws IOException {
         Path jar = Files.createTempFile("classpath-scanner-fixture", ".jar");
         try (OutputStream out = Files.newOutputStream(jar);

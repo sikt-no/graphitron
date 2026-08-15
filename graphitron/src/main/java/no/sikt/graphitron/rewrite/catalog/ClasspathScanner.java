@@ -57,8 +57,14 @@ import java.util.zip.ZipFile;
  * container's element type can only use the declared one. Parameter names follow the
  * {@link CompletionData.Parameter#name()} null-when-unavailable contract; see
  * {@link #readParameterNames}.
+ *
+ * <p>Each class also carries the supertypes it declares, which is what lets a consumer answer
+ * assignability without a loader; see {@link #readSupertypes}.
  */
 public final class ClasspathScanner {
+
+    /** The implicit superclass the JVM writes for anything with no {@code extends} clause. */
+    private static final String OBJECT = "java.lang.Object";
 
     /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for the condition fact. */
     private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
@@ -213,7 +219,37 @@ public final class ClasspathScanner {
         var recordComponents = readRecordComponents(cm);
         var scalarConstants = readScalarConstants(cm);
         return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents,
-            scalarConstants, declaredKind(cm), source);
+            scalarConstants, declaredKind(cm), source, readSupertypes(cm));
+    }
+
+    /**
+     * The names the classfile declares above itself: its superclass, then its interfaces in
+     * declaration order. The one thing a bytecode-only scan holds that answers assignability,
+     * which is otherwise a live loader's question and is why a walk over accessor return types
+     * needed one.
+     *
+     * <p>{@code java.lang.Object} is dropped rather than recorded. The JVM writes it as the
+     * superclass of every class with no {@code extends} clause and of every interface, so a row
+     * would report a declaration the source never wrote, and what is left is exactly the extends
+     * clause an author typed.
+     *
+     * <p>An interface's super-interfaces sit in the same array as a class's implements list, so
+     * the clause is decided by the declaring class's own form. Nothing filters the names: a
+     * supertype the scan will never reach is the whole point, a chain's last hop usually being a
+     * JDK interface nobody scans.
+     */
+    private static List<CompletionData.Supertype> readSupertypes(ClassModel cm) {
+        String clause = cm.flags().has(AccessFlag.INTERFACE) ? "EXTENDS" : "IMPLEMENTS";
+        var supertypes = new ArrayList<CompletionData.Supertype>();
+        cm.superclass()
+            .map(entry -> entry.asInternalName().replace('/', '.'))
+            .filter(name -> !OBJECT.equals(name))
+            .ifPresent(name -> supertypes.add(new CompletionData.Supertype(name, "EXTENDS")));
+        for (var declared : cm.interfaces()) {
+            supertypes.add(new CompletionData.Supertype(
+                declared.asInternalName().replace('/', '.'), clause));
+        }
+        return List.copyOf(supertypes);
     }
 
     /**

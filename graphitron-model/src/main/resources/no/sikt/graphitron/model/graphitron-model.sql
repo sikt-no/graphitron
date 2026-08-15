@@ -2339,8 +2339,9 @@ COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 
 
 -- ==== JVM classpath facts =========================================================
--- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes,
--- methods and their parameters, record components, scalar-type fields. The rows are read by a
+-- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes, the
+-- supertypes they name, methods and their parameters, record components, scalar-type fields.
+-- The rows are read by a
 -- bytecode-only scan, so nothing here is a class graphitron owns or a role it assigns; a jar
 -- class an author may name in @record / @service / @enum / @scalarType earns a row on the same
 -- terms as a reactor one. Javadoc and source positions deliberately stay out: what a classfile
@@ -2359,6 +2360,21 @@ COMMENT ON TABLE jvm_class IS 'A class exists on the compile classpath, as the c
 COMMENT ON COLUMN jvm_class.source_name IS 'the classpath entry it was read from; the partition this row belongs to and the key''s leading dimension. Within one run a class present under more than one entry is captured once, at the entry that comes first in classpath order, which is where a classloader would resolve it; store-wide, two runs'' entries are two partitions that coexist by design, so one class name may legitimately appear under several sources';
 COMMENT ON COLUMN jvm_class.class_name IS 'fully qualified binary name';
 COMMENT ON COLUMN jvm_class.class_kind IS 'the classfile''s declared form; the domain is closed over classfile shapes, so a violation is a capture bug';
+
+CREATE TABLE jvm_class_supertype (
+  source_name    VARCHAR NOT NULL,
+  class_name     VARCHAR NOT NULL,
+  supertype_name VARCHAR NOT NULL,
+  declared_via   VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, class_name, supertype_name),
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name),
+  CHECK (declared_via IN ('EXTENDS', 'IMPLEMENTS'))
+);
+COMMENT ON TABLE jvm_class_supertype IS 'A supertype a class in the census declares: its extends clause and its implements list, as the classfile spells them. This is the relation an assignability closure is taken over, and assignability is the one rule a walk over accessor and return types could not state without a live loader; the classfile declares its own supertypes and the scan simply was not reading them. java.lang.Object is deliberately absent, on the same terms the census states its other filters: the JVM writes it as the superclass of every class that declared no extends clause and of every interface, so a row would assert a declaration the source never made, and the closure would gain an edge every reference type already has. A supertype name outside the census is still a row, and at the end of a chain that is the ordinary case: the scan drops nested classes and the generated jOOQ package, and nothing ships the JDK as a classpath entry, while what a closure needs is the name a classfile declares. The chain terminates at such a name, so a derivation reads a missing hop as not-known-to-be-assignable rather than as not-assignable; org.jooq.Result reaching java.util.List is one hop within the census and resolves, a method declared to return java.util.ArrayList does not. Declaration order of the implements list is not carried, no consumer asking which interface came first.';
+COMMENT ON COLUMN jvm_class_supertype.source_name IS 'the declaring class''s classpath entry, as on jvm_class; the key''s leading dimension';
+COMMENT ON COLUMN jvm_class_supertype.class_name IS 'the fully-qualified binary name of the declaring class';
+COMMENT ON COLUMN jvm_class_supertype.supertype_name IS 'the fully-qualified binary name the classfile declares as the supertype, a nested one spelled with the $ the JVM uses. Deliberately not a foreign key and frequently not a census row at all; see this relation''s comment';
+COMMENT ON COLUMN jvm_class_supertype.declared_via IS 'EXTENDS or IMPLEMENTS: which clause of the source declaration the name came from, which is a different question from what the supertype''s own declared form is. Read from the declaring class''s kind rather than from which classfile slot held the name, the JVM storing an interface''s super-interfaces in the same array as a class''s implements list while the source writes them after extends. Carried rather than derived because it is not recoverable: reading it off the supertype''s class_kind needs the supertype to have a census row, and the names that do not are exactly the ones this relation exists to record';
 
 CREATE TABLE jvm_method (
   source_name       VARCHAR NOT NULL,

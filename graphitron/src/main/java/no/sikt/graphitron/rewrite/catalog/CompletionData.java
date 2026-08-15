@@ -146,6 +146,10 @@ public record CompletionData(
      * <p>{@code sourceName} is the classpath entry the class was read from: a compile-output
      * directory or a jar. Only {@link ClasspathScanner} knows one; every other producer leaves it
      * empty, the same way {@link #inferredKind} stands in for a classfile nobody read.
+     *
+     * <p>{@code supertypes} is what the class declares it extends and implements, on the same
+     * terms: only a scan that read bytecode knows any, and every other producer leaves the list
+     * empty rather than guessing at a hierarchy.
      */
     public record ExternalReference(
         String name,
@@ -155,12 +159,29 @@ public record CompletionData(
         List<RecordComponent> recordComponents,
         List<ScalarConstant> scalarConstants,
         String classKind,
-        String sourceName
+        String sourceName,
+        List<Supertype> supertypes
     ) {
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
             scalarConstants = List.copyOf(scalarConstants);
+            supertypes = List.copyOf(supertypes);
+        }
+
+        /** A reference from a producer that read no hierarchy; see {@link #supertypes}. */
+        public ExternalReference(
+            String name,
+            String className,
+            String description,
+            List<Method> methods,
+            List<RecordComponent> recordComponents,
+            List<ScalarConstant> scalarConstants,
+            String classKind,
+            String sourceName
+        ) {
+            this(name, className, description, methods, recordComponents, scalarConstants,
+                classKind, sourceName, List.of());
         }
 
         /**
@@ -232,6 +253,20 @@ public record CompletionData(
             this(name, className, description, methods, recordComponents, List.of());
         }
     }
+
+    /**
+     * A supertype a class declares: the name it names, and the clause that named it.
+     *
+     * <p>{@code declaredVia} is {@code EXTENDS} or {@code IMPLEMENTS}, decided by the declaring
+     * class's own form rather than by where the classfile put the name. The JVM keeps an
+     * interface's super-interfaces in the same slot as a class's implements list, while the source
+     * writes them after {@code extends}, so the slot alone would misreport every interface.
+     *
+     * <p>The named class need not be one the scan reached, and at the end of a chain it usually is
+     * not. What an assignability closure joins is these names to each other, so an unscanned
+     * supertype ends a chain rather than falsifying it.
+     */
+    public record Supertype(String className, String declaredVia) {}
 
     /**
      * One entry in a Java {@code record} class's component list — name plus

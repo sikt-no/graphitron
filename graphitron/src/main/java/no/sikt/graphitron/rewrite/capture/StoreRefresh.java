@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FILE;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
@@ -82,7 +83,8 @@ final class StoreRefresh {
      * do with sources changing.
      */
     private static final Set<Table<?>> PARTITIONED = Set.of(
-        JVM_CLASS, JVM_METHOD, JVM_METHOD_PARAMETER, JVM_RECORD_COMPONENT, JVM_SCALAR_TYPE_FIELD,
+        JVM_CLASS, JVM_CLASS_SUPERTYPE, JVM_METHOD, JVM_METHOD_PARAMETER, JVM_RECORD_COMPONENT,
+        JVM_SCALAR_TYPE_FIELD,
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN,
         JAVA_FILE, JAVA_CLASS_DECLARATION, JAVA_METHOD_DECLARATION, JAVA_FIELD_DECLARATION);
@@ -178,6 +180,8 @@ final class StoreRefresh {
             .where(JVM_RECORD_COMPONENT.SOURCE_NAME.in(staleOwned)).execute();
         dsl.deleteFrom(JVM_SCALAR_TYPE_FIELD)
             .where(JVM_SCALAR_TYPE_FIELD.SOURCE_NAME.in(staleOwned)).execute();
+        dsl.deleteFrom(JVM_CLASS_SUPERTYPE)
+            .where(JVM_CLASS_SUPERTYPE.SOURCE_NAME.in(staleOwned)).execute();
         dsl.deleteFrom(JVM_CLASS).where(JVM_CLASS.SOURCE_NAME.in(staleOwned)).execute();
 
         for (Table<?> table : childrenFirst(graphScoped())) {
