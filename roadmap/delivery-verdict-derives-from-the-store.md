@@ -254,47 +254,32 @@ side the first matching arm names the row.
 
 One sub-predicate is shared, and naming it once is worth a paragraph because it is where this item's
 whole point lands. **Table-anchored target** means the coordinate's target base type is object-kinded
-(`graphql_type.kind = 'OBJECT'`), binds one catalog table through `intent_bound_table`
-(`candidates = 1`), and carries no `@discriminate`, a connection-shaped target anchoring through its
-element instead and taking the same three tests there. Its inputs are not repeated per row below, and
-the fan-in arm is the one that does not use it, its target being polymorphic rather than table-shaped.
+(`graphql_type.kind = 'OBJECT'`) and binds one catalog table through `intent_bound_table`
+(`candidates = 1`), a connection-shaped target taking both tests on its element instead. Two inputs,
+not repeated per row below. Every rule arm but the fan-in gates on it, that arm's target being
+polymorphic rather than table-shaped.
 
-**The kind test is load-bearing, and two earlier drafts of this section omitted it.** `@table` is
-declared `on OBJECT | INPUT_OBJECT | INTERFACE`, and `TypeBuilder` mints a `TableInterfaceType` only
-when an interface carries `@discriminate` as well, so an interface carrying `@table` alone stays a
-plain `InterfaceType` while still owning a `graphitron_table` row and therefore an
-`intent_bound_table` binding. `mint` never has to exclude that shape by hand because it reaches the
-predicate only under `unwrapped instanceof TargetShape.Table`; the store has no such structural gate,
-so without the kind test that target reads as table-anchored store-side and the record-handed and
-authored arms fire where `mint` returns `Inline`. The Java side takes the same guard everywhere it
-reads the marker (`hasAppliedDirective(DIR_TABLE)` sits behind an `instanceof GraphQLObjectType` at
-every site), and so does the demand sibling: its `TABLE_TYPE` arm joins `graphql_type`
-`AND t.kind = 'OBJECT'` over exactly this base relation.
+`kind = 'OBJECT'` is the whole of what replaces `singleTableBackedVerdict`'s hand-written
+`case TableInterfaceType _ -> false`, and if one line of the DDL is the deliverable it is that one.
+It is the direct transcription of the gate `mint` reaches the predicate under,
+`unwrapped instanceof TargetShape.Table`, and it does three jobs with one clause: it excludes the
+discriminated interface child, it excludes the plain `@table` interface, and it supplies the
+polymorphic mask, since no interface or union is object-kinded. That last one is not optional.
+`mint`'s polymorphic arm returns in *both* branches, so an interface or union target never reaches
+the rules below it, and a `UNION` of positive arms does not mask; the kind test is what each lower
+arm says instead, which is why it factors out over the split reading's disjunction rather than
+sitting inside one side of it.
 
-**Which clause replaces the hand-written `case TableInterfaceType _ -> false` is worth stating
-exactly, because the item's framing leans on the answer, and it is the kind test rather than the
-anti-join.** `@discriminate` is declared `on INTERFACE | UNION`, so against an object-kinded anchor
-the anti-join matches nothing: on today's model it is redundant with the clause above, at the base
-type and at the connection element alike. Two readings are available and the choice is the
-implementer's, but it has to be made rather than inherited: drop the anti-join and let the kind test
-carry the exclusion, or keep it as a defensive restatement and say in the view comment that it is one,
-so a later reader does not mistake a no-op for the rule. Either way the item's point is unchanged and
-is not about a single clause: the shape the switch excluded by remembering to write a `case` is now
-excluded by joining facts capture already holds. `@discriminate` becomes load-bearing again as a
-*positive* input, not an anti-join, when `roadmap/batched-discriminated-interface-child.md` lands its
-arm.
-
-**Every rule arm but the fan-in requires an object-kinded target**, and stating it once here is what
-keeps the union faithful. `mint`'s polymorphic arm returns in *both* branches: a coordinate whose
-unwrapped target is an interface or union yields `Batched(PolymorphicFanIn)` or `Inline` and never
-falls through, so that arm masks every rule below it. A `UNION` of positive arms does not mask, so
-each lower arm has to carry the exclusion itself. The shared predicate above carries it for the
-record-handed arm and for the tenant reading. The one place it is not inherited is the split
-reading's `@pivot` disjunct, which is reached without the table-anchored test: a coordinate carrying
-`@splitQuery` and `@pivot` over an interface or union target would mint an `AUTHORED` row store-side
-where `mint` returned at the fan-in arm. Whether the classifier rejects `@pivot` on a polymorphic
-target is not the answer, because the arm should not depend on a rejection it does not read; write
-the kind test into that disjunct.
+An earlier draft reached for an anti-join on `graphitron_discriminate` here instead, and that is the
+same negative-space move in miniature: a hand-picked exclusion standing in for the fact, and both
+redundant and incomplete. Redundant because `@discriminate` is declared `on INTERFACE | UNION` and so
+cannot land on an object-kinded anchor at all. Incomplete because `@table` is declared
+`on OBJECT | INPUT_OBJECT | INTERFACE` while `TypeBuilder` mints a `TableInterfaceType` only when an
+interface carries `@discriminate` too, so a `@table`-only interface stays a plain `InterfaceType`
+holding an `intent_bound_table` binding that the anti-join waves through and `mint` never sees. The
+demand sibling states the kind test for the same reason, on the same base relation: its `TABLE_TYPE`
+arm joins `graphql_type` `AND t.kind = 'OBJECT'`. The anti-join is not deleted, it belongs to the
+fan-in arm, whose target is polymorphic by construction so the kind test cannot do the work there.
 
 [cols="2,4,2"]
 |===
@@ -310,15 +295,15 @@ the kind test into that disjunct.
 
 | `POLYMORPHIC_FAN_IN`
 | the target is an interface or union carrying no `@discriminate`, list-valued or connection-shaped, with at least one table-bound participant
-| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table` (the participant's boundness), `graphitron_discriminate` (anti-joined on the target type). This is the one arm that does not inherit the shared predicate, so both of its own joins are listed rather than left to it
+| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`, `graphitron_discriminate` (anti-joined). The one arm inheriting nothing from the shared predicate, so its own joins are listed
 
 | `RECORD_HANDED_PARENT`
 | the parent is a producer payload and the target is table-anchored
 | the `PRODUCER_PAYLOAD` arm's own shape
 
 | `AUTHORED`, the split reading
-| `@splitQuery` on the coordinate, and either the target is table-anchored or the coordinate carries `@pivot` over an object-kinded target
-| `graphitron_split_query`, `graphitron_pivot`, `graphql_type.kind` (the `@pivot` disjunct's own exclusion, per the masking note above)
+| the target is object-kinded, `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
+| `graphitron_split_query`, `graphitron_pivot`
 
 | `AUTHORED`, the tenant reading
 | `@tenantFanOut` on the coordinate, the target is table-anchored, and the coordinate carries no `@routine`
@@ -532,13 +517,10 @@ has left the question exactly where it was and reproduced the defect in a new pl
   item, and this item models the delivery rules as they are rather than as R661 will leave them.
   Either landing order works. If R661 lands first, this item's view gains one more arm to express
   and the three coordinates that item specifies (its own delivery-agreement bullet enumerates them;
-  they subsume the first coordinate this item asks for). Read where that item homes them before
-  counting on them: it puts the two `@splitQuery`-marked ones in `DeliveryFactPinTest`'s
-  `MARKER_FIXTURE` rather than in `ClassifiedCorpus`, deliberately, to keep a marked coordinate from
-  having to be reconciled with the corpus's `@classified` verdict rows. A corpus-swept shadow test
-  therefore inherits only the unmarked list child, and the marked pair needs a targeted fixture of
-  this item's own; `DemandShadowTest`'s per-shape fixtures beside its corpus sweep are the mould, and
-  the coverage bullet above is asking for reach, not for a particular file. If this item lands first, R661's relation-side edit
+  they subsume the first coordinate this item asks for). Only one of the three arrives in the corpus,
+  though: that item homes the two `@splitQuery`-marked ones in `DeliveryFactPinTest`'s
+  `MARKER_FIXTURE` on purpose, so the marked pair still needs a targeted fixture here, in the mould of
+  `DemandShadowTest`'s per-shape fixtures beside its corpus sweep. If this item lands first, R661's relation-side edit
   becomes additive, a `UNION` arm rather than a negative-space switch case, which is strictly the
   better shape for that implementer. Whoever goes second reads the other's landing note.
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
