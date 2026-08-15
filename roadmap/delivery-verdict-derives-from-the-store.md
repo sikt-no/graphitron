@@ -101,8 +101,10 @@ and an earlier draft of this section asked for two that cannot be written:
 
 * **The closed vocabularies are declared in the column comments.** That is the
   `intent_resolved_field_demand` mould read literally: its `verdict` column says "a closed two-value
-  vocabulary" and its `rule` column enumerates the four literals "in their declared precedence
-  order", and neither is a `CHECK`, because H2 views cannot carry one. No `intent_` view in the model
+  vocabulary" and its `rule` column draws its literals from the rule views' vocabularies "in their
+  declared precedence order", with the enumeration itself sitting on the rule view that owns each
+  vocabulary (`intent_field_demand_rule.rule` names its four). None of them is a `CHECK`, because
+  H2 views cannot carry one. No `intent_` view in the model
   does. `FactSchemaGateTest.commentCoverageIsTotal` is what makes the comment mandatory, so the
   declaration is build-enforced even where the constraint is unavailable, and what holds the rows
   inside the vocabulary is that each arm emits its literal as a constant. The gain over the switch is
@@ -143,7 +145,18 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   example is a list-valued union root whose members are both `@table`, which is the fan-in arm's
   store-side predicate met in full. Scoping by `intent_type_domain` does not remove it, since the
   domain contains root types by construction and the demand sibling registers their fields under its
-  own `ROOT_OPERATION` arm.
+  own `ROOT_OPERATION` arm. Say it with `graphql_root_operation` rather than with the three
+  conventional names, matching the sibling, but record that this is a *different rule* and not a
+  transcription: `mint`'s "not a `ChildField`" resolves through `FieldBuilder`'s `parentType
+  instanceof RootType` dispatch to `TypeBuilder`'s literal `Query` / `Mutation` / `Subscription`
+  set, its only mint site, while `graphql_root_operation` carries the binding, whose name-convention
+  default coincides with those three exactly until a graph spells `schema { query: MyQuery }`. The
+  demand sibling meets the same fork and pins the difference as a population, its view comment
+  naming "a renamed root's fields" as "a known demanded-but-unregistered population the shadow
+  agreement pins"; this item inherits that fork, so the renamed root is a `DeliveryResidue` entry
+  below rather than a coincidence. No corpus example spells a `schema` block, so the two rules agree
+  everywhere the shadow test can currently look, which is the same condition under which the
+  `@discriminate` arm was narrowed at spec time rather than left for the test to find.
 * **The discriminated target, reason `DISCRIMINATED_TARGET`.** `singleTableBackedVerdict` returns
   `false` for a `TableInterfaceType` target, with a matching exclusion inside its `ConnectionType`
   arm, so a discriminated interface child reads `Inline` whatever its parent hands it and whatever
@@ -321,7 +334,7 @@ would have answered it silently.
 
 | `ROOT_COORDINATE` (exemption)
 | the parent type is a root operation binding
-| `graphql_root_operation`, projected onto the type's fields
+| `graphql_root_operation`, projected onto the type's fields; the binding, not the walk's three literal names, which is a stated residue rather than a match
 
 | `SERVICE_CALL` (exemption)
 | the coordinate carries `@service`
@@ -445,7 +458,12 @@ set acquiring an enforcer that is not another switch.**
   implementation: the nesting-field domain boundary above, and any arm whose predicate depends on
   classifier-internal route resolution (`resolveChildPolymorphicJoinPaths`) rather than on a
   captured fact. The one predicate-driven residue candidate is the pivot-slot record parent, the
-  single member of the record-handed population no producer relation witnesses. The joined-table
+  single member of the record-handed population no producer relation witnesses. The renamed root is
+  the third, per the root-exemption bullet above: the exemption arm reads the binding and the walk
+  reads the literal names, so a graph spelling `schema { query: MyQuery }` exempts store-side at
+  coordinates the walk never routes through `classifyRootField` at all. Carry it as a residue whose
+  removal criterion is the walk keying on the binding, rather than narrowing the arm to the three
+  names, which would transcribe the walk's defect into the store. The joined-table
   participant is explicitly *not* a residue candidate, per the fan-in trace above.
 * `DeliveryShadowTest` in `DemandShadowTest`'s mould, registered in `FactCaptureAgreementTest` under
   `Arm.DERIVED` for all three views. Per that test's stated residue discipline: equality outside the
