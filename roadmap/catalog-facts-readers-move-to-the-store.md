@@ -337,8 +337,9 @@ hand-building projection fixtures.
 
 * `GraphitronMcpServerTest`'s catalog cases (the largest block, currently building `CatalogFacts`
   values directly) assert the same wire fields against a store captured from the test jOOQ package.
-  Ambiguity, not-found, filters, and paging all keep their cases; the deltas above get one case
-  each, so the new behaviour is pinned rather than merely permitted.
+  Not-found, filters and paging keep their cases unchanged, and the deltas above get one case each,
+  so the new behaviour is pinned rather than merely permitted. Ambiguity is the exception, and the
+  fixture bullet below is where it goes.
 * `CatalogDescriptorsTest` stays store-free, and the property split is the reason it may: the
   store-free cases own formatting and identifier normalization, which are the composer's own
   business and need no rows. What they cannot own is that the rows a real capture yields compose the
@@ -347,18 +348,41 @@ hand-building projection fixtures.
 * `CatalogSearchIndexTest` / `CatalogSearchOnnxTest` replace the facts supplier with the corpus
   seam. With gate one deleted, the hash gate is the only invalidation left and carries the cases: a
   recapture that changed nothing must not re-embed, a changed catalog must.
-* The foreign-key column pairing is an invariant asserted by a DDL comment and rendered for the
-  first time here, so it gets a named case rather than a bullet: a multi-column foreign key (Sakila
-  carries one) whose `targetColumns` come back in the referenced constraint's own order, which is
-  the only thing position-matching can get wrong.
+* The foreign-key column pairing is stated by `sql_referential_constraint`'s own DDL comment, which
+  calls it guaranteed by SQL semantics and never copied onto the referencing row. The relation
+  therefore needs no case: as a positional join over two captured relations it is correct exactly
+  when its inputs are. What is new here is the Java that renders it, and a hand-written positional
+  zip can get the order wrong where the relation cannot, so the case is aimed there:
+  `public.project_note`'s two-column foreign key to `project` whose `targetColumns` come back in the
+  referenced constraint's own order.
 * `ConflictedReverseEdgeTest` follows `EdgeProducer.Context`'s new shape, and is the only test that
   constructs one. `EdgeCoverageTest` is not: it reads `EdgeProducer`'s four permit-set constants and
   never builds a context, so its partition over the classification permits is untouched by this item.
-* The type arm's move off the bare name gets a case of its own, since it is the one wire fix here: a
-  type bound to a name two schemas declare emits fully-keyed candidate targets rather than one
-  unqualified `TableNode`. The multi-schema tables the test jOOQ package carries are what make it
-  writable without a hand-built classification, which is the same reason the sibling item gives for
-  capturing the binding: a fixture that cannot lie about which table a spelling reaches.
+* **Two cases need a second fixture package, and providing the seam is this item's work.** A bare
+  table name is ambiguous only across schemas, and `StoreBackedBuild` captures from
+  `no.sikt.graphitron.rewrite.test.jooq`, which `graphitron-sakila-db` generates with
+  `inputSchema=public` and nothing else. Every name in that census is unique, so a capture from it
+  cannot produce an ambiguous resolution at all. The hand-built projections could assert one by
+  fiat; a real capture can only show what the source declares. That is the standing cost of
+  anchoring on the source rather than on the projection being replaced, and it is the right cost,
+  but it has to be paid rather than assumed.
+
+  The phenomenon exists one package over. The same module generates
+  `no.sikt.graphitron.rewrite.multischemafixture` from `multischema_a` and `multischema_b`, which
+  declare `event` in both precisely so that a bare spelling reaches two tables, and `graphitron-mcp`
+  already depends on `graphitron-sakila-db` at test scope. What is missing is only the seam:
+  `StoreBackedBuild.JOOQ_PACKAGE` is a `static final` constant threaded into `RewriteContext`, so
+  both `run` overloads capture the single-schema package and no caller can ask for another. Making
+  it a parameter defaulted to today's value is small, and it is the precondition for both cases
+  below.
+
+* The two cases that seam unlocks. `catalog.describe` resolving a spelling two schemas declare
+  answers with both rows rather than one, which is the ambiguity case relocated onto a fixture that
+  carries it. And the type arm's move off the bare name gets a case of its own, being the one wire
+  fix here: a type bound to that spelling emits fully-keyed candidate targets rather than one
+  unqualified `TableNode`. Both want what the sibling item wants from capturing the binding, a
+  fixture that cannot lie about which table a spelling reaches, and neither is writable against a
+  census with one schema in it.
 * `ServerInstructionsTest` is a seventh site and needs its own answer. Its `pagedWorkspace` fixture
   hand-builds a two-table `CatalogFacts` purely so a `limit=1` call on `catalog.tables` pages, beside
   hand-built projections giving five other tools two entries each, and the test boots a real server
