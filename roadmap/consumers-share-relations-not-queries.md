@@ -1,7 +1,7 @@
 ---
 id: R684
 title: "fact-model doctrine: consumers share relations, not queries"
-status: Backlog
+status: Spec
 bucket: architecture
 theme: classification-model
 depends-on: []
