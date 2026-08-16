@@ -156,16 +156,21 @@ grandfathered, which is what the `depends-on` encodes. It carries the mould's no
 assertions on files scanned, because a guard whose whole point is a clean zero is otherwise
 unfalsifiable.
 
-The sibling ships its own LSP-edge guard in two halves, an import scan over `graphitron-mcp`'s
-sources and a pom assertion against a `graphitron-lsp` dependency in any scope. The relationship is
-worth stating so a later reader deletes neither by mistake. This guard generalises the import half:
-one rule over every consumer pair in both directions, with the consumer set derived rather than
-named, so a third store consumer is covered on the day it appears instead of waiting for someone to
-write its pair. The pom half generalises nowhere and stays the sibling's: a declared dependency
-with no import is invisible to any import scan, and it is exactly the state that lets the next
-reader reach for a type without noticing they are widening a dependency. Whether the sibling's
-import half then folds into this guard is that item's call at its own Done gate, not a deletion
-this item performs.
+The sibling ships its own guard in two halves: an import scan over `graphitron-mcp`'s main and test
+sources, and an allowlist over that module's declared `no.sikt` pom coordinates. The relationship
+is worth stating so a later reader deletes neither by mistake.
+
+This guard generalises the import half: one rule over every consumer pair in both directions, with
+the consumer set derived rather than named, so a third store consumer is covered on the day it
+appears instead of waiting for someone to write its pair. That is the sibling's own allowlist
+argument in the other axis. A guard naming the pairs that exist today asserts the history rather
+than the rule, exactly as a denylist naming `graphitron-lsp` would.
+
+The pom half generalises nowhere and stays the sibling's. It is a whole dependency policy for one
+module rather than a statement about consumers, and it catches what no import scan can: a declared
+dependency with no import, which is the state that lets the next reader reach for a type without
+noticing they are widening a dependency. Whether the sibling's import half then folds into this
+guard is that item's call at its own Done gate, not a deletion this item performs.
 
 The within-consumer half (a consumer's own internal helper drifting into a query layer) is honestly
 not mechanically enforceable: within one consumer, a shared reader class is structurally
