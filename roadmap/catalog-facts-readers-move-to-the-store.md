@@ -60,6 +60,14 @@ of a *query* and ownership of a *connection* are separate things, and this item 
 (`DevQueryExecutor`'s own `DriverManager` handling is about the consumer's database, which the
 `execute` tool reaches on the user's behalf, and is unrelated.)
 
+Together the two properties set the price of the next tool, which is what this item is really
+buying. Today a new datum on the MCP wire is a pipeline change: extend a projection in `graphitron`,
+thread it through `BuildArtifacts` and `Workspace` and `DevMojo`, keep the language server
+compiling, and page the result in memory. After this item it is a query and a wire shape, authored
+in `graphitron-mcp`, scoped through `store.reads(...)`, pinned by the module's own fixture, over
+relations the capture already writes. The store's relation surface is the extension point, so making
+the MCP more capable stops requiring changes to any module that is not the MCP.
+
 ## The census is already captured
 
 Nothing new is captured here. `CatalogFactCapture.captureCatalog` walks the same `JooqCatalog` the
@@ -149,7 +157,14 @@ The pom half of the goal lands here in full, because it is cheap and makes the r
 `graphitron-model` transitively through it. Declaring those two directly changes no bytecode and
 turns the LSP edge into what it actually is, one import, rather than a dependency that appears to
 carry the module's whole substrate. The edge itself deletes in whichever of the items above lands
-last, with a test that fails if it comes back.
+last, with a test that fails if it comes back, and the mechanism is worth stating now so the last
+item does not inherit a blocker that is not one. The readers that outlive all three items
+(`snapshot` for `SchemaView`'s backing block and the `status` tool, `vocabulary`, `catalog`) read
+generator types through a state holder; none of them needs the holder's class, only its current
+values. So the deletion is `DevMojo` handing the server suppliers over its own `Workspace`, the
+same move as the `StoreHandle` and the `StoreReader`, and the import goes without waiting for the
+backing-class walk to become a relation. The walk gates one read moving to the store; it does not
+gate the dependency.
 
 ## The classification maps are questions, not a shape
 
@@ -185,6 +200,16 @@ Four of the five are built. What each consumer wants is one of them at a time, w
 relation per fact is for, and joining them is the caller's business rather than a shape the model
 has to anticipate. This is the escalation rule read forwards: the shared thing graduated to a view,
 so the union that used to carry every combination has nothing left to carry.
+
+The same move has a cost side, and it is the leaf-zoo connection. `FieldClassification` is the
+LSP-facing projection of the generator's field taxonomy (the leaf zoo whose dissolution
+`coordinate-lowers-to-datafetcher-queryparts.md` owns), and the exhaustive switch in
+`CatalogBuilder.projectFieldClassification` means every new generator permit costs a mapping
+decision for every reader the projection still has. After this item `graphitron-mcp` is not one of
+those readers: a taxonomy that grows an arm changes no MCP query, because the relations behind the
+five questions are keyed by what a field binds, not by what it was classified as. That is one
+consumer struck from the list the zoo's dissolution waits on, and it is the sense in which the edge
+tools get easier to improve rather than merely relocated.
 
 The payoff is `ReverseEdgeIndex`, and it is larger than the migration. That class iterates every
 coordinate in the schema, runs `EdgeProducer.fieldEdges` per entry, inverts each result into a
@@ -635,4 +660,5 @@ either sibling, so its `depends-on` stays empty, and the machine-visible edge be
 whose Done gate is the one that waits.
 
 The deletion of the pom edge itself is not here, since `Workspace` outlives this item. It belongs to
-whichever of the three named items lands last, along with the test that keeps it deleted.
+whichever of the three named items lands last, along with the test that keeps it deleted, by the
+supplier move the dependency section states.
