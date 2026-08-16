@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R642` | CatalogFacts' non-LSP readers move to the store | Spec | 2026-08-14 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
+| `R642` | The MCP catalog and edge tools read the store | Spec | 2026-08-16 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-16 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | Spec | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
@@ -500,7 +500,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### tooling
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
-- `R642` [**CatalogFacts' non-LSP readers move to the store**](catalog-facts-readers-move-to-the-store.md) — Spec, architecture
+- `R642` [**The MCP catalog and edge tools read the store**](catalog-facts-readers-move-to-the-store.md) — Spec, architecture
 - `R681` [**The MCP code tools read the store**](mcp-code-tools-read-the-store.md) — Backlog, architecture
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
