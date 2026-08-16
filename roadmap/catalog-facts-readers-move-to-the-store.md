@@ -35,6 +35,31 @@ projection and one store handle would be the awkward half-state rather than a sm
 argument for taking it is in "The classification maps are questions, not a shape" below, and what
 that section is really about is that the reverse index stops being a data structure.
 
+## The goal
+
+Retiring `CatalogFacts` is the mechanism. The goal is two properties of `graphitron-mcp`, and both
+outlive the code this item touches.
+
+**No dependency on `graphitron-lsp`.** The module may depend on `graphitron` and `graphitron-model`,
+and should declare both directly rather than reaching them transitively through the language server.
+It may not depend on the language server. There are no LSP-specific facts: the LSP reads the store
+for its own purposes and the MCP has different data needs, so each writes the queries its own
+surface wants. The current edge is a pre-store artifact, from when MCP had no way to reach generator
+output except through the object the LSP already held it in, and every argument that once justified
+it was an argument about reaching *data*. The store is that access now.
+
+**No connection to the store of its own.** `graphitron-mcp` never opens a store, mints a connection,
+or knows where the store directory is. The host does: `DevMojo` in `graphitron-maven-plugin` opens
+`sessionStore`, and hands the server a `StoreHandle` over its DSL context. Everything this item adds
+keeps that shape, including the `StoreReader` the `catalog.describe` section calls for, which the
+host mints from `sessionStore.reader()` and passes in exactly as it already does for the language
+server's `StoreAccess`. The rule is worth stating out loud because a module that writes its own
+queries looks like a module that might reasonably open its own connection, and it must not: the
+lifetime, the isolation level and the teardown belong to the process that owns the session. Ownership
+of a *query* and ownership of a *connection* are separate things, and this item moves only the first.
+(`DevQueryExecutor`'s own `DriverManager` handling is about the consumer's database, which the
+`execute` tool reaches on the user's behalf, and is unrelated.)
+
 ## The census is already captured
 
 Nothing new is captured here. `CatalogFactCapture.captureCatalog` walks the same `JooqCatalog` the
@@ -97,16 +122,15 @@ wrinkle: it is a correlated `Field<String>` the LSP wants and MCP passes nothing
 reader that is a component one caller reads as permanently empty. Written separately, it simply is
 not in the MCP query.
 
-## The dependency this item is paying down
+## How far the dependency gets paid down here
 
 `graphitron-mcp` imports exactly two things from `graphitron-lsp`: `Workspace`, and
 `ClassMemberSlots`. Nothing else, and the four projections MCP reads through `Workspace`
 (`snapshot`, `catalog`, `sourceIndex`, `catalogFacts`) are generator types from `graphitron`, not LSP
-types. The edge is one state holder plus one misplaced reader, and it dates from before the store:
-MCP had no way to reach generator output except through the object the LSP already held it in.
+types. The edge is one state holder plus one misplaced reader.
 
-The target state is no edge at all. It is not reachable here, and saying which part blocks is worth
-more than a deferral:
+The goal above is no edge at all. It is not reachable in one item, and saying which part blocks is
+worth more than a deferral:
 
 * `catalogFacts` is this item.
 * `ClassMemberSlots` is this item too. It is already a store read, so nothing migrates; MCP writes
@@ -120,12 +144,12 @@ more than a deferral:
   what remains, for two reasons named in the scope boundary below. `vocabulary` and
   `DirectivesResource` are untouched.
 
-One preparatory step belongs here because it is cheap and makes the rest legible: `graphitron-mcp`
-declares only `graphitron-lsp` today and reaches `graphitron` and `graphitron-model` transitively
-through it. Declaring those two directly changes no bytecode and turns the LSP edge into what it
-actually is, two imports, rather than a dependency that appears to carry the module's whole
-substrate. The pom edge deletes in whichever of the items above lands last, with a test that fails
-if it comes back.
+The pom half of the goal lands here in full, because it is cheap and makes the rest legible:
+`graphitron-mcp` declares only `graphitron-lsp` today and reaches `graphitron` and
+`graphitron-model` transitively through it. Declaring those two directly changes no bytecode and
+turns the LSP edge into what it actually is, one import, rather than a dependency that appears to
+carry the module's whole substrate. The edge itself deletes in whichever of the items above lands
+last, with a test that fails if it comes back.
 
 ## The classification maps are questions, not a shape
 
@@ -268,10 +292,14 @@ the resolved table. Five small queries where there was one map lookup, so the an
 inside one read transaction rather than risking the columns of one generation beside the keys of the
 next. H2 gives that directly; the only wrinkle is that it cannot come from the handle the server
 holds, which carries the session writer's own connection, where a nested transaction is a savepoint
-rather than a boundary. So the server takes a `StoreReader`, which is the substrate's existing
-answer: `DevMojo` mints it from `sessionStore.reader()`, the same call that already gives
+rather than a boundary. So the server *takes* a `StoreReader`, and takes it in the same sense it
+takes its handle: `DevMojo` mints it from `sessionStore.reader()`, the same call that already gives
 `StoreAccess` the LSP's reader, and closes it in `cleanup()` beside `lspStore`. The catalog tools
-answer inside `reader.read(...)`. One field, one line of teardown.
+answer inside `reader.read(...)`. One constructor parameter, one field, one line of teardown, and no
+`GraphitronModelStore` import in `graphitron-mcp`. This is the only place in the item where the
+module's connection surface widens at all, so it is the place the ownership rule from the goal has
+to be checked rather than assumed: the reader is minted by the host, and the module that uses it
+still cannot open one.
 
 Two details come with it. The refusal gate is the reader rather than the handle, so the tools check
 the thing they answer through. And the full constructor's javadoc says today that sharing the
@@ -523,6 +551,17 @@ hand-building projection fixtures.
 * Every query this item writes is tested from `graphitron-mcp`'s own fixture, which is the practical
   half of writing them here: a query lives in the module whose acceptance surface it serves, and is
   pinned by the tests that assert that surface.
+* **The connection-ownership rule gets a guard, and it can land here in full** because unlike the
+  pom edge it is already true and this item is the one that puts pressure on it. A source scan over
+  `graphitron-mcp`'s main sources fails on a reference to `GraphitronModelStore`, to a store-opening
+  entry point, or to a store directory path, the module's whole store surface being the `StoreHandle`
+  and `StoreReader` it is handed. `DevQueryExecutor` is the one exclusion and it is a named one, its
+  connections being to the consumer's own database. Written now, the guard is what keeps the
+  `StoreReader` parameter from becoming a `StoreReader` the module mints for itself the first time
+  someone finds passing it through inconvenient.
+* The corresponding guard for the LSP edge is not written here, since `Workspace` still needs the
+  import. It belongs with the last of the three items, and the ownership guard above is the template
+  for it.
 
 No agreement test between projection and store is worth writing: it dies with the projection in the
 same commit, and what it would have asserted is exactly what the per-tool cases assert against a
