@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: [delivery-verdict-derives-from-the-store]
 created: 2026-08-14
-last-updated: 2026-08-14
+last-updated: 2026-08-16
 ---
 
 # Planners read facts, emitters read commands: close the seam on both tiers
@@ -17,6 +17,14 @@ leaves dissolve into those facts rather than growing; planners read facts and pr
 emitters render commands. Each tier reads only the tier below it, so a planner never reaches past
 the facts into the walk that produced them, and an emitter never reaches past its command into the
 thing that produced it.
+
+That sentence is the functional-core / imperative-shell topology the development principles fix
+(`docs/architecture/explanation/development-principles.adoc`), applied to the emit path: the
+planners are the core, pure derivation from typed facts to command rows, and `render` is the shell
+that encodes those rows outward. `roadmap/audits/2026-07-26-fcis-command-layer-distance.md`
+measured the tree's distance from that ideal; the emit-path share of closing it is this item, and
+closing it is what dissolves the leaf zoo for the generator, because the plan and the emitters are
+the zoo's largest remaining consumers.
 
 This item owns getting there, on both tiers.
 
@@ -191,6 +199,35 @@ Three producers additionally reach the jOOQ catalog directly (`ConditionCommands
 
 The hard core is the first two rows: the per-coordinate classification verdicts.
 
+## Planners share relations, not queries
+
+The accessor table above is a census, not a blueprint. The conversion it invites, transcribing the
+thirteen accessors into thirteen shared store readers that every producer calls, is banned: that
+layer would be the model's read surface rebuilt one tier down, a consumer-shaped API between the
+store and the planners that accretes columns the way the accessors did, and its existence would
+mean the planners read the layer rather than the store, which is the current problem with the walk
+wearing a new name.
+
+Each producer formulates its own reads against the `StoreHandle`. The projections producer asks the
+projection question of the claim views, the launcher producer asks the launcher question, and
+neither goes through a shared shape even where the SQL comes out similar. What producers share is
+the store's relations and derived views, never the query. The LSP migration stated this rule at the
+grain it applies and it transfers verbatim: "What they share is the relations, not the query"
+(`roadmap/lsp-reads-the-fact-store.md`, the catalog-shaped completion arms).
+
+Duplicated query text across producers is the accepted cost, and it is cheap: the store schema is
+the contract, so two producers reading the same view stay correct independently, while a shared
+reader couples them on a helper whose signature is one consumer's convenience. When a read
+genuinely belongs to everyone, that is the signal it is a missing derived view; it lands in the
+store as one, at its own grain, per "What the store must provide" below. It does not land in the
+plan as a shared helper.
+
+Two things this rule does not forbid. A later relation referencing an earlier relation's rows by
+glue key is the plan's own foreign keys, command referencing command, not a store query shared
+between producers; the dependency order in the Scope section stays. And the scoping predicate
+`StoreHandle.reads` stays shared, because it is the store's own contract for reaching source-keyed
+families, not a consumer-shaped read.
+
 ## The facts to plan against are available
 
 The planner half was previously sequenced behind the fact population it needed. That blocker has
@@ -260,8 +297,11 @@ example on another item (below).
 
 ### The closer
 
-Extend `PackageImportDirectionTest` over both packages once they are empty of leaf readers, and
-decide whether the ratchet pins retire at zero or stay as a second mechanism. A pin at zero that can
+Extend `PackageImportDirectionTest` over both packages once they are empty of leaf readers. The
+two dials differ: `render` keeps its existing restriction to commands plus the named pure-data
+refs, while `plan` gets store reads (`StoreHandle` and the generated store tables) plus the command
+vocabulary it produces, with the seven leaf hierarchies forbidden by name. Then decide whether the
+ratchet pins retire at zero or stay as a second mechanism. A pin at zero that can
 only be raised by a rule violation is arguably a guard already, and keeping both would be two
 mechanisms for one invariant.
 
@@ -298,6 +338,11 @@ populations are enumerated under "The facts to plan against are available" above
 * **The closure invariant is the safety net and must not be weakened.** A converted producer that
   commits a row no renderer emits, or drops one a renderer needs, fails the fold. Keep that gate loud
   during the migration rather than relaxing it per increment.
+* **The accessor census reads as an implementation plan.** The path of least resistance for whoever
+  converts producer number two is to extract producer number one's store reads into a shared
+  helper, and each extraction after that looks more natural than the last. "Planners share
+  relations, not queries" above is the rule; the reviewer of every planner-half increment should
+  check for it, because no ratchet counts this.
 * **The two halves can deadlock on each other if sequenced globally.** Converting all six relations
   before any emitter moves leaves the emitters reading leaves for the whole programme; converting all
   emitters first means minting command relations from leaves that the planner half will then re-source.
