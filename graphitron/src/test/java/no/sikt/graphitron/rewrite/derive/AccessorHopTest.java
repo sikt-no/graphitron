@@ -79,6 +79,53 @@ class AccessorHopTest {
                     "java.util.Map at 1"));
     }
 
+    /**
+     * A container either multiplies the delivery or is transparent to it, and the map is the case
+     * worth pinning: a map from a key to one value delivers one, so the map itself decides nothing
+     * and only what sits at its value position does.
+     */
+    @Test
+    void aCollectionMultipliesTheDeliveryAndAWrapperDoesNot() {
+        withCapturedStore(dsl ->
+            assertThat(dsl.select(INTENT_DELIVERY_CONTAINER.CONTAINER_CLASS)
+                .from(INTENT_DELIVERY_CONTAINER)
+                .where(INTENT_DELIVERY_CONTAINER.MULTIPLIES.isTrue())
+                .fetch(0, String.class))
+                .containsExactlyInAnyOrder("java.util.List", "java.util.Set",
+                    "java.util.Collection", "org.jooq.Result"));
+    }
+
+    /**
+     * How many a declared type delivers, read off the descent rather than off the class it landed
+     * on. The four cases are the ones that differ: a collection multiplies, a wrapper around one
+     * does not, a wrapper around a collection does, and a map follows its value.
+     */
+    @Test
+    void theDescentSaysHowManyTheTypeDelivers() {
+        withCapturedStore(dsl -> {
+            assertThat(deliversMany(dsl, "app.Store", "getFilms", "()Ljava/util/List;")).isTrue();
+            assertThat(deliversMany(dsl, "app.Store", "getPending",
+                "()Ljava/util/concurrent/CompletableFuture;"))
+                .as("a wrapper around a collection still delivers many")
+                .isTrue();
+            assertThat(deliversMany(dsl, "app.Store", "getByKey", "()Ljava/util/Map;"))
+                .as("a map to one value delivers one")
+                .isFalse();
+            assertThat(deliversMany(dsl, "app.Store", "getTitle", "()Ljava/lang/String;")).isFalse();
+        });
+    }
+
+    /**
+     * A raw container delivers itself and delivers one of it. The descent never happened, so there
+     * is nothing to multiply, which is the reading the reflective walk reaches by requiring a
+     * parameterised type before it looks at all.
+     */
+    @Test
+    void aRawContainerDeliversOne() {
+        withCapturedStore(dsl ->
+            assertThat(deliversMany(dsl, "app.Store", "getRaw", "()Ljava/util/List;")).isFalse());
+    }
+
     // ===== A declared type, position by position, under its owner =====
 
     /**
@@ -450,6 +497,18 @@ class AccessorHopTest {
                     ? t.OWNER_DESCRIPTOR.isNull()
                     : t.OWNER_DESCRIPTOR.eq(descriptor)))
             .fetch(r -> r.value1() + " " + r.value2());
+    }
+
+    /** How many the named owner's declared type delivers. */
+    private static boolean deliversMany(DSLContext dsl, String className, String ownerName,
+                                        String descriptor) {
+        var e = INTENT_DECLARED_TYPE_ELEMENT;
+        return dsl.select(e.DELIVERS_MANY)
+            .from(e)
+            .where(e.CLASS_NAME.eq(className)
+                .and(e.OWNER_NAME.eq(ownerName))
+                .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
+            .fetchSingle(0, Boolean.class);
     }
 
     /** The delivered class of an owner named directly, for the readers that hold no slot. */

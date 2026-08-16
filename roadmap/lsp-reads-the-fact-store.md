@@ -1969,7 +1969,11 @@ walk is evidence here, not the specification.
    the decomposition set out to surface. The peel moved down a level on the way, the second reader
    having shown its grain was one step too specific. The section below carries both.
 8. The two facts that were clauses: the cardinality disagreement as a detection, and the `@table`
-   population coalesced with the derived one by a view.
+   population coalesced with the derived one by a view. Half done: the cardinality reading landed as
+   `intent_producer_cardinality_conflict`, with `delivers_many` on the peel underneath it and
+   `multiplies` on the container vocabulary. The coalescing view is held on a question the section
+   below states, because the two arms have no payload in common yet and inventing one would decide
+   it by accident.
 9. Have the generator read the fact. The resolver's copy of the walk retires here, which drains step
    3's relation and retires the `walk_` addition with it.
 10. The consumers follow, each its own commit: the class arm of the type-scope question, then
@@ -2303,6 +2307,58 @@ unreachable from the store rather than merely unwritten. That is a capture-side 
 `intent_bound_table`'s population besides. The input axis is absent too: a producer's parameters
 back the argument types they map to, which needs the argument-mapping resolution and the parameter
 arm of the type-reference union, and it is the next thing this chain owes.
+
+## Settled while building: a clause becomes a detection, and the coalescing view wants a fact nobody captured
+
+The cardinality half of step 8 landed and the `@table` half is held on a question, which is worth
+stating rather than answering by picking whichever shape the SQL made easiest.
+
+**The comparison already existed; what it lacked was a name.** The walk reads the SDL field's
+cardinality and the producer's declared return, and uses the comparison as a clause: where they
+disagree it declines to bind and reads the field as a carrier whose collection feeds an inner list
+field. So the reading was there and its whole output was a silence, which is the shape a defect
+hides in. `intent_producer_cardinality_conflict` is the same comparison stated as rows, and the
+difference is that a reader can now ask whether a given coordinate is a carrier or an author error,
+where before the walk answered by moving on.
+
+**It needed one fact underneath it, and the fact belonged to the declared type.** How many a
+declared type delivers is a property of the type, not of the comparison, so it is `delivers_many` on
+`intent_declared_type_element` rather than a clause inside the detection. That in turn needed the
+container vocabulary to say which containers multiply, so `intent_delivery_container` grew a
+`multiplies` column. The map is the case worth having a column for: a map from a key to one value
+delivers one and a map from a key to a list delivers many, so the map itself decides nothing and
+only its value position does, which is exactly what the walk's own peel does and exactly what a
+reader would get wrong if the vocabulary were a flat list of container names.
+
+**A raw container delivers one, and that agrees with the walk for a different reason.** The walk
+requires a parameterised type before it looks at cardinality at all, so a bare `List` is not
+multi-valued to it. Here the descent simply never happens, so there is nothing to multiply. Same
+answer, and neither side had to know about the other's reasoning.
+
+**The held question: the two backing populations have no payload in common.** The plan says the
+`@table` population is `intent_bound_table` and the two are coalesced by a view, provenance kept by
+separate relations rather than a tag column on a merged base. The obstacle is what such a view would
+carry. A class-backed type's backing is one column, a binary class name. A table-backed type's is
+three, the `sql_table` key. A view carrying both is four columns NULL by kind, which is the shape
+this stratum has rejected repeatedly, and a view carrying only the type and which kind backs it
+makes every reader join the arm anyway.
+
+There is a shape that dissolves it, and it is a capture widening rather than a modelling choice: a
+`@table` type's backing *is* a class, the generated jOOQ record class for the table, which is what
+the walk binds it to. If `sql_table` carried that FQN, both arms would carry one uniform
+`class_name` and the view would be a clean coalesce with a provenance column, on
+`intent_field_producer_method.declared_via`'s terms. `sql_table.class_fqn` is not it: that column is
+the generated *table* class, captured for goto-definition, and its comment says so. The record class
+is a fact the store is short.
+
+So the fork is whether step 8's second half waits for that widening, which is small (the catalog
+walk holds the `Table` and `recordClass()` is one call on it) and makes the view honest, or whether
+the view ships now in the kind-plus-type shape and is rewritten when the widening lands.
+Recommendation: capture the record class FQN first. The widening is the same loop this item has run
+four times already, the consumers that fork on table-versus-class are the ones step 10 migrates, and
+shipping a view whose shape we already expect to change is how a substrate accretes a compatibility
+seam. Flagged rather than taken, because it grows the capture surface and that is a call worth
+making out loud.
 
 ## Retired vocabulary
 

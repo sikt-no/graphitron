@@ -157,7 +157,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_type_backing_class} and {@code intent_type_backing_conflict}, the closure
  *       over those hops and the types it answers two ways, to captured SDL over a hand-built
  *       census, its cases pinning the reachability itself and each population the derivation
- *       deliberately does not reach, with
+ *       deliberately does not reach;
+ *       {@code no.sikt.graphitron.rewrite.derive.ProducerCardinalityTest} binds
+ *       {@code intent_producer_cardinality_conflict}, where a field and its producer disagree
+ *       about how many, every case pairing a disagreement with an agreement over the same
+ *       producer so the detection's silence is asserted and not assumed; with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against {@code walk_type_backing_class} over public fixture classes both
  *       sides can see;
@@ -270,6 +274,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_accessor_hop", Arm.DERIVED);
         registrations.put("intent_type_backing_class", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
+        registrations.put("intent_producer_cardinality_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);
