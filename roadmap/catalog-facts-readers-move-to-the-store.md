@@ -14,8 +14,10 @@ last-updated: 2026-08-16
 
 `graphitron-mcp` answers thirteen tools, one resource and one prompt off four generator-side
 projections it reaches through the language server's `Workspace`. This item ends that: after it the
-module imports nothing from `graphitron-lsp`, reads no classification projection, and answers every
-tool from the fact store or from a value its host hands it.
+module compiles against `graphitron-model` and nothing else in the reactor, names no type from
+`graphitron-lsp` or `graphitron` in any main source, reads no classification projection, and answers
+every tool from the fact store or from a value its host hands it. The generator survives at test
+scope, where the fixture runs a real build to produce the store the tests read.
 
 The item takes full ownership of the module's dependencies and finishes the job. It waits on no
 other item and defers nothing to one: every read that has to move, moves here. That is a change from
@@ -46,29 +48,54 @@ Retiring `CatalogFacts` is one mechanism among several. The goal is four propert
 `graphitron-mcp`, and all four outlive the code this item touches. Each lands here in full; none is
 deferred to a successor, and the close-out slice asserts each of them as a test.
 
-**Two reactor dependencies, `graphitron` and `graphitron-model`, and no others.** This is the
-property, stated positively, and it is stronger than deleting the language-server edge. After this
-item `graphitron-mcp`'s pom declares exactly two `no.sikt` modules at compile scope, `graphitron`
-and `graphitron-model`, both of which it reaches transitively today, plus `graphitron-sakila-db` at
-test scope for the jOOQ fixture the tests capture from. Nothing else in the reactor may appear in
-any scope. The guard is an allowlist over the pom's `no.sikt` coordinates rather than a rule naming
-`graphitron-lsp`, because a rule that names one artifact passes the next edge somebody adds:
-`graphitron-javapoet` is on the compile classpath transitively already, `graphitron-jakarta-rest` is
-a plausible reach for a module rendering consumer-facing shapes, and neither is what this module is
-allowed to depend on.
+**One reactor dependency: `graphitron-model`.** This is the property, stated positively, and it is
+much stronger than deleting the language-server edge. After this item `graphitron-mcp` compiles
+against exactly one `no.sikt` module, `graphitron-model`, plus `org.jooq:jooq`. Not
+`graphitron-lsp`, and not `graphitron` either. The module that answers questions about a generated
+graph stops compiling against the generator.
 
-`org.jooq:jooq` is declared here too, and that is a correction this item owes rather than new scope.
-`DiagnosticsTool` and `DiagnosticFacets` import `org.jooq` today with no declaration in the module's
-pom, resolving it transitively through the language server. This item makes every tool in the module
-a jOOQ query author, so the undeclared direct use goes from two files to most of the module while
-the edge that supplies it is being deleted. Declaring what the module compiles against is the whole
-of the fix.
+That is the honest end state of "the MCP reads only the store". A module that still compiles against
+`graphitron` can still reach for a projection the next time a tool wants a datum, and the whole
+argument for the store as the extension point is that reaching for one should not be possible. The
+store is a published schema in `graphitron-model`; the generator is the thing that fills it. A
+reader needs the first and not the second.
 
-There are no LSP-specific facts, which is why the edge can go at all: the LSP reads the store for
+**Test scope is different, and the difference is structural rather than a hedge.** The tests keep
+`graphitron` and `graphitron-sakila-db`, because the module's test strategy is to assert against a
+real capture and a capture is something only the generator can produce. `StoreBackedBuild` runs
+`GraphQLRewriteGenerator.buildOutput()` into a file store, and its own javadoc says why nothing
+cheaper works: "Tests over hand-built reports cannot survive the substrate: the loaders read the
+walk's own streams, so the rows a test asserts on have to come from a real pipeline run." Every
+slice below leans on that fixture, and the alternative, a pre-built store shipped as a test resource,
+would put a frozen artifact where the item deliberately put a live one. So the allowlist is written
+per scope: compile is `graphitron-model` alone, test adds `graphitron` and `graphitron-sakila-db`
+by name.
+
+The split is not a loophole, because scope is exactly the distinction that matters here.
+`graphitron-mcp` is *published*, and its pom comment records that a Maven plugin resolves its
+declared dependencies from the consumer's repositories at execution time. Compile scope is what
+ships and what a future reader can reach for; test scope reaches nothing a consumer receives and
+constrains no production read. The guard fails on a `graphitron` import in main sources, which is
+the property, and permits one in tests, which is the fixture.
+
+`org.jooq:jooq` is declared rather than inherited, and that is a correction this item owes rather
+than new scope. `DiagnosticsTool` and `DiagnosticFacets` import `org.jooq` today with no declaration
+in the module's pom, resolving it transitively through the language server. This item makes every
+tool in the module a jOOQ query author, so the undeclared direct use goes from two files to most of
+the module while the edge that supplies it is being deleted.
+
+The allowlist shape matters as much as its contents. A rule naming `graphitron-lsp` passes the next
+edge somebody adds: `graphitron-javapoet` rides in transitively today, and `graphitron-jakarta-rest`
+is a plausible reach for a module rendering consumer-facing shapes. Stating the permitted set per
+scope means any new edge is argued for at the guard rather than noticed later.
+
+There are no LSP-specific facts, which is why that edge can go at all: the LSP reads the store for
 its own purposes and the MCP has different data needs, so each writes the queries its own surface
 wants. The current edge is a pre-store artifact, from when MCP had no way to reach generator output
 except through the object the LSP already held it in, and every argument that once justified it was
-an argument about reaching *data*. The store is that access now.
+an argument about reaching *data*. The store is that access now, and the same sentence retires the
+`graphitron` edge one step later: once no tool reads a projection, nothing in main sources names a
+generator type.
 
 **No read of the classification projection.** `FieldClassification`, `TypeClassification` and
 `TypeBackingShape` are the generator's field and type taxonomy projected for the language server.
@@ -485,6 +512,12 @@ directive list missing the user's own declarations reads as a grammar that forbi
 `workspace.vocabulary()` call and therefore the whole of its `LspVocabulary` coupling; the
 resource's `workspace.snapshot()` read; and `DirectiveShape` as a type `graphitron-mcp` names.
 
+`TypeShape` and the `renderType` recursion over it go with them, and that one is worth naming
+because it is a `graphitron` type rather than an LSP one, so it survives the edge deletion and would
+otherwise be residue. `DirectivesResource.renderType` walks `TypeShape.Named` and `TypeShape.List`
+to rebuild an argument's SDL spelling (`String!`, `[Foo!]`). `graphql_directive_argument.type_sdl`
+is that spelling, captured. The read replaces a recursion with a column.
+
 There is no `LspVocabulary` import to delete, and that is the point rather than a detail.
 `GraphitronMcpServer` reaches the registry as `workspace.vocabulary().registry()`, so the coupling
 is spelled entirely in method calls. Slice 9's import scan would have passed a module that still
@@ -518,36 +551,71 @@ exhaustive-switch drift guard is unchanged, and the `LspSchemaSnapshot` import g
 same host-hands-a-value move as the `StoreHandle` and the `StoreReader`, applied to the one piece of
 state that has no business being a relation.
 
-**Leaves behind.** Nothing. `Workspace` has no reader left in `graphitron-mcp`.
+**`RejectionKind` goes here too**, and it is the last generator type any main source names. It is
+not a projection and no earlier reading of this item costed it, which is how it survived every
+slice: `DiagnosticsTool` renders a diagnostic's kind as
+`RejectionKind.valueOf(row.getKind()).displayName()`, reading a string out of the `diagnostic` view,
+parsing it into a `graphitron` enum, and calling a method that lower-cases the name and swaps
+underscores for hyphens. The whole of the dependency is a kebab-case transform.
+
+What `valueOf` adds beyond the transform is validation, and the store already performs it:
+`rejection_validation_error.kind` carries a closed `CHECK (kind IN ('AUTHOR_ERROR',
+'INVALID_SCHEMA', 'DEFERRED'))`, which is the same three values the enum declares, enforced at write
+time on the model's own closed-CHECK convention. So the enum was standing in for a constraint the
+DDL states. `graphitron-mcp` renders the stored kind itself, and the `diagnostic.kind` column
+comment (`RejectionKind.name()` on rejection-bearing rows, `NULL` elsewhere) is what the rendering
+is written against. The wire is unchanged.
+
+**Leaves behind.** Nothing. `Workspace` has no reader left in `graphitron-mcp`, and no main source
+names a type from `graphitron`.
 
 ## Slice 9: the edge deletes
 
-`graphitron-mcp`'s pom drops `graphitron-lsp` and declares `graphitron`, `graphitron-model` and
-`org.jooq:jooq` directly, all three of which it reaches transitively today. `graphitron-sakila-db`
-stays at test scope. That leaves the two reactor dependencies the goal names and nothing else, in
-any scope.
+`graphitron-mcp`'s pom drops `graphitron-lsp` and declares `graphitron-model` and `org.jooq:jooq` at
+compile scope, both of which it reaches transitively today. `graphitron` moves to test scope beside
+`graphitron-sakila-db`, which stays. That is the one reactor dependency the goal names on the
+compile surface, and the two the fixture names on the test surface.
 
-**The classpath is not unchanged, and the difference is a payoff worth claiming.** Four artifacts
-leave `graphitron-mcp`'s compile and runtime classpath with the edge: `graphitron-lsp` itself,
-`org.eclipse.lsp4j`, `io.github.tree-sitter:jtreesitter`, and `graphitron-tree-sitter-natives`. The
-last is a per-platform native binary jar published to Central for the language server's parser, and
-this module has no parser. It matters because `graphitron-mcp` is *published*: its pom comment
-records that a Maven plugin resolves its declared dependencies from the consumer's repositories at
-execution time, so these are artifacts a consumer fetches today and stops fetching after this item.
-Shedding a native-binary jar is exactly the module's stated dependency-quarantine purpose, pointed
-the other way for once: the quarantine was built to keep the heavy RAG stack off
-`graphitron-maven-plugin`, and it turns out to have been carrying somebody else's natives the whole
-time.
+**The classpath is not unchanged, and the difference is the payoff.** Six artifacts leave
+`graphitron-mcp`'s compile and runtime classpath: `graphitron-lsp`, `org.eclipse.lsp4j`,
+`io.github.tree-sitter:jtreesitter`, `graphitron-tree-sitter-natives`, and then `graphitron` and
+`graphitron-javapoet` behind them. The natives jar is per-platform binaries published to Central for
+the language server's parser, and this module has no parser. `graphitron-javapoet` is a Java source
+emitter, and this module emits no Java.
 
-Nothing in `graphitron-mcp` imports `org.eclipse.lsp4j` or the tree-sitter binding, so the four go
-without a replacement declaration. Re-check that at pickup with an import scan rather than trusting
-this paragraph, since a slice landing between now and here could reach for one.
+It matters because `graphitron-mcp` is *published*: its pom comment records that a Maven plugin
+resolves its declared dependencies from the consumer's repositories at execution time, so these are
+artifacts a consumer fetches today and stops fetching after this item. What remains on the compile
+and runtime surface is the store schema and jOOQ, which is what a store client is. Shedding the
+generator and a native-binary jar is the module's stated dependency-quarantine purpose pointed the
+other way for once: the quarantine was built to keep the heavy RAG stack off
+`graphitron-maven-plugin`, and it turns out to have been carrying the generator and somebody else's
+natives the whole time.
+
+The runtime loses nothing it needs, because the server does not run alone. It is embedded in the
+`graphitron:dev` JVM, whose plugin already holds the generator; what the server receives from that
+host is a `StoreHandle`, a `StoreReader` and the lifecycle value, none of which is a generator type.
+
+Nothing in `graphitron-mcp` imports `org.eclipse.lsp4j`, the tree-sitter binding, or anything from
+`graphitron-javapoet`, so those go without a replacement declaration. Re-check that at pickup with
+an import scan rather than trusting this paragraph, since a slice landing between now and here could
+reach for one.
 
 The last `Workspace` reader is gone by slice 8, so the type is not a constructor parameter either:
 `GraphitronMcpServer` takes its `StoreHandle`, its `StoreReader` and the lifecycle supplier, and
 `DevMojo` stops passing it the workspace. That is what makes the import scan satisfiable rather than
 merely the reads draining, and it is the last thing holding the `graphitron-lsp` import in the
 module's main sources.
+
+The `graphitron` side of the precondition is an audit rather than a count, and the slices above
+discharge it in full. Every `no.sikt.graphitron.rewrite` import in the module's main sources today
+is one of: `CatalogFacts` (slice 4), `CompletionData` and `SourceWalker` (slices 5 and 6),
+`FieldClassification`, `TypeClassification` and `TypeBackingShape` (slices 4 and 6), `CatalogBuilder`,
+`DirectiveShape` and `TypeShape` (slice 7), `LspSchemaSnapshot` and `RejectionKind` (slice 8). The
+last two of those are the ones no earlier reading had costed, `TypeShape` because it hid inside the
+directives resource's SDL rendering and `RejectionKind` because it is an enum rather than a
+projection and so did not look like a read. Re-run the import scan at pickup: this list is a reading
+of the module as it stands, and a slice landing in between can add a row to it.
 
 Both guards land with it, and the tests section states them. The precondition is arithmetic from the
 slices above rather than a grep nobody ran: every `Workspace` accessor has a stated reader count and
@@ -661,6 +729,14 @@ tool answering from a projection handed to it is still a tool that cannot be ext
 touching the pipeline, which is the cost the goal section says this item is buying out. The only
 values the host hands the server after this are its `StoreHandle`, its `StoreReader`, and the
 dev-session lifecycle arm, none of which is a fact about a graph.
+
+Under the compile-scope rule that argument stops needing to be made, which is the point of moving
+the rule from the language server to the generator. "`CompletionData` crosses a declared `graphitron`
+dependency" was true and was the whole trouble: while that dependency exists, every projection is
+one import away, and each one has to be argued down on its merits. Deleting the compile edge retires
+the argument rather than winning it again. The dev-session lifecycle arm is the one host-supplied
+value that survives, and it is MCP-owned by construction rather than a generator type narrowed,
+which is what lets the compile surface close over `graphitron-model` alone.
 
 ## The classification maps are questions, not a shape
 
@@ -886,6 +962,17 @@ which is how the diagnostics tools are tested. Every slice moves its tool's case
 hand-building projection fixtures, so the fixture work is front-loaded into slice 1 and amortised
 across the rest.
 
+The fixture is the reason `graphitron` stays at test scope, and it is the only reason. It keeps its
+generator imports (`GraphQLRewriteGenerator`, `RewriteContext`, `FactCapture`, the `SchemaInput`
+family, the diagnostics fact writers), because producing a capture is running the generator and
+there is no cheaper substitute that survives the substrate. What the *cases* lose as they convert is
+different and is the item's actual subject: `GraphitronMcpServerTest`, `ServerInstructionsTest`,
+`ConflictedReverseEdgeTest`, `EdgeCoverageTest` and the three RAG tests import `CatalogFacts`,
+`CompletionData`, `SourceWalker`, `LspSchemaSnapshot` and the three permits today purely to
+hand-build inputs, and every one of those imports goes with the fixture it served. An implementer
+can use that as a progress signal: when the only `graphitron` imports left in the module's test
+sources are the ones that drive a build or write facts, the conversion is done.
+
 The cases below are grouped by the slice that lands them. Two of them, the fixture seam and the
 close-out guards, are the item's own rather than any one tool's.
 
@@ -1035,31 +1122,42 @@ fails for eight slices is a guard someone disables.
   connections being to the consumer's own database. Written now, the guard is what keeps the
   `StoreReader` parameter from becoming a `StoreReader` the module mints for itself the first time
   someone finds passing it through inconvenient.
-* **The reactor dependency set**, which is the goal property restated and is deliberately an
-  allowlist. Two halves, and both are needed. A pom assertion reads `graphitron-mcp`'s declared
-  dependencies, takes the ones in the `no.sikt` group, and fails unless that set is exactly
-  `graphitron` and `graphitron-model` at compile scope plus `graphitron-sakila-db` at test scope.
-  A source scan over the module's main and test sources fails on any `no.sikt.graphitron.lsp`
-  import.
+* **The reactor dependency set**, which is the goal property restated, is deliberately an allowlist,
+  and is deliberately scoped. Two halves, and both are needed.
 
-  Each half covers what the other cannot. The import scan alone would pass a pom that still carries
-  the edge, which is the state that lets the next reader reach for a type without noticing they are
-  widening a dependency. The pom assertion alone would pass a module that reaches the language
-  server transitively, which is how the edge arrived in the first place.
+  A pom assertion reads `graphitron-mcp`'s declared dependencies, takes the ones in the `no.sikt`
+  group, and fails unless that set is exactly `graphitron-model` at compile scope and
+  `graphitron` plus `graphitron-sakila-db` at test scope. Anything else in the reactor fails in any
+  scope, and `graphitron` at compile scope fails too, which is the case the whole item is for.
+
+  A source scan fails on any `no.sikt.graphitron.lsp` import in main or test sources, and on any
+  `no.sikt.graphitron.rewrite` import in *main* sources only. The asymmetry is the scope split
+  restated at the source level: the fixture may drive the generator, and no tool may name it.
+
+  Each half covers what the other cannot. The import scan alone would pass a pom that still declares
+  `graphitron` at compile scope, which is the state that lets the next reader reach for a projection
+  without noticing they are widening a dependency. The pom assertion alone would pass a module that
+  reaches the generator transitively, which is how the language-server edge arrived in the first
+  place.
 
   The allowlist shape is the part worth insisting on. A denylist naming `graphitron-lsp` asserts the
   history rather than the rule, and it passes every reactor edge nobody has added yet;
   `graphitron-javapoet` sits on this module's compile classpath transitively today and would sail
   through one. Stating the permitted set means a new edge has to be argued for at the guard rather
   than noticed later, and the guard's message says the rule rather than the symptom:
-  `graphitron-mcp` answers from the store and from what its host hands it, so `graphitron` for the
-  build pipeline it is embedded in and `graphitron-model` for the store are the whole of what it
-  needs. Adding `graphitron-sakila-db` to the allowlist rather than exempting test scope wholesale
-  is the same instinct: the fixture's catalog is a named affordance, not a hole.
-* **The leaf zoo**, on the same scan, failing on a reference to `FieldClassification`,
-  `TypeClassification` or `TypeBackingShape` from `graphitron-mcp`. These are `graphitron` types on a
-  dependency the module legitimately keeps, so no import rule catches them and nothing else would
-  stop the first reader who finds a permit switch more convenient than a join.
+  `graphitron-mcp` answers from the store and from what its host hands it, so the store's schema is
+  the whole of what it compiles against. Naming `graphitron` and `graphitron-sakila-db` in the
+  test-scope allowlist rather than exempting test scope wholesale is the same instinct: the capture
+  fixture is a named affordance, not a hole.
+* **The leaf zoo**, failing on a reference to `FieldClassification`, `TypeClassification` or
+  `TypeBackingShape` from `graphitron-mcp`. Its subject is now the *test* sources, and that narrowing
+  is a consequence of the compile-scope rule rather than a weakening. In main sources the
+  `no.sikt.graphitron.rewrite` scan already catches all three, these being `graphitron` types on a
+  dependency main sources no longer have; a dedicated guard there would assert the same thing twice.
+  Tests keep `graphitron`, so tests are where a permit switch can still be written, and
+  `EdgeCoverageTest` is the precedent: its whole subject is a partition over the permits, and its
+  successor is specified in the tests section as a statement about the query set precisely so the
+  taxonomy does not come back through the fixture.
 * **The `walk_` family**, failing on a reference to `WALK_TYPE_BACKING_CLASS`,
   `WALK_CLAIM_DOMAIN_TYPE` or `WALK_CLAIM_DOMAIN_FIELD` from `graphitron-mcp`. Same argument as the
   leaf-zoo guard and the same failure mode: these are ordinary relations on `graphitron-model`, a
@@ -1110,8 +1208,14 @@ capture.
 * "the last item deletes the edge", and any framing of the `graphitron-lsp` dependency as work
   shared across items or owed by a successor
 * "delete the `graphitron-lsp` edge" as a statement of what this module's dependency rule *is*. The
-  rule is the allowlist, and deleting that edge is one consequence of it; a denylist naming the one
-  artifact that happened to be there records the history instead of the rule
+  rule is the scoped allowlist, and deleting that edge is one consequence of it; a denylist naming
+  the one artifact that happened to be there records the history instead of the rule
+* `RejectionKind` and `TypeShape` as types `graphitron-mcp` names, with `renderType` as a step the
+  directives resource has; the stored kind is rendered here and an argument's SDL spelling is a
+  captured column
+* "a `graphitron` type on a dependency the module legitimately keeps" as a reason anything is
+  reachable from `graphitron-mcp`'s main sources. Main sources keep no such dependency; the phrase
+  survives only for `graphitron-model`'s relations, which is where the `walk_` guard uses it
 * the pom comment's justification of the compile edge on `graphitron-lsp`, with "the server now
   holds the live Workspace" as the reason for it and the acyclicity argument that made it safe;
   there is no edge left for either to be about
@@ -1152,9 +1256,15 @@ the LSP fact-store item's retirement sweep for `CatalogFacts`, whose term surviv
 diff until slice 4 lands here. Whoever takes the LSP item to Done should expect that and read it as
 a sequencing fact rather than a failed sweep.
 
-The pom edge is deleted in slice 9 with both halves of its guard, and that is a change from an
-earlier reading which deferred it to whichever of three items landed last. The deferral was wrong on
-its own terms: the code-tools item moved reads that crossed a `graphitron` dependency, so it never
-had a reason to touch the LSP edge, and the LSP item does not touch `graphitron-mcp` at all. No
-successor was going to inherit the deletion, which is how a promised cleanup becomes a permanent
-one.
+The pom edges are deleted in slice 9 with both halves of the guard, and that is a change from an
+earlier reading which deferred the language-server one to whichever of three items landed last. The
+deferral was wrong on its own terms: the code-tools item moved reads that crossed a `graphitron`
+dependency, so it never had a reason to touch the LSP edge, and the LSP item does not touch
+`graphitron-mcp` at all. No successor was going to inherit the deletion, which is how a promised
+cleanup becomes a permanent one.
+
+The `graphitron` compile edge goes the same way and for a sharper version of the same reason. It is
+the edge every deferral above was implicitly leaning on: "the code tools read a `graphitron` type
+across a declared `graphitron` dependency" was the argument that made three separate reads look free.
+Once the compile surface is `graphitron-model` alone, that argument has no premise, and the reads
+this item moves cannot be re-created by a later one without the guard saying so first.
