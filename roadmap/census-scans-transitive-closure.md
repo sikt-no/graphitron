@@ -19,8 +19,8 @@ drags in behind the jars the consumer actually declared. For `graphitron-sakila-
 bring 9,477 classes and 356,960 rows into the store, which is 87% of everything the store holds,
 and about 516 ms of the 648 ms each classpath scan costs. Almost none of it is referenceable in a
 GraphQL schema: 42 quarkus jars, 14 netty jars, 34 smallrye jars. This item narrows the census to
-the consumer's **reactor modules plus their direct compile-scope dependencies**, which is where
-every class anything actually names turns out to live.
+the consumer's **reactor modules plus their direct compile-scope dependencies**, and adopts the
+matching rule for authors: a schema may not name a class from anywhere else.
 
 The census is what `ClasspathScanner` reads out of `.class` bytes: every public top-level class on
 the classpath, with its methods, record components, supertypes and `GraphQLScalarType` constants.
@@ -77,36 +77,32 @@ that back, and all three survive the narrowing proposed here because the classes
 All three land in jars the consumer declared itself. That is the reason the cut is drawn at direct
 dependencies rather than at the reactor boundary.
 
-## The fork this opens, and it is the item's real question
+## What the census claims after the cut
 
-`ClasspathScanner`'s own documentation states the property being given up: the census is *the set
-the codegen loader can resolve*. Codegen builds a `URLClassLoader` over the whole compile
-classpath, so today the two agree by construction. A narrowed census does not, and the divergence
-has a visible consequence. `Diagnostics.validateScalarTypeClasspath` and the general unknown-class
-check both report "Not found on the compile classpath" whenever the census lacks a name and the
-census is non-empty. After the narrowing, a class reachable only transitively is still bound
-happily by codegen and is still absent from the census, so the diagnostic would call a working
-schema broken. That is the same class of bug the widening fixed, reintroduced at a narrower width.
+`ClasspathScanner` documents the census as *the set the codegen loader can resolve*. Codegen builds
+a `URLClassLoader` over the whole compile classpath, so today the two agree by construction, and a
+narrowed census no longer does: a class reachable only through the transitive closure is still
+bound by that loader and is no longer in the census.
 
-So the item cannot be only a filter on the entry list. It has to decide what the census *claims*.
-Three shapes, to be weighed at Spec:
+That divergence is intended, and it is the point of the item rather than a cost of it. **A schema
+may not name a class outside the reactor or a direct dependency.** Naming a transitively-reachable
+class is an authoring error in its own right, and one every Java project already recognises: it is
+the undeclared-dependency antipattern, the thing `maven-dependency-plugin:analyze` exists to flag,
+and it breaks the moment an intermediate dependency drops the jar in a patch release. The narrowed
+census is therefore not a weaker approximation of the resolvable set. It is the exact statement of
+a different and better-defined question: what an author is permitted to name.
 
-- **Narrow the census and soften the diagnostic.** The census stops claiming to be the resolvable
-  set and starts claiming to be the *offerable* set: what the editor will suggest. Unknown-class
-  then cannot be asserted from absence alone, and the check either falls back to the codegen loader
-  for a name the census misses, or downgrades to a hint. Cheapest, and it costs a real diagnostic
-  some of its confidence.
-- **Narrow the scan, keep the claim, record the width.** The store records which entries were
-  scanned and which were skipped, so a consumer can tell "not on the classpath" from "outside the
-  scanned width" and the diagnostic stays exact for names inside it. `store_source` already carries
-  a row per scanned entry, so the shape is close to what exists.
-- **Scan wide, store narrow.** Keep the read whole and persist only jar classes that are reachable:
-  named at a coordinate, or in the supertype and type-ref closure of a reactor class. Preserves
-  every surface and every claim, cuts the row count hard, and keeps the 516 ms of parsing.
+So `Diagnostics.validateScalarTypeClasspath` and the general unknown-class check keep firing on
+absence, keep their confidence, and are *correct* to reject a transitive-only class. What changes
+is what they say. "Not found on the compile classpath" would be false in that case, and the message
+should name the real problem and its fix: the class is not in this module's reactor or its declared
+dependencies, and the repair is to declare the dependency. Both call sites are in
+`graphitron-lsp`'s `Diagnostics`.
 
-The first two cut both the read and the rows; the third cuts only the rows. Which matters more
-depends on whether the felt cost is the dev loop's latency or the store's size, and that is worth
-naming before choosing.
+One consequence to settle rather than assume: codegen keeps resolving over the full classpath, so
+a schema naming a transitive class would red-squiggle in the editor and still build. Whether the
+build should reject it too, so the editor and the generator state one rule, is a decision for Spec,
+not a reason to widen the census.
 
 ## What to work out at Spec
 
@@ -129,8 +125,13 @@ naming before choosing.
   jars alone are 2,051 classes.
 - **A test that pins the boundary.** `JarResidentClassCensusTest` pins that a jar-resident class
   reaches the census; it should keep passing, with the fixture jar wired as a direct dependency. The
-  new claim needs its own pin: a class reachable only transitively is *not* in the census, and
-  whatever the diagnostic does about that is asserted rather than assumed.
+  new claim needs its own pin, in both directions: a class reachable only transitively is *not* in
+  the census, and the unknown-class diagnostic does report it, with the message that names the
+  missing declaration rather than the classpath.
+- **Whether codegen enforces the same rule.** Today it would resolve the transitive class and
+  generate. Deciding it should not is a change to the generator, not to the census, and could be
+  split out; deciding it should stay permissive means the editor is stricter than the build, which
+  is defensible but should be said out loud rather than fallen into.
 
 ## Not in scope
 
