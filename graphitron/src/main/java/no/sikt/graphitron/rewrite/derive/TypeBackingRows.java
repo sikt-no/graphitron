@@ -2,18 +2,14 @@ package no.sikt.graphitron.rewrite.derive;
 
 import org.jooq.DSLContext;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static org.jooq.impl.DSL.coalesce;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static org.jooq.impl.DSL.notExists;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
@@ -28,12 +24,12 @@ import static org.jooq.impl.DSL.val;
  * is over the SDL type graph, which is cyclic, and H2 has no safe recursive view form for one.
  *
  * <p>The rule is the relation's, not this class's. Every statement below is joins over relations
- * that state their own contracts, so what lives here is the loop and its termination. The seeds
- * are {@code intent_field_producer_method} read twice, once at the class its method delivers and
- * once at the classes its parameters deliver, and the frontier is every backed type's fields read
- * off its class. Both ends are narrowed to objects and input objects, which is where a class can
- * stand for a type at all, and the two axes share one frontier: an input object seeded from a
- * parameter has its own fields read off that class exactly as an output type does.
+ * that state their own contracts, so what lives here is the loop and its termination. The seeds are
+ * {@code intent_type_backing_seed}, which states both axes and is read whole, and the frontier is
+ * every backed type's fields read off its class. Both ends are narrowed to objects and input
+ * objects, which is where a class can stand for a type at all, and the two axes share one frontier:
+ * an input object seeded from a parameter has its own fields read off that class exactly as an
+ * output type does.
  *
  * <p>The pass count is bounded by the row count rather than by a constant. Every pass inserts at
  * least one pair the relation did not hold, so a pass index above the current row count is
@@ -49,7 +45,7 @@ public final class TypeBackingRows {
         dsl.deleteFrom(INTENT_TYPE_BACKING_CLASS)
             .where(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(graphName))
             .execute();
-        int rows = seed(dsl, graphName) + seedInput(dsl, graphName);
+        int rows = seed(dsl, graphName);
         for (int pass = 1; ; pass++) {
             int added = expand(dsl, graphName);
             if (added == 0) {
@@ -66,89 +62,17 @@ public final class TypeBackingRows {
     }
 
     /**
-     * The seeds: a field with an authored Java reference backs the type it returns with the class
-     * the resolved method delivers. A reference matching several overloads seeds each of them,
-     * this relation stating ambiguity as rows on the terms the producer relation already set.
+     * The seeds, read from the relation that states them. Both axes are arms of
+     * {@code intent_type_backing_seed}, so what a producer grounds is said once, where the reader
+     * that needs to tell a grounding from a hop can see it too, rather than twice in a writer.
      */
     private static int seed(DSLContext dsl, String graphName) {
         var b = INTENT_TYPE_BACKING_CLASS;
-        var p = INTENT_FIELD_PRODUCER_METHOD;
-        var e = INTENT_DECLARED_TYPE_ELEMENT;
+        var s = INTENT_TYPE_BACKING_SEED;
         return dsl.insertInto(b, b.GRAPH_NAME, b.TYPE_NAME, b.CLASS_NAME)
-            .select(selectDistinct(p.GRAPH_NAME, GRAPHQL_FIELD.NAMED_TYPE, e.ELEMENT_CLASS)
-                .from(p)
-                .join(GRAPHQL_FIELD).on(GRAPHQL_FIELD.GRAPH_NAME.eq(p.GRAPH_NAME)
-                    .and(GRAPHQL_FIELD.TYPE_NAME.eq(p.TYPE_NAME))
-                    .and(GRAPHQL_FIELD.FIELD_NAME.eq(p.FIELD_NAME)))
-                .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(p.GRAPH_NAME)
-                    .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.NAMED_TYPE))
-                    .and(GRAPHQL_TYPE.KIND.in("OBJECT", "INPUT_OBJECT")))
-                .join(e).on(e.SOURCE_NAME.eq(p.SOURCE_NAME)
-                    .and(e.CLASS_NAME.eq(p.CLASS_NAME))
-                    .and(e.OWNER_KIND.eq("METHOD_RETURN"))
-                    .and(e.OWNER_NAME.eq(p.METHOD_NAME))
-                    .and(e.OWNER_DESCRIPTOR.eq(p.DESCRIPTOR)))
-                .where(p.GRAPH_NAME.eq(graphName)))
-            .execute();
-    }
-
-    /**
-     * The other seeds, on the input axis: a producer's parameter backs the type of the argument it
-     * is fed from, with the class the parameter delivers. The two axes are one closure, not two,
-     * because an input object backed here has its own fields read off its class by the same
-     * frontier that reads an output type's.
-     *
-     * <p>Which argument feeds a parameter is the parameter's own name, unless an {@code argMapping}
-     * entry names that parameter on its left, in which case it is the head of the path on the
-     * right. That is one left join to the pair relation and one to the path's decode at position
-     * zero, which is what the decode being a relation buys: without it this rule would have to
-     * split a string.
-     *
-     * <p>A parameter the consumer compiled without {@code -parameters} has no name, and the walk
-     * this derivation shadows skips it for want of one to match. The same skip is stated here
-     * rather than left to fall out of the join, because it is a rule and not an accident of NULLs.
-     */
-    private static int seedInput(DSLContext dsl, String graphName) {
-        var b = INTENT_TYPE_BACKING_CLASS;
-        var p = INTENT_FIELD_PRODUCER_METHOD;
-        var mp = JVM_METHOD_PARAMETER;
-        var pair = GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
-        var seg = GRAPHITRON_ARGUMENT_PATH_SEGMENT;
-        var a = GRAPHQL_ARGUMENT;
-        var e = INTENT_DECLARED_TYPE_ELEMENT;
-        return dsl.insertInto(b, b.GRAPH_NAME, b.TYPE_NAME, b.CLASS_NAME)
-            .select(selectDistinct(p.GRAPH_NAME, a.NAMED_TYPE, e.ELEMENT_CLASS)
-                .from(p)
-                .join(mp).on(mp.SOURCE_NAME.eq(p.SOURCE_NAME)
-                    .and(mp.CLASS_NAME.eq(p.CLASS_NAME))
-                    .and(mp.METHOD_NAME.eq(p.METHOD_NAME))
-                    .and(mp.DESCRIPTOR.eq(p.DESCRIPTOR)))
-                .leftJoin(pair).on(pair.GRAPH_NAME.eq(p.GRAPH_NAME)
-                    .and(pair.TYPE_NAME.eq(p.TYPE_NAME))
-                    .and(pair.FIELD_NAME.eq(p.FIELD_NAME))
-                    .and(pair.PARAM_NAME.eq(mp.PARAMETER_NAME)))
-                .leftJoin(seg).on(seg.GRAPH_NAME.eq(pair.GRAPH_NAME)
-                    .and(seg.ARGUMENT_PATH.eq(pair.ARGUMENT_PATH))
-                    .and(seg.POSITION.eq(0)))
-                .join(a).on(a.GRAPH_NAME.eq(p.GRAPH_NAME)
-                    .and(a.TYPE_NAME.eq(p.TYPE_NAME))
-                    .and(a.FIELD_NAME.eq(p.FIELD_NAME))
-                    .and(a.ARGUMENT_NAME.eq(coalesce(seg.SEGMENT_NAME, mp.PARAMETER_NAME))))
-                .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(p.GRAPH_NAME)
-                    .and(GRAPHQL_TYPE.TYPE_NAME.eq(a.NAMED_TYPE))
-                    .and(GRAPHQL_TYPE.KIND.in("OBJECT", "INPUT_OBJECT")))
-                .join(e).on(e.SOURCE_NAME.eq(p.SOURCE_NAME)
-                    .and(e.CLASS_NAME.eq(p.CLASS_NAME))
-                    .and(e.OWNER_KIND.eq("METHOD_PARAMETER"))
-                    .and(e.OWNER_NAME.eq(p.METHOD_NAME))
-                    .and(e.OWNER_DESCRIPTOR.eq(p.DESCRIPTOR))
-                    .and(e.OWNER_POSITION.eq(mp.POSITION)))
-                .where(p.GRAPH_NAME.eq(graphName))
-                .and(mp.PARAMETER_NAME.isNotNull())
-                .and(notExists(selectOne().from(b)
-                    .where(b.GRAPH_NAME.eq(graphName))
-                    .and(b.TYPE_NAME.eq(a.NAMED_TYPE))
-                    .and(b.CLASS_NAME.eq(e.ELEMENT_CLASS)))))
+            .select(select(s.GRAPH_NAME, s.TYPE_NAME, s.CLASS_NAME)
+                .from(s)
+                .where(s.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 

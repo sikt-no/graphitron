@@ -155,10 +155,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       walk pinned as pins rather than expectations;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
  *       {@code intent_type_backing_class}, the closure over those hops, together with
+ *       {@code intent_type_backing_seed} naming the groundings it closes over,
  *       {@code intent_type_backing} coalescing it with the table-bound population and
  *       {@code intent_type_backing_conflict} over the coalesce, to captured SDL over a hand-built
  *       census, its cases pinning the reachability itself, each population the closure
- *       deliberately does not reach, and both ways two backings can disagree;
+ *       deliberately does not reach, and every way two backings can disagree;
  *       {@code no.sikt.graphitron.rewrite.derive.ProducerCardinalityTest} binds
  *       {@code intent_producer_cardinality_conflict}, where a field and its producer disagree
  *       about how many, every case pairing a disagreement with an agreement over the same
@@ -274,6 +275,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_declared_type_element", Arm.DERIVED);
         registrations.put("intent_class_member_element", Arm.DERIVED);
         registrations.put("intent_field_accessor_hop", Arm.DERIVED);
+        registrations.put("intent_type_backing_seed", Arm.DERIVED);
         registrations.put("intent_type_backing_class", Arm.DERIVED);
         registrations.put("intent_type_backing", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);

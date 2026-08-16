@@ -2519,6 +2519,48 @@ names "capture runs after classification" as the reason the walk still evaluates
 override as a boolean threaded through its recursion, and names capture moving ahead of
 classification as the condition for retiring that re-derivation. That condition now holds.
 
+## Settled while building: a third difference, and this one was the derivation being wrong
+
+Two behaviour differences between the closure and the walk were on record and queued for
+adjudication, the cardinality guard and the two-level carrier fork. Reading the walk closely enough
+to retire it turned up a third that was not on any list, and it is not an adjudication.
+
+**The walk refuses to read an already-grounded type off a parent's member.** It settles the root
+producers first, folds them, and only then propagates through accessor edges, skipping any child
+type that already has a binding. The comment at that line says why, and it is not about ordering: a
+`film: Film` field on a parent whose accessor returns `LanguageRecord` would otherwise ground
+`Film <- LanguageRecord`, collide with `@table`'s `FilmRecord`, and knock `Film` out of its `@table`
+classification. A hop reads the parent's member type without checking it against the child's own
+grounding, so the class it lands on can be simply wrong rather than merely second.
+
+**The closure does not apply that rule, and the shadow could not have caught it.** Its one closure
+condition is the field-coordinate one, and the frontier's anti-join skips only a type-and-class pair
+it already holds, never a type that already has a different class. No fixture had a type both
+grounded and hop-reached with different classes, so both sides answered the same thing for the wrong
+reason. Adding one produces two rows here and one in the walk, with the conflict view now standing
+over the coalesce and calling it a contest.
+
+**So the store was short a fact, again, and again the consumer-shaped fix was the tempting one.** The
+reading a consumer needs is "a grounding beats a hop", and the closure cannot express it: it
+deliberately carries no route column, correctly, because a class reached by two routes is one
+backing and a route column multiplies every reader's rows. What it can carry is the groundings
+themselves. `intent_type_backing_seed` states them, one row per type and class a producer grounds,
+both axes as arms. Its row asserts something observable without naming a consumer: this graph's type
+is backed by this class by a producer of its own, rather than by being read off some other type's
+class.
+
+**It removes a duplicate rather than adding one.** The seed criteria already existed, twice, as two
+jOOQ statements inside `TypeBackingRows`. The view is now their one home and the writer seeds from
+it, so what a producer grounds is said once, in the place a reader can also see it. That is the test
+a new relation should pass and this one does: it made the writer smaller.
+
+**The precedence stays the reader's.** The relation says where a backing came from and nothing about
+which to believe, on the same terms as the `@table`-beats-closure reading. When the LSP surfaces
+want the same answer in the next step, that is the second reader, and it can lift into a view then.
+`TypeBackingShadowTest.aGroundingBeatsAHopAndTheSeedRelationSaysWhichIsWhich` is the evidence the
+reading is the walk's: the walk answers with the grounding, and the seed rows alone reproduce that
+answer while the closure carries both.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,

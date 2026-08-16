@@ -22,6 +22,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static no.sikt.graphitron.model.Tables.WALK_TYPE_BACKING_CLASS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -130,6 +131,40 @@ class TypeBackingShadowTest {
         });
     }
 
+    /**
+     * The difference that is not a taste question, run against the walk. A type a producer grounds
+     * and a member of another type also delivers is two rows in the closure, and the walk answers
+     * with the grounding: it settles the root producers before it propagates anything, then
+     * declines to read an already-grounded type off a parent's member. That refusal is protective
+     * rather than a tie-break, the hop reading the parent's member type without checking it against
+     * the child's grounding, so the class it lands on can be wrong. What this pins is that
+     * {@code intent_type_backing_seed} is enough to reproduce the walk's answer: the seed row alone
+     * is what the walk says, and the extra closure row is the one the walk suppressed.
+     */
+    @Test
+    void aGroundingBeatsAHopAndTheSeedRelationSaysWhichIsWhich() {
+        String sdl = """
+            type Query {
+                films: [Film] @service(service: {className: "%s", method: "films"})
+                spoken: Language @service(service: {className: "%s", method: "other"})
+            }
+            type Film { title: String language: Language }
+            type Language { name: String }
+            """.formatted(SERVICE, SERVICE);
+
+        withBothSides(sdl, dsl -> {
+            assertThat(walk(dsl)).contains("Language=" + PKG + "TestBackingOther");
+            assertThat(derived(dsl))
+                .as("the closure carries the hop's answer too, and does not choose")
+                .contains("Language=" + PKG + "TestBackingOther",
+                    "Language=" + PKG + "TestBackingLanguage");
+            assertThat(seeded(dsl))
+                .as("the seeds alone reproduce what the walk answered")
+                .contains("Language=" + PKG + "TestBackingOther")
+                .doesNotContain("Language=" + PKG + "TestBackingLanguage");
+        });
+    }
+
     // ===== Helpers =====
 
     private static final String GRAPH = "TypeBackingShadowTest";
@@ -184,6 +219,13 @@ class TypeBackingShadowTest {
         return dsl.select(INTENT_TYPE_BACKING_CLASS.TYPE_NAME, INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
             .from(INTENT_TYPE_BACKING_CLASS)
             .where(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(GRAPH))
+            .fetch(r -> r.value1() + "=" + r.value2());
+    }
+
+    private static List<String> seeded(DSLContext dsl) {
+        return dsl.select(INTENT_TYPE_BACKING_SEED.TYPE_NAME, INTENT_TYPE_BACKING_SEED.CLASS_NAME)
+            .from(INTENT_TYPE_BACKING_SEED)
+            .where(INTENT_TYPE_BACKING_SEED.GRAPH_NAME.eq(GRAPH))
             .fetch(r -> r.value1() + "=" + r.value2());
     }
 

@@ -23,6 +23,7 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -263,6 +264,43 @@ class TypeBackingClassTest {
         });
     }
 
+    // ===== Which rows a producer grounded =====
+
+    /**
+     * The seeds are the groundings and nothing else: a producer's return on one axis, the class
+     * feeding an argument on the other. A type only a hop reaches has no row here even though the
+     * closure backs it, which is the whole of what this relation adds over the closure.
+     */
+    @Test
+    void aSeedIsAGroundingAndAHopIsNot() {
+        withCapturedStore(dsl -> {
+            assertThat(seeds(dsl, GRAPH, "Film")).containsExactly("app.FilmRecord");
+            assertThat(seeds(dsl, GRAPH, "FilmFilter")).containsExactly("app.FilmFilterInput");
+            assertThat(backing(dsl, GRAPH, "Country")).containsExactly("app.CountryRecord");
+            assertThat(seeds(dsl, GRAPH, "Country"))
+                .as("two hops deep, so backed and not grounded").isEmpty();
+        });
+    }
+
+    /**
+     * The contest this relation exists to let a reader settle. A type a producer grounds and a
+     * member of another type also delivers is two rows in the closure, which cannot say which of
+     * them a producer answered for. Here it can, and the difference matters rather than being a
+     * tie-break: the hop reads the parent's member type without checking it against the child's own
+     * grounding, so the class it lands on can be wrong and not merely second. The precedence stays
+     * the reader's, which is why the closure keeps both rows.
+     */
+    @Test
+    void aTypeAProducerGroundsIsToldApartFromWhatAHopReached() {
+        withCapturedStore(dsl -> {
+            assertThat(backing(dsl, GRAPH, "Grounded"))
+                .containsExactly("app.GroundedDto", "app.GroundedRecord");
+            assertThat(seeds(dsl, GRAPH, "Grounded")).containsExactly("app.GroundedDto");
+            assertThat(conflict(dsl, GRAPH, "Grounded"))
+                .containsExactly("app.GroundedDto, app.GroundedRecord 2");
+        });
+    }
+
     // ===== Departures from the walk, pinned =====
 
     /**
@@ -355,6 +393,8 @@ class TypeBackingClassTest {
                 service: {className: "app.FilmService", method: "nameless"})
             scalarArg(q: String): [Film] @service(
                 service: {className: "app.FilmService", method: "scalarArg"})
+            grounded: Grounded @service(
+                service: {className: "app.FilmService", method: "grounded"})
         }
         type Film {
             title: String
@@ -362,6 +402,7 @@ class TypeBackingClassTest {
             actors: [Actor]
             reviews: [Review] @service(service: {className: "app.ReviewService", method: "forFilm"})
             related: Film
+            grounded: Grounded
         }
         type Language @table(name: "language") {
             name: String
@@ -374,6 +415,7 @@ class TypeBackingClassTest {
         type Contested { id: ID }
         type Carrier { id: ID }
         type Orphan { id: ID }
+        type Grounded { id: ID }
         interface Node { id: ID }
         input FilmFilter { title: String, nested: NestedFilter }
         input NestedFilter { code: String }
@@ -408,7 +450,8 @@ class TypeBackingClassTest {
                 producer("nameless", "(Lapp/PlainFilterInput;)Ljava/util/List;",
                     List.of(parameter(null, ref("", "app.PlainFilterInput")))),
                 producer("scalarArg", "(Ljava/lang/String;)Ljava/util/List;",
-                    List.of(parameter("q", ref("", "java.lang.String"))))),
+                    List.of(parameter("q", ref("", "java.lang.String")))),
+                method("grounded", "()Lapp/GroundedDto;", ref("", "app.GroundedDto"))),
             reference(APP, "app.ReviewService",
                 method("forFilm", "()Ljava/util/List;",
                     ref("", "java.util.List"), ref("0", "app.ReviewDto"))),
@@ -417,7 +460,8 @@ class TypeBackingClassTest {
                 component("language", ref("", "app.LanguageRecord")),
                 component("actors", ref("", "java.util.List"), ref("0", "app.ActorRecord")),
                 component("reviews", ref("", "java.util.List"), ref("0", "app.WrongRecord")),
-                component("related", ref("", "app.FilmRecord"))),
+                component("related", ref("", "app.FilmRecord")),
+                component("grounded", ref("", "app.GroundedRecord"))),
             record(APP, "app.LanguageRecord",
                 component("name", ref("", "java.lang.String")),
                 component("country", ref("", "app.CountryRecord"))),
@@ -434,7 +478,9 @@ class TypeBackingClassTest {
             record(APP, "app.NestedFilterInput", component("code", ref("", "java.lang.String"))),
             record(APP, "app.ActorFilterInput", component("name", ref("", "java.lang.String"))),
             record(APP, "app.DeepFilterInput", component("code", ref("", "java.lang.String"))),
-            record(APP, "app.PlainFilterInput", component("code", ref("", "java.lang.String"))));
+            record(APP, "app.PlainFilterInput", component("code", ref("", "java.lang.String"))),
+            record(APP, "app.GroundedDto", component("id", ref("", "java.lang.String"))),
+            record(APP, "app.GroundedRecord", component("id", ref("", "java.lang.String"))));
     }
 
     private static CompletionData.ExternalReference reference(
@@ -488,6 +534,14 @@ class TypeBackingClassTest {
     }
 
     /** Every backing the coalesce holds, each with the population that answered. */
+    private static List<String> seeds(DSLContext dsl, String graphName, String typeName) {
+        var s = INTENT_TYPE_BACKING_SEED;
+        return dsl.select(s.CLASS_NAME).from(s)
+            .where(s.GRAPH_NAME.eq(graphName)).and(s.TYPE_NAME.eq(typeName))
+            .orderBy(s.CLASS_NAME)
+            .fetch(0, String.class);
+    }
+
     private static List<String> coalesced(DSLContext dsl, String graphName, String typeName) {
         return dsl.select(INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.DECLARED_VIA)
             .from(INTENT_TYPE_BACKING)
