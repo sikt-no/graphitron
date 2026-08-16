@@ -14,131 +14,179 @@ last-updated: 2026-08-16
 ## Problem
 
 The store-read discipline that every migration keeps re-deriving is written down only in transient
-places. The rule: consumers of the fact store share the relations and derived views, never the
-queries. Each consumer formulates its own reads against the `StoreHandle`, asking its own question
-of the views, even where the SQL comes out similar; a read two consumers genuinely both need is
-the signal for a missing derived view, which lands in the store at its own grain, not in a shared
-query-helper layer between the store and its readers. That layer is the trap: a consumer-shaped
-accessor API that re-grows the model's read surface one tier down, so consumers read the layer
-rather than the store. (The walk comparison motivates this item but stays out of the durable doc:
-the walk is a transitional producer surface and the helper layer is a consumer surface, so
-equating them in `fact-model.adoc` would wrongly invite the strangler frame's drain criterion.)
+places. The rule: consumers of the fact store share the store's relations and views, never their
+reads of it. Each consumer formulates its own queries against the `StoreHandle`, asking its own
+question of the views, even where the SQL comes out similar. A read two consumers genuinely both
+need is the signal for a missing relation or view, which lands in `graphitron-model` at its own
+grain, never in shared Java code between the store and its readers. That shared-code layer is the
+trap: a consumer-shaped accessor API that re-grows the model's read surface one tier down, so
+consumers read the layer rather than the store.
 
 The LSP migration settled the rule on the catalog-shaped completion arms and the planner/emitter
 conversion imports it, but both are roadmap items, and roadmap items ship and get deleted. The
-durable home is `docs/architecture/explanation/fact-model.adoc`.
+durable home is `docs/architecture/explanation/fact-model.adoc`, and the point of writing it there
+is that the next item does not re-argue it.
 
-## The seam the doctrine must decide
+## Three roles, one rule
 
-The main tree holds exactly one cross-consumer store-reader import: `SchemaView` in
-`graphitron-mcp` imports `no.sikt.graphitron.lsp.facts.ClassMemberSlots`. That javadoc argues the
-sharing deliberately ("shared by every surface that asks the question"), and the underlying rule
-did correctly become a view (`intent_class_member_slot`). Landing a doctrine whose single live
-counterexample is a design the tree reasoned itself into, without saying which side of the line
-it sits on, would be the weak form.
+The rule is about modules, not about packages inside them. Each module gets a role by what it does
+with the store, and the assignment is pinned rather than re-derived per item:
 
-Decision: the seam closes, and `catalog-facts-readers-move-to-the-store.md` already plans the
-closure; this item depends on it rather than duplicating it. That item's "The MCP writes its own
-queries" section settles the reasoning: once the bean rule graduated to the view, a reader is a
-query plus a row shape, and what crosses the module boundary when one consumer imports another's
-reader is a Java row vocabulary that "one model, many views" is satisfied by neither module
-owning. Both modules reading the base is the arrangement the doctrine describes; one module
-reading the other's view of the base is not. So MCP writes its own query over
-`intent_class_member_slot` (a projection of three columns; the rule stays in the view) and the
-import deletes there.
+| Role | Modules today | What it owns |
+|---|---|---|
+| The store | `graphitron-model` | The relations and views, plus the shared read surface (`model.read`: `StoreHandle`, `SourceGraph`, `SourceStamp`) and the shared boot surface (`model.boot`: `StoreReader`, `GraphitronModelStore`). |
+| Consumers | `graphitron-lsp`, `graphitron-mcp` | Their own queries and their own answer shapes. `graphitron` joins this row as its passes re-source onto the store; it queries nothing today. |
+| The composition root | `graphitron-maven-plugin` | Constructing the handle and handing it to each consumer (`DevMojo`). It wires consumers together and queries the store itself never. |
 
-An earlier draft of this spec decided the seam the other way, relocating `ClassMemberSlots` to
-`graphitron-model`'s `read` package as shared store surface. Withdrawn: the model's escalation for
-a rule two consumers genuinely need is a store view, never a shared Java class (the qualifier
-split and the case-insensitive match graduated exactly that way, into `intent_spelled_table`), and
-consumers mean different things by the same rows even where the SQL agrees, which is what a shared
-answer shape papers over (the LSP's `NoCensus` arm against the catalog tools' "absence of rows is
-absence of tables"). The drift worry about two consumers decoding one closed vocabulary is
-answered by the same rule: a decode that is load-bearing across consumers belongs in the view's
-own columns, where the vocabulary lives, not in a Java class beside the handle.
+**The rule: a consumer never imports another consumer.** Its reads are its own, including the row
+shapes they answer with. Duplicated similar-looking query text between consumers is the accepted
+cost, not a defect.
+
+**The escalation: a read two consumers genuinely both need becomes a relation or a view in
+`graphitron-model`, never a shared Java class.** The rule graduates into SQL, where the vocabulary
+already lives; the answer shapes stay per consumer, because two consumers can mean different things
+by the same rows.
+
+Two boundaries keep the rule from over-reaching, and both are boundaries rather than exceptions:
+
+* **The store's own surface is shared by design.** Sharing the handle is not sharing a query.
+  Everything above the handle is a consumer's own: a reader is a query plus a row shape, and a row
+  vocabulary crossing a consumer boundary is the trap even when the rule underneath it is a view.
+* **Decomposition inside one consumer is not this rule.** `CatalogColumns` is read by the LSP's
+  completion, hover, definition, parsing and diagnostic surfaces, and that is ordinary structure
+  within one consumer, not a shared layer between two.
+
+## The live sites, and why they are not this item's work
+
+The main tree holds exactly two cross-consumer imports, both from `graphitron-mcp` into
+`graphitron-lsp`: `SchemaView` imports `no.sikt.graphitron.lsp.facts.ClassMemberSlots`, and
+`GraphitronMcpServer` imports `no.sikt.graphitron.lsp.state.Workspace`. Both are
+`catalog-facts-readers-move-to-the-store.md`'s work, and that item's completion criterion is that
+`graphitron-mcp` has no dependency on `graphitron-lsp` at all, pom edge included. So this item
+plans no source change in either module; it depends on the sibling and lands the rule plus its
+guard once the sibling is done.
+
+The reasoning for closing both is the sibling's and is not restated here beyond the shape: a reader
+is a query plus a row shape, so what crosses the boundary when one consumer imports another's
+reader is a Java row vocabulary that "one model, many views" is satisfied by neither module owning.
+Both modules reading the base is the arrangement the doctrine describes; one module reading the
+other's view of the base is not. MCP writes its own query over `intent_class_member_slot`, and the
+handle reaches it from the composition root rather than through the LSP's state holder.
+
+An earlier draft of this spec decided the first seam the other way, relocating `ClassMemberSlots` to
+`graphitron-model`'s `read` package as shared store surface. Withdrawn, and the escalation rule
+above is why: the model's answer for a rule two consumers need is a store view, never a shared Java
+class. The qualifier split and the case-insensitive match graduated exactly that way, into
+`intent_spelled_table`. The drift worry about two consumers decoding one closed vocabulary is
+answered by the same rule: a decode that is load-bearing across consumers belongs in the view's own
+columns, where the vocabulary lives, not in a Java class beside the handle.
+
+## What is deliberately outside the rule
+
+`graphitron-lsp` and `graphitron-mcp` both import generator types from `graphitron` today
+(`LspSchemaSnapshot`, `CatalogFacts`, `CompletionData`, `FieldClassification`, `TypeBackingShape`
+and their neighbours). Those are not cross-consumer store reads and this rule does not govern them:
+they are the pre-store projection surface, a producer surface inside the strangler window, and they
+drain by the criterion "One base, many views" already states. Saying so explicitly is half the
+point of the section, because the alternative is each migration item re-arguing whether a
+`graphitron` import is the trap. It is not; it is the debt, and it has its own frame.
+
+The two rules meet when the last projection drains: `graphitron` stops being a producer surface for
+the other two, becomes a consumer like them, and its inbound module edges close under this rule
+rather than under the strangler frame's.
 
 ## The doc section
 
-One new `==` section in `fact-model.adoc`, titled "Consumers share relations, not queries",
-placed between "One base, many views" and "The back half: complete commands, a closed graph". The
-tail of "One base, many views" is already about reader shape, so the sharing discipline lands as
-continuous prose there; the alternative home inside "Derived reads are views, not stored facts"
-is rejected because that section owns the shape of a single derivation and already carries the
-missing-view half of the rule. What is genuinely new is short, and short is the target. The
-section carries:
+One new `==` section in `fact-model.adoc`, titled "Consumers share relations, not queries", placed
+between "One base, many views" and "The back half: complete commands, a closed graph". The tail of
+"One base, many views" is already about reader shape, so the sharing discipline lands as continuous
+prose there; the alternative home inside "Derived reads are views, not stored facts" is rejected
+because that section owns the shape of a single derivation and already carries the missing-view
+half of the rule. What is genuinely new is short, and short is the target. The section carries, in
+order:
 
-- The rule: each consumer formulates its own reads against the `StoreHandle`, asking its own
-  question of the views even where the SQL comes out similar; what consumers share is the store's
-  relations, derived views, and read surface, never the query. Duplicated similar-looking query
-  text between consumers is the accepted cost, not a defect.
-- The signal, one clause with an xref, not a paragraph: a read a second consumer needs is the
-  "derivation gets a relation as soon as a second reader asks it" sentence, applied from the
+- The rule and the three roles, as the table above states them but in prose: the store's surface,
+  the consumers' own queries, the composition root that wires them.
+- The accepted cost, one clause: similar-looking query text between consumers is not a defect.
+- The signal, one clause with an xref rather than a paragraph: a read a second consumer needs is
+  the "derivation gets a relation as soon as a second reader asks it" sentence, applied from the
   sharing side.
 - The trap, one clause: a shared query-helper layer is the private-model smell one tier down, the
   fork sitting in the read path rather than the model. (The paragraph above the insertion point
   already argues the fork; do not restate it.)
-- The smell: the row-assertion check applied unchanged, state what a shared reader answers
-  without naming which surface asked. Both live readers pass it as written, which is the tell
-  that it is the right check rather than a new one.
-- The boundary: the store's own read surface, `StoreHandle` and its `reads()` scoping predicate,
-  is shared by design; sharing the handle is not sharing a query. Everything above the handle is
-  a consumer's own: a reader is a query plus a row shape, and a row vocabulary crossing a
-  consumer boundary is the trap even when the rule underneath is a view.
-- The escalation: where a rule two consumers genuinely need arises, it graduates to a store view,
-  never to a shared Java reader class. The answer shapes stay per consumer, because two consumers
-  can mean different things by the same rows.
-- The exemplar, pairing both dispositions on one surface: the catalog arms (`CatalogTables` /
-  `CatalogColumns`), where the table arms stayed apart because hover asks a different question
-  and the column arm joined hover's reader once a second reader could say what it wanted from the
-  same rows, and `intent_class_member_slot`, where the bean rule became a view and each surface
-  reads it with its own query. The latter is already the exemplar in the bean-rule paragraph of
-  "Derived reads are views, not stored facts", so the xref is a real link.
-- The enforcer close, split as below.
+- The escalation: the rule graduates to a view, the answer shapes stay per consumer.
+- The smell test: the row-assertion check from "Name the row, not the question" applied unchanged
+  to a reader, state what it answers without naming which surface asked. Both live LSP readers pass
+  it on their leading sentence (`CatalogTables`: "the tables of the catalog census, by the name an
+  author wrote or by a key a resolution produced"), which is the tell that this is the existing
+  check rather than a new one. Say that it is the reader's stated answer being checked, not the
+  rationale paragraph underneath it, or the next reader will point at "Shared because completion
+  and hover want the same rows" and call it a failure.
+- The within-consumer boundary, one clause: decomposition inside a consumer is ordinary structure,
+  and `CatalogColumns` with its five call sites is the shipped case.
+- The strangler boundary, one clause with an xref: a pre-store projection import is the migration
+  debt, not this trap.
+- The enforcer line naming the guard.
 
 ## Enforcement
 
-Split the way the rule splits. The cross-consumer half is mechanically checkable: no consumer
-module imports another consumer module's store-reader package, a guard in the
-`PackageImportDirectionTest` mould (or an added leg on it). After the sibling item deletes
-`SchemaView`'s import the guard fires on zero sites, clean rather than grandfathered, which is
-what the `depends-on` encodes. The guard is the general form across all consumer pairs, present
-and future; it does not wait for the MCP pom's LSP edge to delete (the sibling defers that to
-whichever of its three named items lands last), only for the reader import to go, and it
-complements rather than duplicates the connection-ownership scan the sibling's tests section
-already specifies. The within-consumer half (a
-consumer's own internal helper drifting into a query layer) is honestly not mechanically
-enforceable: a shared reader class is structurally indistinguishable from legitimate
-within-consumer decomposition. It gets the bounded form of the "*Not mechanically enforced:*"
-label, naming what the guard above does catch, so the label is a boundary statement rather than a
-blanket concession.
+The cross-consumer half is mechanically checkable and the guard is the rule verbatim: no consumer
+module imports another consumer module. A guard in the `PackageImportDirectionTest` mould, textually
+scanning sibling modules' sources off `GuardScope.locateRepoRoot()` the way that test already scans
+package roots, so it needs no module dependency on the modules it polices.
+
+The consumer set is derived rather than remembered, in the census style
+`borrowDialComponentClosureIsPinned` already uses: scan every module's main sources for
+`no.sikt.graphitron.model.read.StoreHandle`, and pin the resulting module set against the role table
+above. A module that starts querying the store therefore joins the guard's scope by a deliberate
+edit to the pinned roles, never silently. `graphitron-model` (the store) and
+`graphitron-maven-plugin` (the composition root, which constructs the handle rather than querying
+it) are roles in that table, not carve-outs in the import rule: the rule scopes to the consumer row.
+
+After the sibling deletes both imports the guard fires on zero sites, clean rather than
+grandfathered, which is what the `depends-on` encodes. It carries the mould's non-vacuity
+assertions on files scanned, because a guard whose whole point is a clean zero is otherwise
+unfalsifiable. It complements rather than duplicates the connection-ownership scan the sibling's
+tests section already specifies.
+
+The within-consumer half (a consumer's own internal helper drifting into a query layer) is honestly
+not mechanically enforceable: within one consumer, a shared reader class is structurally
+indistinguishable from legitimate decomposition, which is exactly why the section states that case
+as a boundary rather than a violation. It gets the bounded form of the "*Not mechanically
+enforced:*" label, naming what the guard above does catch, so the label is a boundary statement
+rather than a blanket concession.
 
 ## Deliverables
 
-1. Add the cross-consumer import guard, once the sibling item's `SchemaView` migration has
-   deleted the one live import.
+1. Add the cross-consumer import guard with its derived-and-pinned consumer set, once the sibling
+   item has deleted `graphitron-mcp`'s dependency on `graphitron-lsp`.
 2. Add the `fact-model.adoc` section per above, its enforcer line naming the now-live guard.
-3. No `development-principles.adoc` edit: "One model, many views" already xrefs
-   `fact-model.adoc`, and the doc stands at 3,497 of its 3,500-word enforced budget.
+3. No `development-principles.adoc` edit: "One model, many views" already xrefs `fact-model.adoc`,
+   and the doc stands at 3,497 of its 3,500-word enforced budget.
 
-Order matters: the sibling's import deletion, then the guard, then the doc, so the doc's
-"*Enforced by:*" line names a green test at the moment it lands. The seam closure itself is the
-sibling's deliverable, not this item's; nothing here touches `graphitron-mcp` or `graphitron-lsp`
-main sources.
+Order matters: the sibling's dependency deletion, then the guard, then the doc, so the doc's
+"*Enforced by:*" line names a green test at the moment it lands. Nothing here touches
+`graphitron-mcp` or `graphitron-lsp` main sources.
 
 ## Risks
 
-- Sequencing: this item waits on a large sibling. If the sibling's `SchemaView` migration is far
-  off, the doctrine sits unwritten while the trap is live; the mitigation is that the sibling can
-  land its member-slot query as an early increment, since that read is a three-column projection
-  independent of the catalog-tool work, and this item unblocks the moment the import is gone.
+- Sequencing: this item waits on a large sibling, and waits for all of it rather than for one
+  import, because the sibling's completion criterion is the whole `graphitron-lsp` dependency. If
+  that is far off, the doctrine sits unwritten while the trap is live. Mitigation, if the wait
+  proves long: the doc section is independent of the guard and could land first with its enforcer
+  line deferred, at the cost of a section that describes a rule nothing checks. Prefer waiting;
+  take the split only on an explicit call.
 - Padding: the signal and the trap are one clause each, and the fork argument already sits in the
   paragraphs above the insertion point. Restating doctrine in new vocabulary is the failure mode
-  this section warns about, applied to itself.
+  this section warns about, applied to itself. The section's length budget is the sum of its
+  bullets, not a page.
 
 ## Done criteria
 
 - The section exists at the stated position with the elements above; the docs module renders.
-- The guard is green with zero grandfathered sites and no carve-outs.
+- The guard is green with zero grandfathered sites and no carve-outs in the import rule.
+- The pinned consumer set matches what a `StoreHandle` scan derives, so the guard's scope cannot
+  drift from the role table.
 - Full `mvn install -Plocal-db` is green.
 - The planner/emitter item's "Planners share relations, not queries" section and the LSP item's
   settled note can cite the durable section instead of restating it; whether to reword them is
