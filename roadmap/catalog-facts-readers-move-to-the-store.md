@@ -392,21 +392,31 @@ MCP's own query rather than the LSP's.
 
 ### The backing class
 
-One read of `intent_type_backing_class`, keyed by `(graph_name, type_name)`, joined to
+One read of `intent_type_backing`, keyed by `(graph_name, type_name)`, joined to
 `intent_type_backing_conflict` where the tool wants to say a type is answered more than one way.
-That relation is the closure over `intent_field_accessor_hop`'s edges from producer-grounded seeds,
-materialized at capture cadence by a writer that clears and re-derives its graph partition, so on
-any settled store the rows are current for every captured graph.
 
-An ambiguous binding is rows, as everywhere else in the model. A type two seeds answer differently is
-two rows, and `intent_type_backing_conflict` names it with `class_names` and `candidates`, where the
-walk suppresses the second observation to protect the first and leaves the disagreement unobservable.
-The wire reports the candidates and the tool does not choose.
+That view is the right read rather than `intent_type_backing_class` underneath it, and its own
+comment gives the reason: it is "one relation for the question every consumer of a backing actually
+asks, which is what class, not which walk found it". The `schema` tool is exactly that consumer. Its
+two arms are the `@table` binding read through the table's generated record and the producer-and-hop
+closure, and the closure arm is materialized at capture cadence by a writer that clears and
+re-derives its graph partition, so on any settled store the rows are current for every captured
+graph. `declared_via` carries which arm answered, and the wire keeps it: an agent asking why a type
+is backed by a jOOQ record wants the difference between "you bound it to a table" and "a producer
+returns it".
 
-The four populations the relation does not yet carry, stated in the classification section above,
-are inherited rather than worked around. A `@table`-bound type in particular has no row here on
-purpose: that binding is `intent_bound_table`'s, so the `schema` entry's table slot answers where its
-class slot is silent, which is the same split the relation's own comment draws.
+An ambiguous binding is rows, as everywhere else in the model, and this view is where the model
+declines a precedence the walk applies. A type whose `@table` binding and whose closure answer
+differently is two rows; the walk resolves that pair by reading the table and never looking at the
+class. The comment is explicit that a consumer may still apply that precedence by filtering on
+`declared_via`, and that what it may not do is mistake the precedence for agreement. The `schema`
+tool does neither: it reports both rows with their `declared_via`, which is the honest rendering of
+a disagreement an author probably wants to know about.
+
+One silence is worth stating because it looks like a bug from the wire. A table whose generated model
+has no record class reports `org.jooq.Record`, which is not a backing, so the view drops it and the
+type is unbacked here. The `schema` entry's table slot still answers for such a type; only its class
+slot is empty.
 
 **Wire.** Breaking, and the item's one deliberate breaking change. The `kind` values change from
 permit names to classifier names, `backingShape.kind` goes, and the demand and conflict slots are
@@ -596,9 +606,10 @@ So the permits are not a requirement any consumer has. They are what precomputin
 once costs, from when there was nothing to ask at read time. The questions themselves are seven:
 
 1. Which table backs this type. `intent_bound_table`, with `candidates` for arity.
-2. Which class backs this type. `intent_type_backing_class`, keyed `(graph_name, type_name,
-   class_name)`, with `intent_type_backing_conflict` giving `class_names` and `candidates` where a
-   type is answered more than one way.
+2. Which class backs this type. `intent_type_backing`, which coalesces both populations that can
+   answer: a `@table` binding read through the table's generated record, and the closure over
+   producer returns and accessor hops, discriminated by `declared_via`. `intent_type_backing_conflict`
+   gives `class_names` and `candidates` where a type is answered more than one way.
 3. Which column does this field match. `intent_column_match_claim` for the structural case, which
    already carries the resolved table's full key; `intent_field_column_table` where a directive
    moved the match off the parent's own binding, whose `disposition` and `basis` say which.
@@ -639,13 +650,20 @@ keeping that code alive; `walk_type_backing_class` is still there and is still n
 reads. What changed is that the honest alternative stopped being "write the recursion yourself" and
 became "read the relation that closure produced", which is the better trade in the same direction.
 
-Four populations `intent_type_backing_class` does not yet carry are stated in its own comment, and
-the `schema` slice inherits all four rather than working around any: a `@table`-bound type seeds
-nothing there (that population is `intent_bound_table`'s, and the generated jOOQ records the census
-excludes by design are unreachable below one), the input axis is absent, the walk's cardinality guard
-is not applied, and the two-level carrier fork is not applied. Each is queued for adjudication against
-the walk's shadow on the store side. The tool reports what the relation says, which is the same
-posture it takes everywhere else in this item.
+Three populations the closure does not yet carry are stated in `intent_type_backing_class`'s own
+comment, and the `schema` slice inherits all three rather than working around any: the walk's
+cardinality guard is not applied, so a single-object field produced by a collection return backs its
+type here where the walk reads a carrier and declines; the two-level carrier fork is not applied, so
+a payload wrapper backs itself here where the walk reaches past it to the data field; and a
+`@table`-bound type seeds nothing into the closure, which is why the tool reads the coalescing view
+rather than the closure relation. Each is queued for adjudication against the walk's shadow on the
+store side. The tool reports what the relation says, which is the same posture it takes everywhere
+else in this item.
+
+This substrate is moving under the item faster than any other part of it, so the count above is a
+reading of one commit rather than a durable fact. The input axis was absent when this paragraph was
+first written and is not any more; the coalescing view did not exist and does. Re-read
+`intent_type_backing_class`'s comment at pickup rather than trusting this paragraph's arithmetic.
 
 The same move has a cost side, and it is the leaf-zoo connection. The classification projections are
 the LSP-facing view of the generator's field and type taxonomy (the leaf zoo whose dissolution
@@ -840,10 +858,12 @@ that distinction surfaces.
   views buy: today an unclassified coordinate and an out-of-scope one are the same answer.
 * **The backing-class cases assert the tool's rendering, not the closure.** The closure is
   `intent_type_backing_class`'s, derived and shadow-tested on the store side, so re-asserting its
-  reachability from here would be a second opinion on somebody else's relation. Three cases: a
-  class-backed type reports its class and its members, a type with two rows reports both candidates
-  rather than choosing, and a `@table`-bound type reports its table with no class slot, which is the
-  population the relation deliberately does not seed.
+  reachability from here would be a second opinion on somebody else's relation. Four cases, one per
+  thing the rendering can get wrong: a closure-backed type reports its class, its members and
+  `declared_via`; a `@table`-bound type reports its generated record class through the same slot,
+  since the coalescing view is what makes those one answer; a type both arms answer differently
+  reports both rows rather than applying the walk's table-wins precedence; and a table whose model
+  has no record class reports its table with an empty class slot, that arm being dropped by the view.
 * **The classification-arm coverage question does not come back in a new spelling.** The old
   `SchemaView` guard was its own exhaustive switch; the new reads have no arm count to cover. What
   replaces it is the same shape as the edge-kind successor above: every wire slot the `schema` entry
@@ -936,9 +956,8 @@ fails for eight slices is a guard someone disables.
   `WALK_CLAIM_DOMAIN_TYPE` or `WALK_CLAIM_DOMAIN_FIELD` from `graphitron-mcp`. Same argument as the
   leaf-zoo guard and the same failure mode: these are ordinary relations on `graphitron-model`, a
   dependency the module keeps. `walk_type_backing_class` is the live temptation, since it is keyed
-  the same way as `intent_type_backing_class` and answers a superset of it while the derived
-  relation's four absent populations are still being adjudicated. The guard's message says why not:
-  the family drains, and a consumer of it does not.
+  the same way as `intent_type_backing` and answers the populations the closure is still being built
+  out to cover. The guard's message says why not: the family drains, and a consumer of it does not.
 
 The last three guards are what make the goal's properties enforceable rather than aspirational, and
 they are the reason those properties are worth stating separately at all. No agreement test between
