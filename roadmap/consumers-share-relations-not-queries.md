@@ -58,20 +58,27 @@ Two boundaries keep the rule from over-reaching, and both are boundaries rather 
 
 ## The live sites, and why they are not this item's work
 
-The main tree holds exactly two cross-consumer imports, both from `graphitron-mcp` into
-`graphitron-lsp`: `SchemaView` imports `no.sikt.graphitron.lsp.facts.ClassMemberSlots`, and
-`GraphitronMcpServer` imports `no.sikt.graphitron.lsp.state.Workspace`. Both are
-`catalog-facts-readers-move-to-the-store.md`'s work, and that item's completion criterion is that
-`graphitron-mcp` has no dependency on `graphitron-lsp` at all, pom edge included. So this item
-plans no source change in either module; it depends on the sibling and lands the rule plus its
-guard once the sibling is done.
+Every cross-consumer import in the tree runs from `graphitron-mcp` into `graphitron-lsp`. Two in
+main sources: `SchemaView` imports `no.sikt.graphitron.lsp.facts.ClassMemberSlots`, and
+`GraphitronMcpServer` imports `no.sikt.graphitron.lsp.state.Workspace`. Three more in test sources,
+all of them `Workspace` (`StoreBackedBuild`, `GraphitronMcpServerTest`, `ServerInstructionsTest`),
+which is why the guard below scans test sources too: a rule about what a consumer may reach for
+does not stop at the main/test line.
 
-The reasoning for closing both is the sibling's and is not restated here beyond the shape: a reader
-is a query plus a row shape, so what crosses the boundary when one consumer imports another's
-reader is a Java row vocabulary that "one model, many views" is satisfied by neither module owning.
-Both modules reading the base is the arrangement the doctrine describes; one module reading the
-other's view of the base is not. MCP writes its own query over `intent_class_member_slot`, and the
-handle reaches it from the composition root rather than through the LSP's state holder.
+All of them are `catalog-facts-readers-move-to-the-store.md`'s work. "No dependency on
+`graphitron-lsp`" is the first of that item's four stated goals, it lands there in full rather than
+deferring to a successor, and it covers the pom edge as well as the imports. So this item plans no
+source change in either module; it depends on the sibling and lands the rule plus its guard once
+the sibling is done.
+
+The reasoning for closing them is the sibling's, in its "The MCP writes its own queries" section,
+and is not restated here beyond the shape: a reader is a query plus a row shape, so what crosses
+the boundary when one consumer imports another's reader is a Java row vocabulary that "one model,
+many views" is satisfied by neither module owning. Both modules reading the base is the arrangement
+the doctrine describes; one module reading the other's view of the base is not. That the sibling
+had to argue this from first principles, in its own body, over the obvious move of reusing the
+LSP's `facts` package, is the case for this item: the argument is general, it is being made per
+item, and it should be citable instead.
 
 An earlier draft of this spec decided the first seam the other way, relocating `ClassMemberSlots` to
 `graphitron-model`'s `read` package as shared store surface. Withdrawn, and the escalation rule
@@ -131,9 +138,10 @@ order:
 ## Enforcement
 
 The cross-consumer half is mechanically checkable and the guard is the rule verbatim: no consumer
-module imports another consumer module. A guard in the `PackageImportDirectionTest` mould, textually
-scanning sibling modules' sources off `GuardScope.locateRepoRoot()` the way that test already scans
-package roots, so it needs no module dependency on the modules it polices.
+module imports another consumer module, in main or test sources. A guard in the
+`PackageImportDirectionTest` mould, textually scanning sibling modules' sources off
+`GuardScope.locateRepoRoot()` the way that test already scans package roots, so it needs no module
+dependency on the modules it polices.
 
 The consumer set is derived rather than remembered, in the census style
 `borrowDialComponentClosureIsPinned` already uses: scan every module's main sources for
@@ -143,11 +151,21 @@ edit to the pinned roles, never silently. `graphitron-model` (the store) and
 `graphitron-maven-plugin` (the composition root, which constructs the handle rather than querying
 it) are roles in that table, not carve-outs in the import rule: the rule scopes to the consumer row.
 
-After the sibling deletes both imports the guard fires on zero sites, clean rather than
+After the sibling deletes the imports the guard fires on zero sites, clean rather than
 grandfathered, which is what the `depends-on` encodes. It carries the mould's non-vacuity
 assertions on files scanned, because a guard whose whole point is a clean zero is otherwise
-unfalsifiable. It complements rather than duplicates the connection-ownership scan the sibling's
-tests section already specifies.
+unfalsifiable.
+
+The sibling ships its own LSP-edge guard in two halves, an import scan over `graphitron-mcp`'s
+sources and a pom assertion against a `graphitron-lsp` dependency in any scope. The relationship is
+worth stating so a later reader deletes neither by mistake. This guard generalises the import half:
+one rule over every consumer pair in both directions, with the consumer set derived rather than
+named, so a third store consumer is covered on the day it appears instead of waiting for someone to
+write its pair. The pom half generalises nowhere and stays the sibling's: a declared dependency
+with no import is invisible to any import scan, and it is exactly the state that lets the next
+reader reach for a type without noticing they are widening a dependency. Whether the sibling's
+import half then folds into this guard is that item's call at its own Done gate, not a deletion
+this item performs.
 
 The within-consumer half (a consumer's own internal helper drifting into a query layer) is honestly
 not mechanically enforceable: within one consumer, a shared reader class is structurally
