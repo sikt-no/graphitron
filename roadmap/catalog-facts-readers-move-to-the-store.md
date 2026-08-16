@@ -117,7 +117,7 @@ row is a slice below, and the item is done when every row's right-hand column is
 
 | `schema`
 | What graphitron made of a type or field, and what it binds
-| the claim, binding and demand views, plus a backing-class recursion
+| the claim, binding, backing and demand views
 
 | `directives`
 | The directive grammar this schema can use
@@ -390,41 +390,23 @@ The `@node` metadata block joins `graphitron_node` and `graphitron_node_key_colu
 from `CompletionData.nodeMetadata`. Backing members keep reading `intent_class_member_slot`, through
 MCP's own query rather than the LSP's.
 
-### The backing class is a reader's recursion
+### The backing class
 
-This is the one question with no relation that answers it directly, and with the `walk_` family
-ruled out it is the slice's real work. It is tractable, and the DDL says so in as many words:
-`intent_field_accessor_hop` describes itself as "one edge of the walk that binds SDL types to
-backing classes, stated as a fact instead of as a step, **so the closure over these edges is a
-reader's recursion rather than a rule buried inside one**". `graphitron-mcp` is such a reader, and
-the relation was built for exactly this.
+One read of `intent_type_backing_class`, keyed by `(graph_name, type_name)`, joined to
+`intent_type_backing_conflict` where the tool wants to say a type is answered more than one way.
+That relation is the closure over `intent_field_accessor_hop`'s edges from producer-grounded seeds,
+materialized at capture cadence by a writer that clears and re-derives its graph partition, so on
+any settled store the rows are current for every captured graph.
 
-The recursion has three parts, all over built relations:
+An ambiguous binding is rows, as everywhere else in the model. A type two seeds answer differently is
+two rows, and `intent_type_backing_conflict` names it with `class_names` and `candidates`, where the
+walk suppresses the second observation to protect the first and leaves the disagreement unobservable.
+The wire reports the candidates and the tool does not choose.
 
-* **The ground.** A type produced by an `@service` or `@externalField` method is backed by that
-  method's return class: `intent_field_producer_method` joined to `jvm_method_return_type_ref`,
-  with containers peeled the way `intent_class_member_element` peels them. That relation's own
-  comment points at this join: "which class the method's return names is
-  `jvm_method_return_type_ref`'s answer, one join further on".
-* **The step.** From a type whose class is known, each field's child type is backed by what the
-  accessor delivers: `intent_field_accessor_hop` with `from_class_name` bound to the parent's
-  resolved class. The relation is total over standing classes by construction, so binding the
-  parent first is what keeps the product small; its comment says so.
-* **The conditions**, which the comment explicitly assigns to the reader rather than to the edge: a
-  field carrying `@service` grounds its own binding rather than hopping, and a child type already
-  bound is not re-entered. Both are terminations of the recursion, and the query states them.
-
-Two departures from the walk come with the edge relation and are inherited rather than introduced.
-Its comment records them: an SDL field's arguments are not read, so the relation hops where the walk
-would not (an argument-taking field standing on a no-argument accessor of the same name) and stays
-silent where the walk would hop (a field whose accessor takes those arguments). These are recorded
-behaviour differences, adjudicated case by case, and the `schema` tool inherits whichever answer the
-relation gives. Naming them here is the point: the tool's answer for such a field may differ from
-what it says today, and that is the relation's stance rather than a bug in this slice.
-
-An ambiguous binding is rows, as everywhere else in the model. A type two hops bind to different
-classes yields both, where the walk refuses to bind at all; the wire reports the candidates and the
-tool does not choose.
+The four populations the relation does not yet carry, stated in the classification section above,
+are inherited rather than worked around. A `@table`-bound type in particular has no row here on
+purpose: that binding is `intent_bound_table`'s, so the `schema` entry's table slot answers where its
+class slot is silent, which is the same split the relation's own comment draws.
 
 **Wire.** Breaking, and the item's one deliberate breaking change. The `kind` values change from
 permit names to classifier names, `backingShape.kind` goes, and the demand and conflict slots are
@@ -614,10 +596,9 @@ So the permits are not a requirement any consumer has. They are what precomputin
 once costs, from when there was nothing to ask at read time. The questions themselves are seven:
 
 1. Which table backs this type. `intent_bound_table`, with `candidates` for arity.
-2. Which class backs this type. No relation states it; the edges are
-   `intent_field_producer_method` with `jvm_method_return_type_ref` for the ground and
-   `intent_field_accessor_hop` for the step, and the closure over them is the reader's, which the
-   `schema` slice writes.
+2. Which class backs this type. `intent_type_backing_class`, keyed `(graph_name, type_name,
+   class_name)`, with `intent_type_backing_conflict` giving `class_names` and `candidates` where a
+   type is answered more than one way.
 3. Which column does this field match. `intent_column_match_claim` for the structural case, which
    already carries the resolved table's full key; `intent_field_column_table` where a directive
    moved the match off the parent's own binding, whose `disposition` and `basis` say which.
@@ -637,26 +618,34 @@ once costs, from when there was nothing to ask at read time. The questions thems
    `intent_resolved_field_demand` / `intent_resolved_type_demand` say whether the model wanted a
    verdict here at all, with the rule that decided it.
 
-Six of the seven are a relation read. What each consumer wants is one of them at a time, which is
-what a relation per fact is for, and joining them is the caller's business rather than a shape the
-model has to anticipate. This is the escalation rule read forwards: the shared thing graduated to a
-view, so the union that used to carry every combination has nothing left to carry.
+All seven are a relation read. What each consumer wants is one of them at a time, which is what a
+relation per fact is for, and joining them is the caller's business rather than a shape the model
+has to anticipate. This is the escalation rule read forwards: the shared thing graduated to a view,
+so the union that used to carry every combination has nothing left to carry.
 
-Question 2 is the seventh and the only one that costs real work, so it is worth being exact about
-what it does and does not need. `walk_type_backing_class` states the answer directly and is ruled
-out by the goal, so the relation that *would* have made this a one-line read is the one relation the
-item may not use. That is not a loss, and the DDL says why: the edge relation
-`intent_field_accessor_hop` describes itself as stating a step "as a fact instead of as a step, so
-the closure over these edges is a reader's recursion rather than a rule buried inside one". The
-closure was left to a reader on purpose, and the alternative to writing it is not a cheaper query
-but `TypeBackingShape`, the taxonomy this item exists to stop reading. The `schema` slice writes the
-recursion and states the two behaviour differences the edge relation carries.
+Question 2 is worth a note on how it got that way, because for most of this item's life it was the
+hard one. The backing class had no relation stating it, only edges: producer-method returns for the
+ground and `intent_field_accessor_hop` for the step, with that view's own comment inviting a reader
+to close over them. An earlier reading of this item took the invitation and put the recursion in the
+`schema` slice. That would have been a mistake, and the store side found out first: a recursive form
+over those edges measured at 369 seconds returning nothing on an adversarial census, because H2
+re-evaluates a recursive view once per outer row of whatever joins it. The closure is now
+materialized on the store side, written at capture cadence by a derivation that clears and re-derives
+its graph partition, and the MCP reads rows.
 
-The choice generalises past this item. A shadow relation answers a question by transcribing what the
-code being replaced decided, so reading one buys an answer at the price of keeping the code alive.
-Writing the recursion costs a query and buys an answer that survives the walk's deletion. This item
-takes the second trade everywhere it appears, which is what makes "no `walk_` family" a property
-worth stating in the goal rather than a preference expressed once.
+The generalisation survives the correction and is worth keeping. A shadow relation answers a question
+by transcribing what the code being replaced decided, so reading one buys an answer at the price of
+keeping that code alive; `walk_type_backing_class` is still there and is still not what this module
+reads. What changed is that the honest alternative stopped being "write the recursion yourself" and
+became "read the relation that closure produced", which is the better trade in the same direction.
+
+Four populations `intent_type_backing_class` does not yet carry are stated in its own comment, and
+the `schema` slice inherits all four rather than working around any: a `@table`-bound type seeds
+nothing there (that population is `intent_bound_table`'s, and the generated jOOQ records the census
+excludes by design are unreachable below one), the input axis is absent, the walk's cardinality guard
+is not applied, and the two-level carrier fork is not applied. Each is queued for adjudication against
+the walk's shadow on the store side. The tool reports what the relation says, which is the same
+posture it takes everywhere else in this item.
 
 The same move has a cost side, and it is the leaf-zoo connection. The classification projections are
 the LSP-facing view of the generator's field and type taxonomy (the leaf zoo whose dissolution
@@ -672,12 +661,10 @@ section claimed the opposite.
 
 That also settles what the edge tools cost at rest. Today the first reverse traversal after a build
 pays a whole-schema walk; afterwards it is an indexed lookup per query, and the build pays nothing.
-The `schema` slice's recursion runs the other way and is worth pricing honestly: it is the one query
-this item adds that is more expensive than what it replaces, since a map lookup becomes a recursive
-join. It is bounded by the schema's accessor depth, it runs per request rather than per build, and
-the `schema` tool is paged, so the bound is a page of types rather than the graph. If it turns out to
-need a memo, that memo keys on the store's own currency rather than on a projection's reference
-identity, which is the distinction the deleted memos got wrong.
+Every read this item adds is an indexed lookup on a captured or materialized relation, so no tool
+pays a derivation at request time. That is worth stating because it was nearly not true: the
+backing-class closure was specced here as a per-request recursion before it existed on the store
+side, and the store side's own measurement of that shape is why it is materialized instead.
 
 ## Where the answers change
 
@@ -851,18 +838,12 @@ that distinction surfaces.
   participants, a conflicted coordinate reports its directives and message, and an exempt coordinate
   reports `EXEMPT` with its rule. That last one has no predecessor at all and is the case the demand
   views buy: today an unclassified coordinate and an out-of-scope one are the same answer.
-* **The backing-class recursion gets its own cases, and they are the slice's real test surface**,
-  being the one place this item writes a derivation rather than a read. Four: a type grounded
-  directly on a `@service` method's return class; a type reached one accessor hop from such a
-  ground; a type reached through a container-valued hop, so the element peel is exercised; and a
-  type behind a field carrying its own `@service`, which terminates the recursion rather than
-  hopping through it. A fifth pins the ambiguous case: a type two hops bind to different classes
-  reports both candidates rather than declining.
-* **The two inherited behaviour differences get a case each, asserting the relation's answer rather
-  than the walk's.** An argument-taking field standing on a no-argument accessor of the same name
-  hops here where the walk would not; a field whose accessor takes those arguments does not hop
-  here where the walk would. Both are `intent_field_accessor_hop`'s recorded departures, and a case
-  each is what keeps them recorded rather than rediscovered as bugs.
+* **The backing-class cases assert the tool's rendering, not the closure.** The closure is
+  `intent_type_backing_class`'s, derived and shadow-tested on the store side, so re-asserting its
+  reachability from here would be a second opinion on somebody else's relation. Three cases: a
+  class-backed type reports its class and its members, a type with two rows reports both candidates
+  rather than choosing, and a `@table`-bound type reports its table with no class slot, which is the
+  population the relation deliberately does not seed.
 * **The classification-arm coverage question does not come back in a new spelling.** The old
   `SchemaView` guard was its own exhaustive switch; the new reads have no arm count to cover. What
   replaces it is the same shape as the edge-kind successor above: every wire slot the `schema` entry
@@ -954,9 +935,10 @@ fails for eight slices is a guard someone disables.
 * **The `walk_` family**, failing on a reference to `WALK_TYPE_BACKING_CLASS`,
   `WALK_CLAIM_DOMAIN_TYPE` or `WALK_CLAIM_DOMAIN_FIELD` from `graphitron-mcp`. Same argument as the
   leaf-zoo guard and the same failure mode: these are ordinary relations on `graphitron-model`, a
-  dependency the module keeps, and the backing-class recursion is exactly the query someone would be
-  tempted to replace with a two-line read of the shadow. The guard's message says why: the family
-  drains, and a consumer of it does not.
+  dependency the module keeps. `walk_type_backing_class` is the live temptation, since it is keyed
+  the same way as `intent_type_backing_class` and answers a superset of it while the derived
+  relation's four absent populations are still being adjudicated. The guard's message says why not:
+  the family drains, and a consumer of it does not.
 
 The last three guards are what make the goal's properties enforceable rather than aspirational, and
 they are the reason those properties are worth stating separately at all. No agreement test between
