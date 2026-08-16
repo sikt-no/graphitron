@@ -3472,6 +3472,18 @@ COMMENT ON COLUMN intent_field_producer_method.method_name IS 'the resolved meth
 COMMENT ON COLUMN intent_field_producer_method.descriptor IS 'the resolved method''s raw JVM descriptor, jvm_method''s overload discriminator and the whole of what tells two rows of one reference apart. The column a reader carries forward to reach the method''s parameters and the classes its declared return type names';
 COMMENT ON COLUMN intent_field_producer_method.candidates IS 'how many census methods this reference matches, this row being one of them; 1 on an unambiguous reference. Partitioned by the reference and not by the coordinate, so a field carrying both directives does not report one arm''s overloads as the other''s. Two overloads and one class declared by two classpath entries both raise it, which is one fact from a reader''s side: the reference names more than one method. Stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms, whether a reference is unique being what decides the reading';
 
+CREATE VIEW intent_delivery_container (container_class, element_index) AS VALUES
+  ('java.util.List', '0'),
+  ('java.util.Set', '0'),
+  ('java.util.Collection', '0'),
+  ('java.util.Optional', '0'),
+  ('java.util.concurrent.CompletableFuture', '0'),
+  ('org.jooq.Result', '0'),
+  ('java.util.Map', '1');
+COMMENT ON VIEW intent_delivery_container IS 'The classes a declared type delivers something through rather than delivers: the container vocabulary the peel descends, one row per class with the type-argument position its element sits at. Named data rather than a predicate spelled inside its reader, on the terms intent_class_member_slot joins its two bean prefixes, and its own relation because the peel reads it twice, once to descend and once to ask whether a position can descend at all. A rule that decides which classes are containers is exactly the kind that must have one home. They are named rather than recognised through the assignability closure because that closure cannot answer here: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and standing in for it is unreachable from below. The set is closed by what a generator meets rather than by what Java offers, so a consumer returning its own collection type is not a container here and delivers itself; widening it is adding a row.';
+COMMENT ON COLUMN intent_delivery_container.container_class IS 'the fully-qualified binary name of the container class, spelled as the census spells a class name';
+COMMENT ON COLUMN intent_delivery_container.element_index IS 'the 0-based type-argument position the delivered element sits at, as a type_path step: 0 for the single-argument containers, 1 for a map, whose key is not what it delivers';
+
 CREATE VIEW intent_declared_type_ref
   (source_name, class_name, owner_kind, owner_name, owner_descriptor,
    type_path, referenced_class, variance) AS
@@ -3495,42 +3507,38 @@ COMMENT ON COLUMN intent_declared_type_ref.variance IS 'NONE, EXTENDS or SUPER, 
 CREATE VIEW intent_declared_type_element
   (source_name, class_name, owner_kind, owner_name, owner_descriptor,
    element_path, element_class, variance) AS
-WITH RECURSIVE spine (source_name, class_name, owner_kind, owner_name, owner_descriptor,
-                      type_path, referenced_class, variance) AS (
-  SELECT source_name, class_name, owner_kind, owner_name, owner_descriptor,
-         type_path, referenced_class, variance
-    FROM intent_declared_type_ref
-   WHERE type_path = ''
-  UNION ALL
-  SELECT t.source_name, t.class_name, t.owner_kind, t.owner_name, t.owner_descriptor,
-         t.type_path, t.referenced_class, t.variance
-    FROM spine p
-    JOIN (SELECT 'java.util.List' AS container_class, '0' AS element_index
-          UNION ALL SELECT 'java.util.Set', '0'
-          UNION ALL SELECT 'java.util.Collection', '0'
-          UNION ALL SELECT 'java.util.Optional', '0'
-          UNION ALL SELECT 'java.util.concurrent.CompletableFuture', '0'
-          UNION ALL SELECT 'org.jooq.Result', '0'
-          UNION ALL SELECT 'java.util.Map', '1') c
-      ON c.container_class = p.referenced_class
-    JOIN intent_declared_type_ref t
-      ON t.source_name = p.source_name AND t.class_name = p.class_name
-     AND t.owner_kind = p.owner_kind AND t.owner_name = p.owner_name
-     AND t.owner_descriptor IS NOT DISTINCT FROM p.owner_descriptor
-     AND t.type_path = CASE WHEN p.type_path = '' THEN c.element_index
-                            ELSE p.type_path || '.' || c.element_index END
-)
-SELECT s.source_name, s.class_name, s.owner_kind, s.owner_name, s.owner_descriptor,
-       s.type_path, s.referenced_class, s.variance
-  FROM spine s
- WHERE NOT EXISTS (SELECT 1 FROM spine d
-                    WHERE d.source_name = s.source_name
-                      AND d.class_name = s.class_name
-                      AND d.owner_kind = s.owner_kind
-                      AND d.owner_name = s.owner_name
-                      AND d.owner_descriptor IS NOT DISTINCT FROM s.owner_descriptor
-                      AND LENGTH(d.type_path) > LENGTH(s.type_path));
-COMMENT ON VIEW intent_declared_type_element IS 'The class a declared type delivers: the type with its delivery wrappers peeled off, one row per owner. A member declared as a List of Film delivers Film, and so do a CompletableFuture of a List of Film and a Map from a key to Film, which is the rule that lets an SDL field naming one object stand on a member, or on a producer method, that hands back many. Keyed by the declared type''s own owner rather than by any reader''s subject, which is the correction a second reader forced: the rule was first stated over member slots, and a producer method''s return is the same declared form under a key no slot relation can hold, so a peel keyed at either reader would have been spelled twice and drifted. The peel walks a spine from the root position: at a position naming a container it descends to that container''s element argument, and it stops at the first position naming no container, or naming one whose element argument names no class. That stopping position is the row. The containers are named as data, seven rows joined into the recursion on the terms intent_class_member_slot joins its two bean prefixes, and they are named rather than recognised through the assignability closure because that closure cannot answer here: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and standing in for it is unreachable from below. The recursion is not the one the SDL type graph needs a guard for. A declared type is a finite tree, so the descent terminates on its own, and the depth is the type''s rather than a bound the rule picks. Two populations fall away with no filter, because the census already omits them: a primitive-typed owner and an array-typed owner name no class at their root and so have no spine at all, an array''s component being the next step down and this walk never taking that step. What this view does not do is judge the class it lands on. A raw List with no type argument delivers java.util.List and says so, and an owner delivering java.lang.String is a row like any other; which landing classes are worth binding an SDL type to is a filter a reader applies rather than a fact this relation withholds.';
+SELECT r0.source_name, r0.class_name, r0.owner_kind, r0.owner_name, r0.owner_descriptor,
+       COALESCE(r4.type_path, r3.type_path, r2.type_path, r1.type_path, r0.type_path),
+       COALESCE(r4.referenced_class, r3.referenced_class, r2.referenced_class,
+                r1.referenced_class, r0.referenced_class),
+       COALESCE(r4.variance, r3.variance, r2.variance, r1.variance, r0.variance)
+  FROM intent_declared_type_ref r0
+  LEFT JOIN intent_delivery_container c1 ON c1.container_class = r0.referenced_class
+  LEFT JOIN intent_declared_type_ref r1
+    ON r1.source_name = r0.source_name AND r1.class_name = r0.class_name
+     AND r1.owner_kind = r0.owner_kind AND r1.owner_name = r0.owner_name
+     AND r1.owner_descriptor IS NOT DISTINCT FROM r0.owner_descriptor
+     AND r1.type_path = c1.element_index
+  LEFT JOIN intent_delivery_container c2 ON c2.container_class = r1.referenced_class
+  LEFT JOIN intent_declared_type_ref r2
+    ON r2.source_name = r0.source_name AND r2.class_name = r0.class_name
+     AND r2.owner_kind = r0.owner_kind AND r2.owner_name = r0.owner_name
+     AND r2.owner_descriptor IS NOT DISTINCT FROM r0.owner_descriptor
+     AND r2.type_path = r1.type_path || '.' || c2.element_index
+  LEFT JOIN intent_delivery_container c3 ON c3.container_class = r2.referenced_class
+  LEFT JOIN intent_declared_type_ref r3
+    ON r3.source_name = r0.source_name AND r3.class_name = r0.class_name
+     AND r3.owner_kind = r0.owner_kind AND r3.owner_name = r0.owner_name
+     AND r3.owner_descriptor IS NOT DISTINCT FROM r0.owner_descriptor
+     AND r3.type_path = r2.type_path || '.' || c3.element_index
+  LEFT JOIN intent_delivery_container c4 ON c4.container_class = r3.referenced_class
+  LEFT JOIN intent_declared_type_ref r4
+    ON r4.source_name = r0.source_name AND r4.class_name = r0.class_name
+     AND r4.owner_kind = r0.owner_kind AND r4.owner_name = r0.owner_name
+     AND r4.owner_descriptor IS NOT DISTINCT FROM r0.owner_descriptor
+     AND r4.type_path = r3.type_path || '.' || c4.element_index
+ WHERE r0.type_path = '';
+COMMENT ON VIEW intent_declared_type_element IS 'The class a declared type delivers: the type with its delivery wrappers peeled off, one row per owner. A member declared as a List of Film delivers Film, and so do a CompletableFuture of a List of Film and a Map from a key to Film, which is the rule that lets an SDL field naming one object stand on a member, or on a producer method, that hands back many. Keyed by the declared type''s own owner rather than by any reader''s subject, which is the correction a second reader forced: the rule was first stated over member slots, and a producer method''s return is the same declared form under a key no slot relation can hold, so a peel keyed at either reader would have been spelled twice and drifted. The peel descends from the root position: at a position naming a container it steps to that container''s element argument, and it stops at the first position naming no container, or naming one whose element argument names no class. That stopping position is the row, and the descent is four outer joins deep rather than a recursion. The bound is deliberate and was measured into existence. A recursive form terminates on its own, a declared type being a finite tree, so termination was never the question; the cost was. H2 re-evaluates a recursive view once per outer row of whatever joins it, and the readers here join it without a class predicate on purpose, the accessor hop being total over standing classes, so at sixteen thousand census methods the hop took six minutes to return nothing where reading the peel by itself took a third of a second. Four is what the reflective walk this replaces also descends, so the bound costs no agreement with it, and a nesting deeper than four delivers the last container reached rather than silently delivering the wrong class: element_path shows the depth and element_class names a container, which is a shape a reader can detect and a detection can be built on. The containers are intent_delivery_container''s rows, joined once per level, which is why they are a relation rather than a list inlined in this one. The recursion is not the one the SDL type graph needs a guard for. A declared type is a finite tree, so the descent terminates on its own, and the depth is the type''s rather than a bound the rule picks. Two populations fall away with no filter, because the census already omits them: a primitive-typed owner and an array-typed owner name no class at their root and so have no spine at all, an array''s component being the next step down and this walk never taking that step. What this view does not do is judge the class it lands on. A raw List with no type argument delivers java.util.List and says so, and an owner delivering java.lang.String is a row like any other; which landing classes are worth binding an SDL type to is a filter a reader applies rather than a fact this relation withholds.';
 COMMENT ON COLUMN intent_declared_type_element.source_name IS 'the owning class''s classpath entry, carried from intent_declared_type_ref; the partition a graph reaches through store_graph_source';
 COMMENT ON COLUMN intent_declared_type_element.class_name IS 'the fully-qualified binary name of the class declaring the owner';
 COMMENT ON COLUMN intent_declared_type_element.owner_kind IS 'METHOD_RETURN or RECORD_COMPONENT, as on intent_declared_type_ref';

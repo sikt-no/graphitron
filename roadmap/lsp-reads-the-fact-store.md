@@ -2188,7 +2188,10 @@ drifts.
   type is a finite tree, so the descent terminates on its own with no path guard and no bound the
   rule has to pick. That is not the recursion the plan was ruling out, which was the closure over a
   cyclic SDL type graph, and the depth stops being a magic number: the walk peels four levels
-  because someone chose four.
+  because someone chose four. (Overturned by measurement in step 7, and the bound is back. The
+  argument above was about termination, and the thing that made the recursion unusable was cost:
+  H2 re-evaluates a recursive view once per outer row of whatever joins it. Step 7's section
+  carries the numbers.)
 * **Two populations fall away with no filter, because the census already omits them.** A
   primitive-typed slot and an array-typed slot name no class at their root position, so neither has
   a spine and neither delivers anything. The walk reaches the same answer through an explicit
@@ -2265,6 +2268,33 @@ existing service stubs are package-private, and the census keeps public top-leve
 the walk could see them and the derivation could not. That asymmetry is a census filter rather than
 anything about the backing rule, and the fixture classes are public so the comparison is about the
 rule.
+
+**The recursion had to go, and only a measurement could say so.** Moving the peel down a key made
+its base the whole census rather than the bean slots, and that turned a tolerable view into one that
+hung the build. The diagnosis took two wrong guesses first, both worth recording because both were
+plausible: a stale H2 lock file left by a killed build, and a combinatorial blowup in the closure's
+own loop. Neither was it. A thread dump put the build inside the seed query, and a probe over a
+synthetic census of 800 classes and 16,000 methods put numbers on it: reading the peel by itself
+took 363 ms, and the accessor hop, which joins it, took **369 seconds to return nothing**. H2
+re-evaluates a recursive view once per outer row of whatever joins it, and the hop joins it with no
+class predicate on purpose, being total over standing classes. So the cost is the product of the two
+design choices, each defensible alone.
+
+The fix is a bounded descent, four outer joins deep, and it costs the argument the previous section
+made. That argument was about termination, which was never in question; a finite tree terminates
+whatever form you write. What the measurement showed is that the form a reader can *join* matters
+more than the form that reads elegantly on its own, and a recursive view in the middle of a read
+path is a landmine for every consumer downstream of it. Four is also what the walk descends, so the
+bound costs no agreement with the shadow, and a deeper nesting delivers the last container reached
+rather than the wrong class, which `element_path` and a container-named `element_class` make
+detectable rather than silent. The container vocabulary became `intent_delivery_container` on the
+way, a relation rather than a list inlined in its reader, since the descent now reads it once per
+level. After the change the hop is 10 s on the same adversarial synthetic census and the sakila
+example captures and generates in three minutes with no fallback, where before it did not finish.
+
+The general lesson is the one the item keeps relearning at a new layer: a shape argued from the
+model alone is a hypothesis until something measures it. The grain decision above survived the
+measurement unchanged; the implementation of it did not.
 
 **Two shapes of absence are recorded rather than closed.** The `@table` population seeds nothing
 here, and the reason goes one step past the decomposition's: the classes it would seed are the

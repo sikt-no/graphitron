@@ -24,11 +24,13 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for the four relations an accessor hop is built from:
+ * The registered agreement anchor for the five relations an accessor hop is built from:
+ * {@code intent_delivery_container}, the classes a declared type delivers through;
  * {@code intent_declared_type_ref}, the census's declared types under one owner key;
  * {@code intent_declared_type_element}, the class a declared type delivers once the containers are
  * peeled; {@code intent_class_member_element}, that peel read at a member slot's own owner; and
@@ -51,6 +53,31 @@ class AccessorHopTest {
 
     @TempDir
     Path tmp;
+
+    // ===== The vocabulary the peel descends =====
+
+    /**
+     * The container set is a relation because the peel reads it twice, once to descend and once to
+     * ask whether descending is possible at all. Pinned as a whole rather than by sampling: which
+     * classes are containers is the rule the peel turns on, and a row silently added or dropped
+     * changes what every hop lands on.
+     */
+    @Test
+    void theContainerVocabularyIsTheOneTheGeneratorMeets() {
+        withCapturedStore(dsl ->
+            assertThat(dsl.select(INTENT_DELIVERY_CONTAINER.CONTAINER_CLASS,
+                    INTENT_DELIVERY_CONTAINER.ELEMENT_INDEX)
+                .from(INTENT_DELIVERY_CONTAINER)
+                .fetch(r -> r.value1() + " at " + r.value2()))
+                .containsExactlyInAnyOrder(
+                    "java.util.List at 0",
+                    "java.util.Set at 0",
+                    "java.util.Collection at 0",
+                    "java.util.Optional at 0",
+                    "java.util.concurrent.CompletableFuture at 0",
+                    "org.jooq.Result at 0",
+                    "java.util.Map at 1"));
+    }
 
     // ===== A declared type, position by position, under its owner =====
 

@@ -147,8 +147,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_field_producer_method}, the census method an authored Java reference
  *       resolves to, over captured SDL against a hand-built census, half its cases pinning what
  *       the resolution refuses to decide: an overloaded name is rows and an arity, never a pick;
- *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the four relations an
- *       accessor hop is built from ({@code intent_declared_type_ref},
+ *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the five relations an
+ *       accessor hop is built from ({@code intent_delivery_container}, {@code intent_declared_type_ref},
  *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
  *       {@code intent_field_accessor_hop}) to a census built reference by reference, one accessor
  *       per delivery shape, with the two directions in which the hop differs from the reflective
@@ -263,6 +263,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_class_assignable", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
+        registrations.put("intent_delivery_container", Arm.DERIVED);
         registrations.put("intent_declared_type_ref", Arm.DERIVED);
         registrations.put("intent_declared_type_element", Arm.DERIVED);
         registrations.put("intent_class_member_element", Arm.DERIVED);
