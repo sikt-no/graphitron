@@ -147,11 +147,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_field_producer_method}, the census method an authored Java reference
  *       resolves to, over captured SDL against a hand-built census, half its cases pinning what
  *       the resolution refuses to decide: an overloaded name is rows and an arity, never a pick;
- *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the three relations an
- *       accessor hop is built from ({@code intent_class_member_type_ref},
- *       {@code intent_class_member_element} and {@code intent_field_accessor_hop}) to a census
- *       built reference by reference, one accessor per delivery shape, with the two directions in
- *       which the hop differs from the reflective walk pinned as pins rather than expectations;
+ *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the four relations an
+ *       accessor hop is built from ({@code intent_declared_type_ref},
+ *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
+ *       {@code intent_field_accessor_hop}) to a census built reference by reference, one accessor
+ *       per delivery shape, with the two directions in which the hop differs from the reflective
+ *       walk pinned as pins rather than expectations;
+ *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
+ *       {@code intent_type_backing_class} and {@code intent_type_backing_conflict}, the closure
+ *       over those hops and the types it answers two ways, to captured SDL over a hand-built
+ *       census, its cases pinning the reachability itself and each population the derivation
+ *       deliberately does not reach, with
+ *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
+ *       differential against {@code walk_type_backing_class} over public fixture classes both
+ *       sides can see;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
@@ -254,9 +263,12 @@ class FactCaptureAgreementTest {
         registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_class_assignable", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
-        registrations.put("intent_class_member_type_ref", Arm.DERIVED);
+        registrations.put("intent_declared_type_ref", Arm.DERIVED);
+        registrations.put("intent_declared_type_element", Arm.DERIVED);
         registrations.put("intent_class_member_element", Arm.DERIVED);
         registrations.put("intent_field_accessor_hop", Arm.DERIVED);
+        registrations.put("intent_type_backing_class", Arm.DERIVED);
+        registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);

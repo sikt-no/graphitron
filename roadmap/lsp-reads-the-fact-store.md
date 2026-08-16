@@ -1957,15 +1957,17 @@ walk is evidence here, not the specification.
    what resolving it settled.
 6. The accessor hop: the field coordinate and standing class to the class the hop lands on. Done:
    three views on the `DERIVED` arm rather than one, because the peel between the slot and the
-   landing class is a rule two readers want. `intent_class_member_type_ref` is the union the census
-   forecast, `intent_class_member_element` is the class a slot delivers once the containers come
-   off, and `intent_field_accessor_hop` is the edge itself, total over standing classes so that
-   nothing in it presumes the closure. The section below carries the two directions in which it
-   differs from the walk.
+   landing class is a rule two readers want. `intent_class_member_element` is the class a slot
+   delivers once the containers come off and `intent_field_accessor_hop` is the edge itself, total
+   over standing classes so that nothing in it presumes the closure; the union under them was
+   keyed on the slot at first and moved a key lower in step 7, when the second reader turned up.
+   The section below carries the two directions in which the hop differs from the walk.
 7. `intent_type_backing_class` as reachability from step 5's seeds over step 6's edges, materialized
    on the `ReachabilityRows` pattern, beside the conflict view over types two seeds answer
-   differently. The shadow against step 3 reaches agreement here, one adjudicated disagreement at a
-   time.
+   differently. Done, and the shadow is run rather than left available: on a fixture both sides can
+   see, the derivation reproduces the walk exactly, and the one place they part is the disagreement
+   the decomposition set out to surface. The peel moved down a level on the way, the second reader
+   having shown its grain was one step too specific. The section below carries both.
 8. The two facts that were clauses: the cardinality disagreement as a detection, and the `@table`
    population coalesced with the derived one by a view.
 9. Have the generator read the fact. The resolver's copy of the walk retires here, which drains step
@@ -2172,8 +2174,9 @@ drifts.
   `Film`; so does a `CompletableFuture` of a `List` of `Film`, and so does a `Map` from a key to
   `Film`. That rule is wanted twice, once for the slot a hop stands on and once for a producer
   method's declared return, and stating it at each reader would be two spellings of one contract.
-  So `intent_class_member_element` states it once, source-keyed, and both readers join it. The
-  hop relation on top is then what the plan said it was: a local join, no rule inside it.
+  So it is stated once, source-keyed, and both readers join it. The hop relation on top is then
+  what the plan said it was: a local join, no rule inside it. (Where "once" is stated turned out
+  to be one key lower than this increment put it; step 7's section carries the correction.)
 * **The container vocabulary is named data, and the assignability closure cannot replace it.** Seven
   rows join into the peel, on the terms `intent_class_member_slot` joins its two bean prefixes.
   Recognising a container through `intent_class_assignable` instead looks tempting and does not
@@ -2208,6 +2211,69 @@ drifts.
   pinned as pins rather than expectations, and the adjudication belongs to step 7's shadow, which
   is the mechanism this item built for exactly this.
 
+## Settled while building: the second reader moves the fact, and the shadow is run rather than kept
+
+The keystone landed, and the increment that landed it spent most of its argument one level below the
+keystone. Two things settled.
+
+**A second reader showed the peel was keyed at a consumer, not at its own grain.** The peel from a
+declared type to the class it delivers shipped one step earlier as `intent_class_member_element`,
+keyed on a member slot, with a comment saying it was stated once because two readers wanted it. The
+second reader arrived immediately and could not use it: a producer method's return is the same
+declared form under a key no slot relation can hold, a service method being neither a record
+component nor a bean accessor. So the rule moved down to the thing it is actually about.
+`intent_declared_type_ref` names the census's declared types under one owner key and
+`intent_declared_type_element` peels them; `intent_class_member_element` survives as the join that
+reads that peel at a slot's own owner, and `intent_class_member_type_ref` retires, its work being the
+same union one key too high. The loop the item names as its steady state ran here in miniature, and
+the guard clause is the part worth keeping: the fact is modeled at its own grain, never at the
+discovering consumer's convenience. A first consumer is a consumer too.
+
+**The owner key carries a NULL and that is the union's shape, not a withheld fact.** A record
+component has no descriptor, so the record arm's `owner_descriptor` is NULL, determined entirely by
+`owner_kind`, on `intent_authored_claim_conflict.field_name`'s terms. The recursion joins it with
+`IS NOT DISTINCT FROM` rather than coalescing to a placeholder, because a placeholder would be a
+value the census never wrote. The parameter arm is the third relation of exactly this shape and is
+deliberately not unioned in: it would need a position column NULL on both arms present, and no
+reader peels a parameter yet. It joins when the input axis does.
+
+**The closure is one rule, and the one condition on it is not a hop's property.** A field with a
+producer of its own is not read off its parent, its value coming from the method rather than from
+the member, so the hop over it is no edge of this closure. Everything else the walk carried at this
+point (the first-wins child suppression, the cardinality guard, the two-level carrier fork, the
+`@table` grounding, the root mask) is either another relation's or deliberately absent, and the
+relation's comment names each with its reason. Objects and input objects only, on both ends, which
+is what a class can stand for; that one restriction replaces the walk's reject list over Java
+classes (`String`, `Boolean`, the `java` packages, arrays, enums) without importing it, because a
+scalar-typed field names an SDL type nothing can back and falls away on the SDL side.
+
+**Ambiguity is rows, and the conflict view is the dividend.** A type two producers answer
+differently is two rows and `intent_type_backing_conflict` names it. The walk resolves that case by
+declining the second observation to protect the first, then folding, so the contradiction is either
+invisible or arrives as a rejection with the losing side already discarded. This is the population
+the decomposition predicted it would surface, and it is now observable.
+
+**The shadow was run, not merely made available.** The differential is the item's stated mechanism
+and it would have been easy to ship the derivation with the mechanism unexercised, so
+`TypeBackingShadowTest` runs both sides over one schema and one set of classes: capture writes the
+derivation from a real classpath scan, and the walk writes its own row from a bundle built over the
+same text. On the agreement fixture the two sets are equal, producer seed and three hop levels
+included, with both counts asserted non-empty first so an empty answer on either side cannot pass
+vacuously. On the disagreement fixture the walk is silent and the derivation carries two rows, which
+is the difference stated as a pin. Getting both sides visible cost a small fixture population: the
+existing service stubs are package-private, and the census keeps public top-level classes only, so
+the walk could see them and the derivation could not. That asymmetry is a census filter rather than
+anything about the backing rule, and the fixture classes are public so the comparison is about the
+rule.
+
+**Two shapes of absence are recorded rather than closed.** The `@table` population seeds nothing
+here, and the reason goes one step past the decomposition's: the classes it would seed are the
+generated jOOQ records the census excludes by design, so the subtree below a `@table` type is
+unreachable from the store rather than merely unwritten. That is a capture-side gap and it is
+`intent_bound_table`'s population besides. The input axis is absent too: a producer's parameters
+back the argument types they map to, which needs the argument-mapping resolution and the parameter
+arm of the type-reference union, and it is the next thing this chain owes.
+
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
@@ -2225,7 +2291,8 @@ and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
 `beanAccessorSlot` and `lowercaseFirst`, and `TypeContext.tableNameOf` with
 `Diagnostics.collectAllFkNames` and `ArgMappingSupport.resolveMethod`, and
 `TypeContext.tableNameFromClassification` with the sealed `InferredDirectiveArgs.AbsentArm`
-and its `TableName` permit; `DirectiveResolution`
+and its `TableName` permit, and the relation `intent_class_member_type_ref`, whose union the
+owner-keyed `intent_declared_type_ref` states one key lower; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
 `typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's

@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
+import no.sikt.graphitron.rewrite.derive.TypeBackingRows;
 import no.sikt.graphitron.rewrite.derive.TypeBackingClassRows;
 import no.sikt.graphitron.rewrite.derive.WalkReach;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
@@ -366,6 +367,7 @@ public final class FactCapture {
             // the partition they derive from is.
             ReachabilityRows.derive(txDsl, graph.name());
             InputOccurrencePaths.derive(txDsl, graph.name());
+            TypeBackingRows.derive(txDsl, graph.name());
             sources.commitStamps(txDsl);
         });
     }

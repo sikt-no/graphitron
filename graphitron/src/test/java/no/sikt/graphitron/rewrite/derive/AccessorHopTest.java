@@ -22,14 +22,16 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_ELEMENT;
-import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for the three relations an accessor hop is built from:
- * {@code intent_class_member_type_ref}, the classes a member slot's declared type names;
- * {@code intent_class_member_element}, the one it delivers once the containers are peeled; and
+ * The registered agreement anchor for the four relations an accessor hop is built from:
+ * {@code intent_declared_type_ref}, the census's declared types under one owner key;
+ * {@code intent_declared_type_element}, the class a declared type delivers once the containers are
+ * peeled; {@code intent_class_member_element}, that peel read at a member slot's own owner; and
  * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
  *
  * <p>The census is built reference by reference, which is the choice {@link ClassAssignableTest}
@@ -50,35 +52,70 @@ class AccessorHopTest {
     @TempDir
     Path tmp;
 
-    // ===== A slot's declared type, position by position =====
+    // ===== A declared type, position by position, under its owner =====
 
     /**
-     * Both arms answer under one key. A record component and a bean accessor decompose into the
-     * same path grammar, and a reader standing on a slot does not have to know which produced it.
+     * Both owner kinds answer under one key. A record component and a method return decompose into
+     * the same path grammar, and a reader that holds an owner does not have to know which census
+     * relation stated it.
      */
     @Test
-    void bothMemberArmsNameTheirPositionsUnderOneKey() {
+    void bothOwnerKindsNameTheirPositionsUnderOneKey() {
         withCapturedStore(dsl -> {
-            assertThat(positions(dsl, "app.FilmRecord", "actors"))
+            assertThat(positions(dsl, "app.FilmRecord", "actors", null))
                 .containsExactlyInAnyOrder(" java.util.List", "0 app.ActorRecord");
-            assertThat(positions(dsl, "app.Store", "films"))
+            assertThat(positions(dsl, "app.Store", "getFilms", "()Ljava/util/List;"))
                 .containsExactlyInAnyOrder(" java.util.List", "0 app.FilmRecord");
         });
     }
 
     /**
-     * A slot carries its accessor's name and not its descriptor, so the bean arm has to pick among
-     * same-named methods. It picks the one the slot rule itself picked, and the parameterised twin
-     * declared beside it lends the slot nothing.
+     * The owner key holds an overload apart, which is the whole reason it carries a descriptor. Two
+     * methods of one name decompose into two owners rather than into one owner's confused positions.
      */
     @Test
-    void anOverloadedAccessorDoesNotLendItsPositionsToTheSlot() {
-        withCapturedStore(dsl ->
-            assertThat(positions(dsl, "app.Store", "title"))
-                .containsExactly(" java.lang.String"));
+    void overloadsAreToldApartByTheirDescriptor() {
+        withCapturedStore(dsl -> {
+            assertThat(positions(dsl, "app.Store", "getTitle", "()Ljava/lang/String;"))
+                .containsExactly(" java.lang.String");
+            assertThat(positions(dsl, "app.Store", "getTitle", "(I)Lapp/LanguageRecord;"))
+                .containsExactly(" app.LanguageRecord");
+        });
+    }
+
+    // ===== What a declared type delivers =====
+
+    /**
+     * The peel is keyed on the declared type's owner and not on any reader's subject, so a method
+     * that is no member slot at all is peeled on the same terms. This is the case that moved the
+     * rule down a level: a producer method's return is the second reader, and it arrives under a
+     * key no slot relation can hold.
+     */
+    @Test
+    void aMethodThatIsNoSlotIsPeeledOnTheSameTerms() {
+        withCapturedStore(dsl -> {
+            assertThat(deliveredBy(dsl, "app.Store", "getLookup",
+                "(Ljava/lang/String;)Lapp/FilmRecord;"))
+                .containsExactly("app.FilmRecord at ");
+            assertThat(delivered(dsl, "app.Store", "lookup"))
+                .as("and it is still no slot, so the member view says nothing about it")
+                .isEmpty();
+        });
     }
 
     // ===== What the slot delivers =====
+
+    /**
+     * A slot carries its accessor's name and not its descriptor, so the member view has to pick
+     * among same-named owners. It picks the one the slot rule itself picked, by the absence of
+     * parameter rows, and the parameterised twin declared beside it lends the slot nothing.
+     */
+    @Test
+    void anOverloadedAccessorDoesNotLendItsReturnToTheSlot() {
+        withCapturedStore(dsl ->
+            assertThat(delivered(dsl, "app.Store", "title"))
+                .containsExactly("java.lang.String at "));
+    }
 
     /** A slot naming a class directly delivers it, and the path says nothing was peeled. */
     @Test
@@ -159,7 +196,7 @@ class AccessorHopTest {
         withCapturedStore(dsl -> {
             assertThat(delivered(dsl, "app.Store", "count")).isEmpty();
             assertThat(delivered(dsl, "app.Store", "tags")).isEmpty();
-            assertThat(positions(dsl, "app.Store", "tags"))
+            assertThat(positions(dsl, "app.Store", "getTags", "()[Ljava/lang/String;"))
                 .as("the array's component is still a position, so the absence is the root's")
                 .containsExactly("[] java.lang.String");
         });
@@ -371,14 +408,33 @@ class AccessorHopTest {
         return new CompletionData.TypeRef(path, referencedClass, "NONE");
     }
 
-    /** Each position as its path and the class named there, so a case states the whole decomposition. */
-    private static List<String> positions(DSLContext dsl, String className, String slotName) {
-        return dsl.select(INTENT_CLASS_MEMBER_TYPE_REF.TYPE_PATH,
-                INTENT_CLASS_MEMBER_TYPE_REF.REFERENCED_CLASS)
-            .from(INTENT_CLASS_MEMBER_TYPE_REF)
-            .where(INTENT_CLASS_MEMBER_TYPE_REF.CLASS_NAME.eq(className)
-                .and(INTENT_CLASS_MEMBER_TYPE_REF.SLOT_NAME.eq(slotName)))
+    /**
+     * Each position as its path and the class named there, so a case states the whole
+     * decomposition. A null descriptor names the record arm, where an owner has none.
+     */
+    private static List<String> positions(DSLContext dsl, String className, String ownerName,
+                                          String descriptor) {
+        var t = INTENT_DECLARED_TYPE_REF;
+        return dsl.select(t.TYPE_PATH, t.REFERENCED_CLASS)
+            .from(t)
+            .where(t.CLASS_NAME.eq(className)
+                .and(t.OWNER_NAME.eq(ownerName))
+                .and(descriptor == null
+                    ? t.OWNER_DESCRIPTOR.isNull()
+                    : t.OWNER_DESCRIPTOR.eq(descriptor)))
             .fetch(r -> r.value1() + " " + r.value2());
+    }
+
+    /** The delivered class of an owner named directly, for the readers that hold no slot. */
+    private static List<String> deliveredBy(DSLContext dsl, String className, String ownerName,
+                                            String descriptor) {
+        var e = INTENT_DECLARED_TYPE_ELEMENT;
+        return dsl.select(e.ELEMENT_CLASS, e.ELEMENT_PATH)
+            .from(e)
+            .where(e.CLASS_NAME.eq(className)
+                .and(e.OWNER_NAME.eq(ownerName))
+                .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
+            .fetch(r -> r.value1() + " at " + r.value2());
     }
 
     /** The delivered class and the position it was read at, the answer and its evidence together. */
