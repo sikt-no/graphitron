@@ -1,7 +1,7 @@
 ---
 id: R685
 title: "The class census scans the transitive dependency closure"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: dev-loop
@@ -38,8 +38,10 @@ The classpath has 169 entries: 12 reactor `target/classes` directories and the 1
 
 | Where the classes come from | Classes | Rows in the `jvm_` relations |
 |---|---|---|
-| Reactor modules (directories and sibling jars) | 2,060 | 52,215 |
-| Third-party jars | 9,477 | 356,960 |
+| Reactor `target/classes` | 1,768 | |
+| Declared dependencies | 2,587 | |
+| **Kept by this item** | **4,355** | **212,048** |
+| **Dropped by this item** (transitive only) | **7,182** | **197,127** |
 | Total | 11,537 | 409,175 |
 
 The store holds 413,327 rows in total, so **99% of the store is class census** and **87% of the
@@ -67,15 +69,19 @@ that back, and all three survive the narrowing proposed here because the classes
 
 - Every one of the 69 `jvm_scalar_type_field` rows comes from a third-party jar: 61 from
   `graphql-java-extended-scalars`, 5 from `graphql-java`, 3 from the federation support jar. Zero
-  come from reactor code. `@scalarType` completion exists only because jars are scanned.
+  come from reactor code. `@scalarType` completion exists only because jars are scanned. All three
+  jars are declared.
 - 536 of the 2,060 reactor classes, just over a quarter, declare a supertype that resolves in a
   third-party jar. Assignability is answered from `jvm_class_supertype`, so narrowing past those
-  truncates the chain.
+  truncates the chain. **Reactor supertype edges that land in a transitive-only jar: zero.**
 - 1,617 distinct reactor method return-type references point at a third-party class. Accessor-hop
-  walks follow those into container element types.
+  walks follow those into container element types. **Of those, three land in a transitive-only
+  jar**, all three being `jakarta.ws.rs.core.Response` returned by `graphitron-jakarta-rest`'s own
+  REST resources, which no schema names.
 
-All three land in jars the consumer declared itself. That is the reason the cut is drawn at direct
-dependencies rather than at the reactor boundary.
+So the walks do not meaningfully cross the boundary this item draws, while a cut at the reactor
+edge would have severed all three surfaces. That gap is why the cut is drawn at direct dependencies
+and not one hop earlier.
 
 ## What the census claims after the cut
 
@@ -92,49 +98,193 @@ and it breaks the moment an intermediate dependency drops the jar in a patch rel
 census is therefore not a weaker approximation of the resolvable set. It is the exact statement of
 a different and better-defined question: what an author is permitted to name.
 
-So `Diagnostics.validateScalarTypeClasspath` and the general unknown-class check keep firing on
-absence, keep their confidence, and are *correct* to reject a transitive-only class. What changes
-is what they say. "Not found on the compile classpath" would be false in that case, and the message
-should name the real problem and its fix: the class is not in this module's reactor or its declared
-dependencies, and the repair is to declare the dependency. Both call sites are in
-`graphitron-lsp`'s `Diagnostics`.
+So `Diagnostics.validateScalarTypeClasspath` and `Diagnostics.validateClassName` keep firing on
+absence and are *correct* to reject a transitive-only class. What changes is what they say. "Not
+found on the compile classpath" is false in that case. But the replacement must not swing to
+diagnosing a cause either: after the cut, `ClasspathClasses.Presence.UNKNOWN` merges a typo with a
+real class in an undeclared jar, and the LSP holds no fact separating them, so "declare the
+dependency" would be wrong for the common case. The message states the census's *scope* and leaves
+the cause open.
 
-One consequence to settle rather than assume: codegen keeps resolving over the full classpath, so
-a schema naming a transitive class would red-squiggle in the editor and still build. Whether the
-build should reject it too, so the editor and the generator state one rule, is a decision for Spec,
-not a reason to widen the census.
+**The rule gets a build-side enforcer, in this item.** An invariant exists only while something
+fails when it breaks, and an editor squiggle over a build that generates happily is not that. The
+build is the one place both sets are in hand: `ServiceCatalog`'s `Class.forName(..., ctx.codegenLoader())`
+sites resolve against the whole classpath while the census is already computed in the same pass, so
+"resolves, but no census row" is decidable there with no second scan and no heuristic. That is also
+the only place the honest wording lives, because it is the only place the two populations are told
+apart. This is a breaking change for a consumer who today names a transitive class; the migration is
+one `<dependency>` block, and it is the change the rule exists to force.
 
-## What to work out at Spec
+## One classified list, not two lists
 
-- **Where the direct set comes from.** `AbstractRewriteMojo.resolveCompileClasspath` reads
-  `project.getCompileClasspathElements()`, which is already flattened. The declared set is
-  `project.getDependencies()`, which carries no resolved file, so the two have to be joined on
-  groupId/artifactId/classifier. Decide whether that join lives in the mojo or whether the resolver
-  API offers the direct set directly.
-- **`provided` and `system` scope.** `getCompileClasspathElements` includes them. A directly
-  declared provided dependency should stay in; whether its transitives should is the same question
-  as for compile.
-- **Reactor modules stay whole.** `resolveClasspathRoots` already folds in every reactor project's
-  output directory plus the sibling walk-up for a single-project reactor. That half is unchanged;
-  a sibling module is in whether or not the current module depends on it.
-- **The generated jOOQ package stays excluded**, as it is today.
-- **What the numbers become.** Re-measure after the cut: entries, classes, `jvm_` rows and scan
-  milliseconds, on the same module, so the item lands with a before and an after rather than a
-  projection. The predicted shape is 169 entries down to about 27 and the parse down toward 100 ms,
-  but the class and row counts depend on how much of jOOQ and graphql-java survives, and those two
-  jars alone are 2,051 classes.
-- **A test that pins the boundary.** `JarResidentClassCensusTest` pins that a jar-resident class
-  reaches the census; it should keep passing, with the fixture jar wired as a direct dependency. The
-  new claim needs its own pin, in both directions: a class reachable only transitively is *not* in
-  the census, and the unknown-class diagnostic does report it, with the message that names the
-  missing declaration rather than the classpath.
-- **Whether codegen enforces the same rule.** Today it would resolve the transitive class and
-  generate. Deciding it should not is a change to the generator, not to the census, and could be
-  split out; deciding it should stay permissive means the editor is stricter than the build, which
-  is defensible but should be said out loud rather than fallen into.
+The obvious implementation is to leave `AbstractRewriteMojo.resolveCompileClasspath` whole and add a
+second, narrower resolve method beside it. Do not do that. Two sibling `List<Path>` values are
+structurally interchangeable: nothing stops a call site handing the census list to the loader, and
+the subset relation would live only in prose. `buildCodegenLoader`'s own javadoc records that these
+two sets were assembled separately once, "agreed by coincidence, and the coincidence had already
+broken". A second resolve method rebuilds exactly that topology.
+
+The narrowing does not need two lists. One producer emits one list whose elements carry the decision:
+
+```java
+record ClasspathEntry(Path path, Origin origin) {}
+
+enum Origin {
+    PROJECT,     // this module's own build output
+    DECLARED,    // on the compile classpath, coordinate appears in project.getDependencies()
+    SIBLING,     // a reactor module's output that this module does not declare a dependency on
+    TRANSITIVE   // on the compile classpath, coordinate not declared
+}
+```
+
+The loader, javac and the execution loader project every entry. The census projects
+`origin != TRANSITIVE`. Census ⊆ loader is then a derivation over one classified list rather than a
+promise about two, and the decision survives into the interior instead of being consumed at a filter.
+
+`SIBLING` is its own arm rather than folded into `DECLARED` because the two earn different verdicts.
+`resolveClasspathRoots` folds in *every* reactor project's output, so a sibling this module does not
+depend on is offerable (an author can name it and then add the dependency, which is the dev loop
+working) but is not yet buildable: generated code referencing it fails the consumer's own javac, for
+the same undeclared-dependency reason the item is built on. Four arms is what lets the census say yes
+and the build say "declare a dependency on module X".
+
+## Implementation
+
+**`graphitron`: the entry type.** `ClasspathEntry` and `Origin` live beside `RewriteContext`, not in
+the plugin: they are plain records that cross the seam, and no Maven type comes with them.
+`RewriteContext.classpathRoots` changes from `List<Path>` to `List<ClasspathEntry>`. The unit-tier
+overloads that pass bare paths get a helper that wraps them as `PROJECT`, so those call sites stay
+one argument long.
+
+**`graphitron`: the scan.** `ClasspathScanner.scan(List<ClasspathEntry>, String)` skips a
+`TRANSITIVE` entry before opening it, so the rule is stated once, in the code that would otherwise
+read the entry, and no transitive jar is opened at all. The `isJar` / directory dispatch, the
+dedup-by-FQN across entries and the jOOQ-package exclusion are all unchanged. Update the class
+javadoc: its "Directories and jars alike" paragraph argues the widening this item narrows, and its
+opening sentence claims the census "is the set the codegen loader can resolve".
+
+**`graphitron-maven-plugin`: the classification.** `resolveCompileClasspath` becomes the producer of
+the classified list. Follow the `decodeDependencyVersions` precedent in the same class: a static,
+package-private decode taking the untyped Maven input and returning typed output, so `Artifact` and
+`Dependency` never cross into `graphitron`. Two notes on the join:
+
+- Try `Artifact.getDependencyTrail()` first. The trail's second element is the direct dependency the
+  artifact arrived through, which states directness in one place rather than reconstructing it from
+  two collections that must agree. Measure whether Maven 3.9.14 populates it in a real reactor build
+  before committing; if it does not, fall back to joining `project.getArtifacts()` against
+  `project.getDependencies()` on groupId, artifactId, **type and classifier**, never version, since
+  dependencyManagement rewrites versions.
+- Do not mint a scope allow-list. `GENERATED_CODE_SCOPES` already exists in this class and already
+  argues which scopes generated code is built against. Intersecting the declared coordinates with
+  what `getCompileClasspathElements()` returned leaves the scope question answered by Maven and by
+  that existing constant; two hand-written scope sets in one file that must agree is the shape to
+  avoid.
+
+**`graphitron`: the enforcer.** The `Class.forName(..., codegenLoader)` sites in `ServiceCatalog`
+(seven at the time of writing, six of them through `ctx.codegenLoader()`) are where a class name
+becomes a resolved class. A class that resolves but carries
+no census row is rejected there, through the rejection channels those coordinates already use:
+`Rejection.structural` as `ServiceDirectiveResolver` routes an unresolvable `@service` through, and a
+new `ScalarResolution.Rejected` arm beside `ClassNotFound` for `@scalarType`. Reuse the existing
+channels rather than minting a parallel failure path; the reason string is what differs.
+
+**`graphitron-lsp`: the message.** `Diagnostics.validateScalarTypeClasspath` and
+`Diagnostics.validateClassName` keep their `Presence.UNKNOWN` guard and change their wording to state
+the scope, not the cause. Something in the shape of: *Unknown class 'X'. The census covers this module
+and its declared dependencies; a class reachable only through a transitive dependency must be declared
+before it can be named here.* `ClasspathClasses`'s class javadoc asserts "a name the census does not
+carry is a name that will not resolve at codegen either", which the narrowing falsifies on its own and
+the enforcer then makes true again by a different route; rewrite it to say which route.
+
+**`graphitron-model`: the DDL comments.** The DDL is the model's statement of what it holds, and two
+comments describe the population this item changes. `jvm_class`'s table comment opens "A class exists
+on the compile classpath, as the codegen loader would resolve it" and then enumerates its filters
+*because* a resolution detection reads those filters as absence. The narrowing adds a filter, so it
+belongs in that enumeration. The `jvm_` family definition in the `meta_family` view reads "The compile
+classpath census". Both need to say declared-classpath rather than compile-classpath.
+
+State the new silence while you are there: `ClasspathSources.record` writes a `store_source` row
+lazily, on the first class read from an entry, so a skipped transitive jar produces **no row at all**
+and nothing in the store records that the entry existed and was deliberately not read. That is the
+intended design (provenance is a use-site fact and would be wrong on a store-global, definition-keyed
+relation: a jar direct for module A is transitive for module B), but it must be stated rather than
+left as an absence someone later reads as a bug.
+
+## Tests
+
+- `JarResidentClassCensusTest` keeps passing, with its fixture jar classified `DECLARED`. Its subject
+  is unchanged: a jar-resident class reaches the census.
+- The negative direction is this item's new claim and needs a real pin: a class reachable only
+  transitively is absent from the census. A unit test over hand-built `Dependency` objects cannot
+  pin it, for the reason `decodeDependencyVersions`'s javadoc already concedes about its own test:
+  what a hand-built artifact set cannot pin is Maven's resolution. Put it in the plugin's integration
+  tier beside `basic-generate` and `dependency-version-lag`, which are real reactor builds.
+- A unit-tier pin on the classification decode itself, in the `DependencyVersionDecodeTest` mould:
+  the four `Origin` arms from a hand-built declared list plus resolved set, including the `SIBLING`
+  case.
+- `ClasspathScannerTest` (unit tier) gains the skip: a `TRANSITIVE` entry contributes nothing, and
+  is not opened.
+- Two live tests encode the current claim and move with it: `FactCaptureAgreementTest.classCensusIsPartitionedBySource`,
+  and `WarmStartRefreshTest`, which counts `STORE_SOURCE` rows of kind `JAR`.
+- `FactSchemaGateTest.commentCoverageIsTotal` keeps DDL comments present, never true, so the comment
+  rewrites above are the implementer's responsibility rather than a gate's.
+- An LSP diagnostic pin on the new wording, in `DiagnosticsTest`.
+- The enforcer needs an execution-visible pin: a schema naming a transitive-only class fails the
+  build with the declared-dependency reason.
+
+## What to re-measure at implementation
+
+The item lands with a before and an after, not a projection. On `graphitron-sakila-example`, after the
+cut: classpath entries, census classes, `jvm_` row count, and `ClasspathScanner` wall-clock. Predicted
+from the store as it stands: 169 entries to 27, 11,537 classes to 4,355, 409,175 rows to 212,048, and
+648 ms toward 200 ms (jOOQ and graphql-java survive the cut and are 2,051 classes between them, so the
+parse does not fall as far as the entry count suggests). If the measured numbers differ materially,
+record them rather than the predictions.
+
+## User documentation (first-client check)
+
+The rule is user-facing, so the doc draft is part of the design. `docs/manual/how-to/external-code.adoc`
+is its home: it already has a "Make the class reachable" section, and that section is currently wrong
+in a way this item has to fix anyway. It says the class "has to be on the *plugin's* classpath, not the
+consumer module's compile classpath", and repeats it in the section's closing bullet. `buildCodegenLoader`
+builds the codegen loader over the module's compile classpath parented on the plugin's loader, so the
+module's own classpath has worked for some time; the manual understates what is reachable while this
+item narrows it. Both statements are replaced by one rule:
+
+> A named class must live in this module, in another module of the same Maven project, or in a
+> dependency this module declares itself. A class that is only reachable through another
+> dependency's dependencies is not nameable: declare it, and it becomes nameable. The generator
+> rejects a schema that names an undeclared class, and the editor marks it before you build.
+
+`docs/manual/reference/directives/scalarType.adoc` carries the same reachability question for the
+constant form and gets an xref rather than a second copy of the rule. If the rule does not read simply
+in these two places, the design is wrong and changes before implementation.
+
+## Retired vocabulary
+
+For the Done-gate retirement sweep. These claims are all currently true and all become false:
+
+- "a class the loader resolves is a class the census holds" (`buildCodegenLoader` javadoc,
+  `RewriteContext`'s `@param classpathRoots`)
+- "the census is the set the codegen loader can resolve" (`ClasspathScanner` class javadoc)
+- "a name the census does not carry is a name that will not resolve at codegen either"
+  (`ClasspathClasses` class javadoc)
+- "Not found on the compile classpath" (both `Diagnostics` message sites)
+- "A class exists on the compile classpath, as the codegen loader would resolve it"
+  (`jvm_class` table comment)
+- "The compile classpath census" (`meta_family`'s `jvm_` definition)
+- "has to be on the *plugin's* classpath, not the consumer module's compile classpath"
+  (`docs/manual/how-to/external-code.adoc`)
 
 ## Not in scope
 
 The duplicate scan per dev-loop pass (R620) is a separate cut at the same cost and neither item
 blocks the other. Narrowing the entry list makes both scans cheaper without making the second one
 any less redundant.
+
+Storing entry provenance as a fact is deliberately excluded. If it ever lands it is keyed on
+(graph, entry) and not on the entry: directness is a property of a use site, not of a jar, and one
+workspace store holds many modules' graphs, so a jar that is `DECLARED` for one module is
+`TRANSITIVE` for another. An `origin` column on the store-global, definition-keyed `store_source`
+would be silently wrong the first time two modules in one reactor disagree. Nothing in this item
+needs it: the classification is consumed inside the run that produces it.
