@@ -24,7 +24,8 @@ saying the remaining coupling was somebody else's. The module's reads do not sep
 anyway. `catalog.describe` reads `CatalogFacts`, `edges` reads `CatalogFacts` *and* the
 classification maps, `schema` reads the classification maps *and* a store relation already, the code
 tools read the classpath scan, `status` and `diagnostics` read the snapshot's lifecycle arms, and the
-`directives` resource reads an LSP vocabulary type. Migrating a subset leaves the module holding a
+`directives` resource reads the snapshot *and* the language server's own vocabulary registry.
+Migrating a subset leaves the module holding a
 `Workspace` for whatever was left, which is the state it is in today.
 
 The LSP fact-store item (`lsp-reads-the-fact-store.md`) retires the `CatalogFacts` projection from
@@ -164,6 +165,14 @@ Every slice satisfies the same conditions, and a slice that cannot is not ready 
   `mcp/instructions.txt` and the manual's tool table in the same commit.
 * The reader count on each `Workspace` accessor is stated in the slice, so the close-out slice's
   precondition is arithmetic rather than a grep nobody ran.
+
+The ledger that arithmetic runs over has five accessors, not four, and the fifth is the one an
+import scan does not see. `graphitron-mcp` reads `catalogFacts`, `catalog`, `sourceIndex` and
+`snapshot` as values, and reaches `vocabulary()` through a call chain
+(`workspace.vocabulary().registry()`, once, at server construction) without ever naming
+`LspVocabulary`. Counting only the four that appear as types is how the fifth survives a slice plan.
+Its opening counts are `catalogFacts` four (`catalog.tables`, `catalog.describe`, `catalog.search`,
+`edges`), `catalog` five, `sourceIndex` three, `snapshot` six and `vocabulary` one.
 
 The slices are ordered so the deletions fall out rather than being scheduled. Slices 1 to 3 drain
 `catalogFacts`' readers, so slice 4 deletes the projection. Slices 5 to 8 drain the rest, so slice 9
@@ -324,7 +333,9 @@ The `JooqCatalog` walk that fed the projection does not retire with it: classifi
 same catalog, and `CatalogBuilder.build` still runs. What goes is the second pass over it that
 produced a consumer-shaped copy.
 
-**Leaves behind.** `Workspace` keeps three readers: `catalog`, `sourceIndex`, `snapshot`.
+**Leaves behind.** `catalogFacts` has no reader left, which is what licenses the deletion above.
+`Workspace` keeps four accessors read: `catalog` four, `sourceIndex` three, `snapshot` five,
+`vocabulary` one.
 
 ## Slice 5: `services`, `conditions`, `records`
 
@@ -347,8 +358,9 @@ only the store, and a tool left on `CompletionData` keeps a `Workspace` accessor
 the module edge alive, which is the thing the item is for. The separate item is discarded and its
 scope absorbed here.
 
-**Leaves behind.** `Workspace` keeps one reader, `snapshot`, for `schema`, `status`, `diagnostics`
-and the directives resource.
+**Leaves behind.** `sourceIndex` has no reader left. `catalog` keeps one, `schema`'s `nodeMetadata`
+read, which slice 6 takes. `snapshot` keeps its five (`schema`, `status`, both diagnostics tools,
+the directives resource) and `vocabulary` its one.
 
 ## Slice 6: `schema`
 
@@ -431,8 +443,10 @@ reshaped onto the new queries. `Edge.joinPath`'s component type stops being
 `FieldClassification.FkStep` and becomes an MCP-owned hop record carrying the destination's full key,
 since a bare-name record cannot hold what `intent_field_reference_step_hop` returns.
 
-**Leaves behind.** `snapshot` keeps two readers, both of them the lifecycle arms: `status` and the
-diagnostics axes.
+**Leaves behind.** `catalog` has no reader left. `snapshot` keeps four: `status`, both diagnostics
+tools' axes, and the directives resource, which reads it beside the bundled grammar. `vocabulary`
+keeps its one. Only the directives resource stands between here and the lifecycle arms being all
+that is left, which is why it is the next slice.
 
 ## Slice 7: the `directives` resource
 
@@ -451,8 +465,18 @@ resource has no rows, where today it degrades to the bundled grammar. It reports
 catalog tools report an unbuilt census rather than answering with a partial vocabulary, since a
 directive list missing the user's own declarations reads as a grammar that forbids them.
 
-**Deletes.** The `LspVocabulary` import, the `bundledDirectives` field computed at construction, and
-`DirectiveShape` as a type `graphitron-mcp` names.
+**Deletes.** The `bundledDirectives` field computed at construction, which is the module's only
+`workspace.vocabulary()` call and therefore the whole of its `LspVocabulary` coupling; the
+resource's `workspace.snapshot()` read; and `DirectiveShape` as a type `graphitron-mcp` names.
+
+There is no `LspVocabulary` import to delete, and that is the point rather than a detail.
+`GraphitronMcpServer` reaches the registry as `workspace.vocabulary().registry()`, so the coupling
+is spelled entirely in method calls. Slice 9's import scan would have passed a module that still
+held it, had the `Workspace` parameter not gone with everything else; a coupling reached through a
+call chain is invisible to exactly the guard written to catch it.
+
+**Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps three, all of them the
+lifecycle arms: `status` and the two diagnostics tools' axes.
 
 ## Slice 8: `status` and the diagnostics axes
 
@@ -472,7 +496,7 @@ directly, which it reaches transitively today. The classpath is unchanged in con
 
 Both guards land with it, and the tests section states them. The precondition is arithmetic from the
 slices above rather than a grep nobody ran: every `Workspace` accessor has a stated reader count and
-all four are zero.
+all five are zero, `vocabulary` included.
 
 ## The census is already captured
 
@@ -543,10 +567,13 @@ not in the MCP query.
 
 ## How the dependency gets paid down
 
-`graphitron-mcp` imports exactly three things from `graphitron-lsp`: `Workspace`, `ClassMemberSlots`
-and `LspVocabulary`. The four projections MCP reads through `Workspace` (`snapshot`, `catalog`,
-`sourceIndex`, `catalogFacts`) are generator types from `graphitron`, not LSP types, so the edge is
-one state holder, one misplaced reader, and one vocabulary registry.
+`graphitron-mcp` imports exactly two types from `graphitron-lsp`: `Workspace` and
+`ClassMemberSlots`. That count understates the coupling, which is why the accessor ledger rather
+than the import list is what this item's close-out counts. Four of the five `Workspace` accessors
+MCP reads (`snapshot`, `catalog`, `sourceIndex`, `catalogFacts`) return generator types from
+`graphitron`, not LSP types. The fifth, `vocabulary()`, returns an `LspVocabulary` the module never
+names. So the edge is one state holder, one misplaced reader, and one vocabulary registry reached
+without spelling its type.
 
 Each is answered here:
 
@@ -559,7 +586,8 @@ Each is answered here:
   `intent_class_member_slot` and the LSP keeps its own for the four surfaces its javadoc names.
   Leaving the one existing instance of a coupling while declaring the rule against it would make the
   rule weaker than the exception.
-* `LspVocabulary` goes with the directives resource. The bundled grammar it carries is in the store
+* `vocabulary()` goes with the directives resource, its only caller. The bundled grammar its
+  registry carries is in the store
   already: capture writes every *defined* directive to `graphql_directive`, bundled and
   user-declared alike, because the schema it captures is the merged one.
 * `catalog` and `sourceIndex` become the `jvm_` census and the `java_` declaration family, in the
@@ -582,8 +610,9 @@ dev-session lifecycle arm, none of which is a fact about a graph.
 ## The classification maps are questions, not a shape
 
 There are three taxonomies, not one, and the module reads all three.
-`FieldClassification` has thirty-odd permits, `TypeClassification` twenty-two and `TypeBackingShape`
-six. `EdgeProducer` switches the first two; `SchemaView` switches all three and renders every arm
+`FieldClassification` has twenty-nine permits, `TypeClassification` twenty-two, and
+`TypeBackingShape` five that fan out to eight leaf arms in a switch.
+`EdgeProducer` switches the first two; `SchemaView` switches all three and renders every arm
 onto the `schema` tool's wire. Together that is around ninety exhaustive arms, which reads at first
 like the size of what a store-side migration would have to reproduce.
 
@@ -592,8 +621,8 @@ It is not, because nothing consumes any of them as a union. Every use site is a 
 * `InlayHints.columnNameOf` asks "what column name" across four arms and lets the rest fall through.
   `InlayHints.fkPathOf` asks "what FK path" across two.
 * `DeclTarget.methodTarget` asks "what class and method" across four. `DeclTarget.typeTarget` is
-  the clearest case: six `TypeBackingShape` arms collapse into `tableTarget`, `SourceClass` and
-  `None`, which is a two-way question wearing a six-way costume.
+  the clearest case: eight `TypeBackingShape` arms collapse into `tableTarget`, `SourceClass` and
+  `None`, which is a three-way question wearing an eight-way costume.
 * `EdgeProducer`'s ninety-odd lines of switch produce five edge kinds. Nineteen of its arms produce
   no edge at all and exist to be exhaustive.
 * `SchemaView` is the apparent counterexample, since it renders every arm. What it renders per arm
@@ -780,9 +809,10 @@ scope, since nothing here reintroduces a cross-consumer reader import.
 A fourth is discarded rather than repointed: the Backlog item that planned the code tools' migration
 to `jvm_` / `java_`, which slice 5 now performs. Its whole content was the substrate census that
 slice cites, so nothing is lost by absorbing it, and a Backlog item describing work another item
-owns is a plan nobody will pick up. The file is deleted with the decision recorded here rather than
-left as a redirect, which is the workflow's `Discarded` rather than its tombstone: the supersession
-is total and this spec captures it by reference.
+owns is a plan nobody will pick up. Its file was already deleted while this spec was being drafted,
+with the decision recorded here rather than left as a redirect, which is the workflow's `Discarded`
+rather than its tombstone: the supersession is total and this spec captures it by reference. An
+implementer has nothing to remove for it.
 
 ## Tests
 
