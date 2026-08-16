@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -232,6 +233,31 @@ class PersistentStoreTest {
                 .where(STORE_GRAPH.GRAPH_NAME.eq(GRAPH_NAME)).fetchOne(0, String.class))
                 .as("the name still belongs to the directory that recorded it")
                 .isEqualTo(original.toAbsolutePath().normalize().toString());
+        }
+    }
+
+    /**
+     * The demotion arm seen from the reader's side. A run refused the shared partition still has
+     * to hand its caller a store holding its own capture, because the pass that classifies reads
+     * the store between filling it and closing it. Before anything read a demoted run's store,
+     * nothing could tell the two apart; now the difference is the schema the classifier sees.
+     */
+    @Test
+    @DisplayName("a run refused the shared partition still reads its own capture")
+    void aDemotedRunReadsItsOwnCapture(@TempDir Path tmp) throws IOException {
+        Path directory = tmp.resolve("graphitron-model");
+        Path original = Files.createDirectories(tmp.resolve("original"));
+        captureInto(directory, original);
+
+        Path impostor = Files.createDirectories(tmp.resolve("impostor"));
+        try (var captured = FactCapture.capture(directory,
+                new FactCapture.GraphIdentity(GRAPH_NAME, impostor), FactCapture.SubjectConfig.none(),
+                CapturedStore.registryOf(impostor, "type Query { other: Int }"), SdlVerdicts.none(),
+                CapturedStore.attributionOf(impostor), null, List.of(), new NodeDeclaration(null))) {
+            assertThat(captured.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
+                    .where(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPH_NAME)).fetch(0, String.class))
+                .as("this run's own types, not the partition it was refused")
+                .contains("Query").doesNotContain("Film");
         }
     }
 
