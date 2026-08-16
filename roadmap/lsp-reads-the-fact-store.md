@@ -1955,7 +1955,13 @@ walk is evidence here, not the specification.
    `DERIVED` arm, one row per census method an `@service` or `@externalField` reference matches,
    the two directives coalesced by the view and told apart by a column. The section below carries
    what resolving it settled.
-6. The accessor hop: the field coordinate and standing class to the class the hop lands on.
+6. The accessor hop: the field coordinate and standing class to the class the hop lands on. Done:
+   three views on the `DERIVED` arm rather than one, because the peel between the slot and the
+   landing class is a rule two readers want. `intent_class_member_type_ref` is the union the census
+   forecast, `intent_class_member_element` is the class a slot delivers once the containers come
+   off, and `intent_field_accessor_hop` is the edge itself, total over standing classes so that
+   nothing in it presumes the closure. The section below carries the two directions in which it
+   differs from the walk.
 7. `intent_type_backing_class` as reachability from step 5's seeds over step 6's edges, materialized
    on the `ReachabilityRows` pattern, beside the conflict view over types two seeds answer
    differently. The shadow against step 3 reaches agreement here, one adjudicated disagreement at a
@@ -2154,6 +2160,53 @@ that can be held to it.
   siblings, but a routine reference names a jOOQ routine rather than a class and a method, so it
   does not resolve against `jvm_method` at all. That is a different population rather than the same
   one under another arm, which is the test for whether a view should union something.
+
+## Settled while building: the hop is three relations, and the peel is the one worth naming
+
+The plan called the accessor hop one relation and a local join. It is three, and the reason is the
+same grain argument the keystone lost: the peel from a declared type to the class it delivers is a
+rule with two readers, and a rule with two readers that lives inside one of them is a rule that
+drifts.
+
+* **The peel is the fact, the hop is the join.** A slot declared as a `List` of `Film` delivers
+  `Film`; so does a `CompletableFuture` of a `List` of `Film`, and so does a `Map` from a key to
+  `Film`. That rule is wanted twice, once for the slot a hop stands on and once for a producer
+  method's declared return, and stating it at each reader would be two spellings of one contract.
+  So `intent_class_member_element` states it once, source-keyed, and both readers join it. The
+  hop relation on top is then what the plan said it was: a local join, no rule inside it.
+* **The container vocabulary is named data, and the assignability closure cannot replace it.** Seven
+  rows join into the peel, on the terms `intent_class_member_slot` joins its two bean prefixes.
+  Recognising a container through `intent_class_assignable` instead looks tempting and does not
+  work: nothing ships the JDK as a classpath entry, so `java.util.List` declares nothing the census
+  holds and standing in for it is unreachable from below. That relation's own comment already said
+  the container question is closed over a handful of named classes; this is the reader that proves
+  it meant it.
+* **The peel recurses, which the plan said it would not, and the difference matters.** A declared
+  type is a finite tree, so the descent terminates on its own with no path guard and no bound the
+  rule has to pick. That is not the recursion the plan was ruling out, which was the closure over a
+  cyclic SDL type graph, and the depth stops being a magic number: the walk peels four levels
+  because someone chose four.
+* **Two populations fall away with no filter, because the census already omits them.** A
+  primitive-typed slot and an array-typed slot name no class at their root position, so neither has
+  a spine and neither delivers anything. The walk reaches the same answer through an explicit
+  reject list. Here it is a consequence of the type-reference relation's omission rule, which is
+  the better kind of agreement: nothing had to be written down twice for the two to match.
+* **The edge is total over standing classes, and that is the property that makes it an edge.**
+  Nothing in the hop says which class a parent actually stands on, so a coordinate pairs with every
+  class in the graph's sources offering a slot of that name. A relation that narrowed to the
+  standing class would need the closure that is step 7's job, and would be that answer wearing an
+  edge's name. Totality is also why it is a view and must stay one: the product is large wherever a
+  slot name is common, and small at every join a reader actually writes, because a reader binds the
+  standing class first.
+* **The hop differs from the walk in both directions, and the difference is one omission.** An SDL
+  field's arguments are not read. The walk probes for an accessor whose parameters match them,
+  where a slot is a no-argument member by definition, so the relation hops where the walk would not
+  (an argument-taking field standing on a no-argument accessor of the same name) and stays silent
+  where the walk would hop (a field whose accessor takes those arguments). Closing it would mean a
+  slot relation that holds parameterised members, which is a different question from the one that
+  relation answers and would drag `@field(name:)` completion along with it. Both directions are
+  pinned as pins rather than expectations, and the adjudication belongs to step 7's shadow, which
+  is the mechanism this item built for exactly this.
 
 ## Retired vocabulary
 

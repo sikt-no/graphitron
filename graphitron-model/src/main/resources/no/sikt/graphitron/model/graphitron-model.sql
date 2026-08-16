@@ -3396,7 +3396,7 @@ SELECT m.source_name, m.class_name, 'BEAN_ACCESSOR',
                       AND p.class_name = m.class_name
                       AND p.method_name = m.method_name
                       AND p.descriptor = m.descriptor);
-COMMENT ON VIEW intent_class_member_slot IS 'The member names a class offers an SDL author, in the author''s vocabulary rather than the JVM''s: what @field(name:) resolves against on a type whose backing is a class rather than a table. Keyed by the census''s own key, not by a graph: the question is about a class, and a graph reaches it the way it reaches any source-keyed fact, through store_graph_source. A class takes exactly one arm, chosen by its declared form, which is what keeps a slot name unambiguous about where it came from: a record answers with its components, and anything else answers with its bean accessors. The bean rule is the reason this is a relation and not a reader''s loop. It was written in the LSP-facing projection, where it had to be re-run on every build to hand the same list back, and it is a rule over the census rather than a fact about any graph: a public no-argument method whose name is get or is followed by an upper-case letter offers the remainder with its first letter lowered. The two prefixes are joined as data rather than spelled twice, and no arm reads the return type: a method named isTitle returning a String is a slot exactly as the projection made it one, because an author who wrote that name meant that member and a rule that second-guessed the type would hide it. Taking no parameters is read as the absence of parameter rows rather than as a descriptor''s shape, which is the same reading and the one that does not depend on how a descriptor is spelled. Two spellings of one property (getTitle beside isTitle) are two rows, the same two the projection''s list held; a reader wanting one takes the first, and a reader offering candidates offers both. Declaration order is deliberately not carried: the census records a position for a record component and nothing for a method, so an ordered column would be a fact about one arm only, and a reader that wants a stable list orders by name. What this relation does not answer is which class a type is backed by, which is a reflective walk over accessor return types: the census now carries the declared return type beside the erasure, so a list-valued accessor hop names its element type and the hop is followable, and what is still unbuilt is the walk over those hops rather than the fact it would read. Until that lands a reader holds the class name from elsewhere and asks this relation only what the class offers.';
+COMMENT ON VIEW intent_class_member_slot IS 'The member names a class offers an SDL author, in the author''s vocabulary rather than the JVM''s: what @field(name:) resolves against on a type whose backing is a class rather than a table. Keyed by the census''s own key, not by a graph: the question is about a class, and a graph reaches it the way it reaches any source-keyed fact, through store_graph_source. A class takes exactly one arm, chosen by its declared form, which is what keeps a slot name unambiguous about where it came from: a record answers with its components, and anything else answers with its bean accessors. The bean rule is the reason this is a relation and not a reader''s loop. It was written in the LSP-facing projection, where it had to be re-run on every build to hand the same list back, and it is a rule over the census rather than a fact about any graph: a public no-argument method whose name is get or is followed by an upper-case letter offers the remainder with its first letter lowered. The two prefixes are joined as data rather than spelled twice, and no arm reads the return type: a method named isTitle returning a String is a slot exactly as the projection made it one, because an author who wrote that name meant that member and a rule that second-guessed the type would hide it. Taking no parameters is read as the absence of parameter rows rather than as a descriptor''s shape, which is the same reading and the one that does not depend on how a descriptor is spelled. Two spellings of one property (getTitle beside isTitle) are two rows, the same two the projection''s list held; a reader wanting one takes the first, and a reader offering candidates offers both. Declaration order is deliberately not carried: the census records a position for a record component and nothing for a method, so an ordered column would be a fact about one arm only, and a reader that wants a stable list orders by name. What this relation does not answer is which class a type is backed by. A slot''s own type is one relation further on (intent_class_member_type_ref unions the arms and intent_class_member_element peels the containers off), and the hop a coordinate takes over it is intent_field_accessor_hop; what is still unbuilt is the closure over those hops rather than any fact it would read. Until that lands a reader holds the class name from elsewhere and asks this relation only what the class offers.';
 COMMENT ON COLUMN intent_class_member_slot.source_name IS 'the owning class''s classpath entry, carried from jvm_class; the partition a graph reaches through store_graph_source, and the reason one workspace''s modules do not fold their classes into each other''s answers';
 COMMENT ON COLUMN intent_class_member_slot.class_name IS 'the fully-qualified binary name of the class offering the slot';
 COMMENT ON COLUMN intent_class_member_slot.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR: which arm produced the row, and the whole of what a consumer needs to say what it found. A function of the class''s declared form rather than of the slot, so every slot of one class carries the same value, and carried per row anyway because the readers that fork on it (a diagnostic naming the member kind, a jump landing on a field rather than a method) hold a slot and not a class kind';
@@ -3456,6 +3456,114 @@ COMMENT ON COLUMN intent_field_producer_method.class_name IS 'the fully-qualifie
 COMMENT ON COLUMN intent_field_producer_method.method_name IS 'the resolved method''s name: the reference''s method argument, or the SDL field''s own name where an @externalField omitted it';
 COMMENT ON COLUMN intent_field_producer_method.descriptor IS 'the resolved method''s raw JVM descriptor, jvm_method''s overload discriminator and the whole of what tells two rows of one reference apart. The column a reader carries forward to reach the method''s parameters and the classes its declared return type names';
 COMMENT ON COLUMN intent_field_producer_method.candidates IS 'how many census methods this reference matches, this row being one of them; 1 on an unambiguous reference. Partitioned by the reference and not by the coordinate, so a field carrying both directives does not report one arm''s overloads as the other''s. Two overloads and one class declared by two classpath entries both raise it, which is one fact from a reader''s side: the reference names more than one method. Stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms, whether a reference is unique being what decides the reading';
+
+CREATE VIEW intent_class_member_type_ref
+  (source_name, class_name, origin, slot_name, accessor_method_name,
+   type_path, referenced_class, variance) AS
+SELECT s.source_name, s.class_name, s.origin, s.slot_name, s.accessor_method_name,
+       rt.type_path, rt.referenced_class, rt.variance
+  FROM intent_class_member_slot s
+  JOIN jvm_record_component_type_ref rt
+    ON rt.source_name = s.source_name AND rt.class_name = s.class_name
+   AND rt.component_name = s.slot_name
+ WHERE s.origin = 'RECORD_COMPONENT'
+UNION ALL
+SELECT s.source_name, s.class_name, s.origin, s.slot_name, s.accessor_method_name,
+       rt.type_path, rt.referenced_class, rt.variance
+  FROM intent_class_member_slot s
+  JOIN jvm_method_return_type_ref rt
+    ON rt.source_name = s.source_name AND rt.class_name = s.class_name
+   AND rt.method_name = s.accessor_method_name
+ WHERE s.origin = 'BEAN_ACCESSOR'
+   AND NOT EXISTS (SELECT 1 FROM jvm_method_parameter p
+                    WHERE p.source_name = rt.source_name
+                      AND p.class_name = rt.class_name
+                      AND p.method_name = rt.method_name
+                      AND p.descriptor = rt.descriptor);
+COMMENT ON VIEW intent_class_member_type_ref IS 'The classes a class''s member slots name, one row per position in a slot''s declared type: the union intent_class_member_slot''s own comment forecast, joining each slot to the type-reference relation of the arm that produced it. A reader standing on a slot asks what its type names and does not care whether a record component or a bean accessor answered, which is a reader''s question and therefore a view rather than a fourth base relation. Source-keyed like the slot relation it extends, a graph reaching it through store_graph_source. The path grammar and the omission rules are jvm_method_return_type_ref''s and hold here unchanged: the empty path is the type itself, a digit is a 0-based type-argument index, and a position naming no class has no row, so a primitive-typed slot and an array-typed slot alike name nothing at their root. The bean arm carries one condition the record arm does not need. A slot carries its accessor''s name and not its descriptor, and the type-reference relation is keyed by descriptor, so this arm picks the accessor among same-named methods the way the slot rule picked it in the first place, by the absence of parameter rows. That is the same reading applied twice rather than a second rule, and it is what stops a getTitle(int) declared beside getTitle() from lending its return type to the title slot.';
+COMMENT ON COLUMN intent_class_member_type_ref.source_name IS 'the owning class''s classpath entry, carried from intent_class_member_slot; the partition a graph reaches through store_graph_source';
+COMMENT ON COLUMN intent_class_member_type_ref.class_name IS 'the fully-qualified binary name of the class offering the slot';
+COMMENT ON COLUMN intent_class_member_type_ref.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, as on intent_class_member_slot; which arm produced the slot, and here also which of the census type-reference relations the position was read from';
+COMMENT ON COLUMN intent_class_member_type_ref.slot_name IS 'the name an author writes into @field(name:), as on intent_class_member_slot; not unique within a class, which is why the accessor''s own name is carried beside it';
+COMMENT ON COLUMN intent_class_member_type_ref.accessor_method_name IS 'the Java declaration the slot resolves to, as on intent_class_member_slot; what tells the positions of two spellings of one property apart';
+COMMENT ON COLUMN intent_class_member_type_ref.type_path IS 'the position within the slot''s declared type; the grammar is stated on jvm_method_return_type_ref.type_path';
+COMMENT ON COLUMN intent_class_member_type_ref.referenced_class IS 'the fully-qualified binary name of the class named at this position; the omission rules are stated on jvm_method_return_type_ref.referenced_class';
+COMMENT ON COLUMN intent_class_member_type_ref.variance IS 'NONE, EXTENDS or SUPER, as on jvm_method_return_type_ref.variance';
+
+CREATE VIEW intent_class_member_element
+  (source_name, class_name, origin, slot_name, accessor_method_name,
+   element_path, element_class, variance) AS
+WITH RECURSIVE spine (source_name, class_name, origin, slot_name, accessor_method_name,
+                      type_path, referenced_class, variance) AS (
+  SELECT source_name, class_name, origin, slot_name, accessor_method_name,
+         type_path, referenced_class, variance
+    FROM intent_class_member_type_ref
+   WHERE type_path = ''
+  UNION ALL
+  SELECT t.source_name, t.class_name, t.origin, t.slot_name, t.accessor_method_name,
+         t.type_path, t.referenced_class, t.variance
+    FROM spine p
+    JOIN (SELECT 'java.util.List' AS container_class, '0' AS element_index
+          UNION ALL SELECT 'java.util.Set', '0'
+          UNION ALL SELECT 'java.util.Collection', '0'
+          UNION ALL SELECT 'java.util.Optional', '0'
+          UNION ALL SELECT 'java.util.concurrent.CompletableFuture', '0'
+          UNION ALL SELECT 'org.jooq.Result', '0'
+          UNION ALL SELECT 'java.util.Map', '1') c
+      ON c.container_class = p.referenced_class
+    JOIN intent_class_member_type_ref t
+      ON t.source_name = p.source_name AND t.class_name = p.class_name
+     AND t.origin = p.origin AND t.slot_name = p.slot_name
+     AND t.accessor_method_name = p.accessor_method_name
+     AND t.type_path = CASE WHEN p.type_path = '' THEN c.element_index
+                            ELSE p.type_path || '.' || c.element_index END
+)
+SELECT s.source_name, s.class_name, s.origin, s.slot_name, s.accessor_method_name,
+       s.type_path, s.referenced_class, s.variance
+  FROM spine s
+ WHERE NOT EXISTS (SELECT 1 FROM spine d
+                    WHERE d.source_name = s.source_name
+                      AND d.class_name = s.class_name
+                      AND d.origin = s.origin
+                      AND d.slot_name = s.slot_name
+                      AND d.accessor_method_name = s.accessor_method_name
+                      AND LENGTH(d.type_path) > LENGTH(s.type_path));
+COMMENT ON VIEW intent_class_member_element IS 'The class a member slot delivers: its declared type with the delivery wrappers peeled off, one row per slot. A slot declared as a List of Film delivers Film, and so do a CompletableFuture of a List of Film and a Map from a key to Film, which is the rule that lets an SDL field naming one object stand on a member that hands back many. Stated once here rather than at each reader, because two readers want it (the slot an accessor hop stands on, and a producer method''s declared return) and a rule spelled twice is a rule that drifts. The peel walks a spine from the declared type''s root position: at a position naming a container it descends to that container''s element argument, and it stops at the first position naming no container, or naming one whose element argument names no class. That stopping position is the row. The containers are named as data, seven rows joined into the recursion on the terms intent_class_member_slot joins its two bean prefixes, and they are named rather than recognised through the assignability closure because that closure cannot answer here: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and standing in for it is unreachable from below. The recursion is not the one the SDL type graph needs a guard for. A declared type is a finite tree, so the descent terminates on its own, and the depth is the type''s rather than a bound the rule picks. Two populations fall away with no filter, because the census already omits them: a primitive-typed slot and an array-typed slot name no class at their root and so have no spine at all, an array''s component being the next step down and this walk never taking that step. What this view does not do is judge the class it lands on. A raw List with no type argument delivers java.util.List and says so, and a slot delivering java.lang.String is a row like any other; which landing classes are worth binding an SDL type to is a filter a reader applies rather than a fact this relation withholds.';
+COMMENT ON COLUMN intent_class_member_element.source_name IS 'the owning class''s classpath entry, carried from intent_class_member_slot; the partition a graph reaches through store_graph_source';
+COMMENT ON COLUMN intent_class_member_element.class_name IS 'the fully-qualified binary name of the class offering the slot';
+COMMENT ON COLUMN intent_class_member_element.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, as on intent_class_member_slot';
+COMMENT ON COLUMN intent_class_member_element.slot_name IS 'the name an author writes into @field(name:), as on intent_class_member_slot; two spellings of one property are two slots and so two rows, which this view inherits rather than resolves';
+COMMENT ON COLUMN intent_class_member_element.accessor_method_name IS 'the Java declaration the slot resolves to, as on intent_class_member_slot';
+COMMENT ON COLUMN intent_class_member_element.element_path IS 'the position the peel stopped at, the empty string where the slot''s declared type names its own delivery. The evidence for the answer rather than decoration: a reader can see whether a row came off the root or off three descents, and a test can pin which without asserting on the class that happened to be there';
+COMMENT ON COLUMN intent_class_member_element.element_class IS 'the fully-qualified binary name of the class the slot delivers. Not a foreign key, on jvm_method_return_type_ref.referenced_class''s terms, so a slot delivering a class no classpath entry declares is an ordinary row and a reader learns nothing further about it';
+COMMENT ON COLUMN intent_class_member_element.variance IS 'NONE, EXTENDS or SUPER at the position landed on: a slot declared as a List of ? extends Film delivers Film under EXTENDS. Carried because the three declare different things about which direction values flow and the class name alone cannot tell them apart';
+
+CREATE VIEW intent_field_accessor_hop
+  (graph_name, type_name, field_name, source_name, from_class_name,
+   origin, slot_name, accessor_method_name, to_class_name, element_path, variance) AS
+SELECT f.graph_name, f.type_name, f.field_name, e.source_name, e.class_name,
+       e.origin, e.slot_name, e.accessor_method_name,
+       e.element_class, e.element_path, e.variance
+  FROM graphql_field f
+  JOIN store_graph_source g ON g.graph_name = f.graph_name
+  LEFT JOIN graphitron_field_binding b
+    ON b.graph_name = f.graph_name AND b.type_name = f.type_name
+   AND b.field_name = f.field_name
+  JOIN intent_class_member_element e
+    ON e.source_name = g.source_name
+   AND e.slot_name = COALESCE(b.name_ref, f.field_name);
+COMMENT ON VIEW intent_field_accessor_hop IS 'Where an accessor hop lands: for a field coordinate and a class its parent might stand on, the class the member reading that field delivers. One edge of the walk that binds SDL types to backing classes, stated as a fact instead of as a step, so the closure over these edges is a reader''s recursion rather than a rule buried inside one. The slot a coordinate reads is the @field(name:) override where the field carries one and the field''s own name otherwise, which is the resolution the emission side makes; an output field and an input-object field resolve it identically and are one population here, that directive landing on both. Total over standing classes by construction. Nothing here says which class a parent actually stands on, so a coordinate pairs with every class in the graph''s sources offering a slot of that name, and a row is a conditional rather than an answer. That totality is what makes this an edge relation instead of another copy of the binding, and it is why this is a view that is never materialized: the product is large wherever a slot name is common and small wherever a reader binds the standing class before asking. Ambiguity is rows and no count. Two spellings of one property are two slots on intent_class_member_slot''s stated terms, and that relation already declines to choose between them, so a count here would be a second stance on a question one relation has settled. Two departures from the walk this replaces, both to be adjudicated against its shadow rather than assumed harmless. The first is that an SDL field''s arguments are not read at all. The walk probes for an accessor whose parameters match them, and a slot is a no-argument member by definition, so this relation hops where the walk would not (an argument-taking field standing on a no-argument accessor of the same name) and stays silent where the walk would hop (a field whose accessor takes those arguments). Reading the shape here would mean a slot relation holding parameterised members, which is a different question from the one that relation answers, so the difference is recorded rather than quietly closed. The second is that the walk skips a field carrying @service and skips a child type already bound; both are conditions on the closure rather than properties of an edge, and neither belongs here.';
+COMMENT ON COLUMN intent_field_accessor_hop.graph_name IS 'the owning graph''s partition, carried from graphql_field';
+COMMENT ON COLUMN intent_field_accessor_hop.type_name IS 'the coordinate''s owning type: the type whose standing class the hop departs from';
+COMMENT ON COLUMN intent_field_accessor_hop.field_name IS 'the coordinate''s field name within that type';
+COMMENT ON COLUMN intent_field_accessor_hop.source_name IS 'the departing class''s classpath entry, as on jvm_class; the census partition the graph reached through store_graph_source, and the reason another graph''s entries offer no hops here';
+COMMENT ON COLUMN intent_field_accessor_hop.from_class_name IS 'the class the parent must stand on for this row to hold. A hypothesis the row is conditional on rather than a fact about the coordinate, which is exactly what keeps this relation clear of the closure that decides it';
+COMMENT ON COLUMN intent_field_accessor_hop.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, as on intent_class_member_slot';
+COMMENT ON COLUMN intent_field_accessor_hop.slot_name IS 'the member name the coordinate resolved to: the @field(name:) override, or the field''s own name where it carries none';
+COMMENT ON COLUMN intent_field_accessor_hop.accessor_method_name IS 'the Java declaration the hop reads, as on intent_class_member_slot; the column a jump to the member''s own source lands on';
+COMMENT ON COLUMN intent_field_accessor_hop.to_class_name IS 'the class the hop lands on: what the slot delivers with its wrappers peeled, on intent_class_member_element''s terms. Not a foreign key, a landing class no classpath entry declares being ordinary rather than exceptional';
+COMMENT ON COLUMN intent_field_accessor_hop.element_path IS 'the position within the slot''s declared type the landing class was read at, carried from intent_class_member_element; what says whether the hop peeled anything';
+COMMENT ON COLUMN intent_field_accessor_hop.variance IS 'NONE, EXTENDS or SUPER at that position, carried from intent_class_member_element';
 
 CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
