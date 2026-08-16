@@ -42,7 +42,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R684` | fact-model doctrine: consumers share relations, not queries | Spec | 2026-08-16 | [plan](consumers-share-relations-not-queries.md) |
+| `R684` | fact-model doctrine: consumers share relations, not queries <sub>blocked by: [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)</sub> | Spec | 2026-08-16 | [plan](consumers-share-relations-not-queries.md) |
 
 ---
 
@@ -302,7 +302,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R591` [**Member payload storage home: the three leaf-homed axes**](member-payload-storage-home.md) — Backlog, architecture
 - `R180` [**Resolved accessors for record-parent column reads (recordColumnReadArgs)**](record-parent-column-read-helper.md) — Spec
 - `R545` [**The model owns no emit-library vocabulary**](model-free-of-emit-vocabulary.md) — Backlog, structural
-- `R684` [**fact-model doctrine: consumers share relations, not queries**](consumers-share-relations-not-queries.md) — Spec, architecture
+- `R684` [**fact-model doctrine: consumers share relations, not queries**](consumers-share-relations-not-queries.md) — Spec, architecture, blocked by [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)
 
 ### diagnostics
 
