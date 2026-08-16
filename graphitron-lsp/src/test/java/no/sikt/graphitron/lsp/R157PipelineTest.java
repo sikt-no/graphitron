@@ -148,6 +148,7 @@ class R157PipelineTest {
     // ---- Pipeline helpers ----
 
     private record Artefacts(
+        String sdl,
         TypeDefinitionRegistry registry,
         no.sikt.graphitron.rewrite.GraphitronSchema schema,
         CompletionData catalog,
@@ -173,7 +174,7 @@ class R157PipelineTest {
         var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, catalog);
-        return new Artefacts(registry, schema, catalog, snapshot);
+        return new Artefacts(schemaText, registry, schema, catalog, snapshot);
     }
 
     private static String prelude(String schemaText) {
@@ -255,12 +256,13 @@ class R157PipelineTest {
     }
 
     /**
-     * A store holding the same class census the projection was built from. Taking the list off the
-     * catalog rather than re-scanning is what makes this one pipeline: the classifier, the projection
-     * and the store all answer about the classes this test's own scan read.
+     * A store over the same schema and the same class census the projection was built from. Taking
+     * the census off the catalog rather than re-scanning is what makes this one pipeline: the
+     * classifier, the projection and the store all answer about the classes this test's own scan
+     * read. The schema has to be the same one too, now that which class backs a type is the store's
+     * answer rather than the permit's.
      */
     private static StoreFixture storeOver(Artefacts artefacts) {
-        return StoreFixture.of(tmp, "type Query { placeholder: Int }\n",
-            artefacts.catalog().externalReferences());
+        return StoreFixture.of(tmp, artefacts.sdl(), artefacts.catalog().externalReferences());
     }
 }

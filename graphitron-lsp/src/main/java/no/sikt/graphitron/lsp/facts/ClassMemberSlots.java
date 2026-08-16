@@ -27,10 +27,8 @@ import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
  * deterministic for both, and no surface ships a sort key anyway, so what an editor shows is its
  * own ordering of the labels.
  *
- * <p>Which class a type is backed by is not this relation's question and is still the LSP snapshot's
- * to answer: the binding is a reflective walk over accessor return types, and the census records
- * those erased, so a container-valued hop has no element type to follow. A caller therefore arrives
- * holding a class name and asks only what the class offers.
+ * <p>Which class a type is backed by is not this relation's question. It is {@link TypeBackingClass}'s,
+ * and a caller arrives here holding a class name and asks only what the class offers.
  */
 public final class ClassMemberSlots {
 

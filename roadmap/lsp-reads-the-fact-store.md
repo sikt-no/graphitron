@@ -1994,7 +1994,10 @@ walk is evidence here, not the specification.
     `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the
     class-backed-parent arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
     `walk_type_backing_class` and its writer drain with the last of them rather than at step 9, the
-    differential being what keeps the duplication honest until then.
+    differential being what keeps the duplication honest until then. The class arm is done:
+    completion, hover and the field-member diagnostic read `TypeBackingClass` over
+    `intent_type_backing`, and the precedence between a grounding and a hop is the reader's rule,
+    stated where a second reader can lift it into a view. The section below carries it.
 
 ## Settled while building: a declared type is a tree, so resolving it is a relation per position
 
@@ -2554,6 +2557,56 @@ want the same answer in the next step, that is the second reader, and it can lif
 `TypeBackingShadowTest.aGroundingBeatsAHopAndTheSeedRelationSaysWhichIsWhich` is the evidence the
 reading is the walk's: the walk answers with the grounding, and the seed rows alone reproduce that
 answer while the closure carries both.
+
+## Settled while building: the first consumer reads the backing, and it takes the precedence with it
+
+The class arm of the type-scope question is off the walk. Completion, hover and the field-member
+diagnostic each resolved a class-backed parent by reading the class name off the permit the
+classification projection handed them, which is the reflective walk's answer carried across the
+seam; all three read `TypeBackingClass` now, an LSP fact reader over `intent_type_backing`. This is
+the first consumer of the backing fact, and therefore the first real test of whether the closure and
+its seeds are sufficient. They are.
+
+**The reader owns the precedence, and that was the whole design question.** The relation states
+every class it can reach for a type and prefers none of them, deliberately: a route column would key
+it by path and multiply every reader's rows. So a consumer arriving with rows in hand has to say
+what it makes of them, and this one says two things. A grounding beats a hop, because a hop reads
+the parent's member type without checking it against the child's grounding and can land on a class
+that is wrong rather than merely second; `intent_type_backing_seed` is what tells the two apart. A
+type still answered two ways after that is answered not at all, because there is nothing to prefer
+between two producers and a surface that guessed would offer one class's members while the generator
+bound the other. Both rules are stated in the reader's javadoc rather than assumed of the store,
+which is the point of leaving them here: the second reader is where they lift into a view, and
+knowing whether they are one rule or two per consumer is what that decision needs.
+
+**Silence is one answer with two causes, and that is deliberate.** A type nothing reaches and a type
+two producers contest both render empty, because a surface asking what a class offers has nothing to
+say in either case. A reader that needs them apart has `intent_type_backing_conflict` and its arity,
+which is the shape a rejection would stand on; none of the three surfaces needs one.
+
+**The permit no longer names anything, and a test says so out loud.** Both class arms now ignore the
+`fqClassName` they were routing on, and
+`DiagnosticsTest.theCheckRunsAgainstTheClassTheStoreNamesRatherThanThePermitsOwn` hands the arm a
+permit naming a class the census never held: the projection-era dispatch went silent on it, and the
+store's own binding reports the typo. That is the evidence the class binding moved rather than being
+copied, and it is cheaper than any structural check over the two.
+
+**What it cost was fixtures, and the cost is the honest kind.** A class-backed case can no longer
+capture a placeholder schema and hand-build a projection over some unrelated type name, because the
+class is now the store's answer for a type the document declares. Each such case captures its own
+SDL with a producer grounding the type, which is what a consumer's schema looks like anyway. The
+fixtures were also one class short: the census had a record and a POJO and no member typed by
+either, so no hop could exist and the grounding rule had nothing to be tested against.
+`FilmCardRecord` is that member, and `TypeBackingClassTest.aGroundingBeatsAHopOntoAnotherClass` is
+the rule pinned at the reader that owns it.
+
+**What still routes off the projection, and why this is an arm rather than the question.** The two
+table permits and the three silences remain the snapshot's, so `typesByName()` and
+`TypeBackingShape` stay alive for them. Both table arms are answerable from the store already, the
+`@table` binding through `intent_bound_table` and a jOOQ record's table through
+`sql_table.record_class_fqn`, which is the join `intent_type_backing`'s own table arm runs in
+reverse; what they are waiting on is the remaining consumers of the projection rather than a fact.
+`Diagnostics.validateFieldMember` is the next of them.
 
 ## Retired vocabulary
 

@@ -41,6 +41,9 @@ class FieldCompletionsTest {
     private static final String RECORD_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
     private static final String POJO_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmPojo";
 
+    /** The census's producer, whose return types ground the class-backed cases' own SDL. */
+    private static final String SERVICE_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157Service";
+
     @TempDir
     static Path sharedDirectory;
 
@@ -180,28 +183,27 @@ class FieldCompletionsTest {
     }
 
     /**
-     * The snapshot names the backing class and the store answers what it offers, which is why the
-     * permit's own slot list is empty here: the arm no longer reads it. The class is a real fixture
-     * in the captured census, so the candidates are the components a compiler recorded.
+     * The snapshot says the parent is class-backed, the store says which class, and the census says
+     * what that class offers. So the document itself has to be the captured one: the class is the
+     * store's answer for a type this SDL declares, grounded by a producer of its own, and the
+     * candidates are the components a compiler recorded for it.
      */
     @Test
     void recordBackingCompletionReturnsRecordComponents() {
-        // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
-        // from any SDL directive, so member completion resolves without an applied @record.
         String source = """
-            input FilmInput {
+            type Query {
+                card: FilmCard @service(service: {className: "%s", method: "makeFilmRecord"})
+            }
+            type FilmCard {
                 bar: Int @field(name: "")
             }
-            """;
-        int line = 1;
+            """.formatted(SERVICE_FIXTURE);
+        int line = 4;
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("FilmInput", new TypeBackingShape.RecordBacking(RECORD_FIXTURE)),
-        Map.of());
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = runBacked(source, cursor, classBacking(
+            "FilmCard", new TypeBackingShape.RecordBacking(RECORD_FIXTURE)));
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("filmId", "title");
@@ -210,22 +212,48 @@ class FieldCompletionsTest {
     @Test
     void pojoBackingCompletionReturnsBeanAccessors() {
         String source = """
-            type FilmPojo {
+            type Query {
+                view: FilmPojoView @service(service: {className: "%s", method: "makeFilmPojo"})
+            }
+            type FilmPojoView {
                 bar: Int @field(name: "")
             }
-            """;
-        int line = 1;
+            """.formatted(SERVICE_FIXTURE);
+        int line = 4;
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("FilmPojo", new TypeBackingShape.PojoBacking(POJO_FIXTURE)),
-        Map.of());
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = runBacked(source, cursor, classBacking(
+            "FilmPojoView", new TypeBackingShape.PojoBacking(POJO_FIXTURE)));
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("filmId", "title");
+    }
+
+    /**
+     * A type the store reaches no single class for offers nothing, which is the reading a contested
+     * binding gets everywhere: two producers naming different classes leave a surface with no basis
+     * for offering one class's members over the other's.
+     */
+    @Test
+    void contestedBackingCompletionReturnsEmpty() {
+        String source = """
+            type Query {
+                asRecord: Contested @service(service: {className: "%s", method: "makeFilmRecord"})
+                asPojo: Contested @service(service: {className: "%s", method: "makeFilmPojo"})
+            }
+            type Contested {
+                bar: Int @field(name: "")
+            }
+            """.formatted(SERVICE_FIXTURE, SERVICE_FIXTURE);
+        int line = 5;
+        int col = source.split("\n")[line].indexOf('"') + 1;
+        Point cursor = new Point(line, col);
+
+        var items = runBacked(source, cursor, classBacking(
+            "Contested", new TypeBackingShape.RecordBacking(RECORD_FIXTURE)));
+
+        assertThat(items).isEmpty();
     }
 
     @Test
@@ -596,6 +624,22 @@ class FieldCompletionsTest {
         try (var store = StoreFixture.ofCatalog(sharedDirectory, source)) {
             return run(store.handle(), emptySnapshot(), source, cursor);
         }
+    }
+
+    /**
+     * Runs the arm against a store that captured this very document over the backing-class census,
+     * which is what a class-backed case needs: the class the arm resolves is the store's answer for
+     * a type the document declares, so the document and the capture have to be the same schema.
+     */
+    private List<CompletionItem> runBacked(String source, Point cursor, LspSchemaSnapshot snapshot) {
+        try (var store = StoreFixture.of(sharedDirectory, source, StoreFixture.backingClasses())) {
+            return run(store.handle(), snapshot, source, cursor);
+        }
+    }
+
+    /** The projection's routing arm alone: which class it names is no longer read. */
+    private static LspSchemaSnapshot classBacking(String typeName, TypeBackingShape backing) {
+        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(typeName, backing), Map.of());
     }
 
     /** No projection at all: the cases using it resolve their scope from the store. */

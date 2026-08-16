@@ -37,6 +37,18 @@ class DiagnosticsTest {
     /** The schema is beside the point in the shared fixtures; each case's own buffer is the subject. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
+    /**
+     * The one shared fixture whose schema is not beside the point: which class backs a type is the
+     * store's answer now, so a case validating a member name against a backing class needs a graph
+     * where a producer grounds the type its buffer declares.
+     */
+    private static final String BACKED_SDL = """
+        type Query {
+            card: FilmCard @service(service: {className: "no.sikt.graphitron.lsp.fixtures.R157Service", method: "makeFilmRecord"})
+        }
+        type FilmCard { title: String }
+        """;
+
     @TempDir
     Path tmp;
 
@@ -67,8 +79,8 @@ class DiagnosticsTest {
         catalogOnly = StoreFixture.ofCatalog(catalogRoot, PLACEHOLDER_SDL);
         multiSchema = StoreFixture.ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
         withClasses = StoreFixture.ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus());
-        withBackingClasses = StoreFixture.ofCatalog(
-            backingRoot, PLACEHOLDER_SDL, StoreFixture.backingClasses());
+        withBackingClasses = StoreFixture.ofCatalog(backingRoot, BACKED_SDL,
+            StoreFixture.backingClasses());
         withNodes = StoreFixture.of(nodesRoot, """
             type Query { x: Int }
             type Film @node(typeId: "Film") { id: ID }
@@ -189,18 +201,19 @@ class DiagnosticsTest {
 
     @Test
     void unknownRecordComponentProducesError() {
-        // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
-        // from any SDL directive, so the @field member validation fires without an applied @record.
-        // What the class offers is the census's, so the accept line is the compiler's record header
-        // rather than a list this fixture wrote, and the word the message uses for the member comes
-        // from the arm the relation chose for the class.
+        // Two answers meet here and neither is an SDL directive on the buffer. That the parent is
+        // class-backed is the snapshot's, which is why the arm fires without an applied @record;
+        // which class it is is the store's, a producer in the captured graph grounding FilmCard on
+        // the fixture record. What the class offers is the census's, so the accept line is the
+        // compiler's record header rather than a list this fixture wrote, and the word the message
+        // uses for the member comes from the arm the relation chose for the class.
         var file = file("""
-            input FilmInput {
+            type FilmCard {
                 bar: Int @field(name: "TYPO")
             }
             """);
 
-        var diags = compute(file, withBackingClasses, recordBackedFilmInput());
+        var diags = compute(file, withBackingClasses, recordBackedFilmCard());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -210,22 +223,47 @@ class DiagnosticsTest {
     @Test
     void knownRecordComponentProducesNoError() {
         var file = file("""
-            input FilmInput {
+            type FilmCard {
                 bar: Int @field(name: "title")
             }
             """);
 
-        var diags = compute(file, withBackingClasses, recordBackedFilmInput());
+        var diags = compute(file, withBackingClasses, recordBackedFilmCard());
 
         assertThat(diags).isEmpty();
     }
 
-    /** A type the projection binds to the fixture record, whose members the census answers for. */
-    private static LspSchemaSnapshot recordBackedFilmInput() {
+    /**
+     * A type the store grounds on the fixture record, whose members the census answers for. The
+     * permit routes the arm and no longer names the class, so the projection's own class name is
+     * not what the check runs against; the case below is the one that says so out loud.
+     */
+    private static LspSchemaSnapshot recordBackedFilmCard() {
+        return classBackedFilmCard(RECORD_FIXTURE);
+    }
+
+    @Test
+    void theCheckRunsAgainstTheClassTheStoreNamesRatherThanThePermitsOwn() {
+        // The permit names a class the census never held, which under the projection-era dispatch
+        // meant an empty slot list and silence. The store grounds FilmCard on the fixture record,
+        // so the name is checked against that record's components and the typo is reported.
+        var file = file("""
+            type FilmCard {
+                bar: Int @field(name: "TYPO")
+            }
+            """);
+
+        var diags = compute(file, withBackingClasses, classBackedFilmCard("com.example.Ghost"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("TYPO").contains(RECORD_FIXTURE);
+    }
+
+    private static LspSchemaSnapshot classBackedFilmCard(String permittedClassName) {
         return new LspSchemaSnapshot.Built.Current(
             java.util.List.of(),
-            java.util.Map.of("FilmInput",
-                new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(RECORD_FIXTURE)),
+            java.util.Map.of("FilmCard",
+                new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(permittedClassName)),
             Map.of());
     }
 

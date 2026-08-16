@@ -26,6 +26,7 @@ import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathClasses;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
+import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
@@ -650,9 +651,9 @@ public final class Diagnostics {
      * Validates a {@code @field(name:)} (or other {@code CatalogColumnBinding}
      * coordinate) against the enclosing SDL type's backing shape: column on a
      * table-bound type, component on a Java record, accessor on a POJO. The
-     * dispatch reads {@link LspSchemaSnapshot.Built#typesByName} so the
-     * classifier's projection of the enclosing type is the authoritative
-     * answer.
+     * dispatch reads {@link LspSchemaSnapshot.Built#typesByName} for which of
+     * those the enclosing type is; on the class arms, which class it is comes
+     * from {@link TypeBackingClass} rather than from the permit.
      */
     private static void validateFieldMember(
         Directives.Directive directive, Node valueNode, FileSnapshot file,
@@ -707,17 +708,17 @@ public final class Diagnostics {
                 }
             }
         }
-        // The parent's own scope. What the parent is backed by is still the projection's to answer,
-        // the binding being a reflective walk no relation reproduces yet; what a backing then offers
-        // is the store's, whether that is a table's columns or a class's member slots.
+        // The parent's own scope. Which table the parent is bound to is still the projection's to
+        // answer; which class stands for it is the store's now, as is what either backing then
+        // offers, whether that is a table's columns or a class's member slots.
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return;
         switch (backing) {
-            case TypeBackingShape.RecordBacking r ->
-                validateMemberSlot(store, r.fqClassName(), memberName, valueNode, file, out);
-            case TypeBackingShape.PojoBacking p ->
-                validateMemberSlot(store, p.fqClassName(), memberName, valueNode, file, out);
+            case TypeBackingShape.RecordBacking ignored ->
+                validateMemberSlot(store, typeName.get(), memberName, valueNode, file, out);
+            case TypeBackingShape.PojoBacking ignored ->
+                validateMemberSlot(store, typeName.get(), memberName, valueNode, file, out);
             case TypeBackingShape.JooqRecordBacking.WithTable j ->
                 validateColumnOnTable(store, j.tableName(), memberName, valueNode, file, out);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> { /* no actionable diagnostic */ }
@@ -773,19 +774,24 @@ public final class Diagnostics {
     }
 
     /**
-     * The member name must be one the backing class offers. A class the census holds nothing for is
-     * not a class with no members: it is a class nobody has compiled yet, so the arm stays silent
-     * rather than calling every name unknown mid-build.
+     * The member name must be one the class backing the enclosing type offers. Two silences guard
+     * it, and both say the same thing: report nothing the author can act on. A type the store names
+     * no single class for is one whose binding is unresolved or contested, and a class the census
+     * holds nothing for is not a class with no members but a class nobody has compiled yet, so
+     * neither is grounds for calling a name unknown.
      *
      * <p>The word the message uses for the member is the slots' own origin, not the permit that
      * routed the arm here. Every slot of one class shares it, the relation choosing its arm by the
      * class's declared form, so the first slot speaks for the class.
      */
     private static void validateMemberSlot(
-        Optional<StoreHandle> store, String fqClassName, String memberName,
+        Optional<StoreHandle> store, String typeName, String memberName,
         Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         if (store.isEmpty()) return;
+        var backingClass = TypeBackingClass.of(store.get(), typeName);
+        if (backingClass.isEmpty()) return;
+        String fqClassName = backingClass.get();
         var slots = ClassMemberSlots.of(store.get(), fqClassName);
         if (slots.isEmpty()) return;
         if (slots.stream().anyMatch(slot -> slot.name().equals(memberName))) return;

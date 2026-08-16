@@ -18,4 +18,13 @@ public final class R157Service {
     public static R157FilmPojo makeFilmPojo() {
         throw new UnsupportedOperationException("codegen-time return-type stub");
     }
+
+    /**
+     * Grounds a type on {@link FilmCardRecord}, whose {@code detail} component then carries an
+     * accessor hop onto {@link R157FilmPojo}. The pair is what a test needs to put a hop and a
+     * grounding on one SDL type.
+     */
+    public static FilmCardRecord makeFilmCard() {
+        throw new UnsupportedOperationException("codegen-time return-type stub");
+    }
 }

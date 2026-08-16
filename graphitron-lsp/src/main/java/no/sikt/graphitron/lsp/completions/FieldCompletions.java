@@ -4,6 +4,7 @@ import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
+import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -34,17 +35,17 @@ import java.util.List;
  *       {@code sql_column}, with the generated field's Javadoc joined in on the {@code .java}
  *       cadence.</li>
  *   <li>{@link TypeBackingShape.RecordBacking} or {@link TypeBackingShape.PojoBacking} — the member
- *       slots the backing class offers, from {@link ClassMemberSlots}; which of the two permits
- *       routed the arm here no longer decides anything, the relation choosing components or bean
- *       accessors by the class's own declared form.</li>
+ *       slots the backing class offers, the class itself read from {@link TypeBackingClass} and its
+ *       slots from {@link ClassMemberSlots}. Neither the permit's identity nor the class name it
+ *       carries decides anything here.</li>
  *   <li>{@link TypeBackingShape.NoBacking} or snapshot miss — empty list
  *       (matches today's "no info" behaviour).</li>
  * </ul>
  *
- * <p>Which class or table a type is backed by stays a classification question the snapshot answers,
- * as does the field's own classification; what a backing then offers is a store read, shared with
- * the other surfaces that ask it ({@link CatalogColumns} for a table, {@link ClassMemberSlots} for
- * a class).
+ * <p>Which table a type is bound to stays a classification question the snapshot answers, as does
+ * the field's own classification; which class stands for a type is the store's, and so is what
+ * either backing then offers ({@link CatalogColumns} for a table, {@link ClassMemberSlots} for a
+ * class).
  */
 public final class FieldCompletions {
 
@@ -109,17 +110,17 @@ public final class FieldCompletions {
                 }
             }
         }
-        // The parent's own scope. What the parent is backed by is still the projection's to answer,
-        // the binding being a reflective walk no relation reproduces yet; what a backing then offers
-        // is the store's, whether that is a table's columns or a class's member slots.
+        // The parent's own scope. Which table the parent is bound to is still the projection's to
+        // answer; which class stands for it is the store's now, as is what either backing then
+        // offers, whether that is a table's columns or a class's member slots.
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
             return sigilItems;
         }
         var backing = built.typesByName().get(typeName);
         if (backing == null) return sigilItems;
         var rest = switch (backing) {
-            case TypeBackingShape.RecordBacking r -> memberSlotItems(store, r.fqClassName(), context);
-            case TypeBackingShape.PojoBacking p -> memberSlotItems(store, p.fqClassName(), context);
+            case TypeBackingShape.RecordBacking ignored -> memberSlotItems(store, typeName, context);
+            case TypeBackingShape.PojoBacking ignored -> memberSlotItems(store, typeName, context);
             case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(store, j.tableName(), context);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.<CompletionItem>of();
             case TypeBackingShape.TableBacking t -> tableColumnItems(store, t.tableName(), context);
@@ -181,16 +182,20 @@ public final class FieldCompletions {
     }
 
     /**
-     * The member names the backing class offers, by name. The bean rule that decides what a
-     * non-record class offers is the relation's, so this arm no longer depends on which of the two
-     * class permits routed it here.
+     * The member names the class backing {@code typeName} offers, by name. Both the class and what
+     * it offers are the store's now: the binding through {@link TypeBackingClass} and the members
+     * through {@link ClassMemberSlots}, whose own rule decides between components and accessors. So
+     * this arm depends neither on which of the two class permits routed it here nor on the class
+     * name that permit carries, and a type the store cannot name one class for offers nothing.
      */
     private static List<CompletionItem> memberSlotItems(
-        StoreHandle store, String fqClassName, CompletionContext context
+        StoreHandle store, String typeName, CompletionContext context
     ) {
-        return ClassMemberSlots.of(store, fqClassName).stream()
-            .map(slot -> toMemberSlotItem(slot, context))
-            .toList();
+        return TypeBackingClass.of(store, typeName)
+            .map(className -> ClassMemberSlots.of(store, className).stream()
+                .map(slot -> toMemberSlotItem(slot, context))
+                .toList())
+            .orElse(List.of());
     }
 
     /**

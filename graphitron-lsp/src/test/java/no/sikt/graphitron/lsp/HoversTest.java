@@ -43,8 +43,12 @@ class HoversTest {
             role: String!
         ) on FIELD_DEFINITION
 
-        type Query { placeholder: Int }
+        type Query {
+            placeholder: Int
+            card: FilmCard @service(service: {className: "no.sikt.graphitron.lsp.fixtures.R157Service", method: "makeFilmRecord"})
+        }
         type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
+        type FilmCard { title: String }
         """;
 
     /** A second graph of the same store, for the arms whose subject is that a census is per-graph. */
@@ -226,21 +230,21 @@ class HoversTest {
     }
 
     /**
-     * The parent's record-backing comes from the snapshot's name-keyed projection, not from any SDL
-     * directive, so the member hover resolves without an applied {@code @record}. What the class
-     * offers is the census's, so the rendered type is the one a compiler recorded for the component
-     * rather than one this fixture chose; the permit's own slot list is empty because the arm no
-     * longer reads it.
+     * That the parent is class-backed comes from the snapshot's name-keyed projection, not from any
+     * SDL directive, so the member hover resolves without an applied {@code @record}. Which class
+     * that is comes from the store, a producer in the captured graph grounding {@code FilmCard} on
+     * the fixture record, and what the class offers comes from the census, so the rendered type is
+     * the one a compiler recorded for the component rather than one this fixture chose.
      */
     @Test
     void fieldHoverOnRecordBackingShowsComponentMetadata() {
         var file = file("""
-            input FilmInput {
+            type FilmCard {
                 bar: Int @field(name: "title")
             }
             """);
         var pos = pointAt(file, 1, "title");
-        var snapshot = recordBackedFilmInput();
+        var snapshot = recordBackedFilmCard();
 
         var md = markdownAt(file, snapshot, pos);
 
@@ -249,26 +253,26 @@ class HoversTest {
 
     /**
      * Without a store the member hover renders nothing, which is the same posture every other
-     * census-backed arm takes: the class's members are a fact, and a surface with no access to the
-     * facts declines rather than guessing from the projection that named the class.
+     * census-backed arm takes: both the binding and the class's members are facts, and a surface
+     * with no access to the facts declines rather than guessing from the projection.
      */
     @Test
     void fieldHoverOnRecordBackingIsSilentWithoutAStore() {
         var file = file("""
-            input FilmInput {
+            type FilmCard {
                 bar: Int @field(name: "title")
             }
             """);
         var pos = pointAt(file, 1, "title");
 
-        assertThat(hoverWithoutStore(file, recordBackedFilmInput(), pos)).isEmpty();
+        assertThat(hoverWithoutStore(file, recordBackedFilmCard(), pos)).isEmpty();
     }
 
-    /** A type the projection binds to the fixture record, whose members the census answers for. */
-    private static LspSchemaSnapshot.Built.Current recordBackedFilmInput() {
+    /** A type the store grounds on the fixture record, whose members the census answers for. */
+    private static LspSchemaSnapshot.Built.Current recordBackedFilmCard() {
         return new LspSchemaSnapshot.Built.Current(
             List.of(),
-            java.util.Map.of("FilmInput", new TypeBackingShape.RecordBacking("no.sikt.graphitron.lsp.fixtures.R157FilmRecord")),
+            java.util.Map.of("FilmCard", new TypeBackingShape.RecordBacking("no.sikt.graphitron.lsp.fixtures.R157FilmRecord")),
             Map.of());
     }
 
