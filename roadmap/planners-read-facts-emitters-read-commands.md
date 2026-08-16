@@ -56,8 +56,8 @@ renderer there cannot reach a leaf even by accident.
 
 `no.sikt.graphitron.rewrite.generators` is the same job under none of the rules. It is outside that
 guard, and it is where the un-migrated emitters live: `TypeFetcherGenerator` (around 6,000 lines)
-and `FetcherEmitter` between them carry the leaf dispatch, and `TypeFetcherGenerator` still
-enumerates its coverage as a set of leaf classes (`IMPLEMENTED_LEAVES`, 36 entries) rather than as
+and `FetcherEmitter` between them carry nearly all of the leaf dispatch, and `TypeFetcherGenerator`
+still enumerates its coverage as a set of leaf classes (`IMPLEMENTED_LEAVES`, 36 entries) rather than as
 rows of a command relation. Nothing prevents an emitter there from reading whatever it likes off a
 leaf, which is not a hypothetical: it is how a recent design landed on the wrong carrier, because
 "join the fact onto the command row" and "read it off the leaf the emitter already holds" are both
@@ -96,7 +96,9 @@ pins at filing:
 | planners: leaf references in `plan/`, the pin that legitimately rose before it falls
 |===
 
-All four go to zero. That is the whole item, stated numerically.
+All four go to zero. That is most of the item stated numerically; the residue the pins cannot see
+(a leaf taken as a parameter and never dispatched on) is what the guard extension in "The closer"
+exists to catch, and the census in the emitter half names those files.
 
 So it proposes no new architecture. The architecture is decided, the triangle is built, the guard
 exists for one package and the counters exist for the rest. What is missing is an owner for driving
@@ -290,28 +292,67 @@ emitters to `render` reading only that row, extend the borrow dial by the refs t
 delete the leaf-reading bodies. Output is held byte-identical throughout, which is what makes each
 family a verifiable unit with nothing to argue about.
 
-The families are not equal and the order needs a census before it can be fixed: some already have a
-command relation and need only the emitter cutover, others need the relation minted first. What is
-known now is that the launcher family is done, and the routine-write family is scoped as a worked
-example on another item (below).
+The census is done (2026-08-16) and the order falls out of it. Six files carry all 129 dispatch
+sites, 120 of them in the fetcher family: `TypeFetcherGenerator` 78, `FetcherEmitter` 30,
+`FetcherRegistrationsEmitter` 12. The tail is `GeneratorUtils` 5 (all on `GraphitronType`'s
+result-type arms; one result-Java-type fact on a command row retires them together),
+`ObjectTypeGenerator` 3 (a `schemaType()` accessor fold on rows `SchemaShapeUnit` already
+carries), and `TenantDslEmitter` 1 (the tenancy dial is already command-shaped as
+`TenantStrategy`/`CarrierDsl` for migrated hosts). The other 51 files in the package have no leaf
+dispatch; most of them are membership already decided by `TypeUnitCommand` and `GlobalCommand`
+rows over fixed-text or carrier-driven bodies, and they are the guard extension's concern rather
+than a migration's.
+
+So the order: the three tail families first, because each is an afternoon and retires its sites
+whole; then the fetcher family, which is the item's real weight and subsumes what remains of the
+launchers. "The launcher family is done" was true at the body tier only: the rows methods render
+through `RootLauncherRenderer` and its fragments, but `TypeFetcherGenerator` still emits the
+`DataFetcher` entry points that wrap them, drains the per-class scatter helpers
+(`SplitRowsMethodEmitter`) and the DataLoader registration wrappers (`RowsMethodCall`,
+`DataLoaderFetcherEmitter`), and calls `LauncherCommands.produceWithoutSchema` mid-emission, an
+emitter invoking a planner, which the tier rule forbids. That host tier is not a separate family;
+it is part of the fetcher family's cutover. The fetcher family's membership rows exist
+(`TypeUnitCommand.FetchersUnit`), but no relation says what a coordinate's fetcher method body is,
+for the read entry points or the DML write statements alike, so the per-coordinate fetcher command
+is the relation to mint, and the dispatch arms in `TypeFetcherGenerator` and `FetcherEmitter` are
+exactly the derivation that moves into its producer. The routine-write slice of that family is
+scoped as a worked example on another item (below). Alongside the leaf work, the schema-shape and
+util generators' model-taking entry points (15 of the pin's 18) retire as their reads become store
+reads or command columns, largely with the planner half's sixth step.
+
+Two instrument corrections the census surfaced, each owed to the first increment that touches it:
+
+* `MODEL_TAKING_ENTRY_POINTS` counts only methods literally named `generate`, so four public
+  model-taking entry points are invisible to it: `FetcherRegistrationsEmitter.emit` (both
+  overloads), `SchemaSdlEmitter.emit`, `ObjectTypeGenerator.generateFor`. Widen the counting rule
+  and re-pin at the true number; that raise is a counting-rule fix, not a boundary move, and the
+  pin's never-raise clause is to be read accordingly.
+* The pins count dispatch, not reads. A file that takes a leaf as a parameter and folds over it
+  without one `instanceof` scores zero on every pin yet still reads the hierarchy;
+  `MultiTablePolymorphicEmitter` (2327 lines, 24 leaf references, zero dispatch sites) is the
+  large case. The guard extension in "The closer" is what covers these files, because it forbids
+  the import; the pins alone never would.
 
 ### The closer
 
 Extend `PackageImportDirectionTest` over both packages once they are empty of leaf readers. The
 two dials differ: `render` keeps its existing restriction to commands plus the named pure-data
 refs, while `plan` gets store reads (`StoreHandle` and the generated store tables) plus the command
-vocabulary it produces, with the seven leaf hierarchies forbidden by name. Then decide whether the
-ratchet pins retire at zero or stay as a second mechanism. A pin at zero that can
-only be raised by a rule violation is arguably a guard already, and keeping both would be two
-mechanisms for one invariant.
+vocabulary it produces, with the seven leaf hierarchies forbidden by name. The ratchet pins retire
+in the same commit that extends the guard over the package each pin measures: a zeroed pin the
+guard makes unraisable is a second mechanism for one invariant, and two mechanisms for one
+invariant drift apart.
 
-### Sequencing between the halves
+### Sequencing between the halves: planner leads, per family
 
-The open question this item's Spec has to settle. They touch different packages and could run
-concurrently, but an emitter cutover is easier to verify against a plan that is not simultaneously
-changing its own inputs. The likely answer is that the planner half leads per family rather than
-globally: a family's command relation becomes store-derived, then its emitter moves onto that row.
-That keeps both halves advancing on the same family instead of two fronts crossing.
+Settled: the planner half leads per family, not globally. A family's command relation becomes
+store-derived first, then its emitter moves onto that row. That keeps both halves advancing on the
+same family instead of two fronts crossing, and every emitter cutover verifies against a plan that
+is not simultaneously changing its own inputs. Where a family has no command relation yet, minting
+it from the leaves it covers is a legitimate intermediate step (the plan-side pin rises, as its
+comment anticipates), but the re-sourcing follows within the same family's arc rather than being
+deferred to a global second pass; a minted-from-leaves relation is transitional state, not a
+resting place.
 
 ## What the store must provide
 
@@ -346,7 +387,8 @@ populations are enumerated under "The facts to plan against are available" above
 * **The two halves can deadlock on each other if sequenced globally.** Converting all six relations
   before any emitter moves leaves the emitters reading leaves for the whole programme; converting all
   emitters first means minting command relations from leaves that the planner half will then re-source.
-  Per-family sequencing is the way out and the Spec has to commit to it.
+  Per-family sequencing (settled above) is the way out; each increment's reviewer should hold the
+  work to it.
 
 ## Out of scope
 
@@ -403,8 +445,8 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
   was its last consumer; name them individually as they go rather than as a block.
 * `TypeFetcherGenerator.IMPLEMENTED_LEAVES` and the leaf-keyed coverage vocabulary around it, once
   membership is a command relation's rows rather than a set of leaf classes.
-* The `CommandSeamRatchetTest` pins themselves, if the Spec rules that a zeroed pin is a guard and
-  the two mechanisms collapse into one.
+* The `CommandSeamRatchetTest` pins, each retired in the same commit that extends the structural
+  guard over the package it measures (settled in "The closer" above).
 
 ## Coverage
 
