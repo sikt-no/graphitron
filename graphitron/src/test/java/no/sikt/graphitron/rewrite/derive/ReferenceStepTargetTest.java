@@ -486,7 +486,7 @@ class ReferenceStepTargetTest {
     private static void seedTable(DSLContext dsl, String schema, String tableName) {
         dsl.insertInto(SQL_TABLE)
             .values("pkg", schema, tableName, tableName.toUpperCase(Locale.ROOT),
-                "pkg.tables." + tableName, null)
+                "pkg.tables." + tableName, "pkg.tables.records." + tableName + "Record", null)
             .execute();
     }
 

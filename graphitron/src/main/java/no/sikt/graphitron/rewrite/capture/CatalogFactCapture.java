@@ -115,6 +115,7 @@ final class CatalogFactCapture {
             record.setTableName(name);
             record.setJooqName(entry.javaFieldName());
             record.setClassFqn(table.getClass().getName());
+            record.setRecordClassFqn(table.getRecordType().getName());
             record.setDescription(nullIfBlank(table.getComment()));
             sink.add(record);
 

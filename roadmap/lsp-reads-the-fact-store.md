@@ -1971,9 +1971,12 @@ walk is evidence here, not the specification.
 8. The two facts that were clauses: the cardinality disagreement as a detection, and the `@table`
    population coalesced with the derived one by a view. Half done: the cardinality reading landed as
    `intent_producer_cardinality_conflict`, with `delivers_many` on the peel underneath it and
-   `multiplies` on the container vocabulary. The coalescing view is held on a question the section
-   below states, because the two arms have no payload in common yet and inventing one would decide
-   it by accident.
+   `multiplies` on the container vocabulary. The coalescing view then wanted a payload the two arms
+   did not share, which turned out to be a fact the store was short rather than a shape to choose
+   between: `sql_table.record_class_fqn`. Captured, along with the decode the input axis needed for
+   the same reason, after which `intent_type_backing` is the plain two-arm union the plan described,
+   and `intent_type_backing_conflict` moved over it and gained a second disagreement. Done; the
+   three sections below carry the question, the capture, and the view.
 9. Have the generator read the fact. The resolver's copy of the walk retires here, which drains step
    3's relation and retires the `walk_` addition with it.
 10. The consumers follow, each its own commit: the class arm of the type-scope question, then
@@ -2351,14 +2354,81 @@ the walk binds it to. If `sql_table` carried that FQN, both arms would carry one
 the generated *table* class, captured for goto-definition, and its comment says so. The record class
 is a fact the store is short.
 
-So the fork is whether step 8's second half waits for that widening, which is small (the catalog
-walk holds the `Table` and `recordClass()` is one call on it) and makes the view honest, or whether
-the view ships now in the kind-plus-type shape and is rewritten when the widening lands.
-Recommendation: capture the record class FQN first. The widening is the same loop this item has run
-four times already, the consumers that fork on table-versus-class are the ones step 10 migrates, and
-shipping a view whose shape we already expect to change is how a substrate accretes a compatibility
-seam. Flagged rather than taken, because it grows the capture surface and that is a call worth
-making out loud.
+The fork was whether step 8's second half waits for that widening or ships in the kind-plus-type
+shape and is rewritten later. It was put up and settled the same way it should have been asked:
+if the fact is missing, capture it. The section below carries what that turned out to mean, because
+by then it was two facts and not one.
+
+## Settled while building: the missing fact is captured, and capture is not shaped by who asked
+
+Two pieces of the backing chain turned out to be blocked the same way, each on a fact the store
+did not hold, and each with a cheap alternative that would have put the missing structure inside a
+consumer instead. Both were captured. What the pair is worth recording for is the second-order
+question: *at what grain*, given that only one reader had asked.
+
+**The record class, and why it is a column rather than a relation.** `sql_table.record_class_fqn`
+is `Table.getRecordType()`, one call on the `Table` the catalog walk already holds. It is a fact
+about the table at the table's own grain, single-valued and always present, so it is a column on
+`sql_table` and not a relation beside it. Two details are load-bearing. It is not derivable from
+`class_fqn`: the relation between a table class's name and its record class's name is jOOQ codegen
+configuration, so a store that computed one from the other would be guessing, and the anchor pins
+the two as separate maps for exactly that reason. And a table jOOQ generated no record for reports
+`org.jooq.Record`, which is recorded as written rather than nulled, because that is the catalog's
+own answer and deciding it means "no backing" is a reader's judgement, not capture's.
+
+**The argument path, and why the grain is the path and not the site.** The input axis needs the
+head of an argMapping's right-hand side, and the store held the path only as a string. The
+consumer-shaped capture was sitting right there: the walk uses `segments.get(0)`, so a
+`head_segment` column would have satisfied the one reader that asked and been wrong the first time
+anybody wanted the tail. The fact is the decomposition, so
+`graphitron_argument_path_segment` records the whole of it, one row per position.
+
+The grain question underneath that one is sharper, and it is where the family's own precedent
+decided it. Seven relations in `graphitron_` carry an `argument_path`, so the obvious shape is a
+decode child under each, following the `arg_mapping` to `_arg_mapping_pair` pattern the family
+already uses. But a path's decomposition is a property of the string, not of the site that spells
+it, and seven site-keyed children would copy one decode down every row that shares it. That is the
+repeating group `sql_schema`'s comment already names, in the same schema, about the same mistake.
+So the relation is keyed by the value: one decode per distinct path per graph, and every pair row
+joins it on the column it already has.
+
+**The decode was in capture's hand and being thrown away.** This is the part that settles whether
+it was a capture concern at all. `GraphQLSelectionParser.parseEntries` already returns
+`ParsedEntry.segments()`, and all seven writers were calling `String.join(".", ...)` on it to fill
+the column. Capture was computing the fact and discarding it. Nothing was recovered here that a
+parse had to be invented for; a `String.join` became a helper that writes the rows on the way past.
+
+**Reach is pinned mechanically, because a list of seven is a list that goes stale.**
+`ArgumentPathDecodeTest` enumerates every relation in the generated catalog carrying an
+`argument_path` column and asserts each path it holds rejoins exactly from its own segment rows.
+An eighth pair relation whose writer forgets the decode fails that without anyone remembering to
+extend anything, and the rejoin pins the order and the density of the positions at the same time.
+
+## Settled while building: the coalesce is trivial once both arms carry a class, and it finds a second disagreement
+
+With the record class captured, `intent_type_backing` is what the plan said it would be: a two-arm
+`UNION ALL` over `intent_bound_table` joined to its table's record, and the closure, with a
+`declared_via` column saying which population answered. No NULLs by kind, no kind-plus-type stub, no
+reader joining past it. The whole difficulty had been the missing fact.
+
+**A table that reports `org.jooq.Record` is not backed.** jOOQ answers `getRecordType()` for every
+table, and for one with no generated record the answer is the untyped `org.jooq.Record`. That is a
+truthful catalog answer and a useless backing, so the fact is captured as reported and the view
+drops it. Capture follows the source; the view follows the reader. Splitting it that way means no
+consumer has to know the sentinel exists.
+
+**The coalesce found a disagreement the arm-local view had been calling agreement.** A type can be
+`@table`-bound and also reached by the closure, and the two can name different classes. The walk
+resolves that by precedence, reading the table and never consulting the class. That is a defensible
+reading, and it is a reading rather than a fact, so `intent_type_backing_conflict` moved to stand
+over the coalesce instead of over the closure alone. A consumer that wants the walk's precedence
+filters on `declared_via` and owns having chosen; what it can no longer do is mistake precedence for
+agreement. The count is over distinct class names, so one class both arms happen to name is one
+answer, not a contest.
+
+Worth noting what this did to the view's cost: nothing. It is a grouping over a union of two
+relations, both of which a reader was going to touch anyway, and the earlier lesson about recursive
+views being re-evaluated per outer row does not apply to either arm.
 
 ## Retired vocabulary
 

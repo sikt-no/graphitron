@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
@@ -354,7 +355,7 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(String.join(".", entry.segments()));
+                    row.setArgumentPath(argumentPath(sink, entry));
                     sink.add(row);
                 }
             }
@@ -390,7 +391,7 @@ final class GraphitronFactCapture {
                         pairRow.setStepPosition(position);
                         pairRow.setPosition(pair++);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(String.join(".", entry.segments()));
+                        pairRow.setArgumentPath(argumentPath(sink, entry));
                         sink.add(pairRow);
                     }
                     position++;
@@ -431,7 +432,7 @@ final class GraphitronFactCapture {
                         pairRow.setStepPosition(position);
                         pairRow.setPosition(pair++);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(String.join(".", entry.segments()));
+                        pairRow.setArgumentPath(argumentPath(sink, entry));
                         sink.add(pairRow);
                     }
                     position++;
@@ -485,7 +486,7 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(String.join(".", entry.segments()));
+                    row.setArgumentPath(argumentPath(sink, entry));
                     sink.add(row);
                 }
             }
@@ -616,7 +617,7 @@ final class GraphitronFactCapture {
                     row.setOrdinal(ordinal);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(String.join(".", entry.segments()));
+                    row.setArgumentPath(argumentPath(sink, entry));
                     sink.add(row);
                 }
                 int column = 0;
@@ -685,7 +686,7 @@ final class GraphitronFactCapture {
                     row.setArgumentName(argument);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(String.join(".", entry.segments()));
+                    row.setArgumentPath(argumentPath(sink, entry));
                     sink.add(row);
                 }
             }
@@ -724,7 +725,7 @@ final class GraphitronFactCapture {
                         pairRow.setStepPosition(position);
                         pairRow.setPosition(pair++);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(String.join(".", entry.segments()));
+                        pairRow.setArgumentPath(argumentPath(sink, entry));
                         sink.add(pairRow);
                     }
                     position++;
@@ -894,6 +895,32 @@ final class GraphitronFactCapture {
             undecoded(directive, argumentName, StringValue.newStringValue(raw).build());
             return List.of();
         }
+    }
+
+    /**
+     * Writes one pair's right-hand side, returning the path as the pair relation spells it and
+     * recording what it is made of. The decode is the parse's own segment list, which every caller
+     * here would otherwise join and drop; recording it costs nothing and is the only chance the
+     * store gets, since no reader may split a string.
+     *
+     * <p>Keyed by the path rather than by the site, so a path many directives spell is decoded
+     * once. That is what the claim is doing: a repeat is the same decomposition of the same string
+     * and dropping it is not losing an author's duplicate, which is a different question the
+     * position-keyed pair relations already answer.
+     */
+    private static String argumentPath(FactSink sink, ParsedEntry entry) {
+        String path = String.join(".", entry.segments());
+        for (int position = 0; position < entry.segments().size(); position++) {
+            if (!sink.claim(GRAPHITRON_ARGUMENT_PATH_SEGMENT, path, position)) {
+                continue;
+            }
+            var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_PATH_SEGMENT);
+            row.setArgumentPath(path);
+            row.setPosition(position);
+            row.setSegmentName(entry.segments().get(position));
+            sink.add(row);
+        }
+        return path;
     }
 
     private static Value<?> argument(Directive directive, String name) {

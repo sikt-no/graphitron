@@ -154,10 +154,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       per delivery shape, with the two directions in which the hop differs from the reflective
  *       walk pinned as pins rather than expectations;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
- *       {@code intent_type_backing_class} and {@code intent_type_backing_conflict}, the closure
- *       over those hops and the types it answers two ways, to captured SDL over a hand-built
- *       census, its cases pinning the reachability itself and each population the derivation
- *       deliberately does not reach;
+ *       {@code intent_type_backing_class}, the closure over those hops, together with
+ *       {@code intent_type_backing} coalescing it with the table-bound population and
+ *       {@code intent_type_backing_conflict} over the coalesce, to captured SDL over a hand-built
+ *       census, its cases pinning the reachability itself, each population the closure
+ *       deliberately does not reach, and both ways two backings can disagree;
  *       {@code no.sikt.graphitron.rewrite.derive.ProducerCardinalityTest} binds
  *       {@code intent_producer_cardinality_conflict}, where a field and its producer disagree
  *       about how many, every case pairing a disagreement with an agreement over the same
@@ -207,7 +208,8 @@ class FactCaptureAgreementTest {
             "graphql_schema_directive_arg", "graphql_type_directive", "graphql_type_directive_arg",
             "graphql_field_directive", "graphql_field_directive_arg", "graphql_argument_directive",
             "graphql_argument_directive_arg", "graphql_enum_value_directive",
-            "graphql_enum_value_directive_arg", "graphitron_table", "graphitron_field_binding",
+            "graphql_enum_value_directive_arg", "graphitron_argument_path_segment",
+            "graphitron_table", "graphitron_field_binding",
             "graphitron_argument_binding", "graphitron_enum_value_binding", "graphitron_scalar_type",
             "graphitron_enum", "graphitron_field_condition", "graphitron_field_condition_context_arg",
             "graphitron_field_condition_arg_mapping_pair", "graphitron_argument_condition",
@@ -273,6 +275,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_class_member_element", Arm.DERIVED);
         registrations.put("intent_field_accessor_hop", Arm.DERIVED);
         registrations.put("intent_type_backing_class", Arm.DERIVED);
+        registrations.put("intent_type_backing", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_producer_cardinality_conflict", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
@@ -894,11 +897,16 @@ class FactCaptureAgreementTest {
     }
 
     /**
-     * The generated class names, each at its own grain. The table class is per table; the
-     * {@code Keys} class is per schema, which is why it sits on {@code sql_schema} instead of
-     * repeating down every table row. Both are the join keys goto-definition needs to land in
-     * generated sources, and {@code jvm_class} cannot supply either, since that family excludes the
-     * generated jOOQ package by design.
+     * The generated class names, each at its own grain. The table class and the record class are
+     * both per table; the {@code Keys} class is per schema, which is why it sits on
+     * {@code sql_schema} instead of repeating down every table row. All three are join keys that
+     * reach generated sources, and {@code jvm_class} cannot supply any of them, since that family
+     * excludes the generated jOOQ package by design.
+     *
+     * <p>The table class and the record class are pinned as two maps rather than one, because the
+     * point of the second column is that it is not a function of the first: a codegen configuration
+     * decides what a record is called, so an assertion that derived one name from the other would
+     * pass against a capture that had made the same guess.
      */
     @Test
     @DisplayName("generated class names are captured at the grain the concept has")
@@ -911,15 +919,21 @@ class FactCaptureAgreementTest {
                 new NodeDeclaration(null));
 
             var expectedTables = new LinkedHashMap<String, String>();
+            var expectedRecords = new LinkedHashMap<String, String>();
             var expectedSchemas = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
                 var table = entry.table();
                 var schema = table.getSchema();
                 String schemaName = schema == null ? "" : schema.getName();
                 expectedTables.put(schemaName + "." + table.getName(), table.getClass().getName());
+                expectedRecords.put(schemaName + "." + table.getName(),
+                    table.getRecordType().getName());
                 expectedSchemas.putIfAbsent(schemaName, jooq.keysClassFqn(schema).orElse(null));
             }
             assertThat(expectedTables).as("the catalog has tables, so this pins something").isNotEmpty();
+            assertThat(expectedRecords.values())
+                .as("a catalog that generated no record classes would make the record column vacuous")
+                .anyMatch(name -> !name.equals(org.jooq.Record.class.getName()));
             assertThat(expectedSchemas.values())
                 .as("if no Keys class resolved, the classpath lookup is broken and this is vacuous")
                 .anyMatch(java.util.Objects::nonNull);
@@ -930,6 +944,15 @@ class FactCaptureAgreementTest {
                 .fetch()
                 .intoMap(r -> r.value1() + "." + r.value2(), r -> r.value3());
             assertThat(capturedTables).isEqualTo(expectedTables);
+
+            var capturedRecords = store.dsl()
+                .select(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME, SQL_TABLE.RECORD_CLASS_FQN)
+                .from(SQL_TABLE)
+                .fetch()
+                .intoMap(r -> r.value1() + "." + r.value2(), r -> r.value3());
+            assertThat(capturedRecords)
+                .as("the row type, which is not the table class and not derivable from it")
+                .isEqualTo(expectedRecords);
 
             var capturedSchemas = store.dsl()
                 .select(SQL_SCHEMA.TABLE_SCHEMA, SQL_SCHEMA.KEYS_CLASS_FQN)

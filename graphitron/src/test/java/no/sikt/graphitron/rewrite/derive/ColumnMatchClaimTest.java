@@ -294,7 +294,8 @@ class ColumnMatchClaimTest {
             // The same table name in another schema must not shadow the qualified pick.
             seedSchema(dsl, "pkg.a", "public");
             dsl.insertInto(SQL_TABLE)
-                .values("pkg.a", "public", "actor", "ACTOR", "pkg.a.tables.actor", null)
+                .values("pkg.a", "public", "actor", "ACTOR", "pkg.a.tables.actor",
+                    "pkg.a.tables.records.ActorRecord", null)
                 .execute();
             var rows = dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
                 .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g")).fetch();
@@ -317,7 +318,8 @@ class ColumnMatchClaimTest {
             dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg.b").execute();
             seedSchema(dsl, "pkg.b", "legacy");
             dsl.insertInto(SQL_TABLE)
-                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup", null)
+                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup",
+                    "pkg.b.tables.records.DupRecord", null)
                 .execute();
             assertThat(dsl.fetchCount(INTENT_COLUMN_MATCH_CLAIM,
                 INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g"))).isZero();
@@ -467,7 +469,8 @@ class ColumnMatchClaimTest {
             dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg.b").execute();
             seedSchema(dsl, "pkg.b", "legacy");
             dsl.insertInto(SQL_TABLE)
-                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup", null)
+                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup",
+                    "pkg.b.tables.records.DupRecord", null)
                 .execute();
             var rows = dsl.selectFrom(INTENT_BOUND_TABLE)
                 .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq("g"))
@@ -612,7 +615,8 @@ class ColumnMatchClaimTest {
         seedSchema(dsl, sourceName, tableSchema);
         dsl.insertInto(SQL_TABLE)
             .values(sourceName, tableSchema, tableName, tableName.toUpperCase(Locale.ROOT),
-                sourceName + ".tables." + tableName, null)
+                sourceName + ".tables." + tableName,
+                sourceName + ".tables.records." + tableName + "Record", null)
             .execute();
     }
 

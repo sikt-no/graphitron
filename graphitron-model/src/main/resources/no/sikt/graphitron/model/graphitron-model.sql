@@ -789,6 +789,23 @@ COMMENT ON COLUMN graphql_directive_site.source_column IS 'source column of the 
 
 
 -- ==== Semantic stratum: the decoded graphitron and federation inventory ===========
+
+-- The dotted paths this family stores as written, decomposed once each. Every relation below
+-- whose right-hand side is an argument path shares this one decode, so it leads the family.
+CREATE TABLE graphitron_argument_path_segment (
+  graph_name    VARCHAR NOT NULL,
+  argument_path VARCHAR NOT NULL,
+  position      INT     NOT NULL,
+  segment_name  VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, argument_path, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphitron_argument_path_segment IS 'What a dotted argMapping right-hand side is made of: one row per segment of one path, in order. The seven pair relations of this family each store such a path as a single string, and this states its decomposition once per distinct path rather than once per site that spells it, the decomposition being a property of the string and not of any site. Repeating it under every site key would be the repeating group sql_schema exists to avoid, one value copied down every row that shares it. Keyed by the path itself, which is the only identity a value has, and by the graph, which is the partition this family clears as one. Capture writes it because the parse that produces the pair rows already holds the segments and joins them back into a column, so the decomposition is something capture has in hand and throws away, not something a reader could recover: splitting a string is outside what this schema asks of a view, on intent_input_occurrence_path''s terms. Positions are dense from zero and the segments in order rejoin the path exactly, the lexer admitting no dot inside a segment, so the relation and the column it decodes cannot say different things. A bare argument name is one row rather than none, a single-segment decode being a decode.';
+COMMENT ON COLUMN graphitron_argument_path_segment.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_argument_path_segment.argument_path IS 'the path as written, spelled exactly as the pair relations of this family spell it, which is what lets a pair row reach its own decode without normalising either side';
+COMMENT ON COLUMN graphitron_argument_path_segment.position IS '0-based position of the segment within the path, dense from zero';
+COMMENT ON COLUMN graphitron_argument_path_segment.segment_name IS 'the segment itself, one name carrying no dot. Position zero is the head, naming an argument of the field the directive sits on, and each further position descends through an input-object field of the one before it; which of those a segment resolves to is a question for the derived stratum, and this relation only says what was written';
+
 CREATE TABLE graphitron_table (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -2185,6 +2202,7 @@ CREATE TABLE sql_table (
   table_name   VARCHAR NOT NULL,
   jooq_name    VARCHAR NOT NULL,
   class_fqn    VARCHAR NOT NULL,
+  record_class_fqn VARCHAR NOT NULL,
   description  VARCHAR,
   PRIMARY KEY (source_name, table_schema, table_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
@@ -2195,6 +2213,7 @@ COMMENT ON COLUMN sql_table.source_name IS 'the generated package the table''s s
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_table.class_fqn IS 'the fully qualified name of the generated jOOQ table class, read off the live Table during the catalog walk. Per table, unlike the Keys class name, which is per schema and lives on sql_schema. Goto-definition on @table(name:) and @field(name:) lands in this class, and jvm_class cannot supply it because that family deliberately excludes the generated jOOQ package, so this is the join key that reaches generated sources at all.';
+COMMENT ON COLUMN sql_table.record_class_fqn IS 'the fully qualified name of the record class jOOQ binds this table''s rows to, read off the live Table during the catalog walk. A different fact from class_fqn beside it, and neither spells the other: that is the generated table class an author navigates to, this is the row type a producer method hands back, and the naming relation between them is jOOQ codegen configuration rather than anything the store may assume. Always present, a table always having a row type; a table jOOQ generated no record class for reports org.jooq.Record, which is the catalog''s own answer and stands as written, a reader that wants only generated records comparing against that name rather than reading a NULL. The classpath census cannot supply this, excluding the generated jOOQ package by design, so it is how a type bound to a table reaches a class name at all.';
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
 COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 
@@ -3654,18 +3673,35 @@ COMMENT ON COLUMN intent_type_backing_class.graph_name IS 'the owning graph''s p
 COMMENT ON COLUMN intent_type_backing_class.type_name IS 'the SDL type the class backs; an object or an input object, and a captured type, which is what makes the type FK structural';
 COMMENT ON COLUMN intent_type_backing_class.class_name IS 'the fully-qualified binary name of the class backing the type, spelled as the jvm_ census spells a class name so the two join without normalising. Not a foreign key, on intent_declared_type_element.element_class''s terms: a class the census never reached is the ordinary case at the end of a declared type, and what a producer delivers is a fact whether or not an entry declared it. Not unique per type either, ambiguity being rows here';
 
+CREATE VIEW intent_type_backing (graph_name, type_name, class_name, declared_via) AS
+SELECT b.graph_name, b.type_name, t.record_class_fqn, 'BOUND_TABLE'
+  FROM intent_bound_table b
+  JOIN sql_table t
+    ON t.source_name = b.table_source_name
+   AND t.table_schema = b.table_schema
+   AND t.table_name = b.table_name
+ WHERE t.record_class_fqn <> 'org.jooq.Record'
+UNION ALL
+SELECT graph_name, type_name, class_name, 'BACKING_CLOSURE'
+  FROM intent_type_backing_class;
+COMMENT ON VIEW intent_type_backing IS 'What class stands for a graph''s type, from either population that can answer: the type''s @table binding read through the table''s generated record, and the closure over producer returns and accessor hops. One relation for the question every consumer of a backing actually asks, which is what class, not which walk found it. A view coalescing two relations rather than a base with a provenance tag, on the stratum''s provenance rule: each population is derived by its own rule from its own facts and neither is a special case of the other, so they are separate relations and this is where they meet. Both arms carry the same payload, one binary class name, and they can do that only because sql_table records the record class; before that fact was captured the arms had nothing in common and this view could not be stated without four columns NULL by kind. A table whose generated model has no record class reports org.jooq.Record, and that is not a backing, so the arm drops it and the type is unbacked here, the same silence a type no producer reaches already gets. Ambiguity is rows on both arms and nothing is preferred: a type its @table binding and its closure answer differently is two rows, and intent_type_backing_conflict over this view is where a reader learns so. The walk resolves that pair by precedence, reading the table and never looking at the class, which is a reading a consumer may still apply by filtering on declared_via; what it may not do here is mistake the precedence for agreement.';
+COMMENT ON COLUMN intent_type_backing.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN intent_type_backing.type_name IS 'the SDL type the class stands for';
+COMMENT ON COLUMN intent_type_backing.class_name IS 'the fully-qualified binary name of the backing class, spelled as the jvm_ census spells a class name on both arms. On the table arm this is the generated jOOQ record, which the census deliberately never scanned, so a class name here is not a promise that jvm_class holds the class';
+COMMENT ON COLUMN intent_type_backing.declared_via IS 'which population answered, a closed two-value domain: BOUND_TABLE for the @table binding read through its table''s record class, BACKING_CLOSURE for the reachability over producer returns and accessor hops. Provenance, never a preference; a reader that wants one arm filters on it and owns having chosen';
+
 CREATE VIEW intent_type_backing_conflict (graph_name, type_name, class_names, candidates) AS
 SELECT graph_name, type_name,
-       LISTAGG(class_name, ', ') WITHIN GROUP (ORDER BY class_name),
-       CAST(COUNT(*) AS INT)
-  FROM intent_type_backing_class
+       LISTAGG(DISTINCT class_name, ', ') WITHIN GROUP (ORDER BY class_name),
+       CAST(COUNT(DISTINCT class_name) AS INT)
+  FROM intent_type_backing
  GROUP BY graph_name, type_name
-HAVING COUNT(*) > 1;
-COMMENT ON VIEW intent_type_backing_conflict IS 'The types the backing derivation answers more than one way: one row per type two or more of its producers and hops back with different classes. A population nobody could previously ask about, which is the dividend of stating the closure over an edge relation instead of walking it: the walk resolves a disagreement by refusing the second observation and then folding the survivors, so a contradiction between two producers is either invisible or arrives as a rejection with the losing side already discarded. Here both answers are rows and this view is where a reader learns the type has two. A view over the materialized closure rather than a column on it, on intent_authored_claim_conflict''s terms: the contested population is a grouping over rows the relation already holds, and it costs nothing to state on read. Nothing gates on these rows yet. The reading this relation is shaped for is that a contested type is a rejection at whichever consumer needs one class, and the arity is what such a rejection stands on, which is why it is here rather than left to each reader''s own count.';
-COMMENT ON COLUMN intent_type_backing_conflict.graph_name IS 'the owning graph''s partition, carried from intent_type_backing_class';
+HAVING COUNT(DISTINCT class_name) > 1;
+COMMENT ON VIEW intent_type_backing_conflict IS 'The types the store answers with more than one backing class: one row per type whose producers, accessor hops and @table binding do not all name the same class. Stated over the coalesced intent_type_backing rather than over one arm, because a type contested across the two populations is contested in exactly the sense a consumer needing one class cares about, and an arm-local view would have called that agreement. Two disagreements therefore land here. Two producers answering differently is the one the closure surfaces, a population nobody could previously ask about: the walk resolves it by refusing the second observation and folding the survivors, so a contradiction between producers is either invisible or arrives as a rejection with the losing side already discarded. A @table binding and a reached class answering differently is the other, which the walk resolves by precedence, reading the table without ever consulting the class; that is a defensible reading and a consumer may still apply it, but it is a choice, and a relation that folded it in would have hidden the choice rather than recorded it. Counted over distinct class names, not rows, so one class both arms name is one answer and not a contest. A view over the coalesce rather than a column on the closure, on intent_authored_claim_conflict''s terms: the contested population is a grouping over rows already held, and it costs nothing to state on read. Nothing gates on these rows yet. The reading this relation is shaped for is that a contested type is a rejection at whichever consumer needs one class, and the arity is what such a rejection stands on, which is why it is here rather than left to each reader''s own count.';
+COMMENT ON COLUMN intent_type_backing_conflict.graph_name IS 'the owning graph''s partition, carried from intent_type_backing';
 COMMENT ON COLUMN intent_type_backing_conflict.type_name IS 'the contested SDL type';
 COMMENT ON COLUMN intent_type_backing_conflict.class_names IS 'the contesting classes, comma-joined in name order: one canonical render so two readers grouping by the contested set cannot split a group on row order, on intent_authored_claim_conflict.directives'' terms. Display and grouping only, never a dimension; a reader wanting the classes themselves reads them as rows';
-COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; the arity a rejection stands on, on intent_bound_table.candidates'' terms';
+COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on intent_bound_table.candidates'' terms';
 
 CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,

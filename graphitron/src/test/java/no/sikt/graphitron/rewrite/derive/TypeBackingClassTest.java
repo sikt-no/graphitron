@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -144,6 +145,49 @@ class TypeBackingClassTest {
         withCapturedStore(dsl -> assertThat(conflict(dsl, GRAPH, "Film")).isEmpty());
     }
 
+    // ===== Where the two populations meet =====
+
+    /**
+     * The other arm. A type bound by {@code @table} is backed by the record class of the table it
+     * resolves to, which the closure never seeds and could not reach: the census excludes the
+     * generated jOOQ package by design, so this answer comes from the catalog or from nowhere.
+     */
+    @Test
+    void aTableBoundTypeIsBackedByItsTablesRecord() {
+        withCapturedStore(dsl -> {
+            assertThat(coalesced(dsl, GRAPH, "Tabled"))
+                .containsExactly(FILM_RECORD + " BOUND_TABLE");
+            assertThat(backing(dsl, GRAPH, "Tabled"))
+                .as("and the closure said nothing about it")
+                .isEmpty();
+        });
+    }
+
+    /** The closure's own answers arrive through the coalesce marked as the closure's. */
+    @Test
+    void aClosureAnswerKeepsItsProvenance() {
+        withCapturedStore(dsl ->
+            assertThat(coalesced(dsl, GRAPH, "Film"))
+                .containsExactly("app.FilmRecord BACKING_CLOSURE"));
+    }
+
+    /**
+     * A type its {@code @table} binding and the closure answer differently is two rows and a
+     * conflict, not a precedence. The walk reads the table and never consults the class, which is a
+     * defensible reading and still a choice; folding it in here would have recorded agreement where
+     * there is none.
+     */
+    @Test
+    void aTypeItsTableAndItsClosureAnswerDifferentlyIsContested() {
+        withCapturedStore(dsl -> {
+            assertThat(coalesced(dsl, GRAPH, "Language"))
+                .containsExactly("app.LanguageRecord BACKING_CLOSURE",
+                    LANGUAGE_RECORD + " BOUND_TABLE");
+            assertThat(conflict(dsl, GRAPH, "Language"))
+                .containsExactly("app.LanguageRecord, " + LANGUAGE_RECORD + " 2");
+        });
+    }
+
     // ===== Departures from the walk, pinned =====
 
     /**
@@ -201,9 +245,21 @@ class TypeBackingClassTest {
     private static final String OTHER = "other/target/classes";
 
     /**
+     * The test catalog's own record classes, spelled out rather than read back off
+     * {@code sql_table}: the table arm's claim is that it carries the table's record class, and an
+     * expectation that fetched the same column would agree with any value capture happened to put
+     * there.
+     */
+    private static final String RECORDS = "no.sikt.graphitron.rewrite.test.jooq.tables.records.";
+    private static final String FILM_RECORD = RECORDS + "FilmRecord";
+    private static final String LANGUAGE_RECORD = RECORDS + "LanguageRecord";
+
+    /**
      * One chain three types deep, one cycle, one coordinate two producers answer differently, one
      * field whose own producer overrides its parent's member, one scalar producer and one object
-     * nothing reaches.
+     * nothing reaches. Two types carry {@code @table} against the test catalog: one the closure
+     * never reaches, so the table arm stands alone, and one the closure reaches with a different
+     * class, so the two arms meet and disagree.
      */
     private static final String SDL = """
         type Query {
@@ -221,10 +277,11 @@ class TypeBackingClassTest {
             reviews: [Review] @service(service: {className: "app.ReviewService", method: "forFilm"})
             related: Film
         }
-        type Language {
+        type Language @table(name: "language") {
             name: String
             country: Country
         }
+        type Tabled @table(name: "film") { title: String }
         type Country { code: String }
         type Actor { name: String }
         type Review { body: String }
@@ -306,6 +363,16 @@ class TypeBackingClassTest {
                 .and(INTENT_TYPE_BACKING_CLASS.TYPE_NAME.eq(typeName)))
             .orderBy(INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
             .fetch(0, String.class);
+    }
+
+    /** Every backing the coalesce holds, each with the population that answered. */
+    private static List<String> coalesced(DSLContext dsl, String graphName, String typeName) {
+        return dsl.select(INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.DECLARED_VIA)
+            .from(INTENT_TYPE_BACKING)
+            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(graphName)
+                .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(typeName)))
+            .orderBy(INTENT_TYPE_BACKING.CLASS_NAME)
+            .fetch(r -> r.value1() + " " + r.value2());
     }
 
     /** The canonical render and the arity together, which is the whole of what the view adds. */
