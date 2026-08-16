@@ -145,6 +145,81 @@ class TypeBackingClassTest {
         withCapturedStore(dsl -> assertThat(conflict(dsl, GRAPH, "Film")).isEmpty());
     }
 
+    // ===== The input axis =====
+
+    /**
+     * The second seed. A producer's parameter backs the type of the argument it is fed from, which
+     * by default is the argument sharing its name. Nothing about the result axis reaches an input
+     * object, so without this seed the whole input surface is unbacked.
+     */
+    @Test
+    void aParameterBacksTheTypeOfItsArgument() {
+        withCapturedStore(dsl ->
+            assertThat(backing(dsl, GRAPH, "FilmFilter"))
+                .containsExactly("app.FilmFilterInput"));
+    }
+
+    /**
+     * One closure, not two. An input object seeded from a parameter has its own fields read off
+     * that class by the same frontier that reads an output type's, so the surface below it is
+     * backed without the input axis owning a second expansion.
+     */
+    @Test
+    void anInputObjectSeededFromAParameterHasItsFieldsRead() {
+        withCapturedStore(dsl ->
+            assertThat(backing(dsl, GRAPH, "NestedFilter"))
+                .containsExactly("app.NestedFilterInput"));
+    }
+
+    /**
+     * An {@code argMapping} entry naming the parameter on its left redirects it: the argument fed
+     * to it is the one the right side names, not the one sharing the parameter's name. Here the
+     * parameter is called {@code f} and no argument is, so a rule ignoring the mapping would back
+     * nothing at all.
+     */
+    @Test
+    void anArgMappingRedirectsAParameterToAnotherArgument() {
+        withCapturedStore(dsl ->
+            assertThat(backing(dsl, GRAPH, "ActorFilter"))
+                .containsExactly("app.ActorFilterInput"));
+    }
+
+    /**
+     * A dotted right side is fed by the argument its head names, and the tail is a descent inside
+     * that argument rather than a second coordinate. The mapping here reads {@code deep.inner}, so
+     * the parameter backs {@code DeepFilter} and says nothing about {@code InnerFilter}.
+     */
+    @Test
+    void aDottedPathIsFedByItsHead() {
+        withCapturedStore(dsl -> {
+            assertThat(backing(dsl, GRAPH, "DeepFilter"))
+                .containsExactly("app.DeepFilterInput");
+            assertThat(backing(dsl, GRAPH, "InnerFilter"))
+                .as("the tail names a descent, not the argument being fed")
+                .isEmpty();
+        });
+    }
+
+    /**
+     * A parameter compiled without {@code -parameters} has no name to match an argument by, and the
+     * walk this shadows skips it rather than falling back to position. Same answer here, and it is
+     * a rule rather than a NULL leaking through a join.
+     */
+    @Test
+    void aParameterWithNoNameFeedsNothing() {
+        withCapturedStore(dsl ->
+            assertThat(backing(dsl, GRAPH, "PlainFilter")).isEmpty());
+    }
+
+    /**
+     * A scalar argument is not backed, on the same terms the result axis states: a class can stand
+     * for an object or an input object, and no Java reject list is consulted to say so.
+     */
+    @Test
+    void aScalarArgumentIsNotBacked() {
+        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "String")).isEmpty());
+    }
+
     // ===== Where the two populations meet =====
 
     /**
@@ -269,6 +344,17 @@ class TypeBackingClassTest {
             contested: Contested @service(service: {className: "app.FilmService", method: "left"})
             also: Contested @service(service: {className: "app.FilmService", method: "right"})
             one: Carrier @service(service: {className: "app.FilmService", method: "one"})
+            search(filter: FilmFilter): [Film] @service(
+                service: {className: "app.FilmService", method: "search"})
+            mapped(other: ActorFilter): [Film] @service(
+                service: {className: "app.FilmService", method: "mapped", argMapping: "f: other"})
+            dotted(deep: DeepFilter): [Film] @service(
+                service: {className: "app.FilmService", method: "dotted",
+                          argMapping: "v: deep.inner"})
+            nameless(plain: PlainFilter): [Film] @service(
+                service: {className: "app.FilmService", method: "nameless"})
+            scalarArg(q: String): [Film] @service(
+                service: {className: "app.FilmService", method: "scalarArg"})
         }
         type Film {
             title: String
@@ -289,6 +375,12 @@ class TypeBackingClassTest {
         type Carrier { id: ID }
         type Orphan { id: ID }
         interface Node { id: ID }
+        input FilmFilter { title: String, nested: NestedFilter }
+        input NestedFilter { code: String }
+        input ActorFilter { name: String }
+        input DeepFilter { inner: InnerFilter }
+        input InnerFilter { code: String }
+        input PlainFilter { code: String }
         """;
 
     /**
@@ -306,7 +398,17 @@ class TypeBackingClassTest {
                 method("left", "()Lapp/Left;", ref("", "app.Left")),
                 method("right", "()Lapp/Right;", ref("", "app.Right")),
                 method("one", "()Ljava/util/List;",
-                    ref("", "java.util.List"), ref("0", "app.CarrierRecord"))),
+                    ref("", "java.util.List"), ref("0", "app.CarrierRecord")),
+                producer("search", "(Lapp/FilmFilterInput;)Ljava/util/List;",
+                    List.of(parameter("filter", ref("", "app.FilmFilterInput")))),
+                producer("mapped", "(Lapp/ActorFilterInput;)Ljava/util/List;",
+                    List.of(parameter("f", ref("", "app.ActorFilterInput")))),
+                producer("dotted", "(Lapp/DeepFilterInput;)Ljava/util/List;",
+                    List.of(parameter("v", ref("", "app.DeepFilterInput")))),
+                producer("nameless", "(Lapp/PlainFilterInput;)Ljava/util/List;",
+                    List.of(parameter(null, ref("", "app.PlainFilterInput")))),
+                producer("scalarArg", "(Ljava/lang/String;)Ljava/util/List;",
+                    List.of(parameter("q", ref("", "java.lang.String"))))),
             reference(APP, "app.ReviewService",
                 method("forFilm", "()Ljava/util/List;",
                     ref("", "java.util.List"), ref("0", "app.ReviewDto"))),
@@ -325,7 +427,14 @@ class TypeBackingClassTest {
             record(APP, "app.CarrierRecord", component("id", ref("", "java.lang.String"))),
             record(APP, "app.Left", component("id", ref("", "java.lang.String"))),
             record(APP, "app.Right", component("id", ref("", "java.lang.String"))),
-            record(APP, "app.NodeRecord", component("id", ref("", "java.lang.String"))));
+            record(APP, "app.NodeRecord", component("id", ref("", "java.lang.String"))),
+            record(APP, "app.FilmFilterInput",
+                component("title", ref("", "java.lang.String")),
+                component("nested", ref("", "app.NestedFilterInput"))),
+            record(APP, "app.NestedFilterInput", component("code", ref("", "java.lang.String"))),
+            record(APP, "app.ActorFilterInput", component("name", ref("", "java.lang.String"))),
+            record(APP, "app.DeepFilterInput", component("code", ref("", "java.lang.String"))),
+            record(APP, "app.PlainFilterInput", component("code", ref("", "java.lang.String"))));
     }
 
     private static CompletionData.ExternalReference reference(
@@ -344,6 +453,19 @@ class TypeBackingClassTest {
         String name, String descriptor, CompletionData.TypeRef... refs) {
         return new CompletionData.Method(name, "Object", "", List.of(), false, descriptor,
             "Object", List.of(refs));
+    }
+
+    /** A method taking parameters and handing back a list of films, the input axis's shape. */
+    private static CompletionData.Method producer(
+        String name, String descriptor, List<CompletionData.Parameter> parameters) {
+        return new CompletionData.Method(name, "Object", "", parameters, false, descriptor,
+            "Object", List.of(ref("", "java.util.List"), ref("0", "app.FilmRecord")));
+    }
+
+    /** A parameter; a null name is one the consumer compiled without {@code -parameters}. */
+    private static CompletionData.Parameter parameter(
+        String name, CompletionData.TypeRef... refs) {
+        return new CompletionData.Parameter(name, "Object", "", "", "Object", List.of(refs));
     }
 
     private static CompletionData.RecordComponent component(

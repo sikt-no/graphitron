@@ -21,4 +21,9 @@ public final class TestBackingService {
     public static TestBackingOther other() {
         throw new UnsupportedOperationException();
     }
+
+    /** A producer taking an input, so the differential covers the input axis and not only returns. */
+    public static List<TestBackingFilm> byFilter(TestBackingFilter filter) {
+        throw new UnsupportedOperationException();
+    }
 }

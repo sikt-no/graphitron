@@ -103,6 +103,33 @@ class TypeBackingShadowTest {
         });
     }
 
+    /**
+     * The input axis run through the same differential. Both sides read a producer's parameter and
+     * bind the argument's type to what the parameter delivers, and both reach the argument by the
+     * parameter's own name here, no {@code argMapping} redirecting it. The result axis is asserted
+     * in the same case so a run where the whole fixture failed to resolve cannot pass as agreement
+     * on the input surface.
+     */
+    @Test
+    void theInputAxisAgreesWithTheWalk() {
+        String sdl = """
+            type Query {
+                byFilter(filter: FilmFilter): [Film] @service(
+                    service: {className: "%s", method: "byFilter"})
+            }
+            type Film { title: String }
+            input FilmFilter { code: String }
+            """.formatted(SERVICE);
+
+        withBothSides(sdl, dsl -> {
+            assertThat(walk(dsl)).as("the walk answered something").isNotEmpty();
+            assertThat(derived(dsl)).containsExactlyInAnyOrderElementsOf(walk(dsl));
+            assertThat(derived(dsl)).contains(
+                "FilmFilter=" + PKG + "TestBackingFilter",
+                "Film=" + PKG + "TestBackingFilm");
+        });
+    }
+
     // ===== Helpers =====
 
     private static final String GRAPH = "TypeBackingShadowTest";

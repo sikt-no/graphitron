@@ -1977,8 +1977,16 @@ walk is evidence here, not the specification.
    the same reason, after which `intent_type_backing` is the plain two-arm union the plan described,
    and `intent_type_backing_conflict` moved over it and gained a second disagreement. Done; the
    three sections below carry the question, the capture, and the view.
+8b. The input axis, which the plan had named only as an absence in the backing relation's own
+   comment: a producer's parameter backs the type of the argument it is fed from. Done as a second
+   seed into the same closure rather than a second closure, which needed the parameter arm of
+   `intent_declared_type_ref` and the path decode. The shadow runs it against the walk over a real
+   classfile scan and the two agree. The section below carries it.
 9. Have the generator read the fact. The resolver's copy of the walk retires here, which drains step
-   3's relation and retires the `walk_` addition with it.
+   3's relation and retires the `walk_` addition with it. Unblocked as of step 8b: every population
+   the derivation deliberately does not reach is now either another arm of `intent_type_backing` or
+   one of the two recorded behaviour differences, the cardinality guard and the two-level carrier
+   fork, which are adjudications rather than gaps.
 10. The consumers follow, each its own commit: the class arm of the type-scope question, then
     `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the
     class-backed-parent arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
@@ -2429,6 +2437,46 @@ answer, not a contest.
 Worth noting what this did to the view's cost: nothing. It is a grouping over a union of two
 relations, both of which a reader was going to touch anyway, and the earlier lesson about recursive
 views being re-evaluated per outer row does not apply to either arm.
+
+## Settled while building: the input axis is a second seed, not a second closure
+
+With the path decode in place the input axis is short. A producer's parameter backs the type of the
+argument it is fed from, which is the argument sharing the parameter's name unless an `argMapping`
+entry names that parameter on its left, in which case it is the head of the path on the right. That
+last clause is one left join to the pair relation and one to `graphitron_argument_path_segment` at
+position zero. Without the decode as a relation it would have been string surgery on a key, which is
+the thing this schema does not do.
+
+**One closure, not two.** The input seed writes into the same relation the result seed does, and the
+existing frontier expands it without knowing which seed grounded a row: an input object backed from
+a parameter has its own fields read off that class exactly as an output type does, so the whole
+nested input surface follows from one statement. Two axes and one reachability was the shape all
+along; what was missing was the ability to state the second set of seeds.
+
+**The peel's third arm cost the key one column and nothing else.** `intent_declared_type_ref` had
+forecast this in its own comment: the parameter relation is the third of exactly the same shape, and
+it was left out because it needs an ordinal that is NULL on the other two arms. It joined now that a
+reader arrived, `owner_position` came with it, and the four-level descent needed one more
+`IS NOT DISTINCT FROM` per level and no new thinking. That is the grain decision from step 7 paying
+for itself a second time: had the peel still been keyed at a member slot, this arm would have been a
+second view.
+
+Two arm-determined NULLs on one key is worth naming rather than glossing. `owner_descriptor` is NULL
+exactly on the record arm and `owner_position` exactly on the two arms whose owner needs no ordinal,
+and in both cases `owner_kind` determines which. That is the union's key shape, not a fact withheld,
+and the readers that join the owner key blind already use `IS NOT DISTINCT FROM`.
+
+**The differential covers it, and agrees.** `TypeBackingShadowTest` now runs the input axis against
+the walk over a real classfile scan of public fixtures, and the two answer identically. That matters
+more than the unit cases: the rule has three clauses that could each be plausibly wrong (which
+argument feeds a parameter, what the parameter delivers, and whether the surface below it expands),
+and agreement with an independent implementation over real classfiles is evidence none of them is.
+
+**A nameless parameter feeds nothing, and that is a rule.** A consumer compiled without
+`-parameters` leaves `jvm_method_parameter.parameter_name` NULL, and the walk skips such a parameter
+for want of a name to match. The derivation states the same skip explicitly rather than letting it
+fall out of a NULL failing a join, because the two look identical in a query plan and only one of
+them survives someone reorganising the joins.
 
 ## Retired vocabulary
 

@@ -129,17 +129,38 @@ class AccessorHopTest {
     // ===== A declared type, position by position, under its owner =====
 
     /**
-     * Both owner kinds answer under one key. A record component and a method return decompose into
-     * the same path grammar, and a reader that holds an owner does not have to know which census
-     * relation stated it.
+     * Every owner kind answers under one key. A record component, a method return and a method
+     * parameter decompose into the same path grammar, and a reader that holds an owner does not
+     * have to know which census relation stated it.
      */
     @Test
-    void bothOwnerKindsNameTheirPositionsUnderOneKey() {
+    void everyOwnerKindNamesItsPositionsUnderOneKey() {
         withCapturedStore(dsl -> {
             assertThat(positions(dsl, "app.FilmRecord", "actors", null))
                 .containsExactlyInAnyOrder(" java.util.List", "0 app.ActorRecord");
             assertThat(positions(dsl, "app.Store", "getFilms", "()Ljava/util/List;"))
                 .containsExactlyInAnyOrder(" java.util.List", "0 app.FilmRecord");
+            assertThat(parameterDelivers(dsl, "app.Store", "search",
+                "(Ljava/util/List;Lapp/LanguageRecord;)Lapp/FilmRecord;", 0))
+                .as("a parameter is peeled by the same rule as a return")
+                .containsExactly("java.lang.String at 0");
+        });
+    }
+
+    /**
+     * The ordinal is what tells one parameter from its neighbour, under a key they otherwise share
+     * entirely. Without it the peel would join every position of one parameter's type against every
+     * other's and answer with a cross product.
+     */
+    @Test
+    void parametersAreToldApartByTheirOrdinal() {
+        withCapturedStore(dsl -> {
+            String descriptor = "(Ljava/util/List;Lapp/LanguageRecord;)Lapp/FilmRecord;";
+            assertThat(parameterDelivers(dsl, "app.Store", "search", descriptor, 1))
+                .containsExactly("app.LanguageRecord at ");
+            assertThat(positions(dsl, "app.Store", "search", descriptor))
+                .as("and the return is still the return, unmixed with either")
+                .containsExactly(" app.FilmRecord");
         });
     }
 
@@ -443,6 +464,11 @@ class AccessorHopTest {
                 parameterised("getTitle", "(I)Lapp/LanguageRecord;", "int",
                     ref("", "app.LanguageRecord")),
                 parameterised("getLookup", "(Ljava/lang/String;)Lapp/FilmRecord;", "String",
+                    ref("", "app.FilmRecord")),
+                taking("search", "(Ljava/util/List;Lapp/LanguageRecord;)Lapp/FilmRecord;",
+                    List.of(param("titles", ref("", "java.util.List"),
+                                ref("0", "java.lang.String")),
+                            param("spoken", ref("", "app.LanguageRecord"))),
                     ref("", "app.FilmRecord"))));
     }
 
@@ -463,6 +489,19 @@ class AccessorHopTest {
         String name, String descriptor, CompletionData.TypeRef... refs) {
         return new CompletionData.Method(name, "Object", "", List.of(), false, descriptor,
             "Object", List.of(refs));
+    }
+
+    /** A method whose parameters carry resolved declared types, the peel's third arm. */
+    private static CompletionData.Method taking(
+        String name, String descriptor, List<CompletionData.Parameter> parameters,
+        CompletionData.TypeRef... refs) {
+        return new CompletionData.Method(name, "Object", "", parameters, false, descriptor,
+            "Object", List.of(refs));
+    }
+
+    private static CompletionData.Parameter param(
+        String name, CompletionData.TypeRef... refs) {
+        return new CompletionData.Parameter(name, "Object", "Arg", "", "Object", List.of(refs));
     }
 
     /** An accessor that takes something, which is exactly what keeps it from being a slot. */
@@ -493,6 +532,7 @@ class AccessorHopTest {
             .from(t)
             .where(t.CLASS_NAME.eq(className)
                 .and(t.OWNER_NAME.eq(ownerName))
+                .and(t.OWNER_POSITION.isNull())
                 .and(descriptor == null
                     ? t.OWNER_DESCRIPTOR.isNull()
                     : t.OWNER_DESCRIPTOR.eq(descriptor)))
@@ -507,6 +547,7 @@ class AccessorHopTest {
             .from(e)
             .where(e.CLASS_NAME.eq(className)
                 .and(e.OWNER_NAME.eq(ownerName))
+                .and(e.OWNER_POSITION.isNull())
                 .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
             .fetchSingle(0, Boolean.class);
     }
@@ -519,7 +560,27 @@ class AccessorHopTest {
             .from(e)
             .where(e.CLASS_NAME.eq(className)
                 .and(e.OWNER_NAME.eq(ownerName))
+                .and(e.OWNER_POSITION.isNull())
                 .and(e.OWNER_DESCRIPTOR.eq(descriptor)))
+            .fetch(r -> r.value1() + " at " + r.value2());
+    }
+
+    /**
+     * One parameter's delivered class, addressed by its ordinal. The three owner-keyed helpers
+     * above ask for a null ordinal rather than naming an owner kind, which is the same selection
+     * said in the key's own terms: the two arms they read identify their owner without one.
+     */
+    private static List<String> parameterDelivers(DSLContext dsl, String className,
+                                                  String methodName, String descriptor,
+                                                  int position) {
+        var e = INTENT_DECLARED_TYPE_ELEMENT;
+        return dsl.select(e.ELEMENT_CLASS, e.ELEMENT_PATH)
+            .from(e)
+            .where(e.CLASS_NAME.eq(className)
+                .and(e.OWNER_KIND.eq("METHOD_PARAMETER"))
+                .and(e.OWNER_NAME.eq(methodName))
+                .and(e.OWNER_DESCRIPTOR.eq(descriptor))
+                .and(e.OWNER_POSITION.eq(position)))
             .fetch(r -> r.value1() + " at " + r.value2());
     }
 

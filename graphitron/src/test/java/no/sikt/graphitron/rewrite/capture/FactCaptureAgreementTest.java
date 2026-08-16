@@ -164,8 +164,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       about how many, every case pairing a disagreement with an agreement over the same
  *       producer so the detection's silence is asserted and not assumed; with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
- *       differential against {@code walk_type_backing_class} over public fixture classes both
- *       sides can see;
+ *       differential against {@code walk_type_backing_class} on both axes, over public fixture
+ *       classes both sides can see;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
