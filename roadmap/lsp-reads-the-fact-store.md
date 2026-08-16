@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-14
+last-updated: 2026-08-16
 ---
 
 # The LSP is a fact-store client
@@ -1951,7 +1951,10 @@ walk is evidence here, not the specification.
    one row per class and reachable supertype, on the `DERIVED` arm, with a path guard the plan did
    not expect and the section below argues for.
 5. The producer binding: the field coordinate to its producing method, with the non-unique name a
-   rejection rather than a silent pick.
+   rejection rather than a silent pick. Done: `intent_field_producer_method`, a view on the
+   `DERIVED` arm, one row per census method an `@service` or `@externalField` reference matches,
+   the two directives coalesced by the view and told apart by a column. The section below carries
+   what resolving it settled.
 6. The accessor hop: the field coordinate and standing class to the class the hop lands on.
 7. `intent_type_backing_class` as reachability from step 5's seeds over step 6's edges, materialized
    on the `ReachabilityRows` pattern, beside the conflict view over types two seeds answer
@@ -2104,6 +2107,53 @@ This rule reads nothing but the supertype edges, and an edge is a name and a cla
 hand-built reference states. What compiled fixtures cannot arrange is exactly what a closure has to
 get right: a chain continuing into another entry's declarations, a chain ending at a name no entry
 declares, and a type two chains reach.
+
+## Settled while building: the producer binding resolves a reference, and refuses to choose
+
+`intent_field_producer_method` is a join and lands as a view, which was never in doubt. What the
+plan left open was what the relation does at the coordinates where the walk it replaces makes a
+decision, and the answer in every case was to state the facts and leave the decision to a reader
+that can be held to it.
+
+* **The plan's "rejection rather than a silent pick" is stronger than it reads, because the pick is
+  not stable.** The walk resolves an overloaded name by taking the first method the reflection API
+  hands back, mirroring the projection's own first-match rule. The JVM specifies no order for that
+  list, so the walk's answer for an overloaded name is not merely an arbitrary one of two, it is a
+  value that may differ between runs of the same build on the same classes. The relation states
+  every match and counts them, on `intent_bound_table`'s terms, and the arity is what a rejection
+  needs. Nothing rejects yet, because nothing reads this relation yet; what changed is that the
+  fact a rejection would stand on now exists and is not a pick.
+* **Two directives, one view, and a column that says which.** `@service` and `@externalField` are
+  separate relations precisely so a reader can tell which directive bound a field, and a union view
+  that dropped that would be the provenance rule broken at the layer meant to preserve it. So
+  `declared_via` is carried, on `jvm_class_supertype.declared_via`'s terms: it is not recoverable
+  from the pair of names, and the two are not interchangeable, a service method being invoked for
+  the field's value where an external field's is invoked once for the jOOQ `Field` the generator
+  then selects. A coordinate carrying both directives is two references resolved independently,
+  neither winning; the conflict is already `intent_authored_claim_conflict`'s to report.
+* **The omitted-method fallback landed where its base relation said it would.**
+  `graphitron_external_field`'s comment defers the fallback to a derivation, and this is the
+  derivation: a reference with no method argument names the SDL field's own name. `@service` has no
+  such fallback, so an application missing either name resolves to nothing. The asymmetry is
+  authored rather than incidental, and stating it in one place means no reader has to know which
+  directive forgives an omission.
+* **Absence has two causes, and the relation is shaped so one join separates them.** A reference
+  can fail to resolve because the census never reached the class (the scan's filters, an entry
+  nothing read, the generated jOOQ package) or because the class declares no method of that name.
+  Those are different messages to an author and the same empty result, so the boundary is pinned by
+  half the anchor's cases: a `jvm_class` lookup under the graph's own sources is what tells them
+  apart, and the relation's comment says so rather than leaving each reader to discover it.
+* **A row is a match, not a verdict, and one census gap is why that had to be said out loud.**
+  `@externalField` requires a static method returning a jOOQ `Field`, and the census carries
+  neither a static flag nor anything a parameter-shape test could stand on. Filtering the arm on
+  what the census does hold would have produced a relation that looks like it validates the
+  reference and does not, which is worse than one that plainly resolves it. The static flag is a
+  fact the store is short; it is named here rather than captured, because the rule that would read
+  it is the external field's validation and that is not this step's work.
+* **`@routine` is out, and not for the reason `@table` is.** The three binding relations are
+  siblings, but a routine reference names a jOOQ routine rather than a class and a method, so it
+  does not resolve against `jvm_method` at all. That is a different population rather than the same
+  one under another arm, which is the test for whether a view should union something.
 
 ## Retired vocabulary
 

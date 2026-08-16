@@ -3423,6 +3423,40 @@ COMMENT ON COLUMN intent_class_assignable.source_name IS 'the subtype''s classpa
 COMMENT ON COLUMN intent_class_assignable.class_name IS 'the fully-qualified binary name of the subtype: the class that can stand in for the supertype. Never equal to supertype_name, the closure being over declarations and identity being no declaration';
 COMMENT ON COLUMN intent_class_assignable.supertype_name IS 'the fully-qualified binary name of a type the subtype can stand in for, erased: a class implementing List of Film reaches java.util.List and the type argument is nowhere, which is the shape an assignability question wants and the wrong one for a reader after the element type. Frequently not a census row at all, which is the ordinary case at the end of a chain and the reason the relation this closes over carries no foreign key on it either. A nested type is spelled with the $ the JVM writes and can only ever appear on this side: the scan skips classfiles whose name carries a $, so a nested supertype declares nothing the store holds and a chain reaching one ends there';
 
+CREATE VIEW intent_field_producer_method
+  (graph_name, type_name, field_name, declared_via,
+   source_name, class_name, method_name, descriptor, candidates) AS
+SELECT graph_name, type_name, field_name, declared_via,
+       source_name, class_name, method_name, descriptor, candidates
+  FROM (SELECT r.graph_name, r.type_name, r.field_name, r.declared_via,
+               m.source_name, m.class_name, m.method_name, m.descriptor,
+               CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.type_name,
+                                                r.field_name, r.declared_via) AS INT) AS candidates
+          FROM (SELECT s.graph_name, s.type_name, s.field_name, 'SERVICE' AS declared_via,
+                       s.class_name, s.method AS method_name
+                  FROM graphitron_service s
+                 WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
+                UNION ALL
+                SELECT e.graph_name, e.type_name, e.field_name, 'EXTERNAL_FIELD',
+                       e.class_name, COALESCE(e.method, e.field_name)
+                  FROM graphitron_external_field e
+                 WHERE e.class_name IS NOT NULL) r
+          JOIN store_graph_source g ON g.graph_name = r.graph_name
+          JOIN jvm_method m
+            ON m.source_name = g.source_name
+           AND m.class_name = r.class_name
+           AND m.method_name = r.method_name) resolved;
+COMMENT ON VIEW intent_field_producer_method IS 'The census method a field''s authored Java reference names: @service and @externalField resolved against jvm_method, one row per method the reference matches. A use-keyed resolution over a source-keyed census, which is the shape an authored coordinate reaching into the classpath always takes here, and it states the resolution alone: which class the method''s return names is jvm_method_return_type_ref''s answer, one join further on. Two arms coalesced by a view rather than one relation over a merged base, because which directive named the method is not recoverable from the pair of names and the two say different things about how the method is reached; declared_via carries it, on jvm_class_supertype.declared_via''s terms. The @externalField arm applies the omitted-method fallback graphitron_external_field''s own comment defers to a derivation: a reference with no method argument names the SDL field''s name. @service has no fallback, so an application missing either name resolves to nothing and has no row. Ambiguity is rows and never a decline, as on intent_bound_table: a reference matching two overloads is two rows and candidates says so. That is the one place this relation departs from the walk it replaces, which takes whichever matching method the reflection API hands back first, in an order the JVM does not specify, so the walk''s answer for an overloaded name is unstable rather than merely arbitrary. The intended reading is that a reference matching more than one method is a rejection, and what a rejection needs is the arity, which is why this relation states it rather than picking. Absence has two causes and one join separates them: no jvm_class row under the graph''s sources means the census never reached the class (the scan''s filters, an entry nothing read, the generated jOOQ package), while a class row with no method row means the class declares no method of that name. Nothing here judges the reference beyond matching it. The census carries neither a static flag nor a lifter''s parameter shape, so an @externalField row does not assert the method satisfies that directive''s contract, and a nested class an author spells Outer.Inner matches nothing, the census writing the $ the JVM writes and skipping nested classes anyway.';
+COMMENT ON COLUMN intent_field_producer_method.graph_name IS 'the owning graph''s partition, carried from the directive relation the arm reads';
+COMMENT ON COLUMN intent_field_producer_method.type_name IS 'the referring field''s owning type';
+COMMENT ON COLUMN intent_field_producer_method.field_name IS 'the referring field''s name within the owning type';
+COMMENT ON COLUMN intent_field_producer_method.declared_via IS 'SERVICE or EXTERNAL_FIELD: which directive named the method, a closed two-value vocabulary. Carried rather than derived because the pair of names a row resolves cannot tell the two apart, and they are not interchangeable: a service method is invoked for the field''s value, an external field''s is invoked once for the jOOQ Field the generator selects. A coordinate carrying both directives is a conflict intent_authored_claim_conflict already reports, and here it is simply two references, each resolved on its own, neither winning';
+COMMENT ON COLUMN intent_field_producer_method.source_name IS 'the resolved method''s classpath entry, as on jvm_method; the census partition the graph reached through store_graph_source, and the reason another graph''s entries cannot answer this graph''s reference';
+COMMENT ON COLUMN intent_field_producer_method.class_name IS 'the fully-qualified binary name of the class declaring the resolved method, matched against the reference exactly. Java names are case-sensitive, so a misspelling resolves to nothing rather than to a near match';
+COMMENT ON COLUMN intent_field_producer_method.method_name IS 'the resolved method''s name: the reference''s method argument, or the SDL field''s own name where an @externalField omitted it';
+COMMENT ON COLUMN intent_field_producer_method.descriptor IS 'the resolved method''s raw JVM descriptor, jvm_method''s overload discriminator and the whole of what tells two rows of one reference apart. The column a reader carries forward to reach the method''s parameters and the classes its declared return type names';
+COMMENT ON COLUMN intent_field_producer_method.candidates IS 'how many census methods this reference matches, this row being one of them; 1 on an unambiguous reference. Partitioned by the reference and not by the coordinate, so a field carrying both directives does not report one arm''s overloads as the other''s. Two overloads and one class declared by two classpath entries both raise it, which is one fact from a reader''s side: the reference names more than one method. Stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms, whether a reference is unique being what decides the reading';
+
 CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,

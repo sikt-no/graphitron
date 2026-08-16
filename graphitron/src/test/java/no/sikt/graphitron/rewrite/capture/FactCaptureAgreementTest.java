@@ -143,6 +143,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       reference by reference, the chains a closure has to get right (one crossing classpath
  *       entries, one ending at a name no entry declares, one reaching a type two ways) being
  *       ones a scan of compiled fixtures cannot arrange;
+ *       {@code no.sikt.graphitron.rewrite.derive.FieldProducerMethodTest} binds
+ *       {@code intent_field_producer_method}, the census method an authored Java reference
+ *       resolves to, over captured SDL against a hand-built census, half its cases pinning what
+ *       the resolution refuses to decide: an overloaded name is rows and an arity, never a pick;
  *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
  *       and exemption rules and their resolved reductions to the walked registries via
  *       {@code ClaimDomain}, residues named and disagreement directions pinned;
@@ -244,6 +248,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_class_assignable", Arm.DERIVED);
+        registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);

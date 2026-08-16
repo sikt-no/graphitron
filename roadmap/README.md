@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R642` | CatalogFacts' non-LSP readers move to the store | Spec | 2026-08-14 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
-| `R638` | The LSP is a fact-store client | In Progress | 2026-08-14 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
+| `R638` | The LSP is a fact-store client | In Progress | 2026-08-16 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | Spec | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
