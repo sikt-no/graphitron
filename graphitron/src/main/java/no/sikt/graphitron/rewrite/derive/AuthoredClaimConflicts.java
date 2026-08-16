@@ -64,6 +64,11 @@ public final class AuthoredClaimConflicts {
             fieldVerdicts = List.copyOf(fieldVerdicts);
         }
 
+        /** The empty detection, for callers running capture without the detection pass. */
+        public static Detection empty() {
+            return new Detection(List.of(), List.of());
+        }
+
         /**
          * Every violation the detection minted, type grain first, each grain in coordinate
          * order; the field-grain errors derive from the verdicts here, at the one site, so the

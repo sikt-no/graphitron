@@ -958,17 +958,6 @@ public final class CatalogBuilder {
     }
 
     public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
-        return build(jooq, assembled, ctx, buildExternalReferences(ctx));
-    }
-
-    /**
-     * {@link #build(JooqCatalog, GraphQLSchema, RewriteContext)} for a caller that has already
-     * scanned the classpath. The scan is the expensive part of this builder, and the pass that
-     * captures facts before classifying needs the same references before the assembled schema this
-     * method wants exists, so it does the scan once and hands the result to both.
-     */
-    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx,
-                                       List<CompletionData.ExternalReference> extensions) {
         // FQN of the generated jOOQ Keys class (jOOQ emits it at the package
         // root). Both the table classFqn and this Keys FQN are the join keys the
         // LSP resolves against its source index at request time; the catalog
@@ -982,7 +971,7 @@ public final class CatalogBuilder {
         return new CompletionData(
             buildTables(jooq, keysClassFqn),
             buildScalars(assembled),
-            extensions,
+            buildExternalReferences(ctx),
             buildNodeMetadata(assembled, new NodeDeclaration(jooq))
         );
     }

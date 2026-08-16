@@ -1982,16 +1982,19 @@ walk is evidence here, not the specification.
    seed into the same closure rather than a second closure, which needed the parameter arm of
    `intent_declared_type_ref` and the path decode. The shadow runs it against the walk over a real
    classfile scan and the two agree. The section below carries it.
-9. Have the generator read the fact. The resolver's copy of the walk retires here, which drains step
-   3's relation and retires the `walk_` addition with it. Unblocked as of step 8b: every population
-   the derivation deliberately does not reach is now either another arm of `intent_type_backing` or
-   one of the recorded behaviour differences, which are adjudications rather than gaps. In progress,
-   and it had a precondition the plan had not noticed: the generator classified before it captured,
-   so there was no point at which a classifier could read a captured row. Capture now brackets
-   classification, which the section below carries; the read itself follows.
+9. Make the fact answerable by a consumer. Done, and not the way this entry first read: it said the
+   generator reads the fact and the resolver's copy of the walk retires there, which is the
+   store-reading classifier the emit-path programme explicitly drops in favour of draining the walk
+   from the consumer end. Attempting it produced a capture-ahead-of-classification reorder, reverted;
+   the section below carries what that settled. What the attempt did turn up is a third difference
+   from the walk that was not an adjudication but a defect, a hop contesting a grounding, and the
+   fact that closes it, `intent_type_backing_seed`. The resolver's copy now retires when its last
+   leaf consumer leaves, which is step 10's business and other items'.
 10. The consumers follow, each its own commit: the class arm of the type-scope question, then
     `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the
     class-backed-parent arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
+    `walk_type_backing_class` and its writer drain with the last of them rather than at step 9, the
+    differential being what keeps the duplication honest until then.
 
 ## Settled while building: a declared type is a tree, so resolving it is a relation per position
 
@@ -2480,44 +2483,35 @@ for want of a name to match. The derivation states the same skip explicitly rath
 fall out of a NULL failing a join, because the two look identical in a query plan and only one of
 them survives someone reorganising the joins.
 
-## Settled while building: capture could always have gone first, and one thing held it back
+## Settled while building: the walk drains from the consumer end, so it never reads the store
 
-Step 9 turned out to have a precondition nobody had written down. The generator classified at
-`GraphitronSchemaBuilder.buildBundle` and captured afterwards, so there was no point in the pipeline
-at which a classifier could read a captured row. The relation being ready was never the only blocker.
+Step 9 said the generator reads the fact and the resolver's copy of the walk retires there. Building
+it produced a reorder, and the reorder was wrong, so what it cost is worth writing down.
 
-**Capture never needed the classified model.** Its inputs are the parsed registry, the stage
-verdicts, the jOOQ catalog and the classpath scan, and not one of them comes from classification.
-What came after classification was the *detection*, which is gated on the walk's claim domain and
-therefore genuinely does need it. The two were fused into one call, so the detection's ordering
-constraint was silently imposed on the capture as well. Nothing was wrong with the fusion until
-somebody wanted to read the store in between.
+**The mechanical blocker was real.** The generator classified at
+`GraphitronSchemaBuilder.buildBundle` and captured afterwards, so no classifier could read a captured
+row. Capture never needed the classified model, only the detection did, and the two were fused into
+one call, which imposed the detection's ordering on the capture. Separating them by closing and
+reopening the store fails on the demotion arms, where the store is a private in-memory database that
+dies with its handle, so the capture had to hand its filled store back open. That all worked, and the
+full reactor was green on it.
 
-**Two opens would not do, and the reason is the fallback.** The obvious separation is to capture,
-close, reopen and detect. It fails exactly where it matters: a run refused the shared partition, or
-one whose write failed twice, is demoted to a private in-memory database that dies with its handle,
-so the second open would meet an empty schema on precisely the runs that had trouble. A cache
-demotion is allowed to cost warmth and nothing else, so the shape has to behave identically on the
-shared file and on the fallback. One store lifetime spanning both ends is the only one that does.
+**It was scaffolding for an approach this programme dropped.**
+`roadmap/planners-read-facts-emitters-read-commands.md` puts both halves out of scope in as many
+words: the classification walk keeps producing the leaf model for its remaining consumers, and
+reordering capture ahead of the walk is "scaffolding for a walk being drained from the consumer end
+instead", dropped rather than deferred. So the walk is emptied by its consumers leaving, never
+converted into a store client, and a store-reading classifier is the shape that programme declined.
 
-**So the capture hands its store back open.** `FactCapture.Captured` is the filled store, closed by
-the try-with-resources that opened it, having already made every choice the entry point's contract
-describes: which store this run got, whether it was warm, whether a failed write demoted it. The
-handle still does not escape a scope; what escapes the *call* is the store's lifetime, which is the
-whole point. `run` becomes a capture whose store closes with no reader, and the fused
-capture-and-detect entry point retires, having had one caller and no reason to exist once the
-ordering it enforced was the thing in the way.
+**Which settles what this item's step 9 can be.** `RecordBindingResolver`'s answer reaches nobody
+directly; it is threaded into the leaf model, and the leaf model's consumers are the plan and the
+emitters (that item), the validator, and the LSP projection (this one). A backing class the store
+holds is therefore consumed by those consumers reading it, and the resolver's copy dies with the last
+leaf reader rather than by being re-pointed. The duplication in the meantime is what the shadow
+differential is for, and it is doing its job.
 
-**The demotion arm gained an observable.** Before this, nothing read a demoted run's store, so a run
-that captured into the shared file and one that captured into the fallback were indistinguishable
-from outside. Now a reader sits between the capture and the close, and what it sees is the
-difference: `PersistentStoreTest.aDemotedRunReadsItsOwnCapture` pins that a run refused the shared
-partition still reads its own schema rather than the one it was refused.
-
-This also unblocks a retirement recorded elsewhere. `intent_input_occurrence_override`'s comment
-names "capture runs after classification" as the reason the walk still evaluates the enclosing
-override as a boolean threaded through its recursion, and names capture moving ahead of
-classification as the condition for retiring that re-derivation. That condition now holds.
+The cost of finding this out was one commit, reverted. What survives it is the relation below, which
+is a fact rather than scaffolding and would have been needed by whichever consumer arrived first.
 
 ## Settled while building: a third difference, and this one was the derivation being wrong
 

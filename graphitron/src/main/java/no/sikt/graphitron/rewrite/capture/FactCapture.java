@@ -42,15 +42,12 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * reachability pruning; a primary-key violation on any base relation is therefore a capture bug,
  * never something an author's schema can provoke.
  *
- * <p>The store has readers, so a capture hands its filled store back open rather than closing it:
- * {@link #capture(Path, GraphIdentity, SubjectConfig, TypeDefinitionRegistry, SdlVerdicts, Map,
- * JooqCatalog, List, NodeDeclaration)} returns a {@link Captured} the caller reads and then closes.
- * {@link Captured#detect} runs the authored-claim conflict rule ({@link AuthoredClaimConflicts})
- * over the captured rows and returns its typed {@link AuthoredClaimConflicts.Detection} product
- * (the violations for the caller's error stream, and the field-conflict claims the snapshot's
- * {@code Conflicted} projection overlay consumes), so what that detection reports is decided by the
- * store's content. Relations with no consumer yet are still populated beside the live pipeline and
- * read by nothing; consumers migrate onto them one at a time.
+ * <p>The store has its first reader: {@link #runWithDetections} runs the authored-claim
+ * conflict rule ({@link AuthoredClaimConflicts}) over the freshly captured rows and returns its
+ * typed {@link AuthoredClaimConflicts.Detection} product (the violations for the caller's error
+ * stream, and the field-conflict claims the snapshot's {@code Conflicted} projection overlay
+ * consumes), so what that detection reports is decided by the store's content. Every other relation is still populated beside the live pipeline and read by
+ * nothing; consumers migrate onto it one at a time.
  *
  * <p>A run captures exactly one graph; the store may hold many. The persisted store is shared by
  * every module of a workspace, so a warm open reconciles only what this run owns, and any cache
@@ -195,106 +192,78 @@ public final class FactCapture {
                            Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
                            NodeDeclaration nodes) {
-        // The write with no reader after it: the store is filled and closed in one statement.
-        capture(storeDirectory, graph, config, registry, verdicts, attribution, jooq, extensions,
-            nodes).close();
+        runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq, extensions,
+            nodes, null);
     }
 
     /**
-     * Fills the store for {@code storeDirectory} and hands it back open, having already made every
-     * choice {@link #run}'s contract describes: which store this run got, whether it was warm,
-     * whether a failed write demoted it to a private in-memory one. The caller closes it.
-     *
-     * <p>Returning the filled store rather than closing it is what lets a reader run between the
-     * capture and the detection, which is the ordering the classifier needs to read what capture
-     * wrote. Two opens would not do: the demotion arms land in an in-memory database that dies with
-     * the handle, so a second open would find an empty schema exactly on the runs where the first
-     * one had trouble. One lifetime spanning both is therefore the only shape that behaves the same
-     * on the shared file and on the fallback.
+     * {@link #run}, then the store-backed detections over the store the capture just filled,
+     * before it closes. Returns the detections' typed {@link AuthoredClaimConflicts.Detection}
+     * product (gated on {@code reach}): every caller reads its
+     * {@link AuthoredClaimConflicts.Detection#violations() violations} for the error stream, and
+     * the LSP/MCP snapshot path additionally reads its
+     * {@link AuthoredClaimConflicts.Detection#fieldConflicts() field conflicts} for the
+     * {@code Conflicted} projection overlay; the store handle never escapes. The detection runs
+     * against whichever store the capture landed in, shared file and in-memory fallback alike,
+     * so a cache demotion changes cost and never verdicts.
      */
-    public static Captured capture(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
-                                   TypeDefinitionRegistry registry, SdlVerdicts verdicts,
-                                   Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                                   List<CompletionData.ExternalReference> extensions,
-                                   NodeDeclaration nodes) {
+    public static AuthoredClaimConflicts.Detection runWithDetections(Path storeDirectory, GraphIdentity graph,
+                                                          SubjectConfig config,
+                                                          TypeDefinitionRegistry registry,
+                                                          SdlVerdicts verdicts,
+                                                          Map<String, SchemaInput> attribution,
+                                                          JooqCatalog jooq,
+                                                          List<CompletionData.ExternalReference> extensions,
+                                                          NodeDeclaration nodes, WalkReach reach) {
+        Objects.requireNonNull(reach, "reach");
+        return runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq,
+            extensions, nodes, reach);
+    }
+
+    private static AuthoredClaimConflicts.Detection runInternal(Path storeDirectory, GraphIdentity graph,
+                                                     SubjectConfig config,
+                                                     TypeDefinitionRegistry registry, SdlVerdicts verdicts,
+                                                     Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                                                     List<CompletionData.ExternalReference> extensions,
+                                                     NodeDeclaration nodes, WalkReach reach) {
         if (storeDirectory != null) {
-            GraphitronModelStore shared = GraphitronModelStore.openAt(storeDirectory);
-            boolean handedOver = false;
-            try {
-                if (shared.location().isEmpty()) {
+            try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
+                if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
-                    capture(shared.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
+                    capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
                         extensions, nodes);
-                    handedOver = true;
-                } else if ((!shared.warm() || ownsGraph(shared.dsl(), graph))
-                        && captureWithRetry(shared, graph, config, registry, verdicts, attribution,
-                            jooq, extensions, nodes)) {
-                    handedOver = true;
+                    return detect(store.dsl(), graph, reach);
                 }
-                if (handedOver) {
-                    return new Captured(shared, graph);
-                }
-            } finally {
-                if (!handedOver) {
-                    shared.close();
+                if (!store.warm() || ownsGraph(store.dsl(), graph)) {
+                    if (captureWithRetry(store, graph, config, registry, verdicts, attribution, jooq,
+                            extensions, nodes)) {
+                        return detect(store.dsl(), graph, reach);
+                    }
                 }
             }
         }
-        GraphitronModelStore memory = GraphitronModelStore.open();
-        try {
-            capture(memory.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
+        try (GraphitronModelStore store = GraphitronModelStore.open()) {
+            capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
                 extensions, nodes);
-        } catch (RuntimeException | Error e) {
-            memory.close();
-            throw e;
+            return detect(store.dsl(), graph, reach);
         }
-        return new Captured(memory, graph);
     }
 
     /**
-     * One run's filled fact store, open for as long as its caller needs to read it. The handle
-     * still does not escape: this is the store, closed by the try-with-resources that opened it,
-     * and what a reader gets is {@link #dsl()} for the duration of that block.
-     *
-     * <p>It exists so the pipeline can read the store between filling it and pronouncing on it.
-     * Capture takes no classified model, so it can run first; the detection takes the walk's reach,
-     * so it must run last; whoever reads the store to classify sits between the two. Fusing the
-     * write and the detection into one call, which is what shipped before, put both ends after
-     * classification and left no seam for the middle.
+     * The detection pass over a freshly captured store; a {@code null} reach is {@link #run}'s
+     * no-detection arm, which also writes no {@code walk_} rows. The whole of the walk's reach
+     * lands first: the {@code walk_claim_domain} rows so the {@code intent_authored_claim_conflict}
+     * view's domain-gate join answers over exactly the domain this detection is gated on, and the
+     * backing rows because the same pass is the family's one writer and its cadence, whether or
+     * not this detection reads them.
      */
-    public static final class Captured implements AutoCloseable {
-
-        private final GraphitronModelStore store;
-        private final GraphIdentity graph;
-
-        private Captured(GraphitronModelStore store, GraphIdentity graph) {
-            this.store = store;
-            this.graph = graph;
+    private static AuthoredClaimConflicts.Detection detect(DSLContext dsl, GraphIdentity graph, WalkReach reach) {
+        if (reach == null) {
+            return AuthoredClaimConflicts.Detection.empty();
         }
-
-        /** This run's store, filled. Valid until {@link #close()}. */
-        public DSLContext dsl() {
-            return store.dsl();
-        }
-
-        /**
-         * The detection pass over the captured store. The whole of the walk's reach lands first:
-         * the {@code walk_claim_domain} rows so the {@code intent_authored_claim_conflict} view's
-         * domain-gate join answers over exactly the domain this detection is gated on, and the
-         * backing rows because the same pass is the family's one writer and its cadence, whether
-         * or not this detection reads them.
-         */
-        public AuthoredClaimConflicts.Detection detect(WalkReach reach) {
-            Objects.requireNonNull(reach, "reach");
-            ClaimDomainRows.write(dsl(), graph.name(), reach.domain());
-            TypeBackingClassRows.write(dsl(), graph.name(), reach.backingClasses());
-            return AuthoredClaimConflicts.detect(dsl(), graph.name());
-        }
-
-        @Override
-        public void close() {
-            store.close();
-        }
+        ClaimDomainRows.write(dsl, graph.name(), reach.domain());
+        TypeBackingClassRows.write(dsl, graph.name(), reach.backingClasses());
+        return AuthoredClaimConflicts.detect(dsl, graph.name());
     }
 
     /**
