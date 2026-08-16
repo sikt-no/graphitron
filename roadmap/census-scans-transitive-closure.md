@@ -50,8 +50,15 @@ field, directive, table, binding and intent row, is about 4,150 rows.
 
 Read cost, `ClasspathScanner` over that entry list, best of three warm runs: 648 ms for the whole
 classpath, 51 ms for the reactor directories alone, 516 ms for the third-party jars alone. So the
-jars are roughly 92% of the parse time. The dev loop pays it twice per pass, which is R620's
+jars are roughly 92% of the read time. The dev loop pays it twice per pass, which is R620's
 subject and not this item's.
+
+**Decompression is the bill, not parsing**, and this is what decides that the fix is a narrower
+entry list rather than a shallower read. Over the same 156 jars: opening every jar and listing its
+entries costs 13 ms; inflating the 20,025 `.class` entries costs 486 ms; parsing everything on top
+of that adds roughly 130 ms. Reading fewer members per class is therefore worth about 30% and
+nothing more, and a byte-level prefilter is worth less than that, because the bytes have to be
+inflated before anything can look at them. Only opening fewer jars moves the number.
 
 Nothing names most of it. The transitive tail is 42 quarkus jars (1,288 classes), 14 netty jars
 (1,137), 34 smallrye jars (782), 7 vertx jars (815), 9 jboss jars (616). A consumer writes
@@ -72,12 +79,19 @@ that back, and all three survive the narrowing proposed here because the classes
   come from reactor code. `@scalarType` completion exists only because jars are scanned. All three
   jars are declared.
 - 536 of the 2,060 reactor classes, just over a quarter, declare a supertype that resolves in a
-  third-party jar. Assignability is answered from `jvm_class_supertype`, so narrowing past those
-  truncates the chain. **Reactor supertype edges that land in a transitive-only jar: zero.**
-- 1,617 distinct reactor method return-type references point at a third-party class. Accessor-hop
-  walks follow those into container element types. **Of those, three land in a transitive-only
-  jar**, all three being `jakarta.ws.rs.core.Response` returned by `graphitron-jakarta-rest`'s own
-  REST resources, which no schema names.
+  third-party jar. **Reactor supertype edges that land in a transitive-only jar: zero.**
+- 1,617 distinct reactor method return-type references point at a third-party class. **Of those,
+  three land in a transitive-only jar**, all three being `jakarta.ws.rs.core.Response` returned by
+  `graphitron-jakarta-rest`'s own REST resources, which no schema names.
+
+Be precise about what an unscanned entry costs on those last two, because it is less than it looks
+and the difference is why the cut is safe. A supertype edge and a type reference are rows on the
+*declaring* class carrying the target as a plain name, so `MyService extends org.jooq.X` is produced
+by scanning `MyService` and survives however narrow the census gets. What an unscanned target loses
+is the *continuation*: the target's own row, its methods, and the next hop out of it. The store
+already lives with that, 399 distinct supertype names and 1,301 return-reference targets having no
+`jvm_class` row even at today's full width, so truncation is an existing and tolerated condition
+rather than something this item introduces.
 
 So the walks do not meaningfully cross the boundary this item draws, while a cut at the reactor
 edge would have severed all three surfaces. That gap is why the cut is drawn at direct dependencies
@@ -114,6 +128,29 @@ sites resolve against the whole classpath while the census is already computed i
 the only place the honest wording lives, because it is the only place the two populations are told
 apart. This is a breaking change for a consumer who today names a transitive class; the migration is
 one `<dependency>` block, and it is the change the rule exists to force.
+
+## Rejected: extract less per dependency class
+
+Recorded because the numbers make it look attractive and it does not survive contact with what a
+census is for. The alternative was to keep scanning every dependency but store almost nothing from
+each: only what has a required signature, which in practice means the `public static
+GraphQLScalarType` fields `@scalarType` binds. Thirty classes out of 9,477 carry one, so the store's
+`jvm_` family would fall to roughly 42,000 rows instead of the 212,048 this item's width cut leaves,
+and the read would fall to about 160 ms instead of 235 ms. Every scalar-carrying class is inside the
+declared set, so the two cuts do compose.
+
+It fails on completion. A census exists to answer *before* the author has written anything: an empty
+schema, or a new type in an existing one, is exactly when class-name and method completion earn
+their keep, and at that moment nothing in the document names the class the author is reaching for.
+Any scheme that derives what to read from what the schema already mentions (resolving
+`graphitron_service.class_name` and friends on demand through the codegen loader, which is otherwise
+an appealing shape, since it is bounded by the schema and independent of which jar a class sits in)
+can only ever confirm a name that has already been typed. It cannot offer one. So the enumerative
+read stays, and the lever is which entries get enumerated.
+
+The narrower point inside it is still true and is not a reason to revisit: reading fewer members per
+class buys about 30%, because decompression rather than parsing is the cost. That is an argument for
+this item's width cut, not against it.
 
 ## One classified list, not two lists
 
