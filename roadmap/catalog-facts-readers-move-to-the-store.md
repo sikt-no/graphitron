@@ -169,11 +169,11 @@ row is a slice below, and the item is done when every row's right-hand column is
 
 | `status`
 | Is the dev session live, and is its answer current
-| a host-supplied lifecycle value; no relation, for the reason the scope boundary gives
+| `store_graph` presence and the SDL refusal relations' emptiness; liveness is proved by answering
 
 | `diagnostics`, `diagnostics.aggregate`
 | What is broken, and in what proportion
-| the `diagnostic` view already, plus the same lifecycle value for the axes
+| the `diagnostic` view already, plus the same refusal-relation read for the axes
 
 | `services`, `conditions`, `records`
 | Which consumer Java the schema binds to
@@ -184,8 +184,9 @@ row is a slice below, and the item is done when every row's right-hand column is
 | untouched, neither reads a generator projection
 |===
 
-The right-hand column is the whole claim, and `status` is the one row that does not say "a store
-relation". The scope boundary makes that argument.
+The right-hand column is the whole claim, and every row now names a store read. What the scope
+boundary still fences off is smaller than a row: the handle and reader the host mints, and the one
+liveness bit no relation can carry, which a tool proves by answering at all.
 
 ## The shape of the work: one tool per slice
 
@@ -524,8 +525,9 @@ is spelled entirely in method calls. Slice 9's import scan would have passed a m
 held it, had the `Workspace` parameter not gone with everything else; a coupling reached through a
 call chain is invisible to exactly the guard written to catch it.
 
-**Why this is a store read and not a fourth host-supplied value.** The obvious cheaper move is to
-pass the bundled grammar in, the way slice 8 passes the lifecycle arm, and it would work: `DevMojo`
+**Why this is a store read and not a third host-supplied value.** The obvious cheaper move is to
+pass the bundled grammar in, the way the host already passes the handle and the reader, and it
+would work: `DevMojo`
 already calls `LspVocabulary.load()` at the composition root and hands the result to the `Workspace`
 constructor, and `Workspace.vocabulary()`'s own javadoc calls the registry "shape, not state; there
 is no setter". The host holds the value already. So the coupling was never a problem of reaching
@@ -534,9 +536,9 @@ data, which is worth saying because it is the reverse of every other slice here.
 It is still the wrong move. Passing the bundled half in preserves exactly what this slice exists to
 delete: two halves, a `putIfAbsent` collision rule between them, and a degrade-to-bundled path, all
 to reassemble a union the store already holds. The host-hands-a-value pattern is reserved for what
-the store *cannot* answer, which the scope boundary argues for the dev-session lifecycle and which
-is not true here: capture writes every defined directive of the merged schema, bundled and
-user-declared alike. Reaching for the pattern because it is available, rather than because the store
+the store *cannot* answer, which after the scope boundary's correction is only the connection
+itself and process liveness, and which is not true here: capture writes every defined directive of
+the merged schema, bundled and user-declared alike. Reaching for the pattern because it is available, rather than because the store
 is silent, would leave the merge in the module and buy nothing.
 
 **Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps three, all of them the
@@ -544,12 +546,29 @@ lifecycle arms: `status` and the two diagnostics tools' axes.
 
 ## Slice 8: `status` and the diagnostics axes
 
-These do not become queries, and the reason is the scope boundary's. `DevMojo` hands the server a
-supplier of a small MCP-owned three-arm value, minted from the same snapshot it already holds, and
-`statusResult` and `McpWire.writeSnapshotAxes` switch that instead. The wire is unchanged, the
-exhaustive-switch drift guard is unchanged, and the `LspSchemaSnapshot` import goes. This is the
-same host-hands-a-value move as the `StoreHandle` and the `StoreReader`, applied to the one piece of
-state that has no business being a relation.
+These become queries too, and an earlier reading of this slice said they could not and reached for
+a host-supplied value instead. The scope boundary names that reading withdrawn and carries the
+argument; what this slice carries is the derivation.
+
+Availability is `store_graph` presence: a graph no capture has written is `Unavailable`. Freshness
+is the SDL refusal relations' emptiness over the graph's partition: `graphql_syntax_error` and
+`graphql_schema_error` are written by capture on every pass, on either outcome, so no rows is
+`Current` and rows is `Previous`, whose meaning was always "the newest parse refused something and
+the last clean facts are being held", which is what the transcription families do per source
+anyway. The wire shape is unchanged: `statusResult` and `McpWire.writeSnapshotAxes` render the same
+two fields from the query's answer, `toolsReady` stays the liveness bit no relation can carry (a
+tool that answers has proved it), and the `LspSchemaSnapshot` import goes the way every other
+projection import went, replaced by a query rather than by a value. The exhaustive switches over
+the sealed permits retire with the type; the three cases in the tests section are what pins the
+wire instead.
+
+One behavioural divergence is accepted rather than ported. A first capture that met a refusal
+reported `Unavailable` before, because no snapshot object had ever been built; it reports `Built` /
+`Previous` now, because the store genuinely holds every fact the parseable sources yielded, and
+answering as well as the facts allow is the doctrine. What stays out of the store is
+in-flightness: whether a capture is running this instant is process state with a crash-shaped
+failure mode (a dangling in-progress marker outlives the writer that crashed), and no tool's answer
+depends on it beyond "may refresh shortly", so nobody stores it and nobody hands it in either.
 
 **`RejectionKind` goes here too**, and it is the last generator type any main source names. It is
 not a projection and no earlier reading of this item costed it, which is how it survived every
@@ -594,7 +613,7 @@ natives the whole time.
 
 The runtime loses nothing it needs, because the server does not run alone. It is embedded in the
 `graphitron:dev` JVM, whose plugin already holds the generator; what the server receives from that
-host is a `StoreHandle`, a `StoreReader` and the lifecycle value, none of which is a generator type.
+host is a `StoreHandle` and a `StoreReader`, neither of which is a generator type.
 
 Nothing in `graphitron-mcp` imports `org.eclipse.lsp4j`, the tree-sitter binding, or anything from
 `graphitron-javapoet`, so those go without a replacement declaration. Re-check that at pickup with
@@ -602,7 +621,7 @@ an import scan rather than trusting this paragraph, since a slice landing betwee
 reach for one.
 
 The last `Workspace` reader is gone by slice 8, so the type is not a constructor parameter either:
-`GraphitronMcpServer` takes its `StoreHandle`, its `StoreReader` and the lifecycle supplier, and
+`GraphitronMcpServer` takes its `StoreHandle` and its `StoreReader`, and
 `DevMojo` stops passing it the workspace. That is what makes the import scan satisfiable rather than
 merely the reads draining, and it is the last thing holding the `graphitron-lsp` import in the
 module's main sources.
@@ -703,8 +722,8 @@ Each is answered here:
 * `catalogFacts` becomes the `sql_` census queries the catalog tools and the search corpus read.
 * `snapshot` splits three ways. The classification maps become the claim and binding views, for
   `edges` and for `schema` alike. The directive list becomes `graphql_directive`. The
-  availability / freshness arms become a host-supplied lifecycle value, which is not a relation and
-  should not become one.
+  availability / freshness arms become reads of `store_graph` and the SDL refusal relations, which
+  capture writes on every pass; slice 8 carries the derivation and the scope boundary the argument.
 * `ClassMemberSlots` is already a store read, so nothing migrates; MCP writes its own query over
   `intent_class_member_slot` and the LSP keeps its own for the four surfaces its javadoc names.
   Leaving the one existing instance of a coupling while declaring the rule against it would make the
@@ -727,16 +746,15 @@ in, on the argument that `CompletionData` is a `graphitron` type crossing a decl
 dependency and therefore breaks no stated rule. That argument is correct and beside the point: a
 tool answering from a projection handed to it is still a tool that cannot be extended without
 touching the pipeline, which is the cost the goal section says this item is buying out. The only
-values the host hands the server after this are its `StoreHandle`, its `StoreReader`, and the
-dev-session lifecycle arm, none of which is a fact about a graph.
+values the host hands the server after this are its `StoreHandle` and its `StoreReader`, neither
+of which is a fact about a graph.
 
 Under the compile-scope rule that argument stops needing to be made, which is the point of moving
 the rule from the language server to the generator. "`CompletionData` crosses a declared `graphitron`
 dependency" was true and was the whole trouble: while that dependency exists, every projection is
 one import away, and each one has to be argued down on its merits. Deleting the compile edge retires
-the argument rather than winning it again. The dev-session lifecycle arm is the one host-supplied
-value that survives, and it is MCP-owned by construction rather than a generator type narrowed,
-which is what lets the compile surface close over `graphitron-model` alone.
+the argument rather than winning it again. No host-supplied value survives beyond the handle and
+the reader, which is what lets the compile surface close over `graphitron-model` alone.
 
 ## The classification maps are questions, not a shape
 
@@ -1057,9 +1075,15 @@ user-declared one from one captured schema, with arguments and locations, and re
 pre-capture case rather than degrading. The bundled / user-declared distinction is not asserted,
 because after this item the resource does not draw one.
 
-**Slice 8, `status` and the diagnostics axes.** Three cases, one per arm, driving the supplier
-directly: the wire is unchanged, so what is pinned is that the three arms still reach it after the
-type they switch on stops being `LspSchemaSnapshot`.
+**Slice 8, `status` and the diagnostics axes.** Three cases, one per arm, driven through the
+store: a pre-capture store answers `Unavailable`, a clean capture answers `Built` / `Current`, and
+a capture whose source set includes one refused file answers `Built` / `Previous` off the refusal
+rows. The third case is the one the fixture has to earn, since `StoreBackedBuild`'s default
+sources all parse; whether the fixture can run a capture over a deliberately broken source is a
+substrate check at pickup (the verdict stratum is written on every pass, but the fixture drives
+`buildOutput`, whose refusal behaviour is the sibling item's ground). The divergence this case
+pins, `Built` / `Previous` where the incumbent said `Unavailable` on a first failed parse, is the
+slice's stated behaviour rather than a regression.
 
 **The item's own cases**, which belong to no single tool.
 
@@ -1201,8 +1225,9 @@ capture.
   the collision rule between them; the union is the store's, and the resource reads it
 * "the warm `Workspace`" as prose for what backs the MCP tools, in javadoc and in
   `dev-loop-internals.adoc` alike
-* "the live snapshot" as the thing `status` and the diagnostics axes read, `LspSchemaSnapshot` no
-  longer being the type they switch on
+* "the live snapshot" as the thing `status` and the diagnostics axes read, and "the lifecycle
+  value" / "the lifecycle supplier" as a thing the host hands in; the axes are row-derived and the
+  host hands only the handle and the reader
 * "the flat `ExternalReference` scan joined with the source index" as prose for what the code tools
   read, with `SourceWalker.Index` and `CompletionData.ExternalReference` as `graphitron-mcp` names
 * "the last item deletes the edge", and any framing of the `graphitron-lsp` dependency as work
@@ -1223,25 +1248,31 @@ capture.
 ## Scope boundary
 
 Nothing generator-side is read through the language server after this item, and no generator
-projection is read at all. Exactly one thing is still read as a live value rather than as rows.
+projection is read at all. Nothing is read as a live value rather than as rows either: the host
+hands the server its `StoreHandle` and its `StoreReader`, and everything past the connection is a
+query.
 
-**The dev-session lifecycle**, for `status` and the diagnostics axes. Its `Unavailable` /
-`Built.Current` / `Built.Previous` arms say whether a build has succeeded and whether the last parse
-failed so the previous good one is being held. That is not a fact about a graph, and a relation
-carrying it would put editor state in the fact model. It is worth being precise about why the store
-*cannot* answer it rather than merely why it should not: the store holds what the last successful
-capture wrote, so a graph whose newest parse just failed and a graph nobody has edited are the same
-rows. The distinction `Built.Previous` draws is a fact about the session's *possession* of a build,
-which exists only in the process holding it. So the host hands the server the value, the way it
-hands it the handle and the reader, and the value is an MCP-owned three-arm type rather than
-`LspSchemaSnapshot` narrowed.
+**The dev-session lifecycle is rows, and an earlier reading of this section argued it could not
+be.** The withdrawn argument, kept because its failure mode is instructive: the store holds what
+the last successful capture wrote, so a graph whose newest parse just failed and a graph nobody has
+edited are the same rows, and the distinction `Built.Previous` draws is a fact about the session's
+*possession* of a build, which exists only in the process holding it. Both premises describe the
+projection pipeline, where a snapshot object is minted only on success, and neither survives the
+verdict stratum: `graphql_syntax_error` and `graphql_schema_error` are written by capture on every
+pass, on either outcome (`SdlVerdictCapture`'s javadoc and both relations' comments state the
+cadence), so the freshly broken graph holds refusal rows the untouched one does not, and "the last
+good facts are being held" is not a possession but what the transcription families do per source.
+Slice 8 carries the derivation. What is genuinely process state after the correction is process
+liveness, which a tool proves by answering, and capture in-flightness, which no relation should
+carry and no tool needs.
 
 That is the whole of the boundary, and stating it that way is the point of taking full ownership.
-Earlier readings of this item left three things outside it: the code tools, on the argument that
+Earlier readings of this item left four things outside it: the code tools, on the argument that
 their acceptance surface differs; the pom edge, on the argument that a successor would delete it;
-and the backing class, on the argument that its relation was unbuilt. None survived contact with
-the goal. The first two are answered by the slices; the third was simply wrong, since
-`intent_field_accessor_hop` exists precisely so a reader can close over it.
+the backing class, on the argument that its relation was unbuilt; and the lifecycle, on the
+argument withdrawn above. None survived contact with the goal. The first two are answered by the
+slices; the last two were simply wrong about the substrate, since `intent_field_accessor_hop` and
+the verdict stratum exist precisely so a reader can close over them.
 
 One claim from an earlier reading is withdrawn and worth naming, since it points the same way both
 times it has been corrected: the column match at a site whose table is not the parent's own is
