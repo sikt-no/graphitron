@@ -1,6 +1,6 @@
 ---
 id: R642
-title: "The MCP catalog and edge tools read the store"
+title: "graphitron-mcp reads only the store"
 status: Spec
 bucket: architecture
 priority: 2
@@ -10,43 +10,48 @@ created: 2026-08-12
 last-updated: 2026-08-16
 ---
 
-# The MCP catalog and edge tools read the store
+# graphitron-mcp reads only the store
+
+`graphitron-mcp` answers thirteen tools, one resource and one prompt off four generator-side
+projections it reaches through the language server's `Workspace`. This item ends that: after it the
+module imports nothing from `graphitron-lsp`, reads no classification projection, and answers every
+tool from the fact store or from a value its host hands it.
 
 Sibling of the LSP fact-store item (`lsp-reads-the-fact-store.md`), which retires the
-`CatalogFacts` projection but cannot delete it while non-LSP consumers read it:
-`GraphitronMcpServer`'s `catalog.tables` and `catalog.describe` tools, `EdgeProducer`, `EdgesTool`,
-`ReverseEdgeIndex`, `CatalogDescriptors` and `CatalogSearchIndex` in `graphitron-mcp`,
-plus `GraphQLRewriteGenerator`, whose output record carries the projection. These migrate to
-store-side reads here (`ReverseEdgeIndex` by deleting, for the reason the edge section gives), apart
-from the LSP work, because the MCP catalog tools have their own
-acceptance surface (tool output, paging) that has nothing to do with cursors and buffers, and
-because folding them into the LSP item would credit their `rewrite/catalog` lines to that item's
-simplification measurement. Two constraints bind the siblings: `CatalogFacts` deletes in the same
-commit as its last reader's migration, and both consumers read one shared store-side *base*, never a
-narrowing made for one of them (the `FactCapture.capture` javadoc already states this). The base is
-the relation. What each consumer writes over it is its own, which is the subject of the next
-section. `TenantScopes` and `McpWire` cite the type only in javadoc and just repoint.
+`CatalogFacts` projection but cannot delete it while non-LSP consumers read it. That deletion is the
+occasion for this item rather than its subject. The subject is the module's whole read surface,
+because the reads do not separate: `catalog.describe` reads `CatalogFacts`, `edges` reads
+`CatalogFacts` *and* the classification maps, `schema` reads the classification maps *and* a store
+relation already, `status` and `diagnostics` read the snapshot's lifecycle arms, and the `directives`
+resource reads an LSP vocabulary type. Migrating a subset leaves the module holding a `Workspace`
+for whatever was left, which is the state it is in today and the state the goal below rejects.
 
-The edge tools read a second projection beside the catalog one, `LspSchemaSnapshot`'s per-coordinate
-classification maps, and this item takes those reads too. The two are one migration rather than two:
-`EdgeProducer` resolves a classifier's table name against the census, `ReverseEdgeIndex` inverts
-`EdgeProducer` over every coordinate in the schema, and a version of that code holding one
-projection and one store handle would be the awkward half-state rather than a smaller step. The
-argument for taking it is in "The classification maps are questions, not a shape" below, and what
-that section is really about is that the reverse index stops being a data structure.
+Two constraints bind the siblings. `CatalogFacts` deletes in the same commit as its last reader's
+migration. And both consumers read one shared store-side *base*, never a narrowing made for one of
+them; the `FactCapture.capture` javadoc already states this. The base is the relation. What each
+consumer writes over it is its own, which is the subject of "The MCP writes its own queries" below.
+`TenantScopes` cites the retired type only in javadoc and just repoints.
 
 ## The goal
 
-Retiring `CatalogFacts` is the mechanism. The goal is two properties of `graphitron-mcp`, and both
-outlive the code this item touches.
+Retiring `CatalogFacts` is the mechanism. The goal is three properties of `graphitron-mcp`, and all
+three outlive the code this item touches. Each lands here in full; none is deferred to a successor.
 
-**No dependency on `graphitron-lsp`.** The module may depend on `graphitron` and `graphitron-model`,
-and should declare both directly rather than reaching them transitively through the language server.
-It may not depend on the language server. There are no LSP-specific facts: the LSP reads the store
-for its own purposes and the MCP has different data needs, so each writes the queries its own
-surface wants. The current edge is a pre-store artifact, from when MCP had no way to reach generator
-output except through the object the LSP already held it in, and every argument that once justified
-it was an argument about reaching *data*. The store is that access now.
+**No dependency on `graphitron-lsp`.** The module depends on `graphitron` and `graphitron-model`,
+declared directly, and the pom edge on the language server is deleted, with a test that fails if it
+comes back. There are no LSP-specific facts: the LSP reads the store for its own purposes and the
+MCP has different data needs, so each writes the queries its own surface wants. The current edge is
+a pre-store artifact, from when MCP had no way to reach generator output except through the object
+the LSP already held it in, and every argument that once justified it was an argument about reaching
+*data*. The store is that access now.
+
+**No read of the classification projection.** `FieldClassification`, `TypeClassification` and
+`TypeBackingShape` are the generator's field and type taxonomy projected for the language server.
+`graphitron-mcp` switches all three today, in `EdgeProducer` and in `SchemaView`, across ninety-odd
+exhaustive arms with no `default`. After this item it switches none of them. This is a separate
+property from the one above, and the stronger of the two: an import can be deleted by moving a
+value, while a taxonomy read has to be replaced by asking the question the taxonomy was precomputing
+an answer to.
 
 **No connection to the store of its own.** `graphitron-mcp` never opens a store, mints a connection,
 or knows where the store directory is. The host does: `DevMojo` in `graphitron-maven-plugin` opens
@@ -60,13 +65,67 @@ of a *query* and ownership of a *connection* are separate things, and this item 
 (`DevQueryExecutor`'s own `DriverManager` handling is about the consumer's database, which the
 `execute` tool reaches on the user's behalf, and is unrelated.)
 
-Together the two properties set the price of the next tool, which is what this item is really
+Together the three properties set the price of the next tool, which is what this item is really
 buying. Today a new datum on the MCP wire is a pipeline change: extend a projection in `graphitron`,
 thread it through `BuildArtifacts` and `Workspace` and `DevMojo`, keep the language server
 compiling, and page the result in memory. After this item it is a query and a wire shape, authored
 in `graphitron-mcp`, scoped through `store.reads(...)`, pinned by the module's own fixture, over
 relations the capture already writes. The store's relation surface is the extension point, so making
 the MCP more capable stops requiring changes to any module that is not the MCP.
+
+## What each tool actually asks
+
+The migration is tractable because the tools' intentions are narrower than the projections they read.
+Nine of the thirteen tools plus the resource change here; the census is the item's spine, so it is
+stated per tool rather than per projection.
+
+[cols="1,3,2"]
+|===
+| Tool | What it is for | Where the answer comes from after this
+
+| `catalog.tables`
+| Which tables exist in this graph's source
+| `sql_table`, keyset-paged
+
+| `catalog.describe`
+| One table's columns, keys, indexes and both FK directions
+| the `sql_` family, five queries in one read transaction
+
+| `catalog.search`
+| Which table holds something the author can only describe in words
+| the same two census queries, composed into the embedding corpus
+
+| `edges`
+| What else touches this coordinate, and what breaks if it changes
+| the binding relations, forward and reverse, no index
+
+| `schema`
+| What graphitron made of a type or field, and what it binds
+| the claim, binding and demand views; see the `schema` entry under "The consumers"
+
+| `directives`
+| The directive grammar this schema can use
+| `graphql_directive` and its argument / location children
+
+| `status`
+| Is the dev session live, and is its answer current
+| a host-supplied lifecycle value; no relation, for the reason the scope boundary gives
+
+| `diagnostics`, `diagnostics.aggregate`
+| What is broken, and in what proportion
+| the `diagnostic` view already, plus the same lifecycle value for the axes
+
+| `services`, `conditions`, `records`
+| Which consumer Java the schema binds to
+| unchanged reads, handed in as suppliers rather than reached through `Workspace`
+
+| `docs.search`, `execute`
+| The manual; the consumer's own database
+| untouched, neither reads a generator projection
+|===
+
+The right-hand column is the whole claim, and the two rows that do not say "a store relation" are
+where the argument has to be made rather than asserted. The scope boundary makes both.
 
 ## The census is already captured
 
@@ -115,10 +174,15 @@ one caller never uses. Where a rule genuinely must be shared, this model already
 and it is not a Java class: it graduates to a store view, which is where the qualifier split and the
 case-insensitive match went when the sibling item stopped them acquiring a third copy.
 
-So the catalog reads this item needs are written in `graphitron-mcp`, against
+So every read this item needs is written in `graphitron-mcp`, against
 `no.sikt.graphitron.model.Tables`, scoped through `store.reads(...)` like every other read, shaped by
 what the wire wants rather than by what a second consumer might one day want. The LSP keeps its
 readers unchanged; nothing in `graphitron-lsp` is touched by this item.
+
+After this item the choice is not available anyway, the module edge being gone. That is the right
+order of the two arguments and not a substitute for the first: the guard enforces a rule the
+doctrine already decided, and if the doctrine ever changes, the guard is the site that has to be
+argued with rather than a habit nobody wrote down.
 
 That also removes the constraint the shared-reader arrangement needed to make itself safe (no
 MCP-only component on the shared records), the deferred relocation item it was paying for, and the
@@ -130,86 +194,117 @@ wrinkle: it is a correlated `Field<String>` the LSP wants and MCP passes nothing
 reader that is a component one caller reads as permanently empty. Written separately, it simply is
 not in the MCP query.
 
-## How far the dependency gets paid down here
+## How the dependency gets paid down
 
-`graphitron-mcp` imports exactly two things from `graphitron-lsp`: `Workspace`, and
-`ClassMemberSlots`. Nothing else, and the four projections MCP reads through `Workspace`
-(`snapshot`, `catalog`, `sourceIndex`, `catalogFacts`) are generator types from `graphitron`, not LSP
-types. The edge is one state holder plus one misplaced reader.
+`graphitron-mcp` imports exactly three things from `graphitron-lsp`: `Workspace`, `ClassMemberSlots`
+and `LspVocabulary`. The four projections MCP reads through `Workspace` (`snapshot`, `catalog`,
+`sourceIndex`, `catalogFacts`) are generator types from `graphitron`, not LSP types, so the edge is
+one state holder, one misplaced reader, and one vocabulary registry.
 
-The goal above is no edge at all. It is not reachable in one item, and saying which part blocks is
-worth more than a deferral:
+Each is answered here:
 
-* `catalogFacts` is this item.
-* `ClassMemberSlots` is this item too. It is already a store read, so nothing migrates; MCP writes
-  its own query over `intent_class_member_slot` and the LSP keeps its own for the four surfaces its
-  javadoc names. Leaving the one existing instance of a coupling while declaring the rule against it
-  would make the rule weaker than the exception.
-* `sourceIndex` and the external references are `mcp-code-tools-read-the-store.md`, whose relations
-  (`jvm_`, `java_`) are captured.
-* `snapshot` is partly this item. The edge tools' reads of it move here, because the relations
-  behind every edge kind they emit are built; `SchemaView`'s backing block and the `status` tool are
-  what remains, for two reasons named in the scope boundary below. `vocabulary` and
-  `DirectivesResource` are untouched.
+* `catalogFacts` becomes the `sql_` census queries the catalog tools and the search corpus read.
+* `snapshot` splits three ways. The classification maps become the claim and binding views, for
+  `edges` and for `schema` alike. The directive list becomes `graphql_directive`. The
+  availability / freshness arms become a host-supplied lifecycle value, which is not a relation and
+  should not become one.
+* `ClassMemberSlots` is already a store read, so nothing migrates; MCP writes its own query over
+  `intent_class_member_slot` and the LSP keeps its own for the four surfaces its javadoc names.
+  Leaving the one existing instance of a coupling while declaring the rule against it would make the
+  rule weaker than the exception.
+* `LspVocabulary` goes with the directives resource. The bundled grammar it carries is in the store
+  already: capture writes every *defined* directive to `graphql_directive`, bundled and
+  user-declared alike, because the schema it captures is the merged one.
+* `catalog` and `sourceIndex` stay as reads and stop being reached through the holder. `DevMojo`
+  hands the server suppliers over its own `Workspace`, the same move as the `StoreHandle` and the
+  `StoreReader`. Their migration to `jvm_` / `java_` is `mcp-code-tools-read-the-store.md`, for the
+  reason the scope boundary gives; what this item removes is the *coupling*, not the projection.
 
-The pom half of the goal lands here in full, because it is cheap and makes the rest legible:
-`graphitron-mcp` declares only `graphitron-lsp` today and reaches `graphitron` and
-`graphitron-model` transitively through it. Declaring those two directly changes no bytecode and
-turns the LSP edge into what it actually is, one import, rather than a dependency that appears to
-carry the module's whole substrate. The edge itself deletes in whichever of the items above lands
-last, with a test that fails if it comes back, and the mechanism is worth stating now so the last
-item does not inherit a blocker that is not one. The readers that outlive all three items
-(`snapshot` for `SchemaView`'s backing block and the `status` tool, `vocabulary`, `catalog`) read
-generator types through a state holder; none of them needs the holder's class, only its current
-values. So the deletion is `DevMojo` handing the server suppliers over its own `Workspace`, the
-same move as the `StoreHandle` and the `StoreReader`, and the import goes without waiting for the
-backing-class walk to become a relation. The walk gates one read moving to the store; it does not
-gate the dependency.
+So the pom edge deletes here, with the guard test, rather than being promised to whichever of three
+items lands last. That promise was the previous reading of this item and it was worth abandoning:
+"the last item deletes the edge" is a plan no item owns, and every one of the three could ship while
+truthfully saying the edge was somebody else's. The edge is one item's to delete, and this is it.
+
+That the remaining `catalog` and `sourceIndex` reads survive as suppliers is what makes the deletion
+honest rather than a technicality. A `Supplier<List<CompletionData.ExternalReference>>` is a
+`graphitron` type crossing a declared `graphitron` dependency. It is not the language server reached
+under another name, and the guard test below distinguishes the two by asserting on the *module
+edge*, not on the shape of what crosses it.
 
 ## The classification maps are questions, not a shape
 
-`FieldClassification` has thirty-odd permits and `TypeBackingShape` has six, which reads at first
-like the size of what a store-side migration would have to reproduce. It is not, because nothing
-consumes either one as a union. Every use site on both sides of the fence is a narrow projection
-with a default:
+There are three taxonomies, not one, and the module reads all three.
+`FieldClassification` has thirty-odd permits, `TypeClassification` twenty-two and `TypeBackingShape`
+six. `EdgeProducer` switches the first two; `SchemaView` switches all three and renders every arm
+onto the `schema` tool's wire. Together that is around ninety exhaustive arms, which reads at first
+like the size of what a store-side migration would have to reproduce.
+
+It is not, because nothing consumes any of them as a union. Every use site is a narrow projection:
 
 * `InlayHints.columnNameOf` asks "what column name" across four arms and lets the rest fall through.
   `InlayHints.fkPathOf` asks "what FK path" across two.
-* `DeclTarget.methodTarget` asks "what class and method" across four.
-* `FieldCompletions`, `Hovers`, `Diagnostics` and `DeclTarget` each switch `TypeBackingShape`'s six
-  arms and pull out exactly one of two values, a table name or a class name. `DeclTarget.typeTarget`
-  is the clearest: six arms collapse into `tableTarget`, `SourceClass` and `None`, which is a
-  two-way question wearing a six-way costume.
+* `DeclTarget.methodTarget` asks "what class and method" across four. `DeclTarget.typeTarget` is
+  the clearest case: six `TypeBackingShape` arms collapse into `tableTarget`, `SourceClass` and
+  `None`, which is a two-way question wearing a six-way costume.
+* `EdgeProducer`'s ninety-odd lines of switch produce five edge kinds. Nineteen of its arms produce
+  no edge at all and exist to be exhaustive.
+* `SchemaView` is the apparent counterexample, since it renders every arm. What it renders per arm
+  is a `kind` label plus between zero and five slots drawn from a pool of about a dozen: table name,
+  column name, class name, method name, join path, participants, discriminator, element type. The
+  union is wide because it is a union of *slot combinations*, not because the wire carries ninety
+  distinct facts.
 
 So the permits are not a requirement any consumer has. They are what precomputing every question at
-once costs, from when there was nothing to ask at read time. The questions themselves are five:
+once costs, from when there was nothing to ask at read time. The questions themselves are seven:
 
 1. Which table backs this type. `intent_bound_table`, with `candidates` for arity.
-2. Which class backs this type. Unbuilt, and the one gap that matters here.
-3. Which column does this field match. `intent_column_match_claim` for the name;
-   `intent_field_column_table` for the table when it is not the parent's own, whose absence means
-   the parent's binding answers, which is a `LEFT JOIN` against `intent_bound_table` rather than a
-   second query.
+2. Which class backs this type. `walk_type_backing_class`, keyed `(graph_name, type_name)`.
+3. Which column does this field match. `intent_column_match_claim` for the structural case, which
+   already carries the resolved table's full key; `intent_field_column_table` where a directive
+   moved the match off the parent's own binding, whose `disposition` and `basis` say which.
 4. Which class and method does this field resolve to. `graphitron_service`,
-   `graphitron_external_field`, `graphitron_routine`, and `intent_field_producer_method` over them.
+   `graphitron_external_field`, `graphitron_routine`, and `intent_field_producer_method` over them,
+   the last carrying `descriptor` so an overload is distinguishable and arity is derivable.
 5. What join path does it traverse. `intent_field_reference_step_hop` carries `constraint_name` and
    a fully-keyed `to_schema` / `to_table` per hop, ordered by `(ordinal, position)`, which is
    `FkStep` with a real key instead of a bare name.
+6. Which types participate in this abstract type. `graphql_union_member` for a union;
+   `graphql_implements`, read in the inverting direction, for an interface. Both are captured. This
+   is the question the `PARTICIPATES` edge kind and the `participantTypeNames` wire slot ask, and it
+   is the only one of the seven that no earlier reading of this item named.
+7. What claims this coordinate, and was a verdict demanded. `intent_resolved_field_claim` gives the
+   classifier and its tier; `intent_authored_type_claim` the type grain;
+   `intent_authored_claim_conflict` the violated coordinates with their message and directives; and
+   `intent_resolved_field_demand` / `intent_resolved_type_demand` say whether the model wanted a
+   verdict here at all, with the rule that decided it.
 
-Four of the five are built. What each consumer wants is one of them at a time, which is what a
-relation per fact is for, and joining them is the caller's business rather than a shape the model
-has to anticipate. This is the escalation rule read forwards: the shared thing graduated to a view,
-so the union that used to carry every combination has nothing left to carry.
+All seven are built. What each consumer wants is one of them at a time, which is what a relation per
+fact is for, and joining them is the caller's business rather than a shape the model has to
+anticipate. This is the escalation rule read forwards: the shared thing graduated to a view, so the
+union that used to carry every combination has nothing left to carry.
 
-The same move has a cost side, and it is the leaf-zoo connection. `FieldClassification` is the
-LSP-facing projection of the generator's field taxonomy (the leaf zoo whose dissolution
-`coordinate-lowers-to-datafetcher-queryparts.md` owns), and the exhaustive switch in
-`CatalogBuilder.projectFieldClassification` means every new generator permit costs a mapping
-decision for every reader the projection still has. After this item `graphitron-mcp` is not one of
-those readers: a taxonomy that grows an arm changes no MCP query, because the relations behind the
-five questions are keyed by what a field binds, not by what it was classified as. That is one
-consumer struck from the list the zoo's dissolution waits on, and it is the sense in which the edge
-tools get easier to improve rather than merely relocated.
+Question 2 deserves its caveat stated rather than buried. `walk_type_backing_class` is a transcription
+of the classification walk's own answer, written at capture cadence, and its family header says the
+family "retires with the walk whose reach it transcribes". Reading it makes `graphitron-mcp` a
+consumer of a relation designed as a differential for a derivation that is still being built. That is
+worth doing anyway, and the reason is the alternative: the only other way to answer "which class backs
+this type" is `TypeBackingShape`, which is the taxonomy this item exists to stop reading. A relation
+that will be replaced by a better relation is a strictly better dependency than a projection that
+will be replaced by a relation, because the first substitution is a query edit inside this module and
+the second is the migration this item is. The query's javadoc names `walk_type_backing_class` as the
+site that changes when the derivation lands, and nothing else in the module has to know.
+
+The same move has a cost side, and it is the leaf-zoo connection. The classification projections are
+the LSP-facing view of the generator's field and type taxonomy (the leaf zoo whose dissolution
+`coordinate-lowers-to-datafetcher-queryparts.md` owns), and the exhaustive switches in
+`CatalogBuilder.projectFieldClassification` and `projectTypeClassification` mean every new generator
+permit costs a mapping decision for every reader the projections still have. After this item
+`graphitron-mcp` is not one of those readers: a taxonomy that grows an arm changes no MCP query,
+because the relations behind the seven questions are keyed by what a coordinate binds and what
+claims it, not by what it was classified as. That is one consumer struck from the list the zoo's
+dissolution waits on, and it is the whole reason `SchemaView` migrates here rather than being left
+for later. Leaving it behind would have kept the module on ninety exhaustive arms while the goal
+section claimed the opposite.
 
 The payoff is `ReverseEdgeIndex`, and it is larger than the migration. That class iterates every
 coordinate in the schema, runs `EdgeProducer.fieldEdges` per entry, inverts each result into a
@@ -282,6 +377,27 @@ Per consumer read:
   needing a build step is that it was never a different question, only a different `WHERE`.
 * **A field's join path**, ordered, for the `joinPath` wire field: `intent_field_reference_step_hop`
   by `(ordinal, position)`, each hop carrying `constraint_name` and the destination's full key.
+* **Which types participate in an abstract type.** `graphql_union_member` for a union;
+  `graphql_implements` inverted for an interface, since it is stored in declaration direction. One
+  query answering both, keyed by the abstract type's name. This feeds the `PARTICIPATES` edge kind
+  in both of the edge tool's node arms and the `participantTypeNames` slot on the `schema` wire, and
+  it is the one edge kind whose reverse direction is deliberately not indexed: type-to-type is
+  cheaply walkable forward, which was true before this item and stays true after it.
+* **What claims a coordinate, and whether one was demanded.** `intent_resolved_field_claim` for the
+  field grain (classifier plus `AUTHORED` / `INFERRED` tier), `intent_authored_type_claim` for the
+  type grain, `intent_authored_claim_conflict` for the violated coordinates, and
+  `intent_resolved_field_demand` / `intent_resolved_type_demand` for whether the model wanted a
+  verdict and under which rule. The `schema` tool reads all four; nothing else does.
+* **A type's declaration sites.** `graphql_type_declaration`, which holds every site a type is
+  declared or extended at rather than the single entry `typeDefinitionLocations` reduced them to.
+  `LspSchemaSnapshot`'s own javadoc says the language server already moved to this relation and that
+  the projection "retires when its remaining reader does"; that reader is the `schema` tool and this
+  is where it moves.
+* **The directive vocabulary.** `graphql_directive` with `graphql_directive_argument` and
+  `graphql_directive_location`: per directive its `repeatable` flag and description, per argument
+  its `type_sdl`, `named_type` and description, and its applicable locations. One query set, and
+  the bundled-versus-user-declared split the resource maintains today collapses, because capture
+  writes the merged schema's definitions and the store holds both halves in one relation.
 
 Every one of these is scoped through `store.reads(...)` on the relation's `source_name`, which is
 what keeps a sibling module's catalog out of the answer in a shared store. That scoping also settles
@@ -378,6 +494,70 @@ gone. What replaces it is a coverage question against the relations: every edge 
 declares is produced by some query, and every binding relation feeds some edge kind. The tests
 section says what that costs.
 
+**`schema`** is the largest wire change and the one that needs its own argument, because unlike the
+others it cannot be a translation. Today the tool renders the classification permit's name as
+`kind` plus that arm's slots, for every type and every field. There is no store relation shaped like
+that and there should not be: the permit name is an artifact of the generator's internal taxonomy,
+and the next section explains why reproducing it would defeat the item.
+
+The tool's stated intent is what it migrates onto. The server instructions tell an agent to reach for
+`schema` to learn "what did graphitron make of a type or field, which table backs it, which mutations
+write and to what", and to read `Unresolvable` / `Unclassified` as "graphitron could not read the
+intent you are asking about, go to `diagnostics`". So the entry becomes the answer to five questions
+per coordinate, each a slot present when the relation has a row and absent when it does not:
+
+* **What claims it**, from `intent_resolved_field_claim` / `intent_authored_type_claim`: the
+  classifier and, on the field grain, the tier that decided it. The classifier vocabulary is the
+  store's, which `SchemaView.mapClaim` already emits today for the conflicted arm and documents as
+  "the store's classifier vocabulary, deliberately not a projection permit name". That arm is the
+  template; this generalises it to every coordinate.
+* **What it binds**: table, column, class, method, join path, participants, from questions 1 to 6.
+* **Whether a verdict was demanded**, from `intent_resolved_field_demand` / `..._type_demand`, with
+  the rule name. This replaces `Unresolvable` and `Unclassified` and is strictly more informative
+  than either: those two say a verdict is missing, while `DEMANDED` plus a rule says one was
+  expected and names why, and `EXEMPT` says the coordinate was never in scope. The instructions
+  sentence routing an agent from `Unresolvable` to `diagnostics` keeps working and gets a reason to
+  carry with it.
+* **What conflicts**, from `intent_authored_claim_conflict`: verdict, directives, message. The
+  `Conflicted` arm's per-claim breakdown is this relation joined to the authored claim views, which
+  is where the current arm's data came from before it was flattened into a projection.
+* **Where it is declared**, from `graphql_type_declaration`: every site, not the one the projection
+  reduced them to.
+
+The `@node` metadata block joins `graphitron_node` and `graphitron_node_key_column` and stops coming
+from `CompletionData.nodeMetadata`. Backing members keep reading `intent_class_member_slot`, through
+MCP's own query rather than the LSP's.
+
+This is a breaking wire change, and it is the item's one deliberate one. The `kind` values change
+from permit names to classifier names, `backingShape.kind` goes, and the demand and conflict slots
+are new. It is worth taking rather than preserving: a permit name is a fact about the generator's
+internals that the wire had no business promising, the tool table in the manual documents `schema`
+by what it answers rather than by its permit vocabulary, and the alternative is to hold ninety
+exhaustive arms inside `graphitron-mcp` forever to keep a label stable. The manual's tool table and
+the server instructions both get the vocabulary change; the deltas section carries it.
+
+**The `directives` resource** reads `graphql_directive` and its two children instead of projecting
+`LspVocabulary`'s registry once at construction and unioning the snapshot's list per read. The
+bundled-plus-overlay structure goes with it, along with the `putIfAbsent` collision rule and the
+degrade-to-bundled path: capture writes every defined directive of the merged schema, so one query
+answers what two halves and a merge answered before. The resource's own promise, "the bundled
+grammar unioned with the schema's user-declared directives", is unchanged as a description of the
+content; what changes is that the store already holds the union.
+
+One behaviour follows and is stated rather than discovered: before the first successful capture the
+resource has no rows, where today it degrades to the bundled grammar. It reports that the way the
+catalog tools report an unbuilt census rather than answering with a partial vocabulary, since a
+directive list missing the user's own declarations reads as a grammar that forbids them.
+
+**`status`, and the diagnostics axes.** These do not become queries and the reason is the scope
+boundary's. Both read `LspSchemaSnapshot`'s `Unavailable` / `Built.Current` / `Built.Previous`
+arms, which are dev-session lifecycle rather than facts about a graph. `DevMojo` hands the server a
+supplier of a small MCP-owned three-arm value, minted from the same snapshot it already holds, and
+`statusResult` and `McpWire.writeSnapshotAxes` switch that instead. The wire is unchanged, the
+exhaustive-switch drift guard is unchanged, and the `LspSchemaSnapshot` import goes. This is the
+same host-hands-a-value move as the `StoreHandle` and the `StoreReader`, applied to the one piece of
+state that has no business being a relation.
+
 **`GraphQLRewriteGenerator`** stops building the projection: `BuildArtifacts` loses its
 `catalogFacts` component and the convenience constructor that defaulted it, `buildOutput` stops
 calling `CatalogBuilder.buildCatalogFacts`, and `DevMojo` stops threading the value through
@@ -432,6 +612,18 @@ The tool output is the acceptance surface, so the deltas are named rather than d
 * **A join path's hops carry their constraint's full key.** `FkStep` holds a bare target table name
   and an FK name, and both come back schema-qualified from `intent_field_reference_step_hop`. The
   same argument as the bullet above, on the payload rather than on the endpoint.
+* **The `schema` tool speaks the store's classifier vocabulary.** Its `kind` values stop being
+  `FieldClassification` / `TypeClassification` permit names and become classifier names from the
+  claim views; `backingShape` goes, its table and class halves being questions 1 and 2 answered
+  directly; and `demand` and `conflict` slots appear where `Unresolvable` and `Unclassified` used to
+  stand in for both. This is the item's one breaking wire change, argued in the consumer section
+  above. The server instructions and the manual's tool table both name the old vocabulary and change
+  with it.
+* **A type's declaration sites are plural.** `graphql_type_declaration` holds every site a type is
+  declared or extended at; the projection reduced them to the canonical one. A type declared once
+  answers identically, so the delta is visible only on an extended type, where it is a fix.
+* **The `directives` resource is empty before the first capture** rather than degrading to the
+  bundled grammar. Same posture as the catalog tools, for the reason the consumer section gives.
 * **A missing handle refuses instead of answering empty.** The server can be built without a store
   handle; the diagnostics tools already refuse per call there, on the grounds that an empty answer
   reads as a clean schema. An empty catalog reads as a database with no tables, so the catalog
@@ -446,18 +638,25 @@ accessor, and its assignment in `setBuildOutput`), `DevMojo`'s threading of the 
 `CatalogSearchIndex`'s facts supplier and `liveFactsRef` gate.
 
 On the edge side: `ReverseEdgeIndex` in full, including its `Cache` and the server's
-`reverseEdgeIndexCache` field; `EdgeProducer`'s switch over the classification permits, its four
-permit-set constants and `resolveTable`; and `EdgeCoverageTest`, whose subject is the partition
+`reverseEdgeIndexCache` field; `EdgeProducer`'s two switches over the classification permits, its
+four permit-set constants and `resolveTable`; and `EdgeCoverageTest`, whose subject is the partition
 those constants describe. `EdgeProducer.Context` keeps its name and loses its projection components.
-No classification permit is deleted by this item: `FieldClassification` and `TypeBackingShape` stay,
-with `SchemaView` and the LSP still reading them, and the sibling item retires them when the last
-reader goes. What retires here is `graphitron-mcp`'s dependence on their *arm count*.
 
-Two imports also go, which is the dependency half. `SchemaView`'s `ClassMemberSlots` import is
-replaced by MCP's own query, leaving `Workspace` as the sole remaining `graphitron-lsp` import in
-the module. And `graphitron-mcp`'s pom gains direct declarations of `graphitron` and
-`graphitron-model`, which it reaches transitively through `graphitron-lsp` today. Neither changes
-what is on the classpath; together they make the remaining edge one import wide and visible as such.
+On the schema-view side: `SchemaView.mapTypeClassification`, `mapFieldClassification`, `mapClaim`
+and `mapBackingShape`, which together are the ninety-odd arms, plus the `joinPath` and `members`
+helpers reshaped onto the new queries. `Edge.joinPath`'s component type stops being
+`FieldClassification.FkStep` and becomes an MCP-owned hop record carrying the destination's full
+key, since a bare-name record cannot hold what `intent_field_reference_step_hop` returns.
+
+No classification permit is deleted by this item. `FieldClassification`, `TypeClassification` and
+`TypeBackingShape` stay in `graphitron` with the LSP still reading them, and the sibling item retires
+them when its last reader goes. What retires here is every `graphitron-mcp` read of them.
+
+The whole `graphitron-lsp` edge goes with them: `SchemaView`'s `ClassMemberSlots` import replaced by
+MCP's own query, `DirectivesResource`'s `LspVocabulary` by the directive relations, `Workspace` by
+the handle, the reader and the three suppliers, and the pom dependency itself, replaced by direct
+declarations of `graphitron` and `graphitron-model`. The classpath is unchanged in content and the
+module edge is gone.
 
 The `JooqCatalog` walk that fed the projection does not retire with it: classification reads the
 same catalog, and `CatalogBuilder.build` still runs. What goes is the second pass over it that
@@ -472,14 +671,21 @@ reappeared upstream changes the order.
 Javadoc citations repoint in the same commit, since the `{@link}` gate fails the build otherwise:
 `TenantScopes`, `McpWire`, `NodeRef`, `JooqCatalog`, `CatalogFactCapture` (whose reason for reading
 `JooqCatalog` rather than the projection survives as prose about the projection's narrowings, with
-the type named as history rather than linked), `FactCapture.capture`'s `@param jooq`, and
-`FactCaptureAgreementTest`'s constraint-census comment.
+the type named as history rather than linked), `FactCapture.capture`'s `@param jooq`,
+`FactCaptureAgreementTest`'s constraint-census comment, and `LspSchemaSnapshot`'s
+`typeDefinitionLocations` javadoc, whose "the MCP schema view is what still reads this" sentence
+becomes false here and whose stated retirement condition is met by this item.
 
-Two doc surfaces state where the tools read from and change with them:
+Three doc surfaces state where the tools read from and change with them.
 `docs/architecture/how-to/dev-loop-internals.adoc` says the MCP tools are backed by the warm
-`Workspace`, which stops being true of the catalog tools; `docs/manual/how-to/mcp-agent-context.adoc`
-carries the tool table, whose `catalog.describe` row is the place the unique-key delta becomes a
-user-facing sentence if it needs one at all.
+`Workspace`, which stops being true of all of them. `docs/manual/how-to/mcp-agent-context.adoc`
+carries the tool table, where the `catalog.describe` row is the place the unique-key delta becomes a
+user-facing sentence and the `schema` row carries the classifier-vocabulary change. And
+`graphitron-mcp/src/main/resources/mcp/instructions.txt` is the agent-facing routing text: its
+`schema` bullet names `Unresolvable`, `Unclassified` and `Conflicted` as the readings that send an
+agent to `diagnostics`, so it changes with the vocabulary. That file is an acceptance surface
+`ServerInstructionsTest` boots a real server against, so it changes in the same commit or the test
+fails.
 
 Two live roadmap items name the projection as a current surface and are repointed at the same time,
 since both of their arguments are about the thing this item removes. `lsp-structural-consolidation.md`
@@ -523,15 +729,39 @@ hand-building projection fixtures.
   survives the migration as a claim about rows: a coordinate carrying two claims contributes an edge
   per claim, which is what the claim views already say and what the old inversion had to be careful
   to preserve by hand.
+* **The `schema` tool's cases are rewritten against a real capture, not ported.** Its
+  `GraphitronMcpServerTest` block asserts permit names and slot bags off hand-built projections;
+  under the new wire there is nothing to port, because the vocabulary changed. What replaces it is
+  one case per question: a table-bound type reports its binding, a class-backed type reports its
+  class and members, a field reports its column with the table's full key, a service-backed field
+  reports its method, a referencing field reports its hops, an abstract type reports its
+  participants, a conflicted coordinate reports its directives and message, and an exempt coordinate
+  reports `EXEMPT` with its rule. That last one has no predecessor at all and is the case the demand
+  views buy: today an unclassified coordinate and an out-of-scope one are the same answer.
+* **The classification-arm coverage question does not come back in a new spelling.** The old
+  `SchemaView` guard was its own exhaustive switch; the new reads have no arm count to cover. What
+  replaces it is the same shape as the edge-kind successor below: every wire slot the `schema` entry
+  declares is produced by one of the queries, and every relation the queries read feeds at least one
+  slot. Asserting a mapping between the permits and the classifier vocabulary is explicitly not
+  wanted, for the reason the last test bullet in this section gives.
+* `DirectivesResourceTest`, if one exists at pickup, and otherwise a new case: the resource renders
+  a bundled directive and a user-declared one from one captured schema, with arguments and
+  locations, and reports the pre-capture case rather than degrading. The bundled / user-declared
+  distinction is not asserted, because after this item the resource does not draw one.
 * `EdgeCoverageTest` has no direct successor and needs a replacement rather than a port, which is
   this item's to specify because deleting a coverage test silently is how a taxonomy starts leaking.
-  Its subject is the agreement between `EdgeProducer`'s permit-set constants and
-  `FieldClassification`'s permits, and one side of that is gone. The successor asserts the same
+  Its subject is the agreement between `EdgeProducer`'s permit-set constants and the
+  `FieldClassification` / `TypeClassification` permits, and one side of that is gone. The successor
+  asserts the same
   property one level down, against the relations: every `EdgeKind` the wire declares is produced by
   one of the queries, and every binding relation the queries read feeds at least one `EdgeKind`. The
   second half is what catches a relation gaining an arm that the tool then never surfaces, which is
   the failure the permit partition was really guarding against. Both halves are assertable from
   `graphitron-mcp` without a store, being statements about the query set, so the case stays cheap.
+  `PARTICIPATES` is the arm to check the successor against while writing it: it is a declared
+  `EdgeKind` whose relations an earlier reading of this item omitted from the query list entirely,
+  so a successor that passes without covering it has been written to the queries rather than to the
+  wire.
 * Nothing in this item writes an agreement test between the permits and the relations. Two Java
   spellings of one taxonomy is what the permit partition was; a second one keyed on rows would be
   the same mistake with a store underneath it. The per-edge-kind cases against a real capture are
@@ -561,18 +791,24 @@ hand-building projection fixtures.
   unqualified `TableNode`. Both want what the sibling item wants from capturing the binding, a
   fixture that cannot lie about which table a spelling reaches, and neither is writable against a
   census with one schema in it.
-* `ServerInstructionsTest` is a seventh site and needs its own answer. Its `pagedWorkspace` fixture
-  hand-builds a two-table `CatalogFacts` purely so a `limit=1` call on `catalog.tables` pages, beside
-  hand-built projections giving five other tools two entries each, and the test boots a real server
-  and asserts every tool's leading `N item(s)` line against what came back. That makes it an
-  acceptance surface for a migrating tool, and its constraint is a per-tool minimum count, which a
-  real capture does not promise. So it is not simply a move onto `StoreBackedBuild`: either the
-  captured store is chosen to carry at least two tables (the test jOOQ package does) while the five
-  hand-built projections stay, or `catalog.tables`' paging agreement moves to a store-backed case of
-  its own. Which of the two is the implementer's call; that the case exists is this item's to say.
+* `ServerInstructionsTest` needs its own answer and a larger one than an earlier reading of this item
+  gave it. Its `pagedWorkspace` fixture hand-builds a two-table `CatalogFacts` purely so a `limit=1`
+  call on `catalog.tables` pages, beside hand-built projections giving five other tools two entries
+  each, and the test boots a real server and asserts every tool's leading `N item(s)` line against
+  what came back. Once `schema` migrates too, the hand-built projections have no reader left, so the
+  hybrid option (a captured store beside surviving hand-built projections) is gone and the fixture
+  moves onto `StoreBackedBuild` outright. Its constraint is a per-tool minimum count, which a real
+  capture does not promise by construction, so the SDL the fixture captures is chosen to yield at
+  least two entries per paged tool. That is a fixture-authoring job rather than a design decision,
+  but it is the one place in this item where a test's premise changes rather than its subject, so it
+  is named here rather than left to be discovered when the assertion fails.
 * The member-slot query gets `SchemaView`'s existing case pointed at it, unchanged. The read is the
   same relation with the same ordering, so what the case pins is that the resource still renders the
   slots, not that a new rule was introduced.
+* **The `status` and diagnostics-axes supplier gets a case at the seam**, since it is the one piece
+  of state that stays a live value rather than becoming a row. Three cases, one per arm, driving the
+  supplier directly: the wire is unchanged, so what is pinned is that the three arms still reach it
+  after the type they switch on stops being `LspSchemaSnapshot`.
 * Every query this item writes is tested from `graphitron-mcp`'s own fixture, which is the practical
   half of writing them here: a query lives in the module whose acceptance surface it serves, and is
   pinned by the tests that assert that surface.
@@ -584,9 +820,20 @@ hand-building projection fixtures.
   connections being to the consumer's own database. Written now, the guard is what keeps the
   `StoreReader` parameter from becoming a `StoreReader` the module mints for itself the first time
   someone finds passing it through inconvenient.
-* The corresponding guard for the LSP edge is not written here, since `Workspace` still needs the
-  import. It belongs with the last of the three items, and the ownership guard above is the template
-  for it.
+* **The LSP-edge guard lands here too**, on the ownership guard's template, because the edge is
+  deleted here rather than promised onward. Two halves, and both are needed: a source scan over
+  `graphitron-mcp`'s main and test sources fails on any `no.sikt.graphitron.lsp` import, and a pom
+  assertion fails on a `graphitron-lsp` dependency in any scope. The import scan alone would pass a
+  pom that still carries the edge, which is the state that lets the next reader reach for a type
+  without noticing they are widening a dependency; the pom assertion alone would pass a module that
+  reaches the language server transitively. The guard's message says the rule rather than the
+  symptom: `graphitron-mcp` answers from the store and from what its host hands it.
+* **A leaf-zoo guard, on the same scan**, failing on a reference to `FieldClassification`,
+  `TypeClassification` or `TypeBackingShape` from `graphitron-mcp`. These are `graphitron` types on a
+  dependency the module legitimately keeps, so no import rule catches them and nothing else would
+  stop the first reader who finds a permit switch more convenient than a join. This guard is the one
+  that makes the goal's second property enforceable rather than aspirational, and it is the reason
+  the property is worth stating separately from the module edge at all.
 
 No agreement test between projection and store is worth writing: it dies with the projection in the
 same commit, and what it would have asserted is exactly what the per-tool cases assert against a
@@ -609,48 +856,57 @@ real capture.
   an invariant, the two directions being one relation afterwards
 * `EdgeProducer.resolveTable`, and "resolving a bare table name" as a step the edge tools have;
   with it the degraded `TableNode` and "an empty schema" as a rendering of ambiguity
-* "the classification projection" as prose for what the edge tools read, and the permit-set
+* "the classification projection" as prose for what any MCP tool reads, and the permit-set
   constants' framing of a "partition over the classification permits" as `graphitron-mcp`'s
   coverage obligation
+* `SchemaView.mapFieldClassification`, `mapTypeClassification`, `mapBackingShape`, and "backing
+  shape" as a wire concept; with them "the classification / backing-shape / snapshot mappings are
+  exhaustive switches over the sealed permits" as a statement about this module
+* `Unresolvable` and `Unclassified` as the `schema` tool's answer for a coordinate with no verdict,
+  the demand views distinguishing "no verdict where one was owed" from "never in scope"
+* "the bundled grammar unioned with the live snapshot's user-declared directives" as a description
+  of how the `directives` resource is *composed*, with "the bundled half", "the live overlay" and
+  the collision rule between them; the union is the store's, and the resource reads it
+* "the warm `Workspace`" as prose for what backs the MCP tools, in javadoc and in
+  `dev-loop-internals.adoc` alike
+* "the live snapshot" as the thing `status` and the diagnostics axes read, `LspSchemaSnapshot` no
+  longer being the type they switch on
 
 ## Scope boundary
 
-`graphitron-mcp` reads four generator-side projections, and this item moves one of them outright and
-most of a second. What is left of `snapshot` after this is two readers, and the reason each stays is
-worth stating precisely, because the imprecise version of it is what kept the edge tools on the
-projection longer than the substrate required.
+Nothing generator-side is read through the language server after this item. Two things are still
+read as live values rather than as rows, and both are deliberate.
 
-**`SchemaView`'s backing block** needs to know which class backs a type, and no relation answers
-that. `intent_class_member_slot` says so in its own DDL comment: the question "is a reflective walk
-over accessor return types", the census now carries the declared type beside the erasure so the hops
-are followable, "and what is still unbuilt is the walk over those hops rather than the fact it would
-read. Until that lands a reader holds the class name from elsewhere". `SchemaView` is such a reader.
-The table half of the same block could move today, but splitting one wire object across a projection
-and a store read to save half a blocker is worse than waiting, so the whole block waits.
+**The dev-session lifecycle**, for `status` and the diagnostics axes. Its `Unavailable` /
+`Built.Current` / `Built.Previous` arms say whether a build has succeeded and whether the last parse
+failed so the previous good one is being held. That is not a fact about a graph, and a relation
+carrying it would put editor state in the fact model. It is worth being precise about why the store
+*cannot* answer it rather than merely why it should not: the store holds what the last successful
+capture wrote, so a graph whose newest parse just failed and a graph nobody has edited are the same
+rows. The distinction `Built.Previous` draws is a fact about the session's *possession* of a build,
+which exists only in the process holding it. So the host hands the server the value, the way it
+hands it the handle and the reader.
 
-**The `status` tool** is not blocked, it is out of place. Its `Unavailable` / `Built.Current` /
-`Built.Previous` axes are dev-session lifecycle, whether a build has succeeded and whether the last
-parse failed so the previous good one is being held. That is not a fact about a graph, and a
-relation carrying it would put editor state in the fact model. It reads a live projection because a
-live projection is the right thing for it to read.
+**The consumer-Java scan**, for `services`, `conditions` and `records`. These read
+`CompletionData.ExternalReference` and `SourceWalker.Index`, which are `graphitron` types on a
+dependency this module keeps and declares. They are not the language server and not the leaf zoo, so
+they do not stand in the way of either goal property; what this item removes is that they were
+reached through `Workspace`, and after it they arrive as suppliers. Their migration to the store is
+`mcp-code-tools-read-the-store.md`, and the substrate is confirmed present for it: `jvm_class`,
+`jvm_method` (including the `returns_condition` column the `conditions` split turns on),
+`jvm_method_parameter`, `jvm_record_component`, and the `java_` family for the `location` /
+`locationStatus` fields. The reason to keep that item separate is unchanged and is about measurement
+rather than difficulty: those tools' acceptance surface is source locations, they share not one query
+with anything here, and folding them in would blur what this item's simplification bought.
 
-Those two are why `LspSchemaSnapshot` and therefore `Workspace` outlive this item, and they are a
-shorter list than the previous reading of this boundary had. Two claims that appeared here are
-withdrawn: the column match at a site whose table is not the parent's own is answered by
-`intent_field_column_table`, whose own comment states the omission of the parent case as deliberate
-and reads absence as "the parent's own scope answers"; and foreign-key discovery is unbuilt only for
-the path an author *omitted*, which serves one LSP inlay renderer, while an authored path's hops are
-`intent_field_reference_step_hop`. Neither blocks anything the MCP renders. An implementer should
-re-check both at pickup rather than trusting this paragraph, since the substrate moves under the
-item, but the direction of the correction is that more is readable than the item first claimed.
-
-`CompletionData.ExternalReference` and `SourceWalker.Index` stay, even
-though the sibling item's "What retires" hands their MCP repoint to "the sibling item" and means
-this one: the code tools' Javadoc and location joins are a different family (`jvm_` and the
-java-source relations), a different acceptance surface (the `location` / `locationStatus` wire
-fields), and share not one query with the catalog reads. Folding them in would double this item and
-blur the measurement the split exists to keep clean, so they are filed as their own Backlog item
-(`mcp-code-tools-read-the-store.md`), which is where `Workspace.sourceIndex` and its setter retire.
+Two claims that appeared in earlier readings of this boundary are withdrawn, both in the same
+direction. "Which class backs this type" is not unbuilt: `walk_type_backing_class` carries it, with
+the caveat the classification section states. And the column match at a site whose table is not the
+parent's own is answered by `intent_field_column_table`, whose own comment states the omission of the
+parent case as deliberate and reads absence as "the parent's own scope answers". An implementer
+should re-check both at pickup rather than trusting this paragraph, since the substrate moves under
+the item, but the direction of the correction has been the same twice running: more is readable than
+the item claimed.
 
 That leaves the sibling item's retirement sweep owing two entries to items other than itself:
 `CatalogFacts` to this one, `SourceWalker.Index` to the Backlog one. Whoever takes the sibling to
@@ -659,6 +915,9 @@ failed sweep. The coupling runs that way and only that way: this item needs noth
 either sibling, so its `depends-on` stays empty, and the machine-visible edge belongs on the sibling
 whose Done gate is the one that waits.
 
-The deletion of the pom edge itself is not here, since `Workspace` outlives this item. It belongs to
-whichever of the three named items lands last, along with the test that keeps it deleted, by the
-supplier move the dependency section states.
+The pom edge is deleted here, with both halves of its guard, and that is a change from an earlier
+reading of this item which deferred it to whichever of three items landed last. The deferral was
+wrong on its own terms: `mcp-code-tools-read-the-store.md` moves reads that cross a `graphitron`
+dependency, so it never had a reason to touch the LSP edge, and the LSP item does not touch
+`graphitron-mcp` at all. No successor was going to inherit the deletion, which is how a promised
+cleanup becomes a permanent one.
