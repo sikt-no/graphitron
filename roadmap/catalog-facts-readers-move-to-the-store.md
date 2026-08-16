@@ -491,6 +491,21 @@ is spelled entirely in method calls. Slice 9's import scan would have passed a m
 held it, had the `Workspace` parameter not gone with everything else; a coupling reached through a
 call chain is invisible to exactly the guard written to catch it.
 
+**Why this is a store read and not a fourth host-supplied value.** The obvious cheaper move is to
+pass the bundled grammar in, the way slice 8 passes the lifecycle arm, and it would work: `DevMojo`
+already calls `LspVocabulary.load()` at the composition root and hands the result to the `Workspace`
+constructor, and `Workspace.vocabulary()`'s own javadoc calls the registry "shape, not state; there
+is no setter". The host holds the value already. So the coupling was never a problem of reaching
+data, which is worth saying because it is the reverse of every other slice here.
+
+It is still the wrong move. Passing the bundled half in preserves exactly what this slice exists to
+delete: two halves, a `putIfAbsent` collision rule between them, and a degrade-to-bundled path, all
+to reassemble a union the store already holds. The host-hands-a-value pattern is reserved for what
+the store *cannot* answer, which the scope boundary argues for the dev-session lifecycle and which
+is not true here: capture writes every defined directive of the merged schema, bundled and
+user-declared alike. Reaching for the pattern because it is available, rather than because the store
+is silent, would leave the merge in the module and buy nothing.
+
 **Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps three, all of them the
 lifecycle arms: `status` and the two diagnostics tools' axes.
 
