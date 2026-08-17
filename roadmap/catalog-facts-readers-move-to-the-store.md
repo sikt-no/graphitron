@@ -211,10 +211,10 @@ directions agents cannot cheaply walk forward". Carrying the costume to keep the
 porting five relationship labels, a six-permit node model, a direction argument and a memoised
 in-memory index whose entire purpose is inverting a map, plus a label vocabulary that reads backwards
 in at least two of its five cases (an edge from `Film.title` labelled `BACKS` with target
-`public.film:title` says the field backs the column, and the column backs the field). The reverse
-question comes back as its own tool, one query over the binding relations keyed at the target end,
-under `roadmap/mcp-reverse-lookup-over-binding-relations.md`. Building it fresh after `schema`'s
-queries exist is less work than migrating what is being deleted here.
+`public.film:title` says the field backs the column, and the column backs the field). Nothing is
+filed to bring the reverse question back, and that is deliberate rather than an omission: if it turns
+out to be needed, it is one query over the binding relations keyed at the target end, cheaper to
+author fresh once `schema`'s reads exist than to keep alive here on the chance somebody asks.
 
 **`diagnostics.aggregate` is dropped.** What it is, concretely, is a `GROUP BY` performed in Java over
 a projection, carrying its own dimension enum, a two-bucket partition of that enum, elision
@@ -433,8 +433,8 @@ surviving hand-built `catalogFixture()` cases, which are its ambiguity and not-f
 An earlier reading of this item specified an `EdgeCoverageTest` successor at some length: three
 assertions over the query set and the authored directive vocabulary, guarding against a relation
 gaining an arm the tool never surfaces. That specification retires with the tool it was guarding. The
-property it was protecting is real and belongs with the reverse-lookup item, where the queries it
-would assert over actually exist.
+property it was protecting is real, and it belongs wherever those queries next exist rather than
+here, where after this slice there is no query set for it to be a statement about.
 
 **Deletes, the projection.** `CatalogFacts` and `CatalogFactsTest`,
 `CatalogBuilder.buildCatalogFacts` and its `toKey` helper,
@@ -1070,9 +1070,8 @@ them remove a surface rather than change one, and they lead because they are the
 
 * **The `edges` tool is gone.** No surviving tool answers "what else touches this coordinate, what
   breaks if I change it". `schema` answers the forward half of what it used to, at the coordinate
-  grain and under different field names, and the reverse half has no replacement until
-  `roadmap/mcp-reverse-lookup-over-binding-relations.md` lands. "The surface shrinks first" carries
-  the argument.
+  grain and under different field names, and the reverse half has no replacement and no successor
+  item. "The surface shrinks first" carries the argument.
 * **The `diagnostics.aggregate` tool is gone.** `diagnostics` still pages entries with the same
   filters, so what an agent loses is proportions and the group keys that fed back into the entry
   tool. Returns under `roadmap/diagnostics-aggregation-over-the-store.md`.
@@ -1314,8 +1313,8 @@ aggregate cases in the diagnostics blocks. Two of those are coverage meta-tests 
 silently is how a taxonomy starts leaking, so each states its own reason for having no successor.
 `EdgeCoverageTest`'s subject is the agreement between `EdgeProducer`'s permit-set constants and the
 permit space, and both sides go with the tool; the property it was really guarding, that a relation
-gaining an arm the tool never surfaces gets noticed, belongs with the reverse-lookup item where the
-queries to assert over will exist. `DiagnosticDimensionCoverageTest`'s subject is that the aggregate's
+gaining an arm the tool never surfaces gets noticed, has nothing left in this module to be asserted
+over once the queries go. `DiagnosticDimensionCoverageTest`'s subject is that the aggregate's
 dimension enum partitions into two declared buckets, and the buckets go with the grouping half; the
 filtering half of the enum survives and is already pinned by the `diagnostics` cases that filter on
 it.
@@ -1592,8 +1591,8 @@ is the kind that survives in prose long after the code goes, so it leads.
   `schema` and `code` tools compose and accept; what retires is its framing as a graph the edges tool
   walks
 * `BACKS`, `TARGETS`, `REFERENCES`, `RESOLVES` and `PARTICIPATES` as names for what a coordinate does
-  to a table, column or method, in prose as well as in code. The successor vocabulary is the authored
-  directive that made the binding, which is what the reverse-lookup item is written in
+  to a table, column or method, in prose as well as in code. Anything reading a binding after this
+  item names the authored directive that made it, the store's classifier, or the relation itself
 * `DiagnosticFacets` as a class name and "facet" as the word for a diagnostics grouping key, with
   `aggregateResult`, the triage preset, "the typed-key / location-derived buckets" as a declared
   partition, "an elided group" and "the dimension gloss"; `Dimension` survives as the `diagnostics`
