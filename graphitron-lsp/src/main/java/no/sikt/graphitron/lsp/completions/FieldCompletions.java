@@ -3,7 +3,7 @@ package no.sikt.graphitron.lsp.completions;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
-import no.sikt.graphitron.lsp.facts.FieldColumnScope;
+import no.sikt.graphitron.lsp.facts.FieldColumnTable;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
@@ -93,13 +93,13 @@ public final class FieldCompletions {
         // parent's table, which would point the author at the wrong end of a join; no row at all
         // means the parent's own scope answers, which is the dispatch below.
         if (fieldName != null) {
-            var scope = FieldColumnScope.of(store, typeName, fieldName);
+            var scope = FieldColumnTable.of(store, typeName, fieldName);
             if (scope.isPresent()) {
                 switch (scope.get()) {
-                    case FieldColumnScope.Scope.Resolved(var table) -> {
+                    case FieldColumnTable.Scope.Resolved(var table) -> {
                         return mergeWithSigil(sigilItems, tableColumnItems(store, table, context));
                     }
-                    case FieldColumnScope.Scope.Silent ignored -> {
+                    case FieldColumnTable.Scope.Silent ignored -> {
                         return mergeWithSigil(sigilItems, List.of());
                     }
                 }

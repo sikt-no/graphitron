@@ -133,7 +133,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code no.sikt.graphitron.rewrite.derive.FieldColumnTableTest} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
- *       is what the relation claims;
+ *       is what the relation claims, together with {@code intent_field_column_scope}, the
+ *       navigation the override reads and the column-match classifier reads with it, whose own
+ *       cases are the third rule the override drops and the precedence between the three;
  *       {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotTest} binds
  *       {@code intent_class_member_slot}, the member names a backing class offers, over a real
  *       classfile scan of its own fixtures rather than seeded census rows, because a rule that
@@ -265,6 +267,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
+        registrations.put("intent_field_column_scope", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);

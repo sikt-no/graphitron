@@ -8,7 +8,7 @@ import java.util.Optional;
 /**
  * What a member name written inside an SDL type resolves against: the columns of the tables the
  * type is bound to, or the member slots of the class that stands for it. The type grain of the
- * question {@link FieldColumnScope} answers one grain down, and the fall-back that relation's
+ * question {@link FieldColumnTable} answers one grain down, and the fall-back that relation's
  * absent row defers to.
  *
  * <p>Shared by every surface that asks it, which is completion, hover and the field-member

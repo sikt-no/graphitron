@@ -429,7 +429,7 @@ first; the fall-through is behaviour, not accident, so collapsing the two keeps 
 | `ClassNameBinding` | `ClassNameCompletions` | `jvm_class` |
 | `MethodNameBinding` | `MethodCompletions` | `jvm_method`, `jvm_method_parameter` |
 | `CatalogTableBinding` | `TableCompletions` | `sql_table` |
-| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table`; a class-backed parent's members via `intent_class_member_slot`. Which class or table backs the parent still comes from the projection, that binding being the one piece with no relation |
+| `CatalogColumnBinding` | `FieldCompletions` | `sql_column`; the site's own table via `intent_field_column_table`; a class-backed parent's members via `intent_class_member_slot`. Which class or table backs the parent is `intent_type_backing` and `intent_bound_table`, read as one fork through `TypeMemberScope` |
 | `CatalogFkBinding` | `ReferenceCompletions` | `sql_constraint`, `sql_referential_constraint`; the enclosing type's binding via `intent_bound_table` |
 | `ArgMappingBinding` | `ArgMappingCompletions` | `jvm_method_parameter`; the GraphQL side off the buffer's own field definition, whose arguments are the ones being edited |
 | `ScalarTypeBinding` | `ScalarTypeCompletions` | `jvm_scalar_type_field` |
@@ -453,7 +453,7 @@ around it.
 | `ClassNameBinding` | Class FQN + Javadoc | `jvm_class`; Javadoc via the `java_` source family |
 | `MethodNameBinding` | A signature per overload + Javadoc | `jvm_method`, `jvm_method_parameter`; Javadoc via the `java_` source family, joined on arity |
 | `CatalogTableBinding` | Description, column and key counts | `sql_table`, `sql_column`, `sql_referential_constraint`; Javadoc via the `java_` source family |
-| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table`, a class-backed parent's members via `intent_class_member_slot`; which class backs the parent is the projection's, that binding being the one piece with no relation |
+| `CatalogColumnBinding` | Both column types, nullability, description; member name and type when the backing is a record or POJO | `sql_column`, `sql_table`; Javadoc via the `java_` source family. The site's table via `intent_field_column_table`, a class-backed parent's members via `intent_class_member_slot`; which class or table backs the parent through `TypeMemberScope` over `intent_type_backing` and `intent_bound_table` |
 | `CatalogFkBinding` | FK direction and endpoints, under any spelling the resolver accepts | `sql_referential_constraint`, `sql_constraint` |
 | `NodeTypeBinding` | `typeId`, key columns and their types | `graphitron_node`, `graphitron_node_key_column`, `graphitron_table` + `sql_column` for the types |
 | `ArgMappingBinding`, `ScalarTypeBinding` † | nothing | — |
@@ -475,7 +475,7 @@ around it.
 | Toggle | Collector | Fact source |
 |---|---|---|
 | `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer (built: `BoundTables.unambiguous`); `intent_column_match_claim` for the `@field` renderer, plus `intent_class_member_slot` where the backing is a record or POJO, and a column match at a site whose table is not the parent's own, which no relation answers yet; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer (built: `BoundTables.unambiguous`); `intent_column_match_claim` for the `@field` renderer, which resolves against the site's own scope now (built: `intent_field_column_scope`), plus `intent_class_member_slot` where the backing is a record or POJO, the arm that still has no reader; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentTableHints`, a second pass inside the inferred-directive collector | `intent_bound_table` (built: `BoundTables.unambiguousByType`) |
 | `separateFetch` | `collectSeparateFetchHints` | `intent_field_separate_fetch`, the marked rules only (built: `ClaimFacts`, `SeparateFetchRule`) |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
@@ -2907,3 +2907,108 @@ intra-schema arm was the language server's only one, and it reads the declaratio
 `Built.Current` / `Built.Previous` seal has one language-server reader left, the diagnostics replay,
 the code-action branch having stopped asking the snapshot about freshness and started asking the store
 about this document's text.
+
+## Settled while building: the missing relation was two rules already written, one grain apart
+
+The `@field` inferred-directive renderer's blocker read "a column match at a site whose table is not
+the parent's own, which no relation answers yet". No relation answered it, and the reason was not
+that the resolution had never been derived. It had been derived twice, by two consumers who did not
+know they shared a question.
+
+`intent_field_column_table` answers the narrow question an editor asks at a `@field(name:)` site:
+which table, *when that table is not the parent's own*. It carries the two navigation rules that can
+move a site, an authored `@reference` path's terminal and a field's own named type's binding.
+`intent_column_match_claim`, the structural column-match classifier, wanted the same navigation and
+did not read it: it joined the parent's binding directly, so every name resolved against the parent
+whatever the author had written about where the value comes from.
+
+That is a defect and it was already recorded as something else. `ColumnMatchClaimTest` pinned a
+`@reference` field whose terminal table has no such column: the walk rejects, the derivation claimed
+a coincidental column on the parent instead, and the disagreement was filed as a transitional residue
+waiting for `@reference` to become an authored claim. It was not waiting for anything. The
+derivation was reading the wrong table, and an authored-claim migration would have masked the symptom
+without fixing the read.
+
+So the fact is `intent_field_column_scope`: which table the column names written at a field's site
+resolve against, at every site where any name resolves. Three rules, the two the override view already
+had plus a leaf field's own parent binding as the third, and absence meaning no name resolves here
+rather than "ask the parent". `intent_column_match_claim` joins it. The override view is re-expressed
+over it, keeping its own contract exactly: its rows are the scope's non-parent bases, which is what
+"not the parent's own" means as a projection rather than as a restated rule.
+
+Then it got slow, by two orders of magnitude, and finding out why took a measurement rather than a
+guess. The corpus sweep reads the classifier over a store holding every corpus example, and it went
+from seventy seconds to past thirteen minutes. My first guess was the window function the view's first
+draft used to rank its three rules, so I removed it. That changed nothing, which is the useful part: a
+guess about cost that survives being wrong is a guess that was never evidence.
+
+A probe over twelve captured graphs, timing each relation on its own, found it in one pass. The scope
+view costs 43 ms. The classifier joining it costs 3500 ms, and adding a graph predicate does not move
+that number at all. H2 re-evaluates a joined derived relation once per outer row, so a classifier that
+reads `graphql_field` and joins the scope pays the whole scope per candidate field, and the scope's own
+depth (a path terminal over a hop view over a spelling resolution) is what gets multiplied. The repair
+is the join order: with the scope first in the `FROM` clause it is evaluated once and the base tables
+are probed per row, which is 47 ms for the same twelve graphs, and 24 ms for one graph. Seventy times,
+for the order of two lines.
+
+That constraint is now stated in both relations' comments, because it is invisible in the SQL and
+reversible by anyone tidying a `FROM` clause. It generalises past this pair: any relation joining a
+derivation this deep wants the derivation driving. The classifier was already paying a smaller version
+of the same cost before this increment, reading its table binding from underneath `graphql_field` the
+same way, so fixing the order left it faster than it started: the sweep runs in 14 seconds against a
+pre-change measurement of 71, and those two numbers were taken under different load, so read the
+direction rather than the ratio.
+
+The window came out anyway and should stay out, on the grounds it was mistaken for. Disjoint rules are
+a stronger statement than ranked ones: the authored-path rule and the two pathless rules are separated
+by whether the field carries reference steps, and the two pathless rules by whether the named type is an
+object or a leaf. One-row-per-site is then a property of the rules rather than of a collapse over them,
+and the anchor test asserts it directly, so a schema where two rules overlapped would fail there instead
+of being silently picked between. The one place a collapse was doing real work is the path arm, where an
+element resolving to several rows that all reach one table is several rows; `DISTINCT` over a projection
+that keeps only the table says that exactly, and demanding a single target is what makes it safe.
+
+This is the measurement the item's acceptance asks for, arriving as a shape constraint rather than as a
+latency budget. The sanctioned repair for a slow derivation is materialization with its argument in the
+DDL comment, and it would have been the wrong repair here: nothing about the derivation was expensive,
+one consumer was asking for it the expensive way. Measure before materializing, and measure the
+relations separately, or you will materialize a relation to hide a join order.
+
+This is not the shape the earlier section predicted. It read that no relation answers which column an
+effective name matches at a site-resolved table, and that the next slice would be a derivation
+generalising `intent_column_match_claim`'s matching tail over one. There was no need for a second
+relation: the claim view already carries the matching tail, two name tiers and the collapse to a first
+match, and what it had wrong was the table it matched against. Generalising it would have produced two
+relations that match names, agreeing where they overlap by construction and by nobody's rule. The
+whole change to the classifier is which relation its table comes from.
+
+Two things stayed where they were, and both are about which relation owns a silence. The conflict
+silence stays on the override view: a coordinate whose claims contradict each other has no settled
+scope for an *editor* to offer columns in, but the classifier's raw reading there is what lets a
+diagnostic say "would classify as a table column; `@service` overrides it", so folding that silence
+one relation down would take the sentence away. And the three rules do not carry the same guards.
+Navigating to another type's binding is diverted by an authored claim, a `@pivot` and a root parent;
+resolving in your own parent's scope is diverted by none of them, because a field's parent scope
+exists whatever claims the field. Different guards on rules of one relation looked like a smell and
+is the opposite: it is the two questions being different, stated once each instead of averaged.
+
+What the corpus sweep now says is worth reading precisely. Its anti-join still names `reference`, and
+no longer because those coordinates disagree. A path the walk resolves produces a column carrier
+whose compaction is not `Direct`, so the coordinate sits outside the arm the sweep compares. The
+residue that was a disagreement is gone; what remains at that directive is a domain boundary.
+
+The renderer this started for did not move, and one arm is why. A `@field` at a field of a
+class-backed parent resolves a member name rather than a column, which `intent_class_member_slot`
+answers at its own grain, so the renderer's move is a two-arm read and only one arm existed before
+this. The other arm exists now.
+
+One rename came with it. The language server's reader of the override view was called
+`FieldColumnScope`, which is the name the new relation deserves, so the class is `FieldColumnTable`
+now, named for the relation it reads as its siblings are. A reader wanting the total answer reads the
+scope; a surface wanting the conflict silence reads the override; the names say which is which.
+
+The lesson generalises, and it is the third time this item has hit it from a different side. A
+consumer reporting "no relation answers this" is evidence about the consumer, not about the store. It
+may mean the fact is missing. It may mean the fact exists at another grain. Here it meant the fact
+existed, keyed correctly, with one of its rules living in the consumer that happened to need it
+first.

@@ -61,8 +61,11 @@ import static org.jooq.impl.DSL.selectOne;
  * corpus, walked and captured side by side. Beside the sweep sit the targeted pins: witness
  * content, the {@code @field} rename, the tier precedence and ambiguity semantics the catalog
  * fixtures cannot reach (seeded rows exercise the view's own SQL), the authored-coverage mask
- * with the raw reading surviving, membership scoping, the closed value vocabularies, and the two
- * recorded transitional residues.
+ * with the raw reading surviving, membership scoping, the closed value vocabularies, the authored
+ * path that moves the match off the parent's own table, and the one recorded transitional residue
+ * left. The second was the path case: the view resolved every name against the parent, so a field
+ * whose value the author had pointed elsewhere claimed a coincidental local column. It reads
+ * {@code intent_field_column_scope} now, and the coordinate agrees with the walk.
  */
 @PipelineTier
 class ColumnMatchClaimTest {
@@ -219,17 +222,47 @@ class ColumnMatchClaimTest {
     }
 
     /**
-     * First recorded residue: a diverting directive that is not yet an authored claim.
-     * {@code @reference} routes the walk to the reference arm (which here rejects: no
-     * {@code title} column on the terminal table), while the classifier view claims the
-     * coincidental local column and the reduction has nothing authored to mask it with. The
-     * disagreement is transitional by design (when the reference arm migrates to an authored
-     * claim under the umbrella, the same coordinate-grain anti-join masks this row with no view
-     * edit), and the corpus sweep excludes exactly these coordinates through its relational
-     * residue anti-join.
+     * The match runs where the site navigates, so an authored path moves it to the path's terminal
+     * table. Nothing about the coordinate says "column on the parent" once the author has written
+     * where the value comes from, and resolving there is what makes the witness the table the value
+     * is actually read out of.
      */
     @Test
-    void divertedReferenceFieldIsTheRecordedResidue() {
+    void anAuthoredPathMovesTheMatchToItsTerminalTable() {
+        withCapturedStore("""
+            type Film @table(name: "film") {
+                languageName: String @field(name: "name")
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
+            """, dsl -> {
+            var row = dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
+                .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq(GRAPH))
+                .and(INTENT_COLUMN_MATCH_CLAIM.FIELD_NAME.eq("languageName"))
+                .fetchOne();
+            assertThat(row).isNotNull();
+            assertThat(row.getTableName())
+                .as("the terminal table, not the parent's own")
+                .isEqualToIgnoringCase("language");
+            assertThat(row.getColumnName()).isEqualToIgnoringCase("name");
+        });
+    }
+
+    /**
+     * The residue this class used to record, now agreement. {@code @reference} routes the walk to
+     * the reference arm, which rejects here: the terminal table has no {@code title} column. The
+     * view once claimed the coincidental column on the parent instead, because it read the parent's
+     * binding directly rather than where the site resolves; reading the scope makes it look for
+     * {@code title} on {@code language}, find nothing, and decline exactly as the walk does.
+     *
+     * <p>The sweep's anti-join still names {@code reference}, for a reason that is not a
+     * disagreement: a path the walk resolves produces a {@code ColumnBackedField} whose compaction
+     * is not {@code Direct}, so the coordinate sits outside the arm the sweep compares rather than
+     * inside it wrongly.
+     */
+    @Test
+    void aPathWhoseTerminalLacksTheColumnDeclinesAsTheWalkDoes() {
         var sdl = """
             type Film @table(name: "film") {
                 title: String @reference(path: [{key: "film_language_id_fkey"}])
@@ -246,18 +279,14 @@ class ColumnMatchClaimTest {
                 INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq(GRAPH)
                     .and(INTENT_COLUMN_MATCH_CLAIM.TYPE_NAME.eq("Film"))
                     .and(INTENT_COLUMN_MATCH_CLAIM.FIELD_NAME.eq("title"))))
-                .as("the structural reading claims the coincidental local column")
-                .isEqualTo(1);
+                .as("no title column on the terminal table, so the structural reading declines")
+                .isZero();
             assertThat(dsl.fetchCount(INTENT_RESOLVED_FIELD_CLAIM,
                 INTENT_RESOLVED_FIELD_CLAIM.GRAPH_NAME.eq(GRAPH)
                     .and(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME.eq("Film"))
-                    .and(INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME.eq("title"))
-                    .and(INTENT_RESOLVED_FIELD_CLAIM.TIER.eq("INFERRED"))))
-                .as("nothing authored masks a directive that does not claim yet")
-                .isEqualTo(1);
-            assertThat(maskedClaims(dsl, GRAPH))
-                .as("the sweep's residue anti-join excludes the diverted coordinate")
-                .noneMatch(row -> "Film".equals(row.value1()) && "title".equals(row.value2()));
+                    .and(INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME.eq("title"))))
+                .as("nothing to reduce where nothing claimed")
+                .isZero();
         });
     }
 
@@ -353,7 +382,8 @@ class ColumnMatchClaimTest {
     }
 
     /**
-     * Second recorded residue, not the same shape as the directive one: a {@code Node.id} field
+     * The recorded residue that is left, and it was never the shape the path one had: a
+     * {@code Node.id} field
      * over a table with a literal {@code id} column carries no directive at all, so nothing
      * authored can mask the column reading. The walk rejects the coordinate
      * ({@code FieldBuilder.rejectShadowedIdColumn}: two readings, different wire values, the

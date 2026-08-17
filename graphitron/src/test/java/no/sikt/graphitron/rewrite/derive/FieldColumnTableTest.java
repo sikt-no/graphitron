@@ -21,13 +21,18 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The registered agreement anchor for {@code intent_field_column_table}: which table a column name
  * written at a field's site resolves against, when that table is not the one the field's own parent
- * is bound to.
+ * is bound to. It anchors {@code intent_field_column_scope} with it, the navigation the override
+ * reads and the structural column-match classifier reads too. Two relations in one class because
+ * they are one derivation seen twice: the cases above pin the override's boundary, and the section
+ * near the tail pins the third rule that boundary drops, the precedence among the three, and the one
+ * place the two deliberately disagree.
  *
  * <p>Half of these cases assert that a coordinate produces <em>no</em> row, which is the view's
  * central claim rather than a gap in it. The relation only overrides a parent's own scope, so
@@ -252,6 +257,110 @@ class FieldColumnTableTest {
         });
     }
 
+    // ===== The navigation underneath, and the rule this view drops =====
+
+    /**
+     * The third rule, the one the override view exists to drop: a leaf field's column names resolve
+     * in its parent's own scope. The scope says so with a row; the override says so with none, and
+     * {@link #aScalarFieldLeavesItsParentsScopeStanding} pins that half. Both readings are the same
+     * navigation, which is the point of the two relations sharing one.
+     */
+    @Test
+    void aScalarFieldResolvesInItsParentsOwnScope() {
+        withCapturedStore("""
+            type Film @table(name: "film") {
+                title: String
+            }
+            type Query { films: [Film] }
+            """, dsl -> {
+            var row = scopeRow(dsl, "Film", "title").orElseThrow();
+            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.BASIS)).isEqualTo("PARENT_BINDING");
+            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME)).isEqualToIgnoringCase("film");
+        });
+    }
+
+    /**
+     * A field of a parent nothing binds resolves nowhere, which is absence rather than a silence:
+     * the scope's contract is that a row means "names resolve here", so a plain SDL object's field
+     * contributing none is the whole answer.
+     */
+    @Test
+    void aFieldOfAnUnboundParentResolvesNowhere() {
+        withCapturedStore("""
+            type Note {
+                text: String
+            }
+            type Query { note: Note }
+            """, dsl -> assertThat(scopeRow(dsl, "Note", "text")).isEmpty());
+    }
+
+    /**
+     * The parent must not stand in for a path that reaches nothing, and the scope is where that
+     * refusal lives: a path-carrying field takes the path's terminal or no row at all. The override
+     * view's {@code UNRESOLVED_PATH} silence is read off exactly this absence.
+     */
+    @Test
+    void aPathReachingNoTableResolvesNowhereRatherThanInTheParent() {
+        withCapturedStore("""
+            type Film @table(name: "film") {
+                languageName: String @field(name: "name") @reference(path: [{table: "no_such_table"}])
+            }
+            type Query { films: [Film] }
+            """, dsl -> assertThat(scopeRow(dsl, "Film", "languageName")).isEmpty());
+    }
+
+    /**
+     * The boundary between the two rules a bound parent's field could otherwise land in both of. A
+     * field navigating to a table-bound type reads that type's table, because the columns named at
+     * such a site are the ones the field's own rows have, and the parent rule does not reach it at
+     * all: that rule is a leaf field's, so the two are disjoint by the named type's kind rather than
+     * ranked against each other. The single-row assertion in {@link #scopeRow} is what would catch a
+     * schema where they overlapped after all.
+     */
+    @Test
+    void aFieldNavigatingToABoundTypeReadsItRatherThanItsParent() {
+        withCapturedStore("""
+            type Film @table(name: "film") {
+                languages: [Language!]!
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { films: [Film] }
+            """, dsl -> {
+            var row = scopeRow(dsl, "Film", "languages").orElseThrow();
+            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.BASIS))
+                .as("an object-typed field is the named-type rule's, never the parent rule's")
+                .isEqualTo("NAMED_TYPE_TABLE");
+            assertThat(row.get(INTENT_FIELD_COLUMN_SCOPE.TABLE_NAME))
+                .isEqualToIgnoringCase("language");
+        });
+    }
+
+    /**
+     * The guard asymmetry between the two relations, run. A contested coordinate is silent in the
+     * override view and still resolves in the scope, because the structural column-match classifier
+     * reads the scope and its reading at a contested coordinate is what lets a diagnostic say which
+     * claim overrode a column. Folding the conflict silence one relation down would take that away.
+     */
+    @Test
+    void aContestedCoordinateStillResolvesInTheScope() {
+        withCapturedStoreAndClaimDomain("""
+            type Film @table(name: "film") {
+                title: String
+                    @service(service: {className: "%s", method: "get"})
+                    @externalField(reference: {className: "%s", method: "rating"})
+            }
+            type Query { film: Film }
+            """.formatted(SERVICE_STUB, EXTERNAL_FIELD_STUB), dsl -> {
+            assertThat(row(dsl, "Film", "title").orElseThrow().get(INTENT_FIELD_COLUMN_TABLE.BASIS))
+                .as("the override view goes silent while the claims disagree")
+                .isEqualTo("CONFLICTED");
+            assertThat(scopeRow(dsl, "Film", "title").orElseThrow()
+                .get(INTENT_FIELD_COLUMN_SCOPE.BASIS))
+                .as("the navigation is unchanged by what claims the field")
+                .isEqualTo("PARENT_BINDING");
+        });
+    }
+
     // ===== Partition =====
 
     /** The graph partition: one workspace's graphs do not read each other's resolutions. */
@@ -276,6 +385,20 @@ class FieldColumnTableTest {
     private static final String SERVICE_STUB = "no.sikt.graphitron.rewrite.TestServiceStub";
     private static final String EXTERNAL_FIELD_STUB =
         "no.sikt.graphitron.rewrite.TestExternalFieldStub";
+
+    /** The navigation row for a coordinate, at the same grain as the override above it. */
+    private static Optional<Record> scopeRow(DSLContext dsl, String typeName, String fieldName) {
+        var rows = dsl.select(INTENT_FIELD_COLUMN_SCOPE.fields())
+            .from(INTENT_FIELD_COLUMN_SCOPE)
+            .where(INTENT_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(GRAPH))
+            .and(INTENT_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
+            .and(INTENT_FIELD_COLUMN_SCOPE.FIELD_NAME.eq(fieldName))
+            .fetch();
+        assertThat(rows.size())
+            .as("the navigation carries at most one row per coordinate")
+            .isLessThanOrEqualTo(1);
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.getFirst());
+    }
 
     /** The one row for a coordinate, the relation's grain being the field. */
     private static Optional<Record> row(DSLContext dsl, String typeName, String fieldName) {

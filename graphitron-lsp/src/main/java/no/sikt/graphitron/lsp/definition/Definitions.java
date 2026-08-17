@@ -7,7 +7,7 @@ import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClasspathClasses;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
-import no.sikt.graphitron.lsp.facts.FieldColumnScope;
+import no.sikt.graphitron.lsp.facts.FieldColumnTable;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
@@ -288,14 +288,14 @@ public final class Definitions {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, source));
         if (fieldName.isPresent()) {
-            var scope = FieldColumnScope.of(store, typeName.get(), fieldName.get());
+            var scope = FieldColumnTable.of(store, typeName.get(), fieldName.get());
             if (scope.isPresent()) {
                 return switch (scope.get()) {
-                    case FieldColumnScope.Scope.Resolved(var table) ->
+                    case FieldColumnTable.Scope.Resolved(var table) ->
                         columnDefinition(store, table, columnName);
                     // No column name resolves here at all, so there is nothing to jump to and the
                     // parent's binding must not stand in for one.
-                    case FieldColumnScope.Scope.Silent ignored -> Optional.empty();
+                    case FieldColumnTable.Scope.Silent ignored -> Optional.empty();
                 };
             }
         }

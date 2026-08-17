@@ -25,7 +25,7 @@ import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathClasses;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
-import no.sikt.graphitron.lsp.facts.FieldColumnScope;
+import no.sikt.graphitron.lsp.facts.FieldColumnTable;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -697,15 +697,15 @@ public final class Diagnostics {
         // answers, which is the dispatch below.
         if (fieldName != null) {
             var scope = store.flatMap(handle ->
-                FieldColumnScope.of(handle, typeName.get(), fieldName));
+                FieldColumnTable.of(handle, typeName.get(), fieldName));
             if (scope.isPresent()) {
                 switch (scope.get()) {
-                    case FieldColumnScope.Scope.Resolved(var table) -> {
+                    case FieldColumnTable.Scope.Resolved(var table) -> {
                         validateColumnOnResolvedTable(
                             store.orElseThrow(), table, memberName, valueNode, file, out);
                         return;
                     }
-                    case FieldColumnScope.Scope.Silent ignored -> { return; }
+                    case FieldColumnTable.Scope.Silent ignored -> { return; }
                 }
             }
         }

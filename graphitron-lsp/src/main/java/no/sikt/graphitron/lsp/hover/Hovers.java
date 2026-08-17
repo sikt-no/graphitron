@@ -5,7 +5,7 @@ import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
-import no.sikt.graphitron.lsp.facts.FieldColumnScope;
+import no.sikt.graphitron.lsp.facts.FieldColumnTable;
 import no.sikt.graphitron.lsp.facts.SdlDescriptions;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
@@ -59,8 +59,11 @@ import static org.jooq.impl.DSL.selectCount;
  * <p>Every arm reads the fact store, the declaration-name arm around the coordinate dispatch
  * included: the classpath census and the java-source family for the arms that answer about Java, the
  * catalog census for those that answer about the database, and the graph's own {@code @node}
- * declarations for one more. What still comes from the projection is the declaration-name arm's
- * classification block, and the catalog its binding resolution shares with goto-definition.
+ * declarations for one more. The declaration-name arm's classification block is the claim stratum's,
+ * so it renders with no generator pass behind it; what still comes from the projection is one
+ * question inside the description overlay beneath it, which resolves a declaration through
+ * {@link no.sikt.graphitron.lsp.parsing.DeclTarget} and so asks the snapshot which method a
+ * method-backed field binds to.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
  * the SDL-docstring hover, and so do the two name tokens the coordinate walk does not key: the
@@ -406,13 +409,13 @@ public final class Hovers {
         // the parent's table, so the editor falls through to the SDL docstring; no row at all means
         // the parent's own scope answers, which is the dispatch below.
         if (fieldName != null) {
-            var scope = FieldColumnScope.of(store, typeName.get(), fieldName);
+            var scope = FieldColumnTable.of(store, typeName.get(), fieldName);
             if (scope.isPresent()) {
                 switch (scope.get()) {
-                    case FieldColumnScope.Scope.Resolved(var table) -> {
+                    case FieldColumnTable.Scope.Resolved(var table) -> {
                         return tableColumnHover(store, table, memberName, file, valueNode);
                     }
-                    case FieldColumnScope.Scope.Silent ignored -> { return Optional.empty(); }
+                    case FieldColumnTable.Scope.Silent ignored -> { return Optional.empty(); }
                 }
             }
         }

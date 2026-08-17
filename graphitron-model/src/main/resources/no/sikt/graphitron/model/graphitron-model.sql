@@ -3152,6 +3152,84 @@ COMMENT ON COLUMN intent_field_reference_step_target.fk_on_from IS 'TRUE when th
 COMMENT ON COLUMN intent_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
 COMMENT ON COLUMN intent_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
 
+CREATE VIEW intent_field_column_scope
+  (graph_name, type_name, field_name, basis,
+   table_source_name, table_schema, table_name) AS
+SELECT DISTINCT tg.graph_name, tg.type_name, tg.field_name,
+       'PATH_TERMINAL',
+       tg.to_source_name, tg.to_schema, tg.to_table
+  FROM intent_field_reference_step_target tg
+  JOIN (SELECT graph_name, type_name, field_name, MIN(ordinal) AS ordinal
+          FROM graphitron_field_reference_step
+         GROUP BY graph_name, type_name, field_name) first_application
+    ON first_application.graph_name = tg.graph_name
+   AND first_application.type_name = tg.type_name
+   AND first_application.field_name = tg.field_name
+   AND first_application.ordinal = tg.ordinal
+  JOIN (SELECT graph_name, type_name, field_name, ordinal, MAX(position) AS position
+          FROM graphitron_field_reference_step
+         GROUP BY graph_name, type_name, field_name, ordinal) last_element
+    ON last_element.graph_name = tg.graph_name
+   AND last_element.type_name = tg.type_name
+   AND last_element.field_name = tg.field_name
+   AND last_element.ordinal = tg.ordinal
+   AND last_element.position = tg.position
+ WHERE tg.targets = 1
+UNION ALL
+SELECT f.graph_name, f.type_name, f.field_name,
+       'NAMED_TYPE_TABLE',
+       bt.table_source_name, bt.table_schema, bt.table_name
+  FROM graphql_field f
+  LEFT JOIN graphitron_field_synthesis fs
+    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+   AND fs.field_name = f.field_name
+  JOIN graphql_type nt
+    ON nt.graph_name = f.graph_name
+   AND nt.type_name = COALESCE(
+         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+         f.named_type)
+   AND nt.kind = 'OBJECT'
+  JOIN intent_bound_table bt
+    ON bt.graph_name = f.graph_name AND bt.type_name = nt.type_name
+   AND bt.candidates = 1
+ WHERE f.type_name NOT IN ('Query', 'Mutation', 'Subscription')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                    WHERE s.graph_name = f.graph_name
+                      AND s.type_name = f.type_name
+                      AND s.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM intent_authored_field_claim ac
+                    WHERE ac.graph_name = f.graph_name
+                      AND ac.type_name = f.type_name
+                      AND ac.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_pivot pv
+                    WHERE pv.graph_name = f.graph_name
+                      AND pv.type_name = f.type_name
+                      AND pv.field_name = f.field_name)
+UNION ALL
+SELECT f.graph_name, f.type_name, f.field_name,
+       'PARENT_BINDING',
+       bt.table_source_name, bt.table_schema, bt.table_name
+  FROM graphql_field f
+  JOIN graphql_type leaf
+    ON leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
+   AND leaf.kind IN ('SCALAR', 'ENUM')
+  JOIN intent_bound_table bt
+    ON bt.graph_name = f.graph_name AND bt.type_name = f.type_name
+   AND bt.candidates = 1
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_field_reference_step s
+                    WHERE s.graph_name = f.graph_name
+                      AND s.type_name = f.type_name
+                      AND s.field_name = f.field_name);
+COMMENT ON VIEW intent_field_column_scope IS 'Which table the column names written at a field''s site resolve against: the field''s own navigation, answered at every site where a column name resolves at all. A row means "resolve names against this table"; absence means no column name resolves here, which is what a field of an unbound parent and a field whose authored path reaches no single table both get. The relation exists because two consumers were deriving the same navigation apart from each other. The structural column-match classifier read the parent''s binding directly, so a name at a site an authored path had moved still resolved against the parent, and intent_field_column_table restated the same two navigation rules to answer the narrower question of when the resolved table is not the parent''s own. Both read this now, so the navigation is derived once and the consumers differ only in what each adds to it. Three rules, and they are disjoint rather than ranked, which is what lets this relation be a plain union with no windowed collapse over it. A collapse would be a cost multiplier and not a small one: the column-match classifier joins this view per coordinate, and a window inside it forces the whole relation to materialize on every read, over a store that holds every graph of a workspace. Disjointness carries the one-row-per-site property instead, so state the rules with their boundaries. An authored @reference path resolves to its terminal element''s table: the first application''s last element, the repeatable directive''s ordinal grain collapsed the way the authored-claim view collapses @routine''s, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination. An element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table, which is exactly what demanding a single target makes safe. A field with no path whose named type is itself bound to a table resolves to that table, which is where an ordering column named on a list field lives; the named type read is the one the author wrote, taken off graphitron_field_synthesis where a macro rewrote the field''s type expression, so a connection field''s columns are the element type''s rather than the wrapper''s. A leaf field with no path resolves in its own parent''s binding, which is the scope every column-bound field of a table-bound type resolves in, and the leaf guard is what keeps this rule clear of the one above rather than a ranking between them: that rule reads an OBJECT named type and this one reads a SCALAR or ENUM. The two read the named type at different stages, this rule the field''s current one and that rule the authored one, so a macro that turned an object-typed field into a scalar-typed one would let both fire at a coordinate. None does, and if one ever did it would announce itself as two rows at one site, which the anchor test asserts against, rather than as a silent pick. A field whose named type is an unbound object resolves nowhere, so a column name written at a nesting type''s site has no answer here yet; no consumer asks one, and the rule that would answer it is the type-grain nesting question rather than a fourth rule at this grain. A field carrying reference steps takes the first rule or nothing: a path reaching no single table must not fall back on the parent, because resolving a name against the parent there points the author at the wrong end of a join. The three rules do not carry the same guards and that is not an inconsistency. The named-type rule guards against a root parent, a named type of any kind but OBJECT, an ambiguous binding, an authored claim and a @pivot, because navigating to another type''s binding is exactly what an authored claim diverts. @pivot is the one claim that rule names directly, because the claim vocabulary has no arm for it yet and a pivoted field reads its columns from the pivot rather than from the type it names; the explicit guard folds into the anti-join the day that arm lands. The parent rule guards against none of those, because a field''s own parent scope exists whatever claims the field, and the structural classifier reads it precisely so a diagnostic can say "would classify as a table column; @service overrides it". A consumer joining this relation puts it first in its own FROM clause; intent_column_match_claim''s comment carries the measurement, and the shape it warns against is the one a reader reaches for. Masking is a consumer''s join and never a rule here: the authored-conflict silence intent_field_column_table adds sits in that view, and folding it in would silence the column-match classifier at a contested coordinate, where its raw reading is the whole point.';
+COMMENT ON COLUMN intent_field_column_scope.graph_name IS 'the owning graph''s partition, carried from every rule''s base relation';
+COMMENT ON COLUMN intent_field_column_scope.type_name IS 'the site''s owning type, the field''s parent';
+COMMENT ON COLUMN intent_field_column_scope.field_name IS 'the site''s field name within the owning type';
+COMMENT ON COLUMN intent_field_column_scope.basis IS 'which rule resolved this site: PATH_TERMINAL (an authored @reference path''s terminal element), NAMED_TYPE_TABLE (the field''s named type''s own binding), PARENT_BINDING (the field''s own parent''s binding). A closed vocabulary of three disjoint rules, so it is also which boundary the site fell inside, and the column that lets a consumer tell an override from the parent''s own scope without re-deriving either';
+COMMENT ON COLUMN intent_field_column_scope.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
+COMMENT ON COLUMN intent_field_column_scope.table_schema IS 'the resolved table''s SQL schema';
+COMMENT ON COLUMN intent_field_column_scope.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s columns are one join away';
+
+
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
@@ -3171,13 +3249,13 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
                  ORDER BY CASE WHEN UPPER(c.jooq_name)
                                     = UPPER(COALESCE(fb.name_ref, f.field_name))
                                THEN 0 ELSE 1 END, c.ordinal) AS rn
-          FROM graphql_field f
+          FROM intent_field_column_scope bt
+          JOIN graphql_field f
+            ON f.graph_name = bt.graph_name AND f.type_name = bt.type_name
+           AND f.field_name = bt.field_name
           JOIN graphql_type leaf
             ON leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
            AND leaf.kind IN ('SCALAR', 'ENUM')
-          JOIN intent_bound_table bt
-            ON bt.graph_name = f.graph_name AND bt.type_name = f.type_name
-           AND bt.candidates = 1
           LEFT JOIN graphitron_field_binding fb
             ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name
            AND fb.field_name = f.field_name
@@ -3187,7 +3265,7 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
            AND (UPPER(c.jooq_name) = UPPER(COALESCE(fb.name_ref, f.field_name))
                 OR UPPER(c.column_name) = UPPER(COALESCE(fb.name_ref, f.field_name)))) matched
  WHERE rn = 1;
-COMMENT ON VIEW intent_column_match_claim IS 'The column-match structural classifier: a field whose name resolves against its parent''s bound table claims TABLE_COLUMN, no directive involved. One view per structural classifier, so the row''s columns are exactly this classifier''s join witnesses. The reading transcribes the classification walk''s fall-through arm: the field''s named type has kind SCALAR or ENUM, the parent''s table binding resolves to exactly one candidate (the resolution is intent_bound_table''s, joined here at candidates = 1, which is how this arm transcribes the walk''s Ambiguous verdict; distinguishing that decline from a name not in the catalog at all is a future resolution-stratum detection over graphitron_table, not something this view''s absence encodes), and the effective name matches a column, generated-Java-name tier before SQL-name tier, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The effective name is the @field binding where one decoded, else the field name; the arm needs no undecoded presence fallback because a declined @field decode leaves the COALESCE on the field name, which is the walk''s own fallback. Deliberately mask-light: the only exclusion is the three root names, and it arrives through the binding view rather than being restated here, roots classifying before any table binding is read. No parent-kind gate and no directive knowledge: masking against authored claims is the reduction''s job, and the raw structural reading surviving here is what lets a diagnostic say "would classify as a table column; @service overrides it".';
+COMMENT ON VIEW intent_column_match_claim IS 'The column-match structural classifier: a field whose name resolves against the table its site navigates to claims TABLE_COLUMN, no directive involved. Usually that is the parent''s own bound table, and where an authored @reference path moves the site it is the path''s terminal, which intent_field_column_scope answers for both and this view no longer decides for itself. One view per structural classifier, so the row''s columns are exactly this classifier''s join witnesses. The reading transcribes the classification walk''s fall-through arm: the field''s named type has kind SCALAR or ENUM, the site resolves against exactly one table (the resolution is intent_field_column_scope''s, which requires a single candidate on its parent-binding rule and so is how this arm transcribes the walk''s Ambiguous verdict; distinguishing that decline from a name not in the catalog at all is a future resolution-stratum detection over graphitron_table, not something this view''s absence encodes), and the effective name matches a column, generated-Java-name tier before SQL-name tier, both case-insensitive, collapsed to the first match in tier-then-ordinal order. The effective name is the @field binding where one decoded, else the field name; the arm needs no undecoded presence fallback because a declined @field decode leaves the COALESCE on the field name, which is the walk''s own fallback. The scope drives the join and that is load-bearing rather than stylistic: H2 re-evaluates a joined derived relation once per outer row, so reading the scope from underneath graphql_field costs the whole relation per candidate field and measured seventy times this shape on a store holding a dozen graphs. Any relation joining a derivation this deep wants the derivation first in the FROM clause. Deliberately mask-light: the only exclusion is the three root names, and it arrives through the scope view''s own binding read rather than being restated here, roots classifying before any table binding is read. The scope''s parent-binding rule is mask-light for the same reason, so a coordinate an authored directive claims still produces the structural reading here and the reduction is what drops it. No parent-kind gate and no directive knowledge: masking against authored claims is the reduction''s job, and the raw structural reading surviving here is what lets a diagnostic say "would classify as a table column; @service overrides it".';
 COMMENT ON COLUMN intent_column_match_claim.graph_name IS 'the owning graph''s partition, carried from graphql_field';
 COMMENT ON COLUMN intent_column_match_claim.type_name IS 'the claimed field''s owning type';
 COMMENT ON COLUMN intent_column_match_claim.field_name IS 'the claimed field''s name within the owning type';
@@ -3287,28 +3365,6 @@ COMMENT ON COLUMN intent_authored_claim_conflict.source_column IS 'source column
 CREATE VIEW intent_field_column_table
   (graph_name, type_name, field_name, disposition, basis,
    table_source_name, table_schema, table_name) AS
-WITH path_terminal
-  (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
-  SELECT tg.graph_name, tg.type_name, tg.field_name,
-         tg.to_source_name, tg.to_schema, tg.to_table
-    FROM intent_field_reference_step_target tg
-    JOIN (SELECT graph_name, type_name, field_name, MIN(ordinal) AS ordinal
-            FROM graphitron_field_reference_step
-           GROUP BY graph_name, type_name, field_name) first_application
-      ON first_application.graph_name = tg.graph_name
-     AND first_application.type_name = tg.type_name
-     AND first_application.field_name = tg.field_name
-     AND first_application.ordinal = tg.ordinal
-    JOIN (SELECT graph_name, type_name, field_name, ordinal, MAX(position) AS position
-            FROM graphitron_field_reference_step
-           GROUP BY graph_name, type_name, field_name, ordinal) last_element
-      ON last_element.graph_name = tg.graph_name
-     AND last_element.type_name = tg.type_name
-     AND last_element.field_name = tg.field_name
-     AND last_element.ordinal = tg.ordinal
-     AND last_element.position = tg.position
-   WHERE tg.targets = 1
-)
 SELECT graph_name, type_name, field_name, disposition, basis,
        table_source_name, table_schema, table_name
   FROM (SELECT arms.graph_name, arms.type_name, arms.field_name, arms.disposition, arms.basis,
@@ -3329,47 +3385,19 @@ SELECT graph_name, type_name, field_name, disposition, basis,
                        'SILENT', 'UNRESOLVED_PATH', NULL, NULL, NULL, 1
                   FROM (SELECT DISTINCT graph_name, type_name, field_name
                           FROM graphitron_field_reference_step) a
-                 WHERE NOT EXISTS (SELECT 1 FROM path_terminal pt
-                                    WHERE pt.graph_name = a.graph_name
-                                      AND pt.type_name = a.type_name
-                                      AND pt.field_name = a.field_name)
+                 WHERE NOT EXISTS (SELECT 1 FROM intent_field_column_scope sc
+                                    WHERE sc.graph_name = a.graph_name
+                                      AND sc.type_name = a.type_name
+                                      AND sc.field_name = a.field_name
+                                      AND sc.basis = 'PATH_TERMINAL')
                 UNION ALL
-                SELECT pt.graph_name, pt.type_name, pt.field_name,
-                       'RESOLVE', 'PATH_TERMINAL',
-                       pt.table_source_name, pt.table_schema, pt.table_name, 2
-                  FROM path_terminal pt
-                UNION ALL
-                SELECT f.graph_name, f.type_name, f.field_name,
-                       'RESOLVE', 'NAMED_TYPE_TABLE',
-                       bt.table_source_name, bt.table_schema, bt.table_name, 3
-                  FROM graphql_field f
-                  LEFT JOIN graphitron_field_synthesis fs
-                    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-                   AND fs.field_name = f.field_name
-                  JOIN graphql_type nt
-                    ON nt.graph_name = f.graph_name
-                   AND nt.type_name = COALESCE(
-                         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
-                         f.named_type)
-                   AND nt.kind = 'OBJECT'
-                  JOIN intent_bound_table bt
-                    ON bt.graph_name = f.graph_name AND bt.type_name = nt.type_name
-                   AND bt.candidates = 1
-                 WHERE f.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-                   AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_step s
-                                    WHERE s.graph_name = f.graph_name
-                                      AND s.type_name = f.type_name
-                                      AND s.field_name = f.field_name)
-                   AND NOT EXISTS (SELECT 1 FROM intent_authored_field_claim ac
-                                    WHERE ac.graph_name = f.graph_name
-                                      AND ac.type_name = f.type_name
-                                      AND ac.field_name = f.field_name)
-                   AND NOT EXISTS (SELECT 1 FROM graphitron_pivot pv
-                                    WHERE pv.graph_name = f.graph_name
-                                      AND pv.type_name = f.type_name
-                                      AND pv.field_name = f.field_name)) arms) picked
+                SELECT sc.graph_name, sc.type_name, sc.field_name,
+                       'RESOLVE', sc.basis,
+                       sc.table_source_name, sc.table_schema, sc.table_name, 2
+                  FROM intent_field_column_scope sc
+                 WHERE sc.basis <> 'PARENT_BINDING') arms) picked
  WHERE rn = 1;
-COMMENT ON VIEW intent_field_column_table IS 'Which table a column name written at a field''s site resolves against, when that table is not the one the field''s own parent is bound to. The question an editor asks at a @field(name:) or @defaultOrder(fields: [{name:}]) site, and the resolution three LSP arms (completion, hover, the field-member diagnostic) each used to ask a projected per-permit switch. Deliberately narrow: a field whose column names resolve against its parent''s own binding contributes no row, because a reader already holding the parent''s binding needs no relation to tell it so, and stating that case here would make the relation a copy of intent_bound_table keyed one grain down. Absence therefore means "the parent''s own scope answers", which is the reading every consumer already falls back to; only a row overrides it. Two rules produce a table and both are readings of navigation rather than of a directive vocabulary: an authored @reference path resolves to its terminal element''s table, and a field with no path whose named type is itself bound to a table resolves to that table, which is where an ordering column named on a list field lives. Two rules produce silence instead, meaning "no column name resolves here, and the parent''s scope must not stand in": a coordinate whose classification the author has already contested, and an authored path that reaches no single table. The silences are structural, never a reading of the rejection residue: a derivation that asked the residue whether a coordinate had been reported would go quiet the day that family drains, and this relation''s meaning must not depend on where a message currently lives. The path rule reads the first application''s last element, the repeatable directive''s ordinal grain collapsed the way the authored-claim view collapses @routine''s, and it demands the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination. The named type the rule reads is the one the author wrote, not the one the field currently carries: where a macro rewrote a field''s type expression the authored expression survives on the synthesis relation, and a connection field''s columns are the element type''s rather than the wrapper''s. Taking the named type of that expression is three REPLACEs, list brackets and non-null markers removed, which is what a named type is; reading it there rather than walking the expansion''s own fields means any macro that rewrites a type expression keeps working without this view knowing the shape it expands into. The named-type rule carries the guards that keep it a reading of navigation: a root''s field navigates from no scope of its own, a named type of any kind but OBJECT is an interface, a union or an input and is a different question, an ambiguous binding names no single table, and a field whose classification the author has already claimed does not navigate to its named type at all, that last guard being an anti-join against the authored claims rather than a list of directive names, so it grows as that vocabulary does. @pivot is the one claim the guard names directly, because the claim vocabulary has no arm for it yet and a pivoted field reads its columns from the pivot rather than from the type it names; the explicit guard folds into the anti-join the day that arm lands.';
+COMMENT ON VIEW intent_field_column_table IS 'Which table a column name written at a field''s site resolves against, when that table is not the one the field''s own parent is bound to. The question an editor asks at a @field(name:) or @defaultOrder(fields: [{name:}]) site, and the resolution three LSP arms (completion, hover, the field-member diagnostic) each used to ask a projected per-permit switch. The navigation itself is intent_field_column_scope''s and no longer restated here: this view is that relation read as an override, its two non-parent bases carried through as RESOLVE rows and its parent-binding rows dropped. Deliberately narrow, which is what dropping them means: a field whose column names resolve against its parent''s own binding contributes no row, because a reader already holding the parent''s binding needs no relation to tell it so, and stating that case here would make this view a copy of the scope keyed one grain down. Absence therefore means "the parent''s own scope answers", which is the reading every consumer already falls back to; only a row overrides it. Two rules produce silence, meaning "no column name resolves here, and the parent''s scope must not stand in", and both are this view''s own rather than the scope''s: a coordinate whose classification the author has already contested, and an authored path that reaches no single table, the second read as the scope answering a path-carrying field with no terminal. The conflict silence stays here on purpose, because the column-match classifier reads the same scope and its raw reading at a contested coordinate is what lets a diagnostic name the override. The silences are structural, never a reading of the rejection residue: a derivation that asked the residue whether a coordinate had been reported would go quiet the day that family drains, and this relation''s meaning must not depend on where a message currently lives.';
 COMMENT ON COLUMN intent_field_column_table.graph_name IS 'the owning graph''s partition, carried from every arm''s base relation';
 COMMENT ON COLUMN intent_field_column_table.type_name IS 'the site''s owning type; the parent whose binding this row overrides';
 COMMENT ON COLUMN intent_field_column_table.field_name IS 'the site''s field name within the owning type';
