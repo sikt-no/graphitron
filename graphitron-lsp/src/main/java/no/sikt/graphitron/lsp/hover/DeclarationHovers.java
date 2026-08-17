@@ -35,12 +35,17 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * SDL declaration coordinate added to the sealed family fails to compile until its
  * hover content lands here in the same commit.
  *
- * <p>The classification block is the classifier a claim carries ({@link ClaimClassifiers}) and the
- * facts behind it ({@link ClaimFacts}), each read from the relation that owns it. There is no
- * variant name here and no per-variant payload: the block is a heading and a list of labelled
- * values, so a claim growing a fact is a query in the reader rather than a new arm in a switch. A
+ * <p>The classification block is the classifier a claim carries and the facts behind it, each read
+ * from the relation that owns it. There is no variant name here and no per-variant payload: the block
+ * is a heading and a list of labelled values, so a claim growing a fact is an arm of
+ * {@link ClaimFacts#ofField}'s statement rather than a new arm in a projection's switch. A
  * declaration nothing claims gets no block, which is the same silence the inlay hint keeps at an
  * unclaimed declaration.
+ *
+ * <p>The field block costs one statement. It used to cost one per claim on top of three, and the
+ * per-claim reads were the defect: a conflicted coordinate paid per directive that claimed it, for
+ * facts whose relations were all keyed on the one coordinate being hovered. The type block is
+ * {@link ClaimClassifiers#ofTypes} plus a read per claim still.
  *
  * <p>Beneath the classification block, the hover overlays what the graph's own facts say about the
  * declaration the coordinate binds to: a table's database comment, a column's or member's doc
@@ -218,20 +223,17 @@ public final class DeclarationHovers {
      * round-trip answer about; gating the block on a claim would silence it exactly there.
      */
     private static String renderFieldMarkdown(StoreHandle store, DeclarationHover.FieldDeclarationHover decl) {
-        var classifiers = ClaimClassifiers.ofFields(store, List.of(decl.parentTypeName()))
-            .getOrDefault(decl.coordinate(), List.of());
-        var joinPath = ClaimFacts.joinPath(store, decl.parentTypeName(), decl.fieldName());
-        var fetchRules = ClaimFacts.separateFetchRules(store, List.of(decl.parentTypeName()))
-            .getOrDefault(decl.coordinate(), List.of());
-        if (classifiers.isEmpty() && joinPath.isEmpty() && fetchRules.isEmpty()) return null;
+        var block = ClaimFacts.ofField(store, decl.parentTypeName(), decl.fieldName());
+        if (block.isEmpty()) return null;
         var sb = new StringBuilder();
+        var classifiers = block.classifiers();
         if (!classifiers.isEmpty()) sb.append("**").append(String.join(", ", classifiers)).append("**\n\n");
         sb.append("`").append(decl.coordinate()).append("`");
-        for (String classifier : classifiers) {
-            appendFacts(sb, ClaimFacts.ofField(store, decl.parentTypeName(), decl.fieldName(), classifier));
+        for (var claim : block.claims()) {
+            appendFacts(sb, claim.facts());
         }
-        appendJoinPath(sb, joinPath);
-        appendSeparateFetch(sb, fetchRules);
+        appendJoinPath(sb, block.joinPath());
+        appendSeparateFetch(sb, block.fetchRules());
         return sb.toString();
     }
 

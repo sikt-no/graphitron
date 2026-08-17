@@ -82,6 +82,20 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!--
+            jOOQ's org.jooq.conf.Settings is JAXB-annotated and jOOQ declares
+            jakarta.xml.bind-api as <optional>, so it is not on the classpath transitively.
+            DeclarationHoverStatementCountTest derives a Configuration to attach a statement
+            counter, which reaches Settings; without the API javac cannot resolve those
+            annotation methods and the warnings it emits are rejected by -Werror. Test scope
+            only, the same fix graphitron carries for its emitted-code harness.
+        -->
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
