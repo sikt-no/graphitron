@@ -29,9 +29,11 @@ third constructor argument of each emitted `Mapping` constant; and
 
 The gap is at the read side. Dispatch is source-direct: on a match the matched `Throwable`
 itself goes into the errors list, and the error type's `message:` slot is resolved by
-`no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator#messageMethod`,
-which unconditionally returns `getMessage()` off the source. The matched `Mapping` is out of
-scope by the time the field is fetched, so the override has nothing to act through.
+`no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator#messageMethod`.
+That method forks on the source's runtime shape, a `GraphQLError` arm and a `Throwable` arm
+over a `null` fall-through, but both live arms return `getMessage()` and nothing else is
+consulted. The matched `Mapping` is out of scope by the time the field is fetched, so the
+override has nothing to act through.
 
 Two things make the no-op worse than a plain missing feature. There is no diagnostic: a
 schema that sets `description:` builds clean and runs, and the author discovers the message
@@ -93,9 +95,19 @@ in dependency order.
 
 ### 1. Resolve the branch once, in the model
 
-Replace `Optional<String> description()` on `ErrorType.Handler` with a resolved sealed slot,
+Replace `Optional<String> description()` with a resolved sealed slot,
 `sealed interface ClientMessage permits ClientMessage.Static, ClientMessage.FromSource`,
 decided once in `TypeBuilder`. `Static` carries the string; `FromSource` carries nothing.
+
+The slot goes on the three dispatch records (`ExceptionHandler`, `SqlStateHandler`,
+`VendorCodeHandler`), not on the `ErrorType.Handler` interface. Move 2 rejects
+`description:` on a `ValidationHandler`, so that variant has no client message to carry and
+declaring `clientMessage()` one level up would force it to fake one. This is the opposite
+choice from `matches()`, which stays on the interface with `ValidationHandler` overriding it
+to `Optional.empty()`; leave `matches()` alone, the two are not a pair to keep symmetric.
+Do not mint an intermediate `permits`-level seal for the three dispatch variants either: a
+consumer holding a bare `Handler` already switches on arms to reach the discriminator, and
+one accessor does not pay for a new layer in the hierarchy.
 
 The `Optional` is currently re-branched by three build-time consumers in the same shape:
 `ErrorMappingsClassGenerator` across three arms via `literalOrNull`, its `HandlerKey.of`
@@ -184,9 +196,12 @@ own predicate would be a third spelling.
 
 Also mint `ErrorRouter` and `ErrorMappings` through `GeneratedUnits.singleton(SUB_SCHEMA, ...)`
 while here. `ErrorTypeFetcherClassGenerator` needs to name `ErrorRouter.Mapping`, and
-hand-spelling `outputPackage + ".schema"` there would be the third copy of that formula after
-`ErrorRouterClassGenerator.noChannelRouterCall` and `ChannelCatchArmEmitter.errorRouterClass`.
-Minting it costs one method and removes a formula instead of adding a copy.
+hand-spelling `outputPackage + ".schema"` there would add one more copy of a formula already
+open-coded at 37 sites across `graphitron/src/main`, six of them in the error family alone
+(`ErrorRouterClassGenerator.noChannelRouterCall` and the `clientException` lookup below it,
+`ErrorMappingsClassGenerator.generate`, and `ChannelCatchArmEmitter`'s `errorRouterClass` /
+`errorMappingsClass` / `errorListClass`). Minting removes the error family's copies rather than
+adding a seventh. Sweeping the other 31 is not this item's business; do not widen into it.
 
 ### 5. Make the two manual pages agree
 
@@ -266,8 +281,9 @@ so that tier carries the acceptance.
   sentence goes with it.
 * "`description:` is documentation today" as a statement of behaviour, in the how-to's
   pitfalls list.
-* `Handler.description()` as an accessor name, if move 1 lands: the replacement is
-  `clientMessage()`.
+* `description()` as an accessor name on the handler variants, if move 1 lands: the
+  replacement is `clientMessage()` on the three dispatch records, and nothing at all on
+  `ValidationHandler` or on the `Handler` interface.
 
 ## Out of scope
 
