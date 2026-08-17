@@ -1,7 +1,7 @@
 ---
 id: R697
 title: "Case-folded name columns on the base relations, so matching views stop repeating UPPER()"
-status: Backlog
+status: Spec
 bucket: architecture
 theme: classification-model
 depends-on: []
@@ -32,28 +32,106 @@ inconsistently used one.
 
 ## Why it is worth doing rather than tolerating
 
-Three reasons, in order of weight. A matching predicate written once per column cannot drift between
-the join arm and the ordering arm of the same view, which is a live hazard in the four-repeat case
-above. A folded column is indexable where an expression over a joined derived relation is not, and
-`intent_column_match_claim`'s comment already records a measured seventy-times regression from getting
-the shape of that view's evaluation wrong. And every future matching view stops restating the rule.
+Three reasons, in order of weight. The fold gets stated once per column instead of once per
+comparison; on its own that shortens each predicate spelling without reducing the count, so the plan
+below pairs it with the one restructuring that does close the drift hazard in the four-repeat view
+(the predicate collapse in step 3). A folded column is indexable where an expression over a joined
+derived relation is not; the DDL declares no indexes today, so this is an enabling property rather
+than a taken benefit, and no DDL comment may claim it (`intent_column_match_claim`'s comment already
+records a measured seventy-times regression from getting that view's evaluation shape wrong, which
+is what makes the enablement worth having). And every future matching view stops restating the rule.
 
-## The fork to settle at Spec
+## The fork, settled
 
-Two shapes, and the choice is not obvious:
+The generated column wins. The jOOQ check the Backlog body demanded has been run, not reasoned
+about: a standalone rehearsal against jOOQ 3.20.11 OSS and H2 2.4.240, replicating
+`ModelCodegenDriver`'s exact configuration (live H2 metadata, same `Generate` flags) and
+`FactSink.flush()`'s exact insert shape. Five results, each load-bearing:
 
-* **An H2 generated column** (`GENERATED ALWAYS AS (UPPER(column))`) on each name-bearing base
-  relation. The engine guarantees the invariant and nothing can write a stale value. Risk: capture
-  writes these relations through jOOQ records and batch inserts, and a generated column must not
-  appear in an insert's column list. Whether jOOQ's codegen marks it readonly in 3.20 and whether
-  every writer respects that needs checking before the shape is chosen, not after.
-* **A plain column written by capture.** No writer friction, at the cost of a derived value stored in
-  a base relation, which is the shape the fact-model doctrine refuses. It would need the
-  cannot-be-a-view argument the DDL requires of a materialization, and "the engine cannot enforce it"
-  is a weaker argument than the doctrine's bar.
+1. **Codegen accepts the column silently.** jOOQ OSS emits a `GENERATED ALWAYS AS` column as a
+   plain `TableField` with no readonly or computed marking; readonly-column awareness is a jOOQ
+   commercial-edition feature. So `Table.fields()` includes the folded column, and nothing in the
+   generated surface distinguishes it from a writable one.
+2. **The current flush shape breaks.** `insertInto(table).columns(table.fields())` with
+   `record.intoArray()` binds fails at H2 with "Generated column ... cannot be assigned", in both
+   the plain-insert arm and the `onDuplicateKeyIgnore` shared-family arm.
+3. **The record path is safe.** `record.insert()` and `batchInsert` render from the changed-field
+   set, skip the never-set folded column, and the engine computes the folded value.
+4. **Filtering works.** Excluding the folded columns from the insert column list and the bound
+   value array succeeds, and the folded values compute correctly.
+5. **The engine names its own generated columns.** H2's `INFORMATION_SCHEMA.COLUMNS` reports
+   `IS_GENERATED = 'ALWAYS'` and the `GENERATION_EXPRESSION`, so a writer can discover what not to
+   write from engine metadata rather than from a naming convention or a hand-kept list.
 
-Preference is the generated column, contingent on the jOOQ check. If that check fails the honest
-answer may be to do nothing and leave the repetition, so the check comes first in the Spec body.
+`FactSink.flush()` is the writer that needs the change; the other write paths (`insertInto` with
+explicit column lists in `FactCapture`, `ClasspathSources`, `JavaSourceFacts`; `batchInsert` in
+`JavaSourceFacts` and `BuildWarningFacts`) either never name the folded columns or go through the
+changed-set path result 3 covers. That census is an observation, not the guarantee: the enforcer
+is H2 itself, which rejects the failing shape loudly ("Generated column ... cannot be assigned")
+the first time it executes, so a future writer that regresses into it fails the build rather than
+writing something wrong.
+
+Doctrinally the generated column needs no materialization argument. It is a derivation whose
+enforcer is structural rather than procedural, the same shape as the rendered-coordinate rule
+`graphql_duplicate_declaration.coordinate` already blesses (a derived value on a base relation
+that cannot drift from the columns it renders), with the engine rather than capture doing the
+rendering. The DDL states that argument once, at the first folded column, and the other comments
+point at it instead of each re-arguing.
+
+## Plan
+
+Four moves, one DDL pass and one writer pass, then the views and the verification:
+
+1. **DDL: folded columns.** Add `<column>_folded VARCHAR GENERATED ALWAYS AS (UPPER(<column>))`
+   beside each name-bearing column a matching view folds today: `sql_table` (`table_schema`,
+   `table_name`), `sql_constraint` (`table_schema`, `constraint_name`, `jooq_name`), `sql_column`
+   (`jooq_name`, `column_name`), `graphql_field` (`field_name`, the one folded column landing on a
+   hot, wide, foreign-key-targeted relation), `graphitron_field_binding` (`name_ref`),
+   `graphitron_table` (`table_ref`, `type_name`), `graphitron_field_reference_step` (`table_ref`,
+   `key_ref`), `graphitron_argument_reference_step` (`table_ref`), `graphitron_reference_for_step`
+   (`table_ref`), `graphitron_mutation` (`table_ref`). The exact census is whatever the folding
+   lines actually reference once the rewrite starts; the list above is read off the nineteen lines
+   today. Each column gets a `COMMENT ON COLUMN` in the same pass (the relation-census gate fails
+   an uncommented column): the comment states it is the engine-computed case-folded mirror of its
+   sibling and exists for name matching, with the doctrinal argument stated once at the first
+   folded column per the fork section above.
+2. **Writer: FactSink filters engine-owned columns.** `flush()` learns which columns the engine
+   computes by reading `INFORMATION_SCHEMA.COLUMNS` once per store (engine truth, the same move
+   `parentsFirst` already makes with the generated foreign keys, so a future folded column costs
+   no writer edit). The kept positions are computed once per table as a single index array from
+   which both the insert column list and each row's bound array derive, so the two sequences
+   cannot disagree positionally; a filter computed twice would be a silent wrong write when the
+   copies drift. No claim-key change: folded columns are never part of a natural key.
+3. **Views: fold-free matching.** Each of the nineteen `UPPER(`/`LOWER(` matching lines becomes an
+   equality over folded columns. The effective-name `COALESCE` stays the view's product, now over
+   folded inputs: `COALESCE(fb.name_ref_folded, f.field_name_folded)` in
+   `intent_column_match_claim`, `COALESCE(t.table_ref_folded, t.type_name_folded)` in the spelling
+   union. Qualified-spelling splits take both the split position and the substring over the folded
+   column (`SUBSTRING(x_folded FROM POSITION('.' IN x_folded) + 1)`), so no commutation claim
+   about H2's casing is carried in prose; folding distributes over concatenation regardless of
+   whether casing preserves length. And `intent_column_match_claim` gets the one restructuring the
+   item's lead motive actually needs: an inner select emits `matched_by` and the effective folded
+   name as columns, the outer select orders and filters over them, collapsing the thrice-written
+   match predicate (join arm, `matched_by` CASE, `ROW_NUMBER` ordering) to a single spelling.
+4. **Verification.** The existing pipeline and capture-agreement tests are the harness: they load
+   real SDL and a real catalog through the changed writer and read through the changed views, so a
+   wrong filter or a missed rewrite fails loudly. Two additions earn their place. A capture test
+   asserting a folded column carries the engine-computed value after a real load, pinning result 3
+   against a future writer regression. And a `FactSchemaGateTest` sibling that reads
+   `INFORMATION_SCHEMA.COLUMNS` where `IS_GENERATED = 'ALWAYS'` and asserts every
+   `GENERATION_EXPRESSION` is exactly `UPPER("<c>")` over a non-generated column of the same
+   relation and every such column is named `<c>_folded`, which turns the one-column-per-fold rule
+   and the naming convention from review-only doctrine into a gate (H2 would happily accept
+   `UPPER(COALESCE(...))`, so nothing else stops the next author from crossing that line).
+
+Out of scope, stated so the rewrite does not creep: the single-character accessor-prefix fold
+(`LOWER(SUBSTRING(method_name, ...))` in the accessor views) is prefix grammar, not name matching;
+the meta census views fold `INFORMATION_SCHEMA.TABLES` columns, which are not our base relations.
+Both keep their inline folds. Known re-spellings of the same matching rule outside SQL's reach,
+named here so silence does not read as a claim: the LSP's `CatalogColumns.isNamed`
+(`equalsIgnoreCase` over jOOQ and SQL names) and its `CatalogKeys` sibling restate the two-tier
+case-insensitive match in Java against fetched rows, where a folded column cannot reach. They
+belong to the LSP re-sourcing work the Care section already sequences against, not to this item.
 
 ## Care
 
