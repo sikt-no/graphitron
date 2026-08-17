@@ -174,15 +174,30 @@ two have to stay in agreement or `sameHandlerShape` starts throwing its internal
 Mint one `Mapping[]` per `@error` type instead, and derive each channel constant as the
 ordered concatenation of the per-type arrays it maps. `ErrorChannel.mappedErrorTypes()`
 already carries exactly that list in exactly that order, so the derivation is total, and the
-entries are the `ErrorIndex` fixed point's records (`FieldBuilder.detectErrorsFieldShape` resolves
-each union member through `ctx.errors.forName`), so an `@error` type name determines its array
-content. One row population, read at two grains. `description` then drops out of both dedup
-spellings on its own.
+entries are the `ErrorIndex` fixed point's records (`BuildContext.detectErrorsFieldShape`
+resolves each union member through `errors.forName`), so an `@error` type name determines its
+array content. One row population, read at two grains. `description` then drops out of both
+dedup spellings on its own.
+
+Membership for the per-type grain is `schema.types()`, not the channel walk
+`ErrorMappingsClassGenerator.generate` does today. An `@error` type that no channel maps is a
+live shape rather than a hypothetical: every `GraphitronSchemaBuilderTest.ErrorTypeCase` fixture
+returns its `@error` type straight off `Query` instead of through a payload's errors slot, and
+`TypeUnitCommands.fetchersRows` mints a `FetchersUnit` for every `ErrorType` in `schema.types()`
+which `TypeFetcherGenerator` then renders unconditionally. The fetchers class therefore exists
+for an unmapped type, and move 4's `message()` body would name a constant a channel-keyed mint
+never emits, which is invalid generated Java rather than a diagnostic. Mint per `ErrorType`,
+deriving each array from that type's own `handlers()`; channel reach is not a precondition,
+which is the same fact as the content being name-determined. Emitting the channel-side
+concatenation needs a form too, since Java array initializers do not concatenate: a private
+varargs helper on `ErrorMappings` is the obvious one.
 
 Both grains land in one `ErrorMappings` class, so say what names the per-type constants. The
-channel-keyed ones are `SCREAMING_SNAKE` of an SDL outcome type name or a payload class simple
-name (`ErrorChannelWalker.toScreamingSnake`, `BuildContext.toScreamingSnake`); the obvious
-per-type spelling is `SCREAMING_SNAKE` of the `@error` type name, which shares that namespace.
+channel-keyed ones are `SCREAMING_SNAKE` of an SDL outcome type name
+(`ErrorChannelWalker.toScreamingSnake`), a payload class simple name (the private
+`FieldBuilder.toScreamingSnake`), or a wrapper SDL type name on the `LocalContext` arm
+(`BuildContext.toScreamingSnake`); the obvious per-type spelling is `SCREAMING_SNAKE` of the
+`@error` type name, which shares that namespace.
 Two SDL type names cannot collide, but a payload class simple name and an `@error` type name can
 (a `com.example.NotAllowed` payload class alongside an `@error type NotAllowed` mints
 `NOT_ALLOWED` twice), and a duplicate field is invalid generated Java rather than a diagnostic.
@@ -240,9 +255,9 @@ The how-to's "captured but currently unused" section and its matching pitfall bu
 out, replaced by the resolution order and by the one thing that stays true: the *other*
 fields on the error type still read off the live exception.
 
-"True as written" has to mean the whole `ErrorHandler` field table, not just its `description` row.
-Three of the other rows are already false against the tree, in the same five-row table this move
-edits, so leaving them would make the move's own success criterion unmet:
+"True as written" has to mean the whole page, not just the `description` row of its `ErrorHandler`
+field table. Four other statements are already false against the tree, three of them in the same
+five-row table this move edits, so leaving them would make the move's own success criterion unmet:
 
 * The `handler` row says `DATABASE` "matches `org.jooq.exception.DataAccessException` (or a
   configured subclass)". `TypeBuilder`'s DATABASE arm lifts a no-discriminator entry to
@@ -253,13 +268,25 @@ edits, so leaving them would make the move's own success criterion unmet:
   The DATABASE arm rejects `className` outright, so there is no default to state.
 * The same row says `className` is "ignored for `VALIDATION`". That arm's `disallowed` list rejects
   it.
+* Outside the table, the "Semantics" bullet at line 129 says "`code:` and `sqlState:` may be
+  combined; both must match on the exception". Rule 3 in `parseErrorHandler` rejects a `DATABASE`
+  entry carrying both outright ("cannot carry both 'sqlState' and 'code'"), so this promises the
+  author a build that fails on the arrangement the page recommends.
 
-The last two matter more than the first: they promise an author a build that fails. The first reads
-as harmless because jOOQ wraps the driver's `SQLException` as its cause and the matcher walks the
-chain, so the documented class routes anyway right up until someone relies on the documented
-`className:`. Correcting three table rows in a file already open is smaller than a second pass over
-the same table; the facts above are the whole change, so no re-derivation is needed. Nothing else on
-the page is in scope, and no behaviour changes here.
+The `VALIDATION` row, the `DATABASE` default, and the combined-discriminator bullet matter more than
+the `handler` row: they promise an author a build that fails. The `handler` row reads as harmless
+because jOOQ wraps the driver's `SQLException` as its cause and the matcher walks the chain, so the
+documented class routes anyway right up until someone relies on the documented `className:`.
+
+Two further repeats of that same `DataAccessException` slip sit off the table and go with it, since
+they are the same fact restated: the `className` comment in the directive signature block ("defaults
+to `org.jooq.exception.DataAccessException` for `DATABASE`"), and the "Semantics" bullet claiming a
+no-discriminator `DATABASE` routes "every `DataAccessException` on the channel" when the arm lifts to
+`ExceptionHandler("java.sql.SQLException")`. Both are one-phrase edits.
+
+Correcting these in a file already open is smaller than a second pass over the same page; the facts
+above are the whole change, so no re-derivation is needed. Nothing else on the page is in scope, and
+no behaviour changes here.
 
 ## Settled questions
 
@@ -287,8 +314,9 @@ resolves each arm at build time, and the question is where the resolved `Static`
 1. *Read the mapping.* Emit `return ErrorMappings.FILM_LOOKUP_INVALID[0].description();` for a
    `Static` arm and `return thr.getMessage();` for `FromSource`. No runtime test (the arm chose the
    statement), the string stays interned once in the mappings constant, the accessor the Problem
-   section calls unread becomes read, and `ErrorRouterClassGeneratorTest`'s three exact-set
-   assertions (the `Mapping` method set, `ExceptionMapping`'s field set, its method set) stay green.
+   section calls unread becomes read, and `ErrorRouterClassGeneratorTest`'s three
+   `description`-naming assertions stay green (the `Mapping` method set and `ExceptionMapping`'s
+   field set are exact-set; `ExceptionMapping`'s method set is a `contains`).
    Costs an index-literal coupling between the fetcher and the array, and note the indices are the
    array's, not `et.handlers()`': `buildMappingArrayInitializer` skips `ValidationHandler`, so an
    `@error` type mixing VALIDATION with a dispatch handler shifts them.
@@ -355,7 +383,12 @@ so that tier carries the acceptance.
   Worth naming because this section's thesis is that every layer already has a passing test of its
   own shape: this is the one whose passing assertion states the behaviour being removed, and it is
   also the only `description()` call in the suite made through the `Handler` interface rather than
-  through a variant, so it does not merely change verdict, it stops compiling.
+  through a variant, so it does not merely change verdict, it stops compiling. A second, purely
+  mechanical compile break rides along: move 1 leaves `ValidationHandler` with no components at all,
+  so the five `new ValidationHandler(Optional.empty())` sites lose their argument
+  (`ErrorMappingsClassGeneratorTest` twice, `TypeFetcherGeneratorTest`,
+  `CheckedExceptionMatcherTest`, `ErrorChannelWalkerTest`). Named so the arity change is expected
+  rather than discovered.
 * Unit tier: the `ClientMessage` lift in `TypeBuilder`. No code-string assertion on the
   emitted `message()` body at any tier; that form is banned, and here it would re-create
   exactly the false confidence that let this ship.
