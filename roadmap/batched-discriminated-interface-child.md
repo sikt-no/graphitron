@@ -181,8 +181,11 @@ already do, and `forcesSplitDelivery`'s javadoc should gain this arm in its list
     the "Regression" line below is then a statement about the unbatched path only, which is fine),
     or composite FKs are declared out of scope here and the single-slot read carries over.
   * **The key columns have to reach the select list.** `buildTableInterfaceReprojection` takes an
-    `alwaysProject` parameter that this call site passes `List.of()` for; the launcher's
-    discriminated arm is what uses it. That is the hook for projecting the correlation columns the
+    `alwaysProject` parameter that this call site passes `List.of()` for; the one caller that
+    passes it non-empty is the root `@service` single-table-interface fetcher in
+    `MultiTablePolymorphicEmitter`, threading the base table's primary key (the launcher's
+    discriminated arms assemble through `DiscriminatedTableFragments` directly and never reach
+    this parameter). That is the hook for projecting the correlation columns the
     scatter groups by, so the batched form should thread the key columns through it rather than
     appending to the assembled select.
 * **Tenancy: the loader name has to partition the batch.** This is the one edit on the list whose
