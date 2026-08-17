@@ -346,7 +346,7 @@ public sealed interface ChildField extends OutputField
         }
         /** The FK-derived column pairs of the single cross-table hop. */
         public On.ColumnPairs pairs() { return (On.ColumnPairs) hop.on(); }
-        /** The cross table joined to project this field; equivalent to {@code hop().targetTable()}. */
+        /** The cross table the hop reaches, selected from by the correlated subselect that projects this field; equivalent to {@code hop().targetTable()}. */
         public TableRef targetTable() { return hop.targetTable(); }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(column.columnType());

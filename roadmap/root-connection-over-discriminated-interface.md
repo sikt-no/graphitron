@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a field returning a discriminated table interface"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: interface-union
@@ -40,15 +40,12 @@ roots and their child twins: `allContent` (participants share the base table, on
 `@reference` field), `allParties` (joined detail tables on a single-column shared primary key) and
 `allSubjects` (joined detail tables on a composite shared key).
 
-Pinned state:
-
-* `GraphitronSchemaBuilderTest`'s `TABLE_INTERFACE_ROOT_CONNECTION_DEFERRED` enum row pins the root
-  deferral. Per the `classified-corpus` skill it is a pure-verdict row subsumed by the new corpus
-  example, so it is deleted rather than rewritten.
-* `RootLauncherRendererTest.discriminatedSource_connectionAndFannedPairsAreUnrepresentable` pins
-  the `LauncherCommand` constructor's "never paginates" throw on the `(DiscriminatedTable,
-  Connection)` pair, alongside a "runs single-tenant" assertion that survives unchanged.
-* The child deferral is unpinned: no test asserts its message.
+Pinned state, as it stands after delivery: the `GraphitronSchemaBuilderTest` enum row that pinned
+the root deferral is gone, subsumed by the corpus example under Coverage; the `LauncherCommand`
+backstop test kept only its single-tenant half and is now
+`RootLauncherRendererTest.discriminatedSource_fannedPairIsUnrepresentable`, beside a new
+`discriminatedSource_connection_returnsTheCarrierRefLikeTheAnchorArm`; the child deferral was
+unpinned, so deleting it asserted nothing.
 
 ## Why the pair was deferred, and what the reopen settled
 
@@ -300,38 +297,15 @@ over it.
   fields over different hops, where today's TypeName-prefixed aliases keep them apart) and is its
   own item if anyone wants it.
 
-## Implementation (ordered; each numbered group is a commit)
+## Implementation (all shipped; the plan for each group is in git history at its commit)
 
-1. **The subselect conversion.**
-   * `LauncherCommands.discriminatedBranches`: lower `CrossTableField` to the subselect term with
-     the fixed alias and the gate predicate, carried on `Branch.SingleTable`.
-   * `ProjectionUnitRenderer.scalarInnerSelect` lifted to a shared fragment parameterized on the
-     parent table local; `DiscriminatedTableFragments`'s cross-table emission renders through it;
-     `crossTableJoinChain` and `CrossTableField.aliasVarName()` retire.
-   * Re-freeze
-     `RootLauncherSqlBaselineTest.interfaceRoot_crossTableParticipantField_gatedLeftJoinArm` to the
-     subselect shape and rename it; the existing `allContent` execution assertions stay green.
-   * The execution-tier fan-out pin (Coverage).
-   * Javadoc sweep of the LEFT JOIN vocabulary: `ParticipantRef.TableBound.crossTableFields` /
-     `CrossTableField`, `ChildField.ParticipantColumnReferenceField`, `LaunchSource`'s
-     `Branch.SingleTable`, the `DiscriminatedTableFragments` class javadoc, and any
-     `docs/architecture` row naming conditional LEFT JOINs for this leaf.
-   * While in the area: `JoinStep`'s class javadoc claims "the validator rejects one-to-many
-     navigation on a single-value field"; no such validator exists, and this item makes the claim
-     permanently false rather than aspirational, so delete or restate it.
-     `ParticipantRef.JoinedTableBound`'s "checked by the validator" misattribution points at
-     `TypeBuilder.resolveJoinedTableParticipant` instead.
-     `TypeFetcherGenerator.buildTableInterfaceReprojection`'s javadoc claims four callers; it has
-     two.
-2. **The seam split.** Pure refactor: `projection` / `joinedStep`, `assembly` as the composition,
-   the fields-local name constant, the `{@link}`s. No call site changes; `TypeFetcherGeneratorTest`
-   and `PolymorphicProjectionFilterPinTest` stay green as-is.
-3. **The root lift.** The classifier, `LauncherCommands` and `LauncherCommand` edits above; the
-   renderer connection body; the corpus example plus the deleted enum row; the SQL baselines and
-   execution page walks (Coverage).
-4. **The child lift** (after R661 lands). The child deferral deletes; `Connection` joins the
-   batched fork; the windowing-tail extraction and the discriminated binder; the scatter emission
-   gate; the delivery-fact verification; the child fixture, baseline and page walks (Coverage).
+1. **The subselect conversion**: shipped at `348f914`.
+2. **The seam split**: shipped at `0c55288`, its capture-tier lowering pin at `cd46fe9`.
+3. **The root lift**: shipped at `3201386`.
+4. **The child lift** (rode R661): shipped at `3d4c78a`.
+
+Review rework: the first cycle's three items shipped at `5d256cd`; the second cycle's one gate item
+and its improvements shipped in the pass recorded at the end of this file.
 
 ## What needs no work, with the evidence
 
@@ -430,7 +404,11 @@ Checked, so the implementer does not re-derive it:
   `CrossTableField.aliasVarName()`.
 * "Gated LEFT JOIN" / "conditional LEFT JOIN" as the description of cross-table participant fields,
   wherever it appears: model javadocs, fragment javadocs, the baseline test name
-  `interfaceRoot_crossTableParticipantField_gatedLeftJoinArm`, docs rows.
+  `interfaceRoot_crossTableParticipantField_gatedLeftJoinArm`, docs rows, the user manual, fixture
+  SDL and DDL comments, and test names. The joined-detail join keeps the phrase; it really is a
+  discriminator-gated LEFT JOIN. The unambiguous half of this retirement (the `cross-table … join`
+  adjacency) outlived two sweeps and is now build-enforced by `RetiredVocabularyGuardTest`'s phrase
+  registry, so it does not depend on this file surviving.
 * `JoinStep`'s javadoc paragraph claiming "the validator rejects one-to-many navigation on a
   single-value field".
 * Prose asserting the `(DiscriminatedTable, Connection)` pair is unrepresentable, that no
@@ -439,16 +417,10 @@ Checked, so the implementer does not re-derive it:
 * `targetAtMostOnePerSource`: never landed; this file was its only habitat and this rewrite is the
   sweep.
 
-## What shipped, and what is left
+## Notes from the delivery
 
-Both halves are implemented; nothing of the implementation plan remains.
-
-1. The subselect conversion: shipped at `348f914`.
-2. The seam split: shipped at `0c55288`, its capture-tier lowering pin at `cd46fe9`.
-3. The root lift: shipped at `3201386`.
-4. The child lift: shipped at `3d4c78a`, after R661 landed the batched half it rides. The first
-   review cycle's rework (the retired body pins, the finished LEFT JOIN sweep, the SHA notes
-   here, both non-blocking improvements) shipped at `5d256cd`.
+Both halves are implemented; nothing of the implementation plan remains (the SHAs are in the
+Implementation section above).
 
 One deviation from the child plan, documented at the site: the windowing extraction
 (`windowedPageTail`) takes a caller-supplied step declaration plus a count topology rather than
@@ -549,7 +521,10 @@ with per-bucket `totalCount`, the one-batch-statement round-trip pin). The user-
 passes: the three `docs/` edits carry no roadmap markers, and the `splitQuery` page now names both
 batching cardinalities.
 
-One thing holds the gate.
+One thing holds the gate. *Addressed in the third In Progress pass, recorded below: the sweep was
+re-run against the declaration rather than against the list, and the phrase now carries a
+`RetiredVocabularyGuardTest` entry. Four of the six improvements are taken; the two left are
+recorded there with the reasoning.*
 
 1. **The declared retirement of "gated/conditional LEFT JOIN" as the cross-table description is
    still incomplete, and the second pass swept only the eight habitats the first review
@@ -615,6 +590,77 @@ Improvements, not gate-blocking; take them if cheap while in the area, or file t
   the gate: the body is truthful, and on approval the file is deleted anyway. Recorded because the
   Done-gate precondition is worded as "the spec body reflects what shipped", so the next reviewer
   will weigh the same thing; collapsing those two sections now costs less than re-litigating it.
+
+## Third In Progress pass (answering the second cycle)
+
+**The sweep, re-run against the declaration.** The grep found the twelve habitats the review
+enumerated plus five it did not, which is the review's own point about sweeping a list instead of a
+declaration:
+
+* `docs/manual/reference/directives/discriminate.adoc` and
+  `docs/manual/how-to/polymorphic-types.adoc` (twice) told authors the generator "emits a
+  conditional `LEFT JOIN` gated by `content_type = 'FILM'`". This is the user manual, the surface
+  `workflow.adoc` names first, and it was the most consequential habitat left: it is where a
+  consumer would learn the wrong performance and cardinality model. Rewritten to the capped
+  correlated subquery, stating the property that actually matters to an author (the projection
+  cannot multiply the rows the query returns).
+* `graphitron-sakila-db/src/main/resources/init.sql` described the fan fixture as exercising "the
+  LEFT JOIN ON-clause discriminator gate". Fixture DDL comments are prose habitat by the same
+  argument as fixture SDL, and no guard was reading them; see the habitat note below.
+* `DiscriminatedTableFragments.joinedDetailAliasDeclarations`'s javadoc said it mirrors
+  `crossTableAliasDeclarations` "but joining the whole detail table". Two defects in one sentence:
+  the `{@link}` target was renamed to `crossTableProjections` in commit 1, so the link was dangling
+  (private members are outside the javadoc reference gate's `show` level, which is why the build
+  never caught it), and the contrast implied the cross-table arm still joins. Now it names the
+  shared selection gate and the diverging SQL shape.
+* `GraphQLQueryTest.allContent_crossTableField_joinsFilmAndReturnsRatingForFilmContent` was a test
+  *name* asserting the retired mechanism, with the same claim in its comment and its assertion
+  description. Renamed and restated.
+* `docs/manual/how-to/join-with-references.adoc` said a scalar `@reference` "joins through the FK",
+  about the *plain* shape. Pre-existing and not this item's doing, but it is the page this item's
+  route makes load-bearing (cross-table participant fields now inherit exactly that shape), so a
+  reader following the manual would have learned the wrong mechanism from both ends. Corrected to
+  the subquery.
+
+**The guard entry: taken, scoped to what a mechanical rule can honestly assert.**
+`RetiredVocabularyGuardTest` gains a second registry, `PHRASE_REGISTRY`, and one entry in it. The
+existing registry matches whole identifier tokens, which cannot express this retirement: every word
+in "gated LEFT JOIN" stays live, because the joined-detail join genuinely is one. What is
+unambiguous is the *adjacency* `cross-table … join`, allowing only markup or a join qualifier
+between the two, and that is what the entry matches. Deliberately not proximity-based: the correct
+prose contrasting the two mechanisms ("the joined-detail LEFT JOIN chain, which after the
+cross-table conversion is this fragment's only join chain") sits inside any proximity window, and a
+guard that needs an allowlist for good writing is a guard that will be suppressed. The entry
+therefore covers eight of the pass's seventeen habitats and no more; the rest were phrased as
+"conditional LEFT JOIN gated by `<discriminator>`", which no rule can separate from a correct
+statement about the joined-detail join. Both directions are pinned by
+`theCrossTableJoinPhraseMatchesItsRetiredWordingAndSparesTheLiveMechanism`, because a regex, unlike
+a literal token, can be mistuned into vacuity or into false positives, and neither shows up as a
+build failure at the moment it happens.
+
+What gates the underlying fact remains the exact-SQL baselines and the capture-tier lowering pin;
+the phrase entry gates only the prose, which is all a prose guard can do.
+
+**One habitat gained.** The guard now walks `.sql` alongside `.graphqls` in the in-scope modules.
+Extending it immediately failed the build on a pre-existing hit unrelated to this item
+(`init.sql:399` still named `AccessorKeyedSingle`, retired to `KeyLift.Accessor` with `Arity.ONE`),
+which is the argument for the habitat: the one file in it is the fixture seed script, and its
+per-table comments explain fixture mechanism in the same vocabulary the javadoc uses.
+
+**Improvements.** Taken: the slug citation is gone with the `FilmContent` comment that carried it;
+`fanItems_fanningCrossTableHop_oneEntityPerBaseRow` keys every per-row assertion by `fanBaseId` and
+asserts the typename multiset (it also gained a NULL-through pin on the ALPHA base row with no
+detail row, free from keying by id); a backward walk over the discriminated child arrived as
+`fanOwners_fanItemsConnection_beforeCursorWalksTheSplitBucketBackward`, `last`-then-`before` through
+the reversed seek, and the two sibling walks stopped reading `allFanOwners` positionally while in
+the area; the Implementation and Pinned-state sections are collapsed to what shipped.
+
+Left, with the reasoning: the joined-detail child connection fixture, because it needs a new parent
+table, seed and SDL coordinate rather than an assertion, and the mechanism it would exercise (a
+count topology omitting a key-preserving 1:0..1 join) is covered at the root by
+`allPartiesConnection` / `allSubjectsConnection`; and the legacy `code().toString()` assertion in
+`TypeFetcherGeneratorTest`, which the review already excluded as neither authored nor re-authored
+here. Both are worth an item if anyone wants them, neither is this item's contract.
 
 ## Out of scope
 

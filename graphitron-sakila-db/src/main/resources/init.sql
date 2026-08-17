@@ -396,7 +396,7 @@ INSERT INTO film_actor (actor_id, film_id) VALUES
 
 -- R61 execution-tier fixture: inventory rows linked to films 1, 2, 3 (one row per film).
 -- Used by GraphQLQueryTest.inventoryById_filmRef_resolvesViaExternalFieldReturningTableRecord
--- and the FilmCardWrapper sibling test exercising the AccessorKeyedSingle lift.
+-- and the FilmCardWrapper sibling test exercising the KeyLift.Accessor lift at Arity.ONE.
 INSERT INTO inventory (inventory_id, film_id, store_id) VALUES
     (1, 1, 1),
     (2, 2, 1),
@@ -1247,7 +1247,7 @@ CREATE TABLE multischema_a.event_log (
 -- R395 execution-tier fixture: a single-table discriminated interface living in a NAMED schema
 -- (multischema_a) with a lowercase real name. The discriminator column signal_kind routes rows to
 -- two concrete types; widget_id is an in-schema FK into multischema_a.widget so one participant can
--- carry a cross-table @reference, exercising the LEFT JOIN ON-clause discriminator gate under a
+-- carry a cross-table @reference, exercising the cross-table subselect's discriminator gate under a
 -- non-default schema. The SDL spells @table(name: "signal") (unqualified, lowercase); 'signal' is
 -- unique to multischema_a, so it resolves there, yet jOOQ renders the FROM token schema-qualified as
 -- "multischema_a"."signal". A discriminator qualifier built from the bare directive string emits

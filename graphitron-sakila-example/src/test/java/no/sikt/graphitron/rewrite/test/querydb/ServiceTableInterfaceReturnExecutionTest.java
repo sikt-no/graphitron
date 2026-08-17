@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * back PK-only {@code ContentRecord}s (whose runtime class is always {@code ContentRecord}, so a route
  * (a)-style record-class dispatch would misroute both subtypes to one type), and the generated fetcher
  * collects their PKs, re-fetches by PK projecting {@code __discriminator__} plus the discriminator-gated
- * cross-table {@code LEFT JOIN} for {@code FilmContent.rating}, and routes each row off the live
+ * cross-table subselect for {@code FilmContent.rating}, and routes each row off the live
  * {@code CONTENT_TYPE} via the {@code Content} {@code TypeResolver}.
  *
  * <p>{@code contentSearchMany} returns content rows 1 ({@code FILM}), 3 ({@code SHORT}) and 999 (no live
@@ -90,7 +90,7 @@ class ServiceTableInterfaceReturnExecutionTest {
         assertThat(film.get("contentId")).isEqualTo(1);
         assertThat(shortContent.get("contentId")).isEqualTo(3);
 
-        // FilmContent.rating is populated through the discriminator-gated cross-table join
+        // FilmContent.rating is populated through the discriminator-gated cross-table subselect
         // (content.film_id → film; film 1 is rated 'PG'). It is not a column on the shared table.
         assertThat(film.get("rating")).isEqualTo("PG");
         assertThat(film.get("length")).isNotNull();

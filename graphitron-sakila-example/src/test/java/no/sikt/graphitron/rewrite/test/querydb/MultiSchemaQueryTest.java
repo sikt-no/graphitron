@@ -130,7 +130,7 @@ class MultiSchemaQueryTest {
         // resolves there, yet jOOQ renders the FROM token schema-qualified as "multischema_a"."signal",
         // which the bare directive string does not match. The selection drives all three discriminator
         // emit sites: the __discriminator__ routing projection, the WHERE ... IN restriction, and the
-        // AlertSignal cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK).
+        // AlertSignal cross-table subselect gate (widgetName, signal -> widget via the in-schema FK).
         // Once, each site qualified off the directive string and Postgres rejected the query with
         // "missing FROM-clause entry". A second fix lets the base @table itself be schema-qualified:
         // before that fix the widgetName @reference rejected at schema-validation time

@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code updateFilms}), the composite-PK single and list arms ({@code updateEmailReply} /
  * {@code updateEmailReplies}, row-tuple equality and multi-column VALUES rows), the
  * discriminated single and list arms ({@code createContent} / {@code createContents}, the
- * {@code __discriminator__} re-projection with the discriminator-gated cross-table LEFT JOIN),
+ * {@code __discriminator__} re-projection with the discriminator-gated cross-table subselect),
  * and the encoded negative ({@code deleteFilms}: exactly one statement, no companion). UPSERT
  * is retired from the execution corpus and cannot be pinned at this tier.
  *

@@ -572,7 +572,7 @@ class FetcherPipelineTest {
     // Body-content assertions (justified as in TypeFetcherGeneratorTest's discriminator tests): the
     // return-half re-projection has no structural equivalent, and the load-bearing facts are the
     // synthetic __discriminator__ projection, the participant $project sets, the discriminator-gated
-    // cross-table LEFT JOIN, and that the follow-up SELECT keys off the RETURNING PK rather than
+    // cross-table subselect, and that the follow-up SELECT keys off the RETURNING PK rather than
     // rescanning. Model shape is pinned separately in GraphitronSchemaBuilderTest; runtime routing
     // in DmlTableInterfaceReturnExecutionTest.
 

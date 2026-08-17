@@ -48,7 +48,7 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
 
 A query selecting `... on FilmContent { length }` and `... on ShortContent { description }` produces a single `SELECT content.content_id, content.title, content.length, content.short_description, content.content_type FROM content`; the row mapper inspects `content_type` per row and dispatches to the matching type. Subtype-only fields are read as nullable from the unified projection (the row mapper ignores them on the wrong subtype).
 
-Subtype-specific fields may pull from joined tables. `FilmContent.rating` reaches into `film` via `content_film_id_fkey`; the generator emits a conditional `LEFT JOIN` gated by `content_type = 'FILM'`, so non-`FILM` rows never trigger the join.
+Subtype-specific fields may pull from another table. `FilmContent.rating` reaches into `film` via `content_film_id_fkey`; the generator projects it as a correlated subquery capped at one row, gated by `content_type = 'FILM'`, so non-`FILM` rows read as `NULL` and the projection can never multiply the rows the query returns.
 
 == Constraints
 

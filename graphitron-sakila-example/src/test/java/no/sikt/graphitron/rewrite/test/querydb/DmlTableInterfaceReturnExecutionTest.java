@@ -138,7 +138,8 @@ class DmlTableInterfaceReturnExecutionTest {
         Map<String, Object> payload = (Map<String, Object>) data.get("createContent");
         assertThat(payload.get("__typename")).isEqualTo("ShortContent");
         assertThat(payload.get("description")).isEqualTo("a short blurb");
-        // No FilmContent participant fields on a SHORT row: the FILM-gated cross-table join never fired.
+        // No FilmContent participant fields on a SHORT row: the FILM-gated cross-table subselect
+        // projected NULL.
         assertThat(payload.get("rating")).isNull();
         assertThat(payload.get("length")).isNull();
     }

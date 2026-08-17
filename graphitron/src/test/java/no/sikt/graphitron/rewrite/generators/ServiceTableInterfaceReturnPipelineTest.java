@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * returning a single-table discriminated interface (interface + two {@code @discriminator} implementers,
  * one carrying a cross-table {@code @reference} field). Asserts the model classifies to the new variant
  * and the generated fetcher projects {@code __discriminator__}, a discriminator-gated cross-table
- * {@code LEFT JOIN}, and sources its WHERE from a by-PK row-value {@code IN} off the service records.
+ * subselect, and sources its WHERE from a by-PK row-value {@code IN} off the service records.
  */
 @PipelineTier
 class ServiceTableInterfaceReturnPipelineTest {

@@ -4248,8 +4248,8 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void allContent_crossTableField_joinsFilmAndReturnsRatingForFilmContent() {
-        // FilmContent.rating reaches into the joined film row via content_film_id_fkey. The
+    void allContent_crossTableField_returnsRatingForFilmContent() {
+        // FilmContent.rating reaches the film row via content_film_id_fkey. The
         // film rows seeded in init.sql carry ratings, so requesting the inline-fragment field
         // must return a non-null value for every FilmContent and a null for every ShortContent
         // (whose discriminator gate never matches).
@@ -4265,7 +4265,7 @@ class GraphQLQueryTest {
             .toList();
         assertThat(filmItems).hasSize(2);
         assertThat(filmItems).allSatisfy(i ->
-            assertThat(i.get("rating")).as("FilmContent.rating sourced from joined film row").isNotNull());
+            assertThat(i.get("rating")).as("FilmContent.rating sourced from the film row").isNotNull());
     }
 
     @Test
@@ -4499,16 +4499,42 @@ class GraphQLQueryTest {
         assertThat(items)
             .as("one entity per fan_base row, whatever each row's fan_detail count")
             .hasSize(4);
+        // allFanItems carries no @defaultOrder, so the row order is not SQL-determined either:
+        // assert the typename multiset, and key every per-row assertion by fanBaseId.
         assertThat(items).extracting(i -> i.get("__typename"))
-            .containsExactly("FanAlpha", "FanBeta", "FanAlpha", "FanBeta");
-        var alpha = items.get(0);
+            .containsExactlyInAnyOrder("FanAlpha", "FanBeta", "FanAlpha", "FanBeta");
+        var alpha = byFanBaseId(items, 1);
         assertThat(alpha.get("note"))
             .as("the subselect resolves the reference to one of the detail rows; WHICH row is "
                 + "not SQL-determined (the cap carries no ORDER BY), so the pin is membership")
             .isIn("alpha-note-1", "alpha-note-2", "alpha-note-3");
-        assertThat(items.get(1).containsKey("note"))
+        assertThat(byFanBaseId(items, 3).get("note"))
+            .as("base row 3 is an ALPHA with no fan_detail row, so the subselect projects NULL")
+            .isNull();
+        assertThat(byFanBaseId(items, 2).containsKey("note"))
             .as("FanBeta declares no cross-table field, so the gated term contributes nothing to it")
             .isFalse();
+    }
+
+    /**
+     * The {@code fanItemsConnection} payload for one owner. {@code allFanOwners} declares no
+     * ordering, so the owner is picked by name rather than by position.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> fanItemsConnectionOf(Map<String, Object> data, String ownerName) {
+        return ((List<Map<String, Object>>) data.get("allFanOwners")).stream()
+            .filter(o -> ownerName.equals(o.get("ownerName")))
+            .map(o -> (Map<String, Object>) o.get("fanItemsConnection"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no allFanOwners row named " + ownerName));
+    }
+
+    /** The one {@code allFanItems} row for a given base PK; the fixture declares no ordering. */
+    private static Map<String, Object> byFanBaseId(List<Map<String, Object>> items, int fanBaseId) {
+        return items.stream()
+            .filter(i -> Integer.valueOf(fanBaseId).equals(i.get("fanBaseId")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no allFanItems row for fan_base_id " + fanBaseId));
     }
 
     // ===== the discriminated interface child, paginated =====
@@ -4556,21 +4582,53 @@ class GraphQLQueryTest {
         Map<String, Object> page1 = execute(
             "{ allFanOwners { ownerName fanItemsConnection(first: 2) "
                 + "{ pageInfo { endCursor } } } }");
-        var ownersPage1 = (List<Map<String, Object>>) page1.get("allFanOwners");
-        String ownerACursor = (String) ((Map<String, Object>) ((Map<String, Object>)
-            ownersPage1.get(0).get("fanItemsConnection")).get("pageInfo")).get("endCursor");
+        String ownerACursor = (String) ((Map<String, Object>)
+            fanItemsConnectionOf(page1, "Owner A").get("pageInfo")).get("endCursor");
         assertThat(ownerACursor).isNotNull();
 
         Map<String, Object> page2 = execute(
             "{ allFanOwners { ownerName fanItemsConnection(first: 2, after: \"" + ownerACursor
                 + "\") { pageInfo { hasNextPage } edges { node { label } } } } }");
-        var owners = (List<Map<String, Object>>) page2.get("allFanOwners");
-        var ownerA = (Map<String, Object>) owners.get(0).get("fanItemsConnection");
+        var ownerA = fanItemsConnectionOf(page2, "Owner A");
         assertThat((List<Map<String, Object>>) ownerA.get("edges"))
             .as("owner A's second page is the bucket's remainder")
             .extracting(e -> ((Map<String, Object>) e.get("node")).get("label"))
             .containsExactly("Alpha two");
         assertThat(((Map<String, Object>) ownerA.get("pageInfo")).get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fanOwners_fanItemsConnection_beforeCursorWalksTheSplitBucketBackward() {
+        // The reversed seek through the discriminated binder: the windowing tail inverts the
+        // ORDER BY so ROW_NUMBER() picks each bucket's tail, then trimmedResult() re-reverses to
+        // ascending for the client. @asConnection synthesises `first` carrying the default page
+        // size and the helper rejects a request specifying both ends, so a backward page over a
+        // shorthand coordinate has to null the synthesised argument out.
+        Map<String, Object> tail = execute(
+            "{ allFanOwners { ownerName fanItemsConnection(first: null, last: 2) "
+                + "{ pageInfo { hasPreviousPage startCursor } edges { node { label } } } } }");
+        var ownerATail = fanItemsConnectionOf(tail, "Owner A");
+        assertThat((List<Map<String, Object>>) ownerATail.get("edges"))
+            .as("owner A's bucket is {Alpha one, Beta one, Alpha two} in PK order, so its tail "
+                + "two come back ascending")
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("label"))
+            .containsExactly("Beta one", "Alpha two");
+        var tailPageInfo = (Map<String, Object>) ownerATail.get("pageInfo");
+        assertThat(tailPageInfo.get("hasPreviousPage")).isEqualTo(true);
+        String beforeCursor = (String) tailPageInfo.get("startCursor");
+        assertThat(beforeCursor).isNotNull();
+
+        Map<String, Object> data = execute(
+            "{ allFanOwners { ownerName fanItemsConnection(first: null, last: 2, before: \""
+                + beforeCursor + "\") { pageInfo { hasPreviousPage } edges { node { label } } } } }");
+        var ownerA = fanItemsConnectionOf(data, "Owner A");
+        assertThat((List<Map<String, Object>>) ownerA.get("edges"))
+            .as("only the bucket's head remains before that cursor")
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("label"))
+            .containsExactly("Alpha one");
+        assertThat(((Map<String, Object>) ownerA.get("pageInfo")).get("hasPreviousPage"))
+            .isEqualTo(false);
     }
 
     @Test

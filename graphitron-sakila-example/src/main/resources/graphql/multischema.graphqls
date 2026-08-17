@@ -35,7 +35,7 @@
 #      the bare directive string (the pre-R395 shape) emits "SIGNAL"."signal_kind", which never matches
 #      FROM. This is exactly the shape the consumer reported (@table(name: "INNBOKS_MELDING") over
 #      kommunikasjon.innboks_melding). The discriminator projection, IN filter, and the AlertSignal
-#      cross-table LEFT JOIN gate must all qualify off the FROM table instance, not the directive
+#      cross-table subselect's discriminator gate must all qualify off the FROM table instance, not the directive
 #      string, or Postgres rejects the query with "missing FROM-clause entry". This is the
 #      non-default-schema guard for the dimension R388 regressed on (the sakila Content fixture, in the
 #      unnamed default schema, never hit it). AlertSignal's widgetName @reference (signal -> widget via

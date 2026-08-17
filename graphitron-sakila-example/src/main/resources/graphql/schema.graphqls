@@ -659,7 +659,7 @@ type Query {
     # (a) above, every returned record is the same ContentRecord, so runtime-class dispatch cannot tell
     # the subtypes apart; the generated fetcher collects the returned records' PKs, runs one by-PK
     # SELECT projecting __discriminator__ (+ the participant field set and the discriminator-gated
-    # cross-table LEFT JOIN for FilmContent.rating), and routes each row off the live discriminator.
+    # cross-table subselect for FilmContent.rating), and routes each row off the live discriminator.
     # contentSearchOne is single cardinality (routes to FilmContent); contentSearchMany is list
     # cardinality exercising both subtypes plus a PK with no live row (drop contract).
     contentSearchOne: Content @service(service: {
@@ -2808,9 +2808,9 @@ interface Searchable {
 union Document = Film | Actor
 
 # Implements Content; discriminator value 'FILM'. Adds a length field plus a cross-table
-# participant field exercising stub-interface-union-fetchers.md Track A Phase 2: rating lives
-# on the joined Film row (FK content.film_id → film.film_id), so the interface fetcher emits a
-# conditional LEFT JOIN gated by the FILM discriminator value when the field is selected.
+# participant field: rating lives on the film row one FK hop off the base (content.film_id →
+# film.film_id), so the interface fetcher projects a correlated subselect capped at one row,
+# gated by the FILM discriminator value and emitted only when the field is selected.
 type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
     contentId: Int!       @field(name: "CONTENT_ID")
     title:     String!    @field(name: "TITLE")
@@ -2830,9 +2830,9 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
 # R406: DML write surface for the single-table discriminated Content interface. Every writable
 # column lives on the one shared 'content' @table; the discriminator (CONTENT_TYPE) is written as
 # an ordinary input column the client sets. length / shortDescription are the FILM- / SHORT-specific
-# same-table columns; filmId is the FK the FilmContent.rating cross-table LEFT JOIN reads back on
-# the follow-up discriminator re-projection. Cross-table subtype fields (FilmContent.rating, on the
-# joined film row) are read-side projections only and are not writable through a 'content' INSERT.
+# same-table columns; filmId is the FK the FilmContent.rating cross-table subselect correlates on
+# in the follow-up discriminator re-projection. Cross-table subtype fields (FilmContent.rating, on
+# the film row) are read-side projections only and are not writable through a 'content' INSERT.
 input ContentInput {
     title:       String! @field(name: "TITLE")
     contentType: String! @field(name: "CONTENT_TYPE")
@@ -3381,7 +3381,7 @@ type Mutation {
     # R406: INSERT / UPDATE returning the single-table discriminated Content interface. The write
     # is a plain single-@table 'content' write; the follow-up SELECT re-projects by PK through the
     # discriminator re-projection (projecting __discriminator__ + the participant field set + the
-    # discriminator-gated cross-table LEFT JOIN for FilmContent.rating), so the interface's
+    # discriminator-gated cross-table subselect for FilmContent.rating), so the interface's
     # TypeResolver routes the returned row to FilmContent / ShortContent off its live discriminator.
     createContent(in: ContentInput!): Content @mutation(typeName: INSERT, table: "content")
     updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE, table: "content")

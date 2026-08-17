@@ -283,10 +283,11 @@ public final class DiscriminatedTableFragments {
 
     /**
      * Per-joined-detail-branch detail-alias declarations plus the selection-set-gated
-     * {@code fields.add(detailAlias.<col>)} per detail-exclusive field, mirroring
-     * {@link #crossTableAliasDeclarations} but joining the whole detail table once per branch.
-     * The column projects under its natural name (no {@code .as(...)}) so the participant's
-     * plain column fetcher reads it back by column name.
+     * {@code fields.add(detailAlias.<col>)} per detail-exclusive field. It shares the selection
+     * gate of {@link #crossTableProjections} but not its SQL shape: the whole detail table joins
+     * once per branch (see {@link #joinedStep}) instead of a per-term correlated subselect. The
+     * column projects under its natural name (no {@code .as(...)}) so the participant's plain
+     * column fetcher reads it back by column name.
      */
     private static CodeBlock joinedDetailAliasDeclarations(LaunchSource.DiscriminatedTable source, String tableLocal) {
         var b = CodeBlock.builder();
