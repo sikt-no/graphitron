@@ -1,13 +1,13 @@
 ---
 id: R661
 title: "Batch the discriminated table interface child through a DataLoader"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-08-13
-last-updated: 2026-08-14
+last-updated: 2026-08-17
 ---
 
 # Batch the discriminated table interface child through a DataLoader

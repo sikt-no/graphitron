@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R642` | graphitron-mcp reads only the store | Spec | 2026-08-16 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-16 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
-| `R661` | Batch the discriminated table interface child through a DataLoader | Spec | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R680` | Gather the fact-store test harnesses of all four modules onto one shared home <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md), [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)</sub> | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
@@ -24,6 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R671` | Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check | Spec | 2026-08-14 | [plan](domain-return-type-placeholders-false-conflict.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
+| `R661` | Batch the discriminated table interface child through a DataLoader | Ready | 2026-08-17 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
 | `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -354,7 +354,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R675` [**@condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible**](condition-method-overload-selection.md) — Backlog, architecture
-- `R661` [**Batch the discriminated table interface child through a DataLoader**](batched-discriminated-interface-child.md) — Spec, bug
+- `R661` [**Batch the discriminated table interface child through a DataLoader**](batched-discriminated-interface-child.md) — Ready, bug
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R650` [**Support @asConnection on a field returning a discriminated table interface**](root-connection-over-discriminated-interface.md) — Ready, feature, blocked by [batched-discriminated-interface-child](batched-discriminated-interface-child.md)
