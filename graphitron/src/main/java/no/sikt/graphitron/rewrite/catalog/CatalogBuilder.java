@@ -1205,8 +1205,12 @@ public final class CatalogBuilder {
      * position and no source-derived Javadoc: goto-definition and hover both
      * join {@code (owning-table classFqn, name)} against the LSP-owned source
      * index at request time. The {@code description} is the build-derivable
-     * fallback, which for a column is empty (jOOQ column comments are not
-     * recoverable from the runtime catalog).
+     * fallback, which for a column is empty: the {@link JooqCatalog.ColumnEntry}
+     * shape this reads carries no comment. Not because a column comment is
+     * unreachable, which it is not; {@link JooqCatalog#columnFactsOf} reads it off
+     * the live field for the catalog-discovery projection and the store census
+     * captures it the same way. Hover prefers the source Javadoc the index owns,
+     * so this shape never asked for the database's comment.
      */
     private static CompletionData.Column buildColumn(JooqCatalog.ColumnEntry c) {
         return new CompletionData.Column(

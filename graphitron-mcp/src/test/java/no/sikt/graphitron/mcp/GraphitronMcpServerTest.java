@@ -226,10 +226,11 @@ class GraphitronMcpServerTest {
      * generated {@code Tables} class's reflective field order, which the JDK does not promise is
      * stable at all.
      *
-     * <p>The {@code comment} slot is asserted absent rather than present, and that is a property of
-     * the fixture rather than of the tool: no table in the test schema carries a database comment, so
-     * a real capture writes none. That is the standing cost of anchoring on the source instead of on
-     * the projection being replaced, which could assert a comment by fiat.
+     * <p>Both arms of the {@code comment} slot come from the fixture's own DDL rather than from a
+     * hand-built value: {@code film} declares a table comment and {@code actor} deliberately declares
+     * none, so present and absent are each reachable from a real capture. This is the one assertion
+     * in the module that carries the description column end to end, from the {@code COMMENT ON} the
+     * fixture declares through the jOOQ crawler to the wire.
      */
     @Test
     void catalogTablesListsTheGraphsCensusOrderedBySchemaThenName(@TempDir Path tmp) {
@@ -247,7 +248,15 @@ class GraphitronMcpServerTest {
                 .as("the census, in the ordering the page is keyed by")
                 .contains("actor", "film", "project_note")
                 .isSorted();
-            assertThat(tables).allSatisfy(t -> assertThat(t).doesNotContainKey("comment"));
+            assertThat(tables).filteredOn(t -> "film".equals(t.get("name")))
+                .as("a table whose DDL declares a comment carries it")
+                .singleElement()
+                .satisfies(t -> assertThat(t)
+                    .containsEntry("comment", "One film in the rental catalogue."));
+            assertThat(tables).filteredOn(t -> "actor".equals(t.get("name")))
+                .as("a table whose DDL declares none omits the slot rather than sending null")
+                .singleElement()
+                .satisfies(t -> assertThat(t).doesNotContainKey("comment"));
         }
     }
 

@@ -56,6 +56,8 @@ class CatalogBuilderSourceTest {
         // Decoupling: even with the documented source on the build, the build does
         // not lift its Javadoc. The column description is the build-derivable
         // fallback (empty); the Javadoc surfaces at the LSP tier from the index.
+        // Empty here even though film.film_id carries a database comment, which is
+        // what the completion column shape does with it: it holds no comment at all.
         assertThat(filmId.description()).isEmpty();
     }
 

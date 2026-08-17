@@ -111,6 +111,22 @@ CREATE TABLE film (
     last_update            timestamp       NOT NULL DEFAULT now()
 );
 
+-- The catalog census captures a table's and a column's database comment, and this is the only
+-- place in the fixture that declares any, so it is what pins that path from the database through
+-- the jOOQ crawler to the MCP catalog tools' wire. Deliberately partial rather than thorough:
+-- `film` carries a table comment and `actor` carries none, some of `film`'s columns carry one and
+-- the rest do not, so both arms of "has a comment" are reachable at both grains without a second
+-- table. Do not tidy these into completeness; the absences are the fixture.
+COMMENT ON TABLE film IS 'One film in the rental catalogue.';
+-- Commented so CatalogBuilderSourceTest can tell a database comment from the Javadoc it proves the
+-- build does not lift. An empty description cannot distinguish the two.
+COMMENT ON COLUMN film.film_id IS 'Surrogate key, stable across catalogue imports.';
+-- Carries an apostrophe: the character a naive pipeline breaks on, and one a real consumer's
+-- catalog certainly holds.
+COMMENT ON COLUMN film.title IS 'Display title, as printed on the distributor''s case.';
+-- A column named description, carrying one, so no reader downstream can confuse the two.
+COMMENT ON COLUMN film.description IS 'Free-text synopsis shown to renters.';
+
 CREATE TABLE film_actor (
     actor_id    int  NOT NULL REFERENCES actor(actor_id),
     film_id     int  NOT NULL REFERENCES film(film_id),

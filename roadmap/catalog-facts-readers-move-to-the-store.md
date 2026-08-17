@@ -1196,6 +1196,45 @@ slice's stated behaviour rather than a regression.
 
 **The item's own cases**, which belong to no single tool.
 
+* **The fixture declares database comments, so the `comment` slot is asserted rather than mocked.**
+  This is the same class of fixture cost as the ambiguity case below and it surfaced the same
+  way: a hand-built projection can assert a comment by fiat, and a real capture can only show what
+  the DDL declares. `graphitron-sakila-db`'s `init.sql` carried no `COMMENT ON` statement at all, so
+  every one of its 57 generated table classes carried an empty jOOQ comment, `CatalogFactCapture`
+  wrote `NULL` on its own blank-is-absent rule, and both catalog tools' `comment` slots were absent on
+  every row a capture could produce. Nothing was wrong with the crawler: it reads the comment off the
+  live `Table` and normalises blank to `NULL` precisely so a reader can tell `''` from absent. The
+  source said nothing.
+
+  So `init.sql` declares comments, on both grains, and that is the fixture affordance rather than
+  decoration. What it buys is larger than the two wire slots: the description columns are captured
+  from the database through the crawler to the wire with no test anywhere exercising the path today,
+  and a slot no capture can populate is a slot whose only coverage was a mock. The set is chosen for
+  what it discriminates rather than for breadth. `film` carries a table comment and `actor`
+  deliberately carries none, which is the arm pairing the retired projection fixture asserted by
+  fiat. Within `film` some columns carry one and some do not, so the mixed case lives inside one
+  table rather than needing two. One comment carries an apostrophe, that being the character a naive
+  pipeline breaks on and a real consumer's catalog certainly holds. And `film.description` carries
+  one, so a column *named* description carrying a description cannot be confused with the column's
+  own comment by any reader downstream.
+
+  Bumping `jooq.codegen.schema.version` is what makes the regeneration happen on an incremental
+  build, and the pom comment already says so.
+
+  Declaring the comments answers a question nobody had been able to ask, and the answer is worth
+  recording because it bounds what the fixture can pin. Only two of the three consumers of a jOOQ
+  comment carry it. `JooqCatalog.columnFactsOf` reads it off the live field, so the catalog-discovery
+  projection has it and `CatalogFactCapture` writes it to `sql_table.description` and
+  `sql_column.description` at both grains, which is what makes slice 2's column-comment case real.
+  The completion projection does not: `CatalogBuilder.buildColumn` hardcodes the empty string,
+  because hover joins the LSP's source index for a column's Javadoc at request time and that shape
+  never asked the database for anything. So `CatalogBuilderSourceTest`'s emptiness assertion is
+  correct and stays, and the one thing that changes in `graphitron` is a stale parenthetical in
+  `buildColumn`'s javadoc claiming a column comment is "not recoverable from the runtime catalog",
+  which the sibling method in the same class recovers. An expectation of a comment there would have
+  been a misreading of which projection carries what, and it was worth being wrong about once to
+  find that out.
+
 * **Two cases need a second fixture package, and providing the seam is slice 1's work**, since it is
   the slice that first needs a capture the default package cannot produce. A bare
   table name is ambiguous only across schemas, and `StoreBackedBuild` captures from
