@@ -147,9 +147,42 @@ mvn install -pl :graphitron-sakila-db -Plocal-db
 install — silently re-emits the jar with an empty jOOQ catalog and re-triggers the cascade. After
 any broad install, re-run the `-Plocal-db` install for the catalog as a final step before testing.
 
-**A second, now-eliminated cause of the same cascade** was a *stale sandbox DB* (as opposed to a
+**A second cause of the same cascade** is a *stale sandbox DB* (as opposed to a
 stale `.m2` catalog jar): a `rewrite_test` seeded from an older `init.sql`, e.g. one predating the
-`party_*` tables, kept that outdated schema, so `-Plocal-db` codegen built its catalog
-against a DB missing tables the current corpus expects. The SessionStart hook now drops and
-re-seeds `rewrite_test` on every start (see "Brings up PostgreSQL" above), so a stale sandbox DB no
-longer produces this cascade; if you still see it, it is the catalog-jar clobber above, not the DB.
+`party_*` tables, keeps that outdated schema, so `-Plocal-db` codegen builds its catalog
+against a DB missing tables the current corpus expects. The SessionStart hook drops and
+re-seeds `rewrite_test` on every start (see "Brings up PostgreSQL" above), which makes the schema a
+function of the `init.sql` checked out *at session start*.
+
+**That is not the same as a function of the `init.sql` you are building.** Any mid-session
+sync that moves `init.sql` reintroduces the cascade: fast-forwarding trunk into your branch, a
+rebase, a fetch of someone else's DDL. The hook has already run and will not run again, so the DB
+keeps the schema it was seeded with while codegen compiles against the schema in your working tree.
+This happens in ordinary trunk-based work, not as an edge case, and it presents as a build failure
+that looks like your own diff: a table that "could not be resolved in the jOOQ catalog" with a
+did-you-mean list, cascading `parent type is unclassified` errors, or catalog metadata absent where
+a test expects it (a missing table comment reads as "the description overlay regressed"). Before
+suspecting your change, check whether the sync brought DDL: `git log -p <range> --
+graphitron-sakila-db/src/main/resources/init.sql`.
+
+Recovery is a re-seed by hand, the same steps the hook takes, and then **the generated sources have
+to go**, which is the part that is easy to miss and makes the re-seed look like it did not work:
+
+```bash
+PGPASSWORD=postgres psql -U postgres -h 127.0.0.1 -d postgres \
+  -c "DROP DATABASE IF EXISTS rewrite_test WITH (FORCE)" -c "CREATE DATABASE rewrite_test"
+PGPASSWORD=postgres psql -U postgres -h 127.0.0.1 -d rewrite_test \
+  -f graphitron-sakila-db/src/main/resources/init.sql
+rm -rf graphitron-sakila-db/target/generated-sources
+mvn install -Plocal-db
+```
+
+Why the `rm -rf`: jOOQ codegen does not rewrite a generated file whose content it considers
+unchanged, and it decides that against its own cached state rather than against the database, so a
+re-seeded DB alone leaves the previous run's classes in place. Deleting one file does not force it
+back either; the whole `generated-sources` tree has to go. The tell is a generated table class whose
+constructor still passes `DSL.comment("")` while `obj_description('film'::regclass)` in `psql`
+returns the comment text.
+
+Note the host: JDBC and these commands connect over `127.0.0.1` with a password, so `psql -h
+localhost` without `PGPASSWORD` prompts and fails with `fe_sendauth: no password supplied`.
