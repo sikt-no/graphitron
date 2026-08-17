@@ -1,7 +1,7 @@
 ---
 id: R671
 title: "Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: diagnostics
@@ -204,6 +204,19 @@ Masked-conflict sweep: full `mvn install -Plocal-db`; any fixture newly firing t
 * `Plain(Object)` / `Plain(java.lang.Object)` as a placeholder domain-return answer (the value survives only where it is a genuine `peelToClassName` structural fallback, never as "this producer doesn't know").
 * `MutationServiceRecordField`'s unconditional `TableRecord` answer, and the javadoc claim that non-carrier `@service` mutation shapes "either agree or are filtered by upstream classifier rejections". The arm survives exactly where the leaf's `ReturnTypeRef` carries a resolved table, which is where the producer really does hand down a typed record; it is retired on every other shape.
 * `ReturnTypeRef.ResultReturnType.fqClassName()`'s nullity as a proxy for "the producer hands down a typed jOOQ record". It is a statement about result-axis grounding only; the resolved table is the fact, and it is now carried.
+
+## Implementation notes (In Progress → In Review)
+
+Landed at `e05b79a` (vocabulary, the shared rule, producer answers, the grouping site) and `6324a26` (remaining coverage, the compilation fixture, the docs rewrite). Full reactor green under `mvn install -Plocal-db`, including the javadoc reference gate. The masked-conflict sweep turned up nothing: no fixture newly fires the rejection.
+
+Deviations and findings worth the reviewer's attention:
+
+* **The ungrounded-object-type fixture is constructible**, contrary to this plan's hedge, and it is pinned. An SDL object type nested under a `@table` parent classifies as a `NestingType`; a `@service` whose reflected return is a scalar grounds nothing, so the field's `ReturnTypeRef` is a `ScalarReturnType` naming an Object type and the pair *is* grouped. `SharedDomainTypeProducerPipelineTest.ungroundedObjectTypeReturnedByService_stillClaims` asserts both the root twin and the batched child still derive a real claim there, and that the (genuine) disagreement against the nesting producer's `Plain(org.jooq.Record)` still fires. The honest-gap section's third population stands as written for the *reader* side; the producer side is now tested rather than argued.
+* **`ServiceRecordField.elementType()` was refactored, not duplicated.** The plan asked the claim to derive "the way `elementType()` derives it"; a second copy of that derivation would be the drift this item is about. A private `groundedElementType()` holds the one derivation and answers `null` where nothing grounds `V`; `elementType()` keeps its whole-reflected-type fallback and `domainReturnType()` answers `NoClaim`. One derivation, two null policies.
+* **The twins' unreachable `ReturnTypeRef` arms answer `NoClaim`.** `TableBoundReturnType` routes to the `*ServiceTableField` sibling and `PolymorphicReturnType` to the polymorphic siblings, so neither reaches the record leaves; the switch has to be exhaustive, and a no-claim on an unreachable arm cannot manufacture a conflict if the routing ever changes. Same treatment on `ServiceRecordField` and `RecordReadField`.
+* **The compilation fixture flushed out a separate emit-side defect, filed as R688.** `graphitron-sakila-example`'s shared value type was first written as nested records inside the service class, and the generated fetchers did not compile: the emit seats spell a nested backing class with its binary `Outer$Nested` name in an import and a cast. That is the same class of defect this item retires, one layer down, but at a site this plan does not touch (`FetcherEmitter` / `GeneratorUtils` reaching for `ClassName.bestGuess` on `fqClassName`). The fixture uses top-level classes so the backstop pins the shape this item admits; the nested-class spelling is R688's scope. The nested-class *claim* is still pinned, at the pipeline tier, by `nestedBackingClass_compositeAndComponentRead_spellTheClassOnce`.
+* **Two ratchets moved.** `QueryField.java` no longer imports the emit library (its only use was `ClassName` for the retired `Plain(Object)` answers), so its `ModelEmitVocabularyGuardTest` allowlist entry came off, shrink-only as that test requires. `FixtureWarningsGateTest`'s line pin on `filmsConnectionByRequiredIds` moved 419 → 425 for the SDL inserted above it.
+* Seven hand-built `ReturnTypeRef.ResultReturnType` fixtures moved with the new component, in the seven files this plan named (the count of files, not of call sites; `TypeFetcherGeneratorTest` carries two).
 
 ## Adjacent, not in scope
 
