@@ -63,7 +63,7 @@ inventory becomes a count the guard maintains rather than a list a reader has to
 
 The utility these classes want **already exists**. `capture/CapturedStore` is an `AutoCloseable`
 handle offering `of(Path, String)`, `ofPipeline(Path, String)`, `registryOf`, `attributionOf` and
-`fixtureFile`, and nine test classes inside `capture/` use it happily. It is package-private,
+`fixtureFile`, and ten test classes inside `capture/` use it happily. It is package-private,
 so `derive/` and `diagnostics/` cannot see it at all. Each of them reinvented it independently.
 
 ### The three modules downstream
@@ -100,20 +100,47 @@ that becomes another named harness the moment a third site appears.
 
 ### What the inventory does not count
 
-It counts what stands a store up for a test to assert against. Three classes in `graphitron` open a
-store without capturing anything and are deliberately outside the capture-level inventory:
-`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest` and `capture/JavaSourceFactsTest`.
-All three are `@UnitTier`, and none calls `FactCapture` at all; they open a store and write to it
-directly. They are in scope for the bottom of the stack (they open and close a store, and that is
-shared) and out of scope for everything above it. Stating the edge is part of the item, because an
-inventory with no edge is the thing that rots.
+It counts what stands a store up **for a test to assert a captured view against**. A much larger
+population opens a store for some other reason, and the edge has to be drawn around all of it,
+because the guard below is sized against this set and not against the capture-level inventory.
+
+**Store-mechanics tests.** `capture/PersistentStoreTest` (14 opens), `capture/StoreReaderTest` (5) and
+`capture/WarmStartRefreshTest` (13) have the store's own lifetime, its warm start, its reader and its
+file-backed home as their subject. They open and reopen the same directory deliberately, compare cold
+against warm, and hold two handles at once. These cannot adopt an L0 that owns the store's lifetime,
+because the lifetime is the thing under assertion. They are **permanent** exceptions, not migration
+targets. `capture/BrokenSourceStillCapturesPipelineTest` (2) sits beside them: its subject is what is
+true of the store when a run fails, so it too holds the store across the failure itself.
+
+**Capture-oracle tests.** `capture/FactCaptureAgreementTest` (26 opens) and `capture/FactSchemaGateTest`
+(8) drive `FactCapture` per view, per arm, with the store's population as the subject. They already read
+`CapturedStore` where a factory fits and open directly where none does, which is the primitives layer
+this item ships working as intended. In scope for L0 in principle, low value, and last in any order.
+
+**Direct writers.** `compile/CompileFactsTest` (7), `capture/CommentRenderabilityGateTest` (2),
+`capture/JavaSourceFactsTest` (6) and `capture/SourceGraphScopingTest` (3) open a store and write rows
+to it directly rather than capturing SDL into it. All are `@UnitTier`. `CompileFactsTest` references
+`FactCapture.GraphIdentity` for the graph key but never calls `capture`. They are in scope for the
+bottom of the stack and out of scope for everything above it.
+
+Downstream, the same edge exists and is likewise outside the capture-level inventory:
+`graphitron-lsp`'s `RejectionSeverityCoverageTest`, and `graphitron-mcp`'s `DiagnosticsAggregateTest`
+(3 opens) and `DiagnosticsToolCompileSourceTest`.
+
+`roadmap-tool`'s `SchemaReferencePagesTest` opens a store too and is out of every scope here, because
+`GuardScope.IN_SCOPE_MODULES` excludes that module by design.
+
+Stating the edge is part of the item, because an inventory with no edge is the thing that rots, and
+because the guard's drain-to-empty acceptance is only meaningful once the permanent residue is named.
 
 ### The duplication is the symptom, not the item
 
 The decision being re-made at every capture-level site above is *which capture inputs the store under
 assertion is built from*, and the sites disagree without anything saying why. Past the 5-arg
 `FactCapture.capture` default (which fixes `jooq = null`, `extensions = List.of()`,
-`nodes = new NodeDeclaration(null)`), these shapes are live in the tree:
+`nodes = new NodeDeclaration(null)`), these shapes are live in the tree. The 5-arg default is
+`FactCapture:378` and the production paths are `GraphQLRewriteGenerator:416` and `:445`, both passing
+`new NodeDeclaration(jooq)`:
 
 | Shape | Sites |
 |---|---|
@@ -205,9 +232,9 @@ What the pom comment is about is the main-source dependency, and this item does 
 Widen `CapturedStore` from package-private and move it beside the shared test support in
 `no.sikt.graphitron.rewrite`, which already hosts `TestSchemaHelper`, `TestFixtures` and the
 `*RenderTestSupport` classes. That package is also tier-neutral, which matters: the incoming
-`graphitron` consumers are all `@PipelineTier`, while the nine that already read the handle straddle
+`graphitron` consumers are all `@PipelineTier`, while the ten that already read the handle straddle
 both tiers (`FactCaptureAgreementTest`, `TaggedCaptureStampTest` and `WarmStartRefreshTest` are
-`@PipelineTier`, the other six `@UnitTier`). A home that reads as belonging to one tier's family
+`@PipelineTier`, the other seven `@UnitTier`). A home that reads as belonging to one tier's family
 invites the next reader to infer a tier rule that does not exist, and the mixed readership is already
 the status quo rather than something this item introduces.
 
@@ -275,18 +302,53 @@ shared home is, which is a better first contact with this item than its title.
 
 ### What the guard counts, which is both halves of L0
 
-`GraphitronModelStore.open()` in test sources is the store half, and on its own it leaves the item's
-actual thesis unenforced. A class can take its store from the shared home and still hand-roll the
-fixture file, the graph constant and the capture call, which is exactly what the eighteen `write(`
-copies and fifteen `GRAPH` constants are. So the ratchet counts two things under one allow-list: a
-test-source store open, and a test-source fixture write, the latter recognised as a
-`resolve("....graphqls")` in a test source outside the shared home.
+**The store half is the type, not one factory method.** `GraphitronModelStore` has two entry points:
+`open()` mints a private in-memory database, `openAt(Path)` opens a file-backed one. Counting only
+`open()` would miss the file-store arm entirely, and the file-store arm is the half this item's L0 is
+explicitly required to carry named rather than flagged: `StoreBackedBuild` reaches it through
+`openAt(storeHome)`, and so does every store-mechanics test. So the recogniser is a test-source
+reference to the `GraphitronModelStore` type outside the shared home, which also survives a third
+factory being added.
+
+**The fixture-write half has to be qualified by the store, or it counts the wrong population.** A
+class can take its store from the shared home and still hand-roll the fixture file, the graph constant
+and the capture call, which is exactly what the eighteen `write(` copies and fifteen `GRAPH` constants
+are, so the write is worth counting. But a bare `resolve("....graphqls")` in a test source is not that
+signal: it matches 44 classes and 124 occurrences across the four modules, and roughly half of those
+classes never touch a store at all. `SchemaWatcherTest`, `GenerateMojoTest`, `LintQuickFixTest`,
+`SchemaSdlEmitterTest`, `CatalogBuilderSnapshotTest`, `StoreAccessTest`, `CompletionStoreWiringTest`
+and `MethodClosureOracleTest` each write an SDL file for a watcher, an emitter, a mojo or a parse test,
+and none of them stands a store up. Allow-listing them would put thirty-odd permanent entries in a
+list whose acceptance is that it drains to empty.
+
+So the write counter fires only inside a class the store counter already reaches: a test-source
+`.graphqls` write **in a class that also references `GraphitronModelStore`**. That is precisely the
+population the counter exists for, it excludes every SDL-writing pipeline test by construction rather
+than by allow-list, and it keeps the guard answering the one question it is scoped to.
 
 It deliberately does **not** count `FactCapture.capture` calls in test sources. The primitives layer
 below the factories exists precisely so a test whose axis combination no factory names can write that
 call itself, and a guard forbidding it would forbid the layer this item ships. The two counters above
 catch the same authors by the resources they stand up rather than by the call they make, which is the
 distinction that keeps the guard from policing the design it is protecting.
+
+### The allow-list is two lists, and only one of them drains
+
+With the recognisers above, the guard reaches roughly thirty test classes outside the shared home. The
+entries are not all of one kind, and conflating them is what would make the ratchet's acceptance
+unreadable:
+
+* **Draining entries**, the fifteen capture harnesses in `graphitron`, `graphitron-lsp`'s
+  `StoreFixture`, `graphitron-mcp`'s `StoreFixture` and `StoreBackedBuild`, and the maven plugin's two
+  inline sites. Each slice below removes some of these, and the count reaching zero is the item's
+  completion.
+* **Permanent entries**, the store-mechanics and direct-writer classes named in the edge section
+  above. These are exceptions on the merits and stay after the item is Done. Each carries its reason,
+  and the reason is what makes it an exception rather than a backlog.
+
+The failure message names the draining count only, since that is the number an author tripping the
+guard is being asked about, and the permanent set is a property of the guard rather than of the
+migration.
 
 ### Why a guard at all, since discoverability alone has been tried and lost
 
@@ -306,12 +368,14 @@ repository root by walking up to the `roadmap/workflow.adoc` anchor; `RoadmapRef
 shared: "One definition, so a new module cannot silently join one guard's scope and not the other's",
 which is exactly the failure mode a store-fixture rule has.
 
-The new guard is a third walker over that same scope: a test-source occurrence of
-`GraphitronModelStore.open()` outside the shared home fails the build, with an allow-list naming the
-few sites that legitimately open a store directly. Keep the allow-list short and make each entry
-carry its reason, so it reads as the exception list it is and not as a second, quieter copy of the
-inventory. The failure message should name the shared home and say to add a factory there, since the
-guard's job is to route an author to the answer, not merely to refuse them.
+The new guard is a third walker over that same scope, with the two recognisers the section above
+settles, and the two-part allow-list it describes. Every entry carries its reason, and the permanent
+half is marked as such, so the list reads as an exception list rather than as a second, quieter copy
+of the inventory. The failure message should name the shared home and say to add a factory there,
+since the guard's job is to route an author to the answer, not merely to refuse them.
+
+`GuardScope` is package-private in `no.sikt.graphitron.rewrite`, which is where the shared home is
+moving anyway, so the new guard sits beside its two siblings with no visibility change.
 
 The guard is scoped to the store, not to test hygiene in general. It answers one question, "did you
 stand a store up outside the shared home", and it should never grow a second. A guard that starts
@@ -526,8 +590,10 @@ implementer meets this site knowingly. It is also the one place where this item'
 an assertion needing to change signals a load-bearing axis, does not apply: here the changed assertion
 is the fixture's own name, which is what the rename is. Say so at the call site when it changes.
 
-Eight further classes hardcode `directory.resolve("fixture.graphqls")` inside their own `write` copies,
-so the rename is not one line but one line per copy, taken as each copy migrates. The sweeps then stop
+Fifteen further classes hardcode `directory.resolve("fixture.graphqls")` inside their own `write`
+copies (the fourteen `derive/` harnesses plus `diagnostics/DiagnosticFactsTest`; seventeen files carry
+the literal in all, the other two being `CapturedStore` itself and `WarmStartRefreshTest`), so the
+rename is not one line but one line per copy, taken as each copy migrates. The sweeps then stop
 minting subdirectories, which is a small hand-rolled step deleted rather than moved.
 
 One line of the eight copies has to survive the merge: each of them calls `Files.createDirectories`
@@ -590,17 +656,22 @@ writes, and a DDL change adding a non-null column should break one place rather 
 ### Update the agreement anchors
 
 `FactCaptureAgreementTest`'s class javadoc cites the migrated classes by name as the registered
-per-view agreement anchors, and the list has grown with the population: **fourteen** fully qualified
-`{@code}` names as of 2026-08-17, the original seven (`ColumnMatchClaimTest`,
-`ReferenceStepTargetTest`, `FieldColumnTableTest`, `ClassMemberSlotTest`, `DemandShadowTest`,
-`InputOccurrenceShadowTest`, `AuthoredClaimConflictsTest`) plus `AccessorHopTest`,
-`ClassAssignableTest`, `FieldProducerMethodTest`, `ProducerCardinalityTest`, `TypeBackingClassTest`,
-`TypeBackingClassesTest` and `TypeBackingShadowTest`.
+per-view agreement anchors, and the list has grown with the population: **thirteen** distinct fully
+qualified `{@code}` names in the class javadoc as of 2026-08-17, the original seven
+(`ColumnMatchClaimTest`, `ReferenceStepTargetTest`, `FieldColumnTableTest`, `ClassMemberSlotTest`,
+`DemandShadowTest`, `InputOccurrenceShadowTest`, `AuthoredClaimConflictsTest`, the last of which is
+cited twice) plus `AccessorHopTest`, `ClassAssignableTest`, `FieldProducerMethodTest`,
+`ProducerCardinalityTest`, `TypeBackingClassTest` and `TypeBackingShadowTest`. A fourteenth,
+`TypeBackingClassesTest`, is cited the same way but in a *method* javadoc further down the file
+(`FactCaptureAgreementTest:1689`), so an implementer sweeping the class javadoc alone will miss it.
+`SeparateFetchTest` is a harness copy but is not an anchor, so it does not appear.
 
 Convert them to `{@link}` while touching them, which is the cheap half of this finding. The reason
 this section exists is that `{@code}` is invisible to the javadoc reference gate, so a rename or move
 rots the citation silently; every one of the fourteen names a live class today, so the conversion is
-mechanical and the gate maintains the list from then on. Doing it in this item is what stops the same
+mechanical and the gate maintains the list from then on. Note that the gate runs javadoc against main
+sources, so it will not maintain a citation living in a test class; converting to `{@link}` still buys
+the compiler's own resolution of the reference, which is what stops the silent rot. Doing it in this item is what stops the same
 paragraph having to be written again for the next consolidation.
 `docs/architecture/explanation/fact-model.adoc` cites four of them the same way
 (`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`, `DemandShadowTest`,
@@ -614,9 +685,10 @@ Six slices, ordered so each lands on settled files and each has an arithmetic ac
 too large for one session: fifteen classes in `graphitron`, thirty-six call sites in the language
 server, four modules and an open design question.
 
-**S1: the ratchet.** The guard, both counters, every current site allow-listed with its reason, and the
-count in its failure message. Nothing migrates. Acceptance: the build fails on a new site, proved by a
-negative case, and passes on the tree as it stands.
+**S1: the ratchet.** The guard, both counters, every current site allow-listed with its reason and
+marked draining or permanent, and the draining count in its failure message. Nothing migrates.
+Acceptance: the build fails on a new site, proved by a negative case, and passes on the tree as it
+stands.
 
 **S2: L0.** The store's lifetime, the fixture file with the filename keyed on the graph name, the
 caller-supplied graph identity, `registryOf` / `attributionOf` / `fixtureFile` public, and
@@ -639,8 +711,8 @@ and neither is silenced instead.
 **S6: `graphitron-lsp`.** `StoreFixture` keeps its name and its thirty-six call sites and delegates its
 capture half, including the post-capture writers, which is the part that waits on the LSP item. This is
 also where the seeding consolidation and the hand-written `graphql_type` / `graphql_field` twins land,
-both of them cross-cutting enough to want the whole set in view. Acceptance: the allow-list is empty and
-no LSP test class is edited.
+both of them cross-cutting enough to want the whole set in view. Acceptance: the allow-list's draining
+half is empty, only the permanent entries remain, and no LSP test class is edited.
 
 What must not happen is a rehome landing on top of a file another item is still rewriting, which the
 slice order below is arranged to avoid. This item does not reach Done until all four modules are on the
