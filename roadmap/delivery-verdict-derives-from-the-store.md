@@ -33,7 +33,9 @@ the batched-capable predicate by enumerating what does *not* qualify, with
 `ConnectionType` arm. That is a closed-world claim about the whole shape space, maintained by hand,
 with nothing behind it.
 
-What `roadmap/batched-discriminated-interface-child.md` then had to establish is the exact cost.
+What the batched-discriminated-interface-child item then had to establish is the exact cost (that
+item has since reached Done and its file is retired; its entry in `roadmap/changelog.md` is where
+the record now lives, and every citation of it below reads the same way).
 That item gave the discriminated interface child a batched delivery, and settling what the
 hardcoded `false` owed it took a full reading of `mint`'s arm order: the answer turned out to be
 that the `false` case stays correct as written, because the new delivery arrives as a positive arm
@@ -146,9 +148,10 @@ and an earlier draft of this section asked for two that cannot be written:
 
 `intent_field_separate_fetch` landed on 2026-08-15, after this item was filed, and it is closer to
 the proposal above than the demand stratum is. It is coordinate-grained, carries a `rule` column,
-is registered `Arm.DERIVED`, and its four arms are `SPLIT_QUERY` off `graphitron_split_query`,
+is registered `Arm.DERIVED`, and its five arms are `SPLIT_QUERY` off `graphitron_split_query`,
 `TENANT_FAN_OUT` off `graphitron_tenant_fan_out`, `SERVICE` off `graphitron_service` at a non-root
-parent, and `ROOT_OPERATION` off `graphql_root_operation`. It has live readers: the LSP renders it
+parent, `ROOT_OPERATION` off `graphql_root_operation`, and `RECORD_HANDED_PARENT` off
+`intent_type_backing_class`. It has live readers: the LSP renders it
 through `SeparateFetchRule`, `collectSeparateFetchHints` and `DeclarationHovers`, and
 `SeparateFetchVocabularyTest` seals its vocabulary against the words an editor shows.
 
@@ -170,29 +173,50 @@ a view over a view. Building delivery on separate-fetch's rows would mean re-int
 whose `SERVICE` and `ROOT_OPERATION` arms delivery has to invert, which is worse provenance than
 joining the markers directly.
 
-Three instructions follow for whoever writes the DDL.
+Four instructions follow for whoever writes the DDL.
 
-* **The literals stay identical on purpose.** `SPLIT_QUERY` and `TENANT_FAN_OUT` name the same two
-  captured facts in both vocabularies, and the ground settled under "Open for the implementer" is
+* **The literals stay identical on purpose.** `SPLIT_QUERY`, `TENANT_FAN_OUT` and
+  `RECORD_HANDED_PARENT` name the same three captured facts in both vocabularies, and the ground
+  settled under "Open for the implementer" is
   that the vocabulary names facts rather than decisions. One fact spelled two ways across one
   namespace would be the worse outcome; a reader joining the two relations on a coordinate should
-  meet the same word. The two closed sets stay separate (delivery's carries `POLYMORPHIC_FAN_IN` and
-  `RECORD_HANDED_PARENT`, which are not round-trip rules), and so do their rendering sides: a
+  meet the same word. The two closed sets stay separate (delivery's carries `POLYMORPHIC_FAN_IN`,
+  which is not a round-trip rule; separate-fetch's carries `SERVICE`, which delivery inverts), and so
+  do their rendering sides: a
   delivery consumer that needs constants gets its own, and `SeparateFetchRule` is not widened.
 * **The root arm is a transcription, not a new derivation.** Separate-fetch's `ROOT_OPERATION` arm is
   gate-for-gate what the `ROOT_COORDINATE` exemption needs, down to keying on `graphql_root_operation`
   rather than the three conventional names, and its comment records the renamed-root difference in
   the same words the demand sibling uses. Copy the arm and inherit the residue; do not re-derive it.
+* **The record-handed arm is a transcription too, and this is the instruction that changed latest.**
+  That arm landed in `intent_field_separate_fetch` eighteen minutes after this item's previous
+  revision, so the section below derives its population from first principles and arrives at the
+  right relation by the longer road. The derivation stands, because it is why the arm reads what it
+  reads; the *gate* to write is the shipped one. Two of its clauses the from-scratch reading does
+  not reproduce, and both matter. It anti-joins the parent's binding over `intent_bound_table`
+  rather than over `intent_type_backing`'s `BOUND_TABLE` arm, because that arm drops a table whose
+  generated model has no record class (`record_class_fqn = 'org.jooq.Record'`, stated in the view's
+  own comment), so a `@table` parent with no generated record has no `BOUND_TABLE` row to lose the
+  precedence with and a closure-gated arm would call it record-handed. And it guards the parent's
+  kind at `OBJECT`, which the domain join does not subsume: `intent_type_domain` holds "every named
+  type, of every kind", while the backing closure holds input objects beside objects and an input
+  coordinate is not a delivery. Copy the arm, add `candidates = 1` on the child binding (the sibling
+  deliberately leaves it off, its comment pointing a reader wanting the walk's reading at that
+  column), and inherit the two departures its comment already records: an ambiguously bound child,
+  which the arity filter removes here, and a `@table` interface child at either cardinality, which
+  the `DISCRIMINATED_TARGET` exemption and the fan-in arm answer between them. Both are populations
+  this item had already reasoned to independently, which is corroboration that the two relations are
+  reading one fact.
 * **Say the relationship in both view comments.** A reader meeting two coordinate-grained rule views
   that share two literals and disagree on two populations needs to be told, at each of them, that the
   disagreement is the design. This item owns the comment on its own three views; amending
   `intent_field_separate_fetch`'s to point back is a one-line edit inside this item's scope.
 
-One consequence outside this item, worth recording where it was found rather than acted on here.
-`intent_field_separate_fetch`'s comment defers its class-backed-parent arm on the ground that it
-"needs the backing-class resolution the census does not yet carry". That resolution landed on
-2026-08-16 as `intent_type_backing_class`, which the next section puts to work, so the stated blocker
-is closed. The sibling arm belongs to whoever owns that view, not to this item.
+Nothing is left outside this item on that view. An earlier revision recorded its deferred
+class-backed-parent arm as a finding to hand back to whoever owns it, the stated blocker ("needs the
+backing-class resolution the census does not yet carry") having been closed by
+`intent_type_backing_class` landing on 2026-08-16. That arm has since been written, which is why the
+instruction above is to copy it rather than to note it.
 
 ### Delivery's negative side is not pure complement, and the corpus already proves it
 
@@ -285,7 +309,7 @@ inventory is wider than a first read suggests, and picking the relation whose *n
 vocabulary is how three successive drafts got an entry wrong. The arms need
 `graphitron_split_query`, `graphitron_tenant_fan_out`,
 `graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (through
-`intent_bound_table`, see below), `graphitron_service`, `intent_type_backing` (the record-handed
+`intent_bound_table`, see below), `graphitron_service`, `intent_type_backing_class` (the record-handed
 arm, and the entry the third draft got wrong; the second predicate below is where that is
 established), `graphql_field.is_list`, `graphql_type.kind`,
 `graphql_implements`, `graphql_union_member`, `graphql_root_operation` (the root exemption arm,
@@ -316,7 +340,7 @@ interface child, single-table or joined-table, reaches the arm at all. Underneat
 minted at one site in `TypeBuilder`, behind an `interfaceTable != null` guard that only the
 `TableInterfaceType` construction satisfies (the `InterfaceType` and `UnionType` constructions both
 pass null). So a `JoinedTableBound` participant cannot reach the predicate that would reject it.
-`roadmap/batched-discriminated-interface-child.md` states the same participant invariant
+The batched-discriminated-interface-child item states the same participant invariant
 independently, as the reason it must not copy this guard's shape.
 
 One asymmetry to hold onto, because it looks like a disagreement and is not. The walk's fan-in arm
@@ -367,14 +391,23 @@ that population, and `DemandShadowTest` pins its registered-but-undemanded direc
 today's corpus. An arm copying `PRODUCER_PAYLOAD` would therefore have shipped with a residue the
 size of the accessor closure, described in this item as a single pivot-slot member.
 
-**The arm's gate is a `BACKING_CLOSURE` row on the parent type**, and one precedence fact goes with
-it, because `intent_type_backing` coalesces its two arms and deliberately prefers neither: a type
+**The arm's gate is a class backing on the parent type with the parent's own binding anti-joined
+away**, and one precedence fact goes with it, because `intent_type_backing` coalesces its two arms
+and deliberately prefers neither: a type
 both arms answer is two rows, and `intent_type_backing_conflict` is where a reader learns so. The
 walk resolves that pair by reading the table and never consulting the class, which that view's
 comment calls a defensible reading and explicitly a choice rather than agreement. This arm makes the
-same choice out loud: a parent carrying a `BOUND_TABLE` row is table-handed whatever its closure
+same choice out loud: a parent whose type is bound to a table is table-handed whatever its closure
 says, which is what `sourceShape`'s table arms do. State it in the view comment; do not leave it to
 the join.
+
+Where that choice is *stated* is the correction the sibling instruction above carries. Reading it as
+"no `BOUND_TABLE` row on the parent" spends the coalesced view for a precedence the binding relation
+holds more exactly, and loses a population on the way: `intent_type_backing`'s table arm requires the
+table to have a generated record class, so a `@table` parent whose table reports `org.jooq.Record`
+is absent from that arm and is not table-handed by it, while its binding is a fact all the same. The
+shipped arm anti-joins `intent_bound_table` for exactly that reason and says so; this arm reads
+`intent_type_backing_class` and does the same.
 
 One residue survives and it is the one already named: the pivot-slot record parent, whose source is
 the pivot subselect's graphitron-built jOOQ record, so no class backs it on either arm.
@@ -471,8 +504,8 @@ would have answered it silently.
 | `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`
 
 | `RECORD_HANDED_PARENT`
-| the parent's backing is a class rather than a table, and the target binds one table
-| `intent_type_backing` at `declared_via = 'BACKING_CLOSURE'`, with a `BOUND_TABLE` row on the parent losing to the table reading
+| the parent is an object the backing closure grounds on a class and its own type binds no table, and the target binds one table. `intent_field_separate_fetch`'s arm of this name is the gate; copy it and add the arity filter
+| `intent_type_backing_class` on the parent at `graphql_type.kind = 'OBJECT'`, anti-joined against `intent_bound_table` on the parent, joined to `intent_bound_table` at `candidates = 1` on the target
 
 | `SPLIT_QUERY`
 | `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
@@ -492,8 +525,12 @@ with a witness already in the corpus: `Query.aggregated`, in the same
 `service-child-class-backed-parent` example, is a root *and* carries `@service`, so both exemption
 arms match it and `mint`'s order is what makes `ROOT_COORDINATE` the reason it reports rather than
 `SERVICE_CALL`. The verdict is `INLINE` either way, which is exactly why the reason column needs the
-order stated: the shadow test only catches a mis-ordering here if it compares the winning literal and
-not just the verdict, and that is a choice the implementer makes.
+order stated, and it also settles which instrument can check it. Not the shadow: `mint` returns the
+argument-less `DeliveryFact.Inline.INSTANCE` on both exemptions, so the walk carries no reason
+literal for an `INLINE` coordinate and there is nothing on that side for a folded comparison to
+disagree with. The exemption order is pinned by the overlap fixture instead, per the shadow bullet
+below. Folding the literal into the compared value is still load-bearing, on the rule side, where
+`Batched` does carry its `Trigger`.
 
 ## Which consumers can read it, and when
 
@@ -579,7 +616,9 @@ set acquiring an enforcer that is not another switch.**
   already ships as a registered `Arm.DERIVED` relation, and it makes binding ambiguity rows instead
   of a silent pick: two candidate tables are two rows, so an arm that needs a settled binding states
   `candidates = 1` the way the column-match classifier does. A raw join re-spells a resolution the
-  store owns. This governs the three rule arms that need a *binding*, and not the
+  store owns. The same view is the `RECORD_HANDED_PARENT` arm's parent-side anti-join, unfiltered
+  there because what makes a parent a table row is that it is bound at all, per the sibling
+  instruction above. This governs the three rule arms that need a *binding*, and not the
   `DISCRIMINATED_TARGET` arm, whose `graphitron_table` join is a presence test: what the walk reads
   there is that the interface carries the marker at all, so routing that arm through the binding view
   would drop an ambiguously-spelled discriminated interface out of the exemption and hand it back to
@@ -592,7 +631,7 @@ set acquiring an enforcer that is not another switch.**
   single member of the record-handed population neither backing arm witnesses, its source being a
   graphitron-built record that no class stands for. Note what is *not* on this list any more: the
   accessor-reached class-backed parent, which was a residue for as long as this item planned to copy
-  the producer-payload arm and stopped being one when the arm moved to `intent_type_backing`. The
+  the producer-payload arm and stopped being one when the arm moved to `intent_type_backing_class`. The
   renamed root is
   the third, per the root-exemption bullet above: the exemption arm reads the binding and the walk
   reads the literal names, so a graph spelling `schema { query: MyQuery }` exempts store-side at
@@ -606,8 +645,10 @@ set acquiring an enforcer that is not another switch.**
   a Java-side coordinate list, and each residue asserted non-empty on the shapes that create it so
   no pin can go vacuous. Three specifics that mould already settles, worth copying rather than
   re-deciding. Compare the verdict and the winning literal as one value, the way the sibling folds a
-  coordinate to `DEMANDED:<rule>`, or a mis-ordered precedence passes wherever both readings agree on
-  the verdict, which is every exemption overlap. One fold is one-directional: the walk's
+  coordinate to `DEMANDED:<rule>`, or a mis-ordered precedence among the rule arms passes wherever
+  two rules agree on `BATCHED`. That fold reaches the rule side only, `DeliveryFact.Inline` carrying
+  no trigger to compare an exemption reason against; the exemption order is the overlap pin's job,
+  below, and stating which instrument owns which half is the point. One fold is one-directional: the walk's
   `DeliveryFact.Trigger` mints `Authored` for both authored literals, so the comparison folds the
   store's `SPLIT_QUERY` and `TENANT_FAN_OUT` onto `Authored` rather than asking the walk for a
   distinction it never made; the precedence between the two authored literals is pinned by the
@@ -623,11 +664,11 @@ set acquiring an enforcer that is not another switch.**
   survive in the rule view and the reduction picks the declared winner. `Query.aggregated` is the
   coordinate.
 * Corpus population for every arm the view declares. A shadow test over a corpus that does not
-  exercise an arm is vacuous in exactly the way the R661 review found `DeliveryFactPinTest` to be,
+  exercise an arm is vacuous in exactly the way that item's review found `DeliveryFactPinTest` to be,
   so each declared rule needs a coordinate that reaches it. Three populations are missing today, all
   counted against `ClassifiedCorpus` rather than assumed:
   * The discriminated interface child at both cardinalities, which
-    `roadmap/batched-discriminated-interface-child.md` has since landed, so this is now a check
+    the batched-discriminated-interface-child item has since landed, so this is now a check
     rather than an authoring job. All three coordinates that item specified exist: the unmarked list
     child is `Language.mediaList` in the `table-interface` corpus example, and the marked pair is
     `Film.splitContents` and `Film.splitContent` in `DeliveryFactPinTest`'s `MARKER_FIXTURE`, homed
@@ -710,8 +751,9 @@ had to derive from arm order.
   while the window is open.
 * **Collapsing R557's sweep into the anti-join.** Cross-referenced below, decided in that item.
 * **`intent_field_separate_fetch`'s own arms.** The sibling section leaves that relation's rows
-  untouched and takes only the reciprocal comment sentence. Its deferred class-backed-parent arm is
-  now unblocked, which is a finding recorded below rather than work taken on here.
+  untouched and takes only the reciprocal comment sentence. Its class-backed-parent arm has since
+  been written by its owner, so this item reads it as the model for its own record-handed arm and
+  changes nothing there.
 
 ## Relationship to items already open
 
@@ -730,11 +772,11 @@ had to derive from arm order.
   surface, so pick them for a consumer rather than only for the shadow test. And the exit criterion
   above is checkable against a real population now, because R682's measured read surface says
   exactly which coordinates `deliveryOf()` is asked about.
-* `roadmap/batched-discriminated-interface-child.md` (R661, In Review) **has landed**, and it went
+* The batched-discriminated-interface-child item (Done; see `roadmap/changelog.md`) **has landed**, and it went
   first. There was deliberately no dependency in either direction, an N+1 defect not being something
   that should block on a structural item, and either order would have worked; the consequence of the
-  order that happened is that this item models a delivery rule set R661 has already changed, and the
-  sections above are written against the post-R661 tree rather than against a prediction. Three
+  order that happened is that this item models a delivery rule set that item has already changed, and the
+  sections above are written against the tree that item left rather than against a prediction. Three
   concrete inheritances, all already folded in above and collected here so the next reader can check
   them against the item rather than rediscover them. The `DISCRIMINATED_TARGET` exemption is gated to
   single cardinality, the list half being the fan-in arm's row. The precedence of that exemption over
@@ -748,11 +790,12 @@ had to derive from arm order.
   sibling relation this item's own section places, and shipped `intent_type_backing_class`, the
   backing closure the `RECORD_HANDED_PARENT` arm now reads. Two consequences, neither a dependency in
   either direction. This item's only edit inside that view is the reciprocal comment sentence, which
-  cannot conflict with an arm change. And the blocker that view's comment records for its
-  class-backed-parent arm ("the backing-class resolution the census does not yet carry") was closed
-  by that item's own later step, so if the bullet tracking it is still open there, this is the
-  finding that closes it. Both observations are recorded here because this is where they were found;
-  acting on the second belongs to that item.
+  cannot conflict with an arm change. And that item moves faster than this one's revisions: its
+  `RECORD_HANDED_PARENT` arm landed eighteen minutes after the previous revision of this spec, which
+  is why the sibling section now instructs a copy where it used to instruct a derivation. Re-read
+  that view at pickup rather than trusting the arm list transcribed here; the sibling section names
+  the five arms as of this revision, and the relationship this item declares (two relations, shared
+  literals, two deliberately opposite populations) is what survives another arm landing.
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
   `@splitQuery`: every marker consumed, inert-by-construction, or rejected. Its spec proposes a
   total switch over the classified leaf. If delivery becomes a view, that sweep is an anti-join
@@ -827,7 +870,7 @@ agreement is vacuous.
 
 ## Provenance
 
-Surfaced in the Spec review of `roadmap/batched-discriminated-interface-child.md`, where the
+Surfaced in the Spec review of the batched-discriminated-interface-child item, where the
 missing update to `singleTableBackedVerdict` was the review's blocking finding. The item exists
 because the finding is a symptom: a delivery rule change had to be applied by hand at a second site
 whose encoding is a negative-space enumeration, and nothing but a reviewer's reading stood between
