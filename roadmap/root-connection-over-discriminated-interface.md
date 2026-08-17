@@ -5,7 +5,7 @@ status: Ready
 bucket: feature
 priority: 3
 theme: interface-union
-depends-on: [batched-discriminated-interface-child]
+depends-on: []
 created: 2026-08-13
 last-updated: 2026-08-14
 ---
