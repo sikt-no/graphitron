@@ -26,28 +26,40 @@ comparison side and the walk-less fallback. Neither is relational. The relation 
 `Map<FieldCoordinates, DeliveryFact>` computed by a method that switches on type verdicts, which
 makes it a second switch wearing a relation's name.
 
-The cost is concrete and current. `DeliveryFactRelation.singleTableBackedVerdict` encodes delivery
-as **negative space**: it returns the batched-capable predicate by enumerating what does *not*
-qualify, with `case GraphitronType.TableInterfaceType _ -> false` and a matching exclusion inside
-its `ConnectionType` arm, justified in javadoc as "the single-table interface child, whose only
-delivery is inline". That is a closed-world claim about the whole shape space, maintained by hand,
+The cost is concrete, and the tree has since paid it in public.
+`DeliveryFactRelation.singleTableBackedVerdict` encodes delivery as **negative space**: it returns
+the batched-capable predicate by enumerating what does *not* qualify, with
+`case GraphitronType.TableInterfaceType _ -> false` and a matching exclusion inside its
+`ConnectionType` arm. That is a closed-world claim about the whole shape space, maintained by hand,
 with nothing behind it.
 
 What `roadmap/batched-discriminated-interface-child.md` then had to establish is the exact cost.
-That item gives the discriminated interface child a batched delivery, and settling what the
+That item gave the discriminated interface child a batched delivery, and settling what the
 hardcoded `false` owed it took a full reading of `mint`'s arm order: the answer turned out to be
 that the `false` case stays correct as written, because the new delivery arrives as a positive arm
-placed ahead of the `tableAnchoredChild` computation, and only the javadoc rationale quoted above
-goes false. Nothing in the code said so. The site's correctness under a new batched shape was
-established by a reviewer reading arm order, which is the same as saying it was not established.
+placed ahead of the `tableAnchoredChild` computation, and only the javadoc rationale went false.
+Nothing in the code said so. The site's correctness under a new batched shape was established by a
+reviewer reading arm order, which is the same as saying it was not established.
+
+And the enumeration outlived what it enumerated. With `mint`'s `discriminatedInterfaceTarget` arm
+now standing ahead of the `tableAnchoredChild` computation, every path that reaches
+`singleTableBackedVerdict` has already been filtered by it, so the `TableInterfaceType` case can no
+longer be reached and the `ConnectionType` arm's exclusion conjunct can no longer be false. Both
+survive as dead code with a rewritten javadoc rather than being deleted, because a hand-maintained
+switch has no instrument that could say a case stopped mattering. That is the same defect from the
+other side: the negative space could not tell anyone it had gone stale any more than it could tell
+anyone it was incomplete.
 
 The pin does not close this. `DeliveryFactPinTest` compares the two sides, but
 `DeliveryFactRelation`'s own javadoc states what the comparison is worth: "this production and the
 classifier's batched-leaf arms read the same marker, source-shape and verdict facts on both sides,
 pinned for regression rather than independence". Two readers of the same inputs agreeing is not
-integrity, it is duplication with a consistency check, and the check is further bounded by the
-corpus population: no example carries a list-cardinality discriminated interface child, so even the
-regression reading is blind exactly where the next change lands.
+integrity, it is duplication with a consistency check. The corpus has since closed the coverage hole
+that made the point vividly (a list-cardinality discriminated interface child now exists, added by
+the sibling item as it changed both sites), and closing it changes nothing about the argument: a
+coordinate the corpus does not carry is invisible to the pin, and which coordinates those are is
+whatever nobody has thought to add. Coverage is a thing somebody remembers, on exactly the terms the
+negative-space switch is.
 
 ## The exemplar is already in the tree
 
@@ -218,11 +230,18 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   below rather than a coincidence. No corpus example spells a `schema` block, so the two rules agree
   everywhere the shadow test can currently look, which is the same condition under which the
   `@discriminate` arm was narrowed at spec time rather than left for the test to find.
-* **The discriminated target, reason `DISCRIMINATED_TARGET`.** `singleTableBackedVerdict` returns
-  `false` for a `TableInterfaceType` target, with a matching exclusion inside its `ConnectionType`
-  arm, so a discriminated interface child reads `Inline` whatever its parent hands it and whatever
-  markers it carries. `Inventory.media` in the `table-interface` example is the witness, a
-  discriminated interface child on a `@table` parent. **The captured population is not
+* **The discriminated target, reason `DISCRIMINATED_TARGET`, at single cardinality only.** `mint`'s
+  discriminated arm returns `Inline` at single cardinality and `Batched(PolymorphicFanIn)` at list
+  or connection cardinality, ahead of both the `tableAnchoredChild` computation and the marker
+  reads, so a *single-valued* discriminated interface child reads `Inline` whatever its parent hands
+  it and whatever markers it carries. `Inventory.media` in the `table-interface` example is the
+  witness, a single-valued discriminated interface child on a `@table` parent. The list half is not
+  an exemption at all, and needs no arm of its own: the fan-in rule arm already stands at those
+  coordinates, for the reasons the fan-in trace below gives, and reports the same
+  `POLYMORPHIC_FAN_IN` literal the walk's trigger carries there. `Language.mediaList` in the same
+  example is that coordinate. Everything the rest of this bullet establishes about *which* captured
+  population the arm reads holds unchanged at either cardinality; only the cardinality gate is
+  new. **The captured population is not
   `graphitron_discriminate` alone**, which is the name-matching trap the two predicate entries below
   record, met a third time. `@discriminate` is declared `on INTERFACE | UNION` and nothing rejects it
   on a target carrying no `@table`, while `TypeBuilder` mints a `TableInterfaceType` only where an
@@ -234,12 +253,14 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   which `mint` sends to the fan-in arm; since this exemption outranks every rule arm, the store would
   report `INLINE` at a coordinate the walk reports `BATCHED`. No corpus coordinate carries either
   shape, so the wide arm ships green, which is why the narrowing is stated here rather than left for
-  the shadow test to find. One seam to settle at the reduction: this
-  exemption outranks every rule arm, whereas the `false` it replaces only defeats the readings that
-  consult the target's binding, and the split reading's `@pivot` disjunct does not consult it. No
-  coordinate is on both sides today (`@pivot` is rejected on root and record-backed parents, and no
-  corpus example pivots to a polymorphic target), so this is a precedence choice rather than a live
-  disagreement; make it deliberately and let the shadow test arbitrate.
+  the shadow test to find. The precedence against the marker arms needs no judgement call, because
+  the walk now states it: the discriminated arm returns before the marker block is entered at all,
+  and its own comment records that placement as deliberate, so "the redundant `@splitQuery` an author
+  may write on it cannot claim the trigger at either cardinality". The exemption therefore outranks
+  the `SPLIT_QUERY` arm including its `@pivot` disjunct, and on the list half the fan-in row beats
+  the split row by the rule arms' own declared order. Transcribe that rather than choosing it. Both
+  sides are witnessed: `Film.splitContent` and `Film.splitContents` in `DeliveryFactPinTest`'s
+  `MARKER_FIXTURE` are a marked single and a marked list of exactly this shape.
 
 Three consequences, and together they settle what the open questions used to ask.
 
@@ -298,13 +319,23 @@ pass null). So a `JoinedTableBound` participant cannot reach the predicate that 
 `roadmap/batched-discriminated-interface-child.md` states the same participant invariant
 independently, as the reason it must not copy this guard's shape.
 
+One asymmetry to hold onto, because it looks like a disagreement and is not. The walk's fan-in arm
+and the store's do not have the same population: the discriminated list child reaches the walk's
+*own* discriminated arm and the store's *fan-in* arm, two different arms that mint the same
+`PolymorphicFanIn` / `POLYMORPHIC_FAN_IN` value. That is the shadow comparison working as intended,
+which compares the verdict and the winning literal rather than the route to them. Nothing about the
+trace above changes; it establishes what the walk's arm sees, and the store's gate below is stated on
+its own terms rather than transcribed from it.
+
 Two consequences. The arm's store-side gate is that the target is an interface or union, list-valued
 or connection-shaped, with at least one table-bound participant: `graphql_implements` /
 `graphql_union_member` joined to `graphitron_table`, over `graphql_field.is_list`. Every input is in
 the inventory above and every hop in this arm is single. It
-carries no `@discriminate` anti-join, because the exemption arm below outranks it and both readings
-say `INLINE`; the arm stays unmasked against that exemption exactly as it stays
-unmasked against the root one, which is the sibling's discipline (its rule views let
+carries no `@discriminate` anti-join, and since that shape gained a batched delivery the arm is what
+positively reports its list half: a list-valued discriminated interface target is an interface with
+table-bound participants, so the arm fires there and its literal is the trigger the walk mints. At
+single cardinality the arm does not fire and the exemption answers instead. The arm likewise stays
+unmasked against the root exemption, which is the sibling's discipline (its rule views let
 overlapping readings survive as rows and give the reduction the meet), so this arm does carry
 `Query.people` and the reduction is where that row becomes `INLINE`. And the `sql_`
 catalog family is not needed by any arm, which is why it is absent from that inventory: no arm's
@@ -400,9 +431,10 @@ exemption arm below, and the other two are not facts about the target at all.
 lands.** The negative-side section above already declined the anti-join shape for `@service`, on the
 grounds that it is negative space inside an arm and spreads one rule across every arm it defeats; the
 discriminated target is the same case and takes the same treatment, a third arm in the exemption
-view. Read once instead of carried by every rule arm, reported with a reason literal a reader can
-count, and witnessed by `Inventory.media`. The fan-in arm needs no anti-join of its own either: the
-exemption outranks it and both say `INLINE`.
+view, gated to single cardinality. Read once instead of carried by every rule arm, reported with a
+reason literal a reader can count, and witnessed by `Inventory.media`. The fan-in arm needs no
+anti-join of its own either, and now has a positive reason not to want one: at list cardinality it
+is the arm that carries this very shape.
 
 **There is no polymorphic mask to write.** `mint`'s polymorphic arm returns in *both* branches
 because a switch has to pick an exit; a `UNION` of arms does not mask, and teaching it to would be
@@ -431,11 +463,11 @@ would have answered it silently.
 | `graphitron_service`
 
 | `DISCRIMINATED_TARGET` (exemption)
-| the target is an interface carrying both `@discriminate` and `@table`, which is what `TableInterfaceType` means
-| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates returning the type
+| the target is an interface carrying both `@discriminate` and `@table`, which is what `TableInterfaceType` means, *and* the coordinate is single-valued. The list and connection halves are the fan-in arm's row, not an exemption
+| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates returning the type, gated on `graphql_field.is_list` false and no connection shape
 
 | `POLYMORPHIC_FAN_IN`
-| the target is an interface or union, list-valued or connection-shaped, with at least one table-bound participant
+| the target is an interface or union, list-valued or connection-shaped, with at least one table-bound participant. A discriminated interface target meets this too, which is how its list half gets its row without an arm of its own
 | `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`
 
 | `RECORD_HANDED_PARENT`
@@ -594,15 +626,18 @@ set acquiring an enforcer that is not another switch.**
   exercise an arm is vacuous in exactly the way the R661 review found `DeliveryFactPinTest` to be,
   so each declared rule needs a coordinate that reaches it. Three populations are missing today, all
   counted against `ClassifiedCorpus` rather than assumed:
-  * The list-cardinality discriminated interface child that review named. The `table-interface`
-    example's `Inventory.media` is the only discriminated interface *child* in the corpus and it is
-    `target: Single`; `joined-table-interface` and its paginated sibling reach the shape only through
-    `Query` roots, and a root mints `Inline` before any child rule is evaluated. So the shape whose
-    hardcoded `false` started this item is genuinely unwitnessed.
-    `roadmap/batched-discriminated-interface-child.md` reaches the same conclusion and asks for
-    **three** coordinates rather than one, because the marker arms read `@splitQuery` independently
-    of cardinality: a list child, a list child carrying `@splitQuery`, and a single child carrying
-    `@splitQuery`. Take that count, not this bullet's original one.
+  * The discriminated interface child at both cardinalities, which
+    `roadmap/batched-discriminated-interface-child.md` has since landed, so this is now a check
+    rather than an authoring job. All three coordinates that item specified exist: the unmarked list
+    child is `Language.mediaList` in the `table-interface` corpus example, and the marked pair is
+    `Film.splitContents` and `Film.splitContent` in `DeliveryFactPinTest`'s `MARKER_FIXTURE`, homed
+    there on purpose because a marked coordinate raises that item's new redundancy lint and a
+    `@classified` verdict row would have to reconcile it. `Inventory.media` remains the single
+    unmarked witness. **What does not come free is the store side.** `MARKER_FIXTURE` is a private
+    constant of a pipeline-tier test with no captured store behind it, so `DeliveryShadowTest` cannot
+    read it; the marked pair needs its own fixture there, in the mould of `DemandShadowTest`'s
+    per-shape fixtures beside its corpus sweep. The unmarked list child needs nothing, the corpus
+    sweep reaching it already.
   * **The `@tenantFanOut` arm has no witness anywhere in the corpus.** `@tenantFanOut` occurs zero
     times in `ClassifiedCorpus` (against eight `@splitQuery`, seven `@routine`, four `@pivot`), and
     `DeliveryFactPinTest`'s own `MARKER_FIXTURE` covers only the split-query half, by its comment
@@ -655,13 +690,16 @@ pins two duplicate readers, and afterwards it either becomes a store-versus-cons
 goes away with the crosswalk it compares.
 
 **One test of whether this item succeeded:** the discriminated interface child must not appear in
-`DeliveryResidue` as a standing exemption. The reason is not that the hardcoded `false` is wrong;
-per the Problem statement it survives its own sibling item intact. The reason is that this shape is
-the one whose delivery nobody could settle without reading arm order, so a view that cannot state it
-has left the question exactly where it was and reproduced the defect in a new place. The
-`DISCRIMINATED_TARGET` exemption arm is what passes this test, which is why it is an arm and not a
-predicate folded into the others: a residue is silent and an anti-join is unreportable, while a row
-carries a reason literal and a count.
+`DeliveryResidue` at either cardinality. The reason is not that the hardcoded `false` is wrong; per
+the Problem statement it survived its own sibling item intact, and has since become unreachable
+rather than incorrect. The reason is that this shape is the one whose delivery nobody could settle
+without reading arm order, so a view that cannot state it has left the question exactly where it was
+and reproduced the defect in a new place. Two arms between them pass this test, and the split is the
+point: the `DISCRIMINATED_TARGET` exemption states the single half and the `POLYMORPHIC_FAN_IN` rule
+arm carries the list half, each as a row rather than as a predicate folded into the others. A residue
+is silent and an anti-join is unreportable, while a row carries a literal and a count, and here the
+two rows say out loud that cardinality is the fork, which is exactly the fact a reviewer previously
+had to derive from arm order.
 
 ## Out of scope
 
@@ -692,19 +730,20 @@ carries a reason literal and a count.
   surface, so pick them for a consumer rather than only for the shadow test. And the exit criterion
   above is checkable against a real population now, because R682's measured read surface says
   exactly which coordinates `deliveryOf()` is asked about.
-* `roadmap/batched-discriminated-interface-child.md` (R661, Ready) must not wait for this, and there
-  is deliberately no dependency in either direction: an N+1 defect should not block on a structural
-  item, and this item models the delivery rules as they are rather than as R661 will leave them.
-  Either landing order works. If R661 lands first, this item's view gains one more arm to express
-  and the three coordinates that item specifies (its own delivery-agreement bullet enumerates them;
-  they subsume the first coordinate this item asks for). Only one of the three arrives in the corpus,
-  though: that item homes the two `@splitQuery`-marked ones in `DeliveryFactPinTest`'s
-  `MARKER_FIXTURE` on purpose, so the marked pair still needs a targeted fixture here, in the mould of
-  `DemandShadowTest`'s per-shape fixtures beside its corpus sweep. If this item lands first, R661's
-  relation-side edit becomes additive, a `UNION` arm rather than a negative-space switch case, which
-  is strictly the better shape for that implementer, and its second half is one clause: narrow the
-  `DISCRIMINATED_TARGET` exemption to single cardinality and the fan-in row already standing at the
-  list-cardinality coordinate wins the reduction. Whoever goes second reads the other's landing note.
+* `roadmap/batched-discriminated-interface-child.md` (R661, In Review) **has landed**, and it went
+  first. There was deliberately no dependency in either direction, an N+1 defect not being something
+  that should block on a structural item, and either order would have worked; the consequence of the
+  order that happened is that this item models a delivery rule set R661 has already changed, and the
+  sections above are written against the post-R661 tree rather than against a prediction. Three
+  concrete inheritances, all already folded in above and collected here so the next reader can check
+  them against the item rather than rediscover them. The `DISCRIMINATED_TARGET` exemption is gated to
+  single cardinality, the list half being the fan-in arm's row. The precedence of that exemption over
+  the marker arms is now a transcription rather than a choice, `mint`'s discriminated arm returning
+  ahead of the marker block by design. And the three coordinates that item's delivery-agreement
+  bullet asked for all exist, so this item's corpus work shrinks to a store-side fixture for the
+  marked pair. What that item's landing does *not* change is this item's motivation: its own spec
+  says so, deferring the negative-space defect here rather than restructuring the site, and the
+  enumeration it left behind is now unreachable rather than merely fragile.
 * `roadmap/lsp-reads-the-fact-store.md` (R638, In Progress) owns `intent_field_separate_fetch`, the
   sibling relation this item's own section places, and shipped `intent_type_backing_class`, the
   backing closure the `RECORD_HANDED_PARENT` arm now reads. Two consequences, neither a dependency in
