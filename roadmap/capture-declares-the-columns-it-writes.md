@@ -58,31 +58,61 @@ arrives.
 Inserts are designed. The statement names the columns the writer has data for, explicitly, and that
 list is not derived from the relation's shape at runtime.
 
-Two mechanisms were proposed and rejected for the same reason, recorded so they are not re-proposed:
-filtering `table.fields()` by jOOQ's readonly flag, and grouping each relation's buffered rows by
-jOOQ's changed-field set. Both reconstruct the column list from a different source instead of stating
-it, and both leave the knowledge in the writer rather than at the site that has the data.
+Generated jOOQ records are not the vehicle. Hand-written DML is both simpler and more powerful:
+records cannot express an upsert or a `RETURNING` clause without leaving the record API anyway.
 
-## The fork to settle at Spec
+Three mechanisms were proposed and rejected, recorded so they are not re-proposed. Filtering
+`table.fields()` by jOOQ's readonly flag, and grouping each relation's buffered rows by jOOQ's
+changed-field set: both reconstruct the column list from a different source instead of stating it.
+And keeping the record surface while moving only the column declaration somewhere `flush()` consults:
+that honours the principle's letter while leaving the insert assembled rather than written.
 
-How far the indirection goes with it.
+## The design
 
-* **The sites write the statements.** Each of the 123 capture sites writes its own
-  `insertInto(...).columns(...)`, replacing the `newRecord` plus setters. `FactSink` keeps the jobs
-  that are its own (the `claim()` dedup, the graph-partition stamp, the parents-first ordering, and
-  batching) and loses column-list construction. The statement reads as a statement, at the cost of a
-  large mechanical change across every capture class.
-* **The records stay, `flush()` stops reconstructing.** The sites keep the generated-record surface
-  they currently dogfood, and the declaration of which columns a relation writes moves somewhere
-  explicit that `flush()` consults. Smaller change, but the insert is still assembled rather than
-  written, so it honours the principle's letter more than its shape.
+Two layers, with the jOOQ boundary between them.
 
-The first is the reading the principle most plainly implies. The Spec should settle it before any
-capture class is touched, because the two differ by roughly two orders of magnitude in blast radius.
+**Gatherers produce plain Java records, in bulk.** A crawler's output is a `List<SomeFact>` of
+ordinary records, and it imports neither `DSLContext` nor the generated `Tables`. That is the
+testability half: a gatherer becomes a function from a graphql-java AST, a jOOQ catalog reading or a
+classfile to a list of facts, assertable without a store.
 
-Either way one measurement is mandatory before and after: `flush()`'s bind-batch beats `batchInsert`
-by a measured 1.8x (3.7 s to 2.1 s over a 207k-row census, per its own comment), so the shape must
-keep one prepared statement per relation rather than rendering per row.
+**The store owns the DML: 123 functions, each of a store and a batch.** One per relation, each a
+hand-written bulk statement naming its columns. Writing the DML rather than assembling it is also what
+makes upserts and `RETURNING` available, which the record path cannot express cleanly; today the
+choice between a plain insert and `onDuplicateKeyIgnore` is made by `sharedFamily()`, a string prefix
+test on the table name, so conflict behaviour is currently inferred from a naming convention rather
+than stated per relation.
+
+### Where the assumption does not hold yet
+
+Only the catalog side already has the plain-record intermediate: `JooqCatalog.ColumnFacts`,
+`IndexFacts` and `ForeignKeyFacts` are ordinary records, and `CatalogFactCapture` translates them into
+jOOQ records field by field, so for that side the work is deleting a translation step. The two largest
+capture classes do not work that way. `SdlFactCapture` (1,021 lines) and `GraphitronFactCapture`
+(1,050) go straight from a graphql-java `Node` to `newRecord(...)` plus setters, so those gatherers do
+know about jOOQ and are harder to test than the design assumes. The capture layer is 4,702 lines
+across fourteen classes, and that is the real size of the move.
+
+### Three responsibilities need new homes
+
+`FactSink` is not only building column lists, so the rewrite has to place these deliberately rather
+than let them fall out:
+
+* **The `claim()` dedup, at 79 call sites.** It is not constraint avoidance. It decides which
+  occurrence of a duplicated declaration wins, and the loser is the input to duplicate-declaration
+  detection. An `onDuplicateKeyIgnore` would let physical insert order pick the winner instead, which
+  is a different rule. So dedup belongs in the gather stage, over the plain records, where it is
+  testable, with the losers becoming their own batch.
+* **Parents-first foreign-key ordering.** With 123 functions the caller orders the calls, which makes
+  the ordering explicit instead of a topological sort computed at flush. That is an improvement and
+  also a transfer of a correctness property from machinery into a call sequence, so it wants a test of
+  its own.
+* **The graph-partition stamp**, currently applied inside `add()`. Becomes a parameter of the write
+  function or a component the gatherer fills.
+
+One measurement is mandatory before and after: `flush()`'s bind-batch beats `batchInsert` by a
+measured 1.8x (3.7 s to 2.1 s over a 207k-row census, per its own comment), so each write function
+must issue one bulk statement rather than rendering per row.
 
 ## Gate
 
