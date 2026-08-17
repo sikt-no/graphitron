@@ -1,7 +1,7 @@
 ---
 id: R642
 title: "graphitron-mcp reads only the store"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: tooling
