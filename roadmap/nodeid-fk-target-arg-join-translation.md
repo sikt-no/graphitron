@@ -1,7 +1,7 @@
 ---
 id: R57
 title: "FK-target @nodeId JOIN-with-translation filter emission (argument + input field)"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: nodeid
