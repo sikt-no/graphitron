@@ -51,7 +51,7 @@ A set of **tools** the agent calls to answer questions:
 | Lists the tables in the catalog.
 
 | `catalog.describe`
-| Full column / key / foreign-key detail for one table.
+| Full column / key / foreign-key detail for one table. Columns arrive in the table definition's order, and the keys are what the database declares: a unique constraint over the primary key's own columns is reported rather than filtered out, so the answer is the catalog rather than a row-identity view of it.
 
 | `schema`
 | Describes the classified GraphQL schema.

@@ -937,6 +937,10 @@ The tool output is the acceptance surface, so the deltas are named rather than d
   key also covers was dropped by `candidateKeys` and now appears in `uniqueKeys`. This is the
   intended direction: `catalog.describe` reports the catalog, and the dedup was another consumer's
   key-matching rule leaking into a discovery tool.
+* **A described table's key, index and foreign-key lists are ordered by name.** The three lists
+  carried whatever order jOOQ's `getKeys()`, `getIndexes()` and `getReferences()` returned, which is
+  no stated order; ordering by constraint name and index name is stateable. Unlike the table and
+  column orders below, nothing pages over these, so the delta is only that repeated calls agree.
 * **Table order becomes schema then table name.** Today it is the generated `Tables` class's
   reflective field order, which the JDK does not promise is stable at all, and page cursors are
   offsets into it: a reordering between two calls silently skips or repeats entries. Under the
@@ -1256,6 +1260,29 @@ slice's stated behaviour rather than a regression.
   which the sibling method in the same class recovers. An expectation of a comment there would have
   been a misreading of which projection carries what, and it was worth being wrong about once to
   find that out.
+
+* **The unique-key delta needs a fixture table, for the same reason the comments did.** The delta
+  above is that a unique constraint whose columns the primary key already covers stops being
+  filtered out, and no table in `init.sql` had one: every fixture there pairs a primary key with a
+  unique constraint over *different* columns, so the covered case could not be observed from a
+  capture at all. A hand-built projection could assert it by fiat; this is the third time in this
+  item that anchoring on the source turns a mocked slot into a fixture affordance, and it is the
+  right cost each time.
+
+  So `init.sql` declares `redundant_unique_key`, a two-column table whose whole content is its
+  constraint pair, with no seed rows because nothing selects from it. It carries the delta's case and
+  nothing else, which is why it is a new table rather than a constraint bolted onto an existing
+  fixture: changing one of those would move a generated `Keys` constant that an execution-tier test
+  may name.
+
+  The constraint has to be declared by `ALTER TABLE`, and the discovery is worth recording because
+  the obvious spelling silently does nothing. PostgreSQL's `CREATE TABLE` analysis discards a
+  `UNIQUE` whose column list matches a `PRIMARY KEY` declared in the same statement, so
+  `entry_id serial PRIMARY KEY, UNIQUE (entry_id)` yields one constraint while reading like two, and
+  a fixture written that way would have made the delta look untestable rather than undeclared. Split
+  across two statements both constraints exist, jOOQ's generated model carries the primary key on
+  `getPrimaryKey()` and the redundant one on `getUniqueKeys()`, and `candidateKeys` drops the second
+  on its column-set dedup, which is exactly the behaviour the slice changes.
 
 * **Two cases need a second fixture package, and providing the seam is slice 1's work**, since it is
   the slice that first needs a capture the default package cannot produce. A bare

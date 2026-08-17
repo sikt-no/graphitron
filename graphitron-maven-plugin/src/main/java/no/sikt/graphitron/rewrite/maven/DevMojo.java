@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
@@ -181,6 +182,10 @@ public class DevMojo extends AbstractRewriteMojo {
     // The language server's own reader over sessionStore, minted once the store opens and closed
     // ahead of it in cleanup(). Null for the bare mojos that never start a session.
     StoreAccess lspStore;
+    // The MCP server's reader over sessionStore, for the tools whose answer is several queries and so
+    // needs a transaction of its own rather than a savepoint inside the writer's. Minted and closed
+    // beside lspStore; null for the bare mojos, exactly as that one is.
+    StoreReader mcpStore;
     // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
     // the unit tier); reportCompile writes through it beside the console and workspace sinks.
     CompileFacts compileFacts;
@@ -254,6 +259,10 @@ public class DevMojo extends AbstractRewriteMojo {
         // reader lives with the workspace and is closed with it in cleanup().
         this.lspStore = new StoreAccess(sessionStore.reader(), initialCtx.graphName());
         workspace.setStore(lspStore);
+        // The MCP server's reader, minted from the same call for the same reason one connection cannot
+        // carry two transactions: the language server's reads and an MCP tool's would otherwise
+        // serialize behind each other for no better cause than sharing a socket.
+        this.mcpStore = sessionStore.reader();
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
             workspace.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current, initial.catalogFacts()),
@@ -269,7 +278,7 @@ public class DevMojo extends AbstractRewriteMojo {
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
         bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
             buildExecuteToolConfig(initialCtx),
-            new StoreHandle(sessionStore.dsl(), initialCtx.graphName()));
+            new StoreHandle(sessionStore.dsl(), initialCtx.graphName()), mcpStore);
         // Seed the source facts so goto-definition / hover work before the first .java edit; the
         // source watcher refreshes them on the source cadence thereafter. Path-only read on
         // initialCtx (no loader).
@@ -335,7 +344,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig,
-        ExecuteTool.Config executeConfig, StoreHandle storeHandle)
+        ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader)
         throws MojoExecutionException {
         try {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);
@@ -373,7 +382,7 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             this.mcpServer = new GraphitronMcpServer(
                 new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm, ragConfig,
-                executeConfig, storeHandle);
+                executeConfig, storeHandle, storeReader);
         } catch (IOException e) {
             // The partial-startup unwind must reach the warms too, not just the LSP socket: warm
             // cleanup otherwise lives only in cleanup() (the normal Ctrl+C stop), which this exception
@@ -827,9 +836,12 @@ public class DevMojo extends AbstractRewriteMojo {
         if (docsWarm != null && docsWarm.state() instanceof WarmState.Ready<DocsIndex> ready) {
             ready.handle().close();
         }
-        // Before the store itself, since it reads through a connection the store minted.
+        // Before the store itself, since both read through a connection the store minted.
         if (lspStore != null) {
             lspStore.close();
+        }
+        if (mcpStore != null) {
+            mcpStore.close();
         }
         // Last, after the servers whose tools read through it: the session's store handle. A
         // file-backed store only releases its connection here; the file stays for the next run.

@@ -2,6 +2,7 @@ package no.sikt.graphitron.mcp;
 
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -54,6 +55,7 @@ final class StoreBackedBuild implements AutoCloseable {
     final GraphitronModelStore store;
     final String graphName;
     final GraphQLRewriteGenerator.BuildOutput output;
+    private StoreReader reader;
 
     private StoreBackedBuild(Workspace workspace, GraphitronModelStore store, String graphName,
                              GraphQLRewriteGenerator.BuildOutput output) {
@@ -115,8 +117,25 @@ final class StoreBackedBuild implements AutoCloseable {
         return new StoreHandle(store.dsl(), graphName);
     }
 
+    /**
+     * The reader the tools whose answer is several queries take, minted on first use and closed with
+     * this fixture, which is {@code DevMojo}'s arrangement with no mojo in play.
+     *
+     * <p>One per fixture rather than one per call, deliberately: reads through a reader serialize, so a
+     * case that minted a second would be testing a connection the dev session does not have.
+     */
+    StoreReader reader() {
+        if (reader == null) {
+            reader = store.reader();
+        }
+        return reader;
+    }
+
     @Override
     public void close() {
+        if (reader != null) {
+            reader.close();
+        }
         store.close();
     }
 }

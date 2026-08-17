@@ -347,71 +347,180 @@ class GraphitronMcpServerTest {
             .contains("holds no fact store handle");
     }
 
+    /**
+     * The wire fields are the shipped ones; what changed is that they come from the census and that
+     * the columns arrive in the table definition's order rather than a reflective field walk's, which
+     * is documented as no order in particular.
+     *
+     * <p>The column {@code comment} slot is asserted on both arms from the fixture's own DDL, which is
+     * what makes it a test rather than a restatement of a mock: {@code film_id} declares one and
+     * {@code release_year} deliberately declares none. One of them carries an apostrophe on purpose,
+     * that being the character a naive pipeline breaks on, and {@code description} is a column named
+     * for the thing it carries so no reader can conflate the two.
+     */
     @Test
-    void catalogDescribeReturnsStructuredShapeForResolvedTable() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
-             var client = connect(server.port())) {
-            client.initialize();
+    @SuppressWarnings("unchecked")
+    void catalogDescribeReadsOneTablesWholeDescriptionFromTheCensus(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-describe", CATALOG_SDL)) {
+            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "public.film")));
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.describe")
-                .arguments(Map.of("table", "public.film")).build()));
             assertThat(structured).containsEntry("resolution", "resolved")
                 .containsEntry("schema", "public").containsEntry("name", "film")
-                .containsEntry("comment", "Films catalog");
+                .containsEntry("comment", "One film in the rental catalogue.");
 
-            @SuppressWarnings("unchecked")
             var columns = (List<Map<String, Object>>) structured.get("columns");
-            assertThat(columns).extracting(c -> c.get("sqlName")).containsExactly("film_id", "title");
-            assertThat(columns.get(0))
+            assertThat(columns).extracting(c -> (String) c.get("sqlName"))
+                .as("the table definition's order, which is what sql_column.ordinal states")
+                .startsWith("film_id", "title", "description", "release_year", "language_id");
+            assertThat(columns.getFirst())
                 .containsEntry("javaName", "FILM_ID").containsEntry("sqlType", "integer")
-                .containsEntry("nullable", false).doesNotContainKey("comment");
-            assertThat(columns.get(1)).containsEntry("comment", "Display title");
+                .containsEntry("nullable", false)
+                .containsEntry("comment", "Surrogate key, stable across catalogue imports.");
+            assertThat(columnNamed(columns, "title"))
+                .containsEntry("comment", "Display title, as printed on the distributor's case.");
+            assertThat(columnNamed(columns, "description"))
+                .as("a column named description carries its own comment, not its name")
+                .containsEntry("comment", "Free-text synopsis shown to renters.");
+            assertThat(columnNamed(columns, "release_year"))
+                .as("the database declares no comment here, so the slot is absent rather than blank")
+                .doesNotContainKey("comment")
+                .containsEntry("nullable", true);
 
-            @SuppressWarnings("unchecked")
-            var primaryKey = (Map<String, Object>) structured.get("primaryKey");
-            assertThat(primaryKey).containsEntry("constraintName", "film_pkey")
+            assertThat((Map<String, Object>) structured.get("primaryKey"))
+                .containsEntry("constraintName", "film_pkey")
                 .containsEntry("columns", List.of("film_id"));
 
-            @SuppressWarnings("unchecked")
             var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
-            @SuppressWarnings("unchecked")
             var outgoing = (List<Map<String, Object>>) foreignKeys.get("outgoing");
-            assertThat(outgoing).singleElement().satisfies(fk -> assertThat(fk)
-                .containsEntry("targetTable", "public.language")
-                .containsEntry("columns", List.of("language_id"))
-                .containsEntry("targetColumns", List.of("language_id")));
-            @SuppressWarnings("unchecked")
+            assertThat(outgoing)
+                .as("both language references, each naming its target by the full table id")
+                .allSatisfy(fk -> assertThat(fk).containsEntry("targetTable", "public.language"))
+                .extracting(fk -> fk.get("columns"))
+                .contains(List.of("language_id"), List.of("original_language_id"));
             var incoming = (List<Map<String, Object>>) foreignKeys.get("incoming");
-            assertThat(incoming).singleElement().satisfies(fk -> assertThat(fk)
-                .containsEntry("sourceTable", "public.film_actor"));
+            assertThat(incoming).extracting(fk -> (String) fk.get("sourceTable"))
+                .contains("public.film_actor", "public.inventory");
+        }
+    }
+
+    /**
+     * Every unique constraint the database declares is reported, including one whose columns the
+     * primary key already covers. The projection this replaced deduplicated on column set, which was
+     * a row-identity consumer's key-matching rule applied to a discovery tool: that consumer wants
+     * distinct column sets and dedups for itself, and a description that dedupped could not tell an
+     * agent what the database actually declares.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void catalogDescribeReportsAUniqueKeyThePrimaryKeyAlreadyCovers(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-keys", CATALOG_SDL)) {
+            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "redundant_unique_key")));
+
+            assertThat((Map<String, Object>) structured.get("primaryKey"))
+                .containsEntry("constraintName", "redundant_unique_key_pkey")
+                .containsEntry("columns", List.of("entry_id"));
+            assertThat((List<Map<String, Object>>) structured.get("uniqueKeys"))
+                .as("the covered constraint is a declaration, not a duplicate to be filtered")
+                .singleElement()
+                .satisfies(key -> assertThat(key)
+                    .containsEntry("constraintName", "redundant_unique_key_entry_id_uk")
+                    .containsEntry("columns", List.of("entry_id")));
+        }
+    }
+
+    /**
+     * A multi-column foreign key's two column lists pair up, and pair up in the referenced
+     * constraint's own order. The census never copies the target columns onto the referencing row,
+     * they being the referenced constraint's own rows matched on position, so this is the one place a
+     * hand-written pairing could go wrong where the relation could not: a join that forgot the
+     * position predicate would answer with every combination of the two lists and still look like a
+     * foreign key.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void catalogDescribePairsAMultiColumnForeignKeyByPosition(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-fk", CATALOG_SDL)) {
+            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "public.project_note")));
+
+            var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
+            assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
+                .singleElement()
+                .satisfies(fk -> assertThat(fk)
+                    .containsEntry("constraintName", "project_note_project_fkey")
+                    .containsEntry("targetTable", "public.project")
+                    .containsEntry("columns", List.of("org_id", "project_id"))
+                    .containsEntry("targetColumns", List.of("org_id", "project_id")));
+        }
+    }
+
+    /**
+     * A bare spelling two schemas declare names the candidates instead of picking one. This is the
+     * case a capture from the single-schema package cannot produce at all, every name there being
+     * unique, so it reads a census the fixture module generates from two schemas that declare
+     * {@code event} between them for exactly this purpose.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void catalogDescribeNamesTheCandidatesForASpellingTwoSchemasDeclare(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(
+                tmp, "catalog-ambiguous", CATALOG_SDL, StoreBackedBuild.MULTISCHEMA_JOOQ_PACKAGE)) {
+            var result = GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "event"));
+
+            assertThat(structured(result)).containsEntry("resolution", "ambiguous");
+            assertThat((List<String>) structured(result).get("schemas"))
+                .containsExactly("multischema_a", "multischema_b");
+            assertThat(firstLine(result))
+                .as("the summary tells an agent how to re-call rather than only that it failed")
+                .contains("multischema_a.event");
+
+            // Qualifying it resolves, which is what the candidate list is for.
+            assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "multischema_b.event"))))
+                .containsEntry("resolution", "resolved")
+                .containsEntry("schema", "multischema_b");
         }
     }
 
     @Test
-    void catalogDescribeReturnsAmbiguousForNameCarriedByTwoSchemas() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
-             var client = connect(server.port())) {
-            client.initialize();
+    void catalogDescribeReturnsNotFoundForUnknownName(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-not-found", CATALOG_SDL)) {
+            assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "nope"))))
+                .containsEntry("resolution", "notFound").containsEntry("table", "nope");
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.describe")
-                .arguments(Map.of("table", "film")).build()));
-            assertThat(structured).containsEntry("resolution", "ambiguous");
-            @SuppressWarnings("unchecked")
-            var schemas = (List<String>) structured.get("schemas");
-            assertThat(schemas).containsExactlyInAnyOrder("public", "other");
+            // A spelling with an empty half names nothing the census could hold, and is answered
+            // without opening a transaction to find that out.
+            assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), build.reader(), Map.of("table", "public."))))
+                .containsEntry("resolution", "notFound");
         }
     }
 
+    /**
+     * The refusal gate is the reader, that being what this tool answers through. A store-less server
+     * refuses rather than reporting a table it could not look for, on the same grounds
+     * {@code catalog.tables} refuses: an empty answer reads as a fact about the database.
+     */
     @Test
-    void catalogDescribeReturnsNotFoundForUnknownName() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
-             var client = connect(server.port())) {
-            client.initialize();
-
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.describe")
-                .arguments(Map.of("table", "nope")).build()));
-            assertThat(structured).containsEntry("resolution", "notFound").containsEntry("table", "nope");
+    void catalogDescribeRefusesWithoutAStoreToRead(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-refusal", CATALOG_SDL)) {
+            assertThat(GraphitronMcpServer.catalogDescribeResult(
+                build.handle(), null, Map.of("table", "film")).isError()).isTrue();
+            assertThat(firstLine(GraphitronMcpServer.catalogDescribeResult(
+                null, build.reader(), Map.of("table", "film"))))
+                .startsWith("catalog.describe:")
+                .contains("holds no fact store handle");
         }
+    }
+
+    /** The entry for one column by its SQL name, the census's order being the table definition's. */
+    private static Map<String, Object> columnNamed(List<Map<String, Object>> columns, String sqlName) {
+        return columns.stream().filter(c -> sqlName.equals(c.get("sqlName"))).findFirst()
+            .orElseThrow(() -> new AssertionError("no column named " + sqlName));
     }
 
     // ---- services / conditions / records ----
@@ -742,9 +851,14 @@ class GraphitronMcpServerTest {
         }
     }
 
-    /** A server holding the fixture's live workspace and its session store handle, as the dev loop wires it. */
+    /**
+     * A server holding the fixture's live workspace, its session store handle and its reader, as the
+     * dev loop wires it: the host mints both, so a case that passed only one would be testing a
+     * server no session builds.
+     */
     private static GraphitronMcpServer server(StoreBackedBuild build) throws IOException {
-        return new GraphitronMcpServer(loopback(0), build.workspace, null, null, null, null, build.handle());
+        return new GraphitronMcpServer(loopback(0), build.workspace, null, null, null, null,
+            build.handle(), build.reader());
     }
 
     // ---- directives resource ----
@@ -1177,14 +1291,23 @@ class GraphitronMcpServerTest {
 
     // ---- catalog.search (semantic catalog discovery) ----
 
+    /**
+     * Discovery hands off to description, and the handoff now crosses a seam: {@code catalog.search}
+     * still ranks the projection's descriptors while {@code catalog.describe} reads the census, so the
+     * id one tool emits has to be an id the other accepts rather than a key into the same map. The
+     * search corpus names {@code address} and {@code customer}, which the fixture database declares,
+     * so both ends can speak of the same tables without either being handed the other's data.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void catalogSearchReturnsRankedTableIdsWhoseTopFeedsCatalogDescribe() throws Exception {
+    void catalogSearchReturnsRankedTableIdsWhoseTopFeedsCatalogDescribe(@TempDir Path tmp) throws Exception {
         // The shared embedder warm carries a fake (no ONNX); BM25 over the descriptors carries the
         // ranking. The server kicks the index warm at bind; awaitRagWarm() waits it out deterministically.
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
-        try (var server = new GraphitronMcpServer(
-                loopback(0), catalogSearchWorkspace(), embedderWarm, null, RagConfig.temporary());
+        try (var build = StoreBackedBuild.run(tmp, "catalog-search-handoff", CATALOG_SDL);
+             var server = new GraphitronMcpServer(
+                loopback(0), catalogSearchWorkspace(), embedderWarm, null, RagConfig.temporary(),
+                null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
             server.awaitRagWarm();
@@ -1201,10 +1324,11 @@ class GraphitronMcpServerTest {
             String topId = (String) top.get("id");
             assertThat(topId).isEqualTo(top.get("schema") + "." + top.get("name"));
 
-            // Discovery hands off to description: the top id feeds straight into catalog.describe.
+            // The top id feeds straight into catalog.describe, which resolves it against the census.
             var describe = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.describe")
                 .arguments(Map.of("table", topId)).build()));
-            assertThat(describe).containsEntry("resolution", "resolved");
+            assertThat(describe).containsEntry("resolution", "resolved")
+                .containsEntry("name", top.get("name"));
         }
     }
 

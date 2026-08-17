@@ -5,6 +5,7 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
@@ -262,7 +263,7 @@ class ServerInstructionsTest {
     @Test
     void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
         try (var build = StoreBackedBuild.run(tmp, "paged", PAGED_SDL);
-             var server = server(pagedWorkspace(), null, build.handle());
+             var server = server(pagedWorkspace(), null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
             var advertised = advertisedSurface(client);
@@ -497,14 +498,14 @@ class ServerInstructionsTest {
 
     private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig)
         throws IOException {
-        return server(workspace, executeConfig, null);
+        return server(workspace, executeConfig, null, null);
     }
 
     private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig,
-        StoreHandle storeHandle) throws IOException {
+        StoreHandle storeHandle, StoreReader storeReader) throws IOException {
         return new GraphitronMcpServer(
             new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
-            workspace, null, null, null, executeConfig, storeHandle);
+            workspace, null, null, null, executeConfig, storeHandle, storeReader);
     }
 
     private static McpSyncClient connect(int port) {

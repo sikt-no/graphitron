@@ -45,7 +45,7 @@ class LintSuppressionDiagnosticsParityTest {
         try (var build = StoreBackedBuild.run(tmp, "LintSuppressionDiagnosticsParityTest", SDL,
                 LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
              var server = new GraphitronMcpServer(loopback(0), build.workspace,
-                 null, null, null, null, build.handle());
+                 null, null, null, null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
             var result = client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build());

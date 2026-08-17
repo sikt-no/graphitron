@@ -568,6 +568,25 @@ CREATE TABLE storage_bin (
     label   varchar(64) NOT NULL
 );
 
+-- Catalog-discovery fixture: a UNIQUE constraint over the column set the primary key already
+-- covers. The database declares two constraints and a catalog description reports two, which is
+-- the case this table exists to make observable. A consumer matching row identity wants only
+-- distinct column sets and dedups for itself; a discovery tool that dedupped was answering with
+-- that consumer's rule applied to everyone. Every other fixture here pairs a primary key with a
+-- UNIQUE over different columns, so the covered case had nowhere to be seen. No seed rows: nothing
+-- selects from this table, and its constraint set is the whole of what it carries.
+--
+-- The constraint is declared by ALTER TABLE on purpose, and the inline spelling is not an option.
+-- PostgreSQL's CREATE TABLE analysis silently discards a UNIQUE whose column list matches the
+-- primary key declared in the same statement, so `entry_id serial PRIMARY KEY, UNIQUE (entry_id)`
+-- yields one constraint and reads like two. Split across statements it yields both.
+CREATE TABLE redundant_unique_key (
+    entry_id  serial      PRIMARY KEY,
+    label     varchar(64) NOT NULL
+);
+
+ALTER TABLE redundant_unique_key ADD CONSTRAINT redundant_unique_key_entry_id_uk UNIQUE (entry_id);
+
 -- R338 execution-tier fixture: a parent referenced through a *non-PK unique key*, plus a child
 -- whose FK targets that unique column (split_parent_tag.parent_code -> split_parent.parent_code,
 -- the UNIQUE column, not the parent_id PK). A @splitQuery list field on the parent must project

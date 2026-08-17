@@ -13,6 +13,7 @@ import no.sikt.graphitron.mcp.rag.EmbeddingStore;
 import no.sikt.graphitron.mcp.rag.RagConfig;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
+import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
@@ -136,16 +137,16 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The six-arg form without a fact store handle: the two diagnostics tools are advertised but
-     * refuse when called, naming the missing handle. The entry point of the store-less test
-     * boots; production uses the full constructor below.
+     * The six-arg form without a fact store: the store-backed tools are advertised but refuse when
+     * called, naming what is missing. The entry point of the store-less test boots; production uses
+     * the full constructor below.
      */
     public GraphitronMcpServer(
         InetSocketAddress address, Workspace workspace,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
         ExecuteTool.Config executeConfig
     ) throws IOException {
-        this(address, workspace, embedderWarm, docsWarm, ragConfig, executeConfig, null);
+        this(address, workspace, embedderWarm, docsWarm, ragConfig, executeConfig, null, null);
     }
 
     /**
@@ -161,14 +162,17 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * <p>The handle carries the session's one live {@code DSLContext} and the graph whose partition
      * this server reads, and the caller owns it: {@code DevMojo} opens the store once and closes it
      * at cleanup. This server never opens the persisted file itself, which could silently be a
-     * different store than the one the session writes. Sharing the writer's connection is safe here
-     * only because this server is turn-based; a consumer answering concurrently mints a
-     * {@link no.sikt.graphitron.model.boot.StoreReader} instead.
+     * different store than the one the session writes. Sharing the writer's connection is safe for a
+     * tool whose answer is one query, this server being turn-based, and stops being safe for one
+     * whose answer is several: a nested transaction on the writer's connection is a savepoint rather
+     * than a boundary. So the caller mints a {@link StoreReader} too, and the tools that assemble an
+     * answer from several relations read through that instead. The reader is the caller's to close,
+     * for the same reason the handle is.
      */
     public GraphitronMcpServer(
         InetSocketAddress address, Workspace workspace,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
-        ExecuteTool.Config executeConfig, StoreHandle storeHandle
+        ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader
     ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
         this.catalogSearchIndex = (embedderWarm != null && ragConfig != null)
@@ -205,7 +209,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         // configured), so they stay false even though the tools and resource read live state.
         var tools = new java.util.ArrayList<>(List.of(
             statusTool(workspace),
-            catalogTablesTool(storeHandle), catalogDescribeTool(workspace),
+            catalogTablesTool(storeHandle), catalogDescribeTool(storeHandle, storeReader),
             servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
             schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
             diagnosticsAggregateTool(workspace, storeHandle), edgesTool(workspace),
@@ -459,11 +463,18 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * {@code catalog.describe}: one table's columns, keys, indexes, and foreign keys, read off
-     * {@link Workspace#catalogFacts()} live on every call. An unqualified name two schemas carry
-     * returns a structured {@code ambiguous} result; an unknown name returns {@code notFound}.
+     * {@code catalog.describe}: one table's columns, keys, indexes, and foreign keys, read from the
+     * store on every call. An unqualified name two schemas carry returns a structured
+     * {@code ambiguous} result; an unknown name returns {@code notFound}.
+     *
+     * <p>Takes both the handle and the reader because it needs one thing from each: the graph whose
+     * partition the answer is confined to, and a connection the answer's several queries can share one
+     * transaction on. It refuses when either is absent, the reader being the thing it answers through
+     * and the handle being what says which module's catalog it would have described.
      */
-    private static McpServerFeatures.SyncToolSpecification catalogDescribeTool(Workspace workspace) {
+    private static McpServerFeatures.SyncToolSpecification catalogDescribeTool(
+        StoreHandle store, StoreReader reader
+    ) {
         var tool = McpSchema.Tool.builder("catalog.describe", Map.of(
                 "type", "object",
                 "properties", Map.of(
@@ -474,8 +485,9 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 "required", List.of("table")))
             .title("Describe a catalog table")
             .description("Describes one database table: columns (SQL and Java names, SQL types, "
-                + "nullability, and comments when jOOQ codegen captured them), the primary key, "
-                + "unique keys, indexes, and foreign keys in and out (with their column pairs). "
+                + "nullability, and comments where the database declares them) in table-definition "
+                + "order, the primary key, every unique key the database declares, indexes, and "
+                + "foreign keys in and out (with their column pairs). "
                 + "Foreign-key endpoints name neighbouring tables by their schema-qualified SQL name. "
                 + "Column comments appear only when codegen ran with comments enabled; their absence "
                 + "reflects codegen configuration, not a missing database comment. An ambiguous "
@@ -483,29 +495,34 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> catalogDescribeResult(workspace.catalogFacts(), request.arguments()))
+            .callHandler((exchange, request) -> catalogDescribeResult(store, reader, request.arguments()))
             .build();
     }
 
-    static McpSchema.CallToolResult catalogDescribeResult(CatalogFacts facts, Map<String, Object> args) {
+    static McpSchema.CallToolResult catalogDescribeResult(
+        StoreHandle store, StoreReader reader, Map<String, Object> args
+    ) {
+        if (store == null || reader == null) {
+            return DiagnosticFacets.refusal("catalog.describe");
+        }
         String table = McpWire.stringArg(args, "table").orElse("");
         Optional<String> schema = McpWire.stringArg(args, "schema");
 
         var fields = new LinkedHashMap<String, Object>();
-        String summary = switch (facts.resolve(table, schema)) {
-            case CatalogFacts.TableResolution.Resolved r -> {
+        String summary = switch (CatalogQueries.describe(reader, store.graphName(), table, schema)) {
+            case CatalogQueries.TableResolution.Resolved r -> {
                 fields.put("resolution", "resolved");
                 mapResolvedTable(fields, r.table());
                 yield "catalog.describe: " + r.table().qualifiedName() + " ("
                     + r.table().columns().size() + " column(s)).";
             }
-            case CatalogFacts.TableResolution.Ambiguous a -> {
+            case CatalogQueries.TableResolution.Ambiguous a -> {
                 fields.put("resolution", "ambiguous");
-                fields.put("schemas", List.copyOf(a.schemas()));
+                fields.put("schemas", a.schemas());
                 yield "catalog.describe: table '" + table + "' is ambiguous, carried by schemas "
                     + a.schemas() + "; re-call qualified (e.g. \"" + a.schemas().get(0) + "." + table + "\").";
             }
-            case CatalogFacts.TableResolution.NotFound ignored -> {
+            case CatalogQueries.TableResolution.NotFound ignored -> {
                 fields.put("resolution", "notFound");
                 fields.put("table", table);
                 yield "catalog.describe: table '" + table + "' was not found in the catalog.";
@@ -517,11 +534,15 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
     }
 
-    /** Maps a resolved {@link CatalogFacts.Table} onto the {@code catalog.describe} structured fields. */
-    private static void mapResolvedTable(Map<String, Object> fields, CatalogFacts.Table table) {
+    /**
+     * Maps a described table onto the {@code catalog.describe} structured fields. A {@code null}
+     * comment is a slot the entry omits rather than an empty string on the wire, the census writing
+     * {@code NULL} precisely so a reader can tell a blank comment from an absent one.
+     */
+    private static void mapResolvedTable(Map<String, Object> fields, CatalogQueries.TableDetail table) {
         fields.put("schema", table.schema());
         fields.put("name", table.name());
-        table.comment().ifPresent(c -> fields.put("comment", c));
+        McpWire.putIfNotNull(fields, "comment", table.comment());
 
         var columns = new ArrayList<Map<String, Object>>(table.columns().size());
         for (var c : table.columns()) {
@@ -530,7 +551,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             col.put("javaName", c.javaName());
             col.put("sqlType", c.sqlType());
             col.put("nullable", c.nullable());
-            c.comment().ifPresent(cm -> col.put("comment", cm));
+            McpWire.putIfNotNull(col, "comment", c.comment());
             columns.add(col);
         }
         fields.put("columns", columns);
@@ -542,30 +563,32 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .toList());
 
         var foreignKeys = new LinkedHashMap<String, Object>();
-        foreignKeys.put("outgoing", table.foreignKeys().outgoing().stream()
-            .map(fk -> {
-                var m = new LinkedHashMap<String, Object>();
-                m.put("constraintName", fk.constraintName());
-                m.put("targetTable", fk.targetTable());
-                m.put("columns", fk.columns());
-                m.put("targetColumns", fk.targetColumns());
-                return (Map<String, Object>) m;
-            })
+        foreignKeys.put("outgoing", table.outgoing().stream()
+            .map(fk -> mapForeignKey(fk, "targetTable"))
             .toList());
-        foreignKeys.put("incoming", table.foreignKeys().incoming().stream()
-            .map(fk -> {
-                var m = new LinkedHashMap<String, Object>();
-                m.put("constraintName", fk.constraintName());
-                m.put("sourceTable", fk.sourceTable());
-                m.put("columns", fk.columns());
-                m.put("targetColumns", fk.targetColumns());
-                return (Map<String, Object>) m;
-            })
+        foreignKeys.put("incoming", table.incoming().stream()
+            .map(fk -> mapForeignKey(fk, "sourceTable"))
             .toList());
         fields.put("foreignKeys", foreignKeys);
     }
 
-    private static Map<String, Object> mapKey(CatalogFacts.Key key) {
+    /**
+     * One foreign key's wire entry. The neighbour's slot is named by the direction, an outgoing key
+     * reporting what it targets and an incoming one what declares it, which is the one thing the two
+     * directions do not share.
+     */
+    private static Map<String, Object> mapForeignKey(
+        CatalogQueries.ForeignKeyEntry fk, String neighbourSlot
+    ) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("constraintName", fk.constraintName());
+        m.put(neighbourSlot, fk.otherTable());
+        m.put("columns", fk.columns());
+        m.put("targetColumns", fk.targetColumns());
+        return m;
+    }
+
+    private static Map<String, Object> mapKey(CatalogQueries.KeyEntry key) {
         var m = new LinkedHashMap<String, Object>();
         m.put("constraintName", key.constraintName());
         m.put("columns", key.columns());
