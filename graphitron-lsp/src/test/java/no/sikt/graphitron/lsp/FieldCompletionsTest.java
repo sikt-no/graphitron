@@ -524,6 +524,14 @@ class FieldCompletionsTest {
      * outside the class census by design, so nothing else in the store reaches these declarations.
      *
      * <p>Its own store, because it parses sources into the family the other cases leave empty.
+     *
+     * <p>Both halves of the column grain's precedence land here, and it inverts the table grain's:
+     * the database comment is the fallback and the generated field's Javadoc displaces it once
+     * parsed. That ordering is deliberate, because a generated field's Javadoc carries the qualified
+     * column name <em>and</em> the database comment where one exists, so it is the richer of the two;
+     * jOOQ writes {@code film_id}'s as "The column public.film.film_id. Surrogate key, stable across
+     * catalogue imports." The fixture's hand-written stand-in below carries only the first sentence,
+     * which is what makes the displacement observable at all.
      */
     @Test
     void theGeneratedFieldJavadocDocumentsTheColumn(@TempDir Path tmp) {
@@ -538,8 +546,8 @@ class FieldCompletionsTest {
         try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
             assertThat(documentationOf(
                 run(fixture.handle(), emptySnapshot(), source, cursor), "FILM_ID"))
-                .as("no source parsed yet, and the fixture database carries no column comments")
-                .isEmpty();
+                .as("nothing parsed yet, so the database comment is what documents the column")
+                .isEqualTo("Surrogate key, stable across catalogue imports.");
 
             fixture.withJavaSource(tmp.resolve("generated"), fixture.tableClassFqn("film"), """
                 public class Film {
@@ -550,7 +558,31 @@ class FieldCompletionsTest {
 
             assertThat(documentationOf(
                 run(fixture.handle(), emptySnapshot(), source, cursor), "FILM_ID"))
+                .as("the generated field's Javadoc displaces the comment, inverting the table grain")
                 .isEqualTo("The column <code>public.film.film_id</code>.");
+        }
+    }
+
+    /**
+     * A column the database declares no comment on documents nothing until its generated field is
+     * parsed. The counterpart to the case above, and the reason absence is still meaningful at this
+     * grain: {@code film.release_year} carries no comment, so an empty popup here is the fallback
+     * being genuinely empty rather than a precedence quietly answering.
+     */
+    @Test
+    void aCommentlessColumnDocumentsNothingUntilItsFieldIsParsed(@TempDir Path tmp) {
+        String source = """
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "")
+            }
+            """;
+        int line = 1;
+        Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
+
+        try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
+            assertThat(documentationOf(
+                run(fixture.handle(), emptySnapshot(), source, cursor), "RELEASE_YEAR"))
+                .isEmpty();
         }
     }
 

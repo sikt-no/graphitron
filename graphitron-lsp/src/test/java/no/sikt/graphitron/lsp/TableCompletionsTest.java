@@ -89,6 +89,11 @@ class TableCompletionsTest {
      * exists for: the class lives in the generated package, which the class census excludes by
      * design, so the description reaches the popup through {@code sql_table.class_fqn} meeting a
      * {@code java_class_declaration} row written on the source's own cadence.
+     *
+     * <p>Asserted on {@code actor}, which the fixture database declares no comment on, and that
+     * choice is the subject rather than an incidental one: at the table grain the database comment
+     * wins, so on a commented table the Javadoc never reaches the popup and this join would be
+     * untestable through it. The precedence itself is the case below.
      */
     @Test
     void theGeneratedClassJavadocDocumentsTheCandidate(@TempDir Path tmp) {
@@ -101,9 +106,41 @@ class TableCompletionsTest {
 
         try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
             var items = items(fixture.handle(), source, cursor);
-            assertThat(documentationOf(items, "film"))
-                .as("no source has been parsed yet, and the fixture database carries no comments")
+            assertThat(documentationOf(items, "actor"))
+                .as("no source has been parsed yet, and the database declares no comment on actor")
                 .isEmpty();
+
+            fixture.withJavaSource(tmp.resolve("generated"), fixture.tableClassFqn("actor"), """
+                /** People who appear in films. */
+                public class Actor {
+                }
+                """);
+
+            assertThat(documentationOf(items(fixture.handle(), source, cursor), "actor"))
+                .isEqualTo("People who appear in films.");
+        }
+    }
+
+    /**
+     * The table grain's precedence, which this surface owns its own copy of: the database comment
+     * wins over the generated class Javadoc. For a table the generated Javadoc is boilerplate naming
+     * the table back at the reader, while the comment is what somebody wrote on purpose, so a
+     * commented table documents itself with the comment even once its class has been parsed. The
+     * column grain inverts this, for the reason {@code FieldCompletions} states.
+     */
+    @Test
+    void theDatabaseCommentWinsOverTheGeneratedClassJavadoc(@TempDir Path tmp) {
+        String source = """
+            type Foo @table(name: "") {
+                bar: Int
+            }
+            """;
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
+            assertThat(documentationOf(items(fixture.handle(), source, cursor), "film"))
+                .as("the comment answers before anything has parsed the generated class")
+                .isEqualTo("One film in the rental catalogue.");
 
             fixture.withJavaSource(tmp.resolve("generated"), fixture.tableClassFqn("film"), """
                 /** Movies the rental store carries. */
@@ -112,7 +149,8 @@ class TableCompletionsTest {
                 """);
 
             assertThat(documentationOf(items(fixture.handle(), source, cursor), "film"))
-                .isEqualTo("Movies the rental store carries.");
+                .as("and keeps answering once the class is parsed, rather than being displaced")
+                .isEqualTo("One film in the rental catalogue.");
         }
     }
 

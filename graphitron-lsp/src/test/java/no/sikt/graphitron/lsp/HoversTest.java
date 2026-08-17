@@ -123,9 +123,14 @@ class HoversTest {
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Table** `film`");
-        // The generated class's Javadoc, joined by the FQN the catalog walk captured: the fixture
-        // database carries no comments, so this is the only text a table has.
-        assertThat(md).contains("Movies the rental store carries.");
+        // The table arm's precedence, with both sources answering: film carries a database comment
+        // and the fixture parsed a Javadoc onto its generated class, and the comment is what shows.
+        // For a table the generated Javadoc names the table back at the reader, so the comment is
+        // the one somebody wrote on purpose. The column arm inverts this.
+        assertThat(md)
+            .as("the database comment wins over the generated class Javadoc at the table grain")
+            .contains("One film in the rental catalogue.")
+            .doesNotContain("Movies the rental store carries.");
         // Both counts are correlated subselects on the table's own row rather than a fetched list.
         assertThat(md).containsPattern("\\d+ columns, \\d+ references\\.");
         assertThat(hover.getContents().getRight().getKind()).isEqualTo(MarkupKind.MARKDOWN);

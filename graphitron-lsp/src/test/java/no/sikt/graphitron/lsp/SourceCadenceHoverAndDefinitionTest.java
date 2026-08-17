@@ -46,9 +46,9 @@ class SourceCadenceHoverAndDefinitionTest {
      * The graph the declaration-name case needs, which is the one case where it is not beside the
      * point: the type name that case puts a cursor on resolves through the store's own binding.
      */
-    private static final String DECLARED_FILM_SDL = """
-        type Query { film: Film }
-        type Film @table(name: "film") { title: String }
+    private static final String DECLARED_ACTOR_SDL = """
+        type Query { actor: Actor }
+        type Actor @table(name: "actor") { first_name: String }
         """;
 
     @Test
@@ -88,31 +88,38 @@ class SourceCadenceHoverAndDefinitionTest {
         }
     }
 
+    /**
+     * Asserted on {@code actor}, which the fixture database declares no comment on, and that is the
+     * subject rather than an arbitrary table: at the table grain the database comment wins over the
+     * generated class's Javadoc, so on a commented table hover reports the comment and reads nothing
+     * the source cadence produced. A commentless table is what leaves the parse as the only thing
+     * that can have supplied the text, which is the whole claim here.
+     */
     @Test
     void tableHoverAndGotoBothReadTheWalkedGeneratedSource(@TempDir Path srcRoot) throws IOException {
-        var file = file("type Foo @table(name: \"film\") { bar: Int }");
-        var tablePos = pointAt(file, 0, "film\"");
+        var file = file("type Foo @table(name: \"actor\") { bar: Int }");
+        var tablePos = pointAt(file, 0, "actor\"");
 
         try (var store = StoreFixture.ofCatalog(srcRoot, PLACEHOLDER_SDL)) {
             // The generated table class, written under the FQN the catalog walk actually captured
             // rather than a spelled-out one, so the join both readers make is a real one.
-            String filmFqn = store.tableClassFqn("film");
-            store.withJavaSource(srcRoot, filmFqn, """
-                /** The film table. */
-                public class Film {
-                    public final Object FILM_ID = null;
+            String actorFqn = store.tableClassFqn("actor");
+            store.withJavaSource(srcRoot, actorFqn, """
+                /** The actor table. */
+                public class Actor {
+                    public final Object ACTOR_ID = null;
                 }
                 """);
-            var workspace = workspaceWithTableCatalog(filmFqn);
+            var workspace = workspaceWithTableCatalog(actorFqn);
 
             // Hover's description is the generated class's Javadoc, reached from the store's
-            // catalog census through the FQN into its java-source family; the fixture database
-            // carries no comment, so a parse is the only thing that can have supplied it.
-            assertThat(hoverText(workspace, store, file, tablePos)).contains("The film table.");
+            // catalog census through the FQN into its java-source family; the database declares no
+            // comment on actor, so a parse is the only thing that can have supplied it.
+            assertThat(hoverText(workspace, store, file, tablePos)).contains("The actor table.");
 
             var loc = Definitions.compute(LspVocabulary.load(), file, store.handle(), tablePos)
                 .orElseThrow();
-            assertThat(loc.getUri()).endsWith("Film.java");
+            assertThat(loc.getUri()).endsWith("Actor.java");
             // The class is declared on line 3 (0-based line 2).
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
         }
@@ -176,34 +183,38 @@ class SourceCadenceHoverAndDefinitionTest {
      * The declaration-name arm, whose two halves ask one parsed declaration two questions: hover
      * overlays its doc comment, goto jumps to its position. The type name is the only handle either
      * surface has here, the coordinate being a declaration rather than a directive argument.
+     *
+     * <p>Bound to {@code actor} for the reason the table-hover case above gives: the overlay's table
+     * arm prefers the database comment, so only a commentless table lets a parsed doc comment be the
+     * text under assertion.
      */
     @Test
     void declarationNameHoverAndGotoBothReadTheParsedDeclaration(@TempDir Path srcRoot) {
-        var file = file("type Film @table(name: \"film\") { title: String }");
-        // Cursor on the 'i' of the Film declaration's own name token.
-        var namePos = new Point(0, "type Fi".length());
+        var file = file("type Actor @table(name: \"actor\") { first_name: String }");
+        // Cursor on the 'c' of the Actor declaration's own name token.
+        var namePos = new Point(0, "type Ac".length());
 
-        try (var store = StoreFixture.ofCatalog(srcRoot, DECLARED_FILM_SDL)) {
-            String filmFqn = store.tableClassFqn("film");
-            store.withJavaSource(srcRoot, filmFqn, """
-                /** The film table. */
-                public class Film {
-                    public final Object TITLE = null;
+        try (var store = StoreFixture.ofCatalog(srcRoot, DECLARED_ACTOR_SDL)) {
+            String actorFqn = store.tableClassFqn("actor");
+            store.withJavaSource(srcRoot, actorFqn, """
+                /** The actor table. */
+                public class Actor {
+                    public final Object FIRST_NAME = null;
                 }
                 """);
-            var workspace = workspaceWithTableCatalog(filmFqn);
+            var workspace = workspaceWithTableCatalog(actorFqn);
             // Which declaration the type name binds to is the store's answer off the captured
             // binding, so the projection this arm still takes carries nothing.
             var snapshot = new LspSchemaSnapshot.Built.Current(
                 List.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
             assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
-                .contains("The film table.");
+                .contains("The actor table.");
 
             var loc = DeclarationDefinitions
                 .compute(file, store.handle(), snapshot, namePos)
                 .orElseThrow();
-            assertThat(loc.getUri()).endsWith("Film.java");
+            assertThat(loc.getUri()).endsWith("Actor.java");
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
         }
     }

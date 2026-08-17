@@ -166,10 +166,16 @@ class DeclarationHoverOverlayParityTest {
             String filmFqn = writeSources(store, root);
             var handle = store.handle();
 
-            // The generated table class's doc comment: the fixture database carries no comment on
-            // film, so the class Javadoc is what a table with nothing written about it falls back to.
+            // The table arm reads its database comment first and the generated class's doc comment
+            // only where there is none, so both halves of that precedence are asserted: film carries
+            // a comment and a parsed Javadoc and answers with the comment, actor carries only the
+            // parse and answers with it.
             assertThat(DeclarationHovers.overlay(new DeclTarget.CatalogTable("film", filmFqn), handle))
-                .isEqualTo("The film table.");
+                .isEqualTo("One film in the rental catalogue.");
+            assertThat(DeclarationHovers.overlay(
+                new DeclTarget.CatalogTable("actor", store.tableClassFqn("actor")), handle))
+                .as("the class Javadoc is what a table with no comment falls back to")
+                .isEqualTo("People who appear in films.");
             assertThat(DeclarationHovers.overlay(
                 new DeclTarget.CatalogColumn("film", filmFqn, "TITLE"), handle))
                 .isEqualTo("The film's title.");
@@ -227,14 +233,21 @@ class DeclarationHoverOverlayParityTest {
         }
     }
 
-    /** A doc comment nothing has parsed is absence, not an empty paragraph under the classification. */
+    /**
+     * A doc comment nothing has parsed is absence, not an empty paragraph under the classification.
+     *
+     * <p>The catalog arm is asserted on {@code actor} rather than {@code film}, and the choice is the
+     * subject: a table the database comments on overlays that comment with nothing parsed at all, so
+     * on {@code film} an empty overlay would never have been reachable and this case would have been
+     * asserting the wrong absence.
+     */
     @Test
     void anUnparsedDeclarationOverlaysNothing(@TempDir Path root) {
         try (var store = StoreFixture.ofCatalog(root, PLACEHOLDER_SDL)) {
             var handle = store.handle();
-            String filmFqn = store.tableClassFqn("film");
 
-            assertThat(DeclarationHovers.overlay(new DeclTarget.CatalogTable("film", filmFqn), handle)).isEmpty();
+            assertThat(DeclarationHovers.overlay(
+                new DeclTarget.CatalogTable("actor", store.tableClassFqn("actor")), handle)).isEmpty();
             assertThat(DeclarationHovers.overlay(new DeclTarget.SourceClass(RECORD_CLASS), handle)).isEmpty();
             assertThat(DeclarationHovers.overlay(
                 new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1), handle)).isEmpty();
@@ -243,15 +256,24 @@ class DeclarationHoverOverlayParityTest {
 
     // ===== drift guard: overlay-presence <=> jump-presence, per variant =====
 
+    /**
+     * The biconditional holds for the source-derived arms, and those are the ones it is a drift guard
+     * over: their overlay text has exactly one origin, the parsed declaration goto jumps to, so a
+     * jump without an overlay or an overlay without a jump means the two disagree about what the
+     * store holds.
+     *
+     * <p>The catalog arms are deliberately not in this loop, and the case below says why. Their
+     * overlay has a second origin that no parse feeds.
+     */
     @Test
-    void overlayIsPresentExactlyWhenGotoJumps(@TempDir Path parsed, @TempDir Path unparsed) {
+    void overlayIsPresentExactlyWhenGotoJumpsForTheSourceDerivedArms(
+        @TempDir Path parsed, @TempDir Path unparsed
+    ) {
         try (var store = StoreFixture.ofCatalog(parsed, PLACEHOLDER_SDL);
              var bare = StoreFixture.ofCatalog(unparsed, PLACEHOLDER_SDL)) {
             String filmFqn = writeSources(store, parsed);
 
             for (DeclTarget target : List.of(
-                new DeclTarget.CatalogTable("film", filmFqn),
-                new DeclTarget.CatalogColumn("film", filmFqn, "TITLE"),
                 new DeclTarget.SourceClass(STANDALONE_CLASS),
                 new DeclTarget.SourceField(filmFqn, "TITLE"),
                 new DeclTarget.SourceMethod(POJO_CLASS, "getFirstName", 0),
@@ -267,6 +289,49 @@ class DeclarationHoverOverlayParityTest {
                     .as("goto jump for %s when unparsed", target).isEmpty();
                 assertThat(DeclarationHovers.overlay(target, bare.handle()))
                     .as("hover overlay for %s when unparsed", target).isEmpty();
+            }
+        }
+    }
+
+    /**
+     * A catalog arm's overlay is not a function of the parse, so the biconditional above does not
+     * reach it, and that asymmetry is the design rather than a gap in the guard. Goto still needs a
+     * parsed generated declaration to jump to, while the overlay has the database comment to fall
+     * back on, which capture wrote from the catalog and no source cadence touches. So a commented
+     * table or column describes itself in a store whose sources were never walked, which is the
+     * point of capturing the comment at all.
+     *
+     * <p>What still holds, and is asserted here, is that the parse is the <em>only</em> other origin:
+     * on a catalog target the database says nothing about, overlay and jump are absent together, so
+     * the fallback rather than the arm is what makes the commented case asymmetric.
+     */
+    @Test
+    void aCatalogArmOverlaysItsDatabaseCommentWithNothingParsed(@TempDir Path unparsed) {
+        try (var bare = StoreFixture.ofCatalog(unparsed, PLACEHOLDER_SDL)) {
+            var handle = bare.handle();
+            String filmFqn = bare.tableClassFqn("film");
+
+            for (DeclTarget commented : List.of(
+                new DeclTarget.CatalogTable("film", filmFqn),
+                new DeclTarget.CatalogColumn("film", filmFqn, "TITLE")
+            )) {
+                assertThat(DeclarationDefinitions.locate(commented, handle))
+                    .as("goto jump for %s, which needs a parsed declaration", commented)
+                    .isEmpty();
+                assertThat(DeclarationHovers.overlay(commented, handle))
+                    .as("hover overlay for %s, which needs only the comment", commented)
+                    .isNotEmpty();
+            }
+
+            for (DeclTarget commentless : List.of(
+                new DeclTarget.CatalogTable("actor", bare.tableClassFqn("actor")),
+                new DeclTarget.CatalogColumn("film", filmFqn, "RELEASE_YEAR")
+            )) {
+                assertThat(DeclarationDefinitions.locate(commentless, handle))
+                    .as("goto jump for %s", commentless).isEmpty();
+                assertThat(DeclarationHovers.overlay(commentless, handle))
+                    .as("hover overlay for %s, the fallback being empty too", commentless)
+                    .isEmpty();
             }
         }
     }
@@ -297,6 +362,14 @@ class DeclarationHoverOverlayParityTest {
             public class Film {
                 /** The film's title. */
                 public final Object TITLE = null;
+            }
+            """);
+        // A second generated table class, for the table arm's other half: the database declares no
+        // comment on actor, so its class Javadoc is what the overlay falls back to. Without a
+        // commentless table parsed, the fallback branch has no case.
+        store.withJavaSource(root, store.tableClassFqn("actor"), """
+            /** People who appear in films. */
+            public class Actor {
             }
             """);
         store.withJavaSource(root, STANDALONE_CLASS, """

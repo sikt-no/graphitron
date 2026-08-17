@@ -1226,6 +1226,28 @@ slice's stated behaviour rather than a regression.
   comment carry it. `JooqCatalog.columnFactsOf` reads it off the live field, so the catalog-discovery
   projection has it and `CatalogFactCapture` writes it to `sql_table.description` and
   `sql_column.description` at both grains, which is what makes slice 2's column-comment case real.
+  The larger find is in `graphitron-lsp`, and it is why declaring the comments was worth more than the
+  two wire slots it was asked for. Three surfaces there (`Hovers`, `DeclarationHovers`,
+  `TableCompletions` / `FieldCompletions`) each carry a deliberate, documented, *mutually inverted*
+  precedence between a database comment and a generated Javadoc: at the table grain the comment wins,
+  because a generated table class's Javadoc names the table back at the reader, and at the column grain
+  the Javadoc wins, because a generated field's Javadoc carries the qualified column name *and* the
+  comment where one exists and is therefore the richer of the two. Not one of those six sites had ever
+  been executed with both sources present, because the fixture could only ever supply one. The column
+  arm's stated reason is now checked and holds: jOOQ writes `film_id`'s field Javadoc as "The column
+  public.film.film_id. Surrogate key, stable across catalogue imports." Eight tests failed on the
+  fixture change and every one of them had been asserting emptiness as a proxy for "nothing parsed
+  yet", two of them saying "the fixture database carries no comments" in the assertion description.
+  They are repaired by asserting the precedence where the precedence is the subject and by moving to a
+  commentless table (`actor`, `film.release_year`, left bare for exactly this) where absence is. One
+  drift guard turned out to be stating something no longer true, its overlay-present-exactly-when-goto-
+  jumps biconditional being false for a commented catalog target, whose overlay needs no parse at all;
+  it is split into the source-derived arms, where the biconditional is exact, and the catalog arms,
+  where the asymmetry is the design and the commentless case pins that the parse is the only other
+  origin. That work is in `graphitron-lsp`'s tests, which this item otherwise does not touch; the
+  scope-boundary sentence about not touching that module is about migrating reads, not about a shared
+  fixture's consequences.
+
   The completion projection does not: `CatalogBuilder.buildColumn` hardcodes the empty string,
   because hover joins the LSP's source index for a column's Javadoc at request time and that shape
   never asked the database for anything. So `CatalogBuilderSourceTest`'s emptiness assertion is
