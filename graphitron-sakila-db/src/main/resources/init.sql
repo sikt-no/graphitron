@@ -435,12 +435,24 @@ INSERT INTO party_company (party_id, org_number) VALUES
 -- one entity under the list shape and the single fetch returns a row rather than raising
 -- TooManyRowsException. Row counts are deliberately uneven (3 and 2) so a multiplied result would
 -- differ from the entity count in more than one way.
-CREATE TABLE fan_base (
-    fan_base_id serial      PRIMARY KEY,
-    fan_kind    varchar(10) NOT NULL,
-    label       varchar(50) NOT NULL
+-- fan_owner parents the discriminated fan_base rows so the batched child connection has a
+-- per-parent page boundary to walk: owner 1 holds three items (a first: 2 page splits its
+-- bucket), owner 2 holds one (its page is whole), and the two buckets ride one batch statement.
+CREATE TABLE fan_owner (
+    fan_owner_id serial      PRIMARY KEY,
+    owner_name   varchar(50) NOT NULL
 );
-INSERT INTO fan_base (fan_kind, label) VALUES ('ALPHA', 'Alpha one'), ('BETA', 'Beta one');
+INSERT INTO fan_owner (owner_name) VALUES ('Owner A'), ('Owner B');
+
+CREATE TABLE fan_base (
+    fan_base_id  serial      PRIMARY KEY,
+    fan_kind     varchar(10) NOT NULL,
+    fan_owner_id integer     REFERENCES fan_owner(fan_owner_id),
+    label        varchar(50) NOT NULL
+);
+INSERT INTO fan_base (fan_kind, fan_owner_id, label) VALUES
+    ('ALPHA', 1, 'Alpha one'), ('BETA', 1, 'Beta one'),
+    ('ALPHA', 1, 'Alpha two'), ('BETA', 2, 'Beta two');
 
 CREATE TABLE fan_detail (
     fan_detail_id serial      PRIMARY KEY,

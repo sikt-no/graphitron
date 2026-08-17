@@ -595,6 +595,7 @@ type Query {
     # would fail if the value were read through a join into the row-producing statement.
     allFanItems: [FanItem!]!
     fanItem(fanBaseId: Int! @field(name: "fan_base_id")): FanItem
+    allFanOwners: [FanOwner!]!
 
     # Connection twin of allContent: the same participant-driven select list, paginated. The
     # cross-table participant field rides the select list as a subselect, so the paginating
@@ -1877,6 +1878,12 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # ORDER BY observable; the __idx__ scatter preserves it inside each film's bucket.
     filmContents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
         @defaultOrder(primaryKey: true)
+    # The paginated twin: the same batched discriminated re-projection cut into per-parent
+    # pages, ROW_NUMBER-partitioned by the __idx__ scatter key so one batch statement serves
+    # every film's page. The cross-table participant field (FilmContent.rating) rides the
+    # windowed select list as its gated subselect.
+    filmContentsConnection(last: Int, before: String): [Content!]!
+        @asConnection @reference(path: [{key: "content_film_id_fkey"}])
     # Same-table nesting: FilmDetailsForMethod is a plain object child with no boundary directive,
     # so it stays bound to this film row (a NestingField) and its columns project off the parent
     # film record.
@@ -2719,6 +2726,16 @@ type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: 
 type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "BETA") {
     fanBaseId: Int!    @field(name: "fan_base_id")
     label:     String! @field(name: "label")
+}
+
+# Parent of the fan items, for the batched discriminated child connection: owner 1 holds three
+# items so a first: 2 page splits its bucket, owner 2 holds one so its page is whole, and both
+# buckets ride the one windowed batch statement.
+type FanOwner @table(name: "fan_owner") {
+    fanOwnerId: Int!    @field(name: "fan_owner_id")
+    ownerName:  String! @field(name: "owner_name")
+    fanItemsConnection(last: Int, before: String): [FanItem!]!
+        @asConnection @reference(path: [{key: "fan_base_fan_owner_id_fkey"}])
 }
 
 # R389 COMPOSITE-shared-key discriminated joined-table inheritance fixture (the composite counterpart

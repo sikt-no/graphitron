@@ -238,9 +238,8 @@ public final class BatchedRowsFragments {
      */
     static CodeBlock discriminatedBody(LauncherCommand row,
             LaunchSource.DiscriminatedCorrelatedChain chain, CodeBlock dslDeclaration,
-            ArgPathHelperRegistry argHelpers) {
+            no.sikt.graphitron.command.CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
-        var list = (no.sikt.graphitron.command.ResultShape.RecordList) row.result();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
 
@@ -256,6 +255,13 @@ public final class BatchedRowsFragments {
             whereCondition(row, chain, prelude));
         body.add(DiscriminatedTableFragments.projection(
             chain.discriminated(), List.of(), baseLocal));
+
+        if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
+            discriminatedConnectionTail(body, chain, prelude, conn, carrierDsl);
+            return body.build();
+        }
+
+        var list = (no.sikt.graphitron.command.ResultShape.RecordList) row.result();
         body.addStatement("$L.add(parentInput.field(0, $T.class).as($S))",
             DiscriminatedTableFragments.FIELDS_LOCAL, Integer.class, IDX_COLUMN);
 
@@ -280,6 +286,48 @@ public final class BatchedRowsFragments {
             ordered ? ".orderBy(orderBy)" : "");
         body.addStatement("return scatterByIdx(flat, keys.size())");
         return body.build();
+    }
+
+    /**
+     * The discriminated binder of {@link #windowedPageTail}: the page request observes the
+     * populated {@link DiscriminatedTableFragments#FIELDS_LOCAL} (the seam order the root's
+     * discriminated connection body follows), the ranked inner statement anchors on the
+     * parent-input VALUES table through the correlated chain's step-0 attach and appends the
+     * gated joined-detail LEFT JOINs (proven 1:0..1 at build time, see
+     * {@link DiscriminatedTableFragments#joinedStep}), and the count topology is the same chain
+     * without them, because a key-preserving 1:0..1 LEFT JOIN cannot change the count. The
+     * {@code condition} local already carries the discriminator {@code IN} restriction the
+     * projection half ANDed in, so the page and the count agree on it by construction.
+     */
+    private static void discriminatedConnectionTail(CodeBlock.Builder body,
+            LaunchSource.DiscriminatedCorrelatedChain chain, PreludeBindings prelude,
+            no.sikt.graphitron.command.ResultShape.Connection conn,
+            no.sikt.graphitron.command.CarrierDsl carrierDsl) {
+        pageRequestLocals(body, conn, prelude.terminalAlias(),
+            CodeBlock.of("new $T<>($L)", ARRAY_LIST, DiscriminatedTableFragments.FIELDS_LOCAL));
+
+        var step = CodeBlock.builder();
+        step.add("$T step = dsl\n", ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "SelectJoinStep"), RECORD));
+        step.indent();
+        step.add(".select(selectFields)\n");
+        fromBridgeAndParentJoin(step, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
+            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(),
+            prelude.joinOnParentCols());
+        step.unindent();
+        step.add(";\n");
+        var stepDeclaration = CodeBlock.builder()
+            .add(step.build())
+            .add(DiscriminatedTableFragments.joinedDetailJoins(
+                chain.discriminated(), prelude.terminalAlias()))
+            .build();
+
+        var countFrom = CodeBlock.builder();
+        fromBridgeAndParentJoin(countFrom, chain.joinPath(), prelude.aliases(),
+            prelude.firstAlias(), chain.correlation(), prelude.joinOnAlias(),
+            prelude.joinOnCols(), prelude.joinOnParentCols());
+
+        windowedPageTail(body, stepDeclaration, countFrom.build(), "condition", carrierDsl);
     }
 
     /**
@@ -312,18 +360,49 @@ public final class BatchedRowsFragments {
     }
 
     /**
-     * The windowed per-parent page tail: the pagination argument locals, the two ordering views
-     * from one {@link OrderingBlock} dispatch (the helper arm reading the row's minted ref, so
-     * the call site and the emitted helper share one name derivation), the page request, the
-     * ROW_NUMBER projection partitioned by the idx scatter key, the WHERE hoisted into a local
-     * so the page query and the count source share one glue evaluation, the ranked inner table
-     * with the cursor seek, the outer page filter, and the cursor-independent count source. The
-     * scatter call's trailing {@code dsl} rides the run's carrier-routing fact.
+     * The plain batched binder of {@link #windowedPageTail}: the page request observes the
+     * projection unit's own selection, the ranked inner statement is the arm's
+     * bridge-and-parent-join topology, and the count source repeats it. The WHERE is hoisted
+     * into a local first so the page query and the count source share one glue evaluation.
      */
     private static void connectionTail(CodeBlock.Builder body, LauncherCommand row,
             LaunchSource.Correlated.Projected chain, PreludeBindings prelude,
             no.sikt.graphitron.command.ResultShape.Connection conn,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
+        pageRequestLocals(body, conn, prelude.terminalAlias(),
+            ProjectionCall.fromEnvSelection(className(chain.projection()), prelude.terminalAlias()));
+
+        body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
+            whereCondition(row, chain, prelude));
+
+        var step = CodeBlock.builder();
+        step.add("$T step = dsl\n", ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "SelectJoinStep"), RECORD));
+        step.indent();
+        step.add(".select(selectFields)\n");
+        fromBridgeAndParentJoin(step, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
+            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
+        step.unindent();
+        step.add(";\n");
+
+        var countFrom = CodeBlock.builder();
+        fromBridgeAndParentJoin(countFrom, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
+            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
+
+        windowedPageTail(body, step.build(), countFrom.build(), "where", carrierDsl);
+    }
+
+    /**
+     * The pagination locals every windowed binder opens with: the four argument reads, the two
+     * ordering views from one {@link OrderingBlock} dispatch (the helper arm reading the row's
+     * minted ref, so the call site and the emitted helper share one name derivation), the page
+     * request over the binder's selection, and the {@code selectFields} list seeded from the
+     * helper's merged selection. The binder's step declaration reads {@code selectFields};
+     * {@link #windowedPageTail} appends the idx and rank terms to it.
+     */
+    private static void pageRequestLocals(CodeBlock.Builder body,
+            no.sikt.graphitron.command.ResultShape.Connection conn, String orderingTableLocal,
+            CodeBlock selectionExpression) {
         var helperClass = className(conn.helper());
         var pageRequestClass = helperClass.nestedClass("PageRequest");
 
@@ -332,32 +411,49 @@ public final class BatchedRowsFragments {
         body.addStatement("$T after = env.getArgument($S)", String.class, "after");
         body.addStatement("$T before = env.getArgument($S)", String.class, "before");
 
-        body.add(OrderingBlock.declareBothViews(conn.ordering(), prelude.terminalAlias()));
+        body.add(OrderingBlock.declareBothViews(conn.ordering(), orderingTableLocal));
 
         body.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
-            pageRequestClass, helperClass, conn.defaultPageSize(),
-            ProjectionCall.fromEnvSelection(className(chain.projection()), prelude.terminalAlias()));
+            pageRequestClass, helperClass, conn.defaultPageSize(), selectionExpression);
 
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         body.addStatement("$T<$T> selectFields = new $T<>(page.selectFields())",
             ARRAY_LIST, wildField, ARRAY_LIST);
+    }
+
+    /**
+     * The windowed per-parent page protocol, five coupled facts in one home so the plain batched
+     * binder and the discriminated one cannot drift: the ROW_NUMBER projection partitioned by
+     * the idx scatter key over the page's effective ordering, the seek applied pre-rank on the
+     * ranked inner table, the {@code asTable("ranked")} staging, the outer {@code __rn__ <=
+     * limit} page filter, and the cursor-independent count source feeding
+     * {@code scatterConnectionByIdx}. The scatter call's trailing {@code dsl} rides the run's
+     * carrier-routing fact.
+     *
+     * <p>Preconditions: {@link #pageRequestLocals} has run ({@code page} and {@code selectFields}
+     * are in scope), the prelude's {@code parentInput} is in scope, and the caller has declared
+     * the WHERE local named {@code whereLocal}. {@code stepDeclaration} declares a
+     * {@code SelectJoinStep<Record> step} over {@code dsl.select(selectFields)} plus the binder's
+     * FROM topology (follow-on statements reassigning {@code step} compose, which is how the
+     * discriminated binder appends its gated detail joins). {@code countFromTopology} is the
+     * binder's FROM chain alone, the relation whose rows the carrier counts.
+     */
+    private static void windowedPageTail(CodeBlock.Builder body, CodeBlock stepDeclaration,
+            CodeBlock countFromTopology, String whereLocal,
+            no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         body.addStatement("$T<Integer> idxField = parentInput.field(0, $T.class)",
             FIELD, Integer.class);
         body.addStatement("selectFields.add(idxField.as($S))", IDX_COLUMN);
         body.addStatement("selectFields.add($T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))",
             DSL, DSL, RN_COLUMN);
 
-        body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
-            whereCondition(row, chain, prelude));
+        body.add(stepDeclaration);
 
         var inner = CodeBlock.builder();
-        inner.add("$T<?> ranked = dsl\n", TABLE);
+        inner.add("$T<?> ranked = step\n", TABLE);
         inner.indent();
-        inner.add(".select(selectFields)\n");
-        fromBridgeAndParentJoin(inner, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
-            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
-        inner.add(".where(where)\n");
+        inner.add(".where($L)\n", whereLocal);
         inner.add(".orderBy(page.effectiveOrderBy())\n");
         inner.add(".seek(page.seekFields())\n");
         inner.add(".asTable($S);\n", "ranked");
@@ -379,9 +475,8 @@ public final class BatchedRowsFragments {
         count.add("$T<?> countSource = dsl\n", TABLE);
         count.indent();
         count.add(".select(idxField.as($S))\n", IDX_COLUMN);
-        fromBridgeAndParentJoin(count, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
-            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
-        count.add(".where(where)\n");
+        count.add(countFromTopology);
+        count.add(".where($L)\n", whereLocal);
         count.add(".asTable($S);\n", "countSource");
         count.unindent();
         body.add(count.build());

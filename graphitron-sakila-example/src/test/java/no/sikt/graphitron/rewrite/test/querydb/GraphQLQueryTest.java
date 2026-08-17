@@ -4484,8 +4484,9 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void fanItems_fanningCrossTableHop_oneEntityPerBaseRow() {
-        // fan_base holds 2 rows; fan_detail holds 3 rows for the first and 2 for the second. A
-        // join would hand back 5 entities with the ALPHA row repeated three times.
+        // fan_base holds 4 rows; fan_detail holds 3 rows for the first and 2 for the second
+        // (none for the rest). A join would hand back 7 entities with the first ALPHA row
+        // repeated three times.
         Map<String, Object> data = execute("""
             { allFanItems {
                 __typename
@@ -4497,9 +4498,9 @@ class GraphQLQueryTest {
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allFanItems");
         assertThat(items)
             .as("one entity per fan_base row, whatever each row's fan_detail count")
-            .hasSize(2);
+            .hasSize(4);
         assertThat(items).extracting(i -> i.get("__typename"))
-            .containsExactly("FanAlpha", "FanBeta");
+            .containsExactly("FanAlpha", "FanBeta", "FanAlpha", "FanBeta");
         var alpha = items.get(0);
         assertThat(alpha.get("note"))
             .as("the subselect resolves the reference to one of the detail rows; WHICH row is "
@@ -4508,6 +4509,96 @@ class GraphQLQueryTest {
         assertThat(items.get(1).containsKey("note"))
             .as("FanBeta declares no cross-table field, so the gated term contributes nothing to it")
             .isFalse();
+    }
+
+    // ===== the discriminated interface child, paginated =====
+    //
+    // The batched discriminated re-projection cut into per-parent pages: one windowed batch
+    // statement serves every parent's page, ROW_NUMBER-partitioned by the __idx__ scatter key,
+    // and each parent's carrier counts its own bucket.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fanOwners_fanItemsConnection_perParentPagesRideOneBatchStatement() {
+        // fan_owner 1 holds fan items {1, 2, 3}, owner 2 holds {4}: a first: 2 page splits
+        // owner 1's bucket and leaves owner 2's whole, and totalCount is per bucket, not the
+        // batch total (its per-parent count statements resolve lazily, so no round-trip pin
+        // here; the sibling filmContentsConnection test pins the batch round-trip count).
+        Map<String, Object> data = execute(
+            "{ allFanOwners { ownerName fanItemsConnection(first: 2) "
+                + "{ totalCount pageInfo { hasNextPage endCursor } "
+                + "edges { node { __typename label } } } } }");
+        List<Map<String, Object>> owners = (List<Map<String, Object>>) data.get("allFanOwners");
+        assertThat(owners).hasSize(2);
+        var byName = owners.stream().collect(java.util.stream.Collectors.toMap(
+            o -> (String) o.get("ownerName"), o -> (Map<String, Object>) o.get("fanItemsConnection")));
+
+        var ownerA = byName.get("Owner A");
+        assertThat(ownerA.get("totalCount"))
+            .as("owner A's carrier counts its own three-item bucket")
+            .isEqualTo(3);
+        assertThat((List<Map<String, Object>>) ownerA.get("edges"))
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("label"))
+            .containsExactly("Alpha one", "Beta one");
+        assertThat(((Map<String, Object>) ownerA.get("pageInfo")).get("hasNextPage")).isEqualTo(true);
+
+        var ownerB = byName.get("Owner B");
+        assertThat(ownerB.get("totalCount")).isEqualTo(1);
+        assertThat((List<Map<String, Object>>) ownerB.get("edges"))
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("__typename"))
+            .containsExactly("FanBeta");
+        assertThat(((Map<String, Object>) ownerB.get("pageInfo")).get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void fanOwners_fanItemsConnection_afterCursorWalksTheSplitBucketToItsEnd() {
+        Map<String, Object> page1 = execute(
+            "{ allFanOwners { ownerName fanItemsConnection(first: 2) "
+                + "{ pageInfo { endCursor } } } }");
+        var ownersPage1 = (List<Map<String, Object>>) page1.get("allFanOwners");
+        String ownerACursor = (String) ((Map<String, Object>) ((Map<String, Object>)
+            ownersPage1.get(0).get("fanItemsConnection")).get("pageInfo")).get("endCursor");
+        assertThat(ownerACursor).isNotNull();
+
+        Map<String, Object> page2 = execute(
+            "{ allFanOwners { ownerName fanItemsConnection(first: 2, after: \"" + ownerACursor
+                + "\") { pageInfo { hasNextPage } edges { node { label } } } } }");
+        var owners = (List<Map<String, Object>>) page2.get("allFanOwners");
+        var ownerA = (Map<String, Object>) owners.get(0).get("fanItemsConnection");
+        assertThat((List<Map<String, Object>>) ownerA.get("edges"))
+            .as("owner A's second page is the bucket's remainder")
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("label"))
+            .containsExactly("Alpha two");
+        assertThat(((Map<String, Object>) ownerA.get("pageInfo")).get("hasNextPage")).isEqualTo(false);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmContentsConnection_crossTableFieldSurvivesTheWindowedScatter() {
+        // The paginated twin of filmContents: the cross-table participant field rides the
+        // windowed select list as its gated subselect, so it must come back per page node
+        // exactly as it does under the list shape, and both parents' pages ride one batch
+        // statement (1 films root + 1 windowed batch round-trip).
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId filmContentsConnection(first: 2) "
+                + "{ edges { node { __typename title ... on FilmContent { rating } } } } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"), f -> (Map<String, Object>) f.get("filmContentsConnection")));
+
+        for (int filmId : new int[] {1, 2}) {
+            var connection = byId.get(filmId);
+            var edges = (List<Map<String, Object>>) connection.get("edges");
+            assertThat(edges).hasSize(1);
+            var node = (Map<String, Object>) edges.get(0).get("node");
+            assertThat(node.get("__typename")).isEqualTo("FilmContent");
+            assertThat(node.get("rating"))
+                .as("the gated subselect's alias survives the windowed staging and the scatter")
+                .isNotNull();
+        }
     }
 
     @Test

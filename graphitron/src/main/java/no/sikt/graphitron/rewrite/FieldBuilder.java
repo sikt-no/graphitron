@@ -984,15 +984,6 @@ class FieldBuilder {
 
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            // The same deferral as the root arm: no paginating emission exists over the
-            // discriminated re-projection, and the legacy fetcher read isList() (true for
-            // Connection) and emitted a plain fetch where graphql-java expects the carrier.
-            if (wrapper instanceof FieldWrapper.Connection) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
-                    "Field '" + parentTypeName + "." + name + "': @asConnection on a field"
-                    + " returning a single-table discriminated interface ('" + elementTypeName
-                    + "') is not yet supported; return the list shape instead"));
-            }
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName(), tableInterfaceType.table());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(referencePath.errorMessage()));
@@ -1017,10 +1008,12 @@ class FieldBuilder {
                 LintRule.SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD,
                 "@splitQuery is redundant on a field returning a single-table discriminated "
                 + "interface; the discriminated re-projection is always its own statement, and "
-                + "list cardinality already batches it through a DataLoader. The directive will "
-                + "be ignored.");
-            // Delivery is leaf identity, the multi-table sibling's rule: list cardinality batches
-            // through a DataLoader, single cardinality fetches per parent. The sibling's
+                + "list and connection cardinality already batch it through a DataLoader. The "
+                + "directive will be ignored.");
+            // Delivery is leaf identity, the multi-table sibling's rule: list and connection
+            // cardinality batch through a DataLoader (isList() answers true for both wrappers,
+            // so the fork below needs no Connection disjunct; the launcher's result shape forks
+            // on the wrapper downstream), single cardinality fetches per parent. The sibling's
             // table-bound-participant precondition has no analogue — a discriminated interface
             // rejects non-table implementors at the parse boundary — so cardinality is the whole
             // fork. The batch key is the single FK hop's source side (what the unbatched twin
@@ -7672,9 +7665,9 @@ class FieldBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             // Cross-table participant field on a TableInterfaceType participant: the interface
-            // fetcher (TypeFetcherGenerator) emits a conditional LEFT JOIN per occurrence and
-            // projects the column under a unique alias; the per-field DataFetcher reads it back
-            // by alias. Lookup uses the prepopulated entry on the participant's
+            // fetcher projects a capped correlated subselect per occurrence under a unique
+            // alias; the per-field DataFetcher reads it back by alias. Lookup uses the
+            // prepopulated entry on the participant's
             // ParticipantRef.TableBound — single source of truth lives in TypeBuilder.
             var crossTable = lookupParticipantCrossTableField(parentTypeName, name);
             if (crossTable != null) {

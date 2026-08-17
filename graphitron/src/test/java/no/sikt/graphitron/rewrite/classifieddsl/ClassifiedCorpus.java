@@ -590,12 +590,14 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * The discriminated interface child at both cardinalities. `media` is the inline half (one
-         * per-parent SELECT over the re-projection, no launcher row); `mediaList` is the batched
-         * half, whose launcher row carries the discriminated select list over the plain batched
-         * child's correlated topology. Both hold the same Fetch verdict at target shape Table, so
-         * the pair is the delivery split's own witness: the tuple is identical apart from the
-         * cardinality that decides it.
+         * The discriminated interface child at all three cardinalities. `media` is the inline half
+         * (one per-parent SELECT over the re-projection, no launcher row); `mediaList` is the
+         * batched half, whose launcher row carries the discriminated select list over the plain
+         * batched child's correlated topology; `mediaConnection` is the batched half paginated,
+         * the same launcher row with the windowed per-parent page tail. The list/single pair is
+         * the delivery split's own witness (the tuple is identical apart from the cardinality
+         * that decides it), and the connection coordinate is what makes the delivery pin a gate
+         * over the leaf-versus-relation answer at that cardinality.
          */
         new Example("table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
@@ -607,6 +609,9 @@ public final class ClassifiedCorpus {
               mediaList: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
                 @classified(source: OnlyChild, operations: [Join, OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: DiscriminatedCorrelatedChain, result: RecordList)
+              mediaConnection: [MediaItem!]! @asConnection @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(source: OnlyChild, operations: [Join, OrderBy, Paginate, Select], target: Single, targetShape: Connection)
+                @commits(source: DiscriminatedCorrelatedChain, result: Connection)
             }
             type Query {
               inventory: Inventory @commits(source: AnchorTable, result: SingleRecord)

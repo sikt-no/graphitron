@@ -920,7 +920,8 @@ public class TypeFetcherGenerator {
         // record-backed batched field is present. Single-cardinality fields use
         // scatterSingleByIdx; Connection-cardinality fields use scatterConnectionByIdx.
         boolean hasListSplitField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.BatchedTableInterfaceField
+            f instanceof ChildField.BatchedTableInterfaceField btif
+                && btif.returnType().wrapper() instanceof FieldWrapper.List
             || f instanceof ChildField.BatchedTableField btf
                 && (btf.returnType().wrapper() instanceof FieldWrapper.List
                     || (btf.lookup().isKeyed()
@@ -946,7 +947,9 @@ public class TypeFetcherGenerator {
         // windowed rows-method invocation.
         boolean hasConnectionSplitField = fields.stream().anyMatch(f ->
             f instanceof ChildField.BatchedTableField btf
-                && btf.returnType().wrapper() instanceof FieldWrapper.Connection);
+                && btf.returnType().wrapper() instanceof FieldWrapper.Connection
+            || f instanceof ChildField.BatchedTableInterfaceField btif
+                && btif.returnType().wrapper() instanceof FieldWrapper.Connection);
         if (hasConnectionSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage,
                 TenantDslEmitter.isMultiTenant(ctx)));

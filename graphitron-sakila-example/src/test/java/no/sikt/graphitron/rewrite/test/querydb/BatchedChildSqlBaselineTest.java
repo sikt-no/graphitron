@@ -44,7 +44,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * interface child ({@code Film.filmContents}, the participant-driven re-projection composed over
  * that same parent-input anchor: the {@code __discriminator__} routing alias, the deduped
  * per-branch {@code $project}, the known-value {@code IN} restriction, and the batch-wide
- * {@code ORDER BY} whose relative order each parent's scatter bucket inherits). Seed cardinalities
+ * {@code ORDER BY} whose relative order each parent's scatter bucket inherits), plus its
+ * paginated twin ({@code Film.filmContentsConnection}, the same re-projection riding the ranked
+ * page envelope, which pins that the extracted windowing fragment serves both batched
+ * connection binders). Seed cardinalities
  * keep the VALUES row counts stable: two {@code split_parent} rows, one customer key, one or two
  * film keys per pin, film 1's two seeded cast members, and the occupants fixtures' seeded
  * customer/staff address links.
@@ -145,6 +148,38 @@ class BatchedChildSqlBaselineTest {
                     + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"address_id\") "
                     + "join \"public\".\"address\" as \"addresssplit_a0\" "
                     + "on \"addresssplit_a0\".\"address_id\" = \"parentinput\".\"address_id\"");
+    }
+
+    @Test
+    void discriminatedConnectionBatchedChild_windowedReprojectionPartitionedByIdx() {
+        execute("{ filmById(film_id: [\"1\"]) { filmContentsConnection(first: 2) "
+            + "{ edges { node { title } } } } }");
+        assertThat(SQL_LOG)
+            .as("batched discriminated interface child, paginated: the participant-driven "
+                + "re-projection (routing alias, branch $project, known-value IN) rides the "
+                + "ranked page envelope, ROW_NUMBER() partitioned by the idx scatter key over "
+                + "the base PK order, the page bound on the outer filter; one statement serves "
+                + "every parent's page, which also pins that the extracted windowing fragment "
+                + "serves both batched connection binders")
+            .containsExactly(
+                "select \"public\".\"film\".\"film_id\", \"public\".\"film\".\"title\", "
+                    + "\"filmbyidinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (0, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") using (\"film_id\")",
+                "select \"ranked\".\"__discriminator__\", \"ranked\".\"title\", \"ranked\".\"content_id\", "
+                    + "\"ranked\".\"__idx__\", \"ranked\".\"__rn__\" "
+                    + "from (select \"filmcontentsconnection_c0\".\"content_type\" as \"__discriminator__\", "
+                    + "\"filmcontentsconnection_c0\".\"title\", "
+                    + "\"filmcontentsconnection_c0\".\"content_id\", "
+                    + "\"parentinput\".\"idx\" as \"__idx__\", "
+                    + "row_number() over (partition by \"parentinput\".\"idx\" "
+                    + "order by \"filmcontentsconnection_c0\".\"content_id\" asc) as \"__rn__\" "
+                    + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
+                    + "join \"public\".\"content\" as \"filmcontentsconnection_c0\" "
+                    + "on \"filmcontentsconnection_c0\".\"film_id\" = \"parentinput\".\"film_id\" "
+                    + "where \"filmcontentsconnection_c0\".\"content_type\" in (?, ?) "
+                    + "order by \"filmcontentsconnection_c0\".\"content_id\" asc) as \"ranked\" "
+                    + "where \"ranked\".\"__rn__\" <= ?");
     }
 
     @Test

@@ -81,8 +81,11 @@ class CommandSeamRatchetTest {
      * its batched half: two emission gates read the new leaf by identity (the list-scatter
      * helper gate and the orderBy-helper gate), neither census-enforced, both discoverable at
      * the compile tier because a rows method calling an unemitted helper does not compile.
+     * Raised 71 to 72 when that leaf's connection cardinality lifted: the connection-scatter
+     * helper gate gained the same leaf read its list sibling already had, discoverable at the
+     * compile tier for the same reason.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 71;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 72;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.

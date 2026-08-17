@@ -140,7 +140,7 @@ public final class RootLauncherRenderer {
             // is shared, only the select list forks.
             case LaunchSource.DiscriminatedCorrelatedChain chain ->
                 builder.addCode(BatchedRowsFragments.discriminatedBody(row, chain,
-                    batchedDslDeclaration, argHelpers));
+                    batchedDslDeclaration, carrierDsl, argHelpers));
             case LaunchSource.Correlated.Projected chain ->
                 builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl, argHelpers));
             case LaunchSource.PivotAggregate pivot ->

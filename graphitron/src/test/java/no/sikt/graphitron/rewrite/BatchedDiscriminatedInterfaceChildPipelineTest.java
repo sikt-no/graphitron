@@ -48,6 +48,7 @@ class BatchedDiscriminatedInterfaceChildPipelineTest {
           title: String
           contents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
           content: Content @reference(path: [{key: "content_film_id_fkey"}])
+          contentsConnection: [Content!]! @asConnection @reference(path: [{key: "content_film_id_fkey"}])
         }
         type Query { films: [Film!]! }
         """;
@@ -100,7 +101,35 @@ class BatchedDiscriminatedInterfaceChildPipelineTest {
     }
 
     /**
-     * The two coordinates agree on their delivery across both computation sites. The leaf
+     * The connection cardinality rides the same batched fork: {@code Connection.isList()} is
+     * true, so the classifier mints the same leaf with the same key facts, and the producer's
+     * result shape is where the wrapper forks — the launcher row carries the connection payload
+     * (ordering, page size, runtime refs) instead of the list shape. The facet plan is null at
+     * both ends; an interface-element carrier is rejected at the SDL boundary.
+     */
+    @Test
+    void connectionCardinality_sameBatchedLeaf_launcherRowCarriesTheConnectionShape() {
+        var schema = TestSchemaHelper.buildSchema(SDL);
+        var field = (ChildField.BatchedTableInterfaceField) schema.field("Film", "contentsConnection");
+        assertThat(field.sourceKey().columns())
+            .extracting(c -> c.sqlName().toLowerCase())
+            .containsExactly("film_id");
+
+        var conditions = no.sikt.graphitron.plan.ConditionCommands.produce(
+            schema, no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE);
+        var row = no.sikt.graphitron.plan.LauncherCommands.produce(
+                schema, conditions, no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Film", "contentsConnection").orElseThrow();
+        assertThat(row.source())
+            .isInstanceOf(no.sikt.graphitron.command.LaunchSource.DiscriminatedCorrelatedChain.class);
+        var connection = (no.sikt.graphitron.command.ResultShape.Connection) row.result();
+        assertThat(connection.ordering()).isNotNull();
+        assertThat(connection.defaultPageSize()).isPositive();
+        assertThat(connection.facets()).isNull();
+    }
+
+    /**
+     * The coordinates agree on their delivery across both computation sites. The leaf
      * encoding is the crosswalk; the materialized relation is the production. {@code
      * DeliveryFactPinTest} pins the agreement over the corpus and its marker fixture; this pins
      * the verdicts themselves, so a regression that flipped both sites in step would still fail.
@@ -111,6 +140,10 @@ class BatchedDiscriminatedInterfaceChildPipelineTest {
 
         assertThat(schema.deliveryOf(
                 graphql.schema.FieldCoordinates.coordinates("Film", "contents")))
+            .isEqualTo(new no.sikt.graphitron.rewrite.model.DeliveryFact.Batched(
+                no.sikt.graphitron.rewrite.model.DeliveryFact.Trigger.PolymorphicFanIn.INSTANCE));
+        assertThat(schema.deliveryOf(
+                graphql.schema.FieldCoordinates.coordinates("Film", "contentsConnection")))
             .isEqualTo(new no.sikt.graphitron.rewrite.model.DeliveryFact.Batched(
                 no.sikt.graphitron.rewrite.model.DeliveryFact.Trigger.PolymorphicFanIn.INSTANCE));
         assertThat(schema.deliveryOf(

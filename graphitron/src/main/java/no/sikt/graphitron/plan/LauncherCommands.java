@@ -720,11 +720,12 @@ public final class LauncherCommands {
      * coordinate does need rides the loader <em>name</em>, which the entry point derives through
      * the tenancy binding, not this row.
      *
-     * <p>Never a connection: the classifier rejects {@code @asConnection} on this arm ahead of
-     * the mint, so the result is the list shape, carrying the coordinate's ordering. A batched
-     * list orders globally and the {@code __idx__} scatter preserves relative order inside each
-     * parent's bucket, so the ordering the unbatched twin applies per parent survives the loader
-     * boundary unchanged.
+     * <p>The result forks on the coordinate's wrapper through {@link #interfaceChildResultOf}:
+     * the connection shape when the author wrote {@code @asConnection}, the ordered list shape
+     * otherwise. A batched list orders globally and the {@code __idx__} scatter preserves
+     * relative order inside each parent's bucket, so the ordering the unbatched twin applies per
+     * parent survives the loader boundary unchanged; the connection shape re-keys the same
+     * global ordering per parent through its windowed rank.
      */
     private static LauncherCommand batchedInterfaceChildRow(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField btif,
@@ -743,8 +744,26 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(btif.sourceKey(), btif.loaderRegistration()),
             new TenantStrategy.Single(),
-            new ResultShape.RecordList(
-                orderingOf(btif.orderBy(), btif.parentTypeName(), btif.name(), units)));
+            interfaceChildResultOf(btif, units));
+    }
+
+    /**
+     * The batched discriminated child's payload shape, forked on the coordinate's wrapper. The
+     * connection arm derives through {@link #connectionShape}, the same home both root arms use.
+     * Its facet plan is {@code null} for the reason {@link #interfaceRow}'s is:
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder#unsupportedFacetCarrierReason}
+     * rejects a carrier whose element is not a {@code @table}-backed object type at the SDL
+     * boundary, which an interface element never is.
+     */
+    private static ResultShape interfaceChildResultOf(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField btif,
+            GeneratedUnits units) {
+        var ordering = orderingOf(btif.orderBy(), btif.parentTypeName(), btif.name(), units);
+        if (btif.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
+            return connectionShape(conn, ordering,
+                btif.parentTypeName() + "." + btif.name(), null, units);
+        }
+        return new ResultShape.RecordList(ordering);
     }
 
     /**
