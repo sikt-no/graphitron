@@ -1,7 +1,7 @@
 ---
 id: R687
 title: "A DML carrier payload with an errors field loses its return-derived write target"
-status: Backlog
+status: Spec
 bucket: structural
 priority: 5
 theme: mutation-write
@@ -104,12 +104,103 @@ oppdaterFeideApplikasjonDetaljer(
   @mutation(typeName: UPDATE, table: "feide_applikasjon")
 ```
 
-## Acceptance sketch
+## Design
 
-Pipeline-tier coverage that the consumer shape classifies without `@mutation(table:)`: a
-carrier payload with an errors field on both INSERT and UPDATE, single and bulk input,
-landing on `MutationDmlRecordField` / `MutationBulkDmlRecordField` with the error channel
-present. `SingleRecordPayloadPipelineTest` currently passes `tableArg = true` for every
-errors-bearing fixture, and its `mutationDirective` javadoc states the workaround as though
-it were the rule; those fixtures are the natural home and the javadoc needs correcting with
-them.
+The fix is the ordering treatment `groundRoutineCarriers()` already received, extended to
+the DML family, plus a targeted diagnostic for the carrier shapes that still cannot ground
+afterwards. Docs need no change: the user manual (`docs/manual/reference/directives/mutation.adoc`,
+`table.adoc`, the tutorial) already documents return-derivation as the rule for INSERT /
+UPDATE, so this item aligns the implementation with what the docs promise.
+
+### Ordering: ground DML carriers after the classification indices
+
+Move the `groundDmlMutationField` call out of `groundRootProducers()`'s per-field loop into
+the post-index grounding pass. `RecordBindingResolver.groundRoutineCarriers()` already walks
+every object's fields after `TypeBuilder.buildClassificationIndices()` has built the
+`ErrorIndex`; fold the DML grounding into that same walk and rename the pass
+`groundEmittedCarriers()` (it now grounds two of the three emitted-carrier families; the
+javadoc carries the shared rationale, with per-family notes on `groundDmlMutationField` /
+`groundRoutineMutationField`). `TypeBuilder.prepareForWalk`'s comment above the call updates
+to name both families.
+
+Why the move is safe, to be re-verified at implementation:
+
+* `dmlEmittedMemo` is a dedicated axis. `resolveAll()`'s propagate / fold steps never read
+  it (documented on `RecordBindingResolver.resolveDmlEmitted`), so grounding later cannot
+  change any fold outcome.
+* Nothing between `resolveAll()` and the current `groundRoutineCarriers()` call reads
+  `resolveDmlEmitted`: the `recordBackingClasses` pump reads the result / input axes only,
+  and `buildClassificationIndices` drives membership off `classifyType`, which never
+  consults `dmlEmittedBinding` / `carrierVerdict`.
+* The grounding's structural-scan probe of `TypeBuilder.lookAheadVerdict` becomes a
+  post-fixed-point probe, the same sanctioned pattern `groundRoutineMutationField`'s javadoc
+  describes. The `lookAheadMemo.clear()` at the end of `prepareForWalk` stays: verdicts
+  computed during preparation still must not stick, and the moved pass runs before the
+  clear, exactly as the routine pass does today.
+
+The `ServiceEmitted` family stays in `groundRootProducers()`, deliberately. Its carrier
+detection never reads the `ErrorIndex` (`groundServicePayloadBinding` and
+`singleNonTableObjectDataField` exclude errors-shaped fields structurally, via the
+must-be-a-GraphQL-Object check), and `groundServiceField` also grounds result- and
+input-axis observations that must feed the fold, so it cannot move wholesale and has no bug
+forcing a split. The `groundEmittedCarriers` javadoc records this asymmetry so the next
+reader doesn't "complete" the migration by moving it.
+
+### Diagnostic: name the missing write target when a well-formed carrier fails to ground
+
+`MutationInputResolver.validateReturnType`'s `ScalarReturnType` arm currently distinguishes
+two carrier-adjacent cases before falling to the generic "not yet supported; use ID or a
+@table type" text: a scan `Reject` (surfaces the scan's reason) and
+`diagnoseForbiddenCarrierDirective`. Add the third case: `scanStructuralDmlPayload` returns
+`Admit`, i.e. the payload is a structurally well-formed carrier that never earned a carrier
+verdict because no producer grounded it. Emit a message that names the actual gap, the write
+target, rather than the return type: the payload is recognised as a carrier, its data field's
+element (ID-element or record-element; a `@table`-element carrier return-derives once the
+ordering fix lands) cannot name the write table, so name it with `@mutation(table:)`.
+Tailor the sentence on `Admit.element()`. After the ordering fix this arm fires for
+ID-element and record-element carriers on INSERT / UPDATE without `@mutation(table:)`, and
+for residual silent-skip grounding cases (e.g. an unloadable record class); once grounding
+succeeds the per-verb classifiers' existing element rejections take over, so the new text
+only needs to steer toward the argument, not restate those rules.
+
+### Verb-asymmetry chase (bounded)
+
+The reporter observed INSERT passing where UPDATE failed on 10.0.0-RC31; trunk reproduces
+the failure verb-agnostically. Bound the chase to: (1) the flipped pipeline fixtures below,
+which pin both verbs classifying without `@mutation(table:)`; (2) a note to the reporter
+that the asymmetry is unexplained against trunk and most plausibly a second difference in
+their INSERT field's SDL (an already-present `@mutation(table:)`, or a legacy input
+`@table` bridge). This clone carries no RC31 tag to diff, and the fix supersedes the
+question for both verbs. No further work unless the fixed build still rejects their real
+schema.
+
+## Implementation
+
+* `RecordBindingResolver.groundRootProducers`: drop `groundDmlMutationField` from the field
+  loop.
+* `RecordBindingResolver.groundRoutineCarriers` → `groundEmittedCarriers`: add the DML
+  grounding to its walk; javadoc reworked to cover both families and the deliberate
+  `ServiceEmitted` exception.
+* `RecordBindingResolver.groundDmlMutationField` javadoc: the skip-cases paragraph gains the
+  post-index timing note (mirroring `groundRoutineMutationField`'s probe paragraph).
+* `TypeBuilder.prepareForWalk`: update the pass comment.
+* `MutationInputResolver.validateReturnType`: the `Admit` diagnostic in the
+  `ScalarReturnType` arm.
+
+## Tests
+
+Pipeline tier, in `SingleRecordPayloadPipelineTest`:
+
+* Flip the errors-bearing fixtures (`payload_singleInput_withErrorsField_…`,
+  `payload_bulkInput_withErrorsField_…`,
+  `payload_withErrorsField_emittedFetcher_dispatchesThroughLocalContextRouter`) from
+  `tableArg = true` to the return-derived form, and correct their "does not return-derive"
+  comments. These land on `MutationDmlRecordField` / `MutationBulkDmlRecordField` with the
+  `LocalContext` error channel present, on INSERT and UPDATE, single and bulk input: the
+  consumer shape from the report, classifying without `@mutation(table:)`.
+* Keep one errors-bearing fixture on `tableArg = true` (the explicit argument must keep
+  working, and the rung-1-vs-rung-2 same-table agreement path stays covered).
+* Correct the `mutationDirective` helper's javadoc, which states the workaround as the rule.
+* New test pinning the `Admit`-arm diagnostic: an ID-element carrier with an errors field on
+  INSERT without `@mutation(table:)` rejects with the new write-target message, not
+  "not yet supported".
