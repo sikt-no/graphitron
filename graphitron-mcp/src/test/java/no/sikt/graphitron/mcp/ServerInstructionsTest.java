@@ -5,20 +5,16 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
-import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -265,9 +261,8 @@ class ServerInstructionsTest {
 
     @Test
     void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
-        try (var store = pagedDiagnosticsStore(tmp);
-             var server = server(pagedWorkspace(), null,
-                 new StoreHandle(store.dsl(), "paged"));
+        try (var build = StoreBackedBuild.run(tmp, "paged", PAGED_SDL);
+             var server = server(pagedWorkspace(), null, build.handle());
              var client = connect(server.port())) {
             client.initialize();
             var advertised = advertisedSurface(client);
@@ -300,21 +295,25 @@ class ServerInstructionsTest {
     }
 
     /**
-     * The diagnostics half of the paged fixture: the tool reads the fact store, so its two
-     * entries are written through the production residue loader into an in-memory store; the
-     * report on the workspace covers only the snapshot axes.
+     * The store half of the paged fixture: a real capture, since the tools reading the store want
+     * rows a pipeline run wrote rather than rows a test asserted into place. The schema is chosen to
+     * clear the per-tool minimum this pin needs, which a capture does not promise by construction:
+     * two coordinates naming a column no table declares yield the diagnostics, and the generated test
+     * model's census yields the tables.
      */
-    private static GraphitronModelStore pagedDiagnosticsStore(Path tmp) {
-        var store = GraphitronModelStore.open();
-        new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity("paged", tmp)).write(List.of(
-            new ValidationError("Query.film",
-                new Rejection.AuthorError.Structural("unknown table reference"),
-                new graphql.language.SourceLocation(5, 3, "/schema.graphqls")),
-            new ValidationError("Query.actor",
-                new Rejection.AuthorError.Structural("unknown table reference"),
-                new graphql.language.SourceLocation(6, 3, "/schema.graphqls"))));
-        return store;
-    }
+    private static final String PAGED_SDL = """
+        type Film @table(name: "film") {
+          film_id: Int
+          missingOne: Int
+        }
+        type Actor @table(name: "actor") {
+          missingTwo: Int
+        }
+        type Query {
+          film: Film
+          actor: Actor
+        }
+        """;
 
     // ---- the ambient size ceiling ----
 
@@ -430,11 +429,11 @@ class ServerInstructionsTest {
     // ---- fixtures ----
 
     /**
-     * One workspace carrying every live projection the six paged tools read, each with at least two
-     * entries so a {@code limit=1} call actually pages: catalog facts for {@code catalog.tables}, a
-     * built snapshot with type classifications for {@code schema}, a validation report for
-     * {@code diagnostics}, and external references with methods, condition methods, and record
-     * components for {@code services} / {@code conditions} / {@code records}.
+     * One workspace carrying every live projection the paged tools still read, each with at least two
+     * entries so a {@code limit=1} call actually pages: a built snapshot with type classifications for
+     * {@code schema}, and external references with methods, condition methods, and record components
+     * for {@code services} / {@code conditions} / {@code records}. {@code catalog.tables} and
+     * {@code diagnostics} answer from the capture beside it and read nothing here.
      */
     private static Workspace pagedWorkspace() {
         var filmService = new CompletionData.ExternalReference(
@@ -477,25 +476,8 @@ class ServerInstructionsTest {
 
         var workspace = new Workspace();
         workspace.setBuildOutput(
-            new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot, catalogFixture()), report);
+            new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
         return workspace;
-    }
-
-    private static CatalogFacts catalogFixture() {
-        var film = new CatalogFacts.Table(
-            "public", "film", Optional.of("Films catalog"),
-            List.of(new CatalogFacts.Column("film_id", "FILM_ID", "integer", false, Optional.empty())),
-            Optional.of(new CatalogFacts.Key("film_pkey", List.of("film_id"))),
-            List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
-        var actor = new CatalogFacts.Table(
-            "public", "actor", Optional.empty(),
-            List.of(new CatalogFacts.Column("actor_id", "ACTOR_ID", "integer", false, Optional.empty())),
-            Optional.of(new CatalogFacts.Key("actor_pkey", List.of("actor_id"))),
-            List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
-        var map = new LinkedHashMap<String, CatalogFacts.Table>();
-        map.put("public.film", film);
-        map.put("public.actor", actor);
-        return new CatalogFacts(map);
     }
 
     /**

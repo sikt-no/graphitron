@@ -230,14 +230,18 @@ final class DiagnosticFacets {
     // ---- the refusal and error shapes ----
 
     /**
-     * The handle-less answer: a refusal naming the missing store handle, never a count. Zero
-     * groups from a missing store would read identically to zero groups from a clean schema, so
-     * the wiring fact is loud instead. No production path meets this: {@code graphitron:dev}
-     * always passes the handle; the store-less boots are test servers.
+     * The handle-less answer: a refusal naming the missing store handle, never an empty answer. An
+     * empty result from a missing store reads identically to a real one, so the wiring fact is loud
+     * instead: zero diagnostics read as a clean schema and zero tables as a database with no
+     * tables. Shared by every tool that answers from the store rather than owned by the diagnostics
+     * pair, one wiring failure being one refusal wherever it surfaces. No production path meets
+     * this: {@code graphitron:dev} always passes the handle; the store-less boots are test servers.
+     *
+     * <p>Distinct from a store that holds no rows yet, which is an answer and reports as one.
      */
     static McpSchema.CallToolResult refusal(String tool) {
-        return error(tool + ": this server holds no fact store handle, so the diagnostics "
-            + "stratum cannot be read and a count will not be fabricated. A dev session "
+        return error(tool + ": this server holds no fact store handle, so the store cannot be "
+            + "read and an answer will not be fabricated. A dev session "
             + "(mvn graphitron:dev) always wires its session store handle in.");
     }
 

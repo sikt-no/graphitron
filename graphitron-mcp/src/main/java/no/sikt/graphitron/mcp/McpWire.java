@@ -70,6 +70,46 @@ final class McpWire {
         }
     }
 
+    /**
+     * The keyset cursor's part joiner, spelled as an escape rather than written into the source: a
+     * literal NUL byte in a {@code .java} file is legal inside a string literal and makes the file
+     * binary to every tool that reads it.
+     */
+    private static final String NUL = "\0";
+
+    /**
+     * Opaque keyset cursor: the ordering key of the last entry a page emitted, NUL-joined and
+     * base64-encoded. Beside {@link #encodeCursor} rather than replacing it, the tools that page an
+     * in-memory list still keying pages by offset.
+     *
+     * <p>The encoding stays opaque for the reason the offset form gives, and the reason is stronger
+     * here: nothing on the wire says whether a cursor is a position or a key, so a tool can move
+     * from one to the other without the contract moving. NUL is the joiner because SQL identifiers
+     * cannot contain it, so every key round-trips by splitting.
+     */
+    static String encodeKeysetCursor(List<String> key) {
+        return Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(String.join(NUL, key).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Decodes a keyset cursor back to its {@code arity} key parts. Absent where the cursor is
+     * absent, malformed, or carries the wrong number of parts, which the caller reads as the first
+     * page: the same degradation {@link #decodeCursor} applies by clamping to offset 0, and the
+     * same reason, a client that mangled a cursor being better served by the head of the ordering
+     * than by an error about a value the contract calls opaque.
+     */
+    static Optional<List<String>> decodeKeysetCursor(String cursor, int arity) {
+        if (cursor == null || cursor.isBlank()) return Optional.empty();
+        try {
+            var parts = List.of(new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8)
+                .split(NUL, -1));
+            return parts.size() == arity ? Optional.of(parts) : Optional.empty();
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
+    }
+
     /** A page of items plus the cursor for the next page (absent on the last page). */
     record Page<T>(List<T> items, Optional<String> nextCursor) {}
 

@@ -206,72 +206,136 @@ class GraphitronMcpServerTest {
 
     // ---- catalog.tables / catalog.describe ----
 
+    /**
+     * The schema the catalog cases capture under. Minimal on purpose: the catalog census is a walk of
+     * the generated jOOQ model rather than of the SDL, so what the schema binds does not decide which
+     * tables are captured, and a case asserting on the census wants the census rather than a schema.
+     */
+    private static final String CATALOG_SDL = """
+        type Film @table(name: "film") {
+          film_id: Int
+        }
+        type Query {
+          film: Film
+        }
+        """;
+
+    /**
+     * The wire fields are the shipped ones; what changed is where they come from and the order they
+     * arrive in. Table order is the census's {@code (schema, name)} ordering rather than the
+     * generated {@code Tables} class's reflective field order, which the JDK does not promise is
+     * stable at all.
+     *
+     * <p>The {@code comment} slot is asserted absent rather than present, and that is a property of
+     * the fixture rather than of the tool: no table in the test schema carries a database comment, so
+     * a real capture writes none. That is the standing cost of anchoring on the source instead of on
+     * the projection being replaced, which could assert a comment by fiat.
+     */
     @Test
-    void catalogTablesListsAllTablesWithSchemaAndComment() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
-             var client = connect(server.port())) {
-            client.initialize();
+    void catalogTablesListsTheGraphsCensusOrderedBySchemaThenName(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-tables", CATALOG_SDL)) {
+            var structured = structured(
+                GraphitronMcpServer.catalogTablesResult(build.handle(), Map.of()));
 
-            var result = client.callTool(McpSchema.CallToolRequest.builder("catalog.tables").build());
-            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
-
-            var structured = structured(result);
             @SuppressWarnings("unchecked")
             var tables = (List<Map<String, Object>>) structured.get("tables");
-            assertThat(tables).hasSize(3);
-            assertThat(tables).extracting(t -> t.get("name"))
-                .containsExactly("film", "actor", "film");
-            // public.film carries a comment; public.actor does not (comment omitted, not null-valued).
-            assertThat(tables.get(0)).containsEntry("schema", "public").containsEntry("comment", "Films catalog");
-            assertThat(tables.get(1)).containsEntry("schema", "public").doesNotContainKey("comment");
-            assertThat(structured).doesNotContainKey("nextCursor");
+            assertThat(tables).isNotEmpty();
+            assertThat(tables).extracting(t -> t.get("schema")).containsOnly("public");
+
+            var names = tables.stream().map(t -> (String) t.get("name")).toList();
+            assertThat(names)
+                .as("the census, in the ordering the page is keyed by")
+                .contains("actor", "film", "project_note")
+                .isSorted();
+            assertThat(tables).allSatisfy(t -> assertThat(t).doesNotContainKey("comment"));
         }
     }
 
     @Test
-    void catalogTablesFiltersBySchemaAndNameSubstring() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
-             var client = connect(server.port())) {
-            client.initialize();
-
-            var bySchema = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.tables")
-                .arguments(Map.of("schema", "other")).build()));
+    void catalogTablesFiltersBySchemaAndNameSubstring(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-filters", CATALOG_SDL)) {
+            // The schema filter is exact and case-insensitive; every test table lives in public.
+            var bySchema = structured(GraphitronMcpServer.catalogTablesResult(
+                build.handle(), Map.of("schema", "PUBLIC")));
             @SuppressWarnings("unchecked")
-            var otherTables = (List<Map<String, Object>>) bySchema.get("tables");
-            assertThat(otherTables).singleElement()
-                .satisfies(t -> assertThat(t).containsEntry("schema", "other").containsEntry("name", "film"));
+            var inPublic = (List<Map<String, Object>>) bySchema.get("tables");
+            assertThat(inPublic).isNotEmpty();
+            assertThat(inPublic).extracting(t -> t.get("schema")).containsOnly("public");
 
-            var byName = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.tables")
-                .arguments(Map.of("name", "act")).build()));
+            var noSuchSchema = structured(GraphitronMcpServer.catalogTablesResult(
+                build.handle(), Map.of("schema", "other")));
+            @SuppressWarnings("unchecked")
+            var elsewhere = (List<Map<String, Object>>) noSuchSchema.get("tables");
+            assertThat(elsewhere).isEmpty();
+
+            // The name filter is a case-insensitive substring, so it reaches every table carrying it.
+            var byName = structured(GraphitronMcpServer.catalogTablesResult(
+                build.handle(), Map.of("name", "ACT")));
             @SuppressWarnings("unchecked")
             var actTables = (List<Map<String, Object>>) byName.get("tables");
-            assertThat(actTables).singleElement()
-                .satisfies(t -> assertThat(t).containsEntry("name", "actor"));
+            assertThat(actTables.stream().map(t -> (String) t.get("name")))
+                .contains("actor", "film_actor")
+                .allSatisfy(n -> assertThat(n).contains("act"));
         }
     }
 
+    /**
+     * Paging is keyset on the ordering pair, so following the cursor to exhaustion visits the
+     * unpaged census exactly once. That is the property an offset cursor could not promise: an offset
+     * is only meaningful against an order that is stable between calls, and under keyset the ordering
+     * <em>is</em> the cursor.
+     *
+     * <p>The summary's total stays the whole filtered census on every page rather than the remainder,
+     * which is what tells an agent whether paging is worth starting.
+     */
     @Test
-    void catalogTablesPagesWithCursor() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
-             var client = connect(server.port())) {
-            client.initialize();
-
-            // limit=2 over 3 tables yields a first page of 2 plus a nextCursor.
-            var page1 = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.tables")
-                .arguments(Map.of("limit", 2)).build()));
+    void catalogTablesPagesByKeysetAndVisitsEveryTableOnce(@TempDir Path tmp) {
+        try (var build = StoreBackedBuild.run(tmp, "catalog-paging", CATALOG_SDL)) {
+            var unpaged = structured(GraphitronMcpServer.catalogTablesResult(build.handle(), Map.of()));
             @SuppressWarnings("unchecked")
-            var first = (List<Map<String, Object>>) page1.get("tables");
-            assertThat(first).hasSize(2);
-            assertThat(page1).containsKey("nextCursor");
+            var all = (List<Map<String, Object>>) unpaged.get("tables");
+            var expected = all.stream().map(t -> (String) t.get("name")).toList();
+            assertThat(unpaged).doesNotContainKey("nextCursor");
 
-            // Following the cursor reaches the tail (1 table) with no further nextCursor.
-            var page2 = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.tables")
-                .arguments(Map.of("limit", 2, "cursor", page1.get("nextCursor"))).build()));
-            @SuppressWarnings("unchecked")
-            var second = (List<Map<String, Object>>) page2.get("tables");
-            assertThat(second).hasSize(1);
-            assertThat(page2).doesNotContainKey("nextCursor");
+            var walked = new java.util.ArrayList<String>();
+            Optional<String> cursor = Optional.empty();
+            int pages = 0;
+            do {
+                var args = new LinkedHashMap<String, Object>();
+                args.put("limit", 2);
+                cursor.ifPresent(c -> args.put("cursor", c));
+                var result = GraphitronMcpServer.catalogTablesResult(build.handle(), args);
+                var page = structured(result);
+
+                assertThat(firstLine(result))
+                    .as("the total is the whole filtered census on every page, not the remainder")
+                    .startsWith("catalog.tables: " + expected.size() + " table(s)");
+
+                @SuppressWarnings("unchecked")
+                var entries = (List<Map<String, Object>>) page.get("tables");
+                assertThat(entries).hasSizeBetween(1, 2);
+                entries.forEach(e -> walked.add((String) e.get("name")));
+                cursor = Optional.ofNullable((String) page.get("nextCursor"));
+            } while (cursor.isPresent() && ++pages < expected.size());
+
+            assertThat(walked)
+                .as("keyset paging visits the census once, in order, with nothing skipped or repeated")
+                .containsExactlyElementsOf(expected);
         }
+    }
+
+    /**
+     * A handle-less server refuses rather than answering an empty census, which would read as a
+     * database with no tables. Distinct from a store holding no rows yet, which is an answer.
+     */
+    @Test
+    void catalogTablesRefusesWithoutAStoreHandle() {
+        var result = GraphitronMcpServer.catalogTablesResult(null, Map.of());
+
+        assertThat(result.isError()).isTrue();
+        assertThat(firstLine(result))
+            .startsWith("catalog.tables:")
+            .contains("holds no fact store handle");
     }
 
     @Test
@@ -1365,6 +1429,12 @@ class GraphitronMcpServerTest {
         assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
         assertThat(result.structuredContent()).isInstanceOf(Map.class);
         return (Map<String, Object>) result.structuredContent();
+    }
+
+    /** The summary line an agent reads before the structured payload; the leading count lives here. */
+    private static String firstLine(McpSchema.CallToolResult result) {
+        assertThat(result.content()).isNotEmpty();
+        return ((McpSchema.TextContent) result.content().getFirst()).text().lines().findFirst().orElse("");
     }
 
     private static Workspace workspaceWith(CatalogFacts facts) {

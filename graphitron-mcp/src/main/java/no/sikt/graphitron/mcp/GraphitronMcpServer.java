@@ -205,7 +205,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         // configured), so they stay false even though the tools and resource read live state.
         var tools = new java.util.ArrayList<>(List.of(
             statusTool(workspace),
-            catalogTablesTool(workspace), catalogDescribeTool(workspace),
+            catalogTablesTool(storeHandle), catalogDescribeTool(workspace),
             servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
             schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
             diagnosticsAggregateTool(workspace, storeHandle), edgesTool(workspace),
@@ -385,11 +385,12 @@ public final class GraphitronMcpServer implements AutoCloseable {
     private static final int DEFAULT_TABLES_LIMIT = 100;
 
     /**
-     * {@code catalog.tables}: lists the database tables the schema wires to, reading
-     * {@link Workspace#catalogFacts()} off the live handle on every call. Paging follows the
-     * stable schema-qualified-name ordering, with a {@code nextCursor} until the last page.
+     * {@code catalog.tables}: lists the database tables the schema wires to, as a query over the
+     * {@code sql_table} census scoped to the session's graph. Paging is keyset on the
+     * {@code (schema, name)} ordering, with a {@code nextCursor} until the last page, so the
+     * ordering the page is drawn in is the cursor rather than an offset into it.
      */
-    private static McpServerFeatures.SyncToolSpecification catalogTablesTool(Workspace workspace) {
+    private static McpServerFeatures.SyncToolSpecification catalogTablesTool(StoreHandle storeHandle) {
         var tool = McpSchema.Tool.builder("catalog.tables", Map.of(
                 "type", "object",
                 "properties", Map.of(
@@ -403,42 +404,54 @@ public final class GraphitronMcpServer implements AutoCloseable {
                         "description", "Opaque page cursor from a prior call's nextCursor."))))
             .title("List catalog tables")
             .description("Lists the database tables the GraphQL schema wires to, with optional "
-                + "schema and SQL-name-substring filters, paged via an opaque cursor. Each table "
+                + "schema and SQL-name-substring filters, paged via an opaque cursor. Ordered by "
+                + "schema then SQL name, which is also what the cursor is keyed by, so following a "
+                + "cursor visits every table once. Each table "
                 + "carries its schema, SQL name, and comment when jOOQ codegen captured one. SQL "
                 + "names drive discovery; use catalog.describe for a single table's columns, keys, "
                 + "indexes, and foreign keys.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> catalogTablesResult(workspace.catalogFacts(), request.arguments()))
+            .callHandler((exchange, request) -> catalogTablesResult(storeHandle, request.arguments()))
             .build();
     }
 
-    static McpSchema.CallToolResult catalogTablesResult(CatalogFacts facts, Map<String, Object> args) {
+    /**
+     * A handle-less server refuses rather than answering an empty census, which would read as a
+     * database with no tables. This is not the pre-capture case: a store with no {@code sql_table}
+     * rows is an answer, and absence of rows is absence of tables.
+     */
+    static McpSchema.CallToolResult catalogTablesResult(StoreHandle store, Map<String, Object> args) {
+        if (store == null) {
+            return DiagnosticFacets.refusal("catalog.tables");
+        }
         Optional<String> schema = McpWire.stringArg(args, "schema");
         Optional<String> name = McpWire.stringArg(args, "name");
+        int limit = McpWire.intArg(args, "limit", DEFAULT_TABLES_LIMIT);
+        if (limit < 1) limit = DEFAULT_TABLES_LIMIT;
 
-        var all = facts.tables(schema, name);
-        var paged = McpWire.page(all, args, DEFAULT_TABLES_LIMIT);
+        var page = CatalogQueries.tables(
+            store, schema, name, McpWire.stringArg(args, "cursor"), limit);
 
-        var tableList = new ArrayList<Map<String, Object>>(paged.items().size());
-        for (var t : paged.items()) {
+        var tableList = new ArrayList<Map<String, Object>>(page.entries().size());
+        for (var t : page.entries()) {
             var entry = new LinkedHashMap<String, Object>();
             entry.put("schema", t.schema());
             entry.put("name", t.name());
-            t.comment().ifPresent(c -> entry.put("comment", c));
+            McpWire.putIfNotNull(entry, "comment", t.comment());
             tableList.add(entry);
         }
 
         var fields = new LinkedHashMap<String, Object>();
         fields.put("tables", tableList);
-        paged.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
+        page.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
 
-        String summary = "catalog.tables: " + all.size() + " table(s)"
+        String summary = "catalog.tables: " + page.total() + " table(s)"
             + schema.map(s -> " in schema '" + s + "'").orElse("")
             + name.map(n -> " matching '" + n + "'").orElse("")
-            + "; showing " + paged.items().size()
-            + (paged.nextCursor().isPresent() ? " (more available)" : "") + ".";
+            + "; showing " + page.entries().size()
+            + (page.nextCursor().isPresent() ? " (more available)" : "") + ".";
         return McpSchema.CallToolResult.builder()
             .addTextContent(summary)
             .structuredContent(fields)

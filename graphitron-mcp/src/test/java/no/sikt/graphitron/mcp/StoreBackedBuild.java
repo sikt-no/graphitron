@@ -33,7 +33,22 @@ import java.util.Optional;
  */
 final class StoreBackedBuild implements AutoCloseable {
 
+    /**
+     * The single-schema generated package every case captures from unless it says otherwise:
+     * {@code graphitron-sakila-db} generates it with {@code inputSchema=public} and nothing else, so
+     * every name in its census is unique.
+     */
     static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
+
+    /**
+     * The two-schema generated package, for the cases whose subject is a bare spelling reaching more
+     * than one table. It declares {@code event} in both {@code multischema_a} and
+     * {@code multischema_b} precisely so an unqualified name is ambiguous. A capture from
+     * {@link #JOOQ_PACKAGE} cannot show ambiguity at all, every name there being unique, and a real
+     * capture can only show what the source declares; the projections these cases replace could
+     * assert one by fiat.
+     */
+    static final String MULTISCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
 
     final Workspace workspace;
     final GraphitronModelStore store;
@@ -53,6 +68,21 @@ final class StoreBackedBuild implements AutoCloseable {
     }
 
     static StoreBackedBuild run(Path tmp, String graphName, String sdl, LintConfig lintConfig) {
+        return run(tmp, graphName, sdl, lintConfig, JOOQ_PACKAGE);
+    }
+
+    /**
+     * The generated-package overload, for a case whose subject is a property of the census rather
+     * than of the schema. The package is what {@link RewriteContext} resolves the catalog from, so it
+     * decides which tables the capture writes and therefore what a bare table name can reach.
+     */
+    static StoreBackedBuild run(Path tmp, String graphName, String sdl, String jooqPackage) {
+        return run(tmp, graphName, sdl, LintConfig.empty(), jooqPackage);
+    }
+
+    static StoreBackedBuild run(
+        Path tmp, String graphName, String sdl, LintConfig lintConfig, String jooqPackage
+    ) {
         try {
             Path schema = tmp.resolve("schema.graphqls");
             Files.writeString(schema, sdl);
@@ -62,7 +92,7 @@ final class StoreBackedBuild implements AutoCloseable {
                 new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty()));
             var ctx = new RewriteContext(
                 inputs,
-                tmp, graphName, out, out.resolve("resources"), "fake.output", JOOQ_PACKAGE,
+                tmp, graphName, out, out.resolve("resources"), "fake.output", jooqPackage,
                 List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
                 lintConfig, null, null, null, storeHome,
                 SchemaRecipe.literalOver(inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
