@@ -55,6 +55,19 @@ it, then plays `DevMojo`'s part over the result. Its javadoc says why the substr
 so the rows a test asserts on have to come from a real pipeline run." It shares the bottom of the
 stack with the others and nothing above it.
 
+**And now a second fixture beside it, which is this item's thesis demonstrating itself.** The
+catalog-facts item added `no.sikt.graphitron.mcp.StoreFixture` while migrating the catalog tools: an
+in-memory store plus a direct `FactCapture.capture` call with a `JooqCatalog`, named after the LSP's
+fixture and arriving at its `ofCatalog` / `ofMultiSchemaCatalog` / second-graph shapes independently for
+the second time. It exists for a good reason, which is that a census read does not need a build and
+`StoreBackedBuild` was pricing the generator into every catalog case, so the fixture is not the mistake;
+building it a fourth time is. It is a capture-level copy, so it belongs in the L1 row of the table below
+rather than beside `StoreBackedBuild`, and it is a fresh test-source `GraphitronModelStore.open()` site
+this item's guard would fail. Two things follow. The inventory above understates the drift by one
+module, and the prediction this item made about the catalog-facts item, that it would grow
+`StoreBackedBuild`, was wrong in a direction worth noting: what a consumer reaches for when the shared
+home cannot express its shape is not the nearest existing fixture but a new one.
+
 `graphitron-maven-plugin` has no fixture type at all. `DevMojoTest` and `dev/CatalogRefreshTest` open
 `GraphitronModelStore.open()` inline and write to it directly, two sites. Small, and exactly the shape
 that becomes another named harness the moment a third site appears.
@@ -113,7 +126,7 @@ what keeps the shared home from becoming that type:
 | Level | What it is | Who needs it |
 |---|---|---|
 | L0 | The store's lifetime, and writing an SDL fixture to a file with an identity | All four modules |
-| L1 | Capture-level population: one or more `FactCapture.capture` calls into an open store | `CapturedStore`, `StoreFixture` |
+| L1 | Capture-level population: one or more `FactCapture.capture` calls into an open store | `CapturedStore`, LSP's `StoreFixture`, MCP's `StoreFixture` |
 | L2 | Build-level population: a real `buildOutput()` run into a file store | `StoreBackedBuild` |
 | L3 | The module's own read boundary over a populated store | LSP's `handle()` / `reader()`, MCP's `Workspace` and server wiring |
 
@@ -305,8 +318,22 @@ Both dependencies are live in code this item touches, and both are declared in `
 
 * The LSP item is In Progress and has touched `StoreFixture` in most of its recent commits, including
   the post-capture writers this item moves.
-* The catalog-facts item is in Spec and plans to move the MCP catalog tests *onto* `StoreBackedBuild`,
-  growing the fixture this item rehomes.
+* The catalog-facts item is In Progress. It began by moving the MCP catalog tests onto
+  `StoreBackedBuild` and then moved them off again onto a capture-level fixture of its own, for the
+  reason the inventory above records, so what it hands over is one more L1 copy rather than a grown L2
+  one.
+
+**A case for taking L0 and the `graphitron` half of L1 ahead of both, rather than behind them.** The
+sequencing above assumes the shared home arrives last, and the cost of that assumption is now visible:
+the catalog-facts item has five tool slices left, and each needs capture shapes the LSP's fixture
+already has. The classpath census the code-tools slice reads is `StoreFixture.ofClasspath`, the source
+locations it renders come from `withJavaSource` / `refreshJavaSources`, and the diagnostics axes the
+status slice reads come from `withBuildWarnings`. Left as it is, that item will re-derive most of the
+LSP's fixture inside `graphitron-mcp` one slice at a time, and this item's job grows by a copy per
+slice. Whoever picks this up should weigh doing L0 plus the `graphitron` half of L1 first, then the MCP
+delegation, and leaving the LSP's fixture for last where the in-flight item still holds it. That is the
+order this section already licenses for an early start; what is new is that waiting has a measurable
+price rather than merely a deferred one.
 
 The expected case needs no special handling: this item is in Spec behind both, so both land first and
 this item picks up settled files. If work starts here before they land, take the levels in order and
