@@ -608,6 +608,13 @@ Improvements, not gate-blocking; take them if cheap while in the area, or file t
 * `TypeFetcherGeneratorTest.queryTableInterfaceField_discriminatorSubselectGate_qualifiesOffTableInstance`
   remains a `code().toString()` body assertion. Legacy (one of 76 in that file) and not re-authored
   by this item, so not a gate item; noted only because it is the last cross-table one left.
+* The first cycle's rework item 3 ("collapse the shipped groups to `shipped at <sha>` one-liners")
+  was answered by adding the SHAs to "What shipped, and what is left" while leaving the
+  Implementation section's four groups spelled out in full, and "Pinned state" still describes the
+  pre-delivery world (the deleted enum row, the backstop test under its old name). Not held against
+  the gate: the body is truthful, and on approval the file is deleted anyway. Recorded because the
+  Done-gate precondition is worded as "the spec body reflects what shipped", so the next reviewer
+  will weigh the same thing; collapsing those two sections now costs less than re-litigating it.
 
 ## Out of scope
 
