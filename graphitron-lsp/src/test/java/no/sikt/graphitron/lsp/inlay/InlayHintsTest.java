@@ -18,10 +18,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * LSP-tier unit tests for the inlay-hint renderers that still read the snapshot: given an authored
- * vs bare {@code @field} / {@code @reference} site and a fixed snapshot, only the bare site emits a
- * hint with the resolved value. Config gating and the empty cases live here too, because they are
- * properties of {@code compute} rather than of any one arm.
+ * LSP-tier unit tests for the one inlay-hint renderer that still reads the snapshot: given an
+ * authored vs bare {@code @reference} site and a fixed snapshot, only the bare site emits a hint with
+ * the resolved value. Config gating and the empty cases live here too, because they are properties of
+ * {@code compute} rather than of any one arm.
  *
  * <p>Stale-snapshot behaviour is exercised via {@link LspSchemaSnapshot.Built.Previous}
  * to confirm hints continue to render under the freshness-degraded arm.
@@ -29,7 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every call here passes an empty handle, which is how each case states that its renderer's
  * source is the snapshot. The arms that read the store instead are covered where a fixture can
  * capture one: {@code ClassificationHintsTest}, {@code SeparateFetchHintsTest} and, for the
- * {@code @table} half of this same inferred-directive arm, {@code InferredTableHintsTest}.
+ * {@code @table} and {@code @field} halves of this same inferred-directive arm,
+ * {@code InferredTableHintsTest} and {@code InferredFieldHintsTest}.
  */
 class InlayHintsTest {
 
@@ -52,7 +53,7 @@ class InlayHintsTest {
     void noSnapshotBackedHintsUnderUnavailableSnapshot() {
         var file = file("""
             type Film @table(name: "film") {
-                title: String @field
+                languageName: String @reference
             }
             """);
         var hints = InlayHints.compute(
@@ -102,7 +103,9 @@ class InlayHintsTest {
     }
 
     @Test
-    void inferredFieldHintRendersResolvedColumnName() {
+    void fieldGhostsNeedTheStoreRatherThanTheSnapshot() {
+        // The @field renderer moved onto the claim stratum. The snapshot here carries exactly the
+        // classification the incumbent renderer read, and with no store there is nothing to render.
         var file = file("""
             type Film @table(name: "film") {
                 title: String @field
@@ -114,8 +117,7 @@ class InlayHintsTest {
         );
         var hints = InlayHints.compute(
             new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
-        assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"title\"");
+        assertThat(hints).isEmpty();
     }
 
     @Test
@@ -143,38 +145,41 @@ class InlayHintsTest {
     // ===== extend type X { ... } parity =====
 
     @Test
-    void inferredFieldHintRendersInsideTypeExtension() {
-        // extend type Customer where Customer is @table-classified by a definition in another
-        // file: the inferred @field(name:) must resolve via the snapshot's name-keyed lookup
-        // even though DeclarationKind.enclosing returns the extension node (which carries no
-        // @table directive locally).
+    void inferredReferenceHintRendersInsideTypeExtension() {
+        // extend type Film where Film is @table-classified by a definition in another file: the
+        // renderer must resolve via the snapshot's name-keyed lookup even though
+        // DeclarationKind.enclosing returns the extension node, which carries no @table locally.
         var file = file("""
-            extend type Customer {
-                fullName: String @field
+            extend type Film {
+                languageName: String @reference
             }
             """);
         var snapshot = snapshotWith(
-            Map.of("Customer.fullName", new FieldClassification.Column("customer", "full_name")),
-            Map.of("Customer", new TypeClassification.Table("customer"))
+            Map.of("Film.languageName", new FieldClassification.ColumnReference(
+                "language", "name",
+                List.of(new FieldClassification.FkStep("language", "film_language_id_fkey")))),
+            Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
             new InlayHintConfig(true, false, false, false), file, Optional.empty(), snapshot, fullRange(file));
         assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"full_name\"");
+            .anySatisfy(label -> assertThat(label).contains("film_language_id_fkey"));
     }
 
     @Test
     void hintsRenderUnderPreviousSnapshotForStaleness() {
         var file = file("""
             type Film @table(name: "film") {
-                title: String @field
+                languageName: String @reference
             }
             """);
         var previous = new LspSchemaSnapshot.Built.Previous(
             List.of(),
             Map.of(),
             Map.of(),
-            Map.of("Film.title", new FieldClassification.Column("film", "title")),
+            Map.of("Film.languageName", new FieldClassification.ColumnReference(
+                "language", "name",
+                List.of(new FieldClassification.FkStep("language", "film_language_id_fkey")))),
             Map.of("Film", new TypeClassification.Table("film"))
         );
         var hints = InlayHints.compute(
@@ -182,7 +187,7 @@ class InlayHintsTest {
             fullRange(file));
         assertThat(hints).isNotEmpty();
         assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"title\"");
+            .anySatisfy(label -> assertThat(label).contains("film_language_id_fkey"));
     }
 
     // ===== Test helpers =====

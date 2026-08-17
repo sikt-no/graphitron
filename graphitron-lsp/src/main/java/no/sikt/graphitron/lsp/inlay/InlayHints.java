@@ -5,6 +5,7 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
+import no.sikt.graphitron.lsp.facts.FieldMemberName;
 import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
 import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
@@ -62,12 +63,13 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *
  * <p>The inferred-directive arm always asks the tree-sitter AST whether the canonical argument is
  * present in the buffer, and differs by directive in where it reads the value the author omitted.
- * {@code @table} reads {@link no.sikt.graphitron.lsp.facts.BoundTables the binding relation}, so
- * both its passes ride the capture cadence and answer with no generator pass behind them at all.
- * {@code @field} and {@code @reference} still read the {@link FieldClassification} projection on
- * the snapshot, each because the relation it would need is not built: a column match at a site
- * whose table is not the parent's own, and the foreign-key discovery an omitted path resolves
- * through.
+ * {@code @table} reads {@link no.sikt.graphitron.lsp.facts.BoundTables the binding relation} and
+ * {@code @field} the {@link no.sikt.graphitron.lsp.facts.FieldMemberName member its name reaches},
+ * so those passes ride the capture cadence and answer with no generator pass behind them at all.
+ * {@code @reference} still reads the {@link FieldClassification} projection on the snapshot, because
+ * the relation it would need is not built: it fires only where the path is omitted, so what it
+ * renders is the foreign-key discovery between the two types' bindings rather than any authored
+ * chain.
  *
  * <p>Three cadences result, and each surface is silent when what it reads is absent, so a session
  * holding one of the sources still gets its answers. Store-backed hints render whatever the last
@@ -392,13 +394,18 @@ public final class InlayHints {
             canonicalArgName + ": \"" + table.tableName() + "\"", InlayHintKind.Type));
     }
 
+    /**
+     * Keyed on the enclosing type's declared name for the same reason the {@code @table} pass is, and
+     * answered by the member the field's own name reaches ({@link FieldMemberName}), which is a column
+     * where the site resolves against a table and a class member where it resolves against a class.
+     */
     private static void renderInferredFieldNameHint(
         List<InlayHint> out, FileSnapshot file, InferenceSources sources,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
-        var built = sources.built();
-        if (built == null) return;
+        var store = sources.store().orElse(null);
+        if (store == null) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
@@ -412,13 +419,10 @@ public final class InlayHints {
                 return nameNode != null ? Nodes.text(nameNode, file.source()) : null;
             });
         if (fieldName == null) return;
-        var classification = built.fieldClassificationsByCoord()
-            .get(typeName + "." + fieldName);
-        if (classification == null) return;
-        String columnName = columnNameOf(classification);
-        if (columnName == null) return;
+        String memberName = FieldMemberName.of(store, typeName, fieldName).orElse(null);
+        if (memberName == null) return;
         out.add(makeHint(file, directive.nameNode(),
-            canonicalArgName + ": \"" + columnName + "\"", InlayHintKind.Type));
+            canonicalArgName + ": \"" + memberName + "\"", InlayHintKind.Type));
     }
 
     private static void renderInferredReferencePathHint(
@@ -460,16 +464,6 @@ public final class InlayHints {
     }
 
     // ===== Projection accessors =====
-
-    private static String columnNameOf(FieldClassification classification) {
-        return switch (classification) {
-            case FieldClassification.Column c -> c.columnName();
-            case FieldClassification.ColumnReference c -> c.columnName();
-            case FieldClassification.ParticipantCrossTable c -> c.columnName();
-            case FieldClassification.RecordOrProperty c -> c.columnName();
-            default -> null;
-        };
-    }
 
     private static List<FieldClassification.FkStep> fkPathOf(FieldClassification classification) {
         return switch (classification) {

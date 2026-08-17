@@ -475,7 +475,7 @@ around it.
 | Toggle | Collector | Fact source |
 |---|---|---|
 | `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer (built: `BoundTables.unambiguous`); `intent_column_match_claim` for the `@field` renderer, which resolves against the site's own scope now (built: `intent_field_column_scope`), plus `intent_class_member_slot` where the backing is a record or POJO, the arm that still has no reader; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
+| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer (built: `BoundTables.unambiguous`); `intent_resolved_field_claim` over `intent_column_match_claim` for the `@field` renderer's column arm and `intent_class_member_slot` for its class-member arm (built: `FieldMemberName`), the second reached through `TypeMemberScope`; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
 | `inferredDirectives` | `collectAbsentTableHints`, a second pass inside the inferred-directive collector | `intent_bound_table` (built: `BoundTables.unambiguousByType`) |
 | `separateFetch` | `collectSeparateFetchHints` | `intent_field_separate_fetch`, the marked rules only (built: `ClaimFacts`, `SeparateFetchRule`) |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
@@ -1741,7 +1741,10 @@ out to have been covering a case no capture can produce.
   answers which column an effective name matches *at* it; that derivation is the next slice, and it
   generalises `intent_column_match_claim`'s matching tail over a site-resolved table.
   `@reference` fires only on an omitted path, so its source is the foreign-key discovery between two
-  bindings, which is unbuilt.
+  bindings, which is unbuilt. *(Superseded for `@field`, twice: the relation named here as the next
+  slice turned out not to be needed, and the renderer has since moved. The two later sections on the
+  missing relation and on the `@field` ghost carry what actually happened; `@reference` is still
+  described correctly.)*
 * **A partial move is worth shipping because the cadence change is the user-visible half.** The
   `@table` ghosts now render off a capture alone, so an author who has never had a successful
   generator pass sees them, where before the arm was silent under `Unavailable`. The `inferredDirectives`
@@ -2997,10 +3000,10 @@ no longer because those coordinates disagree. A path the walk resolves produces 
 whose compaction is not `Direct`, so the coordinate sits outside the arm the sweep compares. The
 residue that was a disagreement is gone; what remains at that directive is a domain boundary.
 
-The renderer this started for did not move, and one arm is why. A `@field` at a field of a
-class-backed parent resolves a member name rather than a column, which `intent_class_member_slot`
-answers at its own grain, so the renderer's move is a two-arm read and only one arm existed before
-this. The other arm exists now.
+The renderer this started for did not move in the same commit, and one arm is why. A `@field` at a
+field of a class-backed parent resolves a member name rather than a column, which
+`intent_class_member_slot` answers at its own grain, so the renderer's move is a two-arm read and only
+one arm existed before this. The other arm exists now, and the move followed; see below.
 
 One rename came with it. The language server's reader of the override view was called
 `FieldColumnScope`, which is the name the new relation deserves, so the class is `FieldColumnTable`
@@ -3012,3 +3015,52 @@ consumer reporting "no relation answers this" is evidence about the consumer, no
 may mean the fact is missing. It may mean the fact exists at another grain. Here it meant the fact
 existed, keyed correctly, with one of its rules living in the consumer that happened to need it
 first.
+
+## Settled while building: the `@field` ghost is two relations, and the third population is a gap
+
+With the column arm's fact in place the `@field` inferred-directive renderer moved off the
+classification projection. It reads `FieldMemberName`, one reader over two relations, in the shape
+`TypeMemberScope` already set for the type grain: the arms share no payload, so the order between them
+is the reader's and is stated there rather than assumed of the store.
+
+**A column answers first, and it is read through the reduction.** The renderer asks
+`intent_column_match_claim` for the column its site resolved, joined to `intent_resolved_field_claim`
+so a coordinate an authored claim covers answers with nothing. That join is the whole difference
+between a ghost that describes the generator and one that describes the classifier. `rating` on a
+`@table`-bound `Film` is a real column and `@service` claims the field: the raw structural reading
+survives in the classifier view on purpose, and a ghost naming that column would tell the author
+graphitron resolved something it never reads. The incumbent projection got this right for a different
+reason, the walk having produced `ServiceBacked` at that coordinate and no column at all, so reading
+the reduction is what keeps the behaviour rather than what changes it.
+
+**A class member answers where no column does.** `TypeMemberScope` says whether the parent's names
+resolve against tables or against a class, and where it says a class, `ClassMemberSlots.named` is the
+exact-spelling read of the slot rule. Nothing about the bean-versus-component fork enters the LSP: the
+class's declared form decides it in the DDL, and the reader takes the slot's `name`, which is by
+definition the spelling an author writes into `@field(name:)`.
+
+**One population is now a stated gap rather than a silent one.** A type nothing binds, grounded on the
+row type jOOQ generated for a table, resolves its member names against that table's columns.
+`TypeMemberScope` knows this and offers them; the column arm cannot reach it, because
+`intent_field_column_scope` derives a site's table from a `@table` binding or an authored path and
+never from the parent's backing class. So the ghost is silent there, where the projection rendered a
+column name for part of that population. That is a narrowing, and it is recorded in three places
+rather than absorbed: `FieldMemberName`'s javadoc, an asserted test case that says why the silence is a
+gap, and here.
+
+Closing it is a fourth basis on the scope relation, not a lookup in the consumer, and it is a bigger
+change than it looks. Resolving a parent's backing class to a table means the grounding rule and the
+contested rule that `TypeBackingClass` owns today, plus the record-class-to-table mapping
+`TypeMemberScope` owns, would have to be facts rather than reader code. That is its own increment, and
+a good one for a reason beyond this ghost: a resolution rule living in the consumer that needed it
+first is the exact shape this item has now hit four times. Writing the match against the table from the
+LSP instead would have been the fast repair and the wrong one, putting a second copy of the match rule
+beside the store's.
+
+The ghost's text is worth one note, because it makes most of the test cases turn on presence rather
+than content. Both arms resolve *by* the field's own name, so the value they fill in almost always
+spells that name back. What the author actually reads is whether a ghost is there: a bare `@field` with
+one beside it resolved, one without it did not. Two cases carry more than presence, and they are the
+two worth having. The authored-path case renders a column the parent's table does not have, which is
+evidence of where the resolution ran rather than that it ran. The masked case has a column under it and
+shows nothing.
