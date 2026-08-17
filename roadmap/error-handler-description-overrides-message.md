@@ -127,7 +127,16 @@ compile-checked.
 `handler: VALIDATION` becomes an author-facing rejection. The site is
 `TypeBuilder.parseErrorHandler`'s VALIDATION arm, whose `disallowed` list already rejects
 `className` / `sqlState` / `code` / `matches` on the same entry; `description` joins that
-list and inherits its message shape.
+list and inherits its mechanism.
+
+Not its message text, though. That arm's single shared tail reads "validation runs as a wrapper
+pre-execution step against jakarta.validation.Validator; SQL discriminators do not apply", which
+explains the four existing entries and explains nothing about a rejected `description`; inheriting
+it verbatim would tell an author their description was refused because SQL discriminators do not
+apply. Extend the tail so it covers both reasons, and name
+the constraint annotation's own `message` attribute as the place that authoring surface lives,
+which is what "Settled questions" says the rejection is for. One message covering five fields is
+still one message; the point is that the prose has to be true of whichever subset fired.
 
 That is a *structural* rejection, not a typed arm with an LSP code. The two are different
 mechanisms and only one of them lives at the lift. Every per-handler rule in
@@ -164,9 +173,29 @@ two have to stay in agreement or `sameHandlerShape` starts throwing its internal
 
 Mint one `Mapping[]` per `@error` type instead, and derive each channel constant as the
 ordered concatenation of the per-type arrays it maps. `ErrorChannel.mappedErrorTypes()`
-already carries exactly that list in exactly that order, so the derivation is total. One row
-population, read at two grains. `description` then drops out of both dedup spellings on its
-own.
+already carries exactly that list in exactly that order, so the derivation is total, and the
+entries are the `ErrorIndex` fixed point's records (`FieldBuilder.detectErrorsFieldShape` resolves
+each union member through `ctx.errors.forName`), so an `@error` type name determines its array
+content. One row population, read at two grains. `description` then drops out of both dedup
+spellings on its own.
+
+Both grains land in one `ErrorMappings` class, so say what names the per-type constants. The
+channel-keyed ones are `SCREAMING_SNAKE` of an SDL outcome type name or a payload class simple
+name (`ErrorChannelWalker.toScreamingSnake`, `BuildContext.toScreamingSnake`); the obvious
+per-type spelling is `SCREAMING_SNAKE` of the `@error` type name, which shares that namespace.
+Two SDL type names cannot collide, but a payload class simple name and an `@error` type name can
+(a `com.example.NotAllowed` payload class alongside an `@error type NotAllowed` mints
+`NOT_ALLOWED` twice), and a duplicate field is invalid generated Java rather than a diagnostic.
+Either disambiguate the per-type names by construction (a suffix, or a nested holder class) or
+fail loudly on a clash; pick one in the plan rather than at the keyboard.
+
+*Opportunity, the author's call:* with content determined by type name, the channel constant's
+identity reduces to the ordered list of mapped `@error` type names, so the whole per-handler
+fingerprint is redundant, not just its `description` field. `canonicalHash` could digest the name
+list (or the pass could key on the list directly and drop the digest), and `sameHandlerShape`
+could compare name lists. That shrinks `handlerLine` and `HandlerKey` out of existence rather than
+editing four arms each, and it is the same edit site this move already opens. Not required for the
+defect; noted because move 3 is where it would be cheapest.
 
 This changes emitted constant *names*: two channels that today differ only by author
 description get one shared bare constant where they previously got a bare name plus a
@@ -229,6 +258,35 @@ the SDL-to-model lift is where the rejection lands.
 
 ## Open for the implementer
 
+**What happens to the emitted `Mapping.description()` slot.** Decide this before writing move 4;
+it changes the diff and the test list either way, and the item's own Problem section is about this
+accessor having no reader. Move 1 rules out the runtime `description != null` test, so the fetcher
+resolves each arm at build time, and the question is where the resolved `Static` string comes from:
+
+1. *Read the mapping.* Emit `return ErrorMappings.FILM_LOOKUP_INVALID[0].description();` for a
+   `Static` arm and `return thr.getMessage();` for `FromSource`. No runtime test (the arm chose the
+   statement), the string stays interned once in the mappings constant, the accessor the Problem
+   section calls unread becomes read, and `ErrorRouterClassGeneratorTest`'s three exact-set
+   assertions (the `Mapping` method set, `ExceptionMapping`'s field set, its method set) stay green.
+   Costs an index-literal coupling between the fetcher and the array, and note the indices are the
+   array's, not `et.handlers()`': `buildMappingArrayInitializer` skips `ValidationHandler`, so an
+   `@error` type mixing VALIDATION with a dispatch handler shifts them.
+2. *Inline the literal.* Emit `return "authored string";`. No index coupling, but then nothing reads
+   the emitted `description()` and the slot has to go: the `Mapping` interface method, the field
+   plus constructor parameter plus override on all three concrete mapping classes, and
+   `ErrorMappingsClassGenerator`'s three `literalOrNull(...)` third arguments, which turns the
+   emitted constructors into two-argument calls. That also rewrites the three
+   `ErrorRouterClassGeneratorTest` assertions above and the two test method names that spell
+   "Description".
+3. *Keep it and read nothing.* Not a resolution. The slot would be written by the generator,
+   documented by a freshly rewritten javadoc, and read by nobody, which is the artifact this item
+   exists to remove, one layer down.
+
+Option 1 is the recommendation: it is the smaller diff, it keeps one spelling of the string, and it
+closes the "nothing calls that accessor" sentence literally. Whichever lands, the "Retired
+vocabulary" list below covers the *javadoc text* on `Mapping.description()` only; under option 2 the
+accessor itself is retired too and that bullet needs to say so.
+
 **Whether the per-type override table rides on the command row.** The `@error` fetchers
 command row is `TypeUnitCommand.FetchersUnit(typeName, unit)`, name and unit only, and
 `TypeFetcherGenerator` already reaches back into `schema.type(row.typeName())` to recover the
@@ -268,6 +326,15 @@ so that tier carries the acceptance.
   concatenation of its types' arrays in declaration order), and that two channels differing
   only by author description now share one constant instead of splitting into a bare name
   plus a hash-suffixed sibling.
+* Pipeline tier, an inversion rather than an addition: `GraphitronSchemaBuilderTest`'s
+  `ErrorTypeCase.VALIDATION_LIFTS_TO_VALIDATION_HANDLER` feeds
+  `{handler: VALIDATION, description: "input invalid"}` and asserts today that it lifts cleanly and
+  that `h.description()` carries the string. Move 2 makes that same SDL a rejection, so the row's
+  fixture loses its `description:` and its description assertion; the rejection gets its own row.
+  Worth naming because this section's thesis is that every layer already has a passing test of its
+  own shape: this is the one whose passing assertion states the behaviour being removed, and it is
+  also the only `description()` call in the suite made through the `Handler` interface rather than
+  through a variant, so it does not merely change verdict, it stops compiling.
 * Unit tier: the `ClientMessage` lift in `TypeBuilder`. No code-string assertion on the
   emitted `message()` body at any tier; that form is banned, and here it would re-create
   exactly the false confidence that let this ship.
