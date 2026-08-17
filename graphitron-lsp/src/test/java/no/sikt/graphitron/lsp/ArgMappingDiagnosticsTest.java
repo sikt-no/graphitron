@@ -69,16 +69,16 @@ class ArgMappingDiagnosticsTest {
 
     @Test
     void unknownJavaParameterFlagged() {
-        var diags = diagnose(census("input"), "ghost: a");
+        var diags = diagnose(census("input"), "missing: a");
         assertThat(diags).anySatisfy(d ->
-            assertThat(d.getMessage()).contains("Unknown Java parameter 'ghost'"));
+            assertThat(d.getMessage()).contains("Unknown Java parameter 'missing'"));
     }
 
     @Test
     void unknownGraphqlArgumentFlagged() {
-        var diags = diagnose(census("input"), "input: ghost");
+        var diags = diagnose(census("input"), "input: missing");
         assertThat(diags).anySatisfy(d ->
-            assertThat(d.getMessage()).contains("Unknown GraphQL argument 'ghost'"));
+            assertThat(d.getMessage()).contains("Unknown GraphQL argument 'missing'"));
     }
 
     @Test
@@ -104,7 +104,7 @@ class ArgMappingDiagnosticsTest {
 
     @Test
     void unknownJavaParameterSuppressedWithoutParameterNames() {
-        var diags = diagnose(censusWithoutParameterNames(), "ghost: a");
+        var diags = diagnose(censusWithoutParameterNames(), "missing: a");
         assertThat(diags).noneSatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown Java parameter"));
     }
@@ -115,7 +115,7 @@ class ArgMappingDiagnosticsTest {
         assertThat(diagnose(census("input"), "input: input.missing")).noneSatisfy(d ->
             assertThat(d.getMessage()).contains("Unknown GraphQL argument"));
         // A typo'd head segment is flagged.
-        assertThat(diagnose(census("input"), "input: ghost.missing")).anySatisfy(d ->
-            assertThat(d.getMessage()).contains("Unknown GraphQL argument 'ghost'"));
+        assertThat(diagnose(census("input"), "input: missing.leaf")).anySatisfy(d ->
+            assertThat(d.getMessage()).contains("Unknown GraphQL argument 'missing'"));
     }
 }

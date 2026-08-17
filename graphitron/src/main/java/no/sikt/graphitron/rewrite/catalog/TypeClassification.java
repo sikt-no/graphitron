@@ -23,7 +23,7 @@ import java.util.List;
  *
  * <p>The permit names are no longer user-visible: the language server's declaration surfaces read
  * the fact store's own classifier vocabulary. What remains user-visible here is the payload
- * {@code InlayHints} renders as a ghost annotation, anchored on the {@code Table} / {@code Node} /
+ * {@code InlayHints} renders as a resolution overlay, anchored on the {@code Table} / {@code Node} /
  * {@code TableInterface} records.
  */
 public sealed interface TypeClassification

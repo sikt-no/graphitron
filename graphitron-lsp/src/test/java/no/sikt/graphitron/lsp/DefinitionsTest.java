@@ -132,8 +132,8 @@ class DefinitionsTest {
 
     @Test
     void unknownTableReturnsEmpty() {
-        var file = file("type Foo @table(name: \"GHOST\") { bar: Int }");
-        var pos = pointAt(file, 0, "GHOST");
+        var file = file("type Foo @table(name: \"MISSING\") { bar: Int }");
+        var pos = pointAt(file, 0, "MISSING");
         assertThat(compute(file, pos)).isEmpty();
     }
 
@@ -193,10 +193,10 @@ class DefinitionsTest {
     void unknownColumnReturnsEmpty() {
         var file = file("""
             type Foo @table(name: "film") {
-                bar: Int @field(name: "GHOST")
+                bar: Int @field(name: "MISSING")
             }
             """);
-        var pos = pointAt(file, 1, "GHOST");
+        var pos = pointAt(file, 1, "MISSING");
         assertThat(compute(file, pos)).isEmpty();
     }
 
@@ -307,10 +307,10 @@ class DefinitionsTest {
     void unknownClassNameReturnsEmpty() {
         var file = file("""
             type Foo {
-                bar: Int @service(service: {className: "com.example.Ghost", method: "price"})
+                bar: Int @service(service: {className: "com.example.Missing", method: "price"})
             }
             """);
-        var pos = pointAt(file, 1, "com.example.Ghost");
+        var pos = pointAt(file, 1, "com.example.Missing");
         assertThat(compute(file, pos)).isEmpty();
     }
 

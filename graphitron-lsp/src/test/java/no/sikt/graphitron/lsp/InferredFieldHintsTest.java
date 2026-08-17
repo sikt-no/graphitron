@@ -26,9 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * resolves against a class. Neither has a generator pass behind it, so every case here runs under an
  * unavailable snapshot, as the {@code @table} pass's cases do in {@code InferredTableHintsTest}.
  *
- * <p>A ghost's text is usually the field's own name, because both arms resolve <em>by</em> that name,
- * so what most cases here turn on is whether a ghost appears at all. That is the signal an author
- * reads: a bare {@code @field} with a ghost beside it resolved, and one without did not. Two cases
+ * <p>An overlay's text is usually the field's own name, because both arms resolve <em>by</em> that name,
+ * so what most cases here turn on is whether an overlay appears at all. That is the signal an author
+ * reads: a bare {@code @field} with an overlay beside it resolved, and one without did not. Two cases
  * carry more than presence. The path case renders a column the parent's own table does not have, so
  * the text is evidence of where the resolution ran. The masked case has a column under it and shows
  * nothing, which is what makes the arm a reader of the reduction rather than of the raw classifier.
@@ -99,7 +99,7 @@ class InferredFieldHintsTest {
 
     @Test
     void aNameNoColumnAnswersRendersNothing() {
-        // The whole value of the ghost's absence: `unmatched` names no column of `film`, so
+        // The whole value of the overlay's absence: `unmatched` names no column of `film`, so
         // graphitron reads nothing here and the arm says nothing rather than echoing the field name.
         var file = file("""
             type Film @table(name: "film") {
@@ -122,11 +122,11 @@ class InferredFieldHintsTest {
     /**
      * The reduction is what the arm reads, and this is the case that shows it. {@code rating} is a
      * column of {@code film}, so the structural classifier reaches the coordinate and its raw reading
-     * survives; {@code @service} claims the field, so the generator reads no column at all, and a
-     * ghost naming one would tell the author graphitron resolved something it does not use.
+     * survives; {@code @service} claims the field, so the generator reads no column at all, and an
+     * overlay naming one would tell the author graphitron resolved something it does not use.
      */
     @Test
-    void anAuthoredClaimSilencesTheGhostOverItsOwnColumn() {
+    void anAuthoredClaimSilencesTheOverlayOverItsOwnColumn() {
         var file = file("""
             type Film @table(name: "film") {
                 rating: String @field
@@ -138,7 +138,7 @@ class InferredFieldHintsTest {
     /**
      * The relation the column arm stands on resolves the site rather than the parent, so an authored
      * path moves the match with it. {@code film} has no {@code name} column and {@code language} does:
-     * a ghost here is only possible against the path's terminal table.
+     * an overlay here is only possible against the path's terminal table.
      */
     @Test
     void anAuthoredPathResolvesTheNameAtItsTerminalTable() {
@@ -148,7 +148,7 @@ class InferredFieldHintsTest {
             }
             """);
         assertThat(labels(file))
-            .as("the parent's own table has no such column, so this ghost is the terminal's")
+            .as("the parent's own table has no such column, so this overlay is the terminal's")
             .containsExactly("name: \"name\"");
     }
 
@@ -194,7 +194,7 @@ class InferredFieldHintsTest {
     @Test
     void anExtensionSiteResolvesThroughTheBaseDeclarationsBinding() {
         // A binding is a property of the type rather than of the declaration the cursor is in, so a
-        // field of an extension resolves against the base declaration's table. The @table ghost the
+        // field of an extension resolves against the base declaration's table. The @table overlay the
         // directiveless extension also earns is the sibling pass's subject, not this one's.
         var file = file("""
             extend type Film {
@@ -205,7 +205,7 @@ class InferredFieldHintsTest {
     }
 
     @Test
-    void noGhostsWithoutAStore() {
+    void noOverlaysWithoutAStore() {
         var file = file("""
             type Film @table(name: "film") {
                 title: String @field
@@ -228,7 +228,7 @@ class InferredFieldHintsTest {
         return either.isLeft() ? either.getLeft() : either.getRight().toString();
     }
 
-    /** The inferred-directive toggle alone, so no other arm's label can be mistaken for a ghost. */
+    /** The inferred-directive toggle alone, so no other arm's label can be mistaken for an overlay. */
     private static InlayHintConfig config() {
         return new InlayHintConfig(true, false, false, false);
     }

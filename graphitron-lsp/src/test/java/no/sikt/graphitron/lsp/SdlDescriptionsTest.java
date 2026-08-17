@@ -87,9 +87,9 @@ class SdlDescriptionsTest {
     /** No row, and no description on a row that has none, are the same absence to a reader. */
     @Test
     void aCoordinateNothingDescribesIsEmpty() {
-        assertThat(SdlDescriptions.of(store.handle(), new SchemaCoordinate.Directive("ghost")))
+        assertThat(SdlDescriptions.of(store.handle(), new SchemaCoordinate.Directive("missing")))
             .isEmpty();
-        assertThat(SdlDescriptions.of(store.handle(), new SchemaCoordinate.DirectiveArg("auth", "ghost")))
+        assertThat(SdlDescriptions.of(store.handle(), new SchemaCoordinate.DirectiveArg("auth", "missing")))
             .isEmpty();
         // Declared, and deliberately undocumented: the row exists and its description column is null.
         assertThat(SdlDescriptions.of(store.handle(), new SchemaCoordinate.InputType("Query")))

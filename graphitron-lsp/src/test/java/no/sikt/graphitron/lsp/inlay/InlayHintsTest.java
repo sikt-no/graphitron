@@ -85,7 +85,7 @@ class InlayHintsTest {
     }
 
     @Test
-    void tableGhostsNeedTheStoreRatherThanTheSnapshot() {
+    void tableOverlaysNeedTheStoreRatherThanTheSnapshot() {
         // Both @table passes moved onto the binding relation. The snapshot here carries exactly the
         // classification the incumbent renderer read, and with no store there is nothing to render.
         var file = file("""
@@ -103,7 +103,7 @@ class InlayHintsTest {
     }
 
     @Test
-    void fieldGhostsNeedTheStoreRatherThanTheSnapshot() {
+    void fieldOverlaysNeedTheStoreRatherThanTheSnapshot() {
         // The @field renderer moved onto the claim stratum. The snapshot here carries exactly the
         // classification the incumbent renderer read, and with no store there is nothing to render.
         var file = file("""

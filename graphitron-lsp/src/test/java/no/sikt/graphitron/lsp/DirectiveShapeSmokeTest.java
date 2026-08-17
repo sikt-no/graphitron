@@ -117,7 +117,7 @@ class DirectiveShapeSmokeTest {
                 filmsOuterOverrideFilterInput(filter: FilmConditionInput): [Film!]!
                     @condition(condition: {
                         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-                        method: "ghostMethod"
+                        method: "missingMethod"
                     }, override: true)
             }
             """;
@@ -127,7 +127,7 @@ class DirectiveShapeSmokeTest {
             var diags = diagnose(source, store);
 
             assertThat(diags).hasSize(1);
-            assertThat(diags.get(0).getMessage()).contains("ghostMethod");
+            assertThat(diags.get(0).getMessage()).contains("missingMethod");
         }
     }
 

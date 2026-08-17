@@ -139,11 +139,11 @@ class HoversTest {
     @Test
     void tableHoverWithUnknownTableReturnsEmpty() {
         var file = file("""
-            type Foo @table(name: "GHOST") {
+            type Foo @table(name: "MISSING") {
                 bar: Int
             }
             """);
-        var pos = pointAt(file, 0, "GHOST");
+        var pos = pointAt(file, 0, "MISSING");
 
         assertThat(hoverAt(file, pos)).isEmpty();
     }
@@ -381,10 +381,10 @@ class HoversTest {
     void cursorOnUnknownColumnReturnsEmpty() {
         var file = file("""
             type Film @table(name: "film") {
-                bar: Int @field(name: "GHOST")
+                bar: Int @field(name: "MISSING")
             }
             """);
-        var pos = pointAt(file, 1, "GHOST");
+        var pos = pointAt(file, 1, "MISSING");
 
         assertThat(hoverAt(file, pos)).isEmpty();
     }
@@ -629,10 +629,10 @@ class HoversTest {
     void aDirectiveNoCaptureReadHoversAsNothing() {
         var file = file("""
             type Query {
-                customers: [String!]! @ghost(role: "admin")
+                customers: [String!]! @missing(role: "admin")
             }
             """);
-        var pos = new Point(1, lineSource(file, 1).indexOf("@ghost") + 2);
+        var pos = new Point(1, lineSource(file, 1).indexOf("@missing") + 2);
 
         assertThat(hoverAt(file, pos)).isEmpty();
     }

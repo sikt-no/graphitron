@@ -56,7 +56,7 @@ public final class BoundTables {
 
     /**
      * The one table each of {@code typeNames} is bound to, keyed by type name, for the surfaces that
-     * may only speak when the binding is certain: a ghost annotation showing the author what
+     * may only speak when the binding is certain: an overlay showing the author what
      * graphitron filled in has to be the value graphitron would fill in, and there is no such value
      * where two tables answer to one name.
      *

@@ -84,23 +84,23 @@ class LspVocabularyTest {
     @Test
     void structuralInvariant_failsForUnknownInputType() {
         var overlay = Map.<SchemaCoordinate, Behavior>of(
-            new SchemaCoordinate.InputType("Ghost"), new Behavior.CatalogTableBinding()
+            new SchemaCoordinate.InputType("Missing"), new Behavior.CatalogTableBinding()
         );
 
         assertThatThrownBy(() -> LspVocabulary.load(overlay, FIXTURE_SDL))
             .isInstanceOf(LspStartupException.class)
-            .hasMessageContaining("Ghost");
+            .hasMessageContaining("Missing");
     }
 
     @Test
     void structuralInvariant_failsForUnknownInputField() {
         var overlay = Map.<SchemaCoordinate, Behavior>of(
-            new SchemaCoordinate.InputField("DemoRef", "ghostField"), new Behavior.ClassNameBinding()
+            new SchemaCoordinate.InputField("DemoRef", "missingField"), new Behavior.ClassNameBinding()
         );
 
         assertThatThrownBy(() -> LspVocabulary.load(overlay, FIXTURE_SDL))
             .isInstanceOf(LspStartupException.class)
-            .hasMessageContaining("DemoRef.ghostField");
+            .hasMessageContaining("DemoRef.missingField");
     }
 
     @Test

@@ -120,7 +120,7 @@ class CoverageAgentWiringCheckTest {
     @Test
     void run_withDeclaredModuleMissingItsPom_throwsBuildFailure(@TempDir Path dir) throws IOException {
         Files.writeString(dir.resolve("pom.xml"),
-            "<project><modules><module>ghost</module></modules></project>");
+            "<project><modules><module>missing</module></modules></project>");
 
         assertThatThrownBy(() -> CoverageAgentWiringCheck.run(List.of(dir.toString())))
             .isInstanceOf(BuildFailure.class);

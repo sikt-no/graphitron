@@ -109,7 +109,7 @@ class DiagnosticsTest {
     /**
      * The classes the class-name, method and scalar arms name. Each carries {@code foo}, the method
      * the happy paths reference, so a case about a class name does not trip the sibling method arm;
-     * {@code FilmService} carries the two the method cases name and, deliberately, no {@code ghost}.
+     * {@code FilmService} carries the two the method cases name and, deliberately, no {@code missing}.
      */
     private static List<CompletionData.ExternalReference> classCensus() {
         var foo = List.of(StoreFixture.method("foo", "String"));
@@ -287,14 +287,14 @@ class DiagnosticsTest {
         // definition in another file, the diagnostic fires.
         var file = file("""
             extend type Foo {
-                bar: Int @field(name: "GHOST")
+                bar: Int @field(name: "MISSING")
             }
             """);
 
         var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
+        assertThat(diags.get(0).getMessage()).contains("MISSING").contains("column");
     }
 
     @Test
@@ -501,14 +501,14 @@ class DiagnosticsTest {
     void unknownReferenceTableProducesError() {
         var file = file("""
             type Foo @table(name: "film") {
-                bar: Int @reference(path: [{table: "GHOST"}])
+                bar: Int @reference(path: [{table: "MISSING"}])
             }
             """);
 
         var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("GHOST");
+        assertThat(diags.get(0).getMessage()).contains("MISSING");
     }
 
     // ===== @field(name:) on @reference path field validates against terminal table =====
@@ -711,14 +711,14 @@ class DiagnosticsTest {
     void unknownMethodOnKnownClassProducesError() {
         var file = file("""
             type Query {
-                x: Int @service(service: {className: "com.example.FilmService", method: "ghost"})
+                x: Int @service(service: {className: "com.example.FilmService", method: "missing"})
             }
             """);
 
         var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("ghost").contains("FilmService");
+        assertThat(diags.get(0).getMessage()).contains("missing").contains("FilmService");
     }
 
     @Test
@@ -1246,7 +1246,7 @@ class DiagnosticsTest {
         // into per-element leaves and CatalogColumnBinding dispatches on
         // each independently.
         var file = file("""
-            type Foo implements Node @table(name: "film") @node(keyColumns: ["TITLE", "GHOST"]) {
+            type Foo implements Node @table(name: "film") @node(keyColumns: ["TITLE", "MISSING"]) {
                 id: ID
             }
             """);
@@ -1254,7 +1254,7 @@ class DiagnosticsTest {
         var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
+        assertThat(diags.get(0).getMessage()).contains("MISSING").contains("column");
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
     }
 
@@ -1275,14 +1275,14 @@ class DiagnosticsTest {
     void nodeIdTypeName_unknownType_producesError() {
         var file = file("""
             type Query {
-                x(id: ID @nodeId(typeName: "Ghost")): Int
+                x(id: ID @nodeId(typeName: "Missing")): Int
             }
             """);
 
         var diags = compute(file, withNodes, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("Ghost").contains("@node");
+        assertThat(diags.get(0).getMessage()).contains("Missing").contains("@node");
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
     }
 
@@ -1306,14 +1306,14 @@ class DiagnosticsTest {
         // this reference. The projection could not tell those apart and deferred on both.
         var file = file("""
             type Query {
-                x(id: ID @nodeId(typeName: "Ghost")): Int
+                x(id: ID @nodeId(typeName: "Missing")): Int
             }
             """);
 
         var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("Ghost").contains("@node");
+        assertThat(diags.get(0).getMessage()).contains("Missing").contains("@node");
     }
 
     @Test
@@ -1322,7 +1322,7 @@ class DiagnosticsTest {
         // emptiness of a projection: one decision, taken once, for every value arm.
         var file = file("""
             type Query {
-                x(id: ID @nodeId(typeName: "Ghost")): Int
+                x(id: ID @nodeId(typeName: "Missing")): Int
             }
             """);
 

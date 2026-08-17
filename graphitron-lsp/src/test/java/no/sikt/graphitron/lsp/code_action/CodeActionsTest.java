@@ -129,7 +129,7 @@ class CodeActionsTest {
     void fileBulk_unresolvableOnlyMessage() {
         var workspace = workspaceWith("file:///a.graphqls", """
             type Query {
-                a: Int @asConnection(connectionName: "Ghost")
+                a: Int @asConnection(connectionName: "Missing")
             }
             """);
 

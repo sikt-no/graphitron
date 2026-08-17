@@ -14,7 +14,7 @@ All four live under the `graphitron.inlayHints` (and `graphitron.hover`) namespa
 
 | `graphitron.inlayHints.inferredDirectives`
 | `false`
-| Renders a ghost annotation at `@table` / `@field` / `@reference` sites where the author wrote the directive bare, showing the value Graphitron resolved (`name: "customer"`, `path: [{key: "film_language_id_fkey"}]`, etc.), plus a whole-directive `@table(name: "...")` ghost at an `extend type` site whose base declaration carries the binding.
+| Renders a resolution overlay at `@table` / `@field` / `@reference` sites where the author wrote the directive bare, showing the value Graphitron resolved (`name: "customer"`, `path: [{key: "film_language_id_fkey"}]`, etc.), plus a whole-directive `@table(name: "...")` overlay at an `extend type` site whose base declaration carries the binding.
 
 | `graphitron.inlayHints.classification`
 | `false`
@@ -33,6 +33,8 @@ The toggles are independent: a user who wants the round-trip markers but no clas
 
 == Inferred-directive hints
 
+These are _resolution overlays_: text the editor draws beside your schema that is not in the file. Nothing is inserted, and saving does not write it. What an overlay shows is what Graphitron resolved at a site where you wrote nothing.
+
 Renders only when the canonical argument is _absent_ from the SDL source. The LSP asks the live tree-sitter parse tree whether the argument node exists in the buffer; when it does not, it looks up the value Graphitron resolved. Three sites today:
 
 * `@table` without `name:` shows `name: "<table>"`, the table the type is bound to.
@@ -41,11 +43,11 @@ Renders only when the canonical argument is _absent_ from the SDL source. The LS
 
 Adding the canonical argument to the directive removes the hint immediately on next paint, without waiting for a regenerate cycle.
 
-An `extend type` site additionally gets the whole directive as a ghost. A type's binding belongs to the type rather than to the declaration in front of you, so `extend type Film { ... }` in a file that never mentions `@table` is still table-bound, and the hint reads `@table(name: "film")` on the extension's type name. Where the base declaration is what you are looking at, the directive is already there and only its argument can be filled in.
+An `extend type` site additionally gets the whole directive as an overlay. A type's binding belongs to the type rather than to the declaration in front of you, so `extend type Film { ... }` in a file that never mentions `@table` is still table-bound, and the hint reads `@table(name: "film")` on the extension's type name. Where the base declaration is what you are looking at, the directive is already there and only its argument can be filled in.
 
-Not the undirected bindings, though, and a type can have one without writing any directive at all. A directiveless object returned by a field of a `@table` type is a nesting type: its fields resolve against the parent's own row, so `type Inner { title: String }` under `Film.inner` reads columns off `film` without ever naming it. A type produced by a class-returning field, an xref:directives/service.adoc[`@service`] return or an xref:directives/externalField.adoc[`@externalField`] lift, is backed by that POJO, Java record or jOOQ record, and the class threads down to its child types (see xref:directives/record.adoc[`@record`], the directive that used to declare this and is now ignored). Both kinds are bound and neither gets a ghost today, so read a ghost that appears and do not read its absence as "this type is unbound".
+Not the undirected bindings, though, and a type can have one without writing any directive at all. A directiveless object returned by a field of a `@table` type is a nesting type: its fields resolve against the parent's own row, so `type Inner { title: String }` under `Film.inner` reads columns off `film` without ever naming it. A type produced by a class-returning field, an xref:directives/service.adoc[`@service`] return or an xref:directives/externalField.adoc[`@externalField`] lift, is backed by that POJO, Java record or jOOQ record, and the class threads down to its child types (see xref:directives/record.adoc[`@record`], the directive that used to declare this and is now ignored). Both kinds are bound and neither gets an overlay today, so read an overlay that appears and do not read its absence as "this type is unbound".
 
-Where two schemas declare a table of the same name, nothing renders: the binding is ambiguous, so there is no value Graphitron filled in, and showing either candidate would claim a resolution that did not happen. Root operation types never get a `@table` ghost.
+Where two schemas declare a table of the same name, nothing renders: the binding is ambiguous, so there is no value Graphitron filled in, and showing either candidate would claim a resolution that did not happen. Root operation types never get a `@table` overlay.
 
 == Classification hints
 
@@ -53,7 +55,7 @@ Renders the classifier a declaration is claimed by: the directive that named it 
 
 A declaration nothing claims gets no hint. That is the point of the surface: a hint marks where Graphitron has an opinion about a declaration, and a plain SDL object or a field with no binding gets silence rather than a word for "nothing in particular".
 
-One type label is not a classifier. A payload type reached through a `@service` return carries no directive of its own, so nothing claims it, and Graphitron still knows exactly what it is: the Java class the producer hands back. Such a type is labelled with that class's simple name, so `type FilmCard` under a service returning `FilmCardRecord` reads `FilmCardRecord`. The CamelCase is the tell that you are looking at a class rather than a category, and it answers the question worth asking at a payload type. There is no directive to infer here and therefore no ghost: `@record` is deprecated and ignored, so nothing an author could write expresses the binding, and the label takes its place.
+One type label is not a classifier. A payload type reached through a `@service` return carries no directive of its own, so nothing claims it, and Graphitron still knows exactly what it is: the Java class the producer hands back. Such a type is labelled with that class's simple name, so `type FilmCard` under a service returning `FilmCardRecord` reads `FilmCardRecord`. The CamelCase is the tell that you are looking at a class rather than a category, and it answers the question worth asking at a payload type. There is no directive to infer here and therefore no overlay: `@record` is deprecated and ignored, so nothing an author could write expresses the binding, and the label takes its place.
 
 Two producers naming different classes for one type get no label. Graphitron binds neither, and a label showing one would name the class it does not use; hover the type to see which classes disagree.
 

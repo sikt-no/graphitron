@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * on rather than a name-keyed classification the generator pass shipped.
  *
  * <p>Every case runs under an unavailable snapshot, which is the point of the move as much as it is
- * the marker of where the answer comes from: these ghosts now appear in a session that has captured
+ * the marker of where the answer comes from: these overlays now appear in a session that has captured
  * a schema and has no successful generator pass behind it, where before they waited for one.
  *
  * <p>Two silences are deliberately not asserted, because neither is the arm's claim to make. A
@@ -141,7 +141,7 @@ class InferredTableHintsTest {
             }
             """);
         assertThat(labels(file))
-            .as("the whole-directive ghost is for a site with no directive; this one has one")
+            .as("the whole-directive overlay is for a site with no directive; this one has one")
             .containsExactly("name: \"film\"");
     }
 
@@ -159,7 +159,7 @@ class InferredTableHintsTest {
     }
 
     @Test
-    void aRootTypeGetsNoGhost() {
+    void aRootTypeGetsNoOverlay() {
         // Roots classify before any table binding is read, and the relation masks the three names.
         // Without that, every schema's Query would wear an invented @table(name: "query").
         var file = file("""
@@ -191,7 +191,7 @@ class InferredTableHintsTest {
     }
 
     @Test
-    void noGhostsWithoutAStore() {
+    void noOverlaysWithoutAStore() {
         var file = file("""
             type Customer @table {
                 firstName: String
@@ -218,7 +218,7 @@ class InferredTableHintsTest {
         return either.isLeft() ? either.getLeft() : either.getRight().toString();
     }
 
-    /** The inferred-directive toggle alone, so no other arm's label can be mistaken for a ghost. */
+    /** The inferred-directive toggle alone, so no other arm's label can be mistaken for an overlay. */
     private static InlayHintConfig config() {
         return new InlayHintConfig(true, false, false, false);
     }

@@ -229,8 +229,8 @@ class DeclarationDefinitionsTest {
 
     @Test
     void fieldNameUnknownMemberReturnsEmpty() {
-        var file = file("type FilmRecord { ghost: String }");
-        assertThat(compute(file, pointAt(file, 0, "ghost"))).isEmpty();
+        var file = file("type FilmRecord { missing: String }");
+        assertThat(compute(file, pointAt(file, 0, "missing"))).isEmpty();
     }
 
     // ---- Method-backed field name -> bound method ----

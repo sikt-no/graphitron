@@ -26,20 +26,20 @@ class JavaSourceRegionsTest {
 
     @Test
     void codeView_excludesLineCommentContent() {
-        assertThat(joined("int x = 1; // mentions GhostType here"))
-            .contains("int x = 1;").doesNotContain("GhostType");
+        assertThat(joined("int x = 1; // mentions MissingType here"))
+            .contains("int x = 1;").doesNotContain("MissingType");
     }
 
     @Test
     void codeView_excludesBlockCommentAndJavadocContent() {
-        assertThat(joined("/** GhostType orientation. */\nclass Widget {}"))
-            .doesNotContain("GhostType").contains("Widget");
+        assertThat(joined("/** MissingType orientation. */\nclass Widget {}"))
+            .doesNotContain("MissingType").contains("Widget");
     }
 
     @Test
     void codeView_excludesStringAndTextBlockContent() {
-        String source = "String a = \"GhostType\";\nString b = \"\"\"\n  GhostType\n  \"\"\";";
-        assertThat(joined(source)).doesNotContain("GhostType").contains("String a");
+        String source = "String a = \"MissingType\";\nString b = \"\"\"\n  MissingType\n  \"\"\";";
+        assertThat(joined(source)).doesNotContain("MissingType").contains("String a");
     }
 
     @Test

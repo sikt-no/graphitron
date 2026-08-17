@@ -14,7 +14,7 @@ package no.sikt.graphitron.lsp.state;
  *
  * @param inferredDirectives enables inlay hints at {@code @table} / {@code @field} /
  *     {@code @reference} directive sites where the author omitted the canonical argument.
- *     The hint shows the resolved value as a ghost annotation.
+ *     The hint shows the resolved value as a resolution overlay.
  * @param classification enables classification inlay hints on field declarations and
  *     object / interface / input / union type declarations. The label is the classifier
  *     claiming the declaration ({@code SERVICE}, {@code TABLE_COLUMN}, {@code TABLE}, ...)

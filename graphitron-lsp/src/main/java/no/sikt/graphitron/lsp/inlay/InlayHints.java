@@ -44,7 +44,8 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  * <ul>
  *   <li><b>Inferred-directive arm</b>: at {@code @table} / {@code @field} / {@code @reference}
  *       sites where the author omitted the canonical argument ({@code name:} for the first two,
- *       {@code path:} for the third), renders the resolved value as a ghost annotation.</li>
+ *       {@code path:} for the third), renders the resolved value as a resolution overlay: text
+ *       drawn beside the buffer that the buffer does not contain.</li>
  *   <li><b>Classification arm</b>: at a field or type declaration the claim stratum has an
  *       opinion about, renders the classifiers claiming it, read from
  *       {@link ClaimClassifiers}. At a type declaration no claim names, renders instead the class
@@ -96,7 +97,7 @@ public final class InlayHints {
 
     /**
      * Renderer for the present-directive inlay arm: emits the inferred canonical
-     * argument as a ghost annotation on a directive that omitted it. One per
+     * argument as an overlay on a directive that omitted it. One per
      * {@link InferredDirectiveArgs.Entry}, registered by directive name in
      * {@link #INFERRED_RENDERERS}.
      */
@@ -314,22 +315,22 @@ public final class InlayHints {
 
     /**
      * The {@code @table} arm's second pass: a type bound to a table but carrying no {@code @table}
-     * at all gets the whole directive as a ghost, where the first pass only fills in an argument a
+     * at all gets the whole directive as an overlay, where the first pass only fills in an argument a
      * present directive omitted. What it reaches today is the {@code extend type} site, a binding
      * being a property of the type rather than of the declaration in front of the cursor.
      *
      * <p>It does not reach the undirected bindings, and one of those two is still a missing relation
-     * while the other will never be a ghost. A directiveless object reached from a field of a scoped
+     * while the other will never be overlaid. A directiveless object reached from a field of a scoped
      * type resolves its fields against the parent's own row, and nothing states that binding yet, so
-     * read a ghost that appears and do not read its absence as "this type is unbound". A type
+     * read an overlay that appears and do not read its absence as "this type is unbound". A type
      * produced by a class-returning field is the other, and the store answers it now; it gets no
-     * ghost because a ghost renders a directive an author could have written, and no directive
+     * overlay because an overlay renders a directive an author could have written, and no directive
      * carries a backing class any more, {@code @record} being deprecated and ignored. What shows
      * that binding is the classification arm's type label, which is why the label is a class name
      * there rather than a category.
      *
      * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
-     * null. {@code @field} would put a ghost on every column-bound field in the file, and
+     * null. {@code @field} would overlay every column-bound field in the file, and
      * {@code @reference} has no fact to render. Both are decisions about what is worth showing, so
      * a future third arm is a pass someone writes and argues for, not a flag flipped on an entry.
      */
@@ -517,7 +518,7 @@ public final class InlayHints {
     }
 
     private static InlayHint makeHint(FileSnapshot file, Node anchor, String label, InlayHintKind kind) {
-        // Anchor the hint at the end of the anchor node (so the ghost annotation appears
+        // Anchor the hint at the end of the anchor node (so the overlay appears
         // immediately after the directive name or declaration name).
         Position pos = Positions.toLspPosition(file.source(), anchor.getEndByte());
         var hint = new InlayHint(pos, org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(label));

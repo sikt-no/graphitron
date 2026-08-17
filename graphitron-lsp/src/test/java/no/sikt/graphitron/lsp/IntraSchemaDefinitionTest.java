@@ -148,11 +148,11 @@ class IntraSchemaDefinitionTest {
         String uri = "file:///schema.graphqls";
         ws.didOpen(uri, 1, """
             type Query {
-              ghost: Ghost
+              missing: Missing
             }
             """);
 
-        assertThat(compute(ws, uri, "Ghost")).isEmpty();
+        assertThat(compute(ws, uri, "Missing")).isEmpty();
     }
 
     @Test
@@ -336,12 +336,12 @@ class IntraSchemaDefinitionTest {
         String uri = "file:///schema.graphqls";
         ws.didOpen(uri, 1, """
             type Query {
-              ghost: Ghost
+              missing: Missing
             }
             """);
 
         try (var fixture = StoreFixture.of(tmp, "type Query { placeholder: Int }\n")) {
-            assertThat(compute(ws, uri, "Ghost", fixture.handle())).isEmpty();
+            assertThat(compute(ws, uri, "Missing", fixture.handle())).isEmpty();
         }
     }
 
