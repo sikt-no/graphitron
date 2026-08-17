@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a field returning a discriminated table interface"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: interface-union
@@ -441,11 +441,24 @@ Checked, so the implementer does not re-derive it:
 
 ## What shipped, and what is left
 
-The root half is implemented; the child half rides R661, which has since landed.
+Both halves are implemented; nothing of the implementation plan remains.
 
 1. The subselect conversion: shipped at `348f914`.
 2. The seam split: shipped at `0c55288`, its capture-tier lowering pin at `cd46fe9`.
 3. The root lift: shipped at `3201386`.
+4. The child lift: shipped at `3d4c78a`, after R661 landed the batched half it rides. The first
+   review cycle's rework (the retired body pins, the finished LEFT JOIN sweep, the SHA notes
+   here, both non-blocking improvements) shipped at `5d256cd`.
+
+One deviation from the child plan, documented at the site: the windowing extraction
+(`windowedPageTail`) takes a caller-supplied step declaration plus a count topology rather than
+a bare field-list/idx/page parameter triple, because the discriminated binder's gated
+joined-detail joins are follow-on statements reassigning `step`, not a chainable
+expression; the count topology omits those joins, a key-preserving 1:0..1 LEFT JOIN being unable
+to change the count. The fan fixture gained a `fan_owner` parent so the execution tier can walk
+a genuine per-parent page boundary; the `content` seed was deliberately left untouched (its
+counts pin dozens of standing assertions), so the filmContentsConnection pins cover the
+statement count and the cross-table alias while the fan-owner pins cover the boundary walk.
 
 Two things the plan did not anticipate, both settled in commit 3:
 
@@ -460,9 +473,7 @@ Two things the plan did not anticipate, both settled in commit 3:
   author declares the argument themselves. Not a defect of this item; recorded because the
   execution fixture had to work around it.
 
-The child half (implementation group 4) is untouched and stays specified above. Nothing in the
-root work forecloses it: the seam both paginating callers were designed to share is in place, and
-`BatchedRowsFragments.connectionTail` is still the extraction the child arm needs.
+The child half shipped as group 4 above, over exactly the seam the root work left in place.
 
 ## Review feedback (In Review -> Ready, first cycle)
 
