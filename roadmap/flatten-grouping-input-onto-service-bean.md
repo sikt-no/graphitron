@@ -1,7 +1,7 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 3
 theme: service
@@ -57,43 +57,283 @@ a nested `InputBean` leaf). `varighet` does not, and the outcome splits by bean 
   key names no setter, so `varighet` is dropped, `varighetTall` stays null, and nothing in
   the build says so. The silent half is the worse one.
 
-## Why the sockets are already cut
+## Where the sockets already are
+
+Re-measured at the Spec pass. Three of the four notes in the Backlog draft hold; the fourth
+was wrong and the correction is the reason D1 is two carriers wide rather than one.
 
 * `CallSiteExtraction.FieldBinding` carries a single `sdlFieldName`. R336's D1 solved the
   same problem on its own carriers by widening to an ordered access path whose last element
   is the `Map` key and whose earlier elements are the enclosing nested-input field names,
   "adopting the `NestedInputField` representation".
-* `InputBeanInstantiationEmitter` already reserves the arm and refuses it:
-  `case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb)`. Implementing
-  that arm is the emit half.
+* `InputBeanInstantiationEmitter.perFieldValueExpr` reads `raw.get(fb.sdlFieldName())` in
+  every arm. Its `case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb)`
+  arm is *not* the socket: that arm rejects a `NestedInputField` sitting in the `leaf`
+  slot, and a flattened leaf's transform stays `Direct` / `EnumValueOf` /
+  `NodeIdDecodeRecord` exactly as an unflattened one does. The path belongs on the binding,
+  not on the leaf, so the arm stays a throw and the emit half is the `raw.get(...)` root
+  instead. Recorded here because the Backlog draft named the wrong site.
 * `ServiceMethodCallWalker.fieldBindingShape` appends one path segment per level when it
   lowers to `ValueShape`; a flattened leaf needs it to append the group's segments too.
-  `ValueShape.Scalar` already carries a full `ArgPath`, so nothing below the walker changes
-  shape.
 * R336's D4 null-safe parent-`Map` descent, including skip-not-throw for an absent nullable
   group, is the emit idiom to mirror rather than reinvent.
 
+The correction: the draft's claim that "nothing below the walker changes shape" is false.
+`TypeFetcherGenerator.registerBeanHelper` and `convertNestedFieldBindings` rebuild a
+`CallSiteExtraction.FieldBinding` *out of* a `ValueShape.FieldBinding`, reading
+`vfb.sdlFieldName()` as the `Map` key. A path carried only on the classifier's carrier is
+dropped on the way to the emitter for every root `@service` coordinate, which is the
+coordinate the motivating schema uses. `ValueShape.FieldBinding` therefore widens too. This
+is the round-trip R402 exists to delete; see Coordination below.
+
 ## Binding rule
 
-Implicit, no new directive. A nested input-object field binds to a matching Java member
-when one exists (today's behaviour, which `periode` depends on); only when no member
-matches its binding key does the walk descend and hoist the group's leaves into the
-enclosing bean's binding-key index. That keeps every currently-classifying schema binding
-exactly as it does now. The cost to weigh at Spec is that the SDL's meaning becomes a
-function of the Java side, which the column axis never had to face because it has no
-competing interpretation.
+Implicit, no new directive, and the flatten is *directive-gated* so no authored claim is
+ever silently reinterpreted. For a nested input-object field `g` on a bean whose member set
+is known before any field binds:
 
-## Open questions for the spec pass
+1. **A member matches `g`'s binding key.** Bind as today: `g` recurses into a nested
+   `InputBean` leaf. This is what `periode` in the motivating schema depends on, and it wins
+   unconditionally, including when the matched member's type is not a viable bean class (that
+   stays today's rejection rather than becoming a flatten).
+2. **No member matches, and `g` carries neither `@field(name:)` nor `@nodeId`.** Descend:
+   `g`'s own fields are hoisted into the enclosing bean's binding-key index under the access
+   path `["g", <leaf>]`, and each hoisted leaf binds against the enclosing bean's members by
+   the normal rules. Recursive: a hoisted group descends again.
+3. **No member matches, and `g` carries `@field(name:)` or `@nodeId`.** Reject, naming the
+   directive and the member it failed to find. Both directives are authored claims that the
+   field binds to a named Java member; flattening past a claim that does not resolve would
+   turn a typo into silently-different behaviour, which is the failure mode this item exists
+   to remove rather than relocate.
 
-* Whether the JavaBean arm's silent skip should become a diagnostic once flattening exists.
-  A field that matches no member and cannot be flattened is now a strictly better warning
-  candidate than it was, and the arm's partial-by-design contract is what currently makes
-  the failure invisible.
-* Collision handling when a hoisted leaf's binding key already names a bound member, or two
-  groups hoist the same key. The record arm's existing duplicate-key rejection is the
-  natural home; confirm it fires before either arm builds.
-* Rejection parity with `collectJooqBindings`: cyclic nesting (reuse the `ClassifyContext`
-  `expanding` set), list-shaped grouping inputs, and depth limits.
+`@table` on a grouping input is not a gate. It is deprecated and inert, so the type is an
+ordinary grouping input and flattens exactly as its directiveless twin does, mirroring
+R336's `nestedTableInput_flattensLikeItsDirectivelessTwin` decision on the column axis; the
+existing deprecation advisory keeps firing on the nested type.
+
+Paths are **bean-local**, not argument-absolute: a nested bean's helper receives its own
+`Map`, so a path hoisted inside a nested bean is relative to that bean's `raw`. Same scoping
+as `ColumnBinding.path`, which is relative to the record's own input `Map`.
+
+The draft flagged one cost to weigh: that the SDL's meaning becomes a function of the Java
+side. It does, but only for a directiveless nested field that binds to nothing today, so no
+currently-working schema changes meaning. See Behaviour changes for the one exception, which
+is on the JavaBean arm and moves a silent outcome to a loud one.
+
+## D1: an access path on both `FieldBinding` encodings
+
+Replace `sdlFieldName` with an ordered, non-empty `List<String> accessPath` plus a `leaf()`
+accessor returning the last element, on both:
+
+* `CallSiteExtraction.FieldBinding` (the classifier's carrier), and
+* `ValueShape.FieldBinding` (the `ServiceMethodCall` carrier's composite).
+
+Replace rather than add a second component: keeping both invites the emitter reading one and
+the walker the other. Every existing call site that wants the `Map` key calls `leaf()`; a
+top-level binding is a one-element path and every emitted body is byte-identical to today.
+Constructor validation mirrors `ColumnBinding`: non-empty path, no empty elements.
+
+Consumers to update, all of them small: `InputBeanInstantiationEmitter.perFieldValueExpr` /
+`notALeaf`, `ServiceMethodCallWalker.inputBeanToValueShape` /
+`fieldBindingShape`, and `TypeFetcherGenerator.registerBeanHelper` /
+`convertNestedFieldBindings`. The walker folds the whole path onto the `ArgPath`
+(`for (String s : fb.accessPath()) path = path.append(s)`); group segments are never
+list-lifting, because a list-shaped group is rejected in D3, and the leaf's own list-ness
+keeps riding `fb.list()` into the `ValueShape.ListOf` wrap exactly as today.
+
+## D2: build the binding-key index by descent
+
+`InputBeanResolver.buildInputBeanBody` today indexes SDL fields by binding key into
+`Map<String, GraphQLInputObjectField> sdlByBindingKey` before dispatching to `bindRecord` /
+`bindJavaBean`. Widen the index value to carry the access path alongside the field, and fill
+it by a recursive walk applying the three-way rule above. The member set
+(`javaMembersByName`) is already computed before the index is built, so the gate has what it
+needs with no reordering.
+
+Both arms then read the path off the index entry and pass it to the `FieldBinding`
+constructor. Neither arm's invariant changes shape:
+
+* **Record arm.** Direction A (every component binds) now finds hoisted components, which is
+  the whole point: `varighetTall` and `varighettypeId` resolve. Direction B (every SDL field
+  is consumed) is checked against index entries, so a group field never appears as an
+  unconsumed key in its own right; a *hoisted leaf* that names no component still fails
+  direction B, which is correct, because its value would otherwise be dropped on the way to
+  the canonical constructor.
+* **JavaBean arm.** Unchanged and still partial by design: a hoisted leaf whose key names no
+  setter is skipped exactly as a top-level one is.
+
+`bindField` itself does not change. The leaf transform for a hoisted leaf is computed from
+the SDL field and the matched member exactly as before, including the `@nodeId` jOOQ-record
+decode arm and the enum-parity check.
+
+## D3: rejections
+
+Parity with `collectJooqBindings`, adapted where the axis differs. Each is a
+`Rejection.structural` surfacing at validate time, and each names the dotted access path so
+the message points at the SDL the author wrote.
+
+* **Cyclic grouping.** Load-bearing, not cosmetic: `buildInputBean`'s existing guard is a
+  `Set<Class<?>> visited` on the Java axis, and a flattened group has no Java class to add,
+  so an SDL type that reaches itself through directiveless nesting would recurse until the
+  stack dies. Thread the `ClassifyContext` SDL-type-name `expanding` set through the descent,
+  seeded with the bean's own input type, the same second axis `buildJooqRecord` threads.
+* **List-shaped grouping input.** A group that is a list of groups has no flat member to land
+  on. Reject, mirroring the column axis; the message should say to make the field singular
+  rather than suggesting a `List<X>` member, since there is no member at all.
+* **Collision.** The existing duplicate-binding-key rejection in `buildInputBeanBody` is
+  already the right home and already fires before either arm builds. It now also catches a
+  hoisted leaf colliding with a top-level field, and two groups hoisting the same key.
+  Extend its message to dotted paths so `varighet.antall` versus `antall` reads clearly.
+* **Depth.** No limit, matching `collectJooqBindings`. The cycle guard bounds the descent:
+  each level adds a distinct SDL type name to a finite set.
+
+## D4: emit one descent local per group prefix
+
+`InputBeanInstantiationEmitter.buildSingularHelper` declares one typed local per field from
+an expression rooted at `raw`. Keep that shape and change the root. Before the field locals,
+declare one `Map<?, ?>` local per distinct group prefix in first-encounter order:
+
+```java
+Map<?, ?> varighetMap = raw.get("varighet") instanceof Map<?, ?> m ? m : null;
+BigDecimal varighetTall = varighetMap == null ? null : (BigDecimal) varighetMap.get("antall");
+String varighettypeId = varighetMap == null ? null : (String) varighetMap.get("varighettypeId");
+```
+
+`perFieldValueExpr` takes the root local name instead of hardcoding `raw`, so every arm's
+body is unchanged and a depth-1 binding emits byte-identical output. Statement form with
+explicit types and named locals, per the generated-code-is-read-and-debugged principle that
+`buildRecordDecodeHelper` already follows, and one descent per group rather than one per
+sibling leaf. Local names come from the same `camelJoin(prefix) + "Map"` scheme the jOOQ
+emitter uses; confirm at implementation that the collision exposure against a
+same-named bean member is identical to the jOOQ emitter's (a collision is a javac error in
+the consumer's generated sources, so it fails loud, but do not make it worse than the
+precedent).
+
+**The member axis has no omitted-versus-null tri-state.** On the column axis an absent group
+leaves its columns `changed=false`; a bean member has only a value, so an absent, null, or
+non-`Map` group yields `null` for every member hoisted out of it. That is exactly what
+omitting those leaves at the top level of a flat input already does, so no new semantics
+appear, and the graphql-java nested-present-`null` narrowing R336 hit in the execution tier
+is invisible here (both readings produce `null`). Record targets pass those nulls positionally
+to the canonical constructor; a hoisted component declared non-null in SDL is still
+graphql-java's business at the boundary.
+
+## D5: user documentation (first-client check)
+
+New schema shape at `@service`, so the plan carries its own docs draft. Home:
+`docs/manual/how-to/handle-services.adoc`, in the argument-flow section immediately after
+the paragraph on `argMapping` reaching inside an input. Draft, to be transposed to AsciiDoc
+when it moves:
+
+> ### Grouping input fields under a nested input type
+>
+> An input type's fields can be clustered under nested input objects for the client's
+> benefit while the backing Java class stays flat. A nested input field with no matching
+> member on the backing class is treated as a *grouping*: its own fields bind against the
+> backing class as if they had been declared at the top level of the enclosing input.
+>
+> ```graphql
+> input FilmCreateInput {
+>     title:    String!
+>     duration: FilmDurationInput
+> }
+>
+> input FilmDurationInput {
+>     length:     Int
+>     rentalDays: Int
+> }
+> ```
+>
+> ```java
+> public record FilmCreateInput(String title, Integer length, Integer rentalDays) {}
+> ```
+>
+> The client sends `duration: { length: 120 }`; the method receives `length = 120`. The
+> grouping is wire-format ergonomics only and has no effect on the Java side.
+>
+> A nested input field whose name *does* match a member of the backing class keeps binding
+> to that member as a nested object, so adding a matching member is how you opt a group back
+> out of flattening. A group that is absent or null leaves every field under it null, the
+> same as omitting those fields would.
+>
+> Rejected shapes, each named at build time: a grouping input that reaches itself; a
+> list-shaped grouping input (there is nothing for a list of groups to flatten onto); two
+> fields that bind to the same member, whether or not a group is involved; and a nested
+> input field carrying `@field(name:)` or `@nodeId` whose named member does not exist, which
+> is reported as the missing member rather than silently flattened.
+
+If that reads badly at implementation time, the design is wrong and changes before the code
+does.
+
+## Tests
+
+Follow R336's tier split. No generated-body string assertions.
+
+* **Pipeline.** The existing `@service` bean coverage lives in
+  `GraphitronSchemaBuilderTest`'s `RootFieldCase` rows
+  (`SERVICE_MUTATION_FIELD_INPUT_BEAN_*`) and asserts on `ValueShape.FieldBinding`. The two
+  `*_FIELD_RENAMED_*` rows switch from `sdlFieldName` to `leaf()` under D1. Add rows for:
+  flatten onto a record with two-element paths; mixed top-level and hoisted leaves keeping
+  their one- and two-element paths; a matching member still winning over the flatten
+  (`periode`); depth 2; the JavaBean arm hoisting; a hoisted `@nodeId` record member. New
+  record and JavaBean fixtures alongside `TestInputBeanRenamed`.
+* **Pipeline, rejections.** One case per D3 arm plus the directive-gate reject, asserted by
+  message substring, mirroring the four D3 cases in `JooqRecordServiceParamPipelineTest`.
+* **Compilation.** Extend the `graphitron-sakila-example` schema and the
+  `graphitron-sakila-service` bean behind `submitFilmReviewWithDetails` (or a sibling
+  mutation, if reshaping that one loses the existing nested-bean pin) so a real flattened
+  group type-checks against a real consumer record at `<release>17</release>`.
+* **Execution.** Round-trip the flattened group through a real mutation: a present group
+  binding its leaves, an absent group leaving them null, and a matching-member group still
+  arriving as a nested object.
+
+## Behaviour changes and accepted consequences
+
+* **Record arm: reject to accept only.** Every schema this item newly admits fails the build
+  today, on direction A or direction B. The new D3 rejections can only fire on shapes that
+  already fail. There is no record-arm schema that builds today and stops building.
+* **JavaBean arm: one accept-to-reject case, and it is the right direction.** A JavaBean
+  schema where a group's hoisted leaf key collides with a top-level field's key builds today
+  (the group is silently dropped, the top-level field wins) and will fail the build after
+  this change. That is a build break for a schema whose current behaviour is a silent data
+  drop, so it is reported loudly rather than preserved. Name it in the changelog entry.
+* **Bean-helper dedup is keyed by bean class, and flattening widens what that hides.** Two
+  `@service` fields binding one bean class through two SDL input types collapse to one
+  `create<Bean>` helper (`collectTransitively` and `registerBeanHelper` both
+  `putIfAbsent(beanClass, ...)`), so divergent `@field(name:)` mappings already route
+  through the first-seen helper. This is the member-axis twin of the R437 correctness bug,
+  it exists today, and this item neither fixes nor worsens its failure class; it only adds
+  access paths to the set of things that can diverge. Filed as R694.
+
+## Out of scope
+
+* The record arm's totality requirement. A component that no SDL field is meant to populate
+  (a service-filled value) still fails direction A of the bijection; that is a separate gap
+  and deserves its own item if it turns out to matter.
+* `@nodeId` on a bean member typed as a plain `String`, which binds the raw wire id rather
+  than decoding. Orthogonal to nesting, and unchanged by this item.
+* Any change to the jOOQ-record axis, the `@table`-input path, or the graphitron-emitted
+  input record class, which mirrors the SDL and stays SDL-shaped.
+* Re-keying the bean-helper dedup on binding shape (R694).
+* A lint rule for an SDL input field that binds to no member on a JavaBean-target bean
+  (R695). The Backlog draft raised this as an open question; it is answered by deferral,
+  because the specific silent drop this item names is *fixed* here rather than warned about,
+  and what remains is the JavaBean arm's pre-existing partial-by-design contract, whose
+  diagnostic needs its own `LintRule` arm, source locations, and a call on noise against
+  deliberately-partial beans.
+* Reclassifying the grouping input type itself. A flattened group's leaves are bean members
+  and hover should eventually say so; that surface is R337's, and this item consults the
+  enclosing bean's member set only, never the group type's own verdict.
+
+## Coordination with adjacent items
+
+* **R402** deletes the `ValueShape` to synthetic `CallSiteExtraction.InputBean` round-trip
+  that forces D1 to widen two encodings instead of one. Not a dependency in either
+  direction: whichever lands first, the other's diff shrinks. If R402 lands first, D1 is
+  one carrier wide.
+* **R518**'s `argMapping` grouping form is the explicit escape valve for shapes the implicit
+  rule here cannot express (one input's fields scattering across several service params).
+  Complementary, not competing: this item is the convention, that one is the override.
 
 ## Out of scope
 
