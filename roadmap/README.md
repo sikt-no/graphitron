@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | In Review | 2026-08-17 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
-| `R671` | Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check | In Review | 2026-08-17 <sub>created 2026-08-14</sub> | [plan](domain-return-type-placeholders-false-conflict.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Spec | 2026-08-17 | [plan](error-handler-description-overrides-message.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-17 | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
@@ -312,7 +311,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
-- `R671` [**Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check**](domain-return-type-placeholders-false-conflict.md) — In Review, bug
 - `R670` [**Root @lookupKey plus @asConnection reports a @table error the author cannot act on**](root-lookup-connection-diagnostic.md) — Backlog, bug
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
