@@ -61,6 +61,7 @@ public sealed interface ChildField extends OutputField
             case TableField ignored -> SourceShape.Table;
 
             case TableInterfaceField ignored -> SourceShape.Table;
+            case BatchedTableInterfaceField ignored -> SourceShape.Table;
             // Neither service leaf is parent-kind-pure: both are minted on a @table parent and on a
             // class-backed one, so the stored key source is what carries the projection. Its arms
             // are cut on exactly this seam, which makes the derivation total.
@@ -103,6 +104,7 @@ public sealed interface ChildField extends OutputField
             case TableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case BatchedTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case BatchedTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
@@ -377,7 +379,7 @@ public sealed interface ChildField extends OutputField
      */
     sealed interface TableTargetField extends ChildField, SqlGeneratingField
         permits ChildField.TableField, ChildField.BatchedTableField,
-                ChildField.TableInterfaceField,
+                ChildField.TableInterfaceField, ChildField.BatchedTableInterfaceField,
                 ChildField.ServiceTableField {
 
         ReturnTypeRef.TableBoundReturnType returnType();
@@ -565,6 +567,20 @@ public sealed interface ChildField extends OutputField
         }
     }
 
+    /**
+     * A child field returning a single-table discriminated interface, delivered per parent row.
+     * The return type is a {@link GraphitronType.TableInterfaceType}: one shared {@code @table}
+     * with a {@code @discriminate} column routing each row to its participant. The statement is
+     * its own (the discriminated re-projection cannot fold into the parent's SELECT), but it runs
+     * once per parent row, keyed off {@code env.getSource()}.
+     *
+     * <p>Delivery is leaf identity, the same cardinality rule the multi-table
+     * {@link InterfaceField} / {@link BatchedInterfaceField} pair follows: single cardinality
+     * fetches per parent and stays here; list cardinality batches through a DataLoader as
+     * {@link BatchedTableInterfaceField}. The participant precondition the polymorphic sibling
+     * applies has no analogue: a discriminated interface rejects non-table implementors at the
+     * parse boundary, so every participant is table-backed by construction.
+     */
     record TableInterfaceField(
         String parentTypeName,
         String name,
@@ -593,6 +609,87 @@ public sealed interface ChildField extends OutputField
          */
         @Override public List<ColumnRef> parentRowColumns() {
             return ((On.ColumnPairs) ((JoinStep.Hop) joinPath.get(0)).on()).sourceSideColumns();
+        }
+    }
+
+    /**
+     * The DataLoader-batched half of the {@link TableInterfaceField} delivery split: one keyed
+     * re-query over the discriminated base table for the whole batch of parents instead of one
+     * SELECT per parent row. Minted at list cardinality; single cardinality stays on the
+     * unbatched twin.
+     *
+     * <p>Component semantics are {@link TableInterfaceField}'s. The delta is
+     * {@link BatchedTableField}'s, not {@link BatchedInterfaceField}'s, because the key is:
+     * the single FK hop's source side, the same columns the twin reports as its parent-row
+     * demand, derived through the plain batched child's {@code deriveSplitQuerySource}. The
+     * polymorphic sibling keys on the parent's <em>primary key</em> (each participant holds its
+     * own FK back to the parent) and rejects an empty PK for that reason; neither applies here.
+     *
+     * <p>Declines {@link ParentRowDemand} deliberately: the batched arm of
+     * {@code ProjectionCommands.tableTargetContribution} precedes its demand arm and reads
+     * {@link #sourceKey()} through {@link BatchKeyField}, so the demand accessor would never be
+     * reached, and the two answer the same column list anyway. The projection membership census
+     * takes either capability, so {@link BatchKeyField} alone satisfies it.
+     *
+     * <p>The compact constructor pins the batch shape: non-single cardinality (the mint gate),
+     * column-projection key lift off the held parent row, and the {@code @splitQuery} loader
+     * contract ({@link LoaderRegistration.Container#POSITIONAL_LIST} +
+     * {@link LoaderRegistration.Dispatch#LOAD_ONE}), a catalog-FK key being one key per parent
+     * row.
+     */
+    record BatchedTableInterfaceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        String discriminatorColumn,
+        List<String> knownDiscriminatorValues,
+        List<ParticipantRef> participants,
+        List<JoinStep> joinPath,
+        List<WhereFilter> filters,
+        OrderBySpec orderBy,
+        PaginationSpec pagination,
+        SourceKey sourceKey,
+        KeyLift lift,
+        LoaderRegistration loaderRegistration,
+        ParentCorrelation parentCorrelation
+    ) implements TableTargetField, BatchKeyField {
+        public BatchedTableInterfaceField {
+            knownDiscriminatorValues = List.copyOf(knownDiscriminatorValues);
+            participants = List.copyOf(participants);
+            java.util.Objects.requireNonNull(lift, "lift");
+            java.util.Objects.requireNonNull(loaderRegistration, "loaderRegistration");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedTableInterfaceField");
+            ParentCorrelation.checkCarrierInvariant(
+                parentCorrelation, joinPath, "BatchedTableInterfaceField");
+            if (!returnType.wrapper().isList()) {
+                throw new IllegalArgumentException("BatchedTableInterfaceField '" + name
+                    + "': the batched delivery is the non-single cardinality arm; a single "
+                    + "return classifies as the inline twin");
+            }
+            if (!(lift instanceof KeyLift.FkColumns)) {
+                throw new IllegalArgumentException("BatchedTableInterfaceField '" + name
+                    + "': the parent is table-backed by classifier guarantee, so the key is "
+                    + "lifted by column projection (KeyLift.FkColumns); a member-read lift ("
+                    + lift.getClass().getSimpleName() + ") is a class-backed-parent mechanism");
+            }
+            if (loaderRegistration.container() != LoaderRegistration.Container.POSITIONAL_LIST) {
+                throw new IllegalArgumentException("BatchedTableInterfaceField '" + name
+                    + "': the discriminated batched delivery registers a positional-list "
+                    + "DataLoader; no mapped-container source declaration exists on this path");
+            }
+            if (loaderRegistration.dispatch() != LoaderRegistration.Dispatch.LOAD_ONE) {
+                throw new IllegalArgumentException("BatchedTableInterfaceField '" + name
+                    + "': a catalog-FK key is one key per parent row, so the dispatch is "
+                    + "LOAD_ONE; the loadMany contract is an accessor-arity (record-parent) shape");
+            }
+        }
+        /** Structurally none: the classifier routes {@code @lookupKey} only onto table-read leaves. */
+        @Override public LookupResolution lookup() {
+            return LookupResolution.None.INSTANCE;
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
         }
     }
 

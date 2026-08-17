@@ -315,7 +315,15 @@ public final class CatalogBuilder {
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), true, f.lookup().isKeyed())
                     : new FieldClassification.RecordTableTarget(
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), f.lookup().isKeyed());
+            // The delivery split collapses on this view, as the polymorphic pair's does below:
+            // the completion surface exposes the discriminated shape, and inline-vs-batched is
+            // not a fact a completion consumer asks of a coordinate.
             case ChildField.TableInterfaceField f ->
+                new FieldClassification.TableInterface(
+                    targetTableName(f.returnType()),
+                    f.discriminatorColumn(),
+                    participantNames(f.participants()));
+            case ChildField.BatchedTableInterfaceField f ->
                 new FieldClassification.TableInterface(
                     targetTableName(f.returnType()),
                     f.discriminatorColumn(),

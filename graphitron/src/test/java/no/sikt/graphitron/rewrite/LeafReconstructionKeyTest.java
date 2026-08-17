@@ -100,6 +100,8 @@ class LeafReconstructionKeyTest {
             triple("target table (join path)", "batched", "table")),
         Map.entry(ChildField.TableInterfaceField.class,
             triple("target table (join path)", "inline", "single-table discriminated interface")),
+        Map.entry(ChildField.BatchedTableInterfaceField.class,
+            triple("target table (join path)", "batched", "single-table discriminated interface")),
         Map.entry(ChildField.InterfaceField.class,
             triple("participant tables", "inline", "multi-table interface")),
         Map.entry(ChildField.UnionField.class,

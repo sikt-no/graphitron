@@ -84,7 +84,7 @@ class UnifiedEmissionPinsTest {
             .as("Every launcher emit site in generators/ routes through "
                 + "RootLauncherRenderer.render; a count move in either direction is a "
                 + "deliberate edit here")
-            .isEqualTo(7);
+            .isEqualTo(8);
     }
 
     @Test

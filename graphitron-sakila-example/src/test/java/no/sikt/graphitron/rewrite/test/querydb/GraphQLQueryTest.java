@@ -4163,6 +4163,81 @@ class GraphQLQueryTest {
         assertThat(content).isNull();
     }
 
+    // ===== the discriminated interface child, batched =====
+    //
+    // filmContents is the list-cardinality sibling of filmContent above, so it classifies
+    // ChildField.BatchedTableInterfaceField and delivers through a DataLoader. The claim these
+    // cases exist for is a statement count, which no other tier can observe: one child statement
+    // for the whole batch of films, not one per film.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmContents_acrossSeveralParents_runsOneChildStatement() {
+        // Three films in one request: #1 and #2 each have a content row, #3 has none. Unbatched
+        // this arm ran one SELECT per parent; batched it runs one, keyed on the whole batch, and
+        // a parent with no match still gets its (empty) bucket rather than dropping out.
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\", \"3\"]) { filmId filmContents { __typename title } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(3);
+
+        var contentSql = SQL_LOG.stream()
+            .filter(s -> s.contains("from (values") && s.contains("\"public\".\"content\""))
+            .toList();
+        assertThat(contentSql)
+            .as("one batched child statement for all three films; captured: " + SQL_LOG)
+            .hasSize(1);
+
+        var byFilmId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> String.valueOf(f.get("filmId")),
+            f -> (List<Map<String, Object>>) f.get("filmContents")));
+        assertThat(byFilmId.get("1")).extracting(c -> c.get("title"))
+            .containsExactly("ACADEMY DINOSAUR (extended)");
+        assertThat(byFilmId.get("2")).extracting(c -> c.get("title"))
+            .containsExactly("ACE GOLDFINGER (extended)");
+        assertThat(byFilmId.get("3")).as("a parent with no match keeps an empty bucket").isEmpty();
+        assertThat(byFilmId.get("1")).allSatisfy(c ->
+            assertThat(c.get("__typename")).isEqualTo("FilmContent"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmContents_crossTableParticipantField_survivesTheLoaderScatter() {
+        // The re-projection folds FilmContent.rating into the select list as a discriminator-gated
+        // capped subselect aliased "filmcontent_rating", and the participant's per-field fetcher
+        // reads it back by that alias. Under batching the Record arrives from the scatter rather
+        // than from a per-parent fetch, and no classification or delivery-fact tier can see
+        // whether the alias survived that hop.
+        SQL_LOG.clear();
+        Map<String, Object> data = execute("""
+            { filmById(film_id: ["1", "2"]) { filmContents {
+                __typename
+                ... on FilmContent { rating }
+            } } }
+            """);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var contents = films.stream()
+            .flatMap(f -> ((List<Map<String, Object>>) f.get("filmContents")).stream())
+            .toList();
+        assertThat(contents).hasSize(2);
+        assertThat(contents).allSatisfy(c ->
+            assertThat(c.get("rating"))
+                .as("the cross-table alias resolves off the scattered record").isNotNull());
+
+        var contentSql = SQL_LOG.stream()
+            .filter(s -> s.contains("from (values") && s.contains("\"public\".\"content\""))
+            .toList();
+        assertThat(contentSql)
+            .as("captured: " + SQL_LOG)
+            .hasSize(1)
+            .allSatisfy(sql -> assertThat(sql)
+                .as("the rating rides a capped subselect in the batch's select list")
+                .contains("as \"filmcontent_rating\"")
+                .as("and the batch is ordered, so each bucket keeps the scatter's order")
+                .contains("order by"));
+    }
+
     // ===== TableInterfaceType cross-table participant fields =====
     //
     // FilmContent.rating lives on the film table one @reference hop away (FK content.film_id →

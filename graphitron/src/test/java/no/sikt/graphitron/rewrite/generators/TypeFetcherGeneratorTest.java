@@ -1267,11 +1267,11 @@ class TypeFetcherGeneratorTest {
         assertThat(code)
             .as("the cross table is read through a correlated subselect capped at one row, so the "
                 + "hop cannot multiply the statement's rows whatever its cardinality")
-            .contains("org.jooq.impl.DSL.select(f0.RATING)")
+            .contains("org.jooq.impl.DSL.select(ct_f0.RATING)")
             .contains(".limit(1)");
         assertThat(code)
             .as("the subselect correlates on the FK equality (target.eq(source))")
-            .contains("f0.FILM_ID.eq(filmTable.FILM_ID)");
+            .contains("ct_f0.FILM_ID.eq(filmTable.FILM_ID)");
         assertThat(code)
             .as("the WHERE carries the participant's discriminator value, so a row of another "
                 + "participant's type projects NULL exactly as the gated join made it do")
@@ -1293,7 +1293,7 @@ class TypeFetcherGeneratorTest {
         assertThat(code)
             .as("the subselect is projected under the participant alias so the per-field "
                 + "DataFetcher reads it back by name")
-            .contains("fields.add(org.jooq.impl.DSL.field(org.jooq.impl.DSL.select(f0.RATING)")
+            .contains("fields.add(org.jooq.impl.DSL.field(org.jooq.impl.DSL.select(ct_f0.RATING)")
             .contains(".limit(1)).as(\"FilmContent_rating\"))");
     }
 
@@ -1333,7 +1333,7 @@ class TypeFetcherGeneratorTest {
         var code = method(spec, "content").code().toString();
         assertThat(code).contains("env.getSelectionSet().containsAnyOf(\"FilmContent.rating\", "
             + "\"**/FilmContent.rating\")");
-        assertThat(code).contains("org.jooq.impl.DSL.select(f0.RATING)");
+        assertThat(code).contains("org.jooq.impl.DSL.select(ct_f0.RATING)");
         assertThat(code).contains(".limit(1)).as(\"FilmContent_rating\"))");
     }
 

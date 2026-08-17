@@ -147,6 +147,37 @@ class TenantRoutedFetcherPipelineTest {
             .doesNotContain("String.join");
     }
 
+    /**
+     * The discriminated interface child's batched half partitions its loader the same way, and
+     * the assertion is on the emitted <em>name expression</em> rather than on the presence of a
+     * loader: a batch loader resolves one {@code DSLContext} from the environment captured at
+     * loader creation, so a tenant-mixed batch would execute every key against the first key's
+     * tenant and serve one tenant's rows to another. No verdict-level fact can see that, and the
+     * name is passed per emission site rather than structurally forced, so this is the check.
+     */
+    @Test
+    void inheritedBatchedDiscriminatedInterfaceChildPartitionsItsLoaderNamePerTenant() {
+        var schema = multiTenant("""
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+                title: String @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+                title: String @field(name: "TITLE")
+            }
+            type Film @table(name: "film") {
+                title: String
+                contents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
+            }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertThat(render(schema, "FilmFetchers", "contents"))
+            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env);")
+            .doesNotContain("String.join");
+    }
+
     @Test
     void untenantedBatchedChildKeepsTheBarePathNameThroughTheSharedSeam() {
         var schema = multiTenant("""

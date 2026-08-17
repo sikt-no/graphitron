@@ -170,6 +170,7 @@ public final class LauncherCommands {
             Map.entry(LaunchSource.KeyedLookup.class, Invocation.Direct.class),
             Map.entry(LaunchSource.CorrelatedChain.class, Invocation.Batched.class),
             Map.entry(LaunchSource.CorrelatedLookupChain.class, Invocation.Batched.class),
+            Map.entry(LaunchSource.DiscriminatedCorrelatedChain.class, Invocation.Batched.class),
             Map.entry(LaunchSource.PivotAggregate.class, Invocation.Batched.class),
             Map.entry(LaunchSource.ServiceCall.class, Invocation.Batched.class),
             Map.entry(LaunchSource.ServiceTableLift.class, Invocation.Batched.class),
@@ -252,6 +253,9 @@ public final class LauncherCommands {
                     : batchedRow(btf, schema, conditions, units);
             }
             case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
+            case ChildField.BatchedTableInterfaceField btif -> batchedInterfaceChildRow(btif,
+                schema.joinedTableReprojectionOf(btif.returnType().returnTypeName()),
+                whereOf(btif.parentTypeName(), btif.name(), conditions), units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
                 + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
@@ -440,6 +444,12 @@ public final class LauncherCommands {
                         : batchedRow(btf, glue, new TenantStrategy.Single(), units);
                 }
                 case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
+                // The residence split is a classified-schema fact, the root interface arm's
+                // fallback: no base slice, no detail fields.
+                case ChildField.BatchedTableInterfaceField btif -> batchedInterfaceChildRow(btif,
+                    no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
+                    glueFromFilters(btif.parentTypeName(), btif.name(), btif.filters(), units),
+                    units);
                 case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
                 case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
                 default -> throw new IllegalStateException(
@@ -700,6 +710,41 @@ public final class LauncherCommands {
             new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
             tenancy,
             batchedResultOf(btf, units));
+    }
+
+    /**
+     * A batched discriminated-interface child's row: the plain batched child's delivery and
+     * topology facts with the root interface arm's source payload dropped in, so the two halves
+     * each have one derivation. Always single-tenant at the strategy level (the fan-out ladder
+     * rejects {@code @tenantFanOut} on interface-typed fields); the per-tenant partitioning this
+     * coordinate does need rides the loader <em>name</em>, which the entry point derives through
+     * the tenancy binding, not this row.
+     *
+     * <p>Never a connection: the classifier rejects {@code @asConnection} on this arm ahead of
+     * the mint, so the result is the list shape, carrying the coordinate's ordering. A batched
+     * list orders globally and the {@code __idx__} scatter preserves relative order inside each
+     * parent's bucket, so the ordering the unbatched twin applies per parent survives the loader
+     * boundary unchanged.
+     */
+    private static LauncherCommand batchedInterfaceChildRow(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField btif,
+            no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
+            GlueCall where, GeneratedUnits units) {
+        return new LauncherCommand(
+            units.rowsMethod(btif.parentTypeName(), btif.name()),
+            FieldCoordinates.coordinates(btif.parentTypeName(), btif.name()),
+            new LaunchSource.DiscriminatedCorrelatedChain(
+                new LaunchSource.DiscriminatedTable(btif.returnType().table(),
+                    btif.discriminatorColumn(), btif.knownDiscriminatorValues(),
+                    reprojection.baseSlice(),
+                    discriminatedBranches(btif.participants(), btif.discriminatorColumn(),
+                        reprojection, units)),
+                btif.joinPath(), btif.parentCorrelation()),
+            where,
+            new Invocation.Batched(btif.sourceKey(), btif.loaderRegistration()),
+            new TenantStrategy.Single(),
+            new ResultShape.RecordList(
+                orderingOf(btif.orderBy(), btif.parentTypeName(), btif.name(), units)));
     }
 
     /**

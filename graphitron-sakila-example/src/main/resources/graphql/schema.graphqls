@@ -1863,6 +1863,12 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # content.film_id FK links a Content entry back to its Film. The generator emits a
     # per-parent fetcher that conditions on the FK and projects the discriminator column.
     filmContent: Content @reference(path: [{key: "content_film_id_fkey"}])
+    # The batched half of the same arm: list cardinality classifies
+    # ChildField.BatchedTableInterfaceField, so the discriminated re-projection runs once for the
+    # whole batch of films instead of once per film. @defaultOrder makes the batch statement's
+    # ORDER BY observable; the __idx__ scatter preserves it inside each film's bucket.
+    filmContents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
+        @defaultOrder(primaryKey: true)
     # Same-table nesting: FilmDetailsForMethod is a plain object child with no boundary directive,
     # so it stays bound to this film row (a NestingField) and its columns project off the parent
     # film record.

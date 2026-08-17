@@ -34,6 +34,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *BatchedInterfaceField*: A list- or connection-cardinality child field returning a multi-table
 * *BatchedPivotField*: The batched (`+@splitQuery+`) `+@pivot+` leaf: the same projection as
 * *BatchedTableField*: A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
+* *BatchedTableInterfaceField*: The DataLoader-batched half of the `+TableInterfaceField+` delivery split: one keyed
 * *BatchedUnionField*: A list- or connection-cardinality child field returning a multi-table
 * *ColumnBackedField*: A column-backed output carrier on a table-backed parent: the field's value is produced
 * *ColumnBackedReferenceField*: A column-backed output carrier on a table-backed parent reached through a
@@ -51,15 +52,16 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *SingleRecordIdField*: The single data field on an `+@service+` source-record carrier: an ID-typed scalar
 * *SingleRecordIdFieldFromReturning*: The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
 * *TableField*
-* *TableInterfaceField*
+* *TableInterfaceField*: A child field returning a `+GraphitronType.TableInterfaceType+` (`+@table+` +
 * *UnionField*: A single-cardinality child field returning a multi-table
 
 === InputField
 
 * *ColumnBackedField*: An input field successfully resolved to one or more SQL columns on the consuming
 * *ColumnBackedReferenceField*: An input field that uses `+@reference+` (or an
+* *ConditionOwnedField*: Input field whose explicit `+@condition(override: true)+` method owns the WHERE
 * *NestingField*: An input field whose GraphQL type is itself an input
-* *UnboundField*: Input field that does not bind to a SQL column. The defining property is the absence of a
+* *UnboundField*: Input field that does not bind to a SQL column: the classifier looked
 
 === GraphitronType
 

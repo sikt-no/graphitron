@@ -56,7 +56,7 @@ public final class BatchedRowsFragments {
      * classification-side emission); it is ignored under fanned tenancy, whose {@code dsl} is
      * the scatter lambda's parameter.
      */
-    static CodeBlock body(LauncherCommand row, LaunchSource.Correlated chain,
+    static CodeBlock body(LauncherCommand row, LaunchSource.Correlated.Projected chain,
             CodeBlock dslDeclaration, no.sikt.graphitron.command.CarrierDsl carrierDsl,
             ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
@@ -218,6 +218,71 @@ public final class BatchedRowsFragments {
     }
 
     /**
+     * The whole rows-method body for a batched discriminated-interface child: the correlated
+     * arms' framing, prelude and topology (the parent-input VALUES anchor, the step-0 attach to
+     * the base table, the WHERE fold) with the participant-driven select list of
+     * {@link DiscriminatedTableFragments} in place of one unit's {@code $project}.
+     *
+     * <p>The composition order is what the two fragment families jointly require. The WHERE fold
+     * is hoisted into the {@code condition} local first, because the assembly's discriminator
+     * restriction is source-entailed and ANDs itself into that local rather than riding the
+     * command's WHERE slot. Then the projection half runs, declaring the {@code fields} set,
+     * the detail aliases and the gated cross-table subselects, all addressed against the
+     * chain's terminal alias (the base table's local). The {@code __idx__} scatter column joins
+     * that set, so no {@code alwaysProject} column list is threaded through: the scatter groups
+     * by the parent-input index, never by a projected child column.
+     *
+     * <p>The ordering is the coordinate's own, applied to the whole batch. One global ORDER BY
+     * plus the {@code __idx__} scatter reproduces the unbatched twin's per-parent ordering,
+     * because the scatter appends rows to their key's bucket in fetch order.
+     */
+    static CodeBlock discriminatedBody(LauncherCommand row,
+            LaunchSource.DiscriminatedCorrelatedChain chain, CodeBlock dslDeclaration,
+            ArgPathHelperRegistry argHelpers) {
+        var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
+        var list = (no.sikt.graphitron.command.ResultShape.RecordList) row.result();
+        String fieldName = row.coordinate().getFieldName();
+        var body = CodeBlock.builder();
+
+        body.beginControlFlow("if (keys.isEmpty())");
+        body.addStatement("return $T.of()", LIST_CN);
+        body.endControlFlow();
+        body.add(dslDeclaration);
+
+        var prelude = prelude(body, fieldName, batched.sourceKey(), chain, argHelpers);
+        String baseLocal = prelude.terminalAlias();
+
+        body.addStatement("$T condition = $L", ClassName.get("org.jooq", "Condition"),
+            whereCondition(row, chain, prelude));
+        body.add(DiscriminatedTableFragments.projection(
+            chain.discriminated(), List.of(), baseLocal));
+        body.addStatement("$L.add(parentInput.field(0, $T.class).as($S))",
+            DiscriminatedTableFragments.FIELDS_LOCAL, Integer.class, IDX_COLUMN);
+
+        var step = CodeBlock.builder();
+        step.add("$T step = dsl\n", ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "SelectJoinStep"), RECORD));
+        step.indent();
+        step.add(".select(new $T<>($L))\n", ARRAY_LIST, DiscriminatedTableFragments.FIELDS_LOCAL);
+        fromBridgeAndParentJoin(step, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
+            chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(),
+            prelude.joinOnParentCols());
+        step.unindent();
+        step.add(";\n");
+        body.add(step.build());
+        body.add(DiscriminatedTableFragments.joinedDetailJoins(chain.discriminated(), baseLocal));
+
+        boolean ordered = list.ordering() != null;
+        if (ordered) {
+            body.add(OrderingBlock.declareSortView(list.ordering(), baseLocal));
+        }
+        body.addStatement("$T<$T> flat = step.where(condition)$L.fetch()", RESULT, RECORD,
+            ordered ? ".orderBy(orderBy)" : "");
+        body.addStatement("return scatterByIdx(flat, keys.size())");
+        return body.build();
+    }
+
+    /**
      * The per-key element view of the batched payload, the {@code V} the entry point's
      * DataLoader resolves each key to: the scatter's marker-bearing {@code List<Object>}
      * element list under fanned tenancy, the connection carrier (its ref minted on the row)
@@ -256,7 +321,7 @@ public final class BatchedRowsFragments {
      * scatter call's trailing {@code dsl} rides the run's carrier-routing fact.
      */
     private static void connectionTail(CodeBlock.Builder body, LauncherCommand row,
-            LaunchSource.Correlated chain, PreludeBindings prelude,
+            LaunchSource.Correlated.Projected chain, PreludeBindings prelude,
             no.sikt.graphitron.command.ResultShape.Connection conn,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         var helperClass = className(conn.helper());

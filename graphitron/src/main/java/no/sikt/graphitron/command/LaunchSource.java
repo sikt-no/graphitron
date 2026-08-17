@@ -55,19 +55,33 @@ public sealed interface LaunchSource {
 
     /**
      * The correlated-chain capability shared by the batched child arms: the terminal
-     * {@link #table}, its {@link #projection} unit, the hop chain and the step-0
-     * {@link #correlation}. The batched renderer's prelude, topology and WHERE fold read this
-     * capability; the arms fork only where the SQL genuinely differs (the lookup sibling's
-     * second VALUES join).
+     * {@link #table}, the hop chain and the step-0 {@link #correlation}. Exactly the topology
+     * the batched renderer's prelude, parent-input attach and WHERE fold read; the arms fork
+     * only where the SQL genuinely differs (the lookup sibling's second VALUES join, the
+     * discriminated arm's participant-driven select list).
+     *
+     * <p>The select list is deliberately <em>not</em> on this capability. Two arms project one
+     * unit's {@code $project} and declare it as a component; the discriminated arm has no
+     * single projection unit at all (the same fact {@link DiscriminatedTable} states), so a
+     * {@code projection()} member here would have no answer on a third of the population.
      */
-    sealed interface Correlated extends LaunchSource permits CorrelatedChain, CorrelatedLookupChain {
+    sealed interface Correlated extends LaunchSource
+            permits Correlated.Projected, DiscriminatedCorrelatedChain {
         TableRef table();
-
-        UnitRef projection();
 
         List<JoinStep> joinPath();
 
         no.sikt.graphitron.rewrite.model.ParentCorrelation correlation();
+
+        /**
+         * The two correlated arms whose select list is one unit's {@code $project} over the
+         * terminal alias. The intermediate seal is what keeps {@link #projection()} total where
+         * it is declared instead of unanswerable on the discriminated sibling.
+         */
+        sealed interface Projected extends Correlated
+                permits CorrelatedChain, CorrelatedLookupChain {
+            UnitRef projection();
+        }
     }
 
     /**
@@ -81,7 +95,8 @@ public sealed interface LaunchSource {
      * reads, one derivation per fact.
      */
     record CorrelatedChain(TableRef table, UnitRef projection, List<JoinStep> joinPath,
-            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation) implements Correlated {
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation)
+            implements Correlated.Projected {
         public CorrelatedChain {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(projection, "projection");
@@ -103,7 +118,8 @@ public sealed interface LaunchSource {
      */
     record CorrelatedLookupChain(TableRef table, UnitRef projection, List<JoinStep> joinPath,
             no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
-            LookupMapping.ColumnMapping mapping, UnitMethodRef inputRows) implements Correlated {
+            LookupMapping.ColumnMapping mapping, UnitMethodRef inputRows)
+            implements Correlated.Projected {
         public CorrelatedLookupChain {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(projection, "projection");
@@ -111,6 +127,33 @@ public sealed interface LaunchSource {
             Objects.requireNonNull(correlation, "correlation");
             Objects.requireNonNull(mapping, "mapping");
             Objects.requireNonNull(inputRows, "inputRows");
+        }
+    }
+
+    /**
+     * A batched child returning a single-table discriminated interface: {@link CorrelatedChain}'s
+     * topology (the parent-input VALUES anchor, the step-0 attach, the forward hops) with the
+     * {@link #discriminated} arm's participant-driven select list in place of one unit's
+     * {@code $project}, borrowed whole the way {@link DiscriminatedReentry} borrows it. The two
+     * halves are orthogonal, which is why the arm composes rather than duplicates: the batch
+     * grain never reaches the select list (every participant scalar rides it as a capped
+     * correlated subselect against the base row, every join it emits is the joined-detail
+     * 1:0..1 hop), and the discriminator restriction never reaches the topology.
+     *
+     * <p>{@link #table()} answers the discriminated base table, the terminal the chain's single
+     * FK hop lands on and the local the assembly addresses.
+     */
+    record DiscriminatedCorrelatedChain(DiscriminatedTable discriminated, List<JoinStep> joinPath,
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation) implements Correlated {
+        public DiscriminatedCorrelatedChain {
+            Objects.requireNonNull(discriminated, "discriminated");
+            joinPath = List.copyOf(joinPath);
+            Objects.requireNonNull(correlation, "correlation");
+        }
+
+        @Override
+        public TableRef table() {
+            return discriminated().table();
         }
     }
 

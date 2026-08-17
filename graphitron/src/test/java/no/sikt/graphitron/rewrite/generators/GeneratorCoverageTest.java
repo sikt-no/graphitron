@@ -84,6 +84,7 @@ public class GeneratorCoverageTest {
                 ChildField.ComputedField.class, ChildField.BatchedPivotField.class,
                 ChildField.BatchedTableField.class, ChildField.ServiceTableField.class,
                 ChildField.ServiceRecordField.class, ChildField.TableInterfaceField.class,
+                ChildField.BatchedTableInterfaceField.class,
                 ChildField.InterfaceField.class, ChildField.UnionField.class,
                 ChildField.BatchedInterfaceField.class, ChildField.BatchedUnionField.class);
 

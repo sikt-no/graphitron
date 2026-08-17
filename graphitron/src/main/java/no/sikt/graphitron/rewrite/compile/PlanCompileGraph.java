@@ -417,6 +417,8 @@ public final class PlanCompileGraph {
                     precise(owner, keyed.projection());
                     precise(owner, keyed.inputRows().owner());
                 }
+                case LaunchSource.DiscriminatedCorrelatedChain chain ->
+                    addDiscriminatedEdges(owner, chain.discriminated());
                 case LaunchSource.DiscriminatedTable discriminated ->
                     addDiscriminatedEdges(owner, discriminated);
                 case LaunchSource.ProjectedReentry reentry -> precise(owner, reentry.projection());

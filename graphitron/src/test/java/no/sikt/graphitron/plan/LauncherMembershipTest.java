@@ -32,8 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LauncherMembershipTest {
 
     // Every launch family in one fixture: the four root catalog shapes (plain table, routine
-    // chain, discriminated interface, keyed lookup), the three batched child shapes (plain
-    // split, split lookup at list-per-key cardinality, split pivot), both @service child kinds
+    // chain, discriminated interface, keyed lookup), the four batched child shapes (plain
+    // split, split lookup at list-per-key cardinality, split pivot, discriminated interface at
+    // list cardinality), both @service child kinds
     // (table-returning and scalar), and all four reentry-carrying DML return arms. The encoded
     // DELETE is the deliberate non-member witness: present in the model, no row.
     private static final String SDL = """
@@ -72,6 +73,7 @@ class LauncherMembershipTest {
             {key: "film_actor_actor_id_fkey"}
           ])
           languages: [Language!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+          contents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
         }
         input FilmInput { title: String }
         input FilmKeyInput { filmId: Int! @field(name: "film_id") }
@@ -91,10 +93,10 @@ class LauncherMembershipTest {
         }
         """;
 
-    /** The 13 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
+    /** The 14 minting coordinates the fixture exercises, pinned so the fixture stays honest. */
     private static final List<String> EXPECTED_COVERED = List.of(
         "Query.films", "Query.filmById", "Query.content", "Query.tilganger",
-        "Film.titleTextsSplit", "Film.actorsSplit", "Film.languages",
+        "Film.titleTextsSplit", "Film.actorsSplit", "Film.languages", "Film.contents",
         "Language.films", "Language.rank",
         "Mutation.createFilm", "Mutation.createFilms",
         "Mutation.createContent", "Mutation.createContents");
@@ -201,7 +203,7 @@ class LauncherMembershipTest {
             .toList();
         assertThat(expected)
             .as("the fixture must exercise every non-DML launch family member")
-            .hasSize(9);
+            .hasSize(10);
         assertThat(relation.rows())
             .extracting(r -> r.coordinate().getTypeName() + "." + r.coordinate().getFieldName())
             .containsExactlyInAnyOrderElementsOf(expected);

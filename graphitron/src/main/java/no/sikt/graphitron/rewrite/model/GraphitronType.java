@@ -203,7 +203,15 @@ public sealed interface GraphitronType
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
      * {@link UnclassifiedType}).
      *
-     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type. Unbound participants (e.g. {@code @error} types) are recorded as {@link ParticipantRef.Unbound}.
+     * <p>{@code participants} holds one {@link ParticipantRef} per implementing type, and every
+     * one of them is table-backed: {@code TypeBuilder.buildParticipantList}'s discriminated arm
+     * errors on a classified non-table implementor and its fall-through errors on a directiveless
+     * one, so {@link ParticipantRef.Unbound} is unreachable here (unlike on the directiveless
+     * {@link InterfaceType} / {@link UnionType} siblings, where {@code @error} and nesting members
+     * do land there). The arm covers both table-backed shapes: a participant whose data lives on
+     * the shared base is {@link ParticipantRef.TableBound}, one declaring its own detail
+     * {@code @table} is {@link ParticipantRef.JoinedTableBound}, so consumers that mean "every
+     * participant is table-backed" must not narrow to the former alone.
      */
     record TableInterfaceType(
         String name,

@@ -40,9 +40,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * list, {@code Address.occupantsConnection} with the ranked pages envelope,
  * {@code OccupantsBatchPayload.occupants} on an accessor-many record parent, the
  * {@code loader.loadMany} dispatch; each is the stage-1 narrow UNION ALL over the participant
- * tables plus per-typename stage-2 VALUES-join re-projections). Seed cardinalities keep the
- * VALUES row counts stable: two {@code split_parent} rows, one customer key, one or two film
- * keys per pin, film 1's two seeded cast members, and the occupants fixtures' seeded
+ * tables plus per-typename stage-2 VALUES-join re-projections), and the batched discriminated
+ * interface child ({@code Film.filmContents}, the participant-driven re-projection composed over
+ * that same parent-input anchor: the {@code __discriminator__} routing alias, the deduped
+ * per-branch {@code $project}, the known-value {@code IN} restriction, and the batch-wide
+ * {@code ORDER BY} whose relative order each parent's scatter bucket inherits). Seed cardinalities
+ * keep the VALUES row counts stable: two {@code split_parent} rows, one customer key, one or two
+ * film keys per pin, film 1's two seeded cast members, and the occupants fixtures' seeded
  * customer/staff address links.
  */
 @ExecutionTier
@@ -102,6 +106,29 @@ class BatchedChildSqlBaselineTest {
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"parent_code\") "
                     + "join \"public\".\"split_parent_tag\" as \"tags_s0\" "
                     + "on \"tags_s0\".\"parent_code\" = \"parentinput\".\"parent_code\"");
+    }
+
+    @Test
+    void discriminatedInterfaceBatchedChild_reprojectionOverTheParentInputAnchor() {
+        execute("{ filmById(film_id: [\"1\", \"2\"]) { filmContents { __typename title } } }");
+        assertThat(SQL_LOG)
+            .as("batched discriminated interface child: the participant-driven re-projection "
+                + "(the routing discriminator alias, each branch's $project, the known-value IN "
+                + "restriction) composed over the plain batched child's parent-input VALUES "
+                + "anchor, one statement for the whole batch of films")
+            .containsExactly(
+                "select \"public\".\"film\".\"film_id\", \"public\".\"film\".\"title\", "
+                    + "\"filmbyidinput\".\"idx\" as \"__idx__\" "
+                    + "from \"public\".\"film\" "
+                    + "join (values (0, ?), (1, ?)) as \"filmbyidinput\" (\"idx\", \"film_id\") "
+                    + "using (\"film_id\")",
+                "select \"filmcontents_c0\".\"content_type\" as \"__discriminator__\", "
+                    + "\"filmcontents_c0\".\"title\", \"parentinput\".\"idx\" as \"__idx__\" "
+                    + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
+                    + "join \"public\".\"content\" as \"filmcontents_c0\" "
+                    + "on \"filmcontents_c0\".\"film_id\" = \"parentinput\".\"film_id\" "
+                    + "where \"filmcontents_c0\".\"content_type\" in (?, ?) "
+                    + "order by \"filmcontents_c0\".\"content_id\" asc");
     }
 
     @Test

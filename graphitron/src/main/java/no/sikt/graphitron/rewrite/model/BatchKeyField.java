@@ -9,9 +9,10 @@ package no.sikt.graphitron.rewrite.model;
  * {@link ChildField.BatchedTableField}, lookup-keyed or not (both
  * source shapes; the {@code @sourceRow} DTO-parent shape dissolves onto the former's
  * Record arm), {@link ChildField.BatchedPivotField},
- * {@link ChildField.ServiceTableField}, {@link ChildField.ServiceRecordField}, and the
+ * {@link ChildField.ServiceTableField}, {@link ChildField.ServiceRecordField}, the
  * batched polymorphic pair {@link ChildField.BatchedInterfaceField} /
- * {@link ChildField.BatchedUnionField}. The "all" is enforced as a biconditional by the
+ * {@link ChildField.BatchedUnionField}, and the discriminated interface child's batched half
+ * {@link ChildField.BatchedTableInterfaceField}. The "all" is enforced as a biconditional by the
  * projection membership census: a {@link ChildField} leaf declares a
  * {@link LoaderRegistration} record component iff it implements this interface.
  *

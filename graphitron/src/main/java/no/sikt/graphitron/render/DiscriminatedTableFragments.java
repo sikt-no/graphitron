@@ -77,6 +77,15 @@ public final class DiscriminatedTableFragments {
     public static final String FIELDS_LOCAL = "fields";
 
     /**
+     * Namespace prefix for the Java locals a cross-table term's hop aliases bind. The alias
+     * scheme ({@code PathFragments.generateAliases}) emits a lowercase letter run plus the hop
+     * index and never an underscore, so a prefixed local cannot collide with one; the projected
+     * SQL alias keeps the bare token. See {@link #crossTableProjections} for why the separation is
+     * load-bearing.
+     */
+    private static final String CROSS_TABLE_LOCAL_PREFIX = "ct_";
+
+    /**
      * The whole assembly, ending with {@code step} joined and ready for the caller's terminal:
      * {@link #projection} composed with {@link #joinedStep} over the populated field list. A
      * caller that must observe the field list before the statement is composed calls the two
@@ -137,8 +146,20 @@ public final class DiscriminatedTableFragments {
         return CodeBlock.builder()
             .addStatement("$T step = dsl.select($L).from($L)",
                 selectJoinStepOfRecord, selectExpression, tableLocal)
-            .add(joinedDetailJoinChain(source, tableLocal))
+            .add(joinedDetailJoins(source, tableLocal))
             .build();
+    }
+
+    /**
+     * The join half of {@link #joinedStep} alone, for a caller whose FROM clause is not the base
+     * table: the batched child anchors on the parent-input VALUES derived table and reaches the
+     * base through the correlated chain's step-0 attach, so it composes its own {@code step}
+     * declaration and appends this. Precondition: a {@code step} local of type
+     * {@code SelectJoinStep<Record>} is in scope, and {@link #projection} has run (it declares
+     * the detail aliases these arms test).
+     */
+    public static CodeBlock joinedDetailJoins(LaunchSource.DiscriminatedTable source, String tableLocal) {
+        return joinedDetailJoinChain(source, tableLocal);
     }
 
     /**
@@ -236,17 +257,24 @@ public final class DiscriminatedTableFragments {
             for (var ct : single.crossTableTerms()) {
                 var term = ct.term();
                 var aliases = PathFragments.generateAliases(term.path());
+                // The Java locals carry a namespace prefix the alias scheme cannot produce (it
+                // emits a lowercase letter run followed by the hop index, never an underscore).
+                // The projected SQL alias keeps the bare token: the batched host declares its
+                // base-table local from the same scheme, and Java forbids an inner block from
+                // shadowing an enclosing local, so an unprefixed hop local would fail to compile
+                // whenever the hop's target and the discriminated base share a first letter.
+                var locals = aliases.stream().map(a -> CROSS_TABLE_LOCAL_PREFIX + a).toList();
                 b.beginControlFlow("if ($L)",
                     typeConditionedGate(single.participant().typeName(), ct.fieldName()));
                 for (int i = 0; i < term.path().size(); i++) {
                     var target = ((no.sikt.graphitron.rewrite.model.JoinStep.HasTargetTable)
                         term.path().get(i)).targetTable();
                     b.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                        target.tableClass(), aliases.get(i), target.constantsClass(),
+                        target.tableClass(), locals.get(i), target.constantsClass(),
                         target.javaFieldName(), tableLocal, "_" + aliases.get(i));
                 }
                 b.addStatement("fields.add($T.field($L).as($S))",
-                    DSL, PathFragments.scalarInnerSelect(term, aliases, tableLocal), term.asName());
+                    DSL, PathFragments.scalarInnerSelect(term, locals, tableLocal), term.asName());
                 b.endControlFlow();
             }
         }

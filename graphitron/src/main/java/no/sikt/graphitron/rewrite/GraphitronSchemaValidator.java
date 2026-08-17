@@ -424,6 +424,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f      -> validateBatchedTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField f -> validateBatchedTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField f   -> validateBatchedInterfaceField(f, errors);
@@ -1067,6 +1068,18 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateTableInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField field, List<ValidationError> errors) {
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+    }
+    /**
+     * The batched twin's checks are the unbatched one's: the same authored {@code @reference}
+     * path and the same cardinality surface. The batch shape itself (list-only mint, the key
+     * lift, the loader contract) is pinned on the leaf's compact constructor, so nothing an
+     * author writes can reach a violation of it.
+     */
+    private void validateBatchedTableInterfaceField(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField field,
+            List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }

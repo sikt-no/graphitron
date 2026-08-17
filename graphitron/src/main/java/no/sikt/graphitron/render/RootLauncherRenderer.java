@@ -136,7 +136,12 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain, argHelpers));
-            case LaunchSource.Correlated chain ->
+            // Ahead of the Correlated arm below, which its sibling seal dominates: the topology
+            // is shared, only the select list forks.
+            case LaunchSource.DiscriminatedCorrelatedChain chain ->
+                builder.addCode(BatchedRowsFragments.discriminatedBody(row, chain,
+                    batchedDslDeclaration, argHelpers));
+            case LaunchSource.Correlated.Projected chain ->
                 builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration, carrierDsl, argHelpers));
             case LaunchSource.PivotAggregate pivot ->
                 builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration, argHelpers));
@@ -555,19 +560,7 @@ public final class RootLauncherRenderer {
 
     /** The single/list shapes' sort-view-only ordering statement. */
     private static CodeBlock orderByStatement(Ordering ordering, String tableLocal) {
-        return switch (ordering) {
-            case Ordering.Columns columns -> CodeBlock.builder()
-                .addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST,
-                    OrderByFragments.fixedSortParts(columns.spec(), tableLocal))
-                .build();
-            // The helper is a same-class private static (launcher and helper share the fetchers
-            // class by the naming vocabulary), so the call is unqualified, matching the entry
-            // points that call it today.
-            case Ordering.Helper helper -> CodeBlock.builder()
-                .addStatement("$T orderBy = $L(env, $L).sortFields()",
-                    SORT_FIELD_LIST, helper.method().methodName(), tableLocal)
-                .build();
-        };
+        return OrderingBlock.declareSortView(ordering, tableLocal);
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {

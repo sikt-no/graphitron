@@ -28,6 +28,25 @@ public final class OrderingBlock {
 
     private OrderingBlock() {}
 
+    /**
+     * Declares the sort view alone ({@code orderBy}), for the non-paginating compositions: an
+     * unpaginated ORDER BY needs no cursor-column view. The {@link Ordering.Helper} arm's call is
+     * unqualified, the launcher and its emitted helper sharing the fetchers class by the naming
+     * vocabulary.
+     */
+    public static CodeBlock declareSortView(Ordering ordering, String tableLocal) {
+        return switch (ordering) {
+            case Ordering.Columns columns -> CodeBlock.builder()
+                .addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST,
+                    OrderByFragments.fixedSortParts(columns.spec(), tableLocal))
+                .build();
+            case Ordering.Helper helper -> CodeBlock.builder()
+                .addStatement("$T orderBy = $L(env, $L).sortFields()",
+                    SORT_FIELD_LIST, helper.method().methodName(), tableLocal)
+                .build();
+        };
+    }
+
     /** Declares {@code orderBy} and {@code extraFields} from one dispatch over the ordering. */
     public static CodeBlock declareBothViews(Ordering ordering, String tableLocal) {
         var code = CodeBlock.builder();

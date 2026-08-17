@@ -90,6 +90,7 @@ public final class ClassifiedDsl {
 
         enum LauncherSource {
           AnchorTable RoutineChain CorrelatedChain CorrelatedLookupChain
+          DiscriminatedCorrelatedChain
           ServiceCall ServiceTableLift PivotAggregate KeyedLookup
           ProjectedReentry DiscriminatedReentry DiscriminatedTable
         }

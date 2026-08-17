@@ -101,4 +101,42 @@ class ClassifierAdvisoryFixPipelineTest {
                 .as("the deleted span is exactly '@splitQuery'").isEqualTo(11);
         });
     }
+
+    /**
+     * The discriminated interface child's sibling advisory, at both cardinalities: the arm's
+     * delivery is decided by cardinality alone, so {@code @splitQuery} names nothing it does not
+     * already do and is reported redundant with the same computable deletion fix. The list
+     * coordinate batches and the single one does not, and both warn: the directive's own
+     * semantics (stop projecting into the parent's statement) is satisfied before it is applied
+     * either way, the re-projection always being its own statement.
+     */
+    @Test
+    void splitQueryOnDiscriminatedInterfaceChild_carriesDeletionFixAtBothCardinalities() {
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              title: String @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              title: String @field(name: "TITLE")
+            }
+            type Film @table(name: "film") {
+              splitContents: [Content!]! @splitQuery @reference(path: [{key: "content_film_id_fkey"}])
+              splitContent: Content @splitQuery @reference(path: [{key: "content_film_id_fkey"}])
+            }
+            type Query { films: [Film!]! }
+            """);
+
+        for (var coordinate : java.util.List.of("Film.splitContents", "Film.splitContent")) {
+            var fix = fixFor(schema,
+                LintRule.SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD, coordinate);
+            assertThat(fix)
+                .as("redundant @splitQuery on %s carries a deletion fix", coordinate)
+                .isPresent();
+            assertThat(fix.get().edits()).singleElement().satisfies(e -> {
+                assertThat(e.replacement()).isEmpty();
+                assertThat(e.end().getColumn() - e.start().getColumn())
+                    .as("the deleted span is exactly '@splitQuery'").isEqualTo(11);
+            });
+        }
+    }
 }

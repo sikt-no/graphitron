@@ -105,6 +105,16 @@ public record DeliveryFactRelation(Map<FieldCoordinates, DeliveryFact> byCoordin
                 ? new DeliveryFact.Batched(DeliveryFact.Trigger.PolymorphicFanIn.INSTANCE)
                 : DeliveryFact.Inline.INSTANCE;
         }
+        // The discriminated interface child, the same cardinality rule with the participant
+        // conjunct holding by construction (the parse boundary rejects a non-table implementor).
+        // It carries a Table-shaped target rather than an Interface one, so it needs its own arm
+        // rather than the fan-in's; it precedes the marker reads so the redundant @splitQuery an
+        // author may write on it cannot claim the trigger at either cardinality.
+        if (discriminatedInterfaceTarget(types, fieldDef)) {
+            return listOrConnection
+                ? new DeliveryFact.Batched(DeliveryFact.Trigger.PolymorphicFanIn.INSTANCE)
+                : DeliveryFact.Inline.INSTANCE;
+        }
         boolean tableAnchoredChild = unwrapped instanceof TargetShape.Table
             && singleTableBackedVerdict(types, fieldDef);
         if (child.sourceShape() == SourceShape.Record && tableAnchoredChild) {
@@ -147,11 +157,31 @@ public record DeliveryFactRelation(Map<FieldCoordinates, DeliveryFact> byCoordin
     }
 
     /**
+     * Whether the return element's verdict is a single-table discriminated interface: the
+     * discriminated child's own delivery rule reads this instead of the fan-in's participant
+     * scan, the participant conjunct being structural on this shape. A connection verdict
+     * resolves through its element, the same unwrapping every other verdict read here does.
+     */
+    private static boolean discriminatedInterfaceTarget(Map<String, GraphitronType> types,
+                                                        GraphQLFieldDefinition fieldDef) {
+        if (fieldDef == null) {
+            return false;
+        }
+        return switch (types.get(baseTypeName(fieldDef))) {
+            case GraphitronType.TableInterfaceType _ -> true;
+            case GraphitronType.ConnectionType conn ->
+                types.get(conn.elementTypeName()) instanceof GraphitronType.TableInterfaceType;
+            case null, default -> false;
+        };
+    }
+
+    /**
      * Whether the return element's verdict anchors on one catalog table: the discriminating
      * fact between a batched-capable table child and the shapes that share a Table-shaped
      * target without one (the nesting pass-through's directiveless verdict; the single-table
-     * interface child, whose only delivery is inline). A connection verdict anchors through
-     * its element, so authored connection returns stay batched-capable.
+     * interface child, whose delivery the arm above already answered on cardinality, so this
+     * case's {@code false} keeps the marker arms below off that shape). A connection verdict
+     * anchors through its element, so authored connection returns stay batched-capable.
      */
     private static boolean singleTableBackedVerdict(Map<String, GraphitronType> types,
                                                     GraphQLFieldDefinition fieldDef) {

@@ -198,7 +198,10 @@ public final class FetcherEdgeCommands {
             case ChildField.TableInterfaceField f -> row(f.parentTypeName(), f.name(), units,
                 targets -> addParticipantTypeClasses(targets, f.participants(), units));
             // Launcher rows carry these coordinates' references (source projection, WHERE glue,
-            // connection runtime refs).
+            // connection runtime refs). The discriminated child's batched twin joins them: its
+            // assembly moved onto the launcher seam, so its participant projections are edges of
+            // the row's discriminated source arm, minted at the same owner class.
+            case ChildField.BatchedTableInterfaceField ignored -> null;
             case ChildField.BatchedTableField ignored -> null;
             case ChildField.BatchedPivotField ignored -> null;
             case ChildField.ServiceTableField ignored -> null;

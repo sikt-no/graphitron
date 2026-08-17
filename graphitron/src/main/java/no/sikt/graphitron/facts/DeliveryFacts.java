@@ -14,9 +14,10 @@ import java.util.Optional;
  *
  * <p>The row carries the two markers separately because their forcing scopes differ: the
  * table-backed child arm reads the union ({@link Row#forcesSplitDelivery}), while the
- * {@code @pivot} batching gate and the nesting-projection deferral read the {@code @splitQuery}
- * half alone ({@link Row#splitQuery}; a fanned pivot has no scatter emission, and
- * {@code @tenantFanOut} on other shapes is the tenant fold's sweep to reject). Exposing the
+ * {@code @pivot} batching gate, the nesting-projection deferral and the two redundancy
+ * diagnostics (a record-backed parent, a discriminated interface child) read the
+ * {@code @splitQuery} half alone ({@link Row#splitQuery}; a fanned pivot has no scatter emission,
+ * and {@code @tenantFanOut} on other shapes is the tenant fold's sweep to reject). Exposing the
  * structured pair keeps both reads on one gathered fact instead of two directive probes.
  *
  * <p>Rows are labeled with their coordinate but indexed by definition-node identity within the
@@ -57,7 +58,10 @@ public record DeliveryFacts(Map<GraphQLFieldDefinition, Row> rowsByDefinition) {
         return rowFor(fieldDef).map(Row::forcesSplitDelivery).orElse(false);
     }
 
-    /** Whether the coordinate carries {@code @splitQuery} (the pivot / nesting-deferral half). */
+    /**
+     * Whether the coordinate carries {@code @splitQuery} (the half the {@code @pivot} gate, the
+     * nesting deferral and the two redundancy diagnostics read).
+     */
     public boolean splitQuery(GraphQLFieldDefinition fieldDef) {
         return rowFor(fieldDef).map(Row::splitQuery).orElse(false);
     }

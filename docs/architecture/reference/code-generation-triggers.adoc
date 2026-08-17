@@ -349,9 +349,14 @@ shape value. The operation is `Fetch` for interface and union fields (root or ch
 for the Relay `node` / `nodes` roots; the new keyed query a plain-interface or union field opens
 (`InterfaceField` / `UnionField`, and the polymorphic roots `QueryInterfaceField` / `QueryUnionField` /
 `QueryNodeField` / `QueryNodesField`) is a *derived* new-query, not an asserted axis. The one structural
-difference is a `@table`+`@discriminate` interface child (`TableInterfaceField`): it is
-foreign-key-correlatable from the parent, so it inlines rather than opening a new query, but its asserted
-`Child` / `Fetch` / `Table` verdict is the same.
+difference is a `@table`+`@discriminate` interface child (`TableInterfaceField` /
+`BatchedTableInterfaceField`): it is foreign-key-correlatable from the parent, but the discriminated
+re-projection is still its own statement rather than a fold into the parent's SELECT, so what the
+cardinality decides is *how many* statements, not whether there is one. It follows the same rule as the
+multi-table pair above, with the participant conjunct holding structurally (the parse boundary rejects a
+non-table implementor of a discriminated interface): list cardinality batches through a DataLoader,
+single cardinality fetches per parent. Either way its asserted `Child` / `Fetch` / `Table` verdict is the
+same.
 
 [source,graphql]
 ----
@@ -403,7 +408,8 @@ union FilmOrActor = Film | Actor
 participant table a row resolves to, with `Film` and `Actor` recorded as the participant slots. Asserted
 by the `union` corpus example.
 
-The `@table`+`@discriminate` interface child (`TableInterfaceField`, inline, target shape `Table`) and
+The `@table`+`@discriminate` interface child (target shape `Table`; `TableInterfaceField` per-parent at
+single cardinality, `BatchedTableInterfaceField` DataLoader-batched at list cardinality) and
 the Relay `Node` root (`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) are further
 leaves on this same polymorphic rule; they are asserted corpus-only (`table-interface`, `relay-node`).
 
@@ -565,7 +571,8 @@ The direct-return `DmlTableField` permit is guaranteed never to carry a class-ba
 | Return `@table`, `@lookupKey` (no split) | `TableField` (keyed lookup arm) | Inline projection in `$project` ; correlated subquery via `DSL.multiset` + VALUES/JOIN lookup keyset
 | Return `@table`, `@splitQuery` | `BatchedTableField` (Table-sourced) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` (default) | `TableField` | Inline projection in `$project` ; correlated subquery via `DSL.multiset` (single cardinality adds `.limit(1)` + a read-side unwrap lambda)
-| Return `@table`+`@discriminate` interface | `TableInterfaceField` | Fetcher method
+| Return `@table`+`@discriminate` interface, list | `BatchedTableInterfaceField` | Async DataLoader fetcher + `rows*()` method ; the discriminated re-projection over the batch's parent-input `VALUES` anchor
+| Return `@table`+`@discriminate` interface, single | `TableInterfaceField` | Fetcher method (one re-projection per parent row)
 | Return multi-table interface | `InterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
 | Return union | `UnionField` | Fetcher method(s) ; per-participant polymorphic projection
 | Return plain object (no `@table`) | `NestingField` | Inline projection ; nested fields fold into the parent SELECT, the object itself wired as an `env.getSource()` passthrough (inherits parent table context)
@@ -605,7 +612,7 @@ The parent here is a type whose backing class is reflection-derived from its pro
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies input-object fields against the consuming field's resolved table: the return-type table on the filter and arg-level `@lookupKey` paths, the write-target table on the DML paths.
 
-**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 4 SQL-generating child field variants (`TableField`, `BatchedTableField`, `TableInterfaceField`, `ServiceTableField`; R432 collapsed the former Split/Record pairs onto the source-gated batched leaf, and the lookup leaves later folded onto their fetch siblings with the `@lookupKey` correspondence riding as the seal's `LookupResolution` arm).
+**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 5 SQL-generating child field variants (`TableField`, `BatchedTableField`, `TableInterfaceField`, `BatchedTableInterfaceField`, `ServiceTableField`; R432 collapsed the former Split/Record pairs onto the source-gated batched leaf, and the lookup leaves later folded onto their fetch siblings with the `@lookupKey` correspondence riding as the seal's `LookupResolution` arm).
 
 === DataLoader-backed field categories
 

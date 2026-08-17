@@ -2309,6 +2309,28 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
+    @ProjectionFor(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField.class)
+    void batchedTableInterfaceFieldProjectionCarriesDiscriminatorAndParticipants() {
+        // The DataLoader half of the discriminated interface child's delivery split, reached
+        // through list cardinality. The delivery collapses on this view, as the polymorphic
+        // pair's does: a completion consumer asks a coordinate for its discriminated shape,
+        // not for inline-vs-batched, so the payload is the inline half's.
+        var snapshot = buildSnapshot("""
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Language @table(name: "language") {
+              mediaList: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { language: Language }
+            """);
+        var f = (FieldClassification.TableInterface)
+            snapshot.fieldClassificationsByCoord().get("Language.mediaList");
+        assertThat(f.tableName()).isEqualToIgnoringCase("film");
+        assertThat(f.discriminatorColumn()).isEqualTo("kind");
+        assertThat(f.participantTypeNames()).contains("Film");
+    }
+
+    @Test
     @ProjectionFor({
         InterfaceField.class, UnionField.class,
         no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType.class,

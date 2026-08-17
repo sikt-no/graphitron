@@ -88,6 +88,12 @@ public sealed interface DeliveryFact {
             // trigger is the provenance regardless of the parent's backing.
             case ChildField.BatchedInterfaceField _, ChildField.BatchedUnionField _ ->
                 new Batched(Trigger.PolymorphicFanIn.INSTANCE);
+            // The discriminated interface child mints from the same cardinality rule as the
+            // multi-table pair above (its participant precondition holding by construction
+            // rather than by a guard), so it shares their provenance. The @splitQuery marker
+            // an author may write on it is redundant and warned about, never the trigger.
+            case ChildField.BatchedTableInterfaceField _ ->
+                new Batched(Trigger.PolymorphicFanIn.INSTANCE);
             case ChildField.ColumnBackedField _, ChildField.ColumnBackedReferenceField _,
                  ChildField.ParticipantColumnReferenceField _, ChildField.TableField _,
                  ChildField.TableInterfaceField _,

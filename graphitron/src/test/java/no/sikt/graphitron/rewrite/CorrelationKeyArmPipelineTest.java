@@ -76,6 +76,27 @@ class CorrelationKeyArmPipelineTest {
     }
 
     @Test
+    void batchedTableInterfaceField_armProjectsTheHopSourceSideColumn() {
+        var language = findType("Language", """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Language @table(name: "language") {
+                name: String
+                mediaList: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { language: Language }
+            """);
+        assertThat(TypeSpecAssertions.armProjectsColumn(language, "mediaList", "LANGUAGE_ID"))
+            .as("the batched discriminated child's arm projects the FK hop's source-side column, "
+                + "reached through its batch key rather than its twin's parent-row demand — the "
+                + "same columns, one accessor")
+            .isTrue();
+        assertThat(TypeSpecAssertions.armProjectsColumn(language, "name", "LANGUAGE_ID"))
+            .as("and no other arm carries the key on its behalf")
+            .isFalse();
+    }
+
+    @Test
     void interfaceField_armProjectsEveryBranchCorrelationColumn() {
         var customer = findType("Customer", """
             interface CustRef { rowId: Int }

@@ -92,6 +92,7 @@ public final class ProjectionCommands {
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         ChildField.TableInterfaceField.class,
+        ChildField.BatchedTableInterfaceField.class,
         ChildField.InterfaceField.class,
         ChildField.UnionField.class,
         ChildField.BatchedInterfaceField.class,

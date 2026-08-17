@@ -1007,8 +1007,45 @@ class FieldBuilder {
             var joinPathError = validateSingleHopFkJoin(referencePath.elements(), name);
             if (joinPathError != null) return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(joinPathError));
             var knownValues = knownDiscriminatorValues(tableInterfaceType);
-            return new TableInterfaceField(parentTypeName, name, location,
-                new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
+            var interfaceReturnType = new ReturnTypeRef.TableBoundReturnType(
+                elementTypeName, tableInterfaceType.table(), wrapper);
+            // @splitQuery names what this arm does anyway: the discriminated re-projection is
+            // already its own statement at both cardinalities, so the directive can only be
+            // redundant here. Warned and ignored, never a delivery gate.
+            warnIfSplitQueryRedundant(fieldDef, parentTypeName, name, location,
+                LintRule.SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD,
+                "@splitQuery is redundant on a field returning a single-table discriminated "
+                + "interface; the discriminated re-projection is always its own statement, and "
+                + "list cardinality already batches it through a DataLoader. The directive will "
+                + "be ignored.");
+            // Delivery is leaf identity, the multi-table sibling's rule: list cardinality batches
+            // through a DataLoader, single cardinality fetches per parent. The sibling's
+            // table-bound-participant precondition has no analogue — a discriminated interface
+            // rejects non-table implementors at the parse boundary — so cardinality is the whole
+            // fork. The batch key is the single FK hop's source side (what the unbatched twin
+            // reports as its parent-row demand), derived through the plain batched child's
+            // producer, so a composite FK keys and correlates on every slot.
+            if (wrapper.isList()) {
+                var interfacePcResolution = ctx.buildParentCorrelation(
+                    referencePath.elements(), parentTableType.table());
+                if (interfacePcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                    return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(e.message()));
+                }
+                var interfaceCorrelation =
+                    ((BuildContext.ParentCorrelationResolution.Resolved) interfacePcResolution).correlation();
+                var interfaceSplitSource = deriveSplitQuerySource(
+                    interfaceCorrelation, parentTableType.table(), interfaceReturnType);
+                return new no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField(
+                    parentTypeName, name, location, interfaceReturnType,
+                    tableInterfaceType.discriminatorColumn(), knownValues,
+                    tableInterfaceType.participants(),
+                    referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    interfaceSplitSource.sourceKey(),
+                    interfaceSplitSource.lift(),
+                    interfaceSplitSource.loaderRegistration(),
+                    interfaceCorrelation);
+            }
+            return new TableInterfaceField(parentTypeName, name, location, interfaceReturnType,
                 tableInterfaceType.discriminatorColumn(), knownValues, tableInterfaceType.participants(),
                 referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
@@ -5948,9 +5985,12 @@ class FieldBuilder {
      * rows method scatters per parent batch). Read off the gathered delivery-marker relation
      * ({@link no.sikt.graphitron.facts.DeliveryFacts}), whose visitor is the marker names'
      * single lexical home; the table-backed child arm reads this union, while the nesting arm's
-     * deferred rejection, the {@code @pivot} batching gate and the routine-chain child read the
-     * {@code @splitQuery} half ({@code @tenantFanOut} on those shapes is the tenant-binding
-     * fold's unreached-marker sweep to reject, not a delivery trigger).
+     * deferred rejection, the {@code @pivot} batching gate, the routine-chain child and the
+     * discriminated interface child's redundancy warning read the {@code @splitQuery} half
+     * ({@code @tenantFanOut} on those shapes is the tenant-binding fold's unreached-marker sweep
+     * to reject, not a delivery trigger). The discriminated arm's read is the nesting arm's kind:
+     * a marker read that feeds a diagnostic, never one that gates delivery, that arm forking on
+     * cardinality alone.
      */
     private boolean forcesSplitDelivery(GraphQLFieldDefinition fieldDef) {
         return ctx.facts.delivery().forcesSplitDelivery(fieldDef);
@@ -6408,17 +6448,31 @@ class FieldBuilder {
 
     private void warnIfSplitQueryOnRecordParent(GraphQLFieldDefinition fieldDef, String parentTypeName,
             String name, SourceLocation location) {
-        if (!fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) return;
-        // Safe deletion fix: @splitQuery takes no arguments, so removing the token is always
-        // computable and never touches an SDL reference.
+        warnIfSplitQueryRedundant(fieldDef, parentTypeName, name, location,
+            LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT,
+            "@splitQuery is redundant on a record-backed parent field; the record handoff already "
+            + "opens a new DataLoader-backed scope. The directive will be ignored.");
+    }
+
+    /**
+     * The shared emit for the arms where {@code @splitQuery} names a delivery the arm already
+     * has: a located {@link BuildWarning.LintFinding} under the caller's rule, carrying the
+     * delete fix. Each arm supplies its own rule and its own reason, the two facts that differ;
+     * the finding's shape and the computability of the fix do not.
+     *
+     * <p>The gate is the gathered marker relation's {@code @splitQuery} half, the same read the
+     * other diagnostic-feeding half-readers make; the applied directive is then reached only to
+     * build the fix, whose presence the row entails (a row exists exactly when a marker is
+     * applied). The fix is always computable: {@code @splitQuery} takes no arguments, so removing
+     * the token never touches an SDL reference.
+     */
+    private void warnIfSplitQueryRedundant(GraphQLFieldDefinition fieldDef, String parentTypeName,
+            String name, SourceLocation location, LintRule rule, String reason) {
+        if (!ctx.facts.delivery().splitQuery(fieldDef)) return;
         var fix = LintFix.deleteBareAppliedDirective(
             fieldDef.getAppliedDirective(DIR_SPLIT_QUERY), "Remove the redundant @splitQuery");
         ctx.addWarning(new BuildWarning.LintFinding(
-            parentTypeName + "." + name + ": @splitQuery is redundant on a record-backed parent field; "
-            + "the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.",
-            location,
-            LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT,
-            fix));
+            parentTypeName + "." + name + ": " + reason, location, rule, fix));
     }
 
     /**

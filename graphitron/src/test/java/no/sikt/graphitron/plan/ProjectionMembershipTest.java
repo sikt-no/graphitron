@@ -166,12 +166,13 @@ class ProjectionMembershipTest {
             .as("declared minting kinds this fixture does not observe directly: the computed"
                 + " field (needs an authored @externalField method; its minting is covered by"
                 + " ServiceProjectionPipelineTest) and the polymorphic child shapes (both"
-                + " delivery halves of the interface/union pair, plus the single-table"
-                + " discriminated leaf), whose gated correlation-key arms are pinned per-shape"
-                + " by CorrelationKeyArmPipelineTest")
+                + " delivery halves of the interface/union pair, and both halves of the"
+                + " single-table discriminated pair), whose gated correlation-key arms are"
+                + " pinned per-shape by CorrelationKeyArmPipelineTest")
             .containsExactlyInAnyOrder(
                 ChildField.ComputedField.class,
                 ChildField.TableInterfaceField.class,
+                ChildField.BatchedTableInterfaceField.class,
                 ChildField.InterfaceField.class,
                 ChildField.UnionField.class,
                 ChildField.BatchedInterfaceField.class,

@@ -61,8 +61,14 @@ class LeafRatchetTest {
      * Installed at 24 (census 2026-08-02, unchanged from the 2026-08-01 baseline).
      * 24 to 22 (2026-08-03): LookupTableField and BatchedLookupTableField folded onto their
      * fetch siblings plus the lookup member, the first dissolution slice.
+     * 22 to 23 (2026-08-17): BatchedTableInterfaceField, the DataLoader-batched half of the
+     * discriminated interface child's delivery split. A delivery leaf, not an
+     * operation-encoding one: it joins the inline/batched pairs the seal already carries
+     * (TableField / BatchedTableField, PivotField / BatchedPivotField, and the polymorphic
+     * pair), leaving the discriminated child no longer the one family member that never
+     * batched.
      */
-    private static final int CHILD_FIELD_LEAVES = 22;
+    private static final int CHILD_FIELD_LEAVES = 23;
 
     /**
      * Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

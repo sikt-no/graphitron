@@ -299,6 +299,7 @@ public class TypeFetcherGenerator {
         ChildField.SingleRecordIdFieldFromReturning.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
+        ChildField.BatchedTableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
         QueryField.QueryInterfaceField.class,
         QueryField.QueryUnionField.class,
@@ -666,6 +667,24 @@ public class TypeFetcherGenerator {
                 // FetcherEmitter.bind and collected below.
                 case ChildField.TableField ignored              -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(ctx, f, outputPackage));
+                case ChildField.BatchedTableInterfaceField f -> {
+                    // The batched twin: the plain batched child's entry point verbatim (the
+                    // source shape is Table, so the key lift is the wrap-driven column
+                    // projection and the prelude is empty) over the launcher's discriminated
+                    // correlated rows method.
+                    var interfaceBatchedRow = launchers.rowFor(f.parentTypeName(), f.name())
+                        .orElseThrow(() -> new IllegalStateException(
+                            "Graphitron generator bug (batched interface child dispatch): coordinate '"
+                            + f.qualifiedName() + "' has no launcher row;"
+                            + " the producer's membership and this dispatch have drifted"));
+                    builder.addMethod(buildBatchedDataFetcher(ctx, f, f.returnType(), f.sourceKey(),
+                        f.lift(), parentTable, resultType, sourceIsOutcome, outputPackage,
+                        interfaceBatchedRow));
+                    builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
+                        interfaceBatchedRow, launchers.carrierDsl(),
+                        TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
+                        ctx.argPathHelpers()));
+                }
                 // ParticipantColumnReferenceField: the value is materialised in the parent record by
                 // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN; the read of it
                 // back is reified by FetcherEmitter.bind into a named source-only method (wrapped in
@@ -871,6 +890,16 @@ public class TypeFetcherGenerator {
                 builder.addMethod(buildOrderByHelperMethod(
                     namingVocabulary.orderByHelperMethod(typeName, qtif.name()).methodName(),
                     arg, names, tableRef, outputPackage));
+            } else if (field instanceof ChildField.BatchedTableInterfaceField btif
+                    && btif.orderBy() instanceof OrderBySpec.Argument arg) {
+                // The batched discriminated child orders the whole batch through the launcher's
+                // Ordering.Helper arm, which calls the same minted ref; emit it here, exactly as
+                // the interface root's arm above does for its own coordinate.
+                var tableRef = btif.returnType().table();
+                var names = GeneratorUtils.ResolvedTableNames.of(tableRef, btif.returnType().returnTypeName(), outputPackage);
+                builder.addMethod(buildOrderByHelperMethod(
+                    namingVocabulary.orderByHelperMethod(typeName, btif.name()).methodName(),
+                    arg, names, tableRef, outputPackage));
             } else if (field instanceof ChildField.BatchedTableField btf
                     && btf.returnType().wrapper() instanceof FieldWrapper.Connection
                     && btf.orderBy() instanceof OrderBySpec.Argument arg) {
@@ -890,7 +919,8 @@ public class TypeFetcherGenerator {
         // record-backed batched field is present. Single-cardinality fields use
         // scatterSingleByIdx; Connection-cardinality fields use scatterConnectionByIdx.
         boolean hasListSplitField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.BatchedTableField btf
+            f instanceof ChildField.BatchedTableInterfaceField
+            || f instanceof ChildField.BatchedTableField btf
                 && (btf.returnType().wrapper() instanceof FieldWrapper.List
                     || (btf.lookup().isKeyed()
                         && btf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record)));
@@ -985,6 +1015,7 @@ public class TypeFetcherGenerator {
         return switch (field) {
             case ChildField.BatchedTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedPivotField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.BatchedTableInterfaceField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             // Batched delivery and a table-bound participant are both leaf identity after the
             // polymorphic delivery split, so only the key wrap is left to read.
             case ChildField.BatchedInterfaceField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;

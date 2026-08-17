@@ -38,14 +38,33 @@ class DeliveryFactPinTest {
      * rides the corpus's DML payload carriers (the record-sourced re-fetch children), and the
      * polymorphic fan-in rides the corpus's batched polymorphic connection; the floors below
      * fail loudly if either corpus population disappears.
+     *
+     * <p>The two {@code @splitQuery}-marked discriminated interface children are here rather than
+     * in the corpus for two reasons. The relation's marker arms read the directive independently
+     * of the cardinality fork that decides this shape's delivery, so a marked coordinate is where
+     * the two sites could diverge without the plain one noticing; and a marked coordinate carries
+     * a redundancy warning, which a {@code @classified} verdict row would have to reconcile.
+     * Both cardinalities appear: the marked list must read batched on both sides with the
+     * <em>fan-in</em> trigger (not the authored one, the cardinality rule preceding the marker
+     * arms), and the marked single must read inline on both.
      */
     private static final String MARKER_FIXTURE = """
+        interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+            title: String @field(name: "TITLE")
+        }
+        type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+            title: String @field(name: "TITLE")
+        }
         type Language @table(name: "language") { name: String }
         type Film @table(name: "film") {
             title: String
             language: Language @reference(path: [{key: "film_language_id_fkey"}])
             splitLanguages: [Language!]! @splitQuery
                 @reference(path: [{key: "film_language_id_fkey"}])
+            splitContents: [Content!]! @splitQuery
+                @reference(path: [{key: "content_film_id_fkey"}])
+            splitContent: Content @splitQuery
+                @reference(path: [{key: "content_film_id_fkey"}])
         }
         type Query {
             films: [Film!]!

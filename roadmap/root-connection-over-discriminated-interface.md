@@ -232,6 +232,28 @@ R661's batched leaf being a separate sealed record (the sibling family's precede
 component list implies); if its implementer picks a delivery slot on the existing leaf instead,
 this item's child fork reads one leaf plus a fact and moves accordingly.
 
+R661 has landed, and it settled the two forks this section was written before. Both went the way
+this section assumed, so nothing above changes, but knowing the shapes by name saves a re-derivation:
+
+* **The leaf is a separate record,** `ChildField.BatchedTableInterfaceField`, in the
+  `TableTargetField` seal and implementing `BatchKeyField`. Its compact constructor pins
+  `returnType().wrapper().isList()`, which is true for `FieldWrapper.Connection` too, so the
+  connection lift needs no constructor edit: the mint gate to widen is the classifier's, where the
+  `Rejection.deferred` at the arm's head still rejects `Connection` before the fork is reached.
+* **The launch source is `LaunchSource.DiscriminatedCorrelatedChain`,** a third arm of the
+  `Correlated` capability rather than a reuse of `CorrelatedChain`: the topology is shared verbatim
+  (prelude, parent-input attach, WHERE fold) and only the select list forks, which is why
+  `Correlated` no longer declares `projection()` — that member moved onto the
+  `Correlated.Projected` sub-seal the two `$project`-ing arms implement. So the shared scatter is
+  the machinery, as this section assumed: the gate to widen for the connection half is
+  `TypeFetcherGenerator`'s `hasConnectionSplitField`, beside the `hasListSplitField` gate R661
+  already widened.
+* The rows-method body is `BatchedRowsFragments.discriminatedBody`, which composes
+  `DiscriminatedTableFragments.projection` + a `step` declaration over
+  `fromBridgeAndParentJoin` + the newly-extracted `joinedDetailJoins`. The `connectionTail`
+  extraction this section calls for is the remaining work, and `discriminatedBody` is the arm that
+  binds it.
+
 The connection tail: `BatchedRowsFragments.connectionTail` already owns the per-key windowing
 protocol for the plain batched child, five coupled facts (`rowNumber() over
 (partitionBy(__idx__).orderBy(page.effectiveOrderBy()))`, seek applied pre-rank on the inner

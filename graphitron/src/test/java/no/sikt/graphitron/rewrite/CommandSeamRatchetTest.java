@@ -77,9 +77,12 @@ class CommandSeamRatchetTest {
      * unchanged, its hosting filter having become per-row routing), then 71 to 69 when the
      * lookup triplet dissolved (the reified-read arm's lookup twin deleted outright; the
      * list-scatter gate's two-leaf disjunction became one leaf read forking on the
-     * {@code LookupResolution}).
+     * {@code LookupResolution}). Raised 69 to 71 when the discriminated interface child gained
+     * its batched half: two emission gates read the new leaf by identity (the list-scatter
+     * helper gate and the orderBy-helper gate), neither census-enforced, both discoverable at
+     * the compile tier because a rows method calling an unemitted helper does not compile.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 69;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 71;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -110,9 +113,11 @@ class CommandSeamRatchetTest {
      * arm deleted, the surviving arm's row fork living in the launcher row's source arm.
      * Raised 59 to 60 when the routine carrier landed (the fetcher dispatch gained the
      * {@code MutationRoutineWriteRecordField} arm, a new leaf's one dispatch site, not new
-     * dispatch on an existing leaf).
+     * dispatch on an existing leaf). Raised 60 to 62 when the discriminated interface child's
+     * batched half landed: the fetcher dispatch arm plus the parent-input key-wrap probe's arm,
+     * both a new leaf's own sites rather than new dispatch on an existing leaf.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 60;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 62;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -196,9 +201,12 @@ class CommandSeamRatchetTest {
      * {@code PivotSpecField} seal (which this counting rule still chases in plan/, so the
      * fold is one reference where two stood). Raised 124 to 125 when the routine carrier
      * landed (the fetcher edge producer's mutation switch gained the new leaf's
-     * condition-glue arm).
+     * condition-glue arm). Raised 125 to 128 when the discriminated interface child's batched
+     * half landed: the launcher's batched-child payload arm on both walks, plus the fetcher edge
+     * producer's null arm (its participant projections being edges of the launcher row's
+     * discriminated source instead).
      */
-    private static final int PLAN_LEAF_REFERENCES = 125;
+    private static final int PLAN_LEAF_REFERENCES = 128;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

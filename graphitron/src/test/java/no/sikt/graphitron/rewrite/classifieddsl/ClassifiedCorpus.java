@@ -447,14 +447,17 @@ public final class ClassifiedCorpus {
          * plain-interface or union child (InterfaceField / UnionField) and any polymorphic root
          * (QueryInterfaceField / QueryUnionField) share that Fetch verdict; the new-query they open is
          * derived, not an axis. The exception's verdict is the same: a @table+@discriminate interface child
-         * (TableInterfaceField) is FK-correlatable from the parent and classifies as a plain Fetch,
-         * though the generator currently emits a per-parent query (a known defect; the corpus asserts the
-         * correct verdict). Delivery is leaf identity, not a tuple axis: at list (or connection)
+         * (TableInterfaceField / BatchedTableInterfaceField) is FK-correlatable from the parent and
+         * classifies as a plain Fetch, its target shape being Table rather than Interface (one base
+         * table, discriminated, not a participant fan-in). Delivery is leaf identity, not a tuple axis:
+         * at list (or connection)
          * cardinality with at least one table-bound participant the child batches through a DataLoader
          * (BatchedInterfaceField / BatchedUnionField) with the same Fetch verdict its single-cardinality
          * inline sibling holds, exactly as the child-table inline/split pairs do; `namedPlaces`
          * (child-holds-FK: address.city_id points at the parent) and `relatedList` (parent-holds-FK
-         * with the FK columns inside film_actor's primary key) pin the batched halves. A parent-holds-FK
+         * with the FK columns inside film_actor's primary key) pin the batched halves. The
+         * discriminated child follows the same cardinality rule with its participant conjunct holding
+         * structurally, and `mediaList` pins its batched half. A parent-holds-FK
          * participant whose FK columns sit outside the parent's primary key is single-valued and
          * rejects at list cardinality, so the customer/address pair stays single. Of the four shapes
          * below (plain interface, union,
@@ -586,14 +589,28 @@ public final class ClassifiedCorpus {
             }
             """),
 
+        /*
+         * The discriminated interface child at both cardinalities. `media` is the inline half (one
+         * per-parent SELECT over the re-projection, no launcher row); `mediaList` is the batched
+         * half, whose launcher row carries the discriminated select list over the plain batched
+         * child's correlated topology. Both hold the same Fetch verdict at target shape Table, so
+         * the pair is the delivery split's own witness: the tuple is identical apart from the
+         * cardinality that decides it.
+         */
         new Example("table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") {
               media: MediaItem @classified(source: OnlyChild, operations: [Join, Select], target: Single, targetShape: Table)
             }
+            type Language @table(name: "language") {
+              mediaList: [MediaItem!]! @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(source: OnlyChild, operations: [Join, OrderBy, Select], target: List, targetShape: Table)
+                @commits(source: DiscriminatedCorrelatedChain, result: RecordList)
+            }
             type Query {
               inventory: Inventory @commits(source: AnchorTable, result: SingleRecord)
+              language: Language @commits(source: AnchorTable, result: SingleRecord)
               topMedia: MediaItem @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
                 @commits(source: DiscriminatedTable, result: SingleRecord)
             }

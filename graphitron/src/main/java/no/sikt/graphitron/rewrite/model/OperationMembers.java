@@ -177,6 +177,8 @@ public final class OperationMembers {
             shape(Set.of(Kind.SELECT), withLookupOptional(BATCHED_TABLE_READ_OPTIONALS))),
         Map.entry(ChildField.TableInterfaceField.class,
             shape(Set.of(Kind.SELECT), CHILD_TABLE_READ_OPTIONALS)),
+        Map.entry(ChildField.BatchedTableInterfaceField.class,
+            shape(Set.of(Kind.SELECT), CHILD_TABLE_READ_OPTIONALS)),
         Map.entry(ChildField.InterfaceField.class,
             shape(Set.of(Kind.SELECT), Set.of())),
         Map.entry(ChildField.UnionField.class,
@@ -268,6 +270,8 @@ public final class OperationMembers {
                 withResolvedLookup(tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination()),
                     f.lookup());
             case ChildField.TableInterfaceField f ->
+                tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
+            case ChildField.BatchedTableInterfaceField f ->
                 tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
 
             // --- Child fields: polymorphic reads (no field-level filter surface on these leaves) ---
