@@ -207,6 +207,15 @@ non-generated columns of its own relation, and pair each admitted shape with its
 (`<c>_folded` for a fold, a named column for a calculation like the spelling), rather than admitting
 a single expression template.
 
+**4. Step 2's writer change is the wrong repair, and belongs to the sibling item on designed
+inserts.** Having `FactSink.flush()` read `INFORMATION_SCHEMA.COLUMNS` to learn which columns the
+engine computes, and exclude them, is still every-field-minus-exceptions: the column list stays
+inferred from the schema rather than stated by the writer, the knowledge sits in the writer instead
+of at the call site that knows, and it answers only for the one exception H2 reports. The sibling item
+on capture declaring the columns it writes covers the general case: where the insert names the columns
+the writer has data for, a generated column needs no writer change at all, because no writer names it.
+Drop step 2 and take that item as a soft prerequisite, rather than repairing this one writer here.
+
 ## Care
 
 Broad and mechanical: it touches name-bearing base relations across several families and every view
