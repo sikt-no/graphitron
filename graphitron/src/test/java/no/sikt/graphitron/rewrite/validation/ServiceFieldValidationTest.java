@@ -42,7 +42,7 @@ class ServiceFieldValidationTest {
     private static final List<ColumnRef> RESOLVED_KEY_COLUMNS =
         List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer"));
     private static final ReturnTypeRef.ResultReturnType RECORD_RT_SINGLE =
-        new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null);
+        new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null, null);
     private static final SourceKey RECORD_SOURCE_KEY =
         TestFixtures.serviceSourceKey(new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS);
     /** A {@code @table} parent's key source: the parent's own table owns the key columns. */

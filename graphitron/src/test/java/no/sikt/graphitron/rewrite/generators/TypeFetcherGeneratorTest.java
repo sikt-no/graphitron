@@ -878,7 +878,7 @@ class TypeFetcherGeneratorTest {
             "com.example.Service", "createFilm",
             ClassName.bestGuess("com.example.Film"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "createFilm", null,
-            new ReturnTypeRef.ResultReturnType("Film", single(), "com.example.Film"),             TestFixtures.stubServiceCall(method),
+            new ReturnTypeRef.ResultReturnType("Film", single(), "com.example.Film", null),             TestFixtures.stubServiceCall(method),
             Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -1479,7 +1479,7 @@ class TypeFetcherGeneratorTest {
             String parentType, String name, boolean isList, ServiceSourceShape shape, String fqBackingClass) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
-            "FilmDetails", returnWrapper, fqBackingClass);
+            "FilmDetails", returnWrapper, fqBackingClass, null);
         return serviceRecordField(parentType, name, "getDetails", returnType, shape,
             ClassName.bestGuess(fqBackingClass));
     }

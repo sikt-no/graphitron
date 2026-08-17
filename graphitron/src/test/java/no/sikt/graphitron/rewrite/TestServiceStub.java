@@ -938,4 +938,63 @@ class TestServiceStub {
 
     /** Site E: an input bean whose jOOQ-enum member is bound to an SDL enum with a divergent value. */
     public static String useEnumBean(TestWireEnumBean input) { throw new UnsupportedOperationException(); }
+
+    // ===== shared value type producer fixtures =====
+
+    /**
+     * Batched child producer of the shared value type, keyed on the parent {@code @table}'s
+     * record: {@code Map<FilmRecord, Translations>}. The rows method's outer {@code Map} never
+     * reaches {@code env.getSource()}; the loader resolves it to one {@code Translations} per key,
+     * which is what the value type's child fetchers receive.
+     */
+    public static java.util.Map<FilmRecord,
+            no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.Translations>
+            sharedTranslationsByFilm(java.util.Set<FilmRecord> films) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Root producer of the same shared value type, returned directly. */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.Translations
+            sharedTranslations() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The reading half: a class-backed parent whose {@code translations()} component is the shared
+     * value type, so the second producer of that type is a record-component read.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.FilmSummary
+            sharedFilmSummary() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The list-shaped reader: the component is {@code List<Translations>}. */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.TranslationsList
+            sharedTranslationsList() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Composite producer of a <em>nested</em> backing class ({@code SharedValueTypeFixtures$NestedComposite}):
+     * the record-composite carrier arm of the single backing-class mint.
+     */
+    public static java.util.List<no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.NestedComposite>
+            sharedNestedComposites() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The reading half of the nested-class case: a parent holding the composite as a component. */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.NestedCompositeHolder
+            sharedNestedCompositeHolder() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * A class-backed, table-less payload, reachable from either operation root: the population on
+     * which the root {@code @service} twins must answer the same backing-class claim.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.SharedPayload
+            sharedPayload() {
+        throw new UnsupportedOperationException();
+    }
 }

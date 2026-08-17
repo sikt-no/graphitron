@@ -16,7 +16,7 @@ import no.sikt.graphitron.javapoet.TypeName;
  * {@link #domainReturnType()} with the Java domain type its emitted resolver puts at
  * {@code env.getSource()} for the return type's child datafetchers. The builder's group-by step
  * over the classified field registry compares the answers across producers reaching the same SDL
- * return type; disagreement on the {@link DomainReturnType} sealed arm is recorded on the
+ * return type; disagreement on the {@link DomainReturnType.Claim} sealed arm is recorded on the
  * {@link no.sikt.graphitron.rewrite.GraphitronSchema} as a
  * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement}, which
  * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} surfaces as a build error.
@@ -25,10 +25,12 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
 
     /**
      * The Java domain type this producer puts at {@code env.getSource()} for its return type's
-     * child datafetchers. The uniform-domain-return-type check rides on the
-     * {@link DomainReturnType} sealed arm; relaxing the per-permit answer breaks the
-     * invariant that lets the generator commit to a single Java source type per child-field coord
-     * at emit time.
+     * child datafetchers, or {@link DomainReturnType.NoClaim} where no fact in the model names
+     * it. The uniform-domain-return-type check rides on the {@link DomainReturnType.Claim} sealed
+     * arm; relaxing the per-permit answer breaks the invariant that lets the generator commit to a
+     * single Java source type per child-field coord at emit time. Answering a placeholder class
+     * instead of a no-claim is the opposite failure and equally forbidden: it manufactures a
+     * disagreement out of two producers that never stated anything.
      */
     DomainReturnType domainReturnType();
 
@@ -189,7 +191,11 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         };
     }
 
-    /** Anchor for "this permit has no concrete Java class on offer" — the unreached generic. */
+    /**
+     * {@link #peelToClassName}'s structural fallback: the answer when the reflected type is
+     * neither a bare class nor a peelable container. Not a stand-in for "this permit has no
+     * concrete Java class on offer"; {@link DomainReturnType.NoClaim} carries that meaning.
+     */
     ClassName OBJECT_CLASS = ClassName.get(Object.class);
     /** Anchor for permits whose value is a scalar {@code String} (encoded NodeId carriers, etc.). */
     ClassName STRING_CLASS = ClassName.get(String.class);
@@ -199,8 +205,13 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@code List}, {@code Set}, {@code Collection}, {@code Result}) one level deep, returning
      * the inner element {@link ClassName} or {@link #OBJECT_CLASS} when the inner type is not a
      * bare class. Mirrors {@code RecordBindingResolver.peelReturnElement} on the javapoet axis;
-     * used by {@code @service}-backed permits to derive their {@link DomainReturnType.Plain}
-     * payload from {@link MethodRef#returnType()} without classloading.
+     * used by the root {@code @service} permits ({@link QueryField.QueryServiceRecordField} and
+     * {@link MutationField.MutationServiceRecordField}) on their
+     * {@link ReturnTypeRef.ScalarReturnType} arm, and by {@link ChildField.ComputedField}, to
+     * derive a {@link DomainReturnType.Plain} payload without classloading. Class-backed result
+     * returns mint through {@link DomainReturnType#claimForBacking} instead: a root's reflected
+     * return peels honestly (the payload is returned directly), but a batched child's peels to
+     * {@code java.util.Map}, a type that never reaches {@code env.getSource()}.
      */
     static ClassName peelToClassName(TypeName t) {
         if (t instanceof ClassName cn) return cn;

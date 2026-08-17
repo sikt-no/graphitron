@@ -660,8 +660,15 @@ public sealed interface ChildField extends OutputField
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
             KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, "InterfaceField");
         }
+        /**
+         * The value handed down is one of the participant types' rows, chosen at run time by the
+         * polymorphic dispatch, so no single Java class names what arrives:
+         * {@link DomainReturnType.NoClaim}. An interface SDL return is filtered out of the
+         * conflict reduction's grouping in any case, so the answer's only surface is the
+         * rejection rendering.
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
         @Override public List<ColumnRef> parentRowColumns() {
             return ParentRowDemand.polymorphicParentRowColumns(
@@ -698,8 +705,9 @@ public sealed interface ChildField extends OutputField
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
             KeyLift.checkResidueAgreement(parentKeyLift, sourceKey, "UnionField");
         }
+        /** See {@link InterfaceField#domainReturnType()}: the same run-time-chosen participant row. */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
         @Override public List<ColumnRef> parentRowColumns() {
             return ParentRowDemand.polymorphicParentRowColumns(
@@ -754,8 +762,9 @@ public sealed interface ChildField extends OutputField
                     + "all-unbound set classifies as the inline leaf");
             }
         }
+        /** See {@link InterfaceField#domainReturnType()}: the same run-time-chosen participant row. */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
         @Override public List<ColumnRef> parentRowColumns() {
             return ParentRowDemand.polymorphicParentRowColumns(
@@ -813,8 +822,9 @@ public sealed interface ChildField extends OutputField
                     + "all-unbound set classifies as the inline leaf");
             }
         }
+        /** See {@link InterfaceField#domainReturnType()}: the same run-time-chosen participant row. */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
         @Override public List<ColumnRef> parentRowColumns() {
             return ParentRowDemand.polymorphicParentRowColumns(
@@ -979,8 +989,13 @@ public sealed interface ChildField extends OutputField
         public PivotSlotField {
             java.util.Objects.requireNonNull(readName, "readName");
         }
+        /**
+         * A slot value is whatever the projected aggregate yields for its column, read by name
+         * off the generic {@code Record}; nothing in the model names its Java class, so the
+         * answer is {@link DomainReturnType.NoClaim}.
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -1094,13 +1109,25 @@ public sealed interface ChildField extends OutputField
          * rejects at classify time.
          */
         public no.sikt.graphitron.javapoet.TypeName elementType() {
+            var grounded = groundedElementType();
+            return grounded != null ? grounded : method().returnType();
+        }
+
+        /**
+         * The per-key {@code V} where something grounds it, and {@code null} where nothing does.
+         * One derivation, two null policies: {@link #elementType()} falls back to the whole
+         * reflected type so a missed shape validation surfaces as the same request-time failure
+         * as before, while {@link #domainReturnType()} answers
+         * {@link DomainReturnType.NoClaim} rather than claiming a class no child fetcher sees.
+         */
+        private no.sikt.graphitron.javapoet.TypeName groundedElementType() {
             no.sikt.graphitron.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
             if (strict != null) return strict;
             // Non-built-in scalar leaf: the service method already declares the outer
             // Map<K, V> / List<V>, so peel V off it; handing back the whole reflected type
             // would let outerRowsReturnType wrap it once more into a Map<K, Map<K, V>> that
             // does not compile. Other null-perKey returns (a backing-less ResultReturnType)
-            // keep the whole-type fallback.
+            // ground nothing.
             if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
                 // loaderRegistration().container() is the field-level projection of the service
                 // method's Sourced param container (FieldBuilder.buildServiceLoaderRegistration
@@ -1109,13 +1136,45 @@ public sealed interface ChildField extends OutputField
                 // and validator can't disagree on isMapped.
                 boolean isMapped = loaderRegistration() != null
                     && loaderRegistration().container() == LoaderRegistration.Container.MAPPED_SET;
-                var peeled = RowsMethodShape.perKeyFromOuter(method().returnType(), returnType(), isMapped);
-                if (peeled != null) return peeled;
+                return RowsMethodShape.perKeyFromOuter(method().returnType(), returnType(), isMapped);
             }
-            return method().returnType();
+            return null;
         }
+        /**
+         * The per-key element the emitted {@code DataLoader<K, V>} resolves to, not the rows
+         * method's outer return: a batched leaf's {@code Map<K, V>} never reaches
+         * {@code env.getSource()} (the loader resolves it to one {@code V} per key), so a claim
+         * peeled off the reflected outer would name a class no child fetcher ever sees.
+         *
+         * <p>Derived from {@link #returnType()} rather than from the reflected return, the same
+         * way {@link #elementType()} derives the {@code V} the loader is typed with, so the claim
+         * and the loader cannot disagree about what {@code V} is:
+         * <ul>
+         *   <li>{@link ReturnTypeRef.ResultReturnType}:
+         *       {@link DomainReturnType#claimForResultReturn}, whose grounded-class branch is
+         *       exactly {@link RowsMethodShape#strictPerKeyType}'s answer for this arm.</li>
+         *   <li>{@link ReturnTypeRef.ScalarReturnType}: the per-key element as
+         *       {@link #elementType()} derives it, and {@link DomainReturnType.NoClaim} where
+         *       neither the schema nor the reflected outer grounds one. The arm is not a synonym
+         *       for "SDL scalar": a type that classified as a nesting or connection type falls
+         *       through to it and is an SDL Object type the conflict reduction does group, which
+         *       is why this derives a real element rather than answering no-claim wholesale.</li>
+         * </ul>
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
+            return switch (returnType()) {
+                case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
+                case ReturnTypeRef.ScalarReturnType ignored -> {
+                    var element = groundedElementType();
+                    yield element == null
+                        ? new DomainReturnType.NoClaim()
+                        : new DomainReturnType.Plain(element);
+                }
+                // A @table-typed return routes to the ServiceTableField sibling and a polymorphic
+                // one is deferred at classify, so neither arm reaches this leaf.
+                case ReturnTypeRef.TableBoundReturnType ignored -> new DomainReturnType.NoClaim();
+                case ReturnTypeRef.PolymorphicReturnType ignored -> new DomainReturnType.NoClaim();
+            };
         }
     }
 
@@ -1145,13 +1204,37 @@ public sealed interface ChildField extends OutputField
             java.util.Objects.requireNonNull(returnType, "returnType");
             java.util.Objects.requireNonNull(locator, "locator");
         }
+        /**
+         * Forks on {@link #returnType()}, not on the locator arm:
+         * <ul>
+         *   <li>{@link ReturnTypeRef.ResultReturnType}:
+         *       {@link DomainReturnType#claimForResultReturn}, following the consumer-level
+         *       identity precedent {@link ServiceTableField#domainReturnType()} sets. Derived from
+         *       the leaf's return type rather than from the reflected accessor handle, so a
+         *       covariant accessor declaration or a raw generic return cannot mint a false
+         *       conflict; the two are held equal upstream, where
+         *       {@code FieldBuilder.resolveRecordAccessor} passes the SDL type's bound class as
+         *       {@code ClassAccessorResolver}'s expected return and a component whose accessor
+         *       does not yield it never reaches this leaf.</li>
+         *   <li>{@link ReturnTypeRef.ScalarReturnType}: the column type under a
+         *       {@link ValueLocator.TypedColumn} locator, and {@link DomainReturnType.NoClaim}
+         *       under the others, where no fact in the model names what the read yields.</li>
+         * </ul>
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(switch (locator) {
-                case ValueLocator.TypedColumn tc -> tc.column().columnType();
-                case ValueLocator.JavaAccessor ignored -> OBJECT_CLASS;
-                case ValueLocator.ByName ignored -> OBJECT_CLASS;
-                case ValueLocator.DefaultRead ignored -> OBJECT_CLASS;
-            });
+            return switch (returnType) {
+                case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
+                case ReturnTypeRef.ScalarReturnType ignored -> switch (locator) {
+                    case ValueLocator.TypedColumn tc -> new DomainReturnType.Plain(tc.column().columnType());
+                    case ValueLocator.JavaAccessor ignored2 -> new DomainReturnType.NoClaim();
+                    case ValueLocator.ByName ignored2 -> new DomainReturnType.NoClaim();
+                    case ValueLocator.DefaultRead ignored2 -> new DomainReturnType.NoClaim();
+                };
+                // A @table-typed return classifies as a table-read leaf and a polymorphic one as
+                // an interface / union leaf; neither arm reaches this one.
+                case ReturnTypeRef.TableBoundReturnType ignored -> new DomainReturnType.NoClaim();
+                case ReturnTypeRef.PolymorphicReturnType ignored -> new DomainReturnType.NoClaim();
+            };
         }
     }
 
@@ -1203,8 +1286,16 @@ public sealed interface ChildField extends OutputField
                     + "result axis before this leaf is built");
             }
         }
+        /**
+         * The per-element composite class, minted through
+         * {@link DomainReturnType#claimForBacking} rather than spelled here: a nested composite
+         * class spelled {@code Outer$Nested} by {@code ClassName.bestGuess} and
+         * {@code Outer.Nested} by the shared mint are unequal {@link ClassName}s, which is the
+         * false-conflict defect the single mint exists to prevent. The compact constructor pins
+         * the non-null backing class, so the claim is never a no-claim here.
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(ClassName.bestGuess(returnType.fqClassName()));
+            return DomainReturnType.claimForBacking(returnType);
         }
     }
 
@@ -1273,8 +1364,15 @@ public sealed interface ChildField extends OutputField
                 throw new IllegalArgumentException("ErrorsField: transport must be non-null");
             }
         }
+        /**
+         * The list this field hands down is heterogeneous: one developer exception class per
+         * mapped {@code @error} type, chosen at run time. No single class names what arrives, so
+         * the honest answer is {@link DomainReturnType.NoClaim}. What the children of those
+         * types can read is enforced elsewhere, by {@code HandlerAccessorCheck}, which holds
+         * every handler's source class to the same declared field set.
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 

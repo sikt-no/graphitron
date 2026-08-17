@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
 import java.util.Optional;
@@ -118,7 +117,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -129,7 +128,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType
     ) implements QueryField {
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -169,7 +168,7 @@ public sealed interface QueryField extends RootField
             participantFilters = List.copyOf(participantFilters);
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -191,7 +190,7 @@ public sealed interface QueryField extends RootField
             participantFilters = List.copyOf(participantFilters);
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -253,8 +252,35 @@ public sealed interface QueryField extends RootField
         ServiceMethodCall serviceMethodCall,
         Optional<ErrorChannel.Mapped> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
+        /**
+         * Forks on {@link #returnType()} exactly as its structural twin
+         * {@link MutationField.MutationServiceRecordField#domainReturnType()} does. The two are
+         * root {@code @service} producers over one payload result type reached from the two
+         * operation roots, and both roots really do reach the same populations (the carrier mint
+         * keys on the payload type name, not on the root), so the symmetry is the invariant:
+         * writing the fork out on both sides is what keeps one payload type from carrying two
+         * arms depending on which root produced it.
+         *
+         * <ul>
+         *   <li>{@link ReturnTypeRef.ResultReturnType}:
+         *       {@link DomainReturnType#claimForResultReturn}, so a table-carrying payload answers
+         *       {@link DomainReturnType.TableRecord} and a class-backed one the backing-class
+         *       claim.</li>
+         *   <li>{@link ReturnTypeRef.ScalarReturnType}: {@link DomainReturnType.Plain} over the
+         *       reflected peel. A root {@code @service} returns its payload directly rather than
+         *       through a container, so {@link OutputField#peelToClassName} is honest here.</li>
+         * </ul>
+         */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
+            return switch (returnType) {
+                case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
+                case ReturnTypeRef.ScalarReturnType ignored ->
+                    new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
+                // A @table-typed return classifies as QueryServiceTableField and a polymorphic one
+                // as QueryServicePolymorphicField; neither arm reaches this leaf.
+                case ReturnTypeRef.TableBoundReturnType ignored -> new DomainReturnType.NoClaim();
+                case ReturnTypeRef.PolymorphicReturnType ignored -> new DomainReturnType.NoClaim();
+            };
         }
     }
 
@@ -290,7 +316,7 @@ public sealed interface QueryField extends RootField
             participants = List.copyOf(participants);
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -311,8 +337,9 @@ public sealed interface QueryField extends RootField
      * {@link QueryTableInterfaceField} ({@code returnType} over the shared {@code @table},
      * {@code discriminatorColumn}, {@code knownDiscriminatorValues}, {@code participants} of
      * {@link ParticipantRef.TableBound} with non-null {@code discriminatorValue}) plus the service
-     * binding. The payload is a raw {@code Record} / {@code List<Record>}, so {@link #domainReturnType()}
-     * is {@link DomainReturnType.Plain} over {@code Object}, exactly as route (a)'s variant.
+     * binding. The payload is a raw {@code Record} / {@code List<Record>} routed to a subtype at
+     * run time, so {@link #domainReturnType()} is {@link DomainReturnType.NoClaim}, exactly as
+     * route (a)'s variant.
      */
     record QueryServiceTableInterfaceField(
         String parentTypeName,
@@ -330,7 +357,7 @@ public sealed interface QueryField extends RootField
             participants = List.copyOf(participants);
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 }

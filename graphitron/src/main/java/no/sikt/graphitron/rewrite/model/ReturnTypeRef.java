@@ -38,8 +38,18 @@ public sealed interface ReturnTypeRef
      * forking on the null is asking "is there a reflected backing class to work against". The
      * copied string stands in for carrying the source arm's identity, so it shares the source
      * slot's caveat: the null is a stand-in marker, not a designed contract.
+     *
+     * <p>{@code table} is the resolved jOOQ table when the named type classified as a
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType} that resolved
+     * one, and {@code null} otherwise. It is the fact that decides whether a producer over this
+     * return hands down a typed jOOQ table record ({@link DomainReturnType#claimForResultReturn}),
+     * and it is carried rather than re-derived per leaf: {@code fqClassName}'s nullity is a
+     * statement about result-axis grounding only, and both {@code JooqTableRecordType}
+     * populations (reflected class name, and the class-less stand-in) put a typed record at
+     * {@code env.getSource()}.
      */
-    record ResultReturnType(String returnTypeName, FieldWrapper wrapper, String fqClassName) implements ReturnTypeRef {}
+    record ResultReturnType(String returnTypeName, FieldWrapper wrapper, String fqClassName, TableRef table)
+        implements ReturnTypeRef {}
 
     /**
      * The return type is a scalar, enum, or a type name that does not resolve to any classified

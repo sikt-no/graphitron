@@ -58,7 +58,6 @@ class ModelEmitVocabularyGuardTest {
         "MappingEntry.java",
         "MethodRef.java",
         "OutputField.java",
-        "QueryField.java",
         "ResolvedContextArg.java",
         "RoutineRef.java",
         "RowsMethodShape.java",

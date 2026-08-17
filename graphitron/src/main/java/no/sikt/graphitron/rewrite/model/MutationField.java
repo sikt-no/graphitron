@@ -363,19 +363,34 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, ServiceField {
         /**
-         * The carrier-shape case ({@code @service} mutation whose reflected return-element is the
-         * payload's single {@code @table}-typed data field's record class) puts a typed
-         * {@code XRecord} verbatim at {@code env.getSource()}: the arm is
-         * {@link DomainReturnType.TableRecord}, its {@link no.sikt.graphitron.javapoet.ClassName}
-         * peeled from {@link MethodRef#returnType()}'s parameterised shape. Non-carrier service
-         * shapes also answer {@code TableRecord}: the validator's structural equality groups
-         * producers by SDL return type, and only the carrier-shape conflict against
-         * {@link MutationDmlRecordField} / {@link MutationBulkDmlRecordField}'s
-         * {@link DomainReturnType.Record} arm is surfaced; other arrangements either agree or are
-         * filtered by upstream classifier rejections.
+         * Forks on {@link #returnType()} exactly as its structural twin
+         * {@link QueryField.QueryServiceRecordField#domainReturnType()} does; see that leaf for
+         * why the symmetry is the invariant rather than a coincidence.
+         *
+         * <ul>
+         *   <li>{@link ReturnTypeRef.ResultReturnType}:
+         *       {@link DomainReturnType#claimForResultReturn}. The carrier shape (a
+         *       {@code @service} mutation whose reflected return-element is the payload's single
+         *       {@code @table}-typed data field's record class) resolves a table and so puts a
+         *       typed {@code XRecord} verbatim at {@code env.getSource()}:
+         *       {@link DomainReturnType.TableRecord}, which is what the cross-arm conflict
+         *       against {@link MutationDmlRecordField} / {@link MutationBulkDmlRecordField}'s
+         *       {@link DomainReturnType.Record} arm reads. A class-backed, table-less payload
+         *       puts the payload object there and answers the backing-class claim.</li>
+         *   <li>{@link ReturnTypeRef.ScalarReturnType}: {@link DomainReturnType.Plain} over the
+         *       reflected peel, as the query twin.</li>
+         * </ul>
          */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.TableRecord(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
+            return switch (returnType) {
+                case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
+                case ReturnTypeRef.ScalarReturnType ignored ->
+                    new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
+                // A @table-typed return classifies as MutationServiceTableField and a polymorphic
+                // one as MutationServicePolymorphicField; neither arm reaches this leaf.
+                case ReturnTypeRef.TableBoundReturnType ignored -> new DomainReturnType.NoClaim();
+                case ReturnTypeRef.PolymorphicReturnType ignored -> new DomainReturnType.NoClaim();
+            };
         }
     }
 
@@ -403,7 +418,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             participants = List.copyOf(participants);
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 
@@ -435,7 +450,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             participants = List.copyOf(participants);
         }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+            return new DomainReturnType.NoClaim();
         }
     }
 

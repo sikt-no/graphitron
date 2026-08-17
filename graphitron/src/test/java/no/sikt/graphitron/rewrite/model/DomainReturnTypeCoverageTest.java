@@ -120,7 +120,7 @@ class DomainReturnTypeCoverageTest {
             List.of(), List.of(), List.of());
         return new MutationField.MutationDmlRecordField(
             "Mutation", "createFilm", null,
-            new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null),
+            new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null, null),
             new OperationMember.Write.Insert(tableInputArg), java.util.Optional.empty());
     }
 

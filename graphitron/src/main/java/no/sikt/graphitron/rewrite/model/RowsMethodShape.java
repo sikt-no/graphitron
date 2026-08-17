@@ -75,8 +75,12 @@ public final class RowsMethodShape {
      * compares it against a reflected {@code TypeName} (which is structural) and fails on a payload
      * that is in fact correct, and the emitter writes it into the loader's declared value type, where
      * javac rejects the {@code $}.
+     *
+     * <p>Package-private rather than private so {@link DomainReturnType#claimForBacking} mints its
+     * backing-class claim through this same splitting: a fourth spelling of it would put two
+     * producers of one nested class on two unequal {@link ClassName}s.
      */
-    private static ClassName fromBinaryName(String binaryName) {
+    static ClassName fromBinaryName(String binaryName) {
         int lastDot = binaryName.lastIndexOf('.');
         String packageName = lastDot < 0 ? "" : binaryName.substring(0, lastDot);
         String[] names = binaryName.substring(lastDot + 1).split("\\$");

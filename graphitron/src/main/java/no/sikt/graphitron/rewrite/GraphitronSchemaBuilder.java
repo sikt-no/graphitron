@@ -681,11 +681,27 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Detects that every {@link OutputField} producer reaching the same SDL return-type name
-     * agrees on its {@link DomainReturnType} sealed arm. Disagreement means the producers put
-     * structurally different Java values at {@code env.getSource()} for the SDL return type's
+     * agrees on its {@link DomainReturnType.Claim} sealed arm. Disagreement means the producers
+     * put structurally different Java values at {@code env.getSource()} for the SDL return type's
      * child datafetchers; the generator commits to one source-Java-type per child-field coord at
      * emit time and does not branch on runtime source type, so a multi-producer disagreement
      * would feed a datafetcher generated against the other producer's record shape.
+     *
+     * <p>Only claims are compared. A {@link DomainReturnType.NoClaim} producer states that
+     * nothing in the model names what it hands down, and unverifiable is not disagreeing, so it
+     * is excluded from the comparison; the local grouping and participant helpers are declared
+     * over {@link DomainReturnType.Claim} so that exclusion is a type fact rather than a filter
+     * a later edit must remember. A no-claim producer stays in the rejection's participant list
+     * when a real conflict fires: the author's first question is who else produces the type.
+     *
+     * <p>What remains enforced here is cross-arm: {@link DomainReturnType.Record} against
+     * {@link DomainReturnType.TableRecord} against {@link DomainReturnType.Plain}, the
+     * projection-vs-typed-record-vs-domain-object axis the arms exist to separate. Class identity
+     * <em>within</em> the {@code Plain} arm for a class-backed SDL type is not this reduction's
+     * job and never was reliably: it is enforced upstream by
+     * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}'s per-type binding fold, which
+     * compares reflected {@code Class} identity and surfaces disagreement as
+     * {@link Rejection.AuthorError.RecordBindingMultiProducer}.
      *
      * <p>Registers one {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} per
      * conflict group on the schema's diagnostic channel ({@code ctx.addDiagnostic}), each naming
@@ -707,10 +723,15 @@ public class GraphitronSchemaBuilder {
             List<FieldCoordinates> coords = group.getValue();
             if (coords.size() < 2) continue;
 
-            java.util.Map<DomainReturnType, List<FieldCoordinates>> byDomain = new LinkedHashMap<>();
+            java.util.Map<DomainReturnType.Claim, List<FieldCoordinates>> byDomain = new LinkedHashMap<>();
             for (var coord : coords) {
                 var of = (OutputField) ctx.fieldRegistry.get(coord);
-                byDomain.computeIfAbsent(of.domainReturnType(), k -> new ArrayList<>()).add(coord);
+                // Claims only: a NoClaim producer is not stating a disagreeing value, it is
+                // stating that no fact names the value. The map's key type is what keeps that
+                // exclusion from being a filter someone can drop.
+                if (of.domainReturnType() instanceof DomainReturnType.Claim claim) {
+                    byDomain.computeIfAbsent(claim, k -> new ArrayList<>()).add(coord);
+                }
             }
             if (byDomain.size() < 2) continue;
 

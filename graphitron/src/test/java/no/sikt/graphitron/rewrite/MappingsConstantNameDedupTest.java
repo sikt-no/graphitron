@@ -186,7 +186,7 @@ class MappingsConstantNameDedupTest {
             "Query",
             fieldName,
             null,
-            new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null),
+            new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null, null),
             new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
             channel);
     }

@@ -580,7 +580,12 @@ class BuildContext {
         if (target instanceof InterfaceType || target instanceof UnionType)
             return new ReturnTypeRef.PolymorphicReturnType(targetTypeName, wrapper);
         if (target instanceof ResultType rt)
-            return new ReturnTypeRef.ResultReturnType(targetTypeName, wrapper, rt.fqClassName());
+            // The resolved table rides along: it is the fact that decides whether a producer over
+            // this return hands down a typed jOOQ table record, and only JooqTableRecordType has
+            // one on offer. Re-deriving it at each leaf is not possible uniformly (a batched
+            // child's reflected return peels to java.util.Map), so it is carried.
+            return new ReturnTypeRef.ResultReturnType(targetTypeName, wrapper, rt.fqClassName(),
+                rt instanceof GraphitronType.JooqTableRecordType jtr ? jtr.table() : null);
         return new ReturnTypeRef.ScalarReturnType(targetTypeName, wrapper);
     }
 
