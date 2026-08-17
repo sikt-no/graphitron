@@ -2009,7 +2009,10 @@ walk is evidence here, not the specification.
     relation now names the split no author writes a marker for, the editor marks it and says why, and
     the arm's own prose owns two departures from the walk. What did not close is the prohibition the
     arm was blamed for, because a second population turned out to be missing and nobody had written
-    it down; the section below names it and hands it on.
+    it down; the section below names it and hands it on. The three silent surfaces are done with it: a
+    payload type now carries the class backing it as its inlay label and as a hover line, a type two
+    producers answer differently says so where nothing said anything at all before, and the third
+    silence turned out to be the right answer rather than a gap, which the section below argues.
 
 ## Settled while building: a declared type is a tree, so resolving it is a relation per position
 
@@ -2738,6 +2741,55 @@ own. The diagnostic's guard keeps its own case, where the guard actually lives. 
 a producer whose return type names a qualified class, `StoreFixture.producing`: a synthetic method
 carries an erased display name, and a package-less name cannot ground anything, which is exactly why
 the census records the qualified names a declared type mentions as rows of their own.
+
+## Settled while building: three silences were two reads and one correct answer
+
+The plan counted three surfaces a class-bound type was silent on and read that as three holes. Two of
+them are one read of the backing the store now holds. The third is not a hole at all, and saying so is
+the useful part.
+
+**The label is a class name because the vocabulary it would otherwise need does not exist.** The
+type-grain classifier vocabulary is `TABLE` and `ERROR`, and both are authored: a claim is what a
+directive said. A backing is derived, so widening that vocabulary to admit it would have put a
+reflection result into a relation keyed on directive applications, which is the shape this whole
+stratum exists to avoid. Minting a category word for the inlay instead (`CLASS`, say) fails a simpler
+test: an author looking at a payload type already knows it is not a table, and what they do not know is
+which class. So the label is the class's simple name, and the CamelCase does real work, reading as a
+class where a classifier reads as a category.
+
+**A claim beats a backing, and not because the label has room for one.** A claimed type's classifier
+already answers what it is, and its backing follows from that answer: a `@table` type's class is its
+table's generated record, which the table facts name one join away. Suppressing the backing there is
+therefore not a truncation, it is declining to restate a derivation. The population that gains a label
+is exactly the population that had none.
+
+**The contested type had no surface anywhere, and that is the finding worth keeping.** Two producers
+naming different classes for one type is a schema the generator refuses to bind, and every reader that
+needs one class is silent there by design, the resolving reader included. So an author whose two
+`@service` methods disagree saw a payload type rendering like a plain object, with nothing anywhere
+saying why. The hover now names the classes and says nothing binds. This is the first surface for a
+population the walk does not merely fail to show but actively hides, by refusing the second
+observation and keeping the first.
+
+**The third silence is correct, and recording that is what closes it.** A ghost renders a directive an
+author could have written with the argument filled in. No directive carries a backing class any more:
+`@record` is deprecated and ignored, so ghosting it would advertise a directive that does nothing. The
+absent-`@table` pass's own comment had lumped the class arm together with the nesting arm as "a missing
+relation"; only the nesting half is, and the class half will never be a ghost. Both halves are now
+stated where a reader will look, so the next person to find this silence does not build a renderer for
+it.
+
+**One bulk read, and the two rules stay in one place.** The inlay annotates a region, so the backing
+read is bulk like the claim reads beside it: the seeds for every type asked about, then the coalesced
+relation for the names nothing grounded. The single-type entry now delegates to the bulk one, which
+matters because the grounding-beats-hop rule and the contested-is-empty rule are the reader's own and a
+second copy of them would drift.
+
+**Cleanup the previous increment owed.** Two javadoc paragraphs still described the class-backed-parent
+split as missing from the separate-fetch relation, one increment after it landed. Both now name the two
+populations that really are missing. The lesson is mechanical: when an increment closes a hole, grep the
+prose that named the hole, because the artifacts that disclose an absence are exactly the ones no test
+covers.
 
 ## Settled while building: the implicit split is three joins, and the hole it was blamed for was two
 

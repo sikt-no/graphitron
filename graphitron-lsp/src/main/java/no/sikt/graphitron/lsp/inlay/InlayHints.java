@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.facts.BoundTables;
 import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
 import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
+import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -45,7 +46,9 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *       {@code path:} for the third), renders the resolved value as a ghost annotation.</li>
  *   <li><b>Classification arm</b>: at a field or type declaration the claim stratum has an
  *       opinion about, renders the classifiers claiming it, read from
- *       {@link ClaimClassifiers}.</li>
+ *       {@link ClaimClassifiers}. At a type declaration no claim names, renders instead the class
+ *       the store backs it with ({@link TypeBackingClass}), which is what graphitron knows a
+ *       producer's payload type to be when no directive says anything about it.</li>
  *   <li><b>Separate-fetch arm</b>: at a field whose rows come from a statement of its own,
  *       renders one marker word. Its own toggle rather than a second label on the classification
  *       arm, because whether a field costs a round trip is a delivery fact rather than a
@@ -175,6 +178,17 @@ public final class InlayHints {
      * fetch batches) are what the hover renders, each from the relation that owns it, because a
      * word naming their combinations would be a taxonomy this arm had to keep in step with the
      * generator by hand.
+     *
+     * <p>One type-declaration label is not a classifier, and it is here because the alternative was
+     * silence at a type graphitron has a firm opinion about. A payload type reached through a
+     * {@code @service} return carries no type directive, so no claim names it, and what the store
+     * knows about it is a backing class. That is not a claim (nothing authored declares it; the
+     * {@code @record} directive that once did is deprecated and ignored), so it renders as the
+     * class's own simple name rather than as a category word minted for the occasion. The
+     * CamelCase reads as a class where a classifier reads as a category, and the class is the
+     * answer an author actually wants at such a type. It shows only where no claim does, the label
+     * having room for one answer: a claimed type's backing, and a contested type's candidates, are
+     * the hover's to state.
      */
     private static void collectClassificationHints(
         List<InlayHint> out, FileSnapshot file, StoreHandle store,
@@ -182,13 +196,32 @@ public final class InlayHints {
     ) {
         var byType = ClaimClassifiers.ofTypes(store, typeNames);
         var byCoordinate = ClaimClassifiers.ofFields(store, typeNames);
+        var unclaimedTypes = new LinkedHashSet<String>();
         for (var site : sites) {
-            var classifiers = site.fieldName() == null
-                ? byType.get(site.typeName())
-                : byCoordinate.get(site.typeName() + "." + site.fieldName());
+            if (site.fieldName() == null && !byType.containsKey(site.typeName())) {
+                unclaimedTypes.add(site.typeName());
+            }
+        }
+        var backingByType = TypeBackingClass.ofTypes(store, unclaimedTypes);
+        for (var site : sites) {
+            if (site.fieldName() == null) {
+                var classifiers = byType.get(site.typeName());
+                String label = classifiers == null || classifiers.isEmpty()
+                    ? simpleName(backingByType.get(site.typeName()))
+                    : String.join(", ", classifiers);
+                if (label != null) out.add(makeHint(file, site.nameNode(), label, InlayHintKind.Type));
+                continue;
+            }
+            var classifiers = byCoordinate.get(site.typeName() + "." + site.fieldName());
             if (classifiers == null || classifiers.isEmpty()) continue;
             out.add(makeHint(file, site.nameNode(), String.join(", ", classifiers), InlayHintKind.Type));
         }
+    }
+
+    /** The trailing segment of a binary class name, or null for no class at all. */
+    private static String simpleName(String className) {
+        if (className == null) return null;
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     // ===== Separate-fetch arm =====
@@ -201,8 +234,9 @@ public final class InlayHints {
      * <p>Silent at a field a universal rule reaches, which today is every field of a root type: a
      * marker true of an entire type down its whole length is noise, and its absence there is not a
      * claim that the field inlines. Silent at a field no rule reaches for the opposite reason and
-     * with the same caveat, the relation not yet carrying the implicit split a class-backed parent
-     * forces, so this arm marks what it can prove and never marks the complement.
+     * with the same caveat, the relation still not carrying a child reached through a connection
+     * wrapper nor the polymorphic fan-in, so this arm marks what it can prove and never marks the
+     * complement.
      */
     private static void collectSeparateFetchHints(
         List<InlayHint> out, FileSnapshot file, StoreHandle store,
@@ -282,13 +316,15 @@ public final class InlayHints {
      * present directive omitted. What it reaches today is the {@code extend type} site, a binding
      * being a property of the type rather than of the declaration in front of the cursor.
      *
-     * <p>It does not reach the undirected bindings, and that absence is a missing relation rather
-     * than a missing case. A directiveless object reached from a field of a scoped type resolves
-     * its fields against the parent's own row; a type produced by a class-returning field resolves
-     * them against that class's members, with no directive naming either. The relation this pass
-     * reads is keyed on {@code @table} applications and cannot carry a binding whose source is the
-     * producing field. Until those are relations, read a ghost that appears and do not read its
-     * absence as "this type is unbound".
+     * <p>It does not reach the undirected bindings, and one of those two is still a missing relation
+     * while the other will never be a ghost. A directiveless object reached from a field of a scoped
+     * type resolves its fields against the parent's own row, and nothing states that binding yet, so
+     * read a ghost that appears and do not read its absence as "this type is unbound". A type
+     * produced by a class-returning field is the other, and the store answers it now; it gets no
+     * ghost because a ghost renders a directive an author could have written, and no directive
+     * carries a backing class any more, {@code @record} being deprecated and ignored. What shows
+     * that binding is the classification arm's type label, which is why the label is a class name
+     * there rather than a category.
      *
      * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
      * null. {@code @field} would put a ghost on every column-bound field in the file, and

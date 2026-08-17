@@ -32,9 +32,14 @@ class ClassificationHoverTest {
      * a DML mutation, a split child field claimed by nothing, a claimed type, an error type, and
      * declarations nothing reaches at all.
      */
+    private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
+
     private static final String SDL = """
         type Query {
             films: [Film] @service(service: {className: "com.example.FilmService", method: "all"})
+            card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            left: Contested @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            right: Contested @service(service: {className: "%1$s", method: "makeFilmPojo"})
         }
 
         type Mutation {
@@ -57,10 +62,18 @@ class ClassificationHoverTest {
             text: String
         }
 
+        type FilmCard {
+            title: String
+        }
+
+        type Contested {
+            title: String
+        }
+
         type FilmError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
             message: String
         }
-        """;
+        """.formatted(FIXTURE_SERVICE);
 
     @TempDir
     static Path tmp;
@@ -69,7 +82,7 @@ class ClassificationHoverTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, SDL);
+        store = StoreFixture.ofCatalog(tmp, SDL, StoreFixture.backingClasses());
     }
 
     @AfterAll
@@ -215,7 +228,40 @@ class ClassificationHoverTest {
     }
 
     @Test
+    void anUnclaimedTypeNamesTheClassBackingIt() {
+        // The payload type the block used to be silent about. No claim names it, so no heading, and
+        // the class its producer hands back is what the store knows it to be.
+        var file = file("""
+            type FilmCard {
+                title: String
+            }
+            """);
+        assertThat(hoverAt(file, 0, "type FilmCa".length()))
+            .doesNotContain("**")
+            .contains("`FilmCard`")
+            .contains("Backed by: `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
+    }
+
+    @Test
+    void aTypeTwoProducersBackDifferentlySaysSoRatherThanPickingOne() {
+        // The population with no surface at all before this: every reader that needs one class is
+        // silent, so without this line the author sees a payload type rendering like a plain object.
+        var file = file("""
+            type Contested {
+                title: String
+            }
+            """);
+        assertThat(hoverAt(file, 0, "type Conte".length()))
+            .contains("`Contested`")
+            .contains("Backing contested, so nothing binds:")
+            .contains("R157FilmPojo")
+            .contains("R157FilmRecord");
+    }
+
+    @Test
     void aDeclarationNothingReachesGetsNoHover() {
+        // Claimed by nothing and backed by nothing: a plain nesting object, which is the population
+        // the backing lines must stay quiet about or they would fire on most of a schema.
         var file = file("""
             type Note {
                 text: String

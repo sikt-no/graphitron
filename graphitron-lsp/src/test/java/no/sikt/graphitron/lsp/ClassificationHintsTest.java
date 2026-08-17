@@ -36,8 +36,16 @@ class ClassificationHintsTest {
      * structural classifier reaches, a field an authored claim masks it at, a coordinate two
      * claims land on, and declarations nothing claims at all.
      */
+    private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
+
     private static final String SDL = """
-        type Query { placeholder: Int }
+        type Query {
+            placeholder: Int
+            card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            row: FilmRow @service(service: {className: "%1$s", method: "makeFilmRow"})
+            left: Contested @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            right: Contested @service(service: {className: "%1$s", method: "makeFilmPojo"})
+        }
 
         type Film @table(name: "film") {
             title: String
@@ -49,10 +57,22 @@ class ClassificationHintsTest {
             text: String
         }
 
+        type FilmCard {
+            title: String
+        }
+
+        type FilmRow @table(name: "film") {
+            title: String
+        }
+
+        type Contested {
+            title: String
+        }
+
         type FilmError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
             message: String
         }
-        """;
+        """.formatted(FIXTURE_SERVICE);
 
     @TempDir
     static Path tmp;
@@ -61,7 +81,7 @@ class ClassificationHintsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, SDL);
+        store = StoreFixture.ofCatalog(tmp, SDL, StoreFixture.backingClasses());
     }
 
     @AfterAll
@@ -115,7 +135,46 @@ class ClassificationHintsTest {
     }
 
     @Test
+    void aTypeNoClaimNamesIsLabelledWithTheClassBackingIt() {
+        // The payload type this arm used to be silent about. Nothing is authored at the
+        // declaration: the label comes from the class a producer elsewhere in the schema hands
+        // back, which is the whole of what the store knows the type to be.
+        var file = file("""
+            type FilmCard {
+                title: String
+            }
+            """);
+        assertThat(labels(file, fullRange())).containsExactly("R157FilmRecord");
+    }
+
+    @Test
+    void aClaimBeatsABackingAtTheSameType() {
+        // FilmRow is bound to a table and grounded on that table's generated record, so both
+        // populations answer. The label is the claim, the backing following from it.
+        var file = file("""
+            type FilmRow @table(name: "film") {
+                title: String
+            }
+            """);
+        assertThat(labels(file, fullRange())).containsExactly("TABLE", "TABLE_COLUMN");
+    }
+
+    @Test
+    void aTypeTwoProducersBackDifferentlyGetsNoLabel() {
+        // Two producers naming different classes leaves nothing to prefer, and a label showing one
+        // would name the class the generator does not bind. The hover states the disagreement.
+        var file = file("""
+            type Contested {
+                title: String
+            }
+            """);
+        assertThat(labels(file, fullRange())).isEmpty();
+    }
+
+    @Test
     void aDeclarationNoClassifierClaimsGetsNoLabel() {
+        // Note is claimed by nothing and backed by nothing: no producer returns it and no member
+        // of a backed class delivers it, so the arm has no opinion to render at either grain.
         var file = file("""
             type Note {
                 text: String

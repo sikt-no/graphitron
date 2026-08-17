@@ -18,7 +18,7 @@ All four live under the `graphitron.inlayHints` (and `graphitron.hover`) namespa
 
 | `graphitron.inlayHints.classification`
 | `false`
-| Renders the classifier claiming a field or type declaration, at the declarations something claims. The field vocabulary is `SERVICE`, `EXTERNAL_FIELD`, `NODE_ID`, `LOOKUP_KEY`, `ROUTINE`, `MUTATION` and `TABLE_COLUMN`; the type vocabulary is `TABLE` and `ERROR`.
+| Renders the classifier claiming a field or type declaration, at the declarations something claims. The field vocabulary is `SERVICE`, `EXTERNAL_FIELD`, `NODE_ID`, `LOOKUP_KEY`, `ROUTINE`, `MUTATION` and `TABLE_COLUMN`; the type vocabulary is `TABLE` and `ERROR`. A type no directive claims but a Java class backs is labelled with that class's simple name instead.
 
 | `graphitron.inlayHints.separateFetch`
 | `false`
@@ -53,6 +53,10 @@ Renders the classifier a declaration is claimed by: the directive that named it 
 
 A declaration nothing claims gets no hint. That is the point of the surface: a hint marks where Graphitron has an opinion about a declaration, and a plain SDL object or a field with no binding gets silence rather than a word for "nothing in particular".
 
+One type label is not a classifier. A payload type reached through a `@service` return carries no directive of its own, so nothing claims it, and Graphitron still knows exactly what it is: the Java class the producer hands back. Such a type is labelled with that class's simple name, so `type FilmCard` under a service returning `FilmCardRecord` reads `FilmCardRecord`. The CamelCase is the tell that you are looking at a class rather than a category, and it answers the question worth asking at a payload type. There is no directive to infer here and therefore no ghost: `@record` is deprecated and ignored, so nothing an author could write expresses the binding, and the label takes its place.
+
+Two producers naming different classes for one type get no label. Graphitron binds neither, and a label showing one would name the class it does not use; hover the type to see which classes disagree.
+
 An authored claim hides the structural one, so a `@service` field of a `@table` type shows `SERVICE` even where its name would have matched a column. Where two directives claim the same declaration, both classifiers render, comma-separated: that is a schema error, and naming the two claims says more than a single word for "conflicted" would.
 
 The label is the classifier and only the classifier. Which table, which column, which foreign-key path, whether the field launches a query of its own: those are facts of their own and the hover is where they are unpacked.
@@ -68,7 +72,12 @@ Renders as markdown when the cursor is on a field-declaration or type-declaratio
 * The join path, where an authored `@reference` resolves to one: each element as the foreign key it joins on and the table it lands in.
 * `Fetched separately`, described below.
 
-Two of those lines hold a hover open on their own. A child field returning a `@table` type is claimed by nothing (no directive names what it is, and the structural classifier only reaches leaf fields), so gating the block on a claim would silence it on exactly the fields whose round-trip cost an author wants to see.
+* `Backed by`, on a type no directive claims that a Java class stands for: the qualified class a producer's return grounds it on, or that a member of another backed class delivers.
+* `Backing contested`, on a type Graphitron answers more than one way. Two producers naming different classes is a schema Graphitron refuses to bind, and this line is the only place that says so; every surface that needs one class is silent there by design.
+
+Three of those lines hold a hover open on their own. A child field returning a `@table` type is claimed by nothing (no directive names what it is, and the structural classifier only reaches leaf fields), so gating the block on a claim would silence it on exactly the fields whose round-trip cost an author wants to see; a payload type is claimed by nothing for the same kind of reason, and its backing is the whole answer to what it is.
+
+A claimed type shows no backing line. Its classifier already answers what it is, and the class follows from that answer: a `@table` type's class is its table's generated record, and the table is named in the block above.
 
 Hover stays distinct from the directive-argument-keyed dispatch (`@table(name:)`, `ExternalCodeReference.method`, ...): the existing directive-arg hovers keep firing when the cursor sits inside a directive, and the classification hover fires only as a fallback on declaration coordinates.
 
