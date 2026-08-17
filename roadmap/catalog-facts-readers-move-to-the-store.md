@@ -302,6 +302,16 @@ tests assert, and what gate one now saves is one census query per `catalog.searc
 that is about to embed text if it misses. Deleting a cache whose subject is two queries is the
 cheaper simplification.
 
+As implemented, the *seam* survives while the projection and the gate go, and the distinction is the
+reason gate one could not be kept: the index takes a supplier of corpus rows rather than of a
+projection, and a read composes fresh rows on every call, so there is no reference for an identity
+check to compare. What crosses into the RAG package is a row shape it declares itself (`CorpusTable`,
+beside the composer that reads it) rather than a query surface; `CatalogQueries` fills it, which keeps
+the module's census reads in one place and the dependency one-directional, the RAG package naming no
+store type. The refusal is gated at the wire beside `catalog.describe`'s rather than inside the index,
+so the RAG package needs no vocabulary for a wiring fact, and it is ordered store-first: no store
+refuses, and no embedder over a store that is present is still the warming degradation.
+
 **Leaves behind.** `catalogFacts` keeps one reader, the edge tools.
 
 ## Slice 4: `edges`, and `CatalogFacts` deletes
@@ -977,6 +987,12 @@ The tool output is the acceptance surface, so the deltas are named rather than d
   tools take the same posture. This is not the pre-capture case: a store with no rows yet is an
   answer, and absence of rows is absence of tables.
 
+  `catalog.search` changes arm rather than answer here, which is worth naming because it had a
+  plausible-looking one already: a store-less server reported the warming degradation, telling an
+  agent to retry on a server where retrying cannot help. Its corpus is the census after this item, so
+  it refuses with the others. A store present and no embedder keeps the warming arm, that being an
+  index with nothing to rank rather than nothing to rank over.
+
 ## What deletes, and when
 
 Each slice above states its own deletions and they are not repeated here. What this section carries
@@ -1108,7 +1124,12 @@ close-out guards, are the item's own rather than any one tool's.
   byte-identical, so one store-backed case owns corpus composition end to end.
 * `CatalogSearchIndexTest` / `CatalogSearchOnnxTest` replace the facts supplier with the corpus
   seam. With gate one deleted, the hash gate is the only invalidation left and carries the cases: a
-  recapture that changed nothing must not re-embed, a changed catalog must.
+  recapture that changed nothing must not re-embed, a changed catalog must. The store-backed case the
+  bullet above calls for landed as `CatalogSearchCorpusTest`, which is where both corpus orderings are
+  pinned: the tables against the page `catalog.tables` draws off the same relation, table for table
+  and in the same order, and the columns against the definition order inside the string the embedder is
+  handed. It also carries the two-schema case, a bare name two schemas declare being where a corpus
+  keyed by anything less than the qualified pair would silently lose a table.
 * The foreign-key column pairing is stated by `sql_referential_constraint`'s own DDL comment, which
   calls it guaranteed by SQL semantics and never copied onto the referencing row. The relation
   therefore needs no case: as a positional join over two captured relations it is correct exactly

@@ -1,10 +1,8 @@
 package no.sikt.graphitron.mcp.rag;
 
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,6 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * retrieval-lift invariants pin here without loading a model. Covers snake_case /
  * camelCase / acronym / digit / single-word splitting, the comment-present vs name-only degradation,
  * and that every descriptor carries both the raw SQL token and its normalized words.
+ *
+ * <p>Store-free deliberately, and the property split is what licenses it: formatting and identifier
+ * normalization are the composer's own business and need no rows. That the rows a real capture yields
+ * compose the string the index embeds is a different claim, and
+ * {@code CatalogSearchCorpusTest} owns it over a captured store.
  */
 class CatalogDescriptorsTest {
 
@@ -30,12 +33,11 @@ class CatalogDescriptorsTest {
 
     @Test
     void descriptorCarriesRawAndNormalizedTokensAndTheTableComment() {
-        var table = new CatalogFacts.Table(
-            "public", "film_actor", Optional.of("join table linking films to actors"),
+        var table = new CorpusTable(
+            "public", "film_actor", "join table linking films to actors",
             List.of(
-                new CatalogFacts.Column("actor_id", "ACTOR_ID", "integer", false, Optional.of("the actor")),
-                new CatalogFacts.Column("last_update", "LAST_UPDATE", "timestamp", false, Optional.empty())),
-            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+                new CorpusTable.Column("actor_id", "the actor"),
+                new CorpusTable.Column("last_update", null)));
 
         String descriptor = CatalogDescriptors.descriptor(table);
 
@@ -51,10 +53,9 @@ class CatalogDescriptorsTest {
 
     @Test
     void descriptorDegradesToNamesOnlyWhenNoCommentsWereCaptured() {
-        var table = new CatalogFacts.Table(
-            "public", "address", Optional.empty(),
-            List.of(new CatalogFacts.Column("address_id", "ADDRESS_ID", "integer", false, Optional.empty())),
-            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+        var table = new CorpusTable(
+            "public", "address", null,
+            List.of(new CorpusTable.Column("address_id", null)));
 
         String descriptor = CatalogDescriptors.descriptor(table);
 

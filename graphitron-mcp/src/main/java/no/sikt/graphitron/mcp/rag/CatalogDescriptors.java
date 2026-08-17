@@ -1,15 +1,13 @@
 package no.sikt.graphitron.mcp.rag;
 
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 /**
- * The pure descriptor composer for the {@code catalog.search} semantic index. Turns a
- * frozen {@link CatalogFacts.Table} into one readable, embeddable descriptor string, and
+ * The pure descriptor composer for the {@code catalog.search} semantic index. Turns one
+ * {@link CorpusTable} into a readable, embeddable descriptor string, and
  * normalizes SQL identifiers into readable words so the embedder sees language rather
  * than {@code snake_case} tokens. Stateless and ONNX-free, so the retrieval-lift invariants pin in
  * a fast unit test.
@@ -40,10 +38,12 @@ final class CatalogDescriptors {
      * exact string handed to {@link Embedder#embedDocuments(List)} for this table, and the exact
      * string folded into {@link #corpusHash(List)}.
      */
-    static String descriptor(CatalogFacts.Table table) {
+    static String descriptor(CorpusTable table) {
         var sb = new StringBuilder();
         sb.append("Table ").append(table.name()).append(" (").append(splitWords(table.name())).append(')');
-        table.comment().ifPresent(c -> sb.append('\n').append("Comment: ").append(c));
+        if (table.comment() != null) {
+            sb.append('\n').append("Comment: ").append(table.comment());
+        }
         if (!table.columns().isEmpty()) {
             sb.append('\n').append("Columns: ");
             for (int i = 0; i < table.columns().size(); i++) {
@@ -51,8 +51,10 @@ final class CatalogDescriptors {
                 if (i > 0) {
                     sb.append(", ");
                 }
-                sb.append(col.sqlName()).append(" (").append(splitWords(col.sqlName())).append(')');
-                col.comment().ifPresent(c -> sb.append(": ").append(c));
+                sb.append(col.name()).append(" (").append(splitWords(col.name())).append(')');
+                if (col.comment() != null) {
+                    sb.append(": ").append(col.comment());
+                }
             }
         }
         return sb.toString();
@@ -137,10 +139,10 @@ final class CatalogDescriptors {
     /**
      * The invalidation key: a SHA-256 over the exact descriptor strings, in order, that are handed
      * to {@link Embedder#embedDocuments(List)}. Computed over the composer's output, never over
-     * {@link CatalogFacts} fields directly, so the hashed thing and the embedded thing are the same
+     * {@link CorpusTable} fields directly, so the hashed thing and the embedded thing are the same
      * artifact and cannot drift when the descriptor format or normalization changes. A changed
-     * column / comment changes a descriptor and so the hash; recomposing identical facts yields an
-     * identical hash.
+     * column / comment changes a descriptor and so the hash; recomposing an unchanged census yields
+     * an identical hash, which is what makes the hash the whole of the invalidation.
      */
     static String corpusHash(List<String> descriptors) {
         try {

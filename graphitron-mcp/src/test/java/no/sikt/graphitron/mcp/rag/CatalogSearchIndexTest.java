@@ -1,13 +1,10 @@
 package no.sikt.graphitron.mcp.rag;
 
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,34 +17,36 @@ import static org.assertj.core.api.Assertions.assertThat;
  * without ONNX. Covers hash-covers-the-corpus re-embed gating, the warming-on-change re-entry,
  * embedder-identity rejection, the persistence round-trip + sibling reaping, and the cross-warm
  * failure propagation.
+ *
+ * <p>The corpus arrives as rows a supplier hands over, which is what the census read produces, so
+ * these cases drive content changes without a store. What they own is the invalidation, and the hash
+ * is now the whole of it: the reference gate that used to sit in front of it had a projection
+ * reference to compare and a read has none.
  */
 class CatalogSearchIndexTest {
 
-    // ---- gate invariants: a changed hash re-embeds, a same-content reference change does not ----
+    // ---- the hash gate: a changed catalog re-embeds, an unchanged recapture does not ----
 
     @Test
-    void changedContentReEmbedsButSameContentReferenceSwapDoesNot() throws Exception {
-        var facts = new AtomicReference<>(factsWith(table("film", "title")));
+    void changedContentReEmbedsButAnUnchangedRecaptureDoesNot() throws Exception {
+        var corpus = new AtomicReference<>(corpusOf(table("film", "title")));
         var embedder = new SpyEmbedder(4);
-        try (var index = newIndex(facts::get, embedder, tempCache())) {
+        try (var index = newIndex(corpus::get, embedder, tempCache())) {
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             // The strings handed to embedDocuments are exactly the composer's output: the hashed
             // thing and the embedded thing are the same artifact, so they cannot drift.
-            assertThat(embedder.lastTexts).isEqualTo(composed(facts.get()));
+            assertThat(embedder.lastTexts).isEqualTo(composed(corpus.get()));
             assertThat(embedder.embedCalls).hasValue(1);
 
-            // A no-op recompile: a fresh CatalogFacts with identical content. Gate 1 misses on the
-            // reference, gate 2 hits on the hash -> no re-embed.
-            facts.set(factsWith(table("film", "title")));
+            // A recapture that changed nothing: fresh rows, identical content. Every read composes,
+            // and the hash is what decides, so nothing re-embeds however many times it is read.
+            corpus.set(corpusOf(table("film", "title")));
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            assertThat(embedder.embedCalls).as("same content under a new reference re-embeds nothing").hasValue(1);
-
-            // A same-reference call short-circuits on gate 1 (no compose, no re-embed).
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            assertThat(embedder.embedCalls).hasValue(1);
+            assertThat(embedder.embedCalls).as("an unchanged census re-embeds nothing").hasValue(1);
 
             // A changed column changes a descriptor, so the hash, so a re-embed kicks.
-            facts.set(factsWith(table("film", "release_year")));
+            corpus.set(corpusOf(table("film", "release_year")));
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(embedder.embedCalls).as("a changed descriptor re-embeds").hasValue(2);
         }
@@ -57,9 +56,9 @@ class CatalogSearchIndexTest {
 
     @Test
     void searchDuringARebuildReportsWarmingThenServesTheReadyIndex() throws Exception {
-        var facts = new AtomicReference<>(factsWith(table("film", "title")));
+        var corpus = corpusOf(table("film", "title"));
         var embedder = new BlockingEmbedder(4);
-        try (var index = newIndex(facts::get, embedder, tempCache())) {
+        try (var index = newIndex(() -> corpus, embedder, tempCache())) {
             index.start(); // kicks the warm; embedDocuments blocks on the gate
 
             // The first search lands while the index warm is still Warming: degradation, not hits.
@@ -82,23 +81,23 @@ class CatalogSearchIndexTest {
     @Test
     void persistedIndexIsRejectedUnderADifferentEmbedderIdentityAndAcceptedUnderTheSame() throws Exception {
         Path cache = tempCache();
-        var facts = factsWith(table("film", "title"));
+        var corpus = corpusOf(table("film", "title"));
 
         // Build and persist under the FakeEmbedder identity.
-        try (var first = newIndex(() -> facts, new FakeEmbedder(4), cache)) {
+        try (var first = newIndex(() -> corpus, new FakeEmbedder(4), cache)) {
             assertThat(first.awaitWarm()).isInstanceOf(WarmState.Ready.class);
         }
 
         // Re-open the same cache under a *different* embedder class: identity mismatch -> rebuild.
         var rejecting = new SpyEmbedder(4);
-        try (var second = newIndex(() -> facts, rejecting, cache)) {
+        try (var second = newIndex(() -> corpus, rejecting, cache)) {
             assertThat(second.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(rejecting.embedCalls).as("a mismatched identity forces a rebuild").hasValue(1);
         }
 
         // Re-open again under the same SpyEmbedder identity: the manifest matches -> load, no re-embed.
         var accepting = new SpyEmbedder(4);
-        try (var third = newIndex(() -> facts, accepting, cache)) {
+        try (var third = newIndex(() -> corpus, accepting, cache)) {
             assertThat(third.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(accepting.embedCalls).as("a matching identity loads without re-embedding").hasValue(0);
         }
@@ -109,15 +108,15 @@ class CatalogSearchIndexTest {
     @Test
     void aPersistedIndexLoadsWithoutReEmbeddingAndReapingKeepsCurrentPlusOnePrior() throws Exception {
         Path cache = tempCache();
-        var facts = factsWith(table("film", "title"));
+        var corpus = corpusOf(table("film", "title"));
 
-        try (var build = newIndex(() -> facts, new SpyEmbedder(4), cache)) {
+        try (var build = newIndex(() -> corpus, new SpyEmbedder(4), cache)) {
             assertThat(build.awaitWarm()).isInstanceOf(WarmState.Ready.class);
         }
 
         // A fresh index over the same cache loads the prebuilt index: no embedDocuments call.
         var reloader = new SpyEmbedder(4);
-        try (var load = newIndex(() -> facts, reloader, cache)) {
+        try (var load = newIndex(() -> corpus, reloader, cache)) {
             assertThat(load.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(reloader.embedCalls).as("a prebuilt index is loaded, not re-embedded").hasValue(0);
             var hits = load.search("film", 10);
@@ -126,12 +125,12 @@ class CatalogSearchIndexTest {
         }
 
         // Three distinct corpora in one index: reaping keeps the current hash dir plus one prior.
-        var ref = new AtomicReference<>(factsWith(table("film", "title")));
+        var ref = new AtomicReference<>(corpusOf(table("film", "title")));
         try (var index = newIndex(ref::get, new SpyEmbedder(4), cache)) {
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            ref.set(factsWith(table("actor", "name")));
+            ref.set(corpusOf(table("actor", "name")));
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            ref.set(factsWith(table("language", "code")));
+            ref.set(corpusOf(table("language", "code")));
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
         }
         try (var dirs = Files.list(cache.resolve("catalog"))) {
@@ -144,12 +143,12 @@ class CatalogSearchIndexTest {
 
     @Test
     void aFailedEmbedderWarmYieldsAFailedIndexAndAFailedSearch() throws Exception {
-        var facts = factsWith(table("film", "title"));
+        var corpus = corpusOf(table("film", "title"));
         var embedderWarm = new AsyncWarm<Embedder>("embedder", () -> {
             throw new IllegalStateException("model load boom");
         });
         embedderWarm.start();
-        try (var index = new CatalogSearchIndex(() -> facts, embedderWarm, new RagConfig(tempCache()))) {
+        try (var index = new CatalogSearchIndex(() -> corpus, embedderWarm, new RagConfig(tempCache()))) {
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Failed.class);
             var outcome = index.search("film", 10);
             assertThat(outcome).isInstanceOf(CatalogSearchIndex.SearchOutcome.Degraded.class);
@@ -160,36 +159,29 @@ class CatalogSearchIndexTest {
     // ---- helpers ----
 
     private static CatalogSearchIndex newIndex(
-        java.util.function.Supplier<CatalogFacts> facts, Embedder embedder, Path cache
+        java.util.function.Supplier<List<CorpusTable>> corpus, Embedder embedder, Path cache
     ) {
         // The shared embedder warm is started by the caller (the server / DevMojo in production); the
         // index only awaits it, so the test must start it or the index warm blocks forever.
         var embedderWarm = new AsyncWarm<Embedder>("embedder", () -> embedder);
         embedderWarm.start();
-        return new CatalogSearchIndex(facts, embedderWarm, new RagConfig(cache));
+        return new CatalogSearchIndex(corpus, embedderWarm, new RagConfig(cache));
     }
 
     private static Path tempCache() throws Exception {
         return Files.createTempDirectory("catalog-search-index-test");
     }
 
-    private static List<String> composed(CatalogFacts facts) {
-        return facts.tablesByQualifiedName().values().stream()
-            .map(CatalogDescriptors::descriptor)
-            .toList();
+    private static List<String> composed(List<CorpusTable> corpus) {
+        return corpus.stream().map(CatalogDescriptors::descriptor).toList();
     }
 
-    private static CatalogFacts.Table table(String name, String column) {
-        return new CatalogFacts.Table(
-            "public", name, Optional.empty(),
-            List.of(new CatalogFacts.Column(column, column.toUpperCase(), "varchar", false, Optional.empty())),
-            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+    private static CorpusTable table(String name, String column) {
+        return new CorpusTable("public", name, null, List.of(new CorpusTable.Column(column, null)));
     }
 
-    private static CatalogFacts factsWith(CatalogFacts.Table table) {
-        var map = new LinkedHashMap<String, CatalogFacts.Table>();
-        map.put(table.qualifiedName(), table);
-        return new CatalogFacts(map);
+    private static List<CorpusTable> corpusOf(CorpusTable table) {
+        return List.of(table);
     }
 
     /** A counting {@link Embedder}: zero vectors (BM25 carries ranking), but records the embed calls and texts. */

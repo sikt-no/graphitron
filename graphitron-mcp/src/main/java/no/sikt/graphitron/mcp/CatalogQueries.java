@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.mcp.rag.CorpusTable;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
@@ -21,8 +22,8 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.row;
 
 /**
- * This module's own reads over the {@code sql_} catalog census, shaped by what the catalog tools
- * put on the wire.
+ * This module's own reads over the {@code sql_} catalog census, shaped by what the catalog tools put
+ * on the wire, plus the whole-graph read {@code catalog.search} composes its embedding corpus from.
  *
  * <p>Written here rather than reused from another consumer's readers, which is the arrangement the
  * store is for: what two modules share is the relation, and a Java row vocabulary crossing a module
@@ -467,6 +468,63 @@ final class CatalogQueries {
             .map(fk -> new Fk(fk.constraintName(), fk.declaringTable(), fk.referencedTable(),
                 List.copyOf(fk.columns()), List.copyOf(fk.targetColumns())))
             .toList();
+    }
+
+    // ---- catalog.search ----
+
+    /**
+     * The {@code catalog.search} corpus: every table in the graph with its columns in definition
+     * order, which the descriptor composer folds into one embeddable string per table.
+     *
+     * <p>Two queries for the whole graph rather than one per table. The corpus is composed on every
+     * observation, so its cost is paid per search rather than per capture, and a query per table would
+     * make that cost the table count.
+     *
+     * <p>Through the reader for the reason {@link #describe} is: an answer assembled from two queries
+     * on the session writer's connection could see a capture commit between them and compose a corpus
+     * mixing one generation's tables with the next one's columns. That would hash to something neither
+     * generation produces, so the index would re-embed and then re-embed again on the next search.
+     *
+     * @param graphName the graph whose partition the corpus is drawn from, rebuilt into a scope per
+     *     transaction rather than held, the {@code DSLContext} being valid for one read only
+     */
+    static List<CorpusTable> searchCorpus(StoreReader reader, String graphName) {
+        return reader.read(dsl -> corpus(new StoreHandle(dsl, graphName)));
+    }
+
+    /**
+     * Reads the columns first and lets the table query drive the result, so a table the census holds
+     * with no columns still gets a descriptor rather than being dropped by the grouping.
+     *
+     * <p>Grouped by the {@code (schema, name)} pair the entry id is composed from rather than by the
+     * whole key, on the same ground the page cursor stands on: a graph's {@code sql_} sources are
+     * generated packages that partition by schema, so two of them naming one table would mean one
+     * schema generated twice. Grouping by what the id is spelled from also means the group key cannot
+     * disagree with the entry it ends up on.
+     */
+    private static List<CorpusTable> corpus(StoreHandle store) {
+        var columnRows = store.dsl()
+            .select(SQL_COLUMN.TABLE_SCHEMA, SQL_COLUMN.TABLE_NAME, SQL_COLUMN.COLUMN_NAME,
+                SQL_COLUMN.DESCRIPTION)
+            .from(SQL_COLUMN)
+            .where(store.reads(SQL_COLUMN.SOURCE_NAME))
+            .orderBy(SQL_COLUMN.TABLE_SCHEMA.asc(), SQL_COLUMN.TABLE_NAME.asc(), SQL_COLUMN.ORDINAL.asc())
+            .fetch();
+
+        var columnsByTable = new LinkedHashMap<String, List<CorpusTable.Column>>();
+        for (var row : columnRows) {
+            columnsByTable
+                .computeIfAbsent(row.value1() + "." + row.value2(), t -> new ArrayList<>())
+                .add(new CorpusTable.Column(row.value3(), row.value4()));
+        }
+
+        return store.dsl()
+            .select(SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME, SQL_TABLE.DESCRIPTION)
+            .from(SQL_TABLE)
+            .where(store.reads(SQL_TABLE.SOURCE_NAME))
+            .orderBy(SQL_TABLE.TABLE_SCHEMA.asc(), SQL_TABLE.TABLE_NAME.asc())
+            .fetch(r -> new CorpusTable(r.value1(), r.value2(), r.value3(),
+                List.copyOf(columnsByTable.getOrDefault(r.value1() + "." + r.value2(), List.of()))));
     }
 
     /**

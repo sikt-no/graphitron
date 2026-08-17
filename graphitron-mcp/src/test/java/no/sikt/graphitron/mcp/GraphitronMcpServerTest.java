@@ -1292,11 +1292,9 @@ class GraphitronMcpServerTest {
     // ---- catalog.search (semantic catalog discovery) ----
 
     /**
-     * Discovery hands off to description, and the handoff now crosses a seam: {@code catalog.search}
-     * still ranks the projection's descriptors while {@code catalog.describe} reads the census, so the
-     * id one tool emits has to be an id the other accepts rather than a key into the same map. The
-     * search corpus names {@code address} and {@code customer}, which the fixture database declares,
-     * so both ends can speak of the same tables without either being handed the other's data.
+     * Discovery hands off to description, and both ends now read the same census: the corpus is
+     * composed from it rather than from a projection, so an id search emits is an id describe accepts
+     * because they are drawn from one relation rather than because two shapes agree.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -1306,7 +1304,7 @@ class GraphitronMcpServerTest {
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
         try (var build = StoreBackedBuild.run(tmp, "catalog-search-handoff", CATALOG_SDL);
              var server = new GraphitronMcpServer(
-                loopback(0), catalogSearchWorkspace(), embedderWarm, null, RagConfig.temporary(),
+                loopback(0), build.workspace, embedderWarm, null, RagConfig.temporary(),
                 null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -1333,11 +1331,15 @@ class GraphitronMcpServerTest {
     }
 
     @Test
-    void catalogSearchReportsWarmingWhileTheIndexIsStillBuilding() throws Exception {
-        // A blocking embedder pins the index in Warming; the first search reports the degradation.
+    void catalogSearchReportsWarmingWhileTheIndexIsStillBuilding(@TempDir Path tmp) throws Exception {
+        // A blocking embedder pins the index in Warming; the first search reports the degradation. The
+        // store is present, which is what separates this arm from the refusal below: the corpus reads,
+        // and what is missing is the embedding of it.
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new BlockingEmbedder(384)));
-        try (var server = new GraphitronMcpServer(
-                loopback(0), catalogSearchWorkspace(), embedderWarm, null, RagConfig.temporary());
+        try (var build = StoreBackedBuild.run(tmp, "catalog-search-warming", CATALOG_SDL);
+             var server = new GraphitronMcpServer(
+                loopback(0), build.workspace, embedderWarm, null, RagConfig.temporary(),
+                null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
 
@@ -1351,22 +1353,25 @@ class GraphitronMcpServerTest {
         }
     }
 
-    /** A two-table fixture (address, customer) the catalog.search BM25 ranking discovers by name. */
-    private static Workspace catalogSearchWorkspace() {
-        var address = new CatalogFacts.Table(
-            "public", "address", Optional.of("Customer mailing addresses"),
-            List.of(
-                new CatalogFacts.Column("address_id", "ADDRESS_ID", "integer", false, Optional.empty()),
-                new CatalogFacts.Column("address", "ADDRESS", "varchar", false, Optional.of("Street address"))),
-            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
-        var customer = new CatalogFacts.Table(
-            "public", "customer", Optional.empty(),
-            List.of(new CatalogFacts.Column("customer_id", "CUSTOMER_ID", "integer", false, Optional.empty())),
-            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
-        var map = new LinkedHashMap<String, CatalogFacts.Table>();
-        map.put("public.address", address);
-        map.put("public.customer", customer);
-        return workspaceWith(new CatalogFacts(map));
+    /**
+     * A corpus that cannot be composed is not an index that is still building, so the store-less server
+     * refuses where it used to report warming. Telling an agent to retry would point it at a wiring
+     * fact no retry can change, and the search corpus is the census like every other catalog answer.
+     */
+    @Test
+    void catalogSearchRefusesWithoutAStoreToRead() throws Exception {
+        var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
+        try (var server = new GraphitronMcpServer(
+                loopback(0), new Workspace(), embedderWarm, null, RagConfig.temporary());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var result = client.callTool(McpSchema.CallToolRequest.builder("catalog.search")
+                .arguments(Map.of("query", "customer address")).build());
+            assertThat(result.isError()).isTrue();
+            assertThat(firstLine(result))
+                .contains("catalog.search").contains("holds no fact store handle");
+        }
     }
 
     /** An {@link Embedder} that blocks forever in {@code embedDocuments}, pinning the index in Warming. */

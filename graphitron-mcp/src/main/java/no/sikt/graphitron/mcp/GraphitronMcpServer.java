@@ -92,10 +92,10 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // is then always advertised but reads as still-warming and degrades to the structured tools.
     private final DocsSearchTool docsSearchTool;
 
-    // The semantic catalog index behind catalog.search: self-observes the live catalogFacts,
-    // persists its Lucene index under the RagConfig cache dir, and rides the same shared embedder
-    // warm docs.search uses. Null when the server is stood up without RAG (the structured-tool
-    // tests); catalog.search then degrades.
+    // The semantic catalog index behind catalog.search: self-observes the census through the store
+    // reader, persists its Lucene index under the RagConfig cache dir, and rides the same shared
+    // embedder warm docs.search uses. Null when the server is stood up without RAG or without a
+    // store; the tool tells those two apart, degrading for the first and refusing for the second.
     private final CatalogSearchIndex catalogSearchIndex;
 
     /**
@@ -175,8 +175,15 @@ public final class GraphitronMcpServer implements AutoCloseable {
         ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader
     ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
-        this.catalogSearchIndex = (embedderWarm != null && ragConfig != null)
-            ? new CatalogSearchIndex(workspace::catalogFacts, embedderWarm, ragConfig)
+        // The corpus is a pair of census queries the index runs per observation, not a projection
+        // reference it holds: the store is where a capture lands, so reading it is what makes the
+        // index current. The reader rather than the handle for the reason catalog.describe takes one,
+        // and the graph name off the handle, so the index exists only when both arrived.
+        this.catalogSearchIndex = (embedderWarm != null && ragConfig != null
+            && storeHandle != null && storeReader != null)
+            ? new CatalogSearchIndex(
+                () -> CatalogQueries.searchCorpus(storeReader, storeHandle.graphName()),
+                embedderWarm, ragConfig)
             : null;
 
         // The ambient instructions string is composed rather than one fixed resource, mirroring the
@@ -213,7 +220,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
             schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
             diagnosticsAggregateTool(workspace, storeHandle), edgesTool(workspace),
-            docsSearchTool.specification(), catalogSearchTool()));
+            docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader)));
         if (executeConfig != null) {
             tools.add(new ExecuteTool(executeConfig).specification());
         }
@@ -872,11 +879,14 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * {@code catalog.search}: fuzzy, semantic discovery over the database catalog by names and
      * comments. The semantic counterpart to {@code catalog.tables} / {@code catalog.describe}: those
      * answer "describe the table I named", this answers "find the table I can only describe". Drives
-     * the self-observing {@link #catalogSearchIndex}, which reads the live {@code catalogFacts} and
-     * refreshes its persisted Lucene index when the catalog content changes. Hits return by the same
-     * schema-qualified SQL id {@code catalog.describe} accepts, so discovery hands off to description.
+     * the self-observing {@link #catalogSearchIndex}, which composes its corpus from the same census
+     * those two read and refreshes its persisted Lucene index when the content changes. Hits return by
+     * the same schema-qualified SQL id {@code catalog.describe} accepts, so discovery hands off to
+     * description.
      */
-    private McpServerFeatures.SyncToolSpecification catalogSearchTool() {
+    private McpServerFeatures.SyncToolSpecification catalogSearchTool(
+        StoreHandle store, StoreReader reader
+    ) {
         var tool = McpSchema.Tool.builder("catalog.search", Map.of(
                 "type", "object",
                 "properties", Map.of(
@@ -898,14 +908,28 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> catalogSearchResult(catalogSearchIndex, request.arguments()))
+            .callHandler((exchange, request) ->
+                catalogSearchResult(catalogSearchIndex, store, reader, request.arguments()))
             .build();
     }
 
-    static McpSchema.CallToolResult catalogSearchResult(CatalogSearchIndex index, Map<String, Object> args) {
+    /**
+     * The two absences are different answers, and the order is what makes them so. No store is a
+     * refusal: the corpus is the census, so an index over no census is not an index that will be ready
+     * shortly, and reporting the warming degradation there would tell an agent to try again on a
+     * server where retrying cannot help. No RAG over a store that is present is the warming
+     * degradation, which is the honest reading of an index that has nothing to rank with, and it
+     * routes to the structured catalog tools that can answer from the same rows.
+     */
+    static McpSchema.CallToolResult catalogSearchResult(
+        CatalogSearchIndex index, StoreHandle store, StoreReader reader, Map<String, Object> args
+    ) {
+        if (store == null || reader == null) {
+            return DiagnosticFacets.refusal("catalog.search");
+        }
         if (index == null) {
-            // Structured-only server (no RAG wired): the tool is advertised but degrades, mirroring
-            // docs.search, so an agent learns to fall back to the structured catalog.* tools.
+            // No RAG wired (the structured-tool tests): the tool is advertised but degrades,
+            // mirroring docs.search, so an agent falls back to the structured catalog.* tools.
             return McpSchema.CallToolResult.builder()
                 .addTextContent(WarmState.degradationMessage(new WarmState.Warming<>()))
                 .structuredContent(Map.of("status", "warming", "results", List.of()))

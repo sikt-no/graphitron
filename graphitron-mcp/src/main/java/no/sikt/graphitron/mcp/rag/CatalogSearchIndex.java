@@ -1,6 +1,5 @@
 package no.sikt.graphitron.mcp.rag;
 
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,16 +16,21 @@ import java.util.function.Supplier;
 
 /**
  * The warm-managed semantic index behind {@code catalog.search}. Owns the content-hash-keyed
- * Lucene index over the {@link CatalogFacts} descriptors, persisted under
+ * Lucene index over the {@link CorpusTable} descriptors, persisted under
  * {@link RagConfig#cacheDir()} so a large catalog is not re-embedded on every {@code dev} restart.
  *
- * <p>Refresh is lazy self-observation: the index is a pure derived function of the live
- * {@link CatalogFacts}, and every {@link #search} re-reads the supplier through two gates
- * (reference identity, then corpus content hash; see {@link #observe()}), so only a genuine
- * content change kicks a re-embed. The re-embed runs on an {@link AsyncWarm} background daemon,
- * off the classpath-watcher thread; while it runs the warm is {@link WarmState.Warming} and
- * searches report the warming degradation. The prior store stays open until {@link #close()} so a
- * swap never leaves a gap.
+ * <p>Refresh is lazy self-observation: the index is a pure derived function of the corpus, and
+ * every {@link #search} re-reads it and gates on its content hash (see {@link #observe()}), so
+ * only a genuine content change kicks a re-embed. The re-embed runs on an {@link AsyncWarm}
+ * background daemon, off the calling thread; while it runs the warm is {@link WarmState.Warming}
+ * and searches report the warming degradation. The prior store stays open until {@link #close()} so
+ * a swap never leaves a gap.
+ *
+ * <p>One gate rather than two. The corpus was a reference to a projection the build swapped, so a
+ * cheap reference-identity check could skip composing at all; it is a pair of catalog queries now,
+ * which yields fresh rows on every read and leaves no reference to compare. The content hash is what
+ * the invalidation always rested on anyway, and what the gate now saves against is embedding text
+ * rather than reading two indexed relations.
  *
  * <p>A persisted index is valid only for its corpus hash and the embedder that built it. Distinct
  * embedding models can share a dimension, so dimension alone cannot tell their indexes apart, and
@@ -48,15 +52,13 @@ public final class CatalogSearchIndex implements AutoCloseable {
     /** Sibling-dir reaping keeps the current hash plus this many recent priors. */
     private static final int PRIORS_TO_KEEP = 1;
 
-    private final Supplier<CatalogFacts> facts;
+    private final Supplier<List<CorpusTable>> corpus;
     private final AsyncWarm<Embedder> embedderWarm;
     private final RagConfig config;
 
     private final Object lock = new Object();
 
-    /** The reference the live corpus was composed from; the gate-1 identity key. */
-    private CatalogFacts liveFactsRef;
-    /** The hash of the live (or in-flight) index's corpus; the gate-2 content key. */
+    /** The hash of the live (or in-flight) index's corpus; the whole of the invalidation key. */
     private String liveHash;
     /** The warm whose state {@link #search} reads; null until the first observe kicks one. */
     private AsyncWarm<EmbeddingStore> liveWarm;
@@ -64,20 +66,25 @@ public final class CatalogSearchIndex implements AutoCloseable {
     private final List<EmbeddingStore> tracked = new ArrayList<>();
 
     /**
-     * @param facts        the live catalog source, typically {@code workspace::catalogFacts}; read
-     *                     by reference identity on every search so a build swap is observed
+     * @param corpus       the catalog census read afresh on every observation, which is what makes a
+     *                     capture since the last search visible without any refresh path. Called on
+     *                     the calling thread, never on the warm daemon: the daemon embeds strings it
+     *                     was handed, and reading the store on it would put a query behind a model
+     *                     load
      * @param embedderWarm the shared embedder warm; started by the caller, this index
      *                     only {@link AsyncWarm#await() awaits} it before embedding
      * @param config       where to persist the content-hash-keyed index
      */
-    public CatalogSearchIndex(Supplier<CatalogFacts> facts, AsyncWarm<Embedder> embedderWarm, RagConfig config) {
-        this.facts = facts;
+    public CatalogSearchIndex(
+        Supplier<List<CorpusTable>> corpus, AsyncWarm<Embedder> embedderWarm, RagConfig config
+    ) {
+        this.corpus = corpus;
         this.embedderWarm = embedderWarm;
         this.config = config;
     }
 
     /**
-     * Eager warm (bind-sync / warm-async): kick the initial index build from the current facts,
+     * Eager warm (bind-sync / warm-async): kick the initial index build from the current census,
      * off the calling thread. The shared embedder warm is started by the caller; the index warm only
      * awaits it. Production calls this at {@code dev} startup; a server that never calls it warms
      * lazily on the first {@link #search}.
@@ -88,8 +95,8 @@ public final class CatalogSearchIndex implements AutoCloseable {
 
     /**
      * Run the natural-language {@code query} against the live index, returning up to {@code limit}
-     * ranked hits, or a degradation when the index is still warming or has failed. Applies the
-     * two-gate self-observe first, so a schema change since the last call is picked up here.
+     * ranked hits, or a degradation when the index is still warming or has failed. Observes the
+     * corpus first, so a capture since the last call is picked up here.
      */
     public SearchOutcome search(String query, int limit) {
         AsyncWarm<EmbeddingStore> warm = observe();
@@ -124,19 +131,19 @@ public final class CatalogSearchIndex implements AutoCloseable {
         return new SearchOutcome.Degraded(WarmState.degradationMessage(state), status);
     }
 
-    /** Applies the two-gate self-observe, kicking a re-embed on a changed hash. Returns the live warm. */
+    /**
+     * Reads the corpus, composes it, and kicks a re-embed when its hash moved. Returns the live warm.
+     *
+     * <p>The read and the composition happen under the lock, so two searches arriving together
+     * observe once rather than racing to kick two warms for the same corpus.
+     */
     private AsyncWarm<EmbeddingStore> observe() {
         synchronized (lock) {
-            CatalogFacts current = facts.get();
-            if (liveWarm != null && current == liveFactsRef) {
-                return liveWarm; // gate 1: reference identity, the cheap common path
-            }
-            var entries = composeCorpus(current);
+            var entries = composeCorpus(corpus.get());
             var descriptors = entries.stream().map(Entry::descriptor).toList();
             String hash = CatalogDescriptors.corpusHash(descriptors);
-            liveFactsRef = current;
             if (liveWarm != null && hash.equals(liveHash)) {
-                return liveWarm; // gate 2: same content under a new reference -> no re-embed
+                return liveWarm; // an unchanged census re-embeds nothing
             }
             liveHash = hash;
             liveWarm = kick(entries, descriptors, hash);
@@ -221,14 +228,18 @@ public final class CatalogSearchIndex implements AutoCloseable {
 
     // ---- corpus composition ----
 
-    private static List<Entry> composeCorpus(CatalogFacts facts) {
-        var tables = facts.tablesByQualifiedName().values();
+    /**
+     * Composes one entry per table, in the order the census read returned them, which is the order
+     * {@link CatalogDescriptors#corpusHash} digests: the ordering is part of the corpus identity, so
+     * a stated table order is what keeps an unchanged catalog hashing to the same index.
+     */
+    private static List<Entry> composeCorpus(List<CorpusTable> tables) {
         var entries = new ArrayList<Entry>(tables.size());
         for (var table : tables) {
             entries.add(new Entry(
-                table.qualifiedName(),
+                table.id(),
                 CatalogDescriptors.descriptor(table),
-                table.comment().orElse("")));
+                table.comment() == null ? "" : table.comment()));
         }
         return entries;
     }
