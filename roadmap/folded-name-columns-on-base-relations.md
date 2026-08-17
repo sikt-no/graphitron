@@ -35,11 +35,14 @@ inconsistently used one.
 Three reasons, in order of weight. The fold gets stated once per column instead of once per
 comparison; on its own that shortens each predicate spelling without reducing the count, so the plan
 below pairs it with the one restructuring that does close the drift hazard in the four-repeat view
-(the predicate collapse in step 3). A folded column is indexable where an expression over a joined
-derived relation is not; the DDL declares no indexes today, so this is an enabling property rather
-than a taken benefit, and no DDL comment may claim it (`intent_column_match_claim`'s comment already
-records a measured seventy-times regression from getting that view's evaluation shape wrong, which
-is what makes the enablement worth having). And every future matching view stops restating the rule.
+(the predicate collapse in step 3). A folded column is indexable where the inline fold is not, and in
+this engine that is absolute rather than comparative: H2 2.4.240 rejects `CREATE INDEX ... ON t
+(UPPER(n))` as a syntax error, so it has no expression indexes at all and a stored column is the only
+route to an indexed folded name. The DDL declares no indexes today, so this is an enabling property
+rather than a taken benefit, and no DDL comment may claim it (`intent_column_match_claim`'s comment
+already records a measured seventy-times regression from getting that view's evaluation shape wrong,
+which is what makes the enablement worth having). And every future matching view stops restating the
+rule.
 
 ## The fork, settled
 
@@ -77,6 +80,28 @@ enforcer is structural rather than procedural, the same shape as the rendered-co
 that cannot drift from the columns it renders), with the engine rather than capture doing the
 rendering. The DDL states that argument once, at the first folded column, and the other comments
 point at it instead of each re-arguing.
+
+## The cheaper alternative, and why it loses facts
+
+H2 has a case-insensitive string type, `VARCHAR_IGNORECASE`, and on the surface it dominates the
+generated column: no second column, no writer change at all, and the fold moves into the type rather
+than into any predicate. It was tested on the same rehearsal and every mechanical part of it works.
+`=` and `LIKE` fold with no expression anywhere. The type survives projection through a view, so a
+downstream comparison keeps folding. A join between an `IGNORECASE` column and a plain `VARCHAR`
+column folds in both directions, which is exactly the authored-meets-catalog shape. And jOOQ OSS
+codegen maps it to a plain `String` field, so nothing downstream sees it.
+
+It is still the wrong answer, because the fold reaches the key. A primary key over an `IGNORECASE`
+column folds with it: inserting `('s', 'film', 'title')` and then `('s', 'film', 'TITLE')` is a
+primary-key violation, and `COUNT(DISTINCT table_name)` answers 1 for `film` beside `FILM`. On the
+catalog relations that is silent fact loss rather than a caught error. A quoted-identifier
+PostgreSQL table may legitimately declare both `"Title"` and `"title"`; `FactSink.claim` dedups on a
+Java `HashSet` and so passes both through case-sensitively; and `sql_` is a shared family whose
+insert carries `onDuplicateKeyIgnore`, so the second column would be discarded without a word and
+the store would under-report a real catalog. The type would be safe only on the non-key name columns,
+which is worse than uniformity: whether `=` folds would become an invisible per-column property, and
+a reader could no longer tell by looking at a predicate what it compares. Rejected, and recorded here
+so the next reader of this item does not re-derive it as an improvement.
 
 ## Plan
 
