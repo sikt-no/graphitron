@@ -3165,3 +3165,51 @@ diagnostics is the largest unmigrated surface left, so writing it before the rec
 add its reads in exactly the shape this pass condemned. Recomposing first means diagnostics is
 written once, and its being the last capability makes it the honest test of whether one statement per
 capability holds for a surface built that way from the start rather than retrofitted.
+
+## Settled while building: the field hover is one statement, and the ungated facts chose its shape
+
+The first read recomposed is the declaration hover's field block, which cost three statements plus one
+per claim standing at the coordinate. It is one now, and the shape is not the one the review pass
+proposed.
+
+* **Nine subqueries over no driving table.** The review called for the claim reduction left-joined to
+  the six per-classifier relations, one row per claim, the classifier column saying which join
+  answered. That shape does not survive its own first case. Every claim-independent fact would hang
+  off a claim row, so a coordinate no claim reaches would lose them, and the field that most needs
+  them is exactly that: a split child returning a table type is claimed by nothing, and the round-trip
+  answer is what an author hovers it for. Driving the statement from nothing puts the claims and the
+  two ungated facts side by side, each a multiset, none conditional on another.
+* **Nothing is joined, because there is nothing to join on.** All nine relations key on the same
+  coordinate, which arrives as a bind value rather than from a driving row, so a join would have
+  bought only the driver that broke the ungated facts. Independent subqueries also mean no arm's
+  fan-out can multiply another's, which the review wanted the multisets for, without having to sort
+  the multi-row arms from the single-row ones to get it.
+* **Every arm is read as a list, including the six that hold at most one row.** So absence is an
+  empty list in all nine rather than a null in some and an empty list in others, and each arm keeps
+  the small record its own relation earns instead of contributing nullable columns to a shared one.
+  The mostly-null projection this reader was written to avoid does not come back as the price of one
+  statement.
+* **The classifier switch survives, with no query in it.** The review read the switch itself as the
+  defect; it was the queries inside it. What is left is the mapping from a classifier to which arm
+  answers it and what an author sees that arm called, over rows already in hand. That is a rendering
+  decision, it is the one this layer owns, and the item had already settled that the kind-to-label
+  mapping stays in Java.
+
+**The durable half is a counted test, not a faster hover.** `DeclarationHoverStatementCountTest`
+attaches an execute listener and asserts one statement for a plain column match, for a coordinate two
+directives both claim, for a field no claim reaches, and for a declaration the store knows nothing
+about. It has no timing and no fixture scale, so it cannot fail for being slow; it exists because the
+defect was invisible from every behavioural assertion. Sixteen hover cases passed throughout, since a
+fan-out into separate round trips returns exactly the text one statement does. The next reader adding
+a fact to the block will reach for another query, which is the natural move, and this is what refuses
+it. The no-claim case doubles as the test's own proof: it was three statements before and asserts one
+now, so a passing count is evidence the listener sees real executions rather than nothing at all.
+
+`graphitron-lsp` takes `jakarta.xml.bind-api` at test scope for it, the fix `graphitron` and
+`graphitron-sakila-example` already carry with the same reason recorded in their poms: jOOQ declares
+it optional, deriving a `Configuration` reaches JAXB-annotated `Settings`, and the annotation methods
+javac cannot then resolve are warnings `-Werror` rejects.
+
+The type block is untouched and still reads a statement per claim, plus two more for an unclaimed
+type's backing. Its number is deliberately not pinned in the new test: asserting the count a defect
+currently has would read as sanctioning it, and the class gains a case when the block is recomposed.
