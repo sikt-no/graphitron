@@ -1,7 +1,7 @@
 ---
 id: R650
 title: "Support @asConnection on a field returning a discriminated table interface"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: interface-union
@@ -527,6 +527,87 @@ Improvements, not gate-blocking, take them if cheap while in the area:
 * The backward-page walk uses `last: 2` with no `before` cursor; the Coverage section named the
   before-cursor page one of the two most cursor-bug-prone cases. Add a `before` walk when the
   child work touches the same fixtures.
+
+## Review feedback (In Review -> Ready, second cycle)
+
+Independent review of both halves. The build is green (full reactor under `-Plocal-db`, exit 0, no
+test failures) and the delivery is substantively sound. The child lift is the fork the plan
+promised: `Connection.isList()` carries the coordinate into the same
+`BatchedTableInterfaceField` mint with no constructor edit, `interfaceChildResultOf` forks the
+payload on the wrapper through the `connectionShape` helper both root arms already share, and
+`windowedPageTail` genuinely unifies the two binders rather than mirroring them (the plain arm's
+emitted SQL is unchanged, which `connectionBatchedChild_rowNumberPartitionedByIdx` confirms by
+staying byte-identical). The seam order the root established is honored at the child: `projection`
+populates the field list, the page request observes it, the step declaration follows, and the gated
+detail joins append as follow-on statements. Both emission-gate edits are correct on precedence
+(`(A && B) || (C && D)`), the list gate correctly narrowed to its `List` half, and the ratchet rose
+with its rationale recorded. The first cycle's three rework items are addressed: five code-string
+body tests deleted, and the delivery adds **zero** new `code().toString()` assertions across all
+six commits. Coverage is well placed (the pipeline-tier leaf/result/delivery pins, the corpus
+coordinate putting `DeliveryFactPinTest` on gate duty, the windowed baseline, per-parent page walks
+with per-bucket `totalCount`, the one-batch-statement round-trip pin). The user-facing-doc check
+passes: the three `docs/` edits carry no roadmap markers, and the `splitQuery` page now names both
+batching cardinalities.
+
+One thing holds the gate.
+
+1. **The declared retirement of "gated/conditional LEFT JOIN" as the cross-table description is
+   still incomplete, and the second pass swept only the eight habitats the first review
+   enumerated rather than re-running the grep against the declaration.** `workflow.adoc` makes the
+   retirement sweep a precondition of `In Review -> Done` and names exactly these surfaces
+   ("javadoc, implementation comments, `.adoc` files, the user manual, fixture prose and SDL
+   descriptions, test names"). Twelve habitats survive, all describing the cross-table mechanism
+   (the joined-detail join legitimately keeps the phrase, and every hit under `target/` is build
+   output):
+   * `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java:349` — "The cross
+     table *joined* to project this field", on `ParticipantColumnReferenceField.targetTable()`.
+     This is a model javadoc on one of the two symbols the spec's own group-1 sweep named.
+   * `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` lines 662, 2813, 2833
+     and 3384. Line 2813 ("the interface fetcher emits a conditional LEFT JOIN gated by the FILM
+     discriminator value when the field is selected") is a `FilmContent` SDL *description*, so it
+     renders into the generated schema and the emitted `FilmContentType`: a retired, now-false
+     mechanism claim reaching a generated artifact.
+   * `graphitron-sakila-example/src/main/resources/graphql/multischema.graphqls:38` — "the
+     AlertSignal cross-table LEFT JOIN gate must all qualify off the FROM table instance". Also a
+     description that renders into the generated `QueryType`. Its unit-tier twin *was* renamed to
+     `..._discriminatorSubselectGate_...` in the same commit, so the pair now disagrees.
+   * `graphitron-sakila-example/.../MultiSchemaQueryTest.java:133` — the same phrase, same fixture.
+   * `graphitron-sakila-example/.../DmlSqlBaselineTest.java:36` — a baseline test's class javadoc
+     describing what the pinned SQL contains, now wrong about the pin.
+   * `graphitron-sakila-example/.../DmlTableInterfaceReturnExecutionTest.java:141` — "the
+     FILM-gated cross-table join never fired". Line 119 of this same file was swept in `5d256cd`.
+   * `graphitron-sakila-example/.../ServiceTableInterfaceReturnExecutionTest.java:25` and `:93`.
+   * `graphitron/src/test/java/.../generators/FetcherPipelineTest.java:575`.
+
+   Why this blocks rather than becoming a follow-up: the `Retired vocabulary` section is only
+   enforceable while the item is open. Approving deletes the spec file, and the declaration goes
+   with it, leaving twelve false statements about the emitted SQL and no record of what they were
+   supposed to say. Re-run the grep against the declaration itself (`gated left join`,
+   `conditional left join`, `left join gate`, and "cross-table ... join" prose) rather than against
+   a reviewer's list, and consider whether the phrase has earned a
+   `RetiredVocabularyGuardTest` registry entry now that it has survived two sweeps.
+
+Improvements, not gate-blocking; take them if cheap while in the area, or file them:
+
+* `schema.graphqls:2811` cites "stub-interface-union-fetchers.md Track A Phase 2" in the same
+  `FilmContent` comment the sweep has to touch. `RoadmapReferenceGuardTest` parses Java so a
+  `.graphqls` slug citation is out of its scan, but this one renders into a generated schema
+  description, which is exactly the consumer surface the citation rule exists to protect.
+* `fanItems_fanningCrossTableHop_oneEntityPerBaseRow` pins `__typename` order with
+  `containsExactly`, but `allFanItems` carries no `@defaultOrder`, so the order rides Postgres heap
+  order — the same non-determinism the first cycle flagged for `note`, now over four seeded rows
+  instead of two. Make it order-insensitive.
+* Neither child connection fixture has joined-detail participants (`FanAlpha`/`FanBeta` and
+  `FilmContent`/`ShortContent` are all single-table), so the documented deviation's load-bearing
+  claim (the count topology may omit the joined-detail joins) is unexercised at the child
+  coordinate. The reasoning is sound and the root's `allPartiesConnection` / `allSubjectsConnection`
+  walks cover joined-detail under pagination, so this is a coverage nicety.
+* Both child fixtures declare `last` / `before` and neither walks backward. The shared
+  `windowedPageTail` is covered by the plain arm's `actorsConnection(last: 1)` walk, so the
+  mechanism is not untested, but the discriminated binder never runs a reversed seek.
+* `TypeFetcherGeneratorTest.queryTableInterfaceField_discriminatorSubselectGate_qualifiesOffTableInstance`
+  remains a `code().toString()` body assertion. Legacy (one of 76 in that file) and not re-authored
+  by this item, so not a gate item; noted only because it is the last cross-table one left.
 
 ## Out of scope
 
