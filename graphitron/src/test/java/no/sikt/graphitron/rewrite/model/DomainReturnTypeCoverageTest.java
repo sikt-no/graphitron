@@ -78,6 +78,58 @@ class DomainReturnTypeCoverageTest {
             .isNotEqualTo(new DomainReturnType.Plain(ClassName.get(Integer.class)));
     }
 
+    /** {@link DomainReturnType.NoClaim} is a value, so two of them are one value to the group-by. */
+    @Test
+    void noClaimArm_structuralEquality() {
+        assertThat(new DomainReturnType.NoClaim()).isEqualTo(new DomainReturnType.NoClaim());
+        assertThat(new DomainReturnType.NoClaim())
+            .isNotEqualTo(new DomainReturnType.Plain(ClassName.get(Object.class)));
+    }
+
+    /**
+     * The root's split is Claim / NoClaim, and the three comparable arms sit under {@link
+     * DomainReturnType.Claim}. The conflict reduction's group-by is declared over {@code Claim},
+     * so a fourth arm added under the root without a home in that seal cannot silently join the
+     * comparison, and one added under {@code Claim} must state its equality semantics.
+     */
+    @Test
+    void rootSplitsIntoClaimAndNoClaim() {
+        assertThat(DomainReturnType.class.getPermittedSubclasses())
+            .containsExactlyInAnyOrder(DomainReturnType.Claim.class, DomainReturnType.NoClaim.class);
+        assertThat(DomainReturnType.Claim.class.getPermittedSubclasses())
+            .containsExactlyInAnyOrder(
+                DomainReturnType.Record.class,
+                DomainReturnType.TableRecord.class,
+                DomainReturnType.Plain.class);
+        assertThat(new DomainReturnType.NoClaim()).isNotInstanceOf(DomainReturnType.Claim.class);
+    }
+
+    /**
+     * The shared result-return rule asks the table question first: a result type carrying both a
+     * resolved table and a reflected backing class claims the typed record, never
+     * {@code Plain(XRecord)}, which would falsify {@link DomainReturnType.Plain}'s "no jOOQ
+     * surface" contract.
+     */
+    @Test
+    void resultReturnRule_asksTheTableQuestionFirst() {
+        var table = stubFilmTable();
+        var withTable = new ReturnTypeRef.ResultReturnType(
+            "FilmDetails", new FieldWrapper.Single(true), "com.example.jooq.tables.records.FilmRecord", table);
+        assertThat(DomainReturnType.claimForResultReturn(withTable))
+            .isEqualTo(new DomainReturnType.TableRecord(table.recordClass()));
+
+        var classOnly = new ReturnTypeRef.ResultReturnType(
+            "FilmDto", new FieldWrapper.Single(true), "com.example.Outer$Nested", null);
+        assertThat(DomainReturnType.claimForResultReturn(classOnly))
+            .as("a nested backing class is spelled Outer.Nested, the one mint's spelling")
+            .isEqualTo(new DomainReturnType.Plain(ClassName.get("com.example", "Outer", "Nested")));
+
+        var neither = new ReturnTypeRef.ResultReturnType(
+            "Ungrounded", new FieldWrapper.Single(true), null, null);
+        assertThat(DomainReturnType.claimForResultReturn(neither))
+            .isEqualTo(new DomainReturnType.NoClaim());
+    }
+
     /** The validator's diagnostic message embeds arm names without permit-internal {@code Wrap.X} tokens. */
     @Test
     void toString_usesArmNamesForRejectionMessage() {
@@ -88,6 +140,9 @@ class DomainReturnTypeCoverageTest {
         assertThat(record.toString()).isEqualTo("Record(film)");
         assertThat(tableRecord.toString()).isEqualTo("TableRecord(FilmRecord)");
         assertThat(plain.toString()).isEqualTo("Plain(java.lang.String)");
+        // A no-claim participant still renders in the rejection's participant list, as a
+        // statement rather than as a placeholder class.
+        assertThat(new DomainReturnType.NoClaim().toString()).isEqualTo("makes no source-type claim");
     }
 
     /** {@link MutationField.MutationDmlRecordField} answers {@link DomainReturnType.Record} from its resolved write target. */

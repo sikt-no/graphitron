@@ -242,6 +242,56 @@ class SharedDomainTypeProducerPipelineTest {
         assertNoDisagreement(schema);
     }
 
+    /**
+     * {@code ReturnTypeRef.ScalarReturnType} is not a synonym for "SDL scalar": an object type
+     * that classified as a nesting type falls through to that arm and <em>is</em> grouped by the
+     * conflict reduction. Both {@code @service} producers over such a type therefore keep deriving
+     * a real claim; an implementer reading the arm as "never grouped" and collapsing it to
+     * no-claim would drop live producers out of the comparison with nothing failing.
+     *
+     * <p>The pair genuinely disagrees here (the nesting producer hands down a generic jOOQ
+     * {@code Record}, the service hands down a {@code String}), so the rejection firing is the
+     * assertion that the claims are still behaviour-bearing.
+     */
+    @Test
+    void ungroundedObjectTypeReturnedByService_stillClaims() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") {
+                title: String
+                info: FilmInfo
+                detail: FilmInfo
+                    @service(service: {className: "%s", method: "sharedInfoByFilm"})
+            }
+            type FilmInfo { title: String }
+            type Query {
+                films: [Film]
+                info: FilmInfo
+                    @service(service: {className: "%s", method: "get"})
+            }
+            """.formatted(STUB, STUB));
+
+        assertThat(schema.type("FilmInfo")).isInstanceOf(GraphitronType.NestingType.class);
+
+        var root = schema.field("Query", "info");
+        assertThat(root).isInstanceOf(QueryField.QueryServiceRecordField.class);
+        assertThat(((QueryField.QueryServiceRecordField) root).returnType())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType.class);
+        assertThat(((OutputField) root).domainReturnType())
+            .isEqualTo(new DomainReturnType.Plain(
+                no.sikt.graphitron.javapoet.ClassName.get(String.class)));
+
+        var child = schema.field("Film", "detail");
+        assertThat(child).isInstanceOf(ChildField.ServiceRecordField.class);
+        assertThat(((OutputField) child).domainReturnType())
+            .as("the per-key V the loader is typed with, peeled off the rows method's outer Map")
+            .isEqualTo(new DomainReturnType.Plain(
+                no.sikt.graphitron.javapoet.ClassName.get(String.class)));
+
+        assertThat(TestSchemaHelper.diagnosticMessages(schema))
+            .as("the nesting producer's generic Record really does disagree with a String")
+            .contains("disagreeing env.getSource() Java domain types");
+    }
+
     /** Both producers of {@code sdlType} state the same backing-class claim. */
     private static void assertSameClaim(
             no.sikt.graphitron.rewrite.model.GraphitronField a,

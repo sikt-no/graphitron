@@ -581,4 +581,62 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(conflicts.get(0).message())
             .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
     }
+
+    /**
+     * The other side of the result-return rule, so it is pinned from both directions: a
+     * class-backed payload with no resolved table answers the backing-class {@code Plain} claim,
+     * not {@code TableRecord}. Before the arms were confined to the population that has a table,
+     * every {@code @service} mutation payload wore {@code TableRecord} regardless, which made the
+     * cross-arm distinction unavailable and put the query twin's {@code Plain} permanently at odds
+     * with it. A future collapse back to an unconditional arm fails here.
+     */
+    @Test
+    void serviceProducer_classBackedTablelessPayload_claimsThePlainBackingClass() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Translations { nb: String  en: String }
+            type SharedPayload { status: String  translations: Translations }
+            type Query { x: String }
+            type Mutation {
+                writePayload: SharedPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "sharedPayload"})
+            }
+            """);
+
+        var field = schema.field("Mutation", "writePayload");
+        assertThat(field).isInstanceOf(MutationField.MutationServiceRecordField.class);
+        assertThat(((OutputField) field).domainReturnType())
+            .isEqualTo(new no.sikt.graphitron.rewrite.model.DomainReturnType.Plain(
+                no.sikt.graphitron.javapoet.ClassName.bestGuess(
+                    "no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.SharedPayload")));
+    }
+
+    /**
+     * The cross-arm tooth the query twin's fork preserves: a table-backed carrier payload produced
+     * by a {@code @service} <em>query</em> beside a DML producer of the same payload still
+     * disagrees. Leaving the query twin on a factory default of "no claim" would drop a producer
+     * that really does put a typed record at {@code env.getSource()} out of the comparison and
+     * silently accept this pair.
+     */
+    @Test
+    void serviceQueryCarrier_mixedWithDml_stillRejects() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmListPayload { films: [Film!] }
+            input FilmInput { title: String }
+            type Query {
+                readFilms: FilmListPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            type Mutation {
+                createFilms(in: [FilmInput!]!): FilmListPayload @mutation(typeName: INSERT)
+            }
+            """);
+
+        var conflicts = new GraphitronSchemaValidator().validate(schema).stream()
+            .filter(e -> e.rejection() instanceof Rejection.AuthorError.MultiProducerDomainTypeDisagreement)
+            .toList();
+        assertThat(conflicts).hasSize(1);
+        assertThat(conflicts.get(0).message())
+            .contains("FilmListPayload", "createFilms", "readFilms", "Record(film)", "TableRecord(FilmRecord)");
+    }
 }

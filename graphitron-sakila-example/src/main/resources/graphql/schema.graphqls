@@ -184,6 +184,12 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService",
         method: "summaries"
     })
+    # The reading half of the shared value type: a class-backed parent whose translations
+    # component is the same class Film.sharedTranslations produces.
+    translationSummary: TranslationSummary @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SharedValueTypeService",
+        method: "translationSummary"
+    })
     # R300: @routine table-valued read function. Binds the three TEXT IN parameters of
     # public.tilganger_for_feidebruker_med_fs_fiktivt_fnr from GraphQL arguments and reads the
     # RETURNS TABLE result through the existing selection-narrowing projection.
@@ -1601,6 +1607,20 @@ type FilmKeySummary {
     })
 }
 
+# Shared class-backed value type: SharedTranslations is produced twice, by the batched child
+# @service on Film below and by the TranslationSummary record component read. Both producers hand
+# down the same Java object, so one set of child fetchers serves both; the shape used to be
+# unauthorable because the two producers reported placeholders that could never compare equal.
+type SharedTranslations {
+    nb: String
+    en: String
+}
+
+type TranslationSummary {
+    translations: SharedTranslations
+    note: String
+}
+
 type Film implements Node & Searchable @table(name: "film") @node {
     id:          ID!          @nodeId
     filmId:      Int!         @field(name: "FILM_ID")
@@ -1681,6 +1701,12 @@ type Film implements Node & Searchable @table(name: "film") @node {
     durabilityError: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.DurabilityErrorService",
         method: "synthesize"
+    })
+    # Shared-value-type producer: a batched child @service whose per-key element is the
+    # SharedTranslations class TranslationSummary.translations reads as a record component.
+    sharedTranslations: SharedTranslations @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SharedValueTypeService",
+        method: "translationsByFilm"
     })
     # R49 ServiceRecordField Phase A fixture: child @service with a scalar return.
     # FilmService.titleUppercase has the mapped-batch shape

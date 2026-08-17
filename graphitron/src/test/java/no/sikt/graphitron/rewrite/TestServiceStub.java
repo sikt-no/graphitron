@@ -997,4 +997,14 @@ class TestServiceStub {
             sharedPayload() {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Batched child producer whose SDL return is an object type the model never grounded a class
+     * for (it classifies as a nesting type), so the leaf carries a {@code ScalarReturnType} over
+     * an SDL Object type: the sub-population the conflict reduction does group despite the arm's
+     * name. The per-key {@code V} is peeled off this outer {@code Map}.
+     */
+    public static java.util.Map<FilmRecord, String> sharedInfoByFilm(java.util.Set<FilmRecord> films) {
+        throw new UnsupportedOperationException();
+    }
 }
