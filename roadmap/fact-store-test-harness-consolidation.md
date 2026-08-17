@@ -52,7 +52,7 @@ verifiable in one grep each:
 | classes hand-rolling a capture harness in `graphitron` | 8 | 15 |
 | classes duplicating `private static Path write(` | 8 | 18 |
 | classes declaring their own `GRAPH` constant | 8 | 15 |
-| files referencing `CapturedStore` | 9 | 24 |
+| files matching `CapturedStore`: the type's ten readers, plus the hand-rolled `withCapturedStore` copies | 9 | 24 |
 | test classes reading `graphitron-lsp`'s `StoreFixture` | 28 | 35 |
 
 **The rate is the argument, not the total.** Roughly two to three new copies a week, all of them
@@ -319,21 +319,40 @@ explicitly required to carry named rather than flagged: `StoreBackedBuild` reach
 reference to the `GraphitronModelStore` type outside the shared home, which also survives a third
 factory being added.
 
-**The fixture-write half has to be qualified by the store, or it counts the wrong population.** A
-class can take its store from the shared home and still hand-roll the fixture file, the graph constant
-and the capture call, which is exactly what the eighteen `write(` copies and fifteen `GRAPH` constants
-are, so the write is worth counting. But a bare `resolve("....graphqls")` in a test source is not that
-signal: it matches 44 classes and 124 occurrences across the four modules, and roughly half of those
-classes never touch a store at all. `SchemaWatcherTest`, `GenerateMojoTest`, `LintQuickFixTest`,
-`SchemaSdlEmitterTest`, `CatalogBuilderSnapshotTest`, `StoreAccessTest`, `CompletionStoreWiringTest`
-and `MethodClosureOracleTest` each write an SDL file for a watcher, an emitter, a mojo or a parse test,
-and none of them stands a store up. Allow-listing them would put thirty-odd permanent entries in a
-list whose acceptance is that it drains to empty.
+**The fixture-write half needs a recogniser of its own, and a bare `resolve` is not it.** A class can
+take its store from the shared home and still hand-roll the fixture file, the graph constant and the
+capture call, which is what the eighteen `write(` copies and fifteen `GRAPH` constants become the
+moment L0 lands, so the write is worth counting. But a bare `resolve("....graphqls")` in a test source
+is not that signal: it matches 44 classes and 124 occurrences across the four modules, and 19 of those
+classes reference no store route at all. `SchemaWatcherTest`, `GenerateMojoTest`, `SchemaSdlEmitterTest`,
+`CatalogBuilderSnapshotTest` and `MethodClosureOracleTest` each write an SDL file for a watcher, an
+emitter, a mojo or a parse test and never stand a store up. Three more do stand one up, through
+`StoreFixture`, but the `.graphqls` paths they resolve are negative-case URIs that nothing ever writes:
+`LintQuickFixTest`'s `elsewhere.graphqls`, `StoreAccessTest`'s `written-since-the-last-capture.graphqls`
+and `CompletionStoreWiringTest`'s `unstored.graphqls`. Allow-listing any of the eight would put
+permanent entries in a list whose acceptance is that it drains to empty.
 
-So the write counter fires only inside a class the store counter already reaches: a test-source
-`.graphqls` write **in a class that also references `GraphitronModelStore`**. That is precisely the
-population the counter exists for, it excludes every SDL-writing pipeline test by construction rather
-than by allow-list, and it keeps the guard answering the one question it is scoped to.
+**The obvious qualifier is the one to avoid, because it makes the counter vacuous.** Firing the write
+counter only inside a class the store counter already reaches, a `.graphqls` write *in a class that also
+references `GraphitronModelStore`*, is a conjunction whose first conjunct is the store counter itself.
+Its reached set is therefore a subset of the store counter's and it can never contribute a class: 22 of
+the 44 also reference `GraphitronModelStore`, and all 22 sit inside the 33 below. Worse, it is silent on
+the one shape it exists for. A class that takes its store from `CapturedStore` stops naming
+`GraphitronModelStore`, so from S2 onward, which is the whole migration window, the half-migrated class
+the counter is meant to hold falls outside the counter's own qualifier.
+
+**Two changes make it independent, and cost nothing.** Key it on an actual write, `Files.writeString` or
+`Files.write` to a `.graphqls` path, rather than on a bare `resolve`; and qualify it on the class
+standing a store up *by any route*, `GraphitronModelStore` **or** the shared home. Measured against the
+tree as it stands, that recogniser reaches 21 classes, every one already inside the 33, so S1's partition
+is untouched. The store-free SDL writers stay excluded by construction rather than by allow-list, and the
+three negative-URI classes drop out because they never write. What it newly admits, a class referencing
+the shared home while writing its own `.graphqls`, is empty today and becomes non-empty exactly when a
+migration does half the job. That is the counter earning its place: it lands green and is a live tripwire
+for the state this item spends its whole life passing through.
+
+If the recogniser turns out not to be worth its cost, the honest alternative is to drop the write counter
+and say the guard has one. What must not ship is the vacuous form, which is a claim the guard cannot keep.
 
 It deliberately does **not** count `FactCapture.capture` calls in test sources. The primitives layer
 below the factories exists precisely so a test whose axis combination no factory names can write that
@@ -458,7 +477,8 @@ once that item is Done, not before.
 
 ### `graphitron-mcp`: `StoreBackedBuild` onto the shared floor
 
-`StoreBackedBuild` keeps its name, its `run(...)` factories and all five of its call sites. What it
+`StoreBackedBuild` keeps its name, its `run(...)` factories and all ten of its `run` call sites across
+the four test classes named above. What it
 stops owning is L0: the store's lifetime and the schema file it writes. Today it resolves
 `tmp.resolve("schema.graphqls")` and manages its own `GraphitronModelStore`, which is the third
 independent answer in the tree to "where does the fixture file go and who closes the store."
@@ -482,7 +502,8 @@ itself on its first day.
 
 ### Sequencing against the in-flight items
 
-Both dependencies are live in code this item touches, and both are declared in `depends-on`.
+Both dependencies are live in code this item touches. Only the LSP one is declared in `depends-on`, for
+the reason the paragraphs below give.
 
 * The LSP item is In Progress and has touched `StoreFixture` in most of its recent commits, including
   the post-capture writers this item moves.
@@ -726,9 +747,11 @@ server, four modules and an open design question.
 **S1: the ratchet.** The guard, both counters, all 33 current sites allow-listed with their reasons
 and marked draining, permanent or deferred, each entry self-validating, and the draining count in its
 failure message. Nothing migrates. Acceptance: the build fails on a new site, proved by a negative
-case; it fails on a stale entry, proved the same way; it passes on the tree as it stands; and the
-three markers partition the 33 with nothing unmarked, so 20 + 11 + 2 is the number the guard itself
-reports.
+case; it fails on a stale entry, proved the same way; the write counter has a negative case of its own,
+a class taking its store from the shared home while writing its own `.graphqls`, since that arm reaches
+nothing in the tree as it stands and would otherwise ship unobserved; it passes on the tree as it stands;
+and the three markers partition the 33 with nothing unmarked, so 20 + 11 + 2 is the number the guard
+itself reports.
 
 **S2: L0.** The store's lifetime, the fixture file with the filename keyed on the graph name, the
 caller-supplied graph identity, `registryOf` / `attributionOf` / `fixtureFile` public, and
@@ -778,8 +801,11 @@ that edits an LSP or MCP test class is reporting that the shared level cannot ex
 module needs. Treat that as the finding and widen the shared level, rather than adjusting the test to
 suit it.
 
-The guard is the one genuinely new test, and it needs its own negative case: a fixture source that
-opens a store outside the shared home must fail it. A guard whose passing state is the only state
+The guard is the one genuinely new test, and it needs a negative case per counter: a fixture source that
+opens a store outside the shared home must fail it, and so must one that takes its store from the shared
+home and writes its own `.graphqls`. The second matters more than it looks, because that arm reaches
+nothing in the tree as it stands; without a negative case it would ship unobserved and stay that way
+until the migration it is meant to police walks into it. A guard whose passing state is the only state
 ever observed is a guard nobody knows is wired up.
 
 `mvn install -Plocal-db` is the gate, and it has to be the full reactor build rather than any
