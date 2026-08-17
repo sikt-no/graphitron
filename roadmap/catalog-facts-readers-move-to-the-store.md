@@ -1015,22 +1015,28 @@ Three doc surfaces state where the tools read from and change with them.
 carries the tool table, where the `catalog.describe` row is the place the unique-key delta becomes a
 user-facing sentence and the `schema` row carries the classifier-vocabulary change.
 
-That page states the same warm-`Workspace` framing twice outside its table, and both sentences go
-false rather than merely stale, so they change here too. "The same `mvn graphitron:dev` process
-serves both the LSP (for your editor) and the MCP server (for your agent) off one warm workspace"
-keeps its first clause and loses its last: one process still serves both, but after slice 9 the
-server holds no `Workspace` at all, taking a `StoreHandle` and a `StoreReader` instead. And "three
-kinds of context, all served off the same warm workspace the dev loop keeps current" is wrong in
-each of its three load-bearing words. *Same* claims the two surfaces share one source, which they
-stop doing: what they share is the session store, and the `Workspace` becomes the language server's
-alone. *Warm workspace* names the wrong mechanism, the answers being store rows rather than an
-in-memory value. And *the dev loop keeps current* attributes freshness to the build's swap of that
-value, where after this item it is capture cadence, which is also what makes the sentence worth
-rewriting rather than deleting: `status` derives `Current` / `Previous` from the SDL refusal
-relations' emptiness, so what the page should promise an agent is that the store is written on every
-pass and the tools say which reading they are giving. The accurate replacement is shorter than the
-sentence it replaces, since one store written by one process is an easier promise than a shared warm
-value.
+That page states the warm-`Workspace` framing twice outside its table, and both sentences keep their
+shape and change one noun: the shared live thing is the warm *store*. What they claim is worth
+preserving exactly, because it is the promise the page exists to make.
+
+"The same `mvn graphitron:dev` process serves both the LSP (for your editor) and the MCP server (for
+your agent) off one warm workspace" stays true of the process and the sharing, and after slice 9 the
+server holds no `Workspace` at all, taking a `StoreHandle` and a `StoreReader` instead. One warm
+store is what the two surfaces then share, and the sentence says so with one word changed.
+
+"Three kinds of context, all served off the same warm workspace the dev loop keeps current" is the
+one to be careful with, because its *same* is not the LSP and the MCP but the `about` prompt, the
+`directives` resource and the tools: the claim is that everything an agent gets comes from one live
+source rather than from three of varying age. That claim survives and gets stronger. Today it is at
+its least true, the tools reading a mix of frozen projections, the `directives` resource composing a
+bundled half with a snapshot overlay, and the diagnostics tools already on the store. After this item
+every project-specific answer on that list is one store's rows, so *the same warm store* is a
+tighter statement than the sentence makes now, not a weaker one. Only the currency clause needs a
+second look: *the dev loop keeps current* attributed freshness to the build's swap of an in-memory
+value, and freshness is capture cadence afterwards, which the page can say more plainly since
+`status` reports `Current` / `Previous` off the SDL refusal relations rather than leaving an agent to
+assume. The `about` prompt is bundled text rather than a store read, which is a looseness the
+sentence already carries today and which the swap neither introduces nor has to fix.
 
 The third surface is
 `graphitron-mcp/src/main/resources/mcp/instructions.txt`, the agent-facing routing text: its
@@ -1334,9 +1340,11 @@ capture.
   the collision rule between them; the union is the store's, and the resource reads it
 * "the warm `Workspace`" as prose for what backs the MCP tools, in javadoc, in
   `dev-loop-internals.adoc` and in `mcp-agent-context.adoc` alike; with "one warm workspace" and
-  "the same warm workspace the dev loop keeps current" as the manual's two spellings of it, and
-  "warm workspace" as a thing an agent's context is served *off* at all. The retirement sweep has to
-  reach the manual and not only the contributor docs, this being the surface a consumer reads
+  "the same warm workspace the dev loop keeps current" as the manual's two spellings of it. The
+  retirement sweep has to reach the manual and not only the contributor docs, this being the surface
+  a consumer reads. What retires is *workspace* as the shared thing, not the sharing: "the same warm
+  store" is the replacement in both sentences, and a sweep that deleted the unity claim along with
+  the noun would have thrown away the promise the page is for
 * "the live snapshot" as the thing `status` and the diagnostics axes read, and "the lifecycle
   value" / "the lifecycle supplier" as a thing the host hands in; the axes are row-derived and the
   host hands only the handle and the reader
