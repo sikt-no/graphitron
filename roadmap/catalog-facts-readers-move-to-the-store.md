@@ -216,14 +216,22 @@ filed to bring the reverse question back, and that is deliberate rather than an 
 out to be needed, it is one query over the binding relations keyed at the target end, cheaper to
 author fresh once `schema`'s reads exist than to keep alive here on the chance somebody asks.
 
-**`diagnostics.aggregate` is dropped.** What it is, concretely, is a `GROUP BY` performed in Java over
-a projection, carrying its own dimension enum, a two-bucket partition of that enum, elision
-accounting, and a coverage meta-test whose subject is that the partition stays a partition. The
-`diagnostic` view is already the relation `diagnostics` reads, so grouping over it is a `GROUP BY`
-with counts whose group keys are that view's own columns. None of the enum, the partition or the
-meta-test has a successor in that shape, so migrating them spends the effort on machinery the
-substrate deletes. It returns under
-`roadmap/diagnostics-aggregation-over-the-store.md`.
+**`diagnostics.aggregate` is dropped, and the reason is surface rather than substrate.** This tool is
+already store-native and it is worth being exact about that, because an earlier reading of this item
+had it backwards and called it a `GROUP BY` performed in Java. It is not: the aggregate is a real SQL
+`GROUP BY` over the `diagnostic` view with `HAVING`, ordering and the group limit all pushed down, its
+fifteen dimensions are columns of that view, and the item that built it deliberately never built a
+Java grouping engine. So it costs this item almost nothing to carry. The one projection it still reads
+is the snapshot, for the same two freshness axes `status` and `diagnostics` read, which the lifecycle
+slice converts for all of them at once.
+
+What it costs is surface: a second tool over the relation `diagnostics` already reads, whose
+justification is that the first tool's page can be too long. That is a paging problem wearing a tool,
+and it carries its own dimension vocabulary, a two-bucket partition of that vocabulary, elision
+accounting and a coverage meta-test holding the partition together. The decision to drop it is a
+decision to answer fewer questions with fewer tools, taken with the knowledge that what is being
+deleted works and is on the store already. It is the one removal here that could be reversed cheaply
+if proportions turn out to be worth a tool, and nothing is filed to bring it back.
 
 **`services`, `conditions` and `records` become one `code` tool.** The three share one argument schema
 (`nameLimitCursorSchema`), read one census, and differ by a `WHERE` clause each: a class with record
@@ -476,6 +484,13 @@ better than pointing an agent at a tool that answers a narrower question.
 `vocabulary` one.
 
 ## Slice 5: `diagnostics.aggregate` deletes
+
+This slice deletes working, store-native code, which is unusual enough here to say once at the top.
+The tool needs no migration; it is dropped to answer fewer questions with fewer tools, and "The
+surface shrinks first" carries that argument and corrects the false one an earlier reading of this
+item gave. An implementer who reaches this slice and finds the deletion unappealing is reading it
+correctly: the case for it is surface, not cost, and reversing it costs one `writeSnapshotAxes` line
+in the lifecycle slice.
 
 **Deletes.** The `diagnostics.aggregate` tool specification and handler, and from
 `DiagnosticFacets`: `aggregateResult`, the private `aggregate`, `summarize` and `groupByDimensions`,
@@ -1074,7 +1089,7 @@ them remove a surface rather than change one, and they lead because they are the
   item. "The surface shrinks first" carries the argument.
 * **The `diagnostics.aggregate` tool is gone.** `diagnostics` still pages entries with the same
   filters, so what an agent loses is proportions and the group keys that fed back into the entry
-  tool. Returns under `roadmap/diagnostics-aggregation-over-the-store.md`.
+  tool. Nothing is filed to bring it back.
 * **`services`, `conditions` and `records` become one `code` tool** with a `kind` selector, carrying
   the same entry fields the three carried.
 * **Four bindings the `schema` tool used to report go absent.** A composite `@nodeId` field's key
@@ -1596,7 +1611,9 @@ is the kind that survives in prose long after the code goes, so it leads.
 * `DiagnosticFacets` as a class name and "facet" as the word for a diagnostics grouping key, with
   `aggregateResult`, the triage preset, "the typed-key / location-derived buckets" as a declared
   partition, "an elided group" and "the dimension gloss"; `Dimension` survives as the `diagnostics`
-  tool's filter vocabulary and nothing else does
+  tool's filter vocabulary and nothing else does. What must not be written into the sweep is that the
+  aggregate was a Java grouping engine: it was a `GROUP BY` over the `diagnostic` view, and the item
+  that built it says so
 * `services`, `conditions` and `records` as three tool names, and `CodeTools`' three-result framing
   with them; "the conditions tool is the condition-filtered view" retires as a cross-reference between
   tools and returns as a sentence about one tool's `kind` argument
