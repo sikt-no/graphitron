@@ -222,9 +222,14 @@ family over: it probes a scan in the classifier because the recognizer publishes
 Folding it onto the new arm is the obvious follow-up and deliberately out of scope here (it
 changes a live `@service` diagnostic's provenance and wants its own pins); file it if wanted.
 Because the arm is reachable from any of the three scans, it carries which scan admitted
-alongside the element kind, and the DML seat below forks wording only for a DML-scan admit
+alongside the scan result, and the DML seat below forks wording only for a DML-scan admit
 (the seat's precondition, a non-`Reject` DML scan, makes that the live case) and otherwise
 keeps the generic write-target message.
+
+Carry the whole `DmlPayloadScan.Admit`, not a bare `DmlElementKind`. `IdElement` is a
+no-component record and `Table` carries only the element type name, so neither can name the
+offending data field, which the `IdElement` wording below wants; `Admit.dataField()` is the only
+source for it.
 
 The wording forks on the element kind, because the three populations need different
 advice and, post-fix, this arm is their *only* diagnostic (the per-verb classifiers'
