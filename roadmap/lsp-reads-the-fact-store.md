@@ -390,8 +390,13 @@ Latency is measured per request on the Sakila fixture, against the new implement
 comparison, since there is nothing left to compare against and the direction is not in doubt: the
 point is to find which paths are slow as views, because that decision has a sanctioned answer and
 needs the numbers to be made. A hot path materializes, with the DDL comment owning why, as the
-reachability closure `intent_type_domain` does; never an ad-hoc cache. Measure early enough in the capability sequence that
-the first materialization is a design choice rather than a repair.
+reachability closure `intent_type_domain` does; never an ad-hoc cache.
+
+Measurement is not sequenced, and not a gate. An earlier reading of this clause asked for numbers
+early enough that the first materialization would be a design choice rather than a repair; the
+sanctioned answer is what makes that unnecessary, since the choice is already decided and only its
+trigger is open. Numbers are taken when a surface is reported slow or when a materialization is
+proposed, and no path materializes without them.
 
 ## Capability inventory
 
@@ -3127,9 +3132,13 @@ What that rewrites in the plan:
   away. The arm order stops being the reader's.
 * **The overlay renderers recompose to one statement per site**, and the per-node loop stops issuing
   three.
-* **Latency measurement moves to the front.** The acceptance clause wants it early enough that the
-  first materialization is a design choice rather than a repair, and the recomposition is exactly the
-  work its numbers should inform.
+* **Latency measurement does not move to the front, and is not a gate on the recomposition.**
+  Proposing it as the recomposition's design input inverts the order the work has. There is no
+  reported performance problem, and the defect being corrected is a statement count rather than a
+  measured time: one statement per capability is the right shape whether or not the current shape is
+  slow enough for an author to notice. Make it work, then make it fast. Numbers become worth taking
+  when a surface is reported slow, or when a materialization is actually proposed, and until then
+  measuring first would let a benchmark decide a question the architecture already answers.
 
 **The diagnostics surface composes its own text.** The conflict message is a projection, so each
 surface writes its own sentence: the build report prefixes the coordinate because a console has no
@@ -3142,5 +3151,17 @@ related-information at the other claiming directive's position. That composition
 that column.
 
 Two siblings also came out of the pass and are not this item's work:
-`folded-name-columns-on-base-relations.md` (R697), sequenced ahead of the recomposition so the new
-joins are written against predicates that are already clean, and R698 above.
+`folded-name-columns-on-base-relations.md` (R697) and R698 above.
+
+R697 is **not** sequenced ahead of the recomposition, though the pass that filed it proposed that it
+should be. Folded columns make the recomposed joins cleaner to read; they do not change what those
+joins return, so a statement written against `UPPER(...)` today takes the folded column mechanically
+when R697 lands. Sequencing it first would have parked this item behind a chain it does not depend on
+(R697 awaiting a third-party sign-off, and its own second step now belonging to a capture rewrite
+that has not started), for a cleanup whose value is in the predicates' spelling.
+
+So the remaining order is the recomposition and then diagnostics, in that order and for one reason:
+diagnostics is the largest unmigrated surface left, so writing it before the recomposition would
+add its reads in exactly the shape this pass condemned. Recomposing first means diagnostics is
+written once, and its being the last capability makes it the honest test of whether one statement per
+capability holds for a surface built that way from the start rather than retrofitted.
