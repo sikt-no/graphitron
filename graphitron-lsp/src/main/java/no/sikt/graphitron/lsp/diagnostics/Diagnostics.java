@@ -26,7 +26,7 @@ import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathClasses;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
-import no.sikt.graphitron.lsp.facts.TypeBackingClass;
+import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
@@ -35,7 +35,6 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -72,8 +71,8 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  * be an {@code isEmpty()} test per surface against a projection that could be half-populated; the
  * readers answer it in the same read that answers the name now.
  *
- * <p>What is left of the classifier's projection here is one thing: which class or table backs an SDL
- * type, which the column arm needs and no relation reproduces yet.
+ * <p>What is left of the classifier's projection here is one thing, and it is not a binding: whether
+ * a site admits the {@code $source} sigil, which is the carrier classification.
  */
 public final class Diagnostics {
 
@@ -648,12 +647,14 @@ public final class Diagnostics {
     }
 
     /**
-     * Validates a {@code @field(name:)} (or other {@code CatalogColumnBinding}
-     * coordinate) against the enclosing SDL type's backing shape: column on a
-     * table-bound type, component on a Java record, accessor on a POJO. The
-     * dispatch reads {@link LspSchemaSnapshot.Built#typesByName} for which of
-     * those the enclosing type is; on the class arms, which class it is comes
-     * from {@link TypeBackingClass} rather than from the permit.
+     * Validates a {@code @field(name:)} (or other {@code CatalogColumnBinding} coordinate) against
+     * what the enclosing SDL type's members resolve against: a column on a table-scoped type, a
+     * component or accessor on a class-scoped one. Which of those the type is, and which table or
+     * class, are one read of {@link TypeMemberScope}.
+     *
+     * <p>The snapshot still answers one question here, and it is not the backing: whether the site
+     * admits the {@code $source} sigil, which is the carrier classification rather than anything
+     * about a table or a class.
      */
     private static void validateFieldMember(
         Directives.Directive directive, Node valueNode, FileSnapshot file,
@@ -708,23 +709,17 @@ public final class Diagnostics {
                 }
             }
         }
-        // The parent's own scope. Which table the parent is bound to is still the projection's to
-        // answer; which class stands for it is the store's now, as is what either backing then
-        // offers, whether that is a table's columns or a class's member slots.
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
-        var backing = built.typesByName().get(typeName.get());
-        if (backing == null) return;
-        switch (backing) {
-            case TypeBackingShape.RecordBacking ignored ->
-                validateMemberSlot(store, typeName.get(), memberName, valueNode, file, out);
-            case TypeBackingShape.PojoBacking ignored ->
-                validateMemberSlot(store, typeName.get(), memberName, valueNode, file, out);
-            case TypeBackingShape.JooqRecordBacking.WithTable j ->
-                validateColumnOnTable(store, j.tableName(), memberName, valueNode, file, out);
-            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> { /* no actionable diagnostic */ }
-            case TypeBackingShape.TableBacking t ->
-                validateColumnOnTable(store, t.tableName(), memberName, valueNode, file, out);
-            case TypeBackingShape.NoBacking ignored -> { /* no actionable diagnostic */ }
+        // The parent's own scope, which is one read: whether the type resolves against a table or
+        // against a class, and which one, come back together, and a type the store scopes to
+        // neither is one no name here can be called wrong against.
+        if (store.isEmpty()) return;
+        var scope = TypeMemberScope.of(store.get(), typeName.get());
+        if (scope.isEmpty()) return;
+        switch (scope.get()) {
+            case TypeMemberScope.Scope.Tables(var candidates) ->
+                validateColumnOnTables(store.get(), candidates, memberName, valueNode, file, out);
+            case TypeMemberScope.Scope.Members(var className) ->
+                validateMemberSlot(store.get(), className, memberName, valueNode, file, out);
         }
     }
 
@@ -750,18 +745,16 @@ public final class Diagnostics {
     }
 
     /**
-     * The same check against a table named by a spelling rather than resolved: the parent's
-     * {@code @table} argument as the classifier's projection carried it. A name two schemas both
-     * declare contributes both column lists, which is what the census says and what makes this the
-     * looser of the two reads; the resolved-key form above is the one an author's own site resolves
-     * to.
+     * The same check against the tables the parent's own binding resolved to. An ambiguous binding
+     * contributes every candidate's column list and a name any of them declares stands, which is
+     * the looser of the two reads: which table the author meant is a resolution question, and
+     * flagging a name that one of the candidates has would be reporting the ambiguity as a typo.
      */
-    private static void validateColumnOnTable(
-        Optional<StoreHandle> store, String tableName, String columnName,
+    private static void validateColumnOnTables(
+        StoreHandle store, List<CatalogTable> tables, String columnName,
         Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
-        if (store.isEmpty()) return;
-        var columns = CatalogColumns.of(store.get(), tableName);
+        var columns = CatalogColumns.of(store, tables);
         if (columns.isEmpty()) {
             // Either the enclosing @table is itself a typo, which the @table validation already
             // flagged, or the census has no columns for it and there is nothing to check against.
@@ -769,30 +762,25 @@ public final class Diagnostics {
         }
         if (columns.stream().noneMatch(column -> column.isNamed(columnName))) {
             out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
-                "Unknown column '" + columnName + "' on table '" + tableName + "'."));
+                "Unknown column '" + columnName + "' on table '"
+                + tables.getFirst().tableName() + "'."));
         }
     }
 
     /**
-     * The member name must be one the class backing the enclosing type offers. Two silences guard
-     * it, and both say the same thing: report nothing the author can act on. A type the store names
-     * no single class for is one whose binding is unresolved or contested, and a class the census
-     * holds nothing for is not a class with no members but a class nobody has compiled yet, so
-     * neither is grounds for calling a name unknown.
+     * The member name must be one {@code fqClassName} offers. A class the census holds nothing for
+     * is silence rather than a verdict: it is not a class with no members but a class nobody has
+     * compiled yet, which is no grounds for calling a name unknown.
      *
-     * <p>The word the message uses for the member is the slots' own origin, not the permit that
-     * routed the arm here. Every slot of one class shares it, the relation choosing its arm by the
-     * class's declared form, so the first slot speaks for the class.
+     * <p>The word the message uses for the member is the slots' own origin. Every slot of one class
+     * shares it, the relation choosing its arm by the class's declared form, so the first slot
+     * speaks for the class.
      */
     private static void validateMemberSlot(
-        Optional<StoreHandle> store, String typeName, String memberName,
+        StoreHandle store, String fqClassName, String memberName,
         Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
-        if (store.isEmpty()) return;
-        var backingClass = TypeBackingClass.of(store.get(), typeName);
-        if (backingClass.isEmpty()) return;
-        String fqClassName = backingClass.get();
-        var slots = ClassMemberSlots.of(store.get(), fqClassName);
+        var slots = ClassMemberSlots.of(store, fqClassName);
         if (slots.isEmpty()) return;
         if (slots.stream().anyMatch(slot -> slot.name().equals(memberName))) return;
         String kind = switch (slots.getFirst().origin()) {

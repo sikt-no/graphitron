@@ -1,5 +1,7 @@
 package no.sikt.graphitron.lsp.fixtures;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+
 /**
  * Test producer for {@code R157PipelineTest}. Reflection-only record binding means a type
  * acquires its backing class by being the reflected return type of a producer field; the
@@ -25,6 +27,16 @@ public final class R157Service {
      * grounding on one SDL type.
      */
     public static FilmCardRecord makeFilmCard() {
+        throw new UnsupportedOperationException("codegen-time return-type stub");
+    }
+
+    /**
+     * Grounds a type on the generated jOOQ record for {@code film}, which is the case where the
+     * class standing for a type is a table's row type and the type therefore resolves against the
+     * table's columns rather than the class's members. The catalog census is the only thing that
+     * names this class: the classpath scan excludes the generated package by design.
+     */
+    public static FilmRecord makeFilmRow() {
         throw new UnsupportedOperationException("codegen-time return-type stub");
     }
 }

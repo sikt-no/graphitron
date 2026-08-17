@@ -67,6 +67,23 @@ public final class CatalogTables {
             .and(SQL_TABLE.TABLE_NAME.eq(key.tableName()))).stream().findFirst();
     }
 
+    /**
+     * The tables whose rows jOOQ binds to {@code recordClassFqn}: the reverse of the record class
+     * {@code sql_table} carries, and the only route a type known by its backing class has to a
+     * table. Normally one table, and more only where two catalog sources generated the same record
+     * class name, which is a resolution question this read leaves open on {@link #named}'s terms.
+     *
+     * <p>Empty for the census's own no-record-class sentinel, which every table jOOQ generated no
+     * record for reports. Reading it as a class name would match all of them at once, and it names
+     * no class a producer could deliver.
+     */
+    public static List<Table> ofRecordClass(StoreHandle store, String recordClassFqn) {
+        if (NO_RECORD_CLASS.equals(recordClassFqn)) return List.of();
+        return read(store, SQL_TABLE.RECORD_CLASS_FQN.eq(recordClassFqn));
+    }
+
+    private static final String NO_RECORD_CLASS = "org.jooq.Record";
+
     private static List<Table> read(StoreHandle store, Condition match) {
         var rows = store.dsl()
             .select(SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME,

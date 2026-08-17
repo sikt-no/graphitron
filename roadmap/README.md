@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R642` | graphitron-mcp reads only the store | Spec | 2026-08-17 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
-| `R638` | The LSP is a fact-store client | In Progress | 2026-08-16 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
+| `R638` | The LSP is a fact-store client | In Progress | 2026-08-17 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R680` | Gather the fact-store test harnesses of all four modules onto one shared home <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md), [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)</sub> | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |

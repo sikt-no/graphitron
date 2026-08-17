@@ -72,7 +72,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .startsWith("FILM_ID", "TITLE", "DESCRIPTION")
@@ -81,8 +81,8 @@ class FieldCompletionsTest {
 
     @Test
     void cursorOnFieldDirectiveWithoutEnclosingTableReturnsEmpty() {
-        // Type has no @table directive, so the classifier projected
-        // NoBacking; completions silence.
+        // The type binds no table and no producer grounds it, so the store scopes it to neither a
+        // table nor a class and the arm has nothing to offer.
         String source = """
             type Foo {
                 bar: Int @field(name: "")
@@ -92,20 +92,16 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("Foo", new TypeBackingShape.NoBacking.UnbackedResult()),
-        Map.of());
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).isEmpty();
     }
 
     @Test
     void unknownTableReturnsEmpty() {
-        // Enclosing type points at a table the catalog does not know — but the classifier still
-        // projected TableBacking(MISSING). No census row matches the name, so no candidates
-        // surface; an empty answer here is the store agreeing there is nothing to say.
+        // The enclosing type points at a table the catalog does not know, so the binding resolves
+        // to nothing and the type is scoped to nothing; an empty answer here is the store agreeing
+        // there is nothing to say.
         String source = """
             type Foo @table(name: "MISSING") {
                 bar: Int @field(name: "")
@@ -115,7 +111,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), tableSnapshot("Foo", "MISSING"), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -132,15 +128,14 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("@field") + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
+        var items = run(STORE.handle(), emptySnapshot(), source, cursor);
 
         assertThat(items).isEmpty();
     }
 
     @Test
     void interfaceTypeWithTableDirectiveAlsoResolvesColumns() {
-        // @table on an interface — TableInterfaceType projects to
-        // TableBacking, same data path as TableType.
+        // @table binds an interface as it binds an object, so the same read answers both.
         String source = """
             interface Movie @table(name: "film") {
                 bar: Int @field(name: "")
@@ -150,7 +145,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), tableSnapshot("Movie", "film"), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .contains("FILM_ID", "TITLE");
@@ -175,7 +170,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("[\"") + 2;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .startsWith("FILM_ID", "TITLE", "DESCRIPTION")
@@ -256,10 +251,14 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
+    /**
+     * The column arm consults no projection at all now, so what the snapshot is doing cannot silence
+     * it. Two cases that pinned the opposite are gone with the dependency: an entry missing from the
+     * projection and a projection not built yet both used to mean silence here, and both now mean
+     * only that the arm reads something else.
+     */
     @Test
-    void snapshotMissReturnsEmpty() {
-        // SDL declares the type but the snapshot has no entry — same as
-        // mid-edit state. Silent rather than spamming candidates.
+    void theColumnArmAnswersWithoutASnapshot() {
         String source = """
             type Foo @table(name: "film") {
                 bar: Int @field(name: "")
@@ -269,27 +268,11 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-        var items = run(STORE.handle(), snapshot, source, cursor);
-
-        assertThat(items).isEmpty();
-    }
-
-    @Test
-    void unavailableSnapshotReturnsEmpty() {
-        // Pre-build state — no classifier output to consult yet.
-        String source = """
-            type Foo @table(name: "film") {
-                bar: Int @field(name: "")
-            }
-            """;
-        int line = 1;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        Point cursor = new Point(line, col);
-
-        var items = run(STORE.handle(), LspSchemaSnapshot.unavailable(), source, cursor);
-
-        assertThat(items).isEmpty();
+        try (var store = StoreFixture.ofCatalog(sharedDirectory, source)) {
+            assertThat(run(store.handle(), LspSchemaSnapshot.unavailable(), source, cursor))
+                .extracting(CompletionItem::getLabel)
+                .contains("FILM_ID", "TITLE");
+        }
     }
 
     // ===== $source sigil completion =====
@@ -539,7 +522,7 @@ class FieldCompletionsTest {
         int line = 1;
         Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
 
-        var items = run(STORE.handle(), tableSnapshot("Foo", "FILM"), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(items).extracting(CompletionItem::getLabel).contains("FILM_ID", "TITLE");
     }
@@ -559,7 +542,7 @@ class FieldCompletionsTest {
         int line = 1;
         Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
 
-        var items = run(STORE.handle(), tableSnapshot("Foo", "film"), source, cursor);
+        var items = runCaptured(source, cursor);
 
         assertThat(detailOf(items, "FILM_ID")).isEqualTo("java.lang.Integer");
         assertThat(detailOf(items, "DESCRIPTION")).isEqualTo("java.lang.String (nullable)");
@@ -582,9 +565,9 @@ class FieldCompletionsTest {
         int line = 1;
         Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { placeholder: Int }\n")) {
+        try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
             assertThat(documentationOf(
-                run(fixture.handle(), tableSnapshot("Foo", "film"), source, cursor), "FILM_ID"))
+                run(fixture.handle(), emptySnapshot(), source, cursor), "FILM_ID"))
                 .as("no source parsed yet, and the fixture database carries no column comments")
                 .isEmpty();
 
@@ -596,7 +579,7 @@ class FieldCompletionsTest {
                 """);
 
             assertThat(documentationOf(
-                run(fixture.handle(), tableSnapshot("Foo", "film"), source, cursor), "FILM_ID"))
+                run(fixture.handle(), emptySnapshot(), source, cursor), "FILM_ID"))
                 .isEqualTo("The column <code>public.film.film_id</code>.");
         }
     }
@@ -645,13 +628,6 @@ class FieldCompletionsTest {
     /** No projection at all: the cases using it resolve their scope from the store. */
     private static LspSchemaSnapshot emptySnapshot() {
         return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-    }
-
-    private static LspSchemaSnapshot tableSnapshot(String typeName, String tableName) {
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of(typeName, new TypeBackingShape.TableBacking(tableName)),
-        Map.of());
     }
 
     private static List<CompletionItem> run(

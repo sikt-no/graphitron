@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-16
+last-updated: 2026-08-17
 ---
 
 # The LSP is a fact-store client
@@ -1997,7 +1997,11 @@ walk is evidence here, not the specification.
     differential being what keeps the duplication honest until then. The class arm is done:
     completion, hover and the field-member diagnostic read `TypeBackingClass` over
     `intent_type_backing`, and the precedence between a grounding and a hop is the reader's rule,
-    stated where a second reader can lift it into a view. The section below carries it.
+    stated where a second reader can lift it into a view. The section below carries it. The table
+    arm is done with it: `TypeMemberScope` answers the whole fork, the three surfaces read it, and
+    `Diagnostics.validateFieldMember` is off the projection with them. The second reader turned out
+    to be the one that could not lift the precedence, for a reason the section below carries, so
+    `TypeBackingShape` leaves the language server with `DeclTarget` rather than before it.
 
 ## Settled while building: a declared type is a tree, so resolving it is a relation per position
 
@@ -2607,6 +2611,67 @@ table permits and the three silences remain the snapshot's, so `typesByName()` a
 `sql_table.record_class_fqn`, which is the join `intent_type_backing`'s own table arm runs in
 reverse; what they are waiting on is the remaining consumers of the projection rather than a fact.
 `Diagnostics.validateFieldMember` is the next of them.
+
+## Settled while building: the table arm finishes the question, and answers where the precedence lives
+
+`Diagnostics.validateFieldMember` is off the projection, and so are completion's and hover's column
+arms, because the three share the question and moving one alone would have left them disagreeing
+about what a type is backed by. What replaces the permit switch is `TypeMemberScope`, one read
+answering the whole fork: a type's members resolve against the columns of the tables it is bound to,
+or against the member slots of the class that stands for it, or against nothing. `TypeBackingShape`
+now has exactly one reader left in the language server, `DeclTarget`, which is the next entry.
+
+**The precedence wanted lifting into a view, and trying to lift it is what showed why it cannot be.**
+The class arm left two reader's rules in `TypeBackingClass` and said the second reader was where they
+would become a view. This is that reader, and it arrives wanting a third rule on top: a `@table`
+binding beats a class a producer grounds, which is the walk's own precedence and the one
+`intent_type_backing` records as a choice rather than folding in. So the view looked due. What it ran
+into is that the two arms share no payload. The backing relation coalesces them by carrying a class
+name for both, reaching the table arm's through the table's generated record, and a table jOOQ
+generated no record class for reports `org.jooq.Record`. Routing the table arm through the class
+would therefore leave every table-bound type unscoped in any workspace whose catalog was generated
+without record classes, which is a configuration and not a mistake. A view carrying both payloads
+instead would be four columns NULL by kind, which is the reading `intent_declared_type_ref` refused
+for the same reason. So the arms stay two relations, the table one reads `intent_bound_table`
+directly, and the ordering between them is stated in the reader that needs it.
+
+**A class that is a table's record is a table, and that is the join the coalesce runs backwards.**
+`intent_type_backing`'s own table arm reads `sql_table.record_class_fqn` to turn a binding into a
+class; this reads it the other way to turn a class into a binding, which is what the
+`JooqRecordBacking` permit used to carry pre-resolved. It also disposes of that permit's second arm
+for free: a jOOQ record no table claims is left on the class arm, where the census holds nothing for
+it, because the classpath scan excludes the generated package by design. Silence, which is what the
+standalone permit produced too, and now for a stated reason rather than by a case in a switch.
+
+**Ambiguity became candidates instead of a spelling.** The permit carried a table *name*, so the
+arms read columns by name and an ambiguous `@table` pulled in every schema's table that spelled it,
+including ones the binding never resolved to. The scope carries resolved keys, so an ambiguous
+binding contributes exactly its own candidates: still every one of them, ambiguity being rows, but
+no longer a name match standing in for a resolution.
+
+**Two cases died because the thing they pinned no longer exists.** Completion had a case for a
+projection with no entry for the type and one for no projection at all, both asserting silence. The
+column arm reads no projection now, so what replaced them asserts the opposite and is the more
+useful fact: a session between builds still completes and still validates, the capture being on the
+save cadence rather than the pipeline's. Hover's stale-snapshot case went the same way, and the
+stale-prefers-over-silence rule it stood on survives at the declaration-name arm, hover's last
+reader of the projection. `Hovers.richerHover` lost its snapshot parameter entirely: every coordinate
+arm is a store read now.
+
+**One behaviour changed rather than moving, and it is worth naming.** A buffer whose `@table` is a
+typo used to silence the member check by accident: the permit carried the typo'd name, the census
+had no columns under it, and the arm returned. The scope is keyed on the type name instead, so on a
+saved graph where the type is really bound, the check now runs against the real binding while the
+author is mid-typo. The case that pinned the old behaviour now captures its own document, where the
+binding resolves to nothing and the type is scoped to nothing, so one mistake still yields one
+diagnostic; but the general shape, a buffer ahead of the capture it is checked against, is inherent
+to reading a save-cadence store and was equally true of the per-build projection.
+
+**What it cost was again fixtures, and again the honest kind.** A table-scoped case can no longer
+declare `type Foo @table(name: "film")` in a buffer while the captured graph knows nothing of `Foo`;
+each such case captures its own document or names a type the shared capture binds. The census was
+also short of a producer returning a generated jOOQ record, so the class-is-a-table arm had nothing
+to be tested against, and `R157Service.makeFilmRow` is that producer.
 
 ## Retired vocabulary
 

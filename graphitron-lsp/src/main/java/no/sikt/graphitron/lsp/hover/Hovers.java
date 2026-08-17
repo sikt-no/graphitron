@@ -8,7 +8,7 @@ import no.sikt.graphitron.lsp.facts.ClasspathMethods;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
 import no.sikt.graphitron.lsp.facts.SdlDescriptions;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
-import no.sikt.graphitron.lsp.facts.TypeBackingClass;
+import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
@@ -23,7 +23,6 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
@@ -60,9 +59,8 @@ import static org.jooq.impl.DSL.selectCount;
  * <p>Every arm reads the fact store, the declaration-name arm around the coordinate dispatch
  * included: the classpath census and the java-source family for the arms that answer about Java, the
  * catalog census for those that answer about the database, and the graph's own {@code @node}
- * declarations for one more. What still comes from the projection is the classification snapshot,
- * which answers which table a column site belongs to, and the catalog the declaration-name arm's
- * binding resolution shares with goto-definition.
+ * declarations for one more. What still comes from the projection is the declaration-name arm's
+ * classification block, and the catalog its binding resolution shares with goto-definition.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
  * the SDL-docstring hover, and so do the two name tokens the coordinate walk does not key: the
@@ -131,8 +129,7 @@ public final class Hovers {
 
         if (coordOpt.isPresent() && rangeNode != null) {
             var coord = coordOpt.get();
-            var richer = richerHover(
-                vocabulary, coord, directive, file, store, snapshot, pos, rangeNode);
+            var richer = richerHover(vocabulary, coord, directive, file, store, pos, rangeNode);
             if (richer.isPresent()) return richer;
             // SDL docstring on the coordinate. Empty if the definition carries no description
             // (rare in directives.graphqls).
@@ -169,15 +166,14 @@ public final class Hovers {
     }
 
     /**
-     * Every coordinate arm reads the store; what is left on the projection is the classification
-     * snapshot, which answers which table a site's columns belong to rather than what the database
-     * holds.
+     * Every coordinate arm reads the store and nothing else, the column arm included now that what
+     * a type's members resolve against is a read rather than a permit. The snapshot reaches hover
+     * only through the declaration-name arm, which this dispatch does not key.
      */
     private static Optional<Hover> richerHover(
         LspVocabulary vocabulary, SchemaCoordinate coord,
         Directives.Directive directive, FileSnapshot file,
-        Optional<StoreHandle> store, LspSchemaSnapshot snapshot,
-        Point pos, Node rangeNode
+        Optional<StoreHandle> store, Point pos, Node rangeNode
     ) {
         var behavior = vocabulary.behaviorAt(coord);
         if (behavior.isEmpty()) return Optional.empty();
@@ -194,11 +190,8 @@ public final class Hovers {
                 store.flatMap(s -> methodHover(
                     vocabulary, directive, file, s, pos, rangeNode, mnb.classNameCoord()));
             case Behavior.CatalogTableBinding ignored -> store.flatMap(s -> tableHover(file, s, rangeNode));
-            // The column arm takes the store as an option rather than behind a flatMap: its
-            // record- and POJO-backed sites answer from the classification snapshot's member
-            // slots, and only the table-backed ones are a census read.
             case Behavior.CatalogColumnBinding ignored ->
-                columnHover(directive, file, store, snapshot, rangeNode);
+                store.flatMap(s -> columnHover(directive, file, s, rangeNode));
             case Behavior.CatalogFkBinding ignored -> store.flatMap(s -> fkHover(file, s, rangeNode));
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
             case Behavior.ScalarTypeBinding ignored -> Optional.empty();
@@ -397,8 +390,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> columnHover(
-        Directives.Directive directive, FileSnapshot file, Optional<StoreHandle> store,
-        LspSchemaSnapshot snapshot, Node valueNode
+        Directives.Directive directive, FileSnapshot file, StoreHandle store, Node valueNode
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         var typeDecl = DeclarationKind.enclosing(directive.outer());
@@ -414,8 +406,7 @@ public final class Hovers {
         // the parent's table, so the editor falls through to the SDL docstring; no row at all means
         // the parent's own scope answers, which is the dispatch below.
         if (fieldName != null) {
-            var scope = store.flatMap(handle ->
-                FieldColumnScope.of(handle, typeName.get(), fieldName));
+            var scope = FieldColumnScope.of(store, typeName.get(), fieldName);
             if (scope.isPresent()) {
                 switch (scope.get()) {
                     case FieldColumnScope.Scope.Resolved(var table) -> {
@@ -425,38 +416,35 @@ public final class Hovers {
                 }
             }
         }
-        // The parent's own scope. Which table the parent is bound to is still the projection's to
-        // answer; which class stands for it is the store's now, as is what either backing then
-        // offers, whether that is a table's columns or a class's member slots.
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
-        var backing = built.typesByName().get(typeName.get());
-        if (backing == null) return Optional.empty();
-        return switch (backing) {
-            case TypeBackingShape.RecordBacking ignored ->
-                slotHover(store, typeName.get(), memberName, file, valueNode);
-            case TypeBackingShape.PojoBacking ignored ->
-                slotHover(store, typeName.get(), memberName, file, valueNode);
-            case TypeBackingShape.JooqRecordBacking.WithTable j ->
-                tableColumnHover(store, j.tableName(), memberName, file, valueNode);
-            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> Optional.empty();
-            case TypeBackingShape.TableBacking t ->
-                tableColumnHover(store, t.tableName(), memberName, file, valueNode);
-            case TypeBackingShape.NoBacking ignored -> Optional.empty();
-        };
+        // The parent's own scope, which is one read: whether the type resolves against a table or
+        // against a class, and which one, come back together, and a type the store scopes to
+        // neither renders nothing.
+        return TypeMemberScope.of(store, typeName.get())
+            .flatMap(scope -> switch (scope) {
+                case TypeMemberScope.Scope.Tables(var candidates) ->
+                    tableColumnHover(store, candidates, memberName, file, valueNode);
+                case TypeMemberScope.Scope.Members(var className) ->
+                    slotHover(store, className, memberName, file, valueNode);
+            });
     }
 
     /**
-     * The named column of the named table, under either of the two names the census carries for it.
-     * The projection held only the jOOQ field name, so an author who wrote the SQL name got a hover
-     * only where the two agree up to case; the diagnostic arm already accepts both spellings, and
-     * the census is what lets this one agree with it.
+     * The named column of the tables a binding resolved to, under either of the two names the
+     * census carries for it. The projection held only the jOOQ field name, so an author who wrote
+     * the SQL name got a hover only where the two agree up to case; the diagnostic arm already
+     * accepts both spellings, and the census is what lets this one agree with it.
+     *
+     * <p>Every candidate of an ambiguous binding contributes, and the render names the column's
+     * schema where more than one answers, so what an author sees is that two tables spell it rather
+     * than one arbitrary pick.
      */
     private static Optional<Hover> tableColumnHover(
-        Optional<StoreHandle> store, String tableName, String columnName,
+        StoreHandle store, List<CatalogTable> tables, String columnName,
         FileSnapshot file, Node valueNode
     ) {
-        return store.flatMap(handle ->
-            render(CatalogColumns.of(handle, tableName), tableName, columnName, file, valueNode));
+        if (tables.isEmpty()) return Optional.empty();
+        return render(CatalogColumns.of(store, tables),
+            tables.getFirst().tableName(), columnName, file, valueNode);
     }
 
     /**
@@ -464,11 +452,11 @@ public final class Hovers {
      * second schema's column of the same name behind the caller.
      */
     private static Optional<Hover> tableColumnHover(
-        Optional<StoreHandle> store, CatalogTable table, String columnName,
+        StoreHandle store, CatalogTable table, String columnName,
         FileSnapshot file, Node valueNode
     ) {
-        return store.flatMap(handle -> render(
-            CatalogColumns.of(handle, table), table.tableName(), columnName, file, valueNode));
+        return render(
+            CatalogColumns.of(store, table), table.tableName(), columnName, file, valueNode);
     }
 
     private static Optional<Hover> render(
@@ -482,18 +470,15 @@ public final class Hovers {
     }
 
     /**
-     * The named member of the class backing {@code typeName}, under the one spelling the classifier
-     * would accept. Which class that is comes from {@link TypeBackingClass} and what it offers from
-     * {@link ClassMemberSlots}, so a type the store names no single class for renders nothing, on
-     * the same terms as a member name the class does not offer.
+     * The named member of {@code className}, under the one spelling the classifier would accept.
+     * What the class offers comes from {@link ClassMemberSlots}, so a class the census holds
+     * nothing for renders nothing, on the same terms as a member name the class does not offer.
      */
     private static Optional<Hover> slotHover(
-        Optional<StoreHandle> store, String typeName, String memberName,
+        StoreHandle store, String className, String memberName,
         FileSnapshot file, Node valueNode
     ) {
-        return store
-            .flatMap(handle -> TypeBackingClass.of(handle, typeName)
-                .flatMap(className -> ClassMemberSlots.named(handle, className, memberName)))
+        return ClassMemberSlots.named(store, className, memberName)
             .map(slot -> hover(file, valueNode, "**" + slot.name() + "**: `" + slot.displayType() + "`"));
     }
 

@@ -1,7 +1,9 @@
 package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
+import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.impl.DSL;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -42,12 +44,28 @@ public final class CatalogColumns {
      * resolution already picked, so an ambiguous name cannot widen the result behind the caller.
      */
     public static List<Column> of(StoreHandle store, CatalogTable table) {
-        return of(store, SQL_COLUMN.SOURCE_NAME.eq(table.sourceName())
-            .and(SQL_COLUMN.TABLE_SCHEMA.eq(table.schema()))
-            .and(SQL_COLUMN.TABLE_NAME.eq(table.tableName())));
+        return of(store, keyOf(table));
     }
 
-    private static List<Column> of(StoreHandle store, org.jooq.Condition tableFilter) {
+    /**
+     * The columns of every table a binding resolved to, in schema then definition order. What a set
+     * of keys says that a spelling cannot is which tables the binding actually reached: the
+     * name-keyed read matches whatever spells the name anywhere in the census, and this one matches
+     * what a resolution named and nothing else. Empty for an empty set, there being no table to
+     * read rather than every table.
+     */
+    public static List<Column> of(StoreHandle store, List<CatalogTable> tables) {
+        if (tables.isEmpty()) return List.of();
+        return of(store, DSL.or(tables.stream().map(CatalogColumns::keyOf).toList()));
+    }
+
+    private static Condition keyOf(CatalogTable table) {
+        return SQL_COLUMN.SOURCE_NAME.eq(table.sourceName())
+            .and(SQL_COLUMN.TABLE_SCHEMA.eq(table.schema()))
+            .and(SQL_COLUMN.TABLE_NAME.eq(table.tableName()));
+    }
+
+    private static List<Column> of(StoreHandle store, Condition tableFilter) {
         // The generated field's Javadoc, on the .java cadence, keyed by the table class FQN the
         // catalog walk captured and the column constant's own name.
         Field<String> javadoc = SourceDeclarations.fieldJavadocOf(SQL_TABLE.CLASS_FQN, SQL_COLUMN.JOOQ_NAME);

@@ -4,7 +4,7 @@ import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.FieldColumnScope;
-import no.sikt.graphitron.lsp.facts.TypeBackingClass;
+import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -13,7 +13,6 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -26,26 +25,22 @@ import java.util.List;
 /**
  * Catalog-aware completions for any coordinate the {@link LspVocabulary}
  * overlay declares as a {@link Behavior.CatalogColumnBinding}. The candidate
- * set depends on the enclosing GraphQL type's backing shape, looked up from
- * the {@link LspSchemaSnapshot.Built#typesByName()} projection:
+ * set depends on what the enclosing GraphQL type's members resolve against, which is one read of
+ * {@link TypeMemberScope}:
  *
  * <ul>
- *   <li>{@link TypeBackingShape.TableBacking} or
- *       {@link TypeBackingShape.JooqRecordBacking} with a known table — the column census of
- *       {@code sql_column}, with the generated field's Javadoc joined in on the {@code .java}
- *       cadence.</li>
- *   <li>{@link TypeBackingShape.RecordBacking} or {@link TypeBackingShape.PojoBacking} — the member
- *       slots the backing class offers, the class itself read from {@link TypeBackingClass} and its
- *       slots from {@link ClassMemberSlots}. Neither the permit's identity nor the class name it
- *       carries decides anything here.</li>
- *   <li>{@link TypeBackingShape.NoBacking} or snapshot miss — empty list
- *       (matches today's "no info" behaviour).</li>
+ *   <li>{@link TypeMemberScope.Scope.Tables} — the column census of {@code sql_column} for every
+ *       table the binding resolved to, with the generated field's Javadoc joined in on the
+ *       {@code .java} cadence.</li>
+ *   <li>{@link TypeMemberScope.Scope.Members} — the member slots the backing class offers, read
+ *       through {@link ClassMemberSlots}.</li>
+ *   <li>No scope — empty list, which a type nothing binds and no single class stands for gets.</li>
  * </ul>
  *
- * <p>Which table a type is bound to stays a classification question the snapshot answers, as does
- * the field's own classification; which class stands for a type is the store's, and so is what
- * either backing then offers ({@link CatalogColumns} for a table, {@link ClassMemberSlots} for a
- * class).
+ * <p>The field's own classification is still a question the snapshot answers, and so is whether the
+ * {@code $source} sigil belongs at this site. What the enclosing type resolves against is the
+ * store's, and so is what either scope then offers ({@link CatalogColumns} for a table,
+ * {@link ClassMemberSlots} for a class).
  */
 public final class FieldCompletions {
 
@@ -110,22 +105,17 @@ public final class FieldCompletions {
                 }
             }
         }
-        // The parent's own scope. Which table the parent is bound to is still the projection's to
-        // answer; which class stands for it is the store's now, as is what either backing then
-        // offers, whether that is a table's columns or a class's member slots.
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
-            return sigilItems;
-        }
-        var backing = built.typesByName().get(typeName);
-        if (backing == null) return sigilItems;
-        var rest = switch (backing) {
-            case TypeBackingShape.RecordBacking ignored -> memberSlotItems(store, typeName, context);
-            case TypeBackingShape.PojoBacking ignored -> memberSlotItems(store, typeName, context);
-            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(store, j.tableName(), context);
-            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.<CompletionItem>of();
-            case TypeBackingShape.TableBacking t -> tableColumnItems(store, t.tableName(), context);
-            case TypeBackingShape.NoBacking ignored -> List.<CompletionItem>of();
-        };
+        // The parent's own scope, which is one read: whether the type resolves against a table or
+        // against a class, and which one, come back together, and a type the store scopes to
+        // neither offers nothing.
+        var rest = TypeMemberScope.of(store, typeName)
+            .map(scope -> switch (scope) {
+                case TypeMemberScope.Scope.Tables(var candidates) ->
+                    tableColumnItems(store, candidates, context);
+                case TypeMemberScope.Scope.Members(var className) ->
+                    memberSlotItems(store, className, context);
+            })
+            .orElse(List.of());
         return mergeWithSigil(sigilItems, rest);
     }
 
@@ -147,17 +137,18 @@ public final class FieldCompletions {
     }
 
     /**
-     * The columns of every table this graph's census holds under {@code tableName}, in table-
-     * definition order. The read itself is {@link CatalogColumns}, shared with hover's column arm.
+     * The columns of every table the parent's binding resolved to, in schema then definition order.
+     * The read itself is {@link CatalogColumns}, shared with hover's column arm.
      *
-     * <p>A name two schemas both declare contributes both column lists. The projection answered
+     * <p>An ambiguous binding contributes every candidate's column list. The projection answered
      * with whichever table its list happened to hold first, which was the generated {@code Tables}
-     * class's field order rather than a resolution rule; offering both is what the census says.
+     * class's field order rather than a resolution rule; offering all of them is what the census
+     * says, and each is a table the author might have meant.
      */
     private static List<CompletionItem> tableColumnItems(
-        StoreHandle store, String tableName, CompletionContext context
+        StoreHandle store, List<CatalogTable> tables, CompletionContext context
     ) {
-        return toItems(CatalogColumns.of(store, tableName), context);
+        return toItems(CatalogColumns.of(store, tables), context);
     }
 
     /**
@@ -182,20 +173,17 @@ public final class FieldCompletions {
     }
 
     /**
-     * The member names the class backing {@code typeName} offers, by name. Both the class and what
-     * it offers are the store's now: the binding through {@link TypeBackingClass} and the members
-     * through {@link ClassMemberSlots}, whose own rule decides between components and accessors. So
-     * this arm depends neither on which of the two class permits routed it here nor on the class
-     * name that permit carries, and a type the store cannot name one class for offers nothing.
+     * The member names {@code className} offers, by name, read through {@link ClassMemberSlots},
+     * whose own rule decides between record components and bean accessors. A class the census holds
+     * nothing for offers nothing, which is a consumer who has not compiled rather than a class with
+     * no members.
      */
     private static List<CompletionItem> memberSlotItems(
-        StoreHandle store, String typeName, CompletionContext context
+        StoreHandle store, String className, CompletionContext context
     ) {
-        return TypeBackingClass.of(store, typeName)
-            .map(className -> ClassMemberSlots.of(store, className).stream()
-                .map(slot -> toMemberSlotItem(slot, context))
-                .toList())
-            .orElse(List.of());
+        return ClassMemberSlots.of(store, className).stream()
+            .map(slot -> toMemberSlotItem(slot, context))
+            .toList();
     }
 
     /**

@@ -38,6 +38,16 @@ class DiagnosticsTest {
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
     /**
+     * The catalog fixture's schema, which is not beside the point: what a type's members resolve
+     * against is the store's answer now, so a case validating a column name needs a graph where the
+     * type its buffer declares is bound to a table. {@code Foo} is the name those buffers use.
+     */
+    private static final String TABLE_SDL = """
+        type Query { film: Foo }
+        type Foo @table(name: "film") { title: String }
+        """;
+
+    /**
      * The one shared fixture whose schema is not beside the point: which class backs a type is the
      * store's answer now, so a case validating a member name against a backing class needs a graph
      * where a producer grounds the type its buffer declares.
@@ -63,7 +73,7 @@ class DiagnosticsTest {
     @TempDir
     static Path nodesRoot;
 
-    /** The generated catalog and nothing else, which is also the empty-class-census case. */
+    /** The generated catalog and nothing else, over a graph that binds {@code Foo} to {@code film}. */
     private static StoreFixture catalogOnly;
     /** The two-schema generated model, where a constraint name stops identifying one key. */
     private static StoreFixture multiSchema;
@@ -76,7 +86,7 @@ class DiagnosticsTest {
 
     @BeforeAll
     static void capture() {
-        catalogOnly = StoreFixture.ofCatalog(catalogRoot, PLACEHOLDER_SDL);
+        catalogOnly = StoreFixture.ofCatalog(catalogRoot, TABLE_SDL);
         multiSchema = StoreFixture.ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
         withClasses = StoreFixture.ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus());
         withBackingClasses = StoreFixture.ofCatalog(backingRoot, BACKED_SDL,
@@ -151,7 +161,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains("column");
@@ -165,7 +175,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).isEmpty();
     }
@@ -178,22 +188,27 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).isEmpty();
     }
 
+    /**
+     * The {@code @table} is the typo, not the {@code @field}, and only the real mistake is reported.
+     * Nothing suppresses the second one: a binding that resolves to no table scopes the type to
+     * nothing, so there is no column list for the member name to be absent from. Its own capture,
+     * because the subject is what the store makes of this document's own binding.
+     */
     @Test
     void unknownColumnButUnknownTableSuppressesDuplicateField() {
-        // The @table is the typo, not the @field; reporting both would
-        // double-count one mistake. The @field validator yields here.
-        var file = file("""
+        String sdl = """
             type Foo @table(name: "MISSING") {
                 bar: Int @field(name: "anything")
             }
-            """);
+            type Query { foo: Foo }
+            """;
 
-        var diags = compute(file, catalogOnly, fooTableBacking("MISSING"));
+        var diags = computeCaptured(sdl);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING");
@@ -201,19 +216,19 @@ class DiagnosticsTest {
 
     @Test
     void unknownRecordComponentProducesError() {
-        // Two answers meet here and neither is an SDL directive on the buffer. That the parent is
-        // class-backed is the snapshot's, which is why the arm fires without an applied @record;
-        // which class it is is the store's, a producer in the captured graph grounding FilmCard on
-        // the fixture record. What the class offers is the census's, so the accept line is the
-        // compiler's record header rather than a list this fixture wrote, and the word the message
-        // uses for the member comes from the arm the relation chose for the class.
+        // Two answers meet here and neither is an SDL directive on the buffer, which is why the arm
+        // fires without an applied @record. That the parent resolves to a class, and which class, is
+        // the store's: a producer in the captured graph grounds FilmCard on the fixture record. What
+        // the class offers is the census's, so the accept line is the compiler's record header rather
+        // than a list this fixture wrote, and the word the message uses for the member comes from the
+        // arm the relation chose for the class.
         var file = file("""
             type FilmCard {
                 bar: Int @field(name: "TYPO")
             }
             """);
 
-        var diags = compute(file, withBackingClasses, recordBackedFilmCard());
+        var diags = compute(file, withBackingClasses, noBackings());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -228,66 +243,55 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withBackingClasses, recordBackedFilmCard());
+        var diags = compute(file, withBackingClasses, noBackings());
 
         assertThat(diags).isEmpty();
     }
 
     /**
-     * A type the store grounds on the fixture record, whose members the census answers for. The
-     * permit routes the arm and no longer names the class, so the projection's own class name is
-     * not what the check runs against; the case below is the one that says so out loud.
+     * A built projection holding no backing at all, which is what every member-check case now passes:
+     * the arm reads the store for what a type resolves against, so what the projection would have
+     * said about it is not a variable of these cases. Built rather than unavailable so the
+     * freshness-gated warn arms behave as they do in a settled session.
      */
-    private static LspSchemaSnapshot recordBackedFilmCard() {
-        return classBackedFilmCard(RECORD_FIXTURE);
+    private static LspSchemaSnapshot noBackings() {
+        return new LspSchemaSnapshot.Built.Current(java.util.List.of(), Map.of(), Map.of());
     }
 
+    /**
+     * The projection is not merely unread here, it is absent: a session before its first build gets
+     * the same member check as a settled one, because the capture the check reads is on the save
+     * cadence rather than the pipeline's. Under the projection-era dispatch this was silence, an
+     * absent snapshot meaning an absent backing meaning nothing to check against.
+     */
     @Test
-    void theCheckRunsAgainstTheClassTheStoreNamesRatherThanThePermitsOwn() {
-        // The permit names a class the census never held, which under the projection-era dispatch
-        // meant an empty slot list and silence. The store grounds FilmCard on the fixture record,
-        // so the name is checked against that record's components and the typo is reported.
+    void theCheckRunsWithNoProjectionAtAll() {
         var file = file("""
             type FilmCard {
                 bar: Int @field(name: "TYPO")
             }
             """);
 
-        var diags = compute(file, withBackingClasses, classBackedFilmCard("com.example.Ghost"));
+        var diags = compute(file, withBackingClasses, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains(RECORD_FIXTURE);
-    }
-
-    private static LspSchemaSnapshot classBackedFilmCard(String permittedClassName) {
-        return new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("FilmCard",
-                new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(permittedClassName)),
-            Map.of());
-    }
-
-    private static LspSchemaSnapshot fooTableBacking(String tableName) {
-        return new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking(tableName)),
-        Map.of());
     }
 
     // ===== @field(name:) member validation inside extend type X { ... } =====
 
     @Test
     void unknownColumnInsideTypeExtensionProducesError() {
-        // The AST node DeclarationKind.enclosing returns is the extension; member validation
-        // resolves the parent type's backing through the snapshot's name-keyed projection, so
-        // even though @table lives on the definition in another file, the diagnostic fires.
+        // The AST node DeclarationKind.enclosing returns is the extension; member validation resolves
+        // what the parent type's members answer to by type name, so even though @table lives on the
+        // definition in another file, the diagnostic fires.
         var file = file("""
             extend type Foo {
                 bar: Int @field(name: "GHOST")
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
@@ -301,7 +305,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).isEmpty();
     }
@@ -1244,7 +1248,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
@@ -1259,7 +1263,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, fooTableBacking("film"));
+        var diags = compute(file, catalogOnly, noBackings());
 
         assertThat(diags).isEmpty();
     }

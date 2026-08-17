@@ -170,13 +170,13 @@ class HoversTest {
     @Test
     void fieldHoverShowsColumnMetadata() {
         var file = file("""
-            type Foo @table(name: "film") {
+            type Film @table(name: "film") {
                 bar: Int @field(name: "title")
             }
             """);
         var pos = pointAt(file, 1, "title");
 
-        var md = markdownAt(file, fooFilmSnapshot(), pos);
+        var md = markdownAt(file, pos);
 
         assertThat(md).contains("**Column** `title`");
         assertThat(md).contains("on `film`");
@@ -195,38 +195,37 @@ class HoversTest {
     @Test
     void columnHoverAnswersTheGeneratedNameToo() {
         var file = file("""
-            type Foo @table(name: "film") {
+            type Film @table(name: "film") {
                 bar: Int @field(name: "TITLE")
             }
             """);
         var pos = pointAt(file, 1, "TITLE");
 
-        assertThat(markdownAt(file, fooFilmSnapshot(), pos))
+        assertThat(markdownAt(file, pos))
             // The heading is the SQL name whichever spelling was typed: it is the column's
             // coordinate, and the generated name is a fact about generated code.
             .contains("**Column** `title` on `film`");
     }
 
     /**
-     * Stale-prefers-over-silence, at the one arm that still reads the snapshot: an old classification
-     * beats nothing while the author is mid-edit, so a {@code Built.Previous} snapshot resolves the
-     * enclosing type's table exactly as a current one does. The directive-docstring arms used to carry
-     * this case and no longer read the snapshot at all.
+     * The column arm no longer consults the snapshot, so the stale-prefers-over-silence rule it used
+     * to stand on has nothing to arbitrate here: a stale projection, a current one and none at all
+     * are one answer, because what the enclosing type resolves against is a read. The rule itself
+     * survives at the declaration-name arm, which is the last of hover's readers of the projection.
      */
     @Test
-    void columnHoverUnderAPreviousSnapshotStillAnswers() {
+    void columnHoverIgnoresTheSnapshotEntirely() {
         var file = file("""
-            type Foo @table(name: "film") {
+            type Film @table(name: "film") {
                 bar: Int @field(name: "title")
             }
             """);
         var pos = pointAt(file, 1, "title");
-        var stale = new LspSchemaSnapshot.Built.Previous(
-            List.of(),
-            java.util.Map.of("Foo", new TypeBackingShape.TableBacking("film")),
-            Map.of());
+        var stale = new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of());
 
         assertThat(markdownAt(file, stale, pos)).contains("**Column** `title` on `film`");
+        assertThat(markdownAt(file, LspSchemaSnapshot.unavailable(), pos))
+            .contains("**Column** `title` on `film`");
     }
 
     /**
@@ -376,21 +375,13 @@ class HoversTest {
     @Test
     void cursorOnUnknownColumnReturnsEmpty() {
         var file = file("""
-            type Foo @table(name: "film") {
+            type Film @table(name: "film") {
                 bar: Int @field(name: "GHOST")
             }
             """);
         var pos = pointAt(file, 1, "GHOST");
 
-        assertThat(hoverAt(file, fooFilmSnapshot(), pos)).isEmpty();
-    }
-
-    /** {@code Foo → TableBacking("film")}; matches every {@code type Foo @table(name: "film")} fixture in this file. */
-    private static LspSchemaSnapshot fooFilmSnapshot() {
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("Foo", new TypeBackingShape.TableBacking("film")),
-        Map.of());
+        assertThat(hoverAt(file, pos)).isEmpty();
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {
@@ -689,13 +680,13 @@ class HoversTest {
         // valueNodeFor descends into list_value to honour
         // "Leaf.valueNode is the scalar value node" universally.
         var file = file("""
-            type Foo implements Node @table(name: "film") @node(keyColumns: ["film_id", "title"]) {
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id", "title"]) {
                 id: ID
             }
             """);
         var pos = pointAt(file, 0, "title");
 
-        var hover = hoverAt(file, fooFilmSnapshot(), pos).orElseThrow();
+        var hover = hoverAt(file, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");
