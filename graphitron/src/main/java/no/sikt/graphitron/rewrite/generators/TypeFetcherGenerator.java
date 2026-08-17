@@ -687,9 +687,9 @@ public class TypeFetcherGenerator {
                         ctx.argPathHelpers()));
                 }
                 // ParticipantColumnReferenceField: the value is materialised in the parent record by
-                // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN; the read of it
-                // back is reified by FetcherEmitter.bind into a named source-only method (wrapped in
-                // LightFetcher), collected below. No-op arm here.
+                // the enclosing TableInterfaceField fetcher's discriminator-gated correlated
+                // subselect; the read of it back is reified by FetcherEmitter.bind into a named
+                // source-only method (wrapped in LightFetcher), collected below. No-op arm here.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 // SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
                 // encode) is reified by FetcherEmitter.bind into a named (DataFetchingEnvironment

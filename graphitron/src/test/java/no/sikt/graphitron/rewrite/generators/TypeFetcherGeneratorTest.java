@@ -1215,10 +1215,13 @@ class TypeFetcherGeneratorTest {
 
     // ===== Cross-table participant fields =====
     //
-    // The interface fetcher emits a conditional LEFT JOIN per cross-table participant field. The
-    // gating uses the graphql-java type-scoped selection-set API (Type.field); the JOIN's ON
-    // clause includes the participant's discriminator equality so non-matching rows project NULL
-    // for the cross-table column rather than spuriously matching every row.
+    // A cross-table participant field is projected as a discriminator-gated correlated subselect
+    // capped at one row, gated on the type-scoped selection-set check (Type.field at any depth).
+    // No generator-tier test asserts that body: the lowering is pinned as data in
+    // LauncherCommandsPipelineTest, the exact SQL in RootLauncherSqlBaselineTest (root) and
+    // BatchedChildSqlBaselineTest (child), and the row semantics in GraphQLQueryTest, per the
+    // code-string ban in the testing guide. The fixture below feeds the discriminator
+    // qualification tests in the next section.
 
     private static ParticipantRef.TableBound.CrossTableField filmContentRatingCrossTable() {
         var ratingCol = new ColumnRef("rating", "RATING", "java.lang.String");
@@ -1229,112 +1232,6 @@ class TypeFetcherGeneratorTest {
             null, "rating_0");
         return new ParticipantRef.TableBound.CrossTableField(
             "rating", ratingCol, contentToFilmFk, "FilmContent_rating");
-    }
-
-    @Test
-    void queryTableInterfaceField_crossTableField_emitsTypeScopedSelectionGuard() {
-        var returnType = tableBoundFilm(nonNullList());
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
-                List.of(filmContentRatingCrossTable())),
-            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
-        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "content_type", List.of("FILM", "SHORT"), participants,
-            List.of(), new OrderBySpec.None(), null);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "rowsAllContent").code().toString();
-        assertThat(code)
-            .as("type-scoped selection-set check gates per-participant cross-table column fetch, "
-                + "matching the coordinate wherever it sits in the selection (a connection puts "
-                + "it under edges/node)")
-            .contains("env.getSelectionSet().containsAnyOf(\"FilmContent.rating\", "
-                + "\"**/FilmContent.rating\")");
-    }
-
-    @Test
-    void queryTableInterfaceField_crossTableField_emitsGatedCorrelatedSubselect() {
-        var returnType = tableBoundFilm(nonNullList());
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
-                List.of(filmContentRatingCrossTable())));
-        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "content_type", List.of("FILM"), participants,
-            List.of(), new OrderBySpec.None(), null);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "rowsAllContent").code().toString();
-        assertThat(code)
-            .as("the cross table is read through a correlated subselect capped at one row, so the "
-                + "hop cannot multiply the statement's rows whatever its cardinality")
-            .contains("org.jooq.impl.DSL.select(ct_f0.RATING)")
-            .contains(".limit(1)");
-        assertThat(code)
-            .as("the subselect correlates on the FK equality (target.eq(source))")
-            .contains("ct_f0.FILM_ID.eq(filmTable.FILM_ID)");
-        assertThat(code)
-            .as("the WHERE carries the participant's discriminator value, so a row of another "
-                + "participant's type projects NULL exactly as the gated join made it do")
-            .contains("eq(\"FILM\")");
-    }
-
-    @Test
-    void queryTableInterfaceField_crossTableField_aliasedColumnAddedToSelect() {
-        var returnType = tableBoundFilm(nonNullList());
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
-                List.of(filmContentRatingCrossTable())));
-        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "content_type", List.of("FILM"), participants,
-            List.of(), new OrderBySpec.None(), null);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "rowsAllContent").code().toString();
-        assertThat(code)
-            .as("the subselect is projected under the participant alias so the per-field "
-                + "DataFetcher reads it back by name")
-            .contains("fields.add(org.jooq.impl.DSL.field(org.jooq.impl.DSL.select(ct_f0.RATING)")
-            .contains(".limit(1)).as(\"FilmContent_rating\"))");
-    }
-
-    @Test
-    void queryTableInterfaceField_noCrossTableFields_noLeftJoinEmitted() {
-        var returnType = tableBoundFilm(nonNullList());
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM"),
-            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
-        var field = new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
-            "content_type", List.of("FILM", "SHORT"), participants,
-            List.of(), new OrderBySpec.None(), null);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "rowsAllContent").code().toString();
-        assertThat(code)
-            .as("no LEFT JOIN when no participant declares cross-table fields")
-            .doesNotContain(".leftJoin(");
-    }
-
-    @Test
-    void tableInterfaceField_crossTableField_emitsGatedSubselectAtChildSite() {
-        // Both interface consumers (the Query launcher and the ChildField-rooted legacy
-        // fetcher) share the relocated DiscriminatedTableFragments assembly; this asserts the
-        // emission applies at the child site too.
-        var returnType = tableBoundFilm(nonNullList());
-        List<JoinStep> joinPath = List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE,
-            List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, "content_0"));
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
-                List.of(filmContentRatingCrossTable())));
-        var field = new ChildField.TableInterfaceField("Language", "content", null, returnType,
-            "content_type", List.of("FILM"), participants,
-            joinPath, List.of(), new OrderBySpec.None(), null);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Language", LANGUAGE_TABLE, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var code = method(spec, "content").code().toString();
-        assertThat(code).contains("env.getSelectionSet().containsAnyOf(\"FilmContent.rating\", "
-            + "\"**/FilmContent.rating\")");
-        assertThat(code).contains("org.jooq.impl.DSL.select(ct_f0.RATING)");
-        assertThat(code).contains(".limit(1)).as(\"FilmContent_rating\"))");
     }
 
     // ===== discriminator qualifies off the FROM table instance, not the @table directive =====
@@ -1353,8 +1250,8 @@ class TypeFetcherGeneratorTest {
     /**
      * Single-table discriminated interface whose base {@code @table(name:)} echo
      * ({@code INTERFACE_BASE}) is case- and name-mismatched against the jOOQ-derived FROM token,
-     * exercising all three discriminator emit sites (routing projection, IN filter, LEFT JOIN gate)
-     * in one Query fetcher body.
+     * exercising all three discriminator emit sites (routing projection, IN filter, subselect
+     * gate) in one Query fetcher body.
      */
     private static QueryField.QueryTableInterfaceField discriminatedAllContent() {
         var base = TestFixtures.tableRef(DISCRIMINATOR_DIRECTIVE_NAME, "FILM", "Film", List.of());
@@ -1389,12 +1286,12 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryTableInterfaceField_discriminatorJoinGate_qualifiesOffTableInstance() {
+    void queryTableInterfaceField_discriminatorSubselectGate_qualifiesOffTableInstance() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
         var code = method(spec, "rowsAllContent").code().toString();
         assertThat(code)
-            .as("the LEFT JOIN ON-clause discriminator gate qualifies off the FROM table instance")
+            .as("the cross-table subselect's discriminator gate qualifies off the FROM table instance")
             .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).eq(\"FILM\")");
     }
 

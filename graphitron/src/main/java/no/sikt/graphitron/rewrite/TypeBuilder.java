@@ -821,8 +821,8 @@ class TypeBuilder {
      * @param interfaceTable the {@code TableInterfaceType}'s own table when building participants
      *     for a single-table interface. Used to detect each participant's cross-table fields
      *     (those whose {@code @reference} terminates on a different table than the interface
-     *     table); the resulting {@link ParticipantRef.TableBound.CrossTableField} list drives
-     *     the conditional LEFT JOIN emission in {@code TypeFetcherGenerator}. {@code null} for
+     *     table); the resulting {@link ParticipantRef.TableBound.CrossTableField} list is lowered
+     *     to the capped correlated subselects the interface fetchers project. {@code null} for
      *     plain {@link InterfaceType} and {@link UnionType} contexts, which do not project
      *     cross-table fields through this path.
      */

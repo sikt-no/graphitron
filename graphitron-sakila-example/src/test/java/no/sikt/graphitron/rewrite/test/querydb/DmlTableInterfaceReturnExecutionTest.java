@@ -116,7 +116,7 @@ class DmlTableInterfaceReturnExecutionTest {
         assertThat(payload.get("__typename")).isEqualTo("FilmContent");
         assertThat(payload.get("title")).isEqualTo("R406 Film Row");
         assertThat(payload.get("length")).isEqualTo(118);
-        // rating sourced from the joined film row through the discriminator-gated LEFT JOIN.
+        // rating sourced from the film row through the discriminator-gated subselect.
         assertThat(payload.get("rating")).isEqualTo(rating);
         // ShortContent.description sits on the same content row but must be null on a FILM row.
         assertThat(payload.get("description")).isNull();

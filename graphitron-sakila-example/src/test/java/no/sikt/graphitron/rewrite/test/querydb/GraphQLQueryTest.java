@@ -4401,6 +4401,28 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void allContentConnection_beforeCursorPage_takesTheRowsPrecedingTheCursor() {
+        // The before-cursor seek runs the ordering reversed and re-reverses the page, which makes
+        // it the arm most likely to expose a cursor bug; the forward walk alone never runs it.
+        Map<String, Object> forward = execute(
+            "{ allContentConnection(first: 3) { pageInfo { endCursor } } }");
+        var endCursor = (String) ((Map<String, Object>)
+            ((Map<String, Object>) forward.get("allContentConnection")).get("pageInfo")).get("endCursor");
+
+        Map<String, Object> data = execute(
+            "{ allContentConnection(first: null, last: 2, before: \"" + endCursor + "\") { "
+            + "edges { node { title } } } }");
+        var edges = (List<Map<String, Object>>)
+            ((Map<String, Object>) data.get("allContentConnection")).get("edges");
+        assertThat(edges)
+            .as("last: 2 before the third row's cursor is exactly the first two rows, in forward "
+                + "order; the cursor row itself is excluded")
+            .extracting(e -> ((Map<String, Object>) e.get("node")).get("title"))
+            .containsExactly("ACADEMY DINOSAUR (extended)", "ACE GOLDFINGER (extended)");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void allContentConnection_crossTableParticipantField_resolvesInsideThePage() {
         Map<String, Object> data = execute("""
             { allContentConnection(first: 2) { edges { node {
@@ -4480,8 +4502,9 @@ class GraphQLQueryTest {
             .containsExactly("FanAlpha", "FanBeta");
         var alpha = items.get(0);
         assertThat(alpha.get("note"))
-            .as("the subselect resolves the reference to one of the detail rows")
-            .isEqualTo("alpha-note-1");
+            .as("the subselect resolves the reference to one of the detail rows; WHICH row is "
+                + "not SQL-determined (the cap carries no ORDER BY), so the pin is membership")
+            .isIn("alpha-note-1", "alpha-note-2", "alpha-note-3");
         assertThat(items.get(1).containsKey("note"))
             .as("FanBeta declares no cross-table field, so the gated term contributes nothing to it")
             .isFalse();
@@ -4498,7 +4521,7 @@ class GraphQLQueryTest {
         assertThat(item).isNotNull();
         assertThat(item.get("__typename")).isEqualTo("FanAlpha");
         assertThat(item.get("label")).isEqualTo("Alpha one");
-        assertThat(item.get("note")).isEqualTo("alpha-note-1");
+        assertThat(item.get("note")).isIn("alpha-note-1", "alpha-note-2", "alpha-note-3");
     }
 
     @Test

@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * not re-resolve the bare SQL name through the catalog. A bare-name lookup is ambiguous on the
  * colliding name, so the field drops out of the participant's cross-table set and falls through to
  * the scalar {@code @reference} path as a plain {@link ChildField.ColumnBackedReferenceField}
- * instead of a {@link ChildField.ParticipantColumnReferenceField}: the interface fetcher then emits
- * no conditional LEFT JOIN / alias projection, and the classification of a participant field comes
+ * instead of a {@link ChildField.ParticipantColumnReferenceField}: the interface fetcher then
+ * projects no gated subselect / alias, and the classification of a participant field comes
  * to depend on whether an unrelated schema happens to hold a same-named table. There is no
  * author-side workaround: the FK terminal is not author-named (the {@code @reference} key is
  * {@code TABLE__CONSTRAINT} on the source table).

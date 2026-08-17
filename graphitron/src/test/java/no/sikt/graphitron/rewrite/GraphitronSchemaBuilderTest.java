@@ -455,7 +455,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ParticipantColumnReferenceField =====
     // Cross-table fields on TableInterfaceType participants get their own classified leaf so the
-    // interface fetcher's conditional LEFT JOIN wires the projection and the per-field
+    // interface fetcher projects the gated subselect and the per-field
     // DataFetcher reads it back by alias.
 
     enum ParticipantColumnReferenceFieldCase implements ClassificationCase {

@@ -441,19 +441,11 @@ Checked, so the implementer does not re-derive it:
 
 ## What shipped, and what is left
 
-The root half is implemented; the child half is not, and cannot be until R661 lands. Four commits:
+The root half is implemented; the child half rides R661, which has since landed.
 
-1. **The subselect conversion.** Cross-table participant fields lower at capture into
-   `SelectTerm.ScalarSubselect` (fixed alias, discriminator gate), rendered through the fragment
-   lifted out of `ProjectionUnitRenderer` into `PathFragments` and parameterized on the parent
-   table local. `crossTableJoinChain` and `CrossTableField.aliasVarName()` are gone. Coverage: the
-   `fan_base` / `fan_detail` fixture pair (a participant reference landing on the many side of its
-   FK) with execution-tier pins on both the list and single shapes, plus the re-frozen cross-table
-   SQL baseline.
-2. **The seam split**, exactly as specified, plus the lowering pin at the capture tier.
-3. **The root lift.** Classifier, producer, command backstop, renderer, the
-   `paginated-joined-table-interface` corpus example (rendered into the page) replacing the deleted
-   enum row, three SQL baselines and four execution page walks.
+1. The subselect conversion: shipped at `348f914`.
+2. The seam split: shipped at `0c55288`, its capture-tier lowering pin at `cd46fe9`.
+3. The root lift: shipped at `3201386`.
 
 Two things the plan did not anticipate, both settled in commit 3:
 
@@ -483,7 +475,12 @@ lowering pin sits at the tier that decides it, the totalCount baseline has a twi
 fixture pins the invariant's replacement where only the execution tier can see it. The root half
 is in good shape; the item stays open because its contract is both coordinates and the child half
 waits on R661 (still Spec). Fix the following in the next pass, alongside or before the child
-work:
+work. *All three are addressed in the second In Progress pass: the four named tests plus the
+now-vacuous `noCrossTableFields_noLeftJoinEmitted` sibling are deleted (their facts live in the
+lowering pin, the SQL baselines and the execution walks), the eight habitats are swept along with
+the stale "LEFT JOIN gate" naming in the discriminator-qualification section, the shipped groups
+carry their SHAs above, and both non-blocking improvements are taken (membership pin; a
+before-cursor walk joins the root page walks).*
 
 1. **Code-string body assertions were re-authored rather than retired.** Four
    `TypeFetcherGeneratorTest` tests (`..._selectionGateMatchesAtAnyDepth`'s gate assertion,

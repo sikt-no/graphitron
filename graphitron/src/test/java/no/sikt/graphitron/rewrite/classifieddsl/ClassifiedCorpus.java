@@ -825,7 +825,7 @@ public final class ClassifiedCorpus {
         /*
          * A scalar @reference on a @table+@discriminate interface participant whose FK targets a
          * different table: ParticipantColumnReferenceField (Child / Fetch / Column). It gets its own
-         * leaf so the interface fetcher's conditional LEFT JOIN wires the cross-table projection and the
+         * leaf so the interface fetcher projects the gated cross-table subselect and the
          * per-field DataFetcher reads it back by alias.
          */
         new Example("participant-reference", """
