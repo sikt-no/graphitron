@@ -97,10 +97,12 @@ Replace `Optional<String> description()` on `ErrorType.Handler` with a resolved 
 `sealed interface ClientMessage permits ClientMessage.Static, ClientMessage.FromSource`,
 decided once in `TypeBuilder`. `Static` carries the string; `FromSource` carries nothing.
 
-The `Optional` is currently re-branched by three consumers (`ErrorMappingsClassGenerator`
-across three arms via `literalOrNull`, `HandlerKey.of` across four, and under any read-side
-design a third time), and the naive version of this fix adds a fourth branch that runs *at
-runtime* inside every generated `message()` body as a `description != null` test. That
+The `Optional` is currently re-branched by three build-time consumers in the same shape:
+`ErrorMappingsClassGenerator` across three arms via `literalOrNull`, its `HandlerKey.of`
+across four, and `MappingsConstantNameDedup.handlerLine` across four more, the last a
+near-verbatim duplicate of `HandlerKey.of`. A read-side design adds a fourth consumer, and
+the naive version of this fix makes that fourth branch run *at runtime* inside every
+generated `message()` body as a `description != null` test. That
 deferred null check is the tell: the classifier fully resolves this at build time, and
 generated code carrying a defensive guard over a decided fact reads as noise to a consumer
 who has never seen the generator. With the sealed slot each `message()` arm emits either
@@ -110,8 +112,23 @@ compile-checked.
 ### 2. Reject `description:` on a VALIDATION handler at validate time
 
 `ValidationHandler` does not carry a `ClientMessage` at all, and a `description:` alongside
-`handler: VALIDATION` becomes a typed rejection with a stable LSP code, sitting beside the
-existing per-channel error-channel rules. Rationale under "Settled questions" below.
+`handler: VALIDATION` becomes an author-facing rejection. The site is
+`TypeBuilder.parseErrorHandler`'s VALIDATION arm, whose `disallowed` list already rejects
+`className` / `sqlState` / `code` / `matches` on the same entry; `description` joins that
+list and inherits its message shape.
+
+That is a *structural* rejection, not a typed arm with an LSP code. The two are different
+mechanisms and only one of them lives at the lift. Every per-handler rule in
+`parseErrorHandler` appends prose to `rejectReasons`, and the type comes back as
+`UnclassifiedType(..., Rejection.structural("@error type rejected: ..."))`. The typed family
+with `lspCode()`, `ErrorChannelWalkerError`, is raised by the `OutcomeType` classification
+and `ErrorChannelWalker`: a later pass, keyed on channels rather than on `@error` types, and
+its javadoc names those two as its raisers. Routing this rejection there would mean either
+deferring a per-entry SDL-shape rule to a channel-grained pass or widening that family's
+documented raiser set, for a rule whose four siblings sit untyped one line away. Take the
+sibling shape. If the per-handler rules are worth promoting to typed arms, that is one
+change covering all five, not a carve-out for this one. Rationale for rejecting rather than
+honouring or ignoring is under "Settled questions" below.
 
 ### 3. Mint the `Mapping[]` per `@error` type, and compose the channel arrays from them
 
@@ -119,15 +136,32 @@ existing per-channel error-channel rules. Rationale under "Settled questions" be
 The existing `Mapping[]` constants are keyed on `ErrorChannel.mappingsConstantName()`, a
 use-site coordinate naming which fetcher's payload. Reading a definition-keyed value off a
 use-keyed constant is what forces the overlap, and the confusion is already producing an
-artifact: `ErrorMappingsClassGenerator.HandlerKey` puts `description` into the *channel
-dedup identity*, so two channels with identical dispatch behaviour but different author
-descriptions are split into separate constants even though `description` does not
-participate in dispatch at all.
+artifact: `description` sits in the *channel dedup identity*, so two channels with identical
+dispatch behaviour but different author descriptions are split into separate constants even
+though `description` does not participate in dispatch at all.
+
+That identity is spelled twice, and only one of the two spellings produces the split.
+`MappingsConstantNameDedup.handlerLine` appends `description` to each handler's fingerprint
+line, `canonicalHash` digests those lines, and a differing digest is what mints the
+`_A1B2C3D4` suffix that splits the constant name. `ErrorMappingsClassGenerator.HandlerKey`
+carries `description` too, but only feeds `sameHandlerShape`, an internal sanity check run
+across channels that already share a name. Dropping `description` from `HandlerKey` alone
+changes nothing an author can see; the dedup pass is the site that has to change, and the
+two have to stay in agreement or `sameHandlerShape` starts throwing its internal-bug
+`IllegalStateException`.
 
 Mint one `Mapping[]` per `@error` type instead, and derive each channel constant as the
 ordered concatenation of the per-type arrays it maps. `ErrorChannel.mappedErrorTypes()`
 already carries exactly that list in exactly that order, so the derivation is total. One row
-population, read at two grains. `description` then drops out of `HandlerKey` on its own.
+population, read at two grains. `description` then drops out of both dedup spellings on its
+own.
+
+This changes emitted constant *names*: two channels that today differ only by author
+description get one shared bare constant where they previously got a bare name plus a
+hash-suffixed sibling. That is the artifact being removed, so the rename is the fix rather
+than a side effect. Nothing in the suite observes it today, though, which is the point:
+`MappingsConstantNameDedupTest` never varies `description`, so the change lands silently
+unless the pipeline assertion below is written for it.
 
 ### 4. Read the override at the message fetcher, reusing the one match spelling
 
@@ -213,9 +247,12 @@ so that tier carries the acceptance.
   `filmLookup_zeroId_routesThroughNotFoundErrorType` keeps asserting `getMessage()`, which
   proves the override is per-handler and not global. The `attempted` assertion in the same
   test is the regression guard that the extra-field read still goes to the live exception.
-* Pipeline tier: the VALIDATION rejection, and the per-type/per-channel `Mapping[]`
-  composition (that a channel array equals the concatenation of its types' arrays in
-  declaration order).
+* Pipeline tier: the VALIDATION rejection (an `UnclassifiedType` carrying the `@error type
+  rejected: ...` structural rejection, asserted the way the four sibling rules on that arm
+  are), the per-type/per-channel `Mapping[]` composition (that a channel array equals the
+  concatenation of its types' arrays in declaration order), and that two channels differing
+  only by author description now share one constant instead of splitting into a bare name
+  plus a hash-suffixed sibling.
 * Unit tier: the `ClientMessage` lift in `TypeBuilder`. No code-string assertion on the
   emitted `message()` body at any tier; that form is banned, and here it would re-create
   exactly the false confidence that let this ship.
@@ -235,8 +272,9 @@ so that tier carries the acceptance.
 ## Out of scope
 
 * The fact store already captures `description` (`GraphitronFactCapture` writes it to
-  `graphitron_error_handler`), so the LSP surface needs no change beyond the new rejection
-  code.
+  `graphitron_error_handler`), so the LSP surface needs no change at all: the VALIDATION
+  rejection rides the existing `@error type rejected: ...` structural diagnostic, and mints
+  no new wire code.
 * No change to dispatch, to the source-direct contract, to `redact`, or to the `path:` slot.
 * Re-sourcing the `@error` union `TypeResolver` onto `Mapping[]`, per the note above.
 
