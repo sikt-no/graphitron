@@ -165,6 +165,13 @@ set at the end of `prepareForWalk`. Preparation-time probes then cannot poison t
 all, the `clear()` retires, and a future pass inserted anywhere in `prepareForWalk`
 inherits the property instead of having to know about it.
 
+One expected consequence of the gate, so it does not read as a regression at implementation:
+the two passes that today run *after* the grounding call and *before* the `clear()` (the
+directive-ignored warning loop and `surfaceMultiProducerRejections`) currently populate the memo
+and then have it discarded. Under the gate they stop populating it and recompute per type
+instead. Net behaviour is identical, since a populated-then-cleared memo has no observable
+effect; the cost is a handful of recomputes inside `prepareForWalk`.
+
 The `ServiceEmitted` family stays in `groundRootProducers()`, deliberately. Its carrier
 detection never reads the `ErrorIndex` (`groundServicePayloadBinding` and
 `singleNonTableObjectDataField` exclude errors-shaped fields structurally, via the
@@ -186,10 +193,40 @@ already computes exactly this fact (scan `Admit` + empty `dmlEmittedBinding` is 
 of the same predicate is the two-consumers-one-derivation smell.
 
 Instead, widen the recognizer so it publishes *why*: split an ungrounded-carrier arm out of
-`CarrierBinding.NotACarrier` (carrying the scan's `DmlElementKind`), and have
-`validateReturnType`'s scalar arm switch over that instead of re-scanning. Adding the arm
-breaks every `instanceof NotACarrier` site at compile time, which is the enforcement wanted
-here. The wording forks on the element kind, because the three populations need different
+`CarrierBinding.NotACarrier` (carrying the admitting scan's `DmlElementKind`), and have
+`validateReturnType`'s scalar arm switch over that instead of re-scanning.
+
+Split it *inside* `NotACarrier`, not beside it. Make `NotACarrier` a sealed interface over two
+arms (a plain arm, and an ungrounded-carrier arm carrying the element kind) rather than adding
+a fourth sibling to `CarrierBinding`. Every reader of the coarse question still wants the
+answer "not a producer-backed carrier" for an ungrounded carrier, and only one of the five
+existing read sites is a switch the compiler would force:
+
+* `TypeBuilder.carrierVerdict` (both its `instanceof` early return and the exhaustive `switch`
+  below it): a `null` verdict either way. The `switch` is the sole compile-time break.
+* `TypeBuilder.isDirectivelessNestingTarget`: an ungrounded carrier must stay a nesting target,
+  as today.
+* `FieldBuilder.scanServiceCarrierShape`: must keep yielding `ServiceCarrierShape.NotApplicable`
+  rather than computing a shape verdict for an unbound payload.
+* `FieldBuilder`'s orphan-`@service`-carrier arm (the `carrierBinding(...) instanceof NotACarrier`
+  + `scanStructuralServiceCarrierPayload` Admit guard behind `orphanServiceCarrierReason`): must
+  keep firing, or that diagnostic silently regresses to the generic dangling-type-reference
+  cascade.
+
+A sibling arm would compile clean at all four of those `instanceof` sites while flipping three
+of them, so the enforcement is the sealed subtype keeping `instanceof NotACarrier` true, plus
+the one forced `switch` edit. Do not plan on the compiler enumerating the sites.
+
+That orphan-`@service` arm is the same predicate this section argues against re-spelling, one
+family over: it probes a scan in the classifier because the recognizer publishes no reason.
+Folding it onto the new arm is the obvious follow-up and deliberately out of scope here (it
+changes a live `@service` diagnostic's provenance and wants its own pins); file it if wanted.
+Because the arm is reachable from any of the three scans, it carries which scan admitted
+alongside the element kind, and the DML seat below forks wording only for a DML-scan admit
+(the seat's precondition, a non-`Reject` DML scan, makes that the live case) and otherwise
+keeps the generic write-target message.
+
+The wording forks on the element kind, because the three populations need different
 advice and, post-fix, this arm is their *only* diagnostic (the per-verb classifiers'
 existing record-element / ID-element rejections are unreachable without a grounded binding):
 
@@ -230,22 +267,35 @@ both verbs. No further work unless the fixed build still rejects their real sche
   `lookAheadMemo.clear()` with a memo write-gate on a fixed-point flag; update the pass
   comment above the grounding call.
 * `TypeBuilder.carrierBinding`: split the ungrounded-carrier arm out of
-  `CarrierBinding.NotACarrier`; migrate the `instanceof NotACarrier` sites the compiler
-  flags.
+  `CarrierBinding.NotACarrier`, as a sealed subtype so the coarse `instanceof NotACarrier`
+  question keeps its answer. Walk all five read sites by hand (the four listed in the Design
+  section plus `carrierVerdict`'s `switch`) and confirm each keeps today's behaviour; only the
+  `switch` breaks at compile time.
 * `MutationInputResolver.validateReturnType`: the scalar arm's new case switches over the
-  recognizer's published fact, wording forked per element kind as above.
+  recognizer's published fact, wording forked per element kind as above. The method is static
+  over `(ReturnTypeRef, DmlKind, boolean, BuildContext)`, so it reaches the recognizer through
+  `BuildContext.typeBuilder` rather than a signature change across the seven call sites; that
+  field is null for unit-tier harnesses, so null-guard it the way `BuildContext.lookAheadVerdict`
+  and `FieldBuilder`'s binding accessors already do.
 * Stale-comment sweep, in the same change (these are the comments the next reader will use
   to judge whether a pre-index reader is safe): the `resolveAll`-DML-grounding rationale
   comment at the end of `prepareForWalk`, the `lookAheadVerdict` javadoc's
-  during-`prepareForWalk` paragraph, `groundRoutineCarriers`' "the same instance the DML
-  grounding above already exercises" sentence and its positional "above",
-  `groundDmlMutationField`'s "result-axis observation" opener (it contradicts
-  `dmlEmittedMemo`'s own dedicated-axis doc), and `resolveDmlWriteTableRef`'s
-  "phase-portable … all available before the classification walk" claim, which this bug
-  falsified: the scan reads the phase-varying `ctx.errors`, so the sentence must state the
-  post-index precondition instead of asserting phase-portability. The deeper fix, a typed
-  not-yet-built arm on the indices so a pre-index read refuses instead of answering, is
-  filed as R689 and out of scope here.
+  during-`prepareForWalk` paragraph, `groundRoutineMutationField`'s "the same instance the DML
+  grounding above already exercises" sentence and its positional "above" (the sentence is on
+  the per-field grounder, not on `groundRoutineCarriers`), `groundDmlMutationField`'s
+  "result-axis observation" opener (it contradicts `dmlEmittedMemo`'s own dedicated-axis doc),
+  and `resolveDmlWriteTableRef`'s "phase-portable … all available before the classification
+  walk" claim, which this bug falsified: the scan reads the phase-varying `ctx.errors`, so the
+  sentence must state the post-index precondition instead of asserting phase-portability.
+* One more stale claim in the same javadoc block, found while reviewing: `groundDmlMutationField`'s
+  precedence paraphrase two lines under its opener reads "`@mutation(table:)` preferred on a
+  supported verb, else the input's `@table`". That is already false independently of this bug.
+  Rung 1 is the return-derived table, and the input `@table` bridge is not a rung of
+  `resolveDmlWriteTableRef` at all. It sits in the middle of the comments this sweep exists to
+  fix, so correct it here rather than leaving it to the next reader.
+
+The deeper fix, a typed not-yet-built arm on the indices so a pre-index read refuses instead of
+answering, is filed as R689 and out of scope here.
 
 ## Tests
 
@@ -260,12 +310,18 @@ Pipeline tier, in `SingleRecordPayloadPipelineTest`:
   consumer shape from the report, classifying without `@mutation(table:)`.
 * Keep one errors-bearing fixture on `tableArg = true` (the explicit argument must keep
   working, and the rung-1-vs-rung-2 same-table agreement path stays covered).
-* Pin rung agreement, the bug's sharpest observable: for an errors-bearing carrier with
-  both rungs present (return-derived table and an agreeing `@mutation(table:)`), the
-  grounded `DmlEmitted.tableRef` equals the classified write target. Pre-fix these
-  diverged (grounding used rung 2 while classification used rung 1), which is exactly the
-  divergence `resolveDmlWriteTableRef`'s single-sourcing exists to prevent; this fixture is
-  the one that would have caught the class of bug, stronger than asserting the leaf kind.
+* The flipped fixtures above are the regression pins that carry this item's weight: pre-fix,
+  an errors-bearing carrier with no `@mutation(table:)` resolves neither rung at grounding
+  time, so no `DmlEmitted` is minted and the field rejects. They fail before the ordering
+  move and pass after it.
+* Optionally pin rung agreement on the kept `tableArg = true` fixture: the grounded
+  `DmlEmitted.tableRef` equals the classified write target. Note what this can and cannot
+  see. Pre-fix the two call sites diverged in *provenance* (grounding fell to rung 2 while
+  classification took rung 1), but on an agreeing fixture both rungs resolve the same
+  `TableRef`, so a value-equality assertion passes pre-fix too; and a *disagreeing* fixture
+  cannot be used, because the classify-phase resolvers' must-agree cross-check rejects it.
+  So this is a cheap standing invariant pin on the single-sourced precedence, not a
+  regression pin for this bug. Do not let it stand in for the flipped fixtures.
 * Correct the `mutationDirective` helper's javadoc: of its two stated reasons for
   `tableArg`, only "an errors-shaped sibling present" becomes false; "a deliberately broken
   carrier shape" remains, so the fix is a split, not a deletion.
