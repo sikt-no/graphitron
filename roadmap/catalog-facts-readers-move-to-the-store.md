@@ -19,11 +19,17 @@ module compiles against `graphitron-model` and nothing else in the reactor, name
 every tool from the fact store or from a value its host hands it. The generator survives at test
 scope, where the fixture runs a real build to produce the store the tests read.
 
+Fewer tools come out than went in, and that is the item's second decision rather than a consequence
+of the first. Two tools are dropped instead of migrated and three collapse into one, for the reason
+"The surface shrinks first" below gives: a tool whose shape was dictated by reading a projection is
+not a tool worth carrying onto a substrate that would have produced a different shape. Nine tools,
+one resource and one prompt come out the far side.
+
 The item takes full ownership of the module's dependencies and finishes the job. It waits on no
 other item and defers nothing to one: every read that has to move, moves here. That is a change from
 earlier readings, which split the work three ways and left each part able to ship while truthfully
 saying the remaining coupling was somebody else's. The module's reads do not separate cleanly
-anyway. `catalog.describe` reads `CatalogFacts`, `edges` reads `CatalogFacts` *and* the
+anyway. `catalog.describe` read `CatalogFacts`, `edges` read `CatalogFacts` *and* the
 classification maps, `schema` reads the classification maps *and* a store relation already, the code
 tools read the classpath scan, `status` and `diagnostics` read the snapshot's lifecycle arms, and the
 `directives` resource reads the snapshot *and* the language server's own vocabulary registry.
@@ -32,7 +38,7 @@ Migrating a subset leaves the module holding a
 
 The LSP fact-store item (`lsp-reads-the-fact-store.md`) retires the `CatalogFacts` projection from
 the language server's side and cannot delete the type while a non-LSP consumer reads it. This item
-deletes it, in the slice that migrates its last reader. That is a courtesy the sequencing makes
+deletes it, in the slice that removes its last reader. That is a courtesy the sequencing makes
 free rather than a dependency: no `graphitron-lsp` surface reads `catalogFacts()` today, so nothing
 here waits on that item, and nothing there waits on this one.
 
@@ -137,8 +143,8 @@ the MCP more capable stops requiring changes to any module that is not the MCP.
 ## What each tool actually asks
 
 The migration is tractable because the tools' intentions are narrower than the projections they read.
-Eleven of the thirteen tools plus the resource change here, and this table is the item's spine: each
-row is a slice below, and the item is done when every row's right-hand column is true.
+This table is the item's spine: each row is a slice below, and the item is done when every row's
+right-hand column is true.
 
 [cols="1,3,2"]
 |===
@@ -150,15 +156,11 @@ row is a slice below, and the item is done when every row's right-hand column is
 
 | `catalog.describe`
 | One table's columns, keys, indexes and both FK directions
-| the `sql_` family, five queries in one read transaction
+| the `sql_` family, one nested projection at the table grain
 
 | `catalog.search`
 | Which table holds something the author can only describe in words
 | the same two census queries, composed into the embedding corpus
-
-| `edges`
-| What else touches this coordinate, and what breaks if it changes
-| the binding relations, forward and reverse, no index
 
 | `schema`
 | What graphitron made of a type or field, and what it binds
@@ -172,13 +174,13 @@ row is a slice below, and the item is done when every row's right-hand column is
 | Is the dev session live, and is its answer current
 | `store_graph` presence and the SDL refusal relations' emptiness; liveness is proved by answering
 
-| `diagnostics`, `diagnostics.aggregate`
-| What is broken, and in what proportion
+| `diagnostics`
+| What is broken
 | the `diagnostic` view already, plus the same refusal-relation read for the axes
 
-| `services`, `conditions`, `records`
+| `code`
 | Which consumer Java the schema binds to
-| the `jvm_` census and the `java_` declaration family
+| the `jvm_` census and the `java_` declaration family, one nested projection per class
 
 | `docs.search`, `execute`
 | The manual; the consumer's own database
@@ -188,6 +190,80 @@ row is a slice below, and the item is done when every row's right-hand column is
 The right-hand column is the whole claim, and every row now names a store read. What the scope
 boundary still fences off is smaller than a row: the handle and reader the host mints, and the one
 liveness bit no relation can carry, which a tool proves by answering at all.
+
+Two rows are absent that a reader of the module today would expect, and one row is new. `edges` and
+`diagnostics.aggregate` are dropped rather than migrated, and `services` / `conditions` / `records`
+arrive as the single `code` row. The next section is why.
+
+## The surface shrinks first
+
+A migration that ports every tool assumes each tool's shape was a judgment about what an agent
+needs. Three of them were not: they were judgments about what a projection made cheap to reach, and
+the substrate that produced that constraint is the thing being removed. So the first question per
+tool is whether to carry it, and the answer is no three times.
+
+**`edges` is dropped.** Its stated job is "what else touches this, what breaks if I change it", which
+is two questions wearing one costume. The forward half answers what a coordinate binds, which is
+what the `schema` tool answers, and once `schema` reads the binding relations directly the forward
+half is a reformatting of a `schema` response with a different field layout. The reverse half is the
+genuinely valuable question and the tool's own javadoc says so, calling it "the impact-analysis
+directions agents cannot cheaply walk forward". Carrying the costume to keep the reverse half means
+porting five relationship labels, a six-permit node model, a direction argument and a memoised
+in-memory index whose entire purpose is inverting a map, plus a label vocabulary that reads backwards
+in at least two of its five cases (an edge from `Film.title` labelled `BACKS` with target
+`public.film:title` says the field backs the column, and the column backs the field). The reverse
+question comes back as its own tool, one query over the binding relations keyed at the target end,
+under `roadmap/mcp-reverse-lookup-over-binding-relations.md`. Building it fresh after `schema`'s
+queries exist is less work than migrating what is being deleted here.
+
+**`diagnostics.aggregate` is dropped.** What it is, concretely, is a `GROUP BY` performed in Java over
+a projection, carrying its own dimension enum, a two-bucket partition of that enum, elision
+accounting, and a coverage meta-test whose subject is that the partition stays a partition. The
+`diagnostic` view is already the relation `diagnostics` reads, so grouping over it is a `GROUP BY`
+with counts whose group keys are that view's own columns. None of the enum, the partition or the
+meta-test has a successor in that shape, so migrating them spends the effort on machinery the
+substrate deletes. It returns under
+`roadmap/diagnostics-aggregation-over-the-store.md`.
+
+**`services`, `conditions` and `records` become one `code` tool.** The three share one argument schema
+(`nameLimitCursorSchema`), read one census, and differ by a `WHERE` clause each: a class with record
+components, a method whose `returns_condition` is set, a class with callable methods. `CodeTools`'
+own javadoc already records the split as the tools' derivation rather than a store rule. Three tool
+descriptions, three handlers and three paged wire shapes for three predicates is surface without
+information, and it is worth collapsing now rather than porting three times.
+
+Nothing else is dropped. `docs.search` and `execute` read no generator projection and are untouched
+by this item at all. `catalog.tables`, `catalog.describe`, `catalog.search`, `schema`, `status`,
+`diagnostics`, the `directives` resource and the `about` prompt all answer a question no other tool
+answers, so they carry forward.
+
+## One nested projection per grain
+
+Every read this item writes projects its whole answer in one query, nesting one-to-many children with
+jOOQ's `MULTISET` and mapping them straight onto records with `Records.mapping`. The alternative,
+which the first cut of `catalog.describe` shipped, is several queries at several grains folded back
+together with `LinkedHashMap` accumulators, a synthetic grouping key record, and mutable lists rebuilt
+immutable at the end. That is a relational join written in Java, and it is worth naming as a hazard
+rather than a style preference because it is what the language-server item drifted into and it looks
+locally reasonable every time.
+
+Three things go wrong with the folded shape and all three are cured by nesting. The grouping key has
+to be invented in Java and can be invented wrong: `catalog.describe`'s foreign-key fold needs a
+four-part `FkId` because a constraint name is unique per table and not per schema, which is a fact the
+relation states and the Java has to remember. Consistency has to be argued rather than held: the
+current `describe` needs a second connection and one read transaction so five queries cannot straddle
+a capture commit, where one statement is atomic and needs no argument. And the row count crossing the
+JDBC boundary is the product rather than the sum, since a parent row repeats per child.
+
+The mechanism is verified rather than assumed: nested `MULTISET` two levels deep, `row(...)` inside a
+multiset, and `Records.mapping` onto records all work against the store's H2 through `StoreReader`,
+which jOOQ serves by emulating the nesting over H2's JSON aggregation. `StoreReader` stays the door a
+multi-statement answer goes through, but the reason narrows to the plain one: a read should not ride
+the session writer's connection.
+
+A tool may still fire more than one query where the answers are genuinely independent, which
+`catalog.tables` does for its count beside its page. What the rule forbids is one answer assembled
+from several grains in Java.
 
 ## The shape of the work: one tool per slice
 
@@ -220,10 +296,17 @@ Its opening counts are `catalogFacts` four (`catalog.tables`, `catalog.describe`
 `edges`), `catalog` five, `sourceIndex` three, `snapshot` six and `vocabulary` one.
 
 The slices are ordered so the deletions fall out rather than being scheduled. Slices 1 to 3 drain
-`catalogFacts`' readers, so slice 4 deletes the projection. Slices 5 to 8 drain the rest, so slice 9
+`catalogFacts`' readers, so slice 4 deletes the projection. Slices 7 to 10 drain the rest, so slice 11
 deletes the module edge. Within that constraint the order is by risk: the catalog tools first
 because their queries are the plainest and they prove the fixture, `schema` late because it is the
 largest, and the close-out last because it asserts what the others achieved.
+
+Two slices are not migrations and come before the rest of the work for that reason. Slices 4 and 5
+remove the two dropped tools, so every later slice reads a smaller module, and slice 4 in particular
+turns the projection deletion from something the plan had to sequence around into the removal's own
+by-product. Slice 6 then reshapes the one already-migrated tool that shipped in the folded shape, so
+the nested-projection pattern exists in the tree before `schema` is written against it rather than
+after.
 
 ## Slice 1: `catalog.tables`
 
@@ -271,7 +354,7 @@ still cannot open one.
 Two details come with it. The refusal gate is the reader rather than the handle, so the tools check
 the thing they answer through. And the full constructor's javadoc says today that sharing the
 writer's connection "is safe here only because this server is turn-based; a consumer answering
-concurrently mints a `StoreReader` instead", which stays true of the diagnostics tools and gains a
+concurrently mints a `StoreReader` instead", which stays true of the diagnostics tool and gains a
 second reason here: not concurrency, but an answer assembled from five queries. Those tools keep
 their single-query reads through the handle.
 
@@ -323,169 +406,172 @@ embedder over a store that is present is still the warming degradation.
 
 **Leaves behind.** `catalogFacts` keeps one reader, the edge tools.
 
-## Slice 4: `edges`, and `CatalogFacts` deletes
+## Slice 4: `edges` deletes, and `CatalogFacts` with it
 
-This is the largest change by line count and the one that removes the most code. `EdgeProducer`
-stops switching over classification permits and `ReverseEdgeIndex` stops existing; both directions
-become queries over the binding relations, and `EdgeProducer.Context` carries a handle where it
-carried two projections.
+The largest slice in every earlier reading of this item, and now the smallest, because the tool it was
+going to migrate is dropped instead. "The surface shrinks first" carries the argument; this slice
+carries the removal, and it is the removal that licenses the projection deletion the item was built
+around.
 
-**Reads.** Seven queries, one per question the edge kinds ask:
+**Deletes, the tool.** `EdgesTool`, `EdgeProducer`, `ReverseEdgeIndex` including its `Cache` and the
+server's `reverseEdgeIndexCache` field, `Edge`, `EdgeKind` and `NodeRef`. Six types and one field,
+none of which any surviving tool names. `EdgeProducer` alone is two exhaustive switches over ninety-odd
+classification permits and four permit-set constants; `ReverseEdgeIndex` is a walk over every
+classified field, an inversion into a `HashMap`, and a two-reference memo whose javadoc explains how a
+torn read against a non-atomic multi-field swap self-heals. All of it goes rather than being rewritten
+against relations.
 
-* **What a field binds, forward**, keyed by `(type, field)` and returning the target's full key:
-  `intent_column_match_claim` and `intent_field_column_table` for `BACKS`, `intent_bound_table` for
-  `TARGETS`, `intent_field_reference_step_hop` for `REFERENCES` with its hops, and for `RESOLVES`
-  the two reads the next bullet separates.
-* **What method a field resolves to**, which is two populations and not one, and this is the place
-  an earlier reading of this item lost half of it. `RESOLVES` is produced today from six
-  classification arms. `intent_field_producer_method` answers four of them: `ServiceBacked`,
-  `QueryService` and `MutationService` through its `SERVICE` arm, `Computed` through its
-  `EXTERNAL_FIELD` arm. A fifth, `RoutineBacked`, needs no read at all, for the reason two
-  paragraphs down. The sixth is `InputUnbound`, whose method pair is populated "when the carrier has an explicit
-  `@condition`", and that view does not cover it: its own comment scopes it to "`@service` and
-  `@externalField` resolved against `jvm_method`", and `declared_via` is a documented closed
-  two-value vocabulary. So the condition population is a second query, over
-  `graphitron_field_condition` joined to `jvm_method` and `jvm_method_parameter` for the arity.
-* **What binds a target, reverse**: the same relations with the predicate on the other end, the
-  columns of a given table, the methods of a given class, the types bound to a given table. This is
-  the query that replaces `ReverseEdgeIndex` outright, and the reason the reverse direction stops
-  needing a build step is that it was never a different question, only a different `WHERE`.
-* **Which types participate in an abstract type**, for `PARTICIPATES`: `graphql_union_member` for a
-  union, `graphql_implements` inverted for an interface, since it is stored in declaration
-  direction. One query answering both, keyed by the abstract type's name. Its reverse direction is
-  deliberately not indexed: type-to-type is cheaply walkable forward, which was true before this
-  item and stays true after it.
-* **Table-to-table FK edges** (`outgoingFkEdges` / `incomingFkEdges`) read the same
-  `sql_referential_constraint` query slice 2 wrote, which is where the reverse FK direction was
-  already a query rather than an index, and is the shape the rest of the tool converges on.
+`McpWire` keeps `methodRef` and `columnId`, which the code tools compose their own IDs from, and loses
+whatever exists only to serve `NodeRef`. Check the qualified-table splitter at removal time rather than
+assuming either way, since its only caller may be the node model.
 
-The condition read is an MCP query and deliberately not a third arm on
-`intent_field_producer_method`, which is the escalation rule applied rather than dodged. A rule
-graduates to a store view where it genuinely must be shared, and this one is not shared:
-`DeclTarget.methodBackedTarget` switches five arms and `InputUnbound` is not among them, so no
-language-server surface resolves a condition's method pair at all. Widening a two-value
-`declared_via` to carry a population one consumer wants would put the MCP's requirement in the
-model's vocabulary. What the query does is what that view does for its own two arms and what
-`ClasspathMethods` does for arity, so nothing here is a new mechanism, and `depends-on` stays empty
-because no store-model change is needed.
+**Deletes, the tests.** `EdgeCoverageTest`, whose subject is the agreement between `EdgeProducer`'s
+permit sets and the permit space, and which therefore has no successor rather than a replacement.
+`ConflictedReverseEdgeTest`. The `edges` block of `GraphitronMcpServerTest`, including the two
+surviving hand-built `catalogFixture()` cases, which are its ambiguity and not-found arms.
 
-`RoutineBacked` is the arm that costs nothing, and it is worth stating why so an implementer does
-not go looking for the routine's method in the store. Its target is a generated jOOQ
-`Routines`-class method, `ClasspathScanner` excludes the generated jOOQ package by design, and
-`resolvesMethod` "produces no edge rather than an invented arity" when the class was not scanned.
-So the arm emits no `RESOLVES` edge today, the `jvm_` census excludes the same package for the same
-reason, and `graphitron_routine` carries a `routine_ref` rather than a class and method. The
-migration preserves an empty answer, which is different from a population being dropped, and
-neither read has to reach for the routine.
+An earlier reading of this item specified an `EdgeCoverageTest` successor at some length: three
+assertions over the query set and the authored directive vocabulary, guarding against a relation
+gaining an arm the tool never surfaces. That specification retires with the tool it was guarding. The
+property it was protecting is real and belongs with the reverse-lookup item, where the queries it
+would assert over actually exist.
 
-**Wire.** Unchanged for `RESOLVES`, which is the point of the second query: both populations keep
-emitting one edge per arity-distinct overload with no census row producing no edge, so the arity
-fan-out and the silence both survive. Reading only `intent_field_producer_method` would have
-dropped every `@condition`-carrying input field's edge silently, with no wire delta declared and
-nothing in the tests to catch it.
+**Deletes, the projection.** `CatalogFacts` and `CatalogFactsTest`,
+`CatalogBuilder.buildCatalogFacts` and its `toKey` helper,
+`GraphQLRewriteGenerator.BuildArtifacts`' `catalogFacts` component and the two-argument convenience
+constructor that becomes the canonical one, `Workspace.catalogFacts` (field, accessor, and its
+assignment in `setBuildOutput`), and `DevMojo`'s threading of the value. `TenantScopes` cites the
+retired type in javadoc only and repoints.
 
-The bare-name resolution goes, which is a fix rather than a translation. `EdgeProducer`
-matches a bare name today because its input is a *classifier* table name, and `resolveTable`
-degrades an ambiguous or unfound one to a `TableNode` with an empty schema. Reading the binding
-relations instead means no edge endpoint is ever spelled without its schema, because none of those
-relations carries a bare name to begin with. There is no resolution step left to degrade.
-
-Ambiguity stops being a degradation too. `intent_bound_table` carries a `candidates` arity beside
-the key, so an ambiguously bound type emits that many fully-keyed targets and the count is stated
-rather than recounted downstream.
-
-The census read `EdgeProducer.Context` needed for name resolution is not replaced by a smaller one.
-It is not needed at all: the endpoints arrive keyed, so there is nothing to resolve them against.
-`EdgesTool.selectNode` still resolves the *tool argument* against the census, which is slice 2's
-query reused; what the context holds after this is the handle and the request's scope.
-
-**Deletes.** `ReverseEdgeIndex` in full, including its `Cache` and the server's
-`reverseEdgeIndexCache` field. That class iterates every coordinate in the schema, runs
-`EdgeProducer.fieldEdges` per entry, inverts each result into a `HashMap<String, List<Edge>>`, and
-is wrapped in a memo keyed on a two-reference pair whose javadoc explains how a torn read against a
-non-atomic multi-field swap self-heals. All of it is a `GROUP BY` written in Java because the input
-was a map. Against the store, "what binds this column" is a predicate on the target: the index goes,
-the cache goes, the two-reference key goes, the torn-read paragraph goes, and the stated invariant
-that the reverse direction must invert the same switch as the forward one so "the two directions
-cannot disagree" goes with them, because forward and reverse stop being two code paths over one map
-and become one relation read from either end.
-
-The cache looked like the one memo worth keeping, its subject being a walk over every classified
-field. It is not, because the walk is what this slice removes. A memo exists to avoid recomputing
-something expensive, and an indexed predicate on a target key is not expensive; keeping the cache
-would mean keeping the index, which would mean keeping the inversion, which is the code the
-migration is for.
-
-Also `EdgeProducer`'s two switches, its four permit-set constants and `resolveTable`; and
-`EdgeCoverageTest`, whose subject is the partition those constants describe.
-
-**And `CatalogFacts` deletes here**, this being its last reader: the type and `CatalogFactsTest`,
-`CatalogBuilder.buildCatalogFacts` and its `toKey` helper, `GraphQLRewriteGenerator.BuildArtifacts`'
-`catalogFacts` component and the two-argument convenience constructor that becomes the canonical one,
-`Workspace.catalogFacts` (field, accessor, and its assignment in `setBuildOutput`), and `DevMojo`'s
-threading of the value.
-
-The convenience constructor goes because it cannot survive, not merely because it stops being
-useful: its signature is `(CompletionData, LspSchemaSnapshot.Built.Current)`, which is exactly what
-the canonical constructor becomes once the third component is dropped, so leaving it is a duplicate
-signature and the module does not compile. That is worth knowing in the other direction too, because
-it bounds the blast radius to less than a record-component deletion usually costs. Every existing
-two-argument caller keeps compiling untouched against the new canonical constructor, which covers
-every construction site outside this module: `WorkspaceTest` (five sites) and
+The convenience constructor goes because it cannot survive rather than because it stops being useful:
+its signature is `(CompletionData, LspSchemaSnapshot.Built.Current)`, which is exactly what the
+canonical constructor becomes once the third component drops, so leaving it is a duplicate signature
+and the module does not compile. That bounds the blast radius in the useful direction too. Every
+two-argument caller compiles untouched against the new canonical constructor, which is every
+construction site outside this module: `WorkspaceTest` (five sites) and
 `BuildTriggerPublishesDiagnosticsTest` in `graphitron-lsp`, and `CatalogRefreshTest` in
-`graphitron-maven-plugin` are all already on that form, none of them passes the projection, and none
-asserts on it. They are named here to record that they need no edit rather than to schedule one.
+`graphitron-maven-plugin`. They are named to record that they need no edit, not to schedule one.
 
-Five sites pass three arguments today and they split two ways. Two are main code and lose the
-argument: `GraphQLRewriteGenerator`'s own construction of the record, whose third argument is the
-`buildCatalogFacts` call being deleted with it, and `DevMojo`'s re-wrap of a prior catalog. The other
-three are in this module's tests, `GraphitronMcpServerTest` twice and `ServerInstructionsTest` once,
-and each passes a hand-built `CatalogFacts` fixture. Those are not edited either: they are the
-fixtures slices 1 to 4 convert to `StoreBackedBuild`, so they are gone before this deletion lands
-rather than trimmed by an argument. That ordering is the reason the deletion is a small commit at
-all, and it is worth checking at pickup rather than assumed, since a fixture left behind by an
-incomplete conversion turns the last slice's tidy deletion into a compile error in the middle of it.
+Two main-code sites pass three arguments and lose the third: `GraphQLRewriteGenerator`'s own
+construction, whose third argument is the `buildCatalogFacts` call being deleted with it, and
+`DevMojo`'s re-wrap of a prior catalog. The remaining three-argument sites are both in
+`GraphitronMcpServerTest`'s `edges` block and go with the block.
 
-That the deletion lands in the same commit as the last reader's
-migration is this item's binding constraint, and it is satisfiable without
-waiting on anything: no `graphitron-lsp` surface reads `catalogFacts()`, only the `Workspace` field
-the MCP tools read through. Re-check that at pickup with a `catalogFacts()` grep, because a reader
-that reappeared upstream changes the order.
+That the projection deletes in the same commit as its last reader is this item's binding constraint,
+and it is satisfiable without waiting on anything: no `graphitron-lsp` surface reads `catalogFacts()`,
+only the `Workspace` field the MCP tools read through. Re-check with a `catalogFacts()` grep at
+pickup, since a reader that reappeared upstream changes the order.
 
-The `JooqCatalog` walk that fed the projection does not retire with it: classification reads the
-same catalog, and `CatalogBuilder.build` still runs. What goes is the second pass over it that
-produced a consumer-shaped copy.
+The `JooqCatalog` walk that fed the projection does not retire with it: classification reads the same
+catalog and `CatalogBuilder.build` still runs. What goes is the second pass over it that produced a
+consumer-shaped copy.
+
+**Wire.** The `edges` tool is gone from the tool list, from `mcp/instructions.txt` (its own bullet, and
+its mention in the currency paragraph), and from the manual's tool table. The instructions gain no
+replacement bullet: no surviving tool answers "what breaks if I change this", and saying so plainly is
+better than pointing an agent at a tool that answers a narrower question.
 
 **Leaves behind.** `catalogFacts` has no reader left, which is what licenses the deletion above.
 `Workspace` keeps four accessors read: `catalog` four, `sourceIndex` three, `snapshot` five,
 `vocabulary` one.
 
-## Slice 5: `services`, `conditions`, `records`
+## Slice 5: `diagnostics.aggregate` deletes
 
-**Reads.** The `jvm_` census answers all three, and the split the tools perform stays a derivation
-they perform rather than becoming a relation: `records` lists classes with `jvm_record_component`
-rows, `conditions` lists methods whose `jvm_method.returns_condition` is set, and `services` lists
-classes with callable `jvm_method` rows, condition methods included, since the same class is both.
-That split is the tools' own and is stated in `CodeTools`' javadoc as such; nothing about it becomes
-a store rule.
+**Deletes.** The `diagnostics.aggregate` tool specification and handler, and from
+`DiagnosticFacets`: `aggregateResult`, the private `aggregate`, `summarize` and `groupByDimensions`,
+the `TRIAGE_PRESET`, the four group and example bounds, the `TYPED_KEY_DIMENSIONS` /
+`LOCATION_DERIVED_DIMENSIONS` bucket lists, `dimensionGloss` and `Dimension.wireNames`. Plus
+`DiagnosticsAggregateTest` and `DiagnosticDimensionCoverageTest`, the latter having the bucket
+partition as its whole subject.
 
-Method entries read `jvm_method` with `jvm_method_parameter` for the arity in the `fqcn#method/arity`
-ref, and `declared_return_type` for the signature an author reads. Source locations join the `java_`
-family (`java_class_declaration`, `java_method_declaration`, `java_field_declaration`) for the
-`location` / `locationStatus` wire fields.
+**Survives, and this is the part worth stating so the deletion is not overcut.** `Dimension` itself
+stays, because it is also the `diagnostics` tool's filter vocabulary: `conditions(graphName, args)`
+builds that tool's predicates from it and two arms are matched directly. What retires is the
+grouping half, not the filtering half.
 
-**Why here.** An earlier reading of this item deferred these three tools to a separate Backlog item
-on the grounds that their acceptance surface is source locations and they share no query with the
-catalog reads. Both facts are true and neither is a reason to defer: the goal is the module reading
-only the store, and a tool left on `CompletionData` keeps a `Workspace` accessor alive, which keeps
-the module edge alive, which is the thing the item is for. The separate item is discarded and its
+The two class-level helpers that are not about diagnostics at all move rather than dying with the
+aggregate. `refusal(tool)` and `error(message)` are wire shapes three catalog tools and the
+diagnostics tool all call, so they belong in `McpWire`, which is already the shared wire-helper home.
+What remains under the old name is the diagnostics filter vocabulary and nothing else, so the class
+renames to match; `DiagnosticFacets` was named for the facets that are being deleted.
+
+**Wire.** The tool disappears from the tool list, from `mcp/instructions.txt` (its bullet, and the
+sentence routing group keys back into `diagnostics`), and from the manual's tool table. `diagnostics`
+is unchanged, including its own filters and its snapshot axes.
+
+**Leaves behind.** `snapshot` keeps four (`schema`, `status`, `diagnostics`, the `directives`
+resource). `catalog` four, `sourceIndex` three, `vocabulary` one, unchanged.
+
+## Slice 6: `catalog.describe` becomes one nested projection
+
+The first cut of this tool shipped store-native and folded, and this slice fixes the shape before
+`schema` is written against the pattern. Nothing about the question changes and nothing about the wire
+changes; what changes is that the answer comes back as one result rather than six.
+
+**Reads.** One query at the table grain. The resolved table row carries a `MULTISET` of columns in
+`ordinal` order, a `MULTISET` of primary and unique keys each carrying a nested `MULTISET` of its
+columns in constraint position order, the same for indexes, and a `MULTISET` per foreign-key
+direction with the positional pairing of referencing to referenced columns expressed as the join it
+already is. `Records.mapping` lands each level on the record it already has.
+
+The spelling resolution stays a separate read, and that is the rule's own boundary rather than an
+exception to it. Resolving `film` against the census asks whether one table, two or none match, and
+the answer decides between describing a table, naming candidate schemas and reporting nothing found.
+That is a different question from "describe this table", not a grain of the same answer.
+
+**Deletes.** Both `LinkedHashMap<String, List<String>>` accumulators (keys, indexes), the `FkId`
+grouping record, the mutable-list `Fk` built-then-rebuilt-immutable pass, and the `foreignKeys`
+fold. The `scopedTo` predicate helper survives as the nesting's correlation.
+
+Two paragraphs of javadoc retire with them. The consistency argument for taking a `StoreReader` (five
+queries could straddle a capture commit) is answered by the statement being one statement; the reader
+stays, on the plainer ground that a read must not ride the session writer's connection, and its
+javadoc says that instead. And the note explaining why the foreign-key pairing is a positional join
+rather than a Java zip keeps its point but loses its contrast, the zip having no successor to be
+contrasted with.
+
+**Wire.** Unchanged in every field and every order, which is what makes this slice cheap to verify:
+the existing `catalog.describe` cases pass untouched. The deltas this tool declared when it first
+landed (unique keys the primary key covers are reported, the key / index / foreign-key lists ordered
+by name, columns in `ordinal` order) were already delivered and are not revisited.
+
+**Leaves behind.** No accessor count changes; this slice reads no projection either before or after.
+
+## Slice 7: `services`, `conditions` and `records` become one `code` tool
+
+**Reads.** One nested projection per class over the `jvm_` census: the class row carries a `MULTISET`
+of its callable methods, each with a nested `MULTISET` of parameters for the arity in the
+`fqcn#method/arity` ref and its `declared_return_type` for the signature an author reads, and a
+`MULTISET` of record components. Source locations join the `java_` declaration family
+(`java_class_declaration`, `java_method_declaration`, `java_field_declaration`) for the `location` /
+`locationStatus` wire fields, at the grain each one belongs to.
+
+The three-way split the old tools performed becomes a `kind` argument over one answer rather than
+three tools over one census: a class with `jvm_record_component` rows is a record, a method whose
+`jvm_method.returns_condition` is set is a condition, and a class with callable methods is a service,
+condition methods included, since the same class is both. That split was always the tools' own
+derivation and `CodeTools`' javadoc says so; it stays a derivation and becomes three predicates over
+one read instead of three handlers over three.
+
+**Wire.** This is a breaking change on three tools and the argument for it is in "The surface shrinks
+first". The `code` tool takes the same name filter, limit and cursor the three took (they shared one
+argument schema), plus the `kind` selector, and its entries carry the same class refs, method refs,
+components and location fields. What an agent loses is three tool names; what it gains is one call
+where a class that is both a service and a record needed two. The instructions' three bullets become
+one and the manual's three rows become one.
+
+**Why here rather than in a separate item.** An earlier reading deferred these three to a Backlog
+item on the grounds that their acceptance surface is source locations and they share no query with
+the catalog reads. Both facts are true and neither is a reason to defer: the goal is the module
+reading only the store, and a tool left on `CompletionData` keeps a `Workspace` accessor alive, which
+keeps the module edge alive, which is what the item is for. That separate item is discarded and its
 scope absorbed here.
 
 **Leaves behind.** `sourceIndex` has no reader left. `catalog` keeps one, `schema`'s `nodeMetadata`
-read, which slice 6 takes. `snapshot` keeps its five (`schema`, `status`, both diagnostics tools,
-the directives resource) and `vocabulary` its one.
+read, which slice 8 takes. `snapshot` keeps its four (`schema`, `status`, `diagnostics`, the
+directives resource) and `vocabulary` its one.
 
-## Slice 6: `schema`
+## Slice 8: `schema`
 
 The largest slice, and the only one whose wire cannot be preserved. Today the tool renders the
 classification permit's name as `kind` plus that arm's slots, for every type and every field. There
@@ -504,11 +590,37 @@ not:
   store's, which `SchemaView.mapClaim` already emits today for the conflicted arm and documents as
   "the store's classifier vocabulary, deliberately not a projection permit name". That arm is the
   template; this generalises it to every coordinate.
-* **What it binds**: table, column, class, method, join path, participants. Five of the six are the
-  queries slice 4 wrote, read at the coordinate grain instead of as edges, the method slot included,
-  which means it inherits both of that slice's producer reads rather than only the view: a field
-  whose method comes from an explicit `@condition` reports it here for the same reason it emits an
-  edge there. The sixth is the backing class, which is the next subsection.
+* **What it binds**: table, column, class, method, join path, participants, all six read at the
+  coordinate grain as slots of the entry rather than as separate edges. This slice writes those reads;
+  no earlier slice does, the tool that would have written five of them having been dropped instead of
+  migrated. The relations are `intent_column_match_claim` for the column, `intent_bound_table` for the
+  table with its `candidates` arity, `intent_field_reference_step_hop` for the join path,
+  `graphql_union_member` and `graphql_implements` inverted for participants, and for the method two
+  populations rather than one. `intent_field_producer_method` answers `@service` and `@externalField`
+  through its two `declared_via` arms; a field whose method comes from an explicit `@condition` is not
+  covered by that view, its own comment scoping it to those two, so the condition population is a
+  second read over `graphitron_field_condition` joined to `jvm_method` and `jvm_method_parameter` for
+  the arity. Reading only the view would drop every `@condition`-carrying input field's method slot
+  silently. The sixth slot is the backing class, which is the next subsection.
+
+  The condition read is an MCP query and deliberately not a third arm on
+  `intent_field_producer_method`, which is the escalation rule applied rather than dodged. A rule
+  graduates to a store view where it genuinely must be shared, and this one is not:
+  `DeclTarget.methodBackedTarget` switches five arms and the unbound-input arm is not among them, so no
+  language-server surface resolves a condition's method pair at all. Widening a two-value
+  `declared_via` to carry a population one consumer wants would put the MCP's requirement in the
+  model's vocabulary. What the query does is what that view does for its own two arms and what
+  `ClasspathMethods` does for arity, so nothing here is a new mechanism, and `depends-on` stays empty.
+
+  Four bindings are deliberately not read, and they are declared as removals rather than gaps: a
+  composite `@nodeId` field's key columns, an interface's `@discriminate` column, a `@pivot`'s two
+  columns, and a participant's cross-table column. Each is authored in the transcription family but
+  has no derived view resolving it to a catalog column, so reading it would mean re-implementing a
+  model rule in this module (in the `@nodeId` case, the catalog-primary-key fallback that applies when
+  `keyColumns` is omitted). The `schema` tool reports the slot absent for those coordinates. This is
+  the item's one accepted loss of information, taken because the new substrate is where the rule
+  belongs and a view can add it later without a consumer change; "Where the answers change" states it
+  as a delta.
 * **Whether a verdict was demanded**, from `intent_resolved_field_demand` / `..._type_demand`, with
   the rule name. This replaces `Unresolvable` and `Unclassified` and is strictly more informative
   than either: those two say a verdict is missing, while `DEMANDED` plus a rule says one was
@@ -568,12 +680,12 @@ reshaped onto the new queries. `Edge.joinPath`'s component type stops being
 `FieldClassification.FkStep` and becomes an MCP-owned hop record carrying the destination's full key,
 since a bare-name record cannot hold what `intent_field_reference_step_hop` returns.
 
-**Leaves behind.** `catalog` has no reader left. `snapshot` keeps four: `status`, both diagnostics
-tools' axes, and the directives resource, which reads it beside the bundled grammar. `vocabulary`
+**Leaves behind.** `catalog` has no reader left. `snapshot` keeps three: `status`, the `diagnostics`
+tool's axes, and the directives resource, which reads it beside the bundled grammar. `vocabulary`
 keeps its one. Only the directives resource stands between here and the lifecycle arms being all
 that is left, which is why it is the next slice.
 
-## Slice 7: the `directives` resource
+## Slice 9: the `directives` resource
 
 **Reads.** `graphql_directive` with `graphql_directive_argument` and `graphql_directive_location`:
 per directive its `repeatable` flag and description, per argument its `type_sdl`, `named_type` and
@@ -603,7 +715,7 @@ is that spelling, captured. The read replaces a recursion with a column.
 
 There is no `LspVocabulary` import to delete, and that is the point rather than a detail.
 `GraphitronMcpServer` reaches the registry as `workspace.vocabulary().registry()`, so the coupling
-is spelled entirely in method calls. Slice 9's import scan would have passed a module that still
+is spelled entirely in method calls. Slice 11's import scan would have passed a module that still
 held it, had the `Workspace` parameter not gone with everything else; a coupling reached through a
 call chain is invisible to exactly the guard written to catch it.
 
@@ -623,10 +735,10 @@ itself and process liveness, and which is not true here: capture writes every de
 the merged schema, bundled and user-declared alike. Reaching for the pattern because it is available, rather than because the store
 is silent, would leave the merge in the module and buy nothing.
 
-**Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps three, all of them the
-lifecycle arms: `status` and the two diagnostics tools' axes.
+**Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps two, both of them the
+lifecycle arms: `status` and the `diagnostics` tool's axes.
 
-## Slice 8: `status` and the diagnostics axes
+## Slice 10: `status` and the diagnostics axes
 
 These become queries too, and an earlier reading of this slice said they could not and reached for
 a host-supplied value instead. The scope boundary names that reading withdrawn and carries the
@@ -670,7 +782,7 @@ is written against. The wire is unchanged.
 **Leaves behind.** Nothing. `Workspace` has no reader left in `graphitron-mcp`, and no main source
 names a type from `graphitron`.
 
-## Slice 9: the edge deletes
+## Slice 11: the edge deletes
 
 `graphitron-mcp`'s pom drops `graphitron-lsp` and declares `graphitron-model` and `org.jooq:jooq` at
 compile scope, both of which it reaches transitively today. `graphitron` moves to test scope beside
@@ -702,7 +814,7 @@ Nothing in `graphitron-mcp` imports `org.eclipse.lsp4j`, the tree-sitter binding
 an import scan rather than trusting this paragraph, since a slice landing between now and here could
 reach for one.
 
-The last `Workspace` reader is gone by slice 8, so the type is not a constructor parameter either:
+The last `Workspace` reader is gone by slice 10, so the type is not a constructor parameter either:
 `GraphitronMcpServer` takes its `StoreHandle` and its `StoreReader`, and
 `DevMojo` stops passing it the workspace. That is what makes the import scan satisfiable rather than
 merely the reads draining, and it is the last thing holding the `graphitron-lsp` import in the
@@ -710,9 +822,9 @@ module's main sources.
 
 The `graphitron` side of the precondition is an audit rather than a count, and the slices above
 discharge it in full. Every `no.sikt.graphitron.rewrite` import in the module's main sources today
-is one of: `CatalogFacts` (slice 4), `CompletionData` and `SourceWalker` (slices 5 and 6),
-`FieldClassification`, `TypeClassification` and `TypeBackingShape` (slices 4 and 6), `CatalogBuilder`,
-`DirectiveShape` and `TypeShape` (slice 7), `LspSchemaSnapshot` and `RejectionKind` (slice 8). The
+is one of: `CatalogFacts` (slice 4), `CompletionData` and `SourceWalker` (slices 7 and 8),
+`FieldClassification`, `TypeClassification` and `TypeBackingShape` (slices 4 and 8), `CatalogBuilder`,
+`DirectiveShape` and `TypeShape` (slice 9), `LspSchemaSnapshot` and `RejectionKind` (slice 10). The
 last two of those are the ones no earlier reading had costed, `TypeShape` because it hid inside the
 directives resource's SDL rendering and `RejectionKind` because it is an enum rather than a
 projection and so did not look like a read. Re-run the import scan at pickup: this list is a reading
@@ -805,7 +917,7 @@ Each is answered here:
 * `snapshot` splits three ways. The classification maps become the claim and binding views, for
   `edges` and for `schema` alike. The directive list becomes `graphql_directive`. The
   availability / freshness arms become reads of `store_graph` and the SDL refusal relations, which
-  capture writes on every pass; slice 8 carries the derivation and the scope boundary the argument.
+  capture writes on every pass; slice 10 carries the derivation and the scope boundary the argument.
 * `ClassMemberSlots` is already a store read, so nothing migrates; MCP writes its own query over
   `intent_class_member_slot` and the LSP keeps its own for the four surfaces its javadoc names.
   Leaving the one existing instance of a coupling while declaring the rule against it would make the
@@ -855,7 +967,9 @@ It is not, because nothing consumes any of them as a union. Every use site is a 
   the clearest case: eight `TypeBackingShape` arms collapse into `tableTarget`, `SourceClass` and
   `None`, which is a three-way question wearing an eight-way costume.
 * `EdgeProducer`'s ninety-odd lines of switch produce five edge kinds. Nineteen of its arms produce
-  no edge at all and exist to be exhaustive.
+  no edge at all and exist to be exhaustive. This is the extreme case of the pattern and it is why
+  its tool is dropped rather than migrated: a switch whose answer is five labels, half of whose arms
+  answer nothing, is not a taxonomy read that needs a store-side counterpart.
 * `SchemaView` is the apparent counterexample, since it renders every arm. What it renders per arm
   is a `kind` label plus between zero and five slots drawn from a pool of about a dozen: table name,
   column name, class name, method name, join path, participants, discriminator, element type. The
@@ -941,17 +1055,34 @@ dissolution waits on, and it is the whole reason `SchemaView` migrates here rath
 for later. Leaving it behind would have kept the module on ninety exhaustive arms while the goal
 section claimed the opposite.
 
-That also settles what the edge tools cost at rest. Today the first reverse traversal after a build
-pays a whole-schema walk; afterwards it is an indexed lookup per query, and the build pays nothing.
-Every read this item adds is an indexed lookup on a captured or materialized relation, so no tool
-pays a derivation at request time. That is worth stating because it was nearly not true: the
+That also settles what the tools cost at rest, and the edge tools settle it by leaving: today the
+first reverse traversal after a build pays a whole-schema walk, and nothing after this item pays one
+because nothing walks. Every read this item adds is an indexed lookup on a captured or materialized
+relation, so no tool pays a derivation at request time. That is worth stating because it was nearly
+not true: the
 backing-class closure was specced here as a per-request recursion before it existed on the store
 side, and the store side's own measurement of that shape is why it is materialized instead.
 
 ## Where the answers change
 
-The tool output is the acceptance surface, so the deltas are named rather than discovered:
+The tool output is the acceptance surface, so the deltas are named rather than discovered. Three of
+them remove a surface rather than change one, and they lead because they are the largest:
 
+* **The `edges` tool is gone.** No surviving tool answers "what else touches this coordinate, what
+  breaks if I change it". `schema` answers the forward half of what it used to, at the coordinate
+  grain and under different field names, and the reverse half has no replacement until
+  `roadmap/mcp-reverse-lookup-over-binding-relations.md` lands. "The surface shrinks first" carries
+  the argument.
+* **The `diagnostics.aggregate` tool is gone.** `diagnostics` still pages entries with the same
+  filters, so what an agent loses is proportions and the group keys that fed back into the entry
+  tool. Returns under `roadmap/diagnostics-aggregation-over-the-store.md`.
+* **`services`, `conditions` and `records` become one `code` tool** with a `kind` selector, carrying
+  the same entry fields the three carried.
+* **Four bindings the `schema` tool used to report go absent.** A composite `@nodeId` field's key
+  columns, an interface's `@discriminate` column, a `@pivot`'s two columns, and a participant's
+  cross-table column. Each is authored in the store's transcription family but has no derived view
+  resolving it to a catalog column, so reporting it would mean this module re-implementing a model
+  rule. Slice 8 states the reasoning; a store view can restore each without a consumer change.
 * **Unique keys are what the database declares.** A unique constraint whose column set the primary
   key also covers was dropped by `candidateKeys` and now appears in `uniqueKeys`. This is the
   intended direction: `catalog.describe` reports the catalog, and the dedup was another consumer's
@@ -968,16 +1099,16 @@ The tool output is the acceptance surface, so the deltas are named rather than d
 * **Column order becomes the table definition's.** `sql_column.ordinal` is the position
   `Table.fields()` states; the projection carried the reflective field walk's order, which is
   documented as no order in particular.
-* **No edge target is emitted unqualified any more.** `resolveTable` renders a degraded `TableNode`
-  with an empty schema whenever a bare classifier name is ambiguous or unfound, and the degraded
-  node's `wireId()` has no qualifier to render, so `edges` answers today with a bare `film` where
-  every other table node is `schema.film`. Both arms read keyed relations after this, so the degraded node has no producer
-  left. An ambiguously bound type emits the candidates `intent_bound_table` carries, each a full
-  key. This is the one wire change in this item that is a fix rather than a translation: an
-  unqualified table ID is not a node any other tool can be handed back.
-* **A join path's hops carry their constraint's full key.** `FkStep` holds a bare target table name
-  and an FK name, and both come back schema-qualified from `intent_field_reference_step_hop`. The
-  same argument as the bullet above, on the payload rather than on the endpoint.
+* **No table is named unqualified any more, anywhere.** `EdgeProducer.resolveTable` degraded a bare
+  classifier name it could not uniquely resolve to a `TableNode` with an empty schema, whose
+  `wireId()` had no qualifier to render, so a tool could answer with a bare `film` where every other
+  table id is `schema.film`. That producer deletes with its tool, and `schema`'s binding slots read
+  keyed relations, so nothing is left that can emit one. An ambiguously bound type reports the
+  candidates `intent_bound_table` carries, each a full key, with the arity beside them.
+* **A join path's hops carry their constraint's full key.** `FieldClassification.FkStep` holds a bare
+  target table name and an FK name; both come back schema-qualified from
+  `intent_field_reference_step_hop`. The same argument as the bullet above, on the payload rather than
+  on the endpoint.
 * **The `schema` tool speaks the store's classifier vocabulary.** Its `kind` values stop being
   `FieldClassification` / `TypeClassification` permit names and become classifier names from the
   claim views; `backingShape` goes, its table and class halves being questions 1 and 2 answered
@@ -991,7 +1122,7 @@ The tool output is the acceptance surface, so the deltas are named rather than d
 * **The `directives` resource is empty before the first capture** rather than degrading to the
   bundled grammar. Same posture as the catalog tools, for the reason the consumer section gives.
 * **A missing handle refuses instead of answering empty.** The server can be built without a store
-  handle; the diagnostics tools already refuse per call there, on the grounds that an empty answer
+  handle; the diagnostics tool already refuses per call there, on the grounds that an empty answer
   reads as a clean schema. An empty catalog reads as a database with no tables, so the catalog
   tools take the same posture. This is not the pre-capture case: a store with no rows yet is an
   answer, and absence of rows is absence of tables.
@@ -1029,7 +1160,7 @@ the type named as history rather than linked), `FactCapture.capture`'s `@param j
 `typeDefinitionLocations` javadoc, whose "the MCP schema view is what still reads this" sentence
 becomes false here and whose stated retirement condition is met by this item.
 
-Two prose comments outside Java state the edge as a fact and go with it in slice 9, neither of them
+Two prose comments outside Java state the edge as a fact and go with it in slice 11, neither of them
 reached by the `{@link}` gate. `graphitron-mcp/pom.xml` carries a block explaining that the compile
 edge on `graphitron-lsp` exists because "the server now holds the live Workspace and reads
 `LspSchemaSnapshot` off it", along with the acyclicity argument that justified it; the dependency it
@@ -1049,7 +1180,7 @@ shape and change one noun: the shared live thing is the warm *store*. What they 
 preserving exactly, because it is the promise the page exists to make.
 
 "The same `mvn graphitron:dev` process serves both the LSP (for your editor) and the MCP server (for
-your agent) off one warm workspace" stays true of the process and the sharing, and after slice 9 the
+your agent) off one warm workspace" stays true of the process and the sharing, and after slice 11 the
 server holds no `Workspace` at all, taking a `StoreHandle` and a `StoreReader` instead. One warm
 store is what the two surfaces then share, and the sentence says so with one word changed.
 
@@ -1058,7 +1189,7 @@ one to be careful with, because its *same* is not the LSP and the MCP but the `a
 `directives` resource and the tools: the claim is that everything an agent gets comes from one live
 source rather than from three of varying age. That claim survives and gets stronger. Today it is at
 its least true, the tools reading a mix of frozen projections, the `directives` resource composing a
-bundled half with a snapshot overlay, and the diagnostics tools already on the store. After this item
+bundled half with a snapshot overlay, and the diagnostics tool already on the store. After this item
 every project-specific answer on that list is one store's rows, so *the same warm store* is a
 tighter statement than the sentence makes now, not a weaker one. Only the currency clause needs a
 second look: *the dev loop keeps current* attributed freshness to the build's swap of an in-memory
@@ -1083,11 +1214,11 @@ snapshot half, so the multi-field argument loses its example and what is left of
 LSP's own reads; whoever picks that item up should re-derive its motivation rather than inherit this
 one. `capture-load-residuals.md` frames a residual around `buildOutput` reusing the `catalogFacts` it
 already holds. And `consumers-share-relations-not-queries.md` depends on this item for the
-`ClassMemberSlots` seam closure, which slice 6 performs; that edge is unaffected by the widened
+`ClassMemberSlots` seam closure, which slice 8 performs; that edge is unaffected by the widened
 scope, since nothing here reintroduces a cross-consumer reader import.
 
 A fourth is discarded rather than repointed: the Backlog item that planned the code tools' migration
-to `jvm_` / `java_`, which slice 5 now performs. Its whole content was the substrate census that
+to `jvm_` / `java_`, which slice 7 now performs. Its whole content was the substrate census that
 slice cites, so nothing is lost by absorbing it, and a Backlog item describing work another item
 owns is a plan nobody will pick up. Its file was already deleted while this spec was being drafted,
 with the decision recorded here rather than left as a redirect, which is the workflow's `Discarded`
@@ -1098,7 +1229,7 @@ implementer has nothing to remove for it.
 
 The MCP module already has the fixture this needs: `StoreBackedBuild` runs a real
 `GraphQLRewriteGenerator.buildOutput()` into a bootstrapped store and hands the server a handle,
-which is how the diagnostics tools are tested. Every slice moves its tool's cases onto it and stops
+which is how the diagnostics tool is tested. Every slice moves its tool's cases onto it and stops
 hand-building projection fixtures, so the fixture work is front-loaded into slice 1 and amortised
 across the rest.
 
@@ -1134,7 +1265,7 @@ sources are the ones that drive a build or write facts, the conversion is done.
 The cases below are grouped by the slice that lands them. Two of them, the fixture seam and the
 close-out guards, are the item's own rather than any one tool's.
 
-**Slice 1 to 4, the catalog and edge tools.**
+**Slices 1 to 3, the catalog tools.**
 
 * `GraphitronMcpServerTest`'s catalog cases (the largest block, currently building `CatalogFacts`
   values directly) assert the same wire fields against a store captured from the test jOOQ package.
@@ -1172,52 +1303,45 @@ close-out guards, are the item's own rather than any one tool's.
 * The foreign-key column pairing is stated by `sql_referential_constraint`'s own DDL comment, which
   calls it guaranteed by SQL semantics and never copied onto the referencing row. The relation
   therefore needs no case: as a positional join over two captured relations it is correct exactly
-  when its inputs are. What is new here is the Java that renders it, and a hand-written positional
-  zip can get the order wrong where the relation cannot, so the case is aimed there:
-  `public.project_note`'s two-column foreign key to `project` whose `targetColumns` come back in the
-  referenced constraint's own order.
-* `ConflictedReverseEdgeTest` moves onto `StoreBackedBuild` rather than following a changed context
-  shape. What it pins is that a conflicted coordinate still reaches the reverse direction, and that
-  survives the migration as a claim about rows: a coordinate carrying two claims contributes an edge
-  per claim, which is what the claim views already say and what the old inversion had to be careful
-  to preserve by hand.
-* `EdgeCoverageTest` has no direct successor and needs a replacement rather than a port, which is
-  this item's to specify because deleting a coverage test silently is how a taxonomy starts leaking.
-  Its subject is the agreement between `EdgeProducer`'s permit-set constants and the
-  `FieldClassification` / `TypeClassification` permits, and one side of that is gone. The successor
-  asserts the same
-  property one level down, against the relations: every `EdgeKind` the wire declares is produced by
-  one of the queries, and every binding relation the queries read feeds at least one `EdgeKind`. The
-  second half is what catches a relation gaining an arm that the tool then never surfaces, which is
-  the failure the permit partition was really guarding against. Both halves are assertable from
-  `graphitron-mcp` without a store, being statements about the query set, so the case stays cheap.
+  when its inputs are. What needs one is the pairing arriving on the wire in the constraint's order,
+  which the case pins through `public.project_note`'s two-column foreign key to `project` whose
+  `targetColumns` come back in the referenced constraint's own order. It keeps that job through slice
+  6, where the fold it was first written against is replaced by a nested projection.
+**Slices 4 and 5, the two removals.** Nothing is added and four test classes go:
+`ConflictedReverseEdgeTest`, `EdgeCoverageTest`, `DiagnosticsAggregateTest` and
+`DiagnosticDimensionCoverageTest`, plus the `edges` block of `GraphitronMcpServerTest` and the
+aggregate cases in the diagnostics blocks. Two of those are coverage meta-tests and deleting one
+silently is how a taxonomy starts leaking, so each states its own reason for having no successor.
+`EdgeCoverageTest`'s subject is the agreement between `EdgeProducer`'s permit-set constants and the
+permit space, and both sides go with the tool; the property it was really guarding, that a relation
+gaining an arm the tool never surfaces gets noticed, belongs with the reverse-lookup item where the
+queries to assert over will exist. `DiagnosticDimensionCoverageTest`'s subject is that the aggregate's
+dimension enum partitions into two declared buckets, and the buckets go with the grouping half; the
+filtering half of the enum survives and is already pinned by the `diagnostics` cases that filter on
+it.
 
-  Those two halves are not enough on their own, and the reason is this item's own near-miss. Both
-  are counted per `EdgeKind`, so a kind that keeps one of its producing populations and loses
-  another passes both: `RESOLVES` stayed produced by the service arm while the `@condition`
-  population was missing from the query list, and nothing in either half notices. So the successor
-  carries a third assertion, one grain finer and written in the authored vocabulary rather than the
-  permits': every directive that can name a method (`@service`, `@externalField`, `@condition`,
-  `@routine`) maps to a named read or to a stated reason there is none, and the map is exhaustive
-  over that list. Being a statement about SDL directives and the relations that capture them, it is
-  not a second spelling of the classification taxonomy, which is what the last bullet in this
-  section rules out and what the leaf-zoo guard would fail a test source for reintroducing. Two
-  entries to check it against while writing it: `@condition`, which the kind-grain halves cannot see
-  at all, and `@routine`, whose correct entry is the stated reason rather than a query.
+What both slices do need is a negative case each, because a deleted tool that is still registered is
+a live tool: one assertion that the server's advertised tool list is exactly the expected names, which
+also catches a later slice adding one by accident. That belongs in `ServerInstructionsTest`, whose
+subject is already what the server tells an agent it can do.
 
-  `PARTICIPATES` is the arm to check the first two halves against, being a declared `EdgeKind` whose
-  relations an earlier reading of this item omitted from the query list entirely, so a successor that
-  passes without covering it has been written to the queries rather than to the wire.
+**Slice 6, the nested projection.** No new cases and this is the point: the existing
+`catalog.describe` cases are the verification, and a reshape that changes no wire field passes them
+untouched. One case is added rather than moved, aimed at what nesting newly makes possible to get
+wrong: a table whose keys, indexes and both foreign-key directions are all non-empty at once, so a
+mis-correlated `MULTISET` shows up as a child list attached to the wrong parent rather than as an
+empty one. The existing foreign-key pairing case covers the ordering half.
 
-**Slice 5, the code tools.** Their existing cases keep their assertions and change their fixture:
-the `services` / `conditions` / `records` blocks assert the same class refs, method refs and
-`location` / `locationStatus` fields against a store captured from the test sources rather than
-against a hand-built scan. Two cases are new because the store distinguishes what the scan did not:
-a class the census never reached and a class it reached that declares no such method are separate
-answers on `intent_field_producer_method`'s stated terms, and the `locationStatus` field is where
-that distinction surfaces.
+**Slice 7, the `code` tool.** The three old blocks' assertions survive and become three `kind` cases
+on one tool: the same class refs, method refs, components and `location` / `locationStatus` fields,
+against a store captured from the test sources rather than against a hand-built scan. One case is new
+because the merge makes it expressible: a class that is both a service and a record answers once with
+both, where two tools each answered half. Two more are new because the store distinguishes what the
+scan did not, a class the census never reached and a class it reached that declares no such method
+being separate answers on `intent_field_producer_method`'s stated terms, with `locationStatus` the
+field where that surfaces.
 
-**Slice 6, `schema`.**
+**Slice 8, `schema`.**
 
 * **The cases are rewritten against a real capture, not ported.** The existing
   `GraphitronMcpServerTest` block asserts permit names and slot bags off hand-built projections;
@@ -1243,12 +1367,12 @@ that distinction surfaces.
   slot. Asserting a mapping between the permits and the classifier vocabulary is explicitly not
   wanted, for the reason the last bullet in this section gives.
 
-**Slice 7, the directives resource.** One case: the resource renders a bundled directive and a
+**Slice 9, the directives resource.** One case: the resource renders a bundled directive and a
 user-declared one from one captured schema, with arguments and locations, and reports the
 pre-capture case rather than degrading. The bundled / user-declared distinction is not asserted,
 because after this item the resource does not draw one.
 
-**Slice 8, `status` and the diagnostics axes.** Three cases, one per arm, driven through the
+**Slice 10, `status` and the diagnostics axes.** Three cases, one per arm, driven through the
 store: a pre-capture store answers `Unavailable`, a clean capture answers `Built` / `Current`, and
 a capture whose source set includes one refused file answers `Built` / `Previous` off the refusal
 rows. The third case is the one the fixture has to earn, since `StoreBackedBuild`'s default
@@ -1384,7 +1508,7 @@ slice's stated behaviour rather than a regression.
   rather than discovered when an assertion fails mid-slice.
 * The member-slot query gets a case rather than a repoint, because there is none to repoint:
   `SchemaView.members` is production code with no test exercising it, the module's one `backingShape`
-  assertion pinning `TableBacking`, the arm without members. Slice 6's backing-class cases are where
+  assertion pinning `TableBacking`, the arm without members. Slice 8's backing-class cases are where
   the slots get asserted; the read is the same relation with the same ordering, so what they pin is
   that the entry still renders the slots, not that a new rule was introduced.
 * Nothing in this item writes an agreement test between the permits and the relations. Two Java
@@ -1395,7 +1519,7 @@ slice's stated behaviour rather than a regression.
   half of writing them here: a query lives in the module whose acceptance surface it serves, and is
   pinned by the tests that assert that surface.
 
-**Slice 9, the guards.** Four, one per goal property, and each is the property restated as an
+**Slice 11, the guards.** Four, one per goal property, and each is the property restated as an
 assertion. Writing them in the close-out slice rather than up front is deliberate: a guard that
 fails for eight slices is a guard someone disables.
 
@@ -1457,6 +1581,30 @@ capture.
 
 ## Retired vocabulary
 
+The three tool removals retire more names than any other change here, and a dropped tool's vocabulary
+is the kind that survives in prose long after the code goes, so it leads.
+
+* `EdgesTool`, `Edge`, `EdgeKind` with all five of its constants, `NodeRef` and its six permits, and
+  the whole vocabulary the tool taught: "the traversal layer", "a typed neighbour", "the direction
+  query axis", "forward edges" and "the reverse direction" as things `graphitron-mcp` has, "the
+  stable-ID grammar the edges tool walks", "an edge endpoint", and "impact analysis" as a capability
+  this module currently offers. What survives is the stable-ID grammar itself, which the catalog,
+  `schema` and `code` tools compose and accept; what retires is its framing as a graph the edges tool
+  walks
+* `BACKS`, `TARGETS`, `REFERENCES`, `RESOLVES` and `PARTICIPATES` as names for what a coordinate does
+  to a table, column or method, in prose as well as in code. The successor vocabulary is the authored
+  directive that made the binding, which is what the reverse-lookup item is written in
+* `DiagnosticFacets` as a class name and "facet" as the word for a diagnostics grouping key, with
+  `aggregateResult`, the triage preset, "the typed-key / location-derived buckets" as a declared
+  partition, "an elided group" and "the dimension gloss"; `Dimension` survives as the `diagnostics`
+  tool's filter vocabulary and nothing else does
+* `services`, `conditions` and `records` as three tool names, and `CodeTools`' three-result framing
+  with them; "the conditions tool is the condition-filtered view" retires as a cross-reference between
+  tools and returns as a sentence about one tool's `kind` argument
+* "several queries in one read transaction" as the shape of an answer, with the multi-query tearing
+  argument that justified it, the `FkId` grouping key, and "folding the rows" as a step a reader has.
+  What replaces all of it is one nested projection, and the reader's remaining justification is that a
+  read must not ride the writer's connection
 * `CatalogFacts`, and its nested `Table`, `Column`, `Key`, `Index`, `ForeignKeys`,
   `OutgoingForeignKey`, `IncomingForeignKey`, `TableResolution` (with `Resolved` / `Ambiguous` /
   `NotFound` arms specific to it)
@@ -1530,7 +1678,7 @@ verdict stratum: `graphql_syntax_error` and `graphql_schema_error` are written b
 pass, on either outcome (`SdlVerdictCapture`'s javadoc and both relations' comments state the
 cadence), so the freshly broken graph holds refusal rows the untouched one does not, and "the last
 good facts are being held" is not a possession but what the transcription families do per source.
-Slice 8 carries the derivation. What is genuinely process state after the correction is process
+Slice 10 carries the derivation. What is genuinely process state after the correction is process
 liveness, which a tool proves by answering, and capture in-flightness, which no relation should
 carry and no tool needs.
 
@@ -1566,7 +1714,7 @@ shared harness home, and the LSP fact-store item's retirement sweep for `Catalog
 survives that item's own diff until slice 4 lands here. Whoever takes the LSP item to Done should expect that and read it as
 a sequencing fact rather than a failed sweep.
 
-The pom edges are deleted in slice 9 with both halves of the guard, and that is a change from an
+The pom edges are deleted in slice 11 with both halves of the guard, and that is a change from an
 earlier reading which deferred the language-server one to whichever of three items landed last. The
 deferral was wrong on its own terms: the code-tools item moved reads that crossed a `graphitron`
 dependency, so it never had a reason to touch the LSP edge, and the LSP item does not touch
