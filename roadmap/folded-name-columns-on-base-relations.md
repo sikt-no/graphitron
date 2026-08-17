@@ -158,6 +158,55 @@ named here so silence does not read as a claim: the LSP's `CatalogColumns.isName
 case-insensitive match in Java against fetched rows, where a folded column cannot reach. They
 belong to the LSP re-sourcing work the Care section already sequences against, not to this item.
 
+## Revision the view charter asks for
+
+Read back against the view charter (a view merges same-grain sources, re-grains, and calculates a
+column only over data it actually joins; a calculation over one relation's own columns belongs on
+that relation), the plan above needs three changes. Appended rather than edited into the steps, so
+the original reasoning stays legible and the delta is auditable.
+
+**1. The effective name is a relation, not a per-view select.** Step 3 keeps
+`COALESCE(name_ref, field_name)` as each view's own product and collapses the four repeats inside
+`intent_column_match_claim` by nesting an inner select. But the rule is restated in two views, not
+one: the column arm writes it five times, and `intent_field_accessor_hop` writes it again at its
+join to `intent_class_member_element`. Both LEFT JOIN `graphitron_field_binding` onto
+`graphql_field`, and those two relations have the same primary key, `(graph_name, type_name,
+field_name)`. Two sources at one grain merged into a relation is the charter's first point exactly,
+so this wants `intent_field_effective_name (graph_name, type_name, field_name, effective_name,
+tier)`, with `tier` naming which side answered, in the shape `intent_resolved_field_claim.tier`
+already established. The two views then join it and the expression is spelled once in the schema.
+
+That also retires step 3's riskiest move rather than performing it carefully. The nesting
+restructuring lands inside the one view whose comment records a measured seventy-times regression
+from getting its derived-relation shape wrong; with the effective name arriving as a join, the
+`matched_by` CASE and the `ROW_NUMBER` ordering reference a column and no new nesting layer is
+needed. What must be measured instead is whether H2 merges the new view into its readers: nothing
+in it blocks view merging (no window function, no aggregate, unlike the deep scope view that was
+measured), but the seventy-times result is the reason to confirm rather than assume.
+
+**2. The spelling calculation descends to the base relation.** `COALESCE(table_ref, type_name)` is
+written twice, in `intent_spelled_table`'s union and again in `intent_bound_table`'s join to it, and
+both inputs are `graphitron_table`'s own columns. That is the charter's own preference for a
+calculated column on the base relation, and step 3 currently keeps it as a view product in folded
+form. Verified against H2 2.4.240: `GENERATED ALWAYS AS (COALESCE(table_ref, type_name))` and its
+`UPPER(...)` variant are both accepted, compute correctly with the reference present and absent, and
+index. One engine constraint to design around: a generated column may not reference another
+generated column of the same relation (H2 answers "Column not found"), so a spelling column and its
+folded twin each restate the `COALESCE` from the non-generated inputs. Both are engine-computed, so
+neither can drift from the other.
+
+**3. The step 4 gate forbids change 2, and the guarantee it leans on does not hold.** As written it
+asserts every `GENERATION_EXPRESSION` is exactly `UPPER("<c>")` over a non-generated column of the
+same relation, which bans `COALESCE(table_ref, type_name)` and encodes "folding only" where the
+charter says single-relation calculations generally belong here. Worse, it treats confinement to the
+own relation as given. H2 does not give it: `GENERATED ALWAYS AS ((SELECT k FROM other LIMIT 1))` is
+accepted, and that is a stored derivation over another relation, precisely the materialization that
+can drift and that the fact-model doctrine refuses. So the gate's real subject is the one thing the
+step assumed was free. It should assert that a generated column's expression references only
+non-generated columns of its own relation, and pair each admitted shape with its naming convention
+(`<c>_folded` for a fold, a named column for a calculation like the spelling), rather than admitting
+a single expression template.
+
 ## Care
 
 Broad and mechanical: it touches name-bearing base relations across several families and every view
