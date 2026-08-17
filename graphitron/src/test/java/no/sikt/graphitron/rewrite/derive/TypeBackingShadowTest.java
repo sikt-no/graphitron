@@ -36,6 +36,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * difference is the one the derivation set out to make rather than an accident. The classes are
  * public fixtures because both sides have to see them: the walk resolves through a classloader,
  * which does not care, and the census keeps public top-level classes only, which does.
+ *
+ * <p><b>When this may go.</b> Not when the language server migrates, which it has: the editor reads
+ * the derivation now while {@code RecordBindingResolver} still binds record types for the leaf model,
+ * so two answers to one question feed two surfaces and the departures pinned in
+ * {@link TypeBackingClassTest} are differences a user can see between what an editor names and what
+ * the generator emits. This comparison is what keeps that list honest, so it earns its capture cost
+ * until the leaf model's binding is the derivation's too.
  */
 @PipelineTier
 class TypeBackingShadowTest {

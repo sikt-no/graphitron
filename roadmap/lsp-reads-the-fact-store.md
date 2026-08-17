@@ -1993,8 +1993,12 @@ walk is evidence here, not the specification.
 10. The consumers follow, each its own commit: the class arm of the type-scope question, then
     `Diagnostics.validateFieldMember`, `DeclTarget` retiring `TypeBackingShape`, the
     class-backed-parent arm of `intent_field_separate_fetch`, and the three silent LSP surfaces.
-    `walk_type_backing_class` and its writer drain with the last of them rather than at step 9, the
-    differential being what keeps the duplication honest until then. The class arm is done:
+    `walk_type_backing_class` and its writer were to drain with the last of them rather than at step 9,
+    the differential being what keeps the duplication honest until then. That criterion did not survive
+    the increment that met it: the walk's backing still has a reader outside this item, and the
+    differential becomes load-bearing rather than redundant once the editor and the generator read
+    different answers. The drain moves to whichever item makes the generator read the backing; the
+    reasoning is in the section below. The class arm is done:
     completion, hover and the field-member diagnostic read `TypeBackingClass` over
     `intent_type_backing`, and the precedence between a grounding and a hop is the reader's rule,
     stated where a second reader can lift it into a view. The section below carries it. The table
@@ -2784,6 +2788,24 @@ read is bulk like the claim reads beside it: the seeds for every type asked abou
 relation for the names nothing grounded. The single-type entry now delegates to the bulk one, which
 matters because the grounding-beats-hop rule and the contested-is-empty rule are the reader's own and a
 second copy of them would drift.
+
+**The walk shadow does not drain here, and the criterion that said it would was wrong.** The sequence
+entry had `walk_type_backing_class` and its writer leaving with the last of the language server's
+consumers, on the ground that the differential was what kept the duplication honest until then. That
+reads the duplication as being between the language server and the derivation. It is not. The walk's
+backing has another reader that this item does not touch: `RecordBindingResolver` still binds record
+types for the leaf model, which is what the plan, the emitters and the validator consume, and this
+item's own step-9 section says as much when it concludes the resolver's copy dies with the last leaf
+reader. So the number of live answers to "what class backs this type" does not drop to one when the
+editor migrates; it stays at two, and only now do the two feed different surfaces. Before this
+increment the editor and the generator both read the walk, so a divergence was impossible. After it,
+the editor reads the derivation and the generated code reads the walk, and the derivation departs from
+the walk in stated ways: a collection return backs a single-object field where the walk reads a carrier
+and declines, and the two-level carrier fork is not applied. Those departures are pinned as pins
+precisely because nobody has adjudicated them, which means an editor can now name a class the generator
+does not bind. The differential is the only artifact that keeps that list honest, so it becomes
+load-bearing at exactly the moment the old criterion would have deleted it. The drain belongs to
+whichever item makes the generator read the backing, and the sequence entry now says so.
 
 **Cleanup the previous increment owed.** Two javadoc paragraphs still described the class-backed-parent
 split as missing from the separate-fetch relation, one increment after it landed. Both now name the two
