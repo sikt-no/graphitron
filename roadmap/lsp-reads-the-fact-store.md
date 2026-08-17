@@ -3064,3 +3064,83 @@ one beside it resolved, one without it did not. Two cases carry more than presen
 two worth having. The authored-path case renders a column the parent's table does not have, which is
 evidence of where the resolution ran rather than that it ran. The masked case has a column under it and
 shows nothing.
+
+## Settled in review: the reads are too small, and "ghost" was cryptic slang
+
+Two corrections from the same review pass, one to the vocabulary and one to the shape of every read
+this item has shipped. The second changes the remaining plan, so it is recorded here rather than
+absorbed.
+
+**"Ghost" retires; a hint is a resolution overlay.** The word came in with the arm's first
+implementation and spread through this item's later sections and into the new tests' names. It means
+"missing" nowhere, which is the objection: it is cryptic where the thing itself is plain. A hint that
+renders text the author did not write is a *resolution overlay*, in two arms, the argument overlay at
+a bare directive and the directive overlay at a site carrying none. The word also collided head-on
+with the LSP test suite's own convention, where `GHOST` and `Ghost` name a table, column, type or
+method that resolves to nothing: within one package the same word carried opposite polarity, one
+being a name with nothing behind it and the other a rendering of something that resolved. The
+fixtures become `MISSING` / `Missing`, prose and test names take "resolution overlay", and the
+published config key `graphitron.inlayHints.inferredDirectives` and its field stay as they are, being
+both clear and in users' editor settings. Sections above this one keep the old word; they are settled
+history, not a cleanup backlog.
+
+**Every read is one relation, and the answers are assembled in Java.** There is no use of `MULTISET`,
+`row()` or `Records.mapping` anywhere in `graphitron-lsp`. One hover on a field declaration costs the
+classifier read, the join-path read, the separate-fetch read, and then one query *per classifier at
+the coordinate* inside a loop, plus the description reads: four to seven statements with an N+1 in
+the middle. The `@field` overlay costs up to three statements per site, called per directive node, so
+a file with forty bare sites is up to a hundred and twenty statements, while the directive-overlay
+pass over that same file is one. Both disciplines therefore live inside one collector, and the bulk
+one is already stated in this item ("a query per grain rather than per declaration"). The readers
+shipped most recently, this item's own, ignore it. `FieldMemberName`'s javadoc saying the arm order
+"is the reader's" is that defect written down and called a design.
+
+The cause is worth naming because it will recur otherwise: each reader was built to own exactly one
+relation, which is right about *facts*, and nothing said where *composition* lives, so it fell to
+Java one `Optional` chain at a time, each looking like two lines rather than like a rule.
+
+**The fix is a projection, not a new view, and the distinction is the whole correction.** A view is
+model: it merges same-grain sources, re-grains, carries keys plus its own products, and never embeds
+a denormalized payload, because a consumer joins for payloads. A projection is one consumer's
+`SELECT`: it joins the views it needs to the relations holding the payloads it wants, and it may
+produce nested denormalized structure, because that is the shape it is about to render. `MULTISET`
+belongs there, in the `SELECT`, never in the DDL. So "one statement per capability" is reachable
+without the model growing shapes it should not have, and the doctrine is
+`views-carry-keys-not-payloads.md` (R698), filed from this review.
+
+What that rewrites in the plan:
+
+* **A union view over the six per-classifier relations is withdrawn.** It was this item's proposal
+  for answering a hover in one query, and it would have flattened six kinds' decoded components into
+  a `(kind, value)` pair, nullable by kind, justified by one consumer's rendering.
+  `intent_resolved_field_claim`'s comment already refuses exactly that shape in as many words.
+* **`ClaimFacts.ofField` becomes one statement with no new DDL:** the claim reduction at the
+  coordinate, left-joined to the six per-classifier relations, projecting typed columns, with
+  `MULTISET` for the genuinely multi-row arms (routine refs, bound tables, error handlers) so their
+  fan-out cannot corrupt the single-row arms. The six-way switch goes: the classifier column already
+  says which join answered. The kind-to-label mapping stays in Java, where this item settled it.
+* **`intent_field_member_name` is the one new view, and it earns it:** two sources at different
+  grains, the column match at the field coordinate and the member slot at (class, member), the second
+  re-grained to the field coordinate through the backing relation. It carries the member name and
+  which basis answered, with `intent_resolved_field_claim.tier` the precedent for why a basis is a
+  column rather than a hidden pick, and nothing else: the member's type and position stay one join
+  away. The arm order stops being the reader's.
+* **The overlay renderers recompose to one statement per site**, and the per-node loop stops issuing
+  three.
+* **Latency measurement moves to the front.** The acceptance clause wants it early enough that the
+  first materialization is a design choice rather than a repair, and the recomposition is exactly the
+  work its numbers should inform.
+
+**The diagnostics surface composes its own text.** The conflict message is a projection, so each
+surface writes its own sentence: the build report prefixes the coordinate because a console has no
+cursor, and this surface has a range and should not repeat it. `Diagnostics` hands `error.message()`
+to the editor verbatim today, so an author sees `Field 'Film.title': ...` squiggled on the line that
+*is* `Film.title`, and the surface can be richer where the console cannot, with
+related-information at the other claiming directive's position. That composition is this item's; the
+`message` column's removal from the intent view is `conflict-message-leaves-the-intent-view.md`
+(R696), and the two are independent because this surface reads through `Diagnostics` rather than off
+that column.
+
+Two siblings also came out of the pass and are not this item's work:
+`folded-name-columns-on-base-relations.md` (R697), sequenced ahead of the recomposition so the new
+joins are written against predicates that are already clean, and R698 above.
