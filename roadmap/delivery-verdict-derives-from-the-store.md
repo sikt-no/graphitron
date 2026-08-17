@@ -15,7 +15,11 @@ last-updated: 2026-08-17
 ## Problem
 
 Delivery (does this coordinate batch through a `DataLoader`, or fetch inline) is decided twice in
-Java and zero times in the store. `DeliveryFactRelation.mint` is the production source that
+Java and stated by no relation. The store is nearer than that sounds: a shipped view,
+`intent_field_separate_fetch`, already names four of the populations delivery reads, for a
+neighbouring question. A section below settles what that relation does and does not answer and why
+both stay. What matters here is that neither Java site is relational.
+`DeliveryFactRelation.mint` is the production source that
 `ProjectionCommands` and `LauncherCommands` read through `GraphitronSchema.deliveryOf`;
 `DeliveryFact.leafDerivedOf` is a total switch over the sealed leaf hierarchy, kept as the
 comparison side and the walk-less fallback. Neither is relational. The relation is a
@@ -80,7 +84,12 @@ the shadow test. The names carry one noun across the stratum, `delivery`, the wa
 `demand`: three relations a reader meets in `SHOW VIEWS` should be recognisable as one stratum, and
 an earlier draft's `batching_rule` broke that for a word the `rule` column already says better.
 Nothing is lost, because the literals still name batching triggers; the relation says which verdict
-it rules on, the row says which trigger produced it. And **the authored grain here is the
+it rules on, the row says which trigger produced it. The noun is not free, and the collision is
+worth stating rather than discovering: `intent_delivery_container` already spends it on an unrelated
+sense, the Java container classes the declared-type peel descends. The `_field_` infix is what keeps
+them apart, and it is load-bearing rather than decorative, so all three relations carry it; a reader
+meeting `intent_field_delivery_*` beside `intent_delivery_container` should be able to tell from the
+key alone that one is about coordinates and the other about classes. And **the authored grain here is the
 coordinate**, unlike the sibling's, whose rule views are type-keyed on the stated ground that "every
 rule shipped so far is a property of the parent type". Delivery's are not: every batching arm reads a
 marker or a target on the field itself. The one exception is the root exemption, which is authored on
@@ -120,6 +129,58 @@ and an earlier draft of this section asked for two that cannot be written:
   analogue is empty by construction on landing. Overlap is designed in rather than pathological, as
   the root coordinate below shows. What the store buys is that the question is expressible at all. A
   switch fallthrough is not a row and cannot be counted; two arms claiming one coordinate can be.
+
+### The nearest relation already ships, and it is a sibling rather than this one
+
+`intent_field_separate_fetch` landed on 2026-08-15, after this item was filed, and it is closer to
+the proposal above than the demand stratum is. It is coordinate-grained, carries a `rule` column,
+is registered `Arm.DERIVED`, and its four arms are `SPLIT_QUERY` off `graphitron_split_query`,
+`TENANT_FAN_OUT` off `graphitron_tenant_fan_out`, `SERVICE` off `graphitron_service` at a non-root
+parent, and `ROOT_OPERATION` off `graphql_root_operation`. It has live readers: the LSP renders it
+through `SeparateFetchRule`, `collectSeparateFetchHints` and `DeclarationHovers`, and
+`SeparateFetchVocabularyTest` seals its vocabulary against the words an editor shows.
+
+**Both relations stay, and neither derives from the other.** The questions differ, and they differ
+exactly where this item's exemptions are. Separate-fetch asks whether a field costs a second trip to
+the database, which is what a schema author reads. Delivery asks whether a coordinate batches through
+a `DataLoader`, which is what a planner reads. A root operation is fetched by its own statement and
+is not batched; a `@service` call is its own fetch and its delivery is owned by the serviceCall
+member. So those two populations are *positive rows* in separate-fetch and *exemptions* here, and the
+next section is where that is established from `mint` rather than asserted. Two relations disagreeing
+on a population both can see is the signal that they answer different questions, not that one is
+wrong.
+
+That is the stratum's own provenance rule rather than a preference. `intent_type_backing`'s comment
+states it for its own pair: "each population is derived by its own rule from its own facts and
+neither is a special case of the other, so they are separate relations". Delivery reads the same base
+relations separate-fetch reads, by its own rule, so it is a second relation over shared facts and not
+a view over a view. Building delivery on separate-fetch's rows would mean re-interpreting a verdict
+whose `SERVICE` and `ROOT_OPERATION` arms delivery has to invert, which is worse provenance than
+joining the markers directly.
+
+Three instructions follow for whoever writes the DDL.
+
+* **The literals stay identical on purpose.** `SPLIT_QUERY` and `TENANT_FAN_OUT` name the same two
+  captured facts in both vocabularies, and the ground settled under "Open for the implementer" is
+  that the vocabulary names facts rather than decisions. One fact spelled two ways across one
+  namespace would be the worse outcome; a reader joining the two relations on a coordinate should
+  meet the same word. The two closed sets stay separate (delivery's carries `POLYMORPHIC_FAN_IN` and
+  `RECORD_HANDED_PARENT`, which are not round-trip rules), and so do their rendering sides: a
+  delivery consumer that needs constants gets its own, and `SeparateFetchRule` is not widened.
+* **The root arm is a transcription, not a new derivation.** Separate-fetch's `ROOT_OPERATION` arm is
+  gate-for-gate what the `ROOT_COORDINATE` exemption needs, down to keying on `graphql_root_operation`
+  rather than the three conventional names, and its comment records the renamed-root difference in
+  the same words the demand sibling uses. Copy the arm and inherit the residue; do not re-derive it.
+* **Say the relationship in both view comments.** A reader meeting two coordinate-grained rule views
+  that share two literals and disagree on two populations needs to be told, at each of them, that the
+  disagreement is the design. This item owns the comment on its own three views; amending
+  `intent_field_separate_fetch`'s to point back is a one-line edit inside this item's scope.
+
+One consequence outside this item, worth recording where it was found rather than acted on here.
+`intent_field_separate_fetch`'s comment defers its class-backed-parent arm on the ground that it
+"needs the backing-class resolution the census does not yet carry". That resolution landed on
+2026-08-16 as `intent_type_backing_class`, which the next section puts to work, so the stated blocker
+is closed. The sibling arm belongs to whoever owns that view, not to this item.
 
 ### Delivery's negative side is not pure complement, and the corpus already proves it
 
@@ -200,14 +261,16 @@ coordinate at all. The exemption view cannot ship vacuous.
 **Every input is already captured.** This is the finding that makes the item view-only rather than
 a capture project, and it survives a relation-by-relation check, but only a check at that grain: the
 inventory is wider than a first read suggests, and picking the relation whose *name* matches an arm's
-vocabulary is how two successive drafts got an entry wrong. The arms need
+vocabulary is how three successive drafts got an entry wrong. The arms need
 `graphitron_split_query`, `graphitron_tenant_fan_out`,
 `graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (through
-`intent_bound_table`, see below), `graphitron_service` / `graphitron_external_field` /
-`graphitron_mutation`, `graphql_field.is_list`, `graphql_type.kind`,
+`intent_bound_table`, see below), `graphitron_service`, `intent_type_backing` (the record-handed
+arm, and the entry the third draft got wrong; the second predicate below is where that is
+established), `graphql_field.is_list`, `graphql_type.kind`,
 `graphql_implements`, `graphql_union_member`, `graphql_root_operation` (the root exemption arm,
-keyed the way the demand sibling's `ROOT_OPERATION` arm already keys it, by the binding rather than
-by the conventional names), and the structural connection recognition over `graphql_field` /
+keyed the way `intent_field_separate_fetch`'s `ROOT_OPERATION` arm already keys it, by the binding
+rather than by the conventional names, which is that arm's keying inherited from the demand
+sibling), and the structural connection recognition over `graphql_field` /
 `graphql_type` (the third predicate below, which is also where `graphitron_connection` turns out to
 be the wrong relation for the arm whose name it matches). All exist, all are keyed
 at the coordinate or type grain the arms would join on, and the marker relations already carry the
@@ -217,7 +280,8 @@ where that is established.
 Three predicates want attention before an arm is written, for three different reasons. One needs
 real care. A second looks like it does and does not, and the reason it does not is worth stating,
 because the obvious reading sends the arm at the catalog for nothing. The third is the one the
-inventory got wrong twice, in the same way the `RecordHandedParent` trigger nearly went wrong.
+inventory got wrong twice, by the same name-matching reflex that put the `RecordHandedParent`
+trigger on the wrong relation in the predicate before it.
 
 **The fan-in arm's gate is non-discrimination, not participant boundness.** The tempting reading is
 that the arm has to tell `ParticipantRef.TableBound` from `JoinedTableBound`, because
@@ -247,18 +311,44 @@ catalog family is not needed by any arm, which is why it is absent from that inv
 predicate reaches a foreign key or a primary key. If an implementer finds one that does, that is a
 finding worth recording rather than a gap to fill quietly.
 
-**Record-handedness is not `@record`.** `graphitron_record` captures the deprecated, ignored
-`@record` directive and is the wrong base relation for the `RecordHandedParent` trigger.
-`ChildField.sourceShape` states what the trigger actually reads: a projection of the *parent type's
-backing*, `Record` exactly when the parent hands a producer-handed domain record rather than a
-catalog row. The captured population for that is the producer payload set,
-`graphitron_service` / `graphitron_external_field` rows whose class decoded plus every
-`graphitron_mutation` payload, which `intent_field_demand_rule`'s `PRODUCER_PAYLOAD` arm already
-assembles in exactly that shape and is the arm to copy. The pivot-slot record parent is the one
-member of the population that arm does not cover, since its source is the pivot subselect's built
-record rather than a producer's. `SourceShapeProjectionTest` already states the parent-backing
-predicate independently of the leaf identities, so it is the cross-check to read before writing the
-arm, and the residue candidate if the store side cannot reach the pivot slot.
+**Record-handedness is neither `@record` nor the producer payload set.** Two relations match this
+arm's vocabulary and neither is the one to join. `graphitron_record` captures the deprecated,
+ignored `@record` directive, which is the obvious miss. The second is the one a draft of this item
+actually made: `intent_field_demand_rule`'s `PRODUCER_PAYLOAD` arm assembles the `@service` /
+`@externalField` payloads whose class decoded plus every `@mutation` payload, it reads like the
+record-handed population, and it is a *seed set* rather than the population.
+
+`ChildField.sourceShape` states what the trigger reads: a projection of the *parent type's backing*,
+`Record` exactly when the parent hands a domain record rather than a catalog row. The store states
+that directly, as of 2026-08-16. `intent_type_backing` answers what class stands for a type, over
+two arms: `BOUND_TABLE`, the `@table` binding read through the table's generated record, and
+`BACKING_CLOSURE`, which is `intent_type_backing_class`, the reachability of
+`intent_field_accessor_hop`'s edges from the producer-grounded seeds. Those seeds are
+`intent_type_backing_seed`, which stands on the same ground `PRODUCER_PAYLOAD` does, a producer's
+resolved method, and reaches it more exactly (through `intent_field_producer_method` and the
+declared return element, rather than through the marker rows and the field's named type). So the
+payload arm is where a closure the store now carries whole begins, and a parent reached only by an
+accessor hop (a nested class-backed carrier, the record-composite carrier's data-field element)
+hands records while no producer relation names it.
+
+That gap is witnessed rather than hypothetical: `DemandResidue.reflectionBound` exists for exactly
+that population, and `DemandShadowTest` pins its registered-but-undemanded direction inside it over
+today's corpus. An arm copying `PRODUCER_PAYLOAD` would therefore have shipped with a residue the
+size of the accessor closure, described in this item as a single pivot-slot member.
+
+**The arm's gate is a `BACKING_CLOSURE` row on the parent type**, and one precedence fact goes with
+it, because `intent_type_backing` coalesces its two arms and deliberately prefers neither: a type
+both arms answer is two rows, and `intent_type_backing_conflict` is where a reader learns so. The
+walk resolves that pair by reading the table and never consulting the class, which that view's
+comment calls a defensible reading and explicitly a choice rather than agreement. This arm makes the
+same choice out loud: a parent carrying a `BOUND_TABLE` row is table-handed whatever its closure
+says, which is what `sourceShape`'s table arms do. State it in the view comment; do not leave it to
+the join.
+
+One residue survives and it is the one already named: the pivot-slot record parent, whose source is
+the pivot subselect's graphitron-built jOOQ record, so no class backs it on either arm.
+`SourceShapeProjectionTest` states the parent-backing predicate independently of the leaf
+identities, so it is the cross-check to read before writing the arm.
 
 **A connection target is not `@asConnection`, and the inventory entry was inverted.**
 `graphitron_connection` captures the `@asConnection` macro's authored spec, one row per carrier
@@ -349,8 +439,8 @@ would have answered it silently.
 | `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`
 
 | `RECORD_HANDED_PARENT`
-| the parent is a producer payload and the target binds one table
-| the `PRODUCER_PAYLOAD` arm's own shape
+| the parent's backing is a class rather than a table, and the target binds one table
+| `intent_type_backing` at `declared_via = 'BACKING_CLOSURE'`, with a `BOUND_TABLE` row on the parent losing to the table reading
 
 | `SPLIT_QUERY`
 | `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
@@ -433,7 +523,14 @@ set acquiring an enforcer that is not another switch.**
   checklist: four rule arms, one literal each, three exemption arms. The closed vocabularies are
   declared in the column comments rather than in constraints a view cannot carry, per the integrity
   note above, with full comment coverage per `FactSchemaGateTest.commentCoverageIsTotal`; the
-  vocabulary's *enforcement* is the shadow test's containment assertion, two bullets down.
+  vocabulary's *enforcement* is the shadow test's containment and floor assertions, in the
+  `DeliveryShadowTest` bullet below.
+* Amend `intent_field_separate_fetch`'s view comment to name this stratum as its sibling, stating the
+  two shared literals and the two populations the pair deliberately answers in opposite directions.
+  The reciprocal sentence belongs in `intent_field_delivery_rule`'s and
+  `intent_field_delivery_exemption`'s comments. Per the sibling section above, this is the whole of
+  that view's involvement: its rows are not read, its arms are not moved, and its
+  class-backed-parent gap stays with whoever owns it.
 * The reduction's precedence runs exemption before rule, which is the opposite of the demand
   sibling's and has to be stated as such in the view comment rather than inherited by analogy.
   `intent_resolved_field_demand` lets demand beat exemption because a `@table` type shaped like a
@@ -460,7 +557,11 @@ set acquiring an enforcer that is not another switch.**
   implementation: the nesting-field domain boundary above, and any arm whose predicate depends on
   classifier-internal route resolution (`resolveChildPolymorphicJoinPaths`) rather than on a
   captured fact. The one predicate-driven residue candidate is the pivot-slot record parent, the
-  single member of the record-handed population no producer relation witnesses. The renamed root is
+  single member of the record-handed population neither backing arm witnesses, its source being a
+  graphitron-built record that no class stands for. Note what is *not* on this list any more: the
+  accessor-reached class-backed parent, which was a residue for as long as this item planned to copy
+  the producer-payload arm and stopped being one when the arm moved to `intent_type_backing`. The
+  renamed root is
   the third, per the root-exemption bullet above: the exemption arm reads the binding and the walk
   reads the literal names, so a graph spelling `schema { query: MyQuery }` exempts store-side at
   coordinates the walk never routes through `classifyRootField` at all. Carry it as a residue whose
@@ -480,7 +581,12 @@ set acquiring an enforcer that is not another switch.**
   distinction it never made; the precedence between the two authored literals is pinned by the
   overlap fixture below, not by the shadow. Assert both vocabularies are subsets of the declared
   sets, since that assertion is what actually enforces the closed sets the comments declare and the
-  DDL cannot. And pin the exemption overlap directly, as
+  DDL cannot. Assert each vocabulary is *reached* as well as contained, one non-empty check per rule
+  and per reason literal: containment stops a stray word, and only the floor stops an arm that
+  matches nothing from shipping as a vocabulary entry no coordinate can produce. That is the same
+  vacuity this item's corpus bullet is about, and the per-trigger floors on `DeliveryFactPinTest` are
+  the local precedent for spelling it as an assertion rather than trusting the corpus. And pin the
+  exemption overlap directly, as
   `overlappingExemptionReadingsSurviveInTheRulesAndResolveByPrecedence` pins the sibling's: both rows
   survive in the rule view and the reduction picks the declared winner. `Query.aggregated` is the
   coordinate.
@@ -565,6 +671,9 @@ carries a reason literal and a count.
 * **Retiring `DeliveryFact.leafDerivedOf` or `DeliveryFactPinTest`.** Both are the comparison side
   while the window is open.
 * **Collapsing R557's sweep into the anti-join.** Cross-referenced below, decided in that item.
+* **`intent_field_separate_fetch`'s own arms.** The sibling section leaves that relation's rows
+  untouched and takes only the reciprocal comment sentence. Its deferred class-backed-parent arm is
+  now unblocked, which is a finding recorded below rather than work taken on here.
 
 ## Relationship to items already open
 
@@ -583,7 +692,7 @@ carries a reason literal and a count.
   surface, so pick them for a consumer rather than only for the shadow test. And the exit criterion
   above is checkable against a real population now, because R682's measured read surface says
   exactly which coordinates `deliveryOf()` is asked about.
-* `roadmap/batched-discriminated-interface-child.md` (R661, Spec) must not wait for this, and there
+* `roadmap/batched-discriminated-interface-child.md` (R661, Ready) must not wait for this, and there
   is deliberately no dependency in either direction: an N+1 defect should not block on a structural
   item, and this item models the delivery rules as they are rather than as R661 will leave them.
   Either landing order works. If R661 lands first, this item's view gains one more arm to express
@@ -596,6 +705,15 @@ carries a reason literal and a count.
   is strictly the better shape for that implementer, and its second half is one clause: narrow the
   `DISCRIMINATED_TARGET` exemption to single cardinality and the fan-in row already standing at the
   list-cardinality coordinate wins the reduction. Whoever goes second reads the other's landing note.
+* `roadmap/lsp-reads-the-fact-store.md` (R638, In Progress) owns `intent_field_separate_fetch`, the
+  sibling relation this item's own section places, and shipped `intent_type_backing_class`, the
+  backing closure the `RECORD_HANDED_PARENT` arm now reads. Two consequences, neither a dependency in
+  either direction. This item's only edit inside that view is the reciprocal comment sentence, which
+  cannot conflict with an arm change. And the blocker that view's comment records for its
+  class-backed-parent arm ("the backing-class resolution the census does not yet carry") was closed
+  by that item's own later step, so if the bullet tracking it is still open there, this is the
+  finding that closes it. Both observations are recorded here because this is where they were found;
+  acting on the second belongs to that item.
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
   `@splitQuery`: every marker consumed, inert-by-construction, or rejected. Its spec proposes a
   total switch over the classified leaf. If delivery becomes a view, that sweep is an anti-join
@@ -606,7 +724,7 @@ carries a reason literal and a count.
   inert position, and this item changes no production read and raises no diagnostic, so folding it
   in would drag a diagnostics surface into a shadow-only item. There is also a shape mismatch worth
   recording, and the negative-side section above sharpens rather than removes it. This item does
-  ship an exemption relation carrying reasons, but for exactly two populations that override a
+  ship an exemption relation carrying reasons, but for exactly three populations that override a
   matching batching rule, which is a different question from the one R557 asks: why a marker that
   matched nothing is nonetheless not an error. So R557 gains its *population* from the anti-join,
   gains the exemption view's shape as a model for stating its own inert reasons positively, and
@@ -652,11 +770,16 @@ is settled at spec rather than left to the implementer. The walk keeps its coars
 vocabulary while it stands as the comparison side; the shadow folds the two literals onto
 `Authored`, per the shadow bullet above.
 
+Both literals are already spelled that way in `intent_field_separate_fetch`, which is corroboration
+rather than collision: two relations reading the same two captured facts arrived at the same two
+words independently, which is what the facts-not-decisions ground predicts. The sibling section
+above settles that the spelling is deliberately shared and the closed sets stay separate.
+
 ## Coverage
 
 The shipped derived views each carry a hand-written anchor test the view cannot produce by
 construction (`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`, `DemandShadowTest`,
-`InputOccurrenceShadowTest` in `rewrite/derive`), plus `Arm.DERIVED` registration in
+`InputOccurrenceShadowTest`, `SeparateFetchTest` in `rewrite/derive`), plus `Arm.DERIVED` registration in
 `FactCaptureAgreementTest`, whose driver fails both on an unregistered relation and on a
 registration the DDL no longer declares. This item follows that pattern rather than inventing one.
 The two additions specific to it are in the Implementation section above: the domain join that
