@@ -1,64 +1,71 @@
 package no.sikt.graphitron.mcp.rag;
 
+import no.sikt.graphitron.mcp.StoreFixture;
+import no.sikt.graphitron.model.boot.StoreReader;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier: the three silent-staleness / lifecycle invariants over the {@link FakeEmbedder}
- * seam fake and a {@link LuceneEmbeddingStore} {@code FSDirectory}, so they pin deterministically
- * without ONNX. Covers hash-covers-the-corpus re-embed gating, the warming-on-change re-entry,
- * embedder-identity rejection, the persistence round-trip + sibling reaping, and the cross-warm
- * failure propagation.
+ * Unit-tier: the silent-staleness and lifecycle invariants over the {@link FakeEmbedder} seam fake and
+ * a {@link LuceneEmbeddingStore} {@code FSDirectory}, so they pin deterministically without ONNX.
+ * Covers hash-covers-the-corpus re-embed gating, the warming-on-change re-entry, embedder-identity
+ * rejection, the persistence round-trip plus sibling reaping, and the cross-warm failure propagation.
  *
- * <p>The corpus arrives as rows a supplier hands over, which is what the census read produces, so
- * these cases drive content changes without a store. What they own is the invalidation, and the hash
- * is now the whole of it: the reference gate that used to sit in front of it had a projection
- * reference to compare and a read has none.
+ * <p>The corpus is a real capture rather than rows a test wrote, which is what lets the gate cases say
+ * what they mean: an unchanged recapture is a recapture, and a changed catalog is a graph whose census
+ * genuinely changed. {@link StoreFixture} pays a schema parse and a catalog walk for that, not a
+ * generator run.
+ *
+ * <p>Three distinct censuses are available and the reaping case needs all three: the single-schema
+ * generated model, the two-schema one, and no catalog at all, which is the pre-codegen state and hashes
+ * as the empty corpus it is.
  */
 class CatalogSearchIndexTest {
 
     // ---- the hash gate: a changed catalog re-embeds, an unchanged recapture does not ----
 
     @Test
-    void changedContentReEmbedsButAnUnchangedRecaptureDoesNot() throws Exception {
-        var corpus = new AtomicReference<>(corpusOf(table("film", "title")));
+    void aChangedCatalogReEmbedsButAnUnchangedRecaptureDoesNot(@TempDir Path tmp) throws Exception {
         var embedder = new SpyEmbedder(4);
-        try (var index = newIndex(corpus::get, embedder, tempCache())) {
+        try (var fixture = StoreFixture.ofCatalog(tmp);
+             var index = newIndex(fixture.reader(), embedder, tempCache())) {
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            // The strings handed to embedDocuments are exactly the composer's output: the hashed
-            // thing and the embedded thing are the same artifact, so they cannot drift.
-            assertThat(embedder.lastTexts).isEqualTo(composed(corpus.get()));
+            // The strings handed to embedDocuments are exactly the composer's output over the census:
+            // the hashed thing and the embedded thing are the same artifact, so they cannot drift.
+            assertThat(embedder.lastTexts).isEqualTo(composed(fixture.reader()));
             assertThat(embedder.embedCalls).hasValue(1);
 
-            // A recapture that changed nothing: fresh rows, identical content. Every read composes,
-            // and the hash is what decides, so nothing re-embeds however many times it is read.
-            corpus.set(corpusOf(table("film", "title")));
+            // A recapture of the same generated model: every row rewritten, nothing changed. The read
+            // composes afresh each time and the hash is what decides, so no observation re-embeds.
+            fixture.recaptureCatalog(StoreFixture.JOOQ_PACKAGE);
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
             assertThat(embedder.embedCalls).as("an unchanged census re-embeds nothing").hasValue(1);
 
-            // A changed column changes a descriptor, so the hash, so a re-embed kicks.
-            corpus.set(corpusOf(table("film", "release_year")));
+            // A recapture against a different generated model: the graph's source membership is
+            // rewritten, so the census its scope sees is another catalog and every descriptor changes.
+            fixture.recaptureCatalog(StoreFixture.MULTISCHEMA_JOOQ_PACKAGE);
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            assertThat(embedder.embedCalls).as("a changed descriptor re-embeds").hasValue(2);
+            assertThat(embedder.embedCalls).as("a changed census re-embeds").hasValue(2);
+            assertThat(embedder.lastTexts).isEqualTo(composed(fixture.reader()));
         }
     }
 
     // ---- warming-on-change re-entry: a build in flight serves the degradation message ----
 
     @Test
-    void searchDuringARebuildReportsWarmingThenServesTheReadyIndex() throws Exception {
-        var corpus = corpusOf(table("film", "title"));
+    void searchDuringARebuildReportsWarmingThenServesTheReadyIndex(@TempDir Path tmp) throws Exception {
         var embedder = new BlockingEmbedder(4);
-        try (var index = newIndex(() -> corpus, embedder, tempCache())) {
+        try (var fixture = StoreFixture.ofCatalog(tmp);
+             var index = newIndex(fixture.reader(), embedder, tempCache())) {
             index.start(); // kicks the warm; embedDocuments blocks on the gate
 
             // The first search lands while the index warm is still Warming: degradation, not hits.
@@ -69,69 +76,86 @@ class CatalogSearchIndexTest {
             embedder.release();
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
 
+            // A Ready index answers, and what it answers with are census ids. Which of them ranks
+            // highest is the embedder's business and not this case's: the fake vectors carry no
+            // semantics, so the ranking here is BM25's alone and CatalogSearchOnnxTest owns retrieval.
             var hits = index.search("film", 10);
             assertThat(hits).isInstanceOf(CatalogSearchIndex.SearchOutcome.Hits.class);
             assertThat(((CatalogSearchIndex.SearchOutcome.Hits) hits).hits())
-                .extracting(EmbeddingStore.Hit::id).contains("public.film");
+                .isNotEmpty()
+                .extracting(EmbeddingStore.Hit::id)
+                .allMatch(corpusIds(fixture.reader())::contains);
         }
     }
 
     // ---- embedder-identity rejection: an index built under one identity is rebuilt under another ----
 
     @Test
-    void persistedIndexIsRejectedUnderADifferentEmbedderIdentityAndAcceptedUnderTheSame() throws Exception {
+    void persistedIndexIsRejectedUnderADifferentEmbedderIdentityAndAcceptedUnderTheSame(
+        @TempDir Path tmp
+    ) throws Exception {
         Path cache = tempCache();
-        var corpus = corpusOf(table("film", "title"));
+        try (var fixture = StoreFixture.ofCatalog(tmp)) {
+            StoreReader reader = fixture.reader();
 
-        // Build and persist under the FakeEmbedder identity.
-        try (var first = newIndex(() -> corpus, new FakeEmbedder(4), cache)) {
-            assertThat(first.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-        }
+            // Build and persist under the FakeEmbedder identity.
+            try (var first = newIndex(reader, new FakeEmbedder(4), cache)) {
+                assertThat(first.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+            }
 
-        // Re-open the same cache under a *different* embedder class: identity mismatch -> rebuild.
-        var rejecting = new SpyEmbedder(4);
-        try (var second = newIndex(() -> corpus, rejecting, cache)) {
-            assertThat(second.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            assertThat(rejecting.embedCalls).as("a mismatched identity forces a rebuild").hasValue(1);
-        }
+            // Re-open the same cache under a *different* embedder class: identity mismatch -> rebuild.
+            var rejecting = new SpyEmbedder(4);
+            try (var second = newIndex(reader, rejecting, cache)) {
+                assertThat(second.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+                assertThat(rejecting.embedCalls).as("a mismatched identity forces a rebuild").hasValue(1);
+            }
 
-        // Re-open again under the same SpyEmbedder identity: the manifest matches -> load, no re-embed.
-        var accepting = new SpyEmbedder(4);
-        try (var third = newIndex(() -> corpus, accepting, cache)) {
-            assertThat(third.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            assertThat(accepting.embedCalls).as("a matching identity loads without re-embedding").hasValue(0);
+            // Re-open again under the same SpyEmbedder identity: the manifest matches -> load, no re-embed.
+            var accepting = new SpyEmbedder(4);
+            try (var third = newIndex(reader, accepting, cache)) {
+                assertThat(third.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+                assertThat(accepting.embedCalls).as("a matching identity loads without re-embedding").hasValue(0);
+            }
         }
     }
 
     // ---- persistence round-trip + sibling reaping ----
 
     @Test
-    void aPersistedIndexLoadsWithoutReEmbeddingAndReapingKeepsCurrentPlusOnePrior() throws Exception {
+    void aPersistedIndexLoadsWithoutReEmbeddingAndReapingKeepsCurrentPlusOnePrior(
+        @TempDir Path tmp
+    ) throws Exception {
         Path cache = tempCache();
-        var corpus = corpusOf(table("film", "title"));
+        try (var fixture = StoreFixture.ofCatalog(tmp)) {
+            StoreReader reader = fixture.reader();
 
-        try (var build = newIndex(() -> corpus, new SpyEmbedder(4), cache)) {
-            assertThat(build.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-        }
+            try (var build = newIndex(reader, new SpyEmbedder(4), cache)) {
+                assertThat(build.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+            }
 
-        // A fresh index over the same cache loads the prebuilt index: no embedDocuments call.
-        var reloader = new SpyEmbedder(4);
-        try (var load = newIndex(() -> corpus, reloader, cache)) {
-            assertThat(load.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            assertThat(reloader.embedCalls).as("a prebuilt index is loaded, not re-embedded").hasValue(0);
-            var hits = load.search("film", 10);
-            assertThat(((CatalogSearchIndex.SearchOutcome.Hits) hits).hits())
-                .extracting(EmbeddingStore.Hit::id).contains("public.film");
-        }
+            // A fresh index over the same cache and the same census loads the prebuilt index: no
+            // embedDocuments call, and the persisted index still answers.
+            var reloader = new SpyEmbedder(4);
+            try (var load = newIndex(reader, reloader, cache)) {
+                assertThat(load.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+                assertThat(reloader.embedCalls).as("a prebuilt index is loaded, not re-embedded").hasValue(0);
+                var hits = load.search("film", 10);
+                assertThat(((CatalogSearchIndex.SearchOutcome.Hits) hits).hits())
+                    .as("the loaded index answers off its persisted segments")
+                    .isNotEmpty()
+                    .extracting(EmbeddingStore.Hit::id)
+                    .allMatch(corpusIds(reader)::contains);
+            }
 
-        // Three distinct corpora in one index: reaping keeps the current hash dir plus one prior.
-        var ref = new AtomicReference<>(corpusOf(table("film", "title")));
-        try (var index = newIndex(ref::get, new SpyEmbedder(4), cache)) {
-            assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            ref.set(corpusOf(table("actor", "name")));
-            assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
-            ref.set(corpusOf(table("language", "code")));
-            assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+            // Three distinct censuses in one index lifetime: two generated models and the pre-codegen
+            // state, whose empty corpus is an answer and hashes as one. Reaping keeps current plus one.
+            try (var index = newIndex(reader, new SpyEmbedder(4), cache)) {
+                assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+                fixture.recaptureCatalog(StoreFixture.MULTISCHEMA_JOOQ_PACKAGE);
+                assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+                fixture.recaptureCatalog(null);
+                assertThat(index.awaitWarm()).isInstanceOf(WarmState.Ready.class);
+            }
         }
         try (var dirs = Files.list(cache.resolve("catalog"))) {
             assertThat(dirs.filter(Files::isDirectory).count())
@@ -142,13 +166,14 @@ class CatalogSearchIndexTest {
     // ---- cross-warm failure propagation ----
 
     @Test
-    void aFailedEmbedderWarmYieldsAFailedIndexAndAFailedSearch() throws Exception {
-        var corpus = corpusOf(table("film", "title"));
+    void aFailedEmbedderWarmYieldsAFailedIndexAndAFailedSearch(@TempDir Path tmp) throws Exception {
         var embedderWarm = new AsyncWarm<Embedder>("embedder", () -> {
             throw new IllegalStateException("model load boom");
         });
         embedderWarm.start();
-        try (var index = new CatalogSearchIndex(() -> corpus, embedderWarm, new RagConfig(tempCache()))) {
+        try (var fixture = StoreFixture.ofCatalog(tmp);
+             var index = new CatalogSearchIndex(
+                 fixture.reader(), fixture.graphName(), embedderWarm, new RagConfig(tempCache()))) {
             assertThat(index.awaitWarm()).isInstanceOf(WarmState.Failed.class);
             var outcome = index.search("film", 10);
             assertThat(outcome).isInstanceOf(CatalogSearchIndex.SearchOutcome.Degraded.class);
@@ -158,30 +183,28 @@ class CatalogSearchIndexTest {
 
     // ---- helpers ----
 
-    private static CatalogSearchIndex newIndex(
-        java.util.function.Supplier<List<CorpusTable>> corpus, Embedder embedder, Path cache
-    ) {
+    private static CatalogSearchIndex newIndex(StoreReader reader, Embedder embedder, Path cache) {
         // The shared embedder warm is started by the caller (the server / DevMojo in production); the
         // index only awaits it, so the test must start it or the index warm blocks forever.
         var embedderWarm = new AsyncWarm<Embedder>("embedder", () -> embedder);
         embedderWarm.start();
-        return new CatalogSearchIndex(corpus, embedderWarm, new RagConfig(cache));
+        return new CatalogSearchIndex(reader, StoreFixture.GRAPH, embedderWarm, new RagConfig(cache));
     }
 
     private static Path tempCache() throws Exception {
         return Files.createTempDirectory("catalog-search-index-test");
     }
 
-    private static List<String> composed(List<CorpusTable> corpus) {
-        return corpus.stream().map(CatalogDescriptors::descriptor).toList();
+    /** The ids the census holds, for the cases whose claim is that an answer comes from it. */
+    private static List<String> corpusIds(StoreReader reader) {
+        return CatalogCorpus.read(reader, StoreFixture.GRAPH).stream().map(CorpusTable::id).toList();
     }
 
-    private static CorpusTable table(String name, String column) {
-        return new CorpusTable("public", name, null, List.of(new CorpusTable.Column(column, null)));
-    }
-
-    private static List<CorpusTable> corpusOf(CorpusTable table) {
-        return List.of(table);
+    /** The corpus as the index composes it, read back through the same query the index reads. */
+    private static List<String> composed(StoreReader reader) {
+        return CatalogCorpus.read(reader, StoreFixture.GRAPH).stream()
+            .map(CatalogDescriptors::descriptor)
+            .toList();
     }
 
     /** A counting {@link Embedder}: zero vectors (BM25 carries ranking), but records the embed calls and texts. */

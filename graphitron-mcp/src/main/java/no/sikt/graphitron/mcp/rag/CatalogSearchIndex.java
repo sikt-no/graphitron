@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp.rag;
 
+import no.sikt.graphitron.model.boot.StoreReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,19 +13,24 @@ import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * The warm-managed semantic index behind {@code catalog.search}. Owns the content-hash-keyed
  * Lucene index over the {@link CorpusTable} descriptors, persisted under
  * {@link RagConfig#cacheDir()} so a large catalog is not re-embedded on every {@code dev} restart.
  *
- * <p>Refresh is lazy self-observation: the index is a pure derived function of the corpus, and
- * every {@link #search} re-reads it and gates on its content hash (see {@link #observe()}), so
- * only a genuine content change kicks a re-embed. The re-embed runs on an {@link AsyncWarm}
- * background daemon, off the calling thread; while it runs the warm is {@link WarmState.Warming}
- * and searches report the warming degradation. The prior store stays open until {@link #close()} so
- * a swap never leaves a gap.
+ * <p>Refresh is lazy self-observation: the index is a pure derived function of the census, and
+ * every {@link #search} re-reads it through {@link CatalogCorpus} and gates on the content hash
+ * (see {@link #observe()}), so only a genuine content change kicks a re-embed. The re-embed runs on an
+ * {@link AsyncWarm} background daemon, off the calling thread; while it runs the warm is
+ * {@link WarmState.Warming} and searches report the warming degradation. The prior store stays open
+ * until {@link #close()} so a swap never leaves a gap.
+ *
+ * <p>Reading the store is this class's own rather than something a caller hands in. What the index ranks
+ * is what a capture wrote, and a corpus arriving from elsewhere would make that a property of whoever
+ * constructed the index instead of one anybody can read off it. The connection is still the host's: this
+ * class reads through a {@link StoreReader} minted and closed by the process that owns the session, and
+ * opens nothing.
  *
  * <p>One gate rather than two. The corpus was a reference to a projection the build swapped, so a
  * cheap reference-identity check could skip composing at all; it is a pair of catalog queries now,
@@ -52,7 +58,8 @@ public final class CatalogSearchIndex implements AutoCloseable {
     /** Sibling-dir reaping keeps the current hash plus this many recent priors. */
     private static final int PRIORS_TO_KEEP = 1;
 
-    private final Supplier<List<CorpusTable>> corpus;
+    private final StoreReader reader;
+    private final String graphName;
     private final AsyncWarm<Embedder> embedderWarm;
     private final RagConfig config;
 
@@ -66,19 +73,20 @@ public final class CatalogSearchIndex implements AutoCloseable {
     private final List<EmbeddingStore> tracked = new ArrayList<>();
 
     /**
-     * @param corpus       the catalog census read afresh on every observation, which is what makes a
-     *                     capture since the last search visible without any refresh path. Called on
-     *                     the calling thread, never on the warm daemon: the daemon embeds strings it
-     *                     was handed, and reading the store on it would put a query behind a model
-     *                     load
+     * @param reader       the store the census is read from, minted and closed by the host that owns
+     *                     the session, never opened here. Read on the observing thread rather than on
+     *                     the warm daemon: the daemon embeds strings it was handed, and reading the
+     *                     store on it would queue a query behind a model load
+     * @param graphName    the graph whose census this index ranks
      * @param embedderWarm the shared embedder warm; started by the caller, this index
      *                     only {@link AsyncWarm#await() awaits} it before embedding
      * @param config       where to persist the content-hash-keyed index
      */
     public CatalogSearchIndex(
-        Supplier<List<CorpusTable>> corpus, AsyncWarm<Embedder> embedderWarm, RagConfig config
+        StoreReader reader, String graphName, AsyncWarm<Embedder> embedderWarm, RagConfig config
     ) {
-        this.corpus = corpus;
+        this.reader = reader;
+        this.graphName = graphName;
         this.embedderWarm = embedderWarm;
         this.config = config;
     }
@@ -139,7 +147,7 @@ public final class CatalogSearchIndex implements AutoCloseable {
      */
     private AsyncWarm<EmbeddingStore> observe() {
         synchronized (lock) {
-            var entries = composeCorpus(corpus.get());
+            var entries = composeCorpus(CatalogCorpus.read(reader, graphName));
             var descriptors = entries.stream().map(Entry::descriptor).toList();
             String hash = CatalogDescriptors.corpusHash(descriptors);
             if (liveWarm != null && hash.equals(liveHash)) {

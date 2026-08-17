@@ -175,15 +175,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
         ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader
     ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
-        // The corpus is a pair of census queries the index runs per observation, not a projection
-        // reference it holds: the store is where a capture lands, so reading it is what makes the
-        // index current. The reader rather than the handle for the reason catalog.describe takes one,
-        // and the graph name off the handle, so the index exists only when both arrived.
+        // The index reads the census itself, through the reader the host minted: the store is where a
+        // capture lands, so reading it per observation is what makes the ranking current. The reader
+        // rather than the handle because the corpus is two queries, and the graph name off the handle,
+        // so the index exists only once both have arrived.
         this.catalogSearchIndex = (embedderWarm != null && ragConfig != null
             && storeHandle != null && storeReader != null)
-            ? new CatalogSearchIndex(
-                () -> CatalogQueries.searchCorpus(storeReader, storeHandle.graphName()),
-                embedderWarm, ragConfig)
+            ? new CatalogSearchIndex(storeReader, storeHandle.graphName(), embedderWarm, ragConfig)
             : null;
 
         // The ambient instructions string is composed rather than one fixed resource, mirroring the

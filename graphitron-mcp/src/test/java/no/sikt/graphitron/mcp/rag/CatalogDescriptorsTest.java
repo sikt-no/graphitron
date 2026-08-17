@@ -7,15 +7,15 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier: the descriptor composer and the name normalizer are pure and ONNX-free, so the
- * retrieval-lift invariants pin here without loading a model. Covers snake_case /
- * camelCase / acronym / digit / single-word splitting, the comment-present vs name-only degradation,
- * and that every descriptor carries both the raw SQL token and its normalized words.
+ * Unit-tier: the two functions whose input is a string rather than a row. {@code splitWords} takes a
+ * SQL identifier and {@code corpusHash} takes descriptors already composed, so both pin here with no
+ * store and no model: snake_case / camelCase / acronym / digit / single-word splitting, and that the
+ * hash covers the exact strings handed to the embedder, in order, unsegmentable.
  *
- * <p>Store-free deliberately, and the property split is what licenses it: formatting and identifier
- * normalization are the composer's own business and need no rows. That the rows a real capture yields
- * compose the string the index embeds is a different claim, and
- * {@code CatalogSearchCorpusTest} owns it over a captured store.
+ * <p>What the composer does with rows belongs where the rows come from. {@link CatalogCorpusTest} owns
+ * the descriptor's own arms (both comment grains, the names-only degradation, the raw token beside its
+ * normalized words) over a captured census, because a hand-built row can spell a comment or an ordinal
+ * the capture never spells.
  */
 class CatalogDescriptorsTest {
 
@@ -29,40 +29,6 @@ class CatalogDescriptorsTest {
         assertThat(CatalogDescriptors.splitWords("film")).isEqualTo("film");
         assertThat(CatalogDescriptors.splitWords("FILM")).isEqualTo("film");
         assertThat(CatalogDescriptors.splitWords("")).isEmpty();
-    }
-
-    @Test
-    void descriptorCarriesRawAndNormalizedTokensAndTheTableComment() {
-        var table = new CorpusTable(
-            "public", "film_actor", "join table linking films to actors",
-            List.of(
-                new CorpusTable.Column("actor_id", "the actor"),
-                new CorpusTable.Column("last_update", null)));
-
-        String descriptor = CatalogDescriptors.descriptor(table);
-
-        // Raw SQL token (so BM25 still matches film_actor exactly) and the normalized words side by side.
-        assertThat(descriptor).contains("Table film_actor (film actor)");
-        // Table comment surfaces on its own line.
-        assertThat(descriptor).contains("Comment: join table linking films to actors");
-        // Each column carries raw + normalized; a column comment appears, an absent one does not.
-        assertThat(descriptor).contains("actor_id (actor id): the actor");
-        assertThat(descriptor).contains("last_update (last update)");
-        assertThat(descriptor).doesNotContain("last_update (last update):");
-    }
-
-    @Test
-    void descriptorDegradesToNamesOnlyWhenNoCommentsWereCaptured() {
-        var table = new CorpusTable(
-            "public", "address", null,
-            List.of(new CorpusTable.Column("address_id", null)));
-
-        String descriptor = CatalogDescriptors.descriptor(table);
-
-        // No comment line at all; still useful via the normalized words.
-        assertThat(descriptor).doesNotContain("Comment:");
-        assertThat(descriptor).contains("Table address (address)");
-        assertThat(descriptor).contains("address_id (address id)");
     }
 
     @Test

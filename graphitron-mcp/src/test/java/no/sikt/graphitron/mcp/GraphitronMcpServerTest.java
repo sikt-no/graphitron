@@ -206,19 +206,9 @@ class GraphitronMcpServerTest {
 
     // ---- catalog.tables / catalog.describe ----
 
-    /**
-     * The schema the catalog cases capture under. Minimal on purpose: the catalog census is a walk of
-     * the generated jOOQ model rather than of the SDL, so what the schema binds does not decide which
-     * tables are captured, and a case asserting on the census wants the census rather than a schema.
-     */
-    private static final String CATALOG_SDL = """
-        type Film @table(name: "film") {
-          film_id: Int
-        }
-        type Query {
-          film: Film
-        }
-        """;
+    // These read the census alone, so they capture it directly rather than running a build for it: the
+    // catalog walk is a function of the generated jOOQ model, and no SDL the cases could declare would
+    // change which tables it writes.
 
     /**
      * The wire fields are the shipped ones; what changed is where they come from and the order they
@@ -234,9 +224,9 @@ class GraphitronMcpServerTest {
      */
     @Test
     void catalogTablesListsTheGraphsCensusOrderedBySchemaThenName(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-tables", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             var structured = structured(
-                GraphitronMcpServer.catalogTablesResult(build.handle(), Map.of()));
+                GraphitronMcpServer.catalogTablesResult(census.handle(), Map.of()));
 
             @SuppressWarnings("unchecked")
             var tables = (List<Map<String, Object>>) structured.get("tables");
@@ -262,24 +252,24 @@ class GraphitronMcpServerTest {
 
     @Test
     void catalogTablesFiltersBySchemaAndNameSubstring(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-filters", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             // The schema filter is exact and case-insensitive; every test table lives in public.
             var bySchema = structured(GraphitronMcpServer.catalogTablesResult(
-                build.handle(), Map.of("schema", "PUBLIC")));
+                census.handle(), Map.of("schema", "PUBLIC")));
             @SuppressWarnings("unchecked")
             var inPublic = (List<Map<String, Object>>) bySchema.get("tables");
             assertThat(inPublic).isNotEmpty();
             assertThat(inPublic).extracting(t -> t.get("schema")).containsOnly("public");
 
             var noSuchSchema = structured(GraphitronMcpServer.catalogTablesResult(
-                build.handle(), Map.of("schema", "other")));
+                census.handle(), Map.of("schema", "other")));
             @SuppressWarnings("unchecked")
             var elsewhere = (List<Map<String, Object>>) noSuchSchema.get("tables");
             assertThat(elsewhere).isEmpty();
 
             // The name filter is a case-insensitive substring, so it reaches every table carrying it.
             var byName = structured(GraphitronMcpServer.catalogTablesResult(
-                build.handle(), Map.of("name", "ACT")));
+                census.handle(), Map.of("name", "ACT")));
             @SuppressWarnings("unchecked")
             var actTables = (List<Map<String, Object>>) byName.get("tables");
             assertThat(actTables.stream().map(t -> (String) t.get("name")))
@@ -299,8 +289,8 @@ class GraphitronMcpServerTest {
      */
     @Test
     void catalogTablesPagesByKeysetAndVisitsEveryTableOnce(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-paging", CATALOG_SDL)) {
-            var unpaged = structured(GraphitronMcpServer.catalogTablesResult(build.handle(), Map.of()));
+        try (var census = StoreFixture.ofCatalog(tmp)) {
+            var unpaged = structured(GraphitronMcpServer.catalogTablesResult(census.handle(), Map.of()));
             @SuppressWarnings("unchecked")
             var all = (List<Map<String, Object>>) unpaged.get("tables");
             var expected = all.stream().map(t -> (String) t.get("name")).toList();
@@ -313,7 +303,7 @@ class GraphitronMcpServerTest {
                 var args = new LinkedHashMap<String, Object>();
                 args.put("limit", 2);
                 cursor.ifPresent(c -> args.put("cursor", c));
-                var result = GraphitronMcpServer.catalogTablesResult(build.handle(), args);
+                var result = GraphitronMcpServer.catalogTablesResult(census.handle(), args);
                 var page = structured(result);
 
                 assertThat(firstLine(result))
@@ -361,9 +351,9 @@ class GraphitronMcpServerTest {
     @Test
     @SuppressWarnings("unchecked")
     void catalogDescribeReadsOneTablesWholeDescriptionFromTheCensus(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-describe", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "public.film")));
+                census.handle(), census.reader(), Map.of("table", "public.film")));
 
             assertThat(structured).containsEntry("resolution", "resolved")
                 .containsEntry("schema", "public").containsEntry("name", "film")
@@ -414,9 +404,9 @@ class GraphitronMcpServerTest {
     @Test
     @SuppressWarnings("unchecked")
     void catalogDescribeReportsAUniqueKeyThePrimaryKeyAlreadyCovers(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-keys", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "redundant_unique_key")));
+                census.handle(), census.reader(), Map.of("table", "redundant_unique_key")));
 
             assertThat((Map<String, Object>) structured.get("primaryKey"))
                 .containsEntry("constraintName", "redundant_unique_key_pkey")
@@ -441,9 +431,9 @@ class GraphitronMcpServerTest {
     @Test
     @SuppressWarnings("unchecked")
     void catalogDescribePairsAMultiColumnForeignKeyByPosition(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-fk", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             var structured = structured(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "public.project_note")));
+                census.handle(), census.reader(), Map.of("table", "public.project_note")));
 
             var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
             assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
@@ -465,10 +455,9 @@ class GraphitronMcpServerTest {
     @Test
     @SuppressWarnings("unchecked")
     void catalogDescribeNamesTheCandidatesForASpellingTwoSchemasDeclare(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(
-                tmp, "catalog-ambiguous", CATALOG_SDL, StoreBackedBuild.MULTISCHEMA_JOOQ_PACKAGE)) {
+        try (var census = StoreFixture.ofMultiSchemaCatalog(tmp)) {
             var result = GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "event"));
+                census.handle(), census.reader(), Map.of("table", "event"));
 
             assertThat(structured(result)).containsEntry("resolution", "ambiguous");
             assertThat((List<String>) structured(result).get("schemas"))
@@ -479,7 +468,7 @@ class GraphitronMcpServerTest {
 
             // Qualifying it resolves, which is what the candidate list is for.
             assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "multischema_b.event"))))
+                census.handle(), census.reader(), Map.of("table", "multischema_b.event"))))
                 .containsEntry("resolution", "resolved")
                 .containsEntry("schema", "multischema_b");
         }
@@ -487,15 +476,15 @@ class GraphitronMcpServerTest {
 
     @Test
     void catalogDescribeReturnsNotFoundForUnknownName(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-not-found", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "nope"))))
+                census.handle(), census.reader(), Map.of("table", "nope"))))
                 .containsEntry("resolution", "notFound").containsEntry("table", "nope");
 
             // A spelling with an empty half names nothing the census could hold, and is answered
             // without opening a transaction to find that out.
             assertThat(structured(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), build.reader(), Map.of("table", "public."))))
+                census.handle(), census.reader(), Map.of("table", "public."))))
                 .containsEntry("resolution", "notFound");
         }
     }
@@ -507,11 +496,11 @@ class GraphitronMcpServerTest {
      */
     @Test
     void catalogDescribeRefusesWithoutAStoreToRead(@TempDir Path tmp) {
-        try (var build = StoreBackedBuild.run(tmp, "catalog-refusal", CATALOG_SDL)) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
             assertThat(GraphitronMcpServer.catalogDescribeResult(
-                build.handle(), null, Map.of("table", "film")).isError()).isTrue();
+                census.handle(), null, Map.of("table", "film")).isError()).isTrue();
             assertThat(firstLine(GraphitronMcpServer.catalogDescribeResult(
-                null, build.reader(), Map.of("table", "film"))))
+                null, census.reader(), Map.of("table", "film"))))
                 .startsWith("catalog.describe:")
                 .contains("holds no fact store handle");
         }
@@ -1302,10 +1291,10 @@ class GraphitronMcpServerTest {
         // The shared embedder warm carries a fake (no ONNX); BM25 over the descriptors carries the
         // ranking. The server kicks the index warm at bind; awaitRagWarm() waits it out deterministically.
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
-        try (var build = StoreBackedBuild.run(tmp, "catalog-search-handoff", CATALOG_SDL);
+        try (var census = StoreFixture.ofCatalog(tmp);
              var server = new GraphitronMcpServer(
-                loopback(0), build.workspace, embedderWarm, null, RagConfig.temporary(),
-                null, build.handle(), build.reader());
+                loopback(0), new Workspace(), embedderWarm, null, RagConfig.temporary(),
+                null, census.handle(), census.reader());
              var client = connect(server.port())) {
             client.initialize();
             server.awaitRagWarm();
@@ -1336,10 +1325,10 @@ class GraphitronMcpServerTest {
         // store is present, which is what separates this arm from the refusal below: the corpus reads,
         // and what is missing is the embedding of it.
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new BlockingEmbedder(384)));
-        try (var build = StoreBackedBuild.run(tmp, "catalog-search-warming", CATALOG_SDL);
+        try (var census = StoreFixture.ofCatalog(tmp);
              var server = new GraphitronMcpServer(
-                loopback(0), build.workspace, embedderWarm, null, RagConfig.temporary(),
-                null, build.handle(), build.reader());
+                loopback(0), new Workspace(), embedderWarm, null, RagConfig.temporary(),
+                null, census.handle(), census.reader());
              var client = connect(server.port())) {
             client.initialize();
 

@@ -302,15 +302,24 @@ tests assert, and what gate one now saves is one census query per `catalog.searc
 that is about to embed text if it misses. Deleting a cache whose subject is two queries is the
 cheaper simplification.
 
-As implemented, the *seam* survives while the projection and the gate go, and the distinction is the
-reason gate one could not be kept: the index takes a supplier of corpus rows rather than of a
-projection, and a read composes fresh rows on every call, so there is no reference for an identity
-check to compare. What crosses into the RAG package is a row shape it declares itself (`CorpusTable`,
-beside the composer that reads it) rather than a query surface; `CatalogQueries` fills it, which keeps
-the module's census reads in one place and the dependency one-directional, the RAG package naming no
-store type. The refusal is gated at the wire beside `catalog.describe`'s rather than inside the index,
-so the RAG package needs no vocabulary for a wiring fact, and it is ordered store-first: no store
-refuses, and no embedder over a store that is present is still the warming degradation.
+The seam goes with the gate, and the index reads the census itself: it takes the `StoreReader` the host
+minted and the graph name, and `CatalogCorpus` beside it holds the two queries. A supplier of rows was
+the first shape tried and it is the wrong one, for a reason worth recording because it recurs whenever a
+consumer is given its facts instead of reading them. Under a supplier, "this index ranks what a capture
+wrote" is a property of the line that constructed it rather than one anybody can read off the type, and
+nothing stops a future caller handing it a corpus from somewhere else. The connection stays the host's
+either way, which is the ownership rule this item states: the index reads through a reader it never
+opened.
+
+That puts the corpus query in the RAG package rather than with the structured tools' reads, which is
+this item's own doctrine one level down. The two are shaped by different consumers, a wire response and
+an embedder, and they overlap in `FROM` clause and nowhere else; what a reader shares with another
+reader is the relation. Gate one could not have survived the move in any case: a read composes fresh
+rows every time, so there is no reference for an identity check to compare.
+
+The refusal is gated at the wire beside `catalog.describe`'s rather than inside the index, so the RAG
+package needs no vocabulary for a wiring fact, and it is ordered store-first: no store refuses, and no
+embedder over a store that is present is still the warming degradation.
 
 **Leaves behind.** `catalogFacts` keeps one reader, the edge tools.
 
@@ -1093,6 +1102,21 @@ which is how the diagnostics tools are tested. Every slice moves its tool's case
 hand-building projection fixtures, so the fixture work is front-loaded into slice 1 and amortised
 across the rest.
 
+**A store does not cost a build, and slice 3 corrects this section on that point.** Reading
+`StoreBackedBuild` as the price of a store is what led slice 3 to reach for a store-free seam in the
+first place; the generator is what that fixture pays for, not the store. `graphitron-lsp`'s own
+`StoreFixture` opens an in-memory store and calls `FactCapture.capture` directly with a `JooqCatalog`,
+which stands a census up in about 50 ms against the 400 ms a build costs, and writes rows only through
+the real capture writer, so the property this section actually wants is intact: a fixture still cannot
+encode a state capture never produces. `graphitron-mcp` gains the same affordance as
+`no.sikt.graphitron.mcp.StoreFixture`, and the rule for the slices after this one is by what the tool
+reads rather than by which fixture exists: a case reading the census or another transcription family
+captures it directly, and `StoreBackedBuild` is for the cases whose rows come from the walk's own
+streams, which is the diagnostics families and nothing else so far. Slice 3 moved the nine
+`catalog.tables` / `catalog.describe` cases and both `catalog.search` server cases across, which is also
+what makes three distinct censuses affordable in one case: two generated models plus the pre-codegen
+state, where a build-shaped fixture would have made that three builds.
+
 The fixture is the reason `graphitron` stays at test scope, and it is the only reason. It keeps its
 generator imports (`GraphQLRewriteGenerator`, `RewriteContext`, `FactCapture`, the `SchemaInput`
 family, the diagnostics fact writers), because producing a capture is running the generator and
@@ -1122,14 +1146,29 @@ close-out guards, are the item's own rather than any one tool's.
   business and need no rows. What they cannot own is that the rows a real capture yields compose the
   descriptor the index embeds, and that is where the risk moved once the corpus stopped being
   byte-identical, so one store-backed case owns corpus composition end to end.
-* `CatalogSearchIndexTest` / `CatalogSearchOnnxTest` replace the facts supplier with the corpus
-  seam. With gate one deleted, the hash gate is the only invalidation left and carries the cases: a
-  recapture that changed nothing must not re-embed, a changed catalog must. The store-backed case the
-  bullet above calls for landed as `CatalogSearchCorpusTest`, which is where both corpus orderings are
-  pinned: the tables against the page `catalog.tables` draws off the same relation, table for table
-  and in the same order, and the columns against the definition order inside the string the embedder is
-  handed. It also carries the two-schema case, a bare name two schemas declare being where a corpus
-  keyed by anything less than the qualified pair would silently lose a table.
+* `CatalogSearchIndexTest` / `CatalogSearchOnnxTest` read a captured census rather than a facts
+  supplier. With gate one deleted, the hash gate is the only invalidation left and carries the cases,
+  and against a store they state the thing itself: a recapture of the same generated model must not
+  re-embed, and a recapture against a different one must. The store-backed case the bullet above calls
+  for landed as `CatalogCorpusTest`, in the package whose code it exercises, and it pins both orderings
+  (tables by the pair the id is spelled from, columns by `ordinal` inside the composed string), the
+  descriptor's comment arms off the fixture's own DDL, the two-schema case where a corpus keyed by
+  anything less than the qualified pair would silently lose a table, one graph's corpus excluding
+  another graph's catalog, and the empty corpus a pre-codegen store answers with.
+* **The ONNX retrieval case got sharper by moving, which was not the expected direction.** Its
+  hand-built corpus was four richly commented tables and it asserted the intended table was among three
+  hits returned, so three quarters of the corpus satisfied it. Over the real census it ranks among 58
+  tables of which the fixture DDL comments exactly one, and the assertions became per-signal: a query
+  naming only a table's *columns* ranks it first (`postal code and district` -> `public.address`), a
+  query quoting a captured *column comment* ranks its table first (`free-text synopsis shown to
+  renters` -> `public.film`), and an inflected name with no comment to help still ranks
+  (`spoken languages` -> `public.language`). The original query survives as the recorded limit: with
+  58 tables to rank among, `where are customer addresses stored?` puts `customer`, `rental` and
+  `store` above `address`, so the intended table is in the page rather than at its head. That is the
+  consumer's real case and worth a test saying so.
+* `CatalogDescriptorsTest` keeps only what takes a string rather than a row, `splitWords` and
+  `corpusHash`. Its descriptor cases moved to the captured census, on the grounds this section already
+  states: a hand-built row can spell a comment or an ordinal the capture never spells.
 * The foreign-key column pairing is stated by `sql_referential_constraint`'s own DDL comment, which
   calls it guaranteed by SQL semantics and never copied onto the referencing row. The relation
   therefore needs no case: as a positional join over two captured relations it is correct exactly
