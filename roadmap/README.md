@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R680` | Gather the fact-store test harnesses of all four modules onto one shared home <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md), [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)</sub> | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
-| `R671` | Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check | Spec | 2026-08-14 | [plan](domain-return-type-placeholders-false-conflict.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R661` | Batch the discriminated table interface child through a DataLoader | Ready | 2026-08-17 <sub>created 2026-08-13</sub> | [plan](batched-discriminated-interface-child.md) |
+| `R671` | Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check | Ready | 2026-08-17 <sub>created 2026-08-14</sub> | [plan](domain-return-type-placeholders-false-conflict.md) |
 | `R650` | Support @asConnection on a field returning a discriminated table interface <sub>blocked by: [batched-discriminated-interface-child](batched-discriminated-interface-child.md)</sub> | Ready | 2026-08-14 <sub>created 2026-08-13</sub> | [plan](root-connection-over-discriminated-interface.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -307,7 +307,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
-- `R671` [**Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check**](domain-return-type-placeholders-false-conflict.md) — Spec, bug
+- `R671` [**Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check**](domain-return-type-placeholders-false-conflict.md) — Ready, bug
 - `R670` [**Root @lookupKey plus @asConnection reports a @table error the author cannot act on**](root-lookup-connection-diagnostic.md) — Backlog, bug
 - `R601` [**The diagnostic stream unifies**](unified-diagnostic-stream.md) — Backlog, structural
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
