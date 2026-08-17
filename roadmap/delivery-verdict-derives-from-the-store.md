@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-15
+last-updated: 2026-08-17
 ---
 
 # Delivery verdict derives from the store, not from a hand-maintained negative-space switch
@@ -352,18 +352,20 @@ would have answered it silently.
 | the parent is a producer payload and the target binds one table
 | the `PRODUCER_PAYLOAD` arm's own shape
 
-| `AUTHORED`, the split reading
+| `SPLIT_QUERY`
 | `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
 | `graphitron_split_query`, `graphitron_pivot`
 
-| `AUTHORED`, the tenant reading
+| `TENANT_FAN_OUT`
 | `@tenantFanOut` on the coordinate, the target binds one table, and the coordinate carries no `@routine`
 | `graphitron_tenant_fan_out`, `graphitron_routine`
 |===
 
-Two things the table shows that the prose could not. `UNION` rather than `UNION ALL` means the two
-`AUTHORED` readings collapse to one row wherever both match, so the open question below is about the
-vocabulary and not about row counts. And the within-side order is load-bearing on the exemption side
+Two things the table shows that the prose could not. The two authored readings carry their own
+literals (settled below, under the questions retired at review), so a coordinate matching both
+yields two rows and the reduction's declared order, `SPLIT_QUERY` first, names the verdict; that
+order is a choice this table makes rather than inherits, and it coincides with `mint`'s own arm
+order, which evaluates the split reading first. And the within-side order is load-bearing on the exemption side
 with a witness already in the corpus: `Query.aggregated`, in the same
 `service-child-class-backed-parent` example, is a root *and* carries `@service`, so both exemption
 arms match it and `mint`'s order is what makes `ROOT_COORDINATE` the reason it reports rather than
@@ -428,7 +430,7 @@ set acquiring an enforcer that is not another switch.**
   trigger, `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` with the
   three arms established above, and `intent_resolved_field_delivery (graph_name, type_name,
   field_name, verdict, rule)` as the reduction. Seven arms in total, and the table above is the
-  checklist: four rule arms under three literals, three exemption arms. The closed vocabularies are
+  checklist: four rule arms, one literal each, three exemption arms. The closed vocabularies are
   declared in the column comments rather than in constraints a view cannot carry, per the integrity
   note above, with full comment coverage per `FactSchemaGateTest.commentCoverageIsTotal`; the
   vocabulary's *enforcement* is the shadow test's containment assertion, two bullets down.
@@ -472,7 +474,11 @@ set acquiring an enforcer that is not another switch.**
   no pin can go vacuous. Three specifics that mould already settles, worth copying rather than
   re-deciding. Compare the verdict and the winning literal as one value, the way the sibling folds a
   coordinate to `DEMANDED:<rule>`, or a mis-ordered precedence passes wherever both readings agree on
-  the verdict, which is every exemption overlap. Assert both vocabularies are subsets of the declared
+  the verdict, which is every exemption overlap. One fold is one-directional: the walk's
+  `DeliveryFact.Trigger` mints `Authored` for both authored literals, so the comparison folds the
+  store's `SPLIT_QUERY` and `TENANT_FAN_OUT` onto `Authored` rather than asking the walk for a
+  distinction it never made; the precedence between the two authored literals is pinned by the
+  overlap fixture below, not by the shadow. Assert both vocabularies are subsets of the declared
   sets, since that assertion is what actually enforces the closed sets the comments declare and the
   DDL cannot. And pin the exemption overlap directly, as
   `overlappingExemptionReadingsSurviveInTheRulesAndResolveByPrecedence` pins the sibling's: both rows
@@ -494,16 +500,18 @@ set acquiring an enforcer that is not another switch.**
   * **The `@tenantFanOut` arm has no witness anywhere in the corpus.** `@tenantFanOut` occurs zero
     times in `ClassifiedCorpus` (against eight `@splitQuery`, seven `@routine`, four `@pivot`), and
     `DeliveryFactPinTest`'s own `MARKER_FIXTURE` covers only the split-query half, by its comment
-    "an authored split child riding a table parent". This is the arm the open question below
-    proposes to promote to its own rule literal, so on the split-literal answer the view would ship
-    a vocabulary entry that no coordinate can reach: vacuous on landing, in exactly the class this
-    item exists to kill. Fixtures for the marker do exist outside the corpus
-    (`TenantFanOutClassificationTest`, `TenantFanOutFetcherPipelineTest`,
-    `TriggerFactPopulationPinTest`), so this is a choice to make rather than a blocker: either add a
-    corpus example, or carry a beside-the-corpus fixture the way `MARKER_FIXTURE` already does.
-    `TriggerFactPopulationPinTest` is the mould for the latter, being pipeline-tier and pinning each
-    gather slot's rows by coordinate so that an empty relation fails as loudly as an over-gathering
-    one.
+    "an authored split child riding a table parent". With `TENANT_FAN_OUT` now its own rule literal
+    (settled below), an unwitnessed arm would ship a vocabulary entry no coordinate can reach:
+    vacuous on landing, in exactly the class this item exists to kill. So the fixture is a
+    deliverable, not a choice, and its home is settled too: a beside-the-corpus fixture the way
+    `MARKER_FIXTURE` already does it, rather than a corpus example, because the marker's existing
+    fixtures all live beside their tests (`TenantFanOutClassificationTest`,
+    `TenantFanOutFetcherPipelineTest`, `TriggerFactPopulationPinTest`) and the corpus owes an
+    example to a classification shape, not to every marker spelling. The fixture carries two
+    coordinates: a tenant fan-out child that witnesses the arm, and a child carrying both
+    `@splitQuery` and `@tenantFanOut` that pins the authored overlap, both rows surviving in the
+    rule view and the reduction picking `SPLIT_QUERY`, the same discipline the `Query.aggregated`
+    exemption-overlap pin applies one side over.
   * **No connection reaches any arm as a child.** Every connection-returning coordinate in the
     corpus sits on `Query`: the three `@asConnection` carriers (`catalog`'s `films`,
     `paginated-joined-table-interface`'s `parties`, `faceted-connection`'s `films`) and both
@@ -607,26 +615,8 @@ carries a reason literal and a count.
 
 ## Open for the implementer
 
-One question is genuinely open, and it is narrower than the two the earlier draft carried.
-
-* **Whether the `Authored` trigger keeps one rule literal or becomes two.** The arm count, read off
-  `DeliveryFactRelation.mint`: three triggers, but four `SELECT`s, because `Authored` is two
-  independent readings (the `@splitQuery` half on a table-bound child or a `@pivot` chain, and
-  `@tenantFanOut` on a table-bound non-`@routine` child) that mint the same literal. The
-  sibling's vocabulary is one literal per arm, which argues for splitting, and against it stands the
-  `@tenantFanOut` arm having no coordinate anywhere, so a split ships a literal nothing reaches.
-  Three observations for whoever decides. The vacuity is an argument for the fixture rather than
-  against the split, since the arm is equally unwitnessed under one literal and merely less visibly
-  so. The decision is cheap now and expensive later: the rule vocabulary becomes R682's read
-  surface once that item lands, so splitting a literal afterwards is a consumer change rather than a
-  DDL change. That asymmetry, not the arm count, is the thing to weigh. And the split is what makes
-  the precedence between the two readings a stated fact instead of an accident of `UNION` dedup: one
-  literal means a coordinate carrying both markers yields one row and the question never comes up,
-  while two literals means two rows and the reduction has to declare which one names the verdict.
-  Under one literal that precedence is unstated because it is unobservable, which is the same trade
-  the negative-space switch was making.
-
-Settled at review rather than left open, in the order the questions were retired.
+Nothing is left open. The earlier draft carried two questions and a later revision a third; all
+three are settled below, in the order the questions were retired.
 
 **Whether `graphitron_service`'s claim is a rule arm or a domain exclusion: it is neither.** It is an
 exemption arm with declared precedence, per the negative-side section above, which also establishes
@@ -645,6 +635,22 @@ walking `graphql_field` from the connection type through its edge to the node's 
 change the answer, because what a view cannot state is a closure of unbounded depth rather than a
 join of more than one. That walk is fixed-depth by the shape's definition, so a plain view holds
 unconditionally.
+
+**The `Authored` trigger becomes two rule literals, `SPLIT_QUERY` and `TENANT_FAN_OUT`.** The
+ground is that the vocabulary captures facts, not decisions. The two readings witness two different
+captured populations, `graphitron_split_query` and `graphitron_tenant_fan_out`, so the literal
+names the fact that produced the row; `Authored` is the walk's decision label, a "the author asked
+for it" grouping, and folding two facts under it already cost the vocabulary its precedence: under
+one literal a coordinate carrying both markers yields one row by `UNION` dedup and the order of the
+two readings is unobservable, the same trade the negative-space switch was making. Two literals
+make the precedence a stated fact, `SPLIT_QUERY` first, coinciding with `mint`'s own arm order. The
+costs the question used to weigh resolve with it. The unwitnessed `@tenantFanOut` arm is answered
+by the fixture deliverable in the Implementation section, since the arm is equally unwitnessed
+under a shared literal and merely less visibly so. And the asymmetry that made this cheap now and
+expensive later, the rule vocabulary becoming R682's read surface once that item lands, is why it
+is settled at spec rather than left to the implementer. The walk keeps its coarser `Trigger`
+vocabulary while it stands as the comparison side; the shadow folds the two literals onto
+`Authored`, per the shadow bullet above.
 
 ## Coverage
 
