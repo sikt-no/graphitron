@@ -311,12 +311,22 @@ stops switching over classification permits and `ReverseEdgeIndex` stops existin
 become queries over the binding relations, and `EdgeProducer.Context` carries a handle where it
 carried two projections.
 
-**Reads.** Six queries, one per question the edge kinds ask:
+**Reads.** Seven queries, one per question the edge kinds ask:
 
 * **What a field binds, forward**, keyed by `(type, field)` and returning the target's full key:
   `intent_column_match_claim` and `intent_field_column_table` for `BACKS`, `intent_bound_table` for
-  `TARGETS`, `intent_field_reference_step_hop` for `REFERENCES` with its hops,
-  `intent_field_producer_method` for `RESOLVES`.
+  `TARGETS`, `intent_field_reference_step_hop` for `REFERENCES` with its hops, and for `RESOLVES`
+  the two reads the next bullet separates.
+* **What method a field resolves to**, which is two populations and not one, and this is the place
+  an earlier reading of this item lost half of it. `RESOLVES` is produced today from six
+  classification arms. `intent_field_producer_method` answers four of them: `ServiceBacked`,
+  `QueryService` and `MutationService` through its `SERVICE` arm, `Computed` through its
+  `EXTERNAL_FIELD` arm. A fifth, `RoutineBacked`, needs no read at all, for the reason two
+  paragraphs down. The sixth is `InputUnbound`, whose method pair is populated "when the carrier has an explicit
+  `@condition`", and that view does not cover it: its own comment scopes it to "`@service` and
+  `@externalField` resolved against `jvm_method`", and `declared_via` is a documented closed
+  two-value vocabulary. So the condition population is a second query, over
+  `graphitron_field_condition` joined to `jvm_method` and `jvm_method_parameter` for the arity.
 * **What binds a target, reverse**: the same relations with the predicate on the other end, the
   columns of a given table, the methods of a given class, the types bound to a given table. This is
   the query that replaces `ReverseEdgeIndex` outright, and the reason the reverse direction stops
@@ -330,7 +340,32 @@ carried two projections.
   `sql_referential_constraint` query slice 2 wrote, which is where the reverse FK direction was
   already a query rather than an index, and is the shape the rest of the tool converges on.
 
-**Wire.** The bare-name resolution goes, which is a fix rather than a translation. `EdgeProducer`
+The condition read is an MCP query and deliberately not a third arm on
+`intent_field_producer_method`, which is the escalation rule applied rather than dodged. A rule
+graduates to a store view where it genuinely must be shared, and this one is not shared:
+`DeclTarget.methodBackedTarget` switches five arms and `InputUnbound` is not among them, so no
+language-server surface resolves a condition's method pair at all. Widening a two-value
+`declared_via` to carry a population one consumer wants would put the MCP's requirement in the
+model's vocabulary. What the query does is what that view does for its own two arms and what
+`ClasspathMethods` does for arity, so nothing here is a new mechanism, and `depends-on` stays empty
+because no store-model change is needed.
+
+`RoutineBacked` is the arm that costs nothing, and it is worth stating why so an implementer does
+not go looking for the routine's method in the store. Its target is a generated jOOQ
+`Routines`-class method, `ClasspathScanner` excludes the generated jOOQ package by design, and
+`resolvesMethod` "produces no edge rather than an invented arity" when the class was not scanned.
+So the arm emits no `RESOLVES` edge today, the `jvm_` census excludes the same package for the same
+reason, and `graphitron_routine` carries a `routine_ref` rather than a class and method. The
+migration preserves an empty answer, which is different from a population being dropped, and
+neither read has to reach for the routine.
+
+**Wire.** Unchanged for `RESOLVES`, which is the point of the second query: both populations keep
+emitting one edge per arity-distinct overload with no census row producing no edge, so the arity
+fan-out and the silence both survive. Reading only `intent_field_producer_method` would have
+dropped every `@condition`-carrying input field's edge silently, with no wire delta declared and
+nothing in the tests to catch it.
+
+The bare-name resolution goes, which is a fix rather than a translation. `EdgeProducer`
 matches a bare name today because its input is a *classifier* table name, and `resolveTable`
 degrades an ambiguous or unfound one to a `TableNode` with an empty schema. Reading the binding
 relations instead means no edge endpoint is ever spelled without its schema, because none of those
@@ -366,10 +401,34 @@ Also `EdgeProducer`'s two switches, its four permit-set constants and `resolveTa
 `EdgeCoverageTest`, whose subject is the partition those constants describe.
 
 **And `CatalogFacts` deletes here**, this being its last reader: the type and `CatalogFactsTest`,
-`CatalogBuilder.buildCatalogFacts` and its `toKey` helper, `BuildArtifacts.catalogFacts` and the
-convenience constructor, `Workspace.catalogFacts` (field, accessor, and its assignment in
-`setBuildOutput`), and `DevMojo`'s threading of the value. That the deletion lands in the same commit
-as the last reader's migration is this item's binding constraint, and it is satisfiable without
+`CatalogBuilder.buildCatalogFacts` and its `toKey` helper, `GraphQLRewriteGenerator.BuildArtifacts`'
+`catalogFacts` component and the two-argument convenience constructor that becomes the canonical one,
+`Workspace.catalogFacts` (field, accessor, and its assignment in `setBuildOutput`), and `DevMojo`'s
+threading of the value.
+
+The convenience constructor goes because it cannot survive, not merely because it stops being
+useful: its signature is `(CompletionData, LspSchemaSnapshot.Built.Current)`, which is exactly what
+the canonical constructor becomes once the third component is dropped, so leaving it is a duplicate
+signature and the module does not compile. That is worth knowing in the other direction too, because
+it bounds the blast radius to less than a record-component deletion usually costs. Every existing
+two-argument caller keeps compiling untouched against the new canonical constructor, which covers
+every construction site outside this module: `WorkspaceTest` (five sites) and
+`BuildTriggerPublishesDiagnosticsTest` in `graphitron-lsp`, and `CatalogRefreshTest` in
+`graphitron-maven-plugin` are all already on that form, none of them passes the projection, and none
+asserts on it. They are named here to record that they need no edit rather than to schedule one.
+
+Five sites pass three arguments today and they split two ways. Two are main code and lose the
+argument: `GraphQLRewriteGenerator`'s own construction of the record, whose third argument is the
+`buildCatalogFacts` call being deleted with it, and `DevMojo`'s re-wrap of a prior catalog. The other
+three are in this module's tests, `GraphitronMcpServerTest` twice and `ServerInstructionsTest` once,
+and each passes a hand-built `CatalogFacts` fixture. Those are not edited either: they are the
+fixtures slices 1 to 4 convert to `StoreBackedBuild`, so they are gone before this deletion lands
+rather than trimmed by an argument. That ordering is the reason the deletion is a small commit at
+all, and it is worth checking at pickup rather than assumed, since a fixture left behind by an
+incomplete conversion turns the last slice's tidy deletion into a compile error in the middle of it.
+
+That the deletion lands in the same commit as the last reader's
+migration is this item's binding constraint, and it is satisfiable without
 waiting on anything: no `graphitron-lsp` surface reads `catalogFacts()`, only the `Workspace` field
 the MCP tools read through. Re-check that at pickup with a `catalogFacts()` grep, because a reader
 that reappeared upstream changes the order.
@@ -427,8 +486,10 @@ not:
   "the store's classifier vocabulary, deliberately not a projection permit name". That arm is the
   template; this generalises it to every coordinate.
 * **What it binds**: table, column, class, method, join path, participants. Five of the six are the
-  queries slice 4 wrote, read at the coordinate grain instead of as edges. The sixth is the backing
-  class, which is the next subsection.
+  queries slice 4 wrote, read at the coordinate grain instead of as edges, the method slot included,
+  which means it inherits both of that slice's producer reads rather than only the view: a field
+  whose method comes from an explicit `@condition` reports it here for the same reason it emits an
+  edge there. The sixth is the backing class, which is the next subsection.
 * **Whether a verdict was demanded**, from `intent_resolved_field_demand` / `..._type_demand`, with
   the rule name. This replaces `Unresolvable` and `Unclassified` and is strictly more informative
   than either: those two say a verdict is missing, while `DEMANDED` plus a rule says one was
@@ -793,9 +854,13 @@ once costs, from when there was nothing to ask at read time. The questions thems
 3. Which column does this field match. `intent_column_match_claim` for the structural case, which
    already carries the resolved table's full key; `intent_field_column_table` where a directive
    moved the match off the parent's own binding, whose `disposition` and `basis` say which.
-4. Which class and method does this field resolve to. `graphitron_service`,
-   `graphitron_external_field`, `graphitron_routine`, and `intent_field_producer_method` over them,
-   the last carrying `descriptor` so an overload is distinguishable and arity is derivable.
+4. Which class and method does this field resolve to. `intent_field_producer_method` over
+   `graphitron_service` and `graphitron_external_field`, carrying `descriptor` so an overload is
+   distinguishable and arity is derivable. Those are its only two arms, so the `@condition`
+   population is a separate read of `graphitron_field_condition` against the `jvm_` census, and
+   `@routine` is no read at all: slice 4 carries both, with the reasons. An earlier reading of this
+   item wrote all three relations as though one view spanned them, which is how a whole population
+   went missing from a query list that looked complete.
 5. What join path does it traverse. `intent_field_reference_step_hop` carries `constraint_name` and
    a fully-keyed `to_schema` / `to_table` per hop, ordered by `(ordinal, position)`, which is
    `FkStep` with a real key instead of a bare name.
@@ -948,8 +1013,27 @@ Three doc surfaces state where the tools read from and change with them.
 `docs/architecture/how-to/dev-loop-internals.adoc` says the MCP tools are backed by the warm
 `Workspace`, which stops being true of all of them. `docs/manual/how-to/mcp-agent-context.adoc`
 carries the tool table, where the `catalog.describe` row is the place the unique-key delta becomes a
-user-facing sentence and the `schema` row carries the classifier-vocabulary change. And
-`graphitron-mcp/src/main/resources/mcp/instructions.txt` is the agent-facing routing text: its
+user-facing sentence and the `schema` row carries the classifier-vocabulary change.
+
+That page states the same warm-`Workspace` framing twice outside its table, and both sentences go
+false rather than merely stale, so they change here too. "The same `mvn graphitron:dev` process
+serves both the LSP (for your editor) and the MCP server (for your agent) off one warm workspace"
+keeps its first clause and loses its last: one process still serves both, but after slice 9 the
+server holds no `Workspace` at all, taking a `StoreHandle` and a `StoreReader` instead. And "three
+kinds of context, all served off the same warm workspace the dev loop keeps current" is wrong in
+each of its three load-bearing words. *Same* claims the two surfaces share one source, which they
+stop doing: what they share is the session store, and the `Workspace` becomes the language server's
+alone. *Warm workspace* names the wrong mechanism, the answers being store rows rather than an
+in-memory value. And *the dev loop keeps current* attributes freshness to the build's swap of that
+value, where after this item it is capture cadence, which is also what makes the sentence worth
+rewriting rather than deleting: `status` derives `Current` / `Previous` from the SDL refusal
+relations' emptiness, so what the page should promise an agent is that the store is written on every
+pass and the tools say which reading they are giving. The accurate replacement is shorter than the
+sentence it replaces, since one store written by one process is an easier promise than a shared warm
+value.
+
+The third surface is
+`graphitron-mcp/src/main/resources/mcp/instructions.txt`, the agent-facing routing text: its
 `schema` bullet names `Unresolvable`, `Unclassified` and the snapshot's `Unavailable` / `Previous`
 as the readings that send an agent to `diagnostics`, and gives `Conflicted` its own sentence
 carrying the rival claims, so both change with the vocabulary. That file is an acceptance surface
@@ -1037,10 +1121,23 @@ close-out guards, are the item's own rather than any one tool's.
   second half is what catches a relation gaining an arm that the tool then never surfaces, which is
   the failure the permit partition was really guarding against. Both halves are assertable from
   `graphitron-mcp` without a store, being statements about the query set, so the case stays cheap.
-  `PARTICIPATES` is the arm to check the successor against while writing it: it is a declared
-  `EdgeKind` whose relations an earlier reading of this item omitted from the query list entirely,
-  so a successor that passes without covering it has been written to the queries rather than to the
-  wire.
+
+  Those two halves are not enough on their own, and the reason is this item's own near-miss. Both
+  are counted per `EdgeKind`, so a kind that keeps one of its producing populations and loses
+  another passes both: `RESOLVES` stayed produced by the service arm while the `@condition`
+  population was missing from the query list, and nothing in either half notices. So the successor
+  carries a third assertion, one grain finer and written in the authored vocabulary rather than the
+  permits': every directive that can name a method (`@service`, `@externalField`, `@condition`,
+  `@routine`) maps to a named read or to a stated reason there is none, and the map is exhaustive
+  over that list. Being a statement about SDL directives and the relations that capture them, it is
+  not a second spelling of the classification taxonomy, which is what the last bullet in this
+  section rules out and what the leaf-zoo guard would fail a test source for reintroducing. Two
+  entries to check it against while writing it: `@condition`, which the kind-grain halves cannot see
+  at all, and `@routine`, whose correct entry is the stated reason rather than a query.
+
+  `PARTICIPATES` is the arm to check the first two halves against, being a declared `EdgeKind` whose
+  relations an earlier reading of this item omitted from the query list entirely, so a successor that
+  passes without covering it has been written to the queries rather than to the wire.
 
 **Slice 5, the code tools.** Their existing cases keep their assertions and change their fixture:
 the `services` / `conditions` / `records` blocks assert the same class refs, method refs and
@@ -1224,6 +1321,9 @@ capture.
 * "the classification projection" as prose for what any MCP tool reads, and the permit-set
   constants' framing of a "partition over the classification permits" as `graphitron-mcp`'s
   coverage obligation
+* `intent_field_producer_method` as the whole of what answers "which method does this field resolve
+  to", and any framing of the producer relations as one view spanning `@service`, `@externalField`
+  and `@routine`; the view has two arms, `@condition` is its own read and `@routine` is none
 * `SchemaView.mapFieldClassification`, `mapTypeClassification`, `mapBackingShape`, and "backing
   shape" as a wire concept; with them "the classification / backing-shape / snapshot mappings are
   exhaustive switches over the sealed permits" as a statement about this module
@@ -1232,8 +1332,11 @@ capture.
 * "the bundled grammar unioned with the live snapshot's user-declared directives" as a description
   of how the `directives` resource is *composed*, with "the bundled half", "the live overlay" and
   the collision rule between them; the union is the store's, and the resource reads it
-* "the warm `Workspace`" as prose for what backs the MCP tools, in javadoc and in
-  `dev-loop-internals.adoc` alike
+* "the warm `Workspace`" as prose for what backs the MCP tools, in javadoc, in
+  `dev-loop-internals.adoc` and in `mcp-agent-context.adoc` alike; with "one warm workspace" and
+  "the same warm workspace the dev loop keeps current" as the manual's two spellings of it, and
+  "warm workspace" as a thing an agent's context is served *off* at all. The retirement sweep has to
+  reach the manual and not only the contributor docs, this being the surface a consumer reads
 * "the live snapshot" as the thing `status` and the diagnostics axes read, and "the lifecycle
   value" / "the lifecycle supplier" as a thing the host hands in; the axes are row-derived and the
   host hands only the handle and the reader
@@ -1287,8 +1390,18 @@ One claim from an earlier reading is withdrawn and worth naming, since it points
 times it has been corrected: the column match at a site whose table is not the parent's own is
 answered by `intent_field_column_table`, whose own comment states the omission of the parent case as
 deliberate and reads absence as "the parent's own scope answers". An implementer should re-check the
-substrate at pickup rather than trusting this document, since the store moves under the item, but
-the direction of every correction so far has been that more is readable than the item claimed.
+substrate at pickup rather than trusting this document, since the store moves under the item.
+
+The corrections no longer all point one way, and the exception is the more instructive of the two
+directions. Most have found more readable than the item claimed, which is the store growing under a
+document written against an earlier commit. The `RESOLVES` correction in slice 4 found less: a view
+whose name reads like the whole answer answers every producer population but one, and the item had
+written it as the whole answer. That failure mode does not announce itself the way a missing relation does,
+because the query list looked complete and the wire kept emitting the kind. So the re-check at
+pickup is two questions, not one. Whether a relation this document names still exists and says what
+it is quoted as saying, and whether it covers every population the tool it replaces answered for,
+which is a question about the view's arms rather than its existence and is answered by reading its
+`declared_via` vocabulary or its `FROM` list rather than by finding the name.
 
 `depends-on` stays empty and should remain so. Three items lean on this one, which is the coupling
 running the right way: `consumers-share-relations-not-queries.md` for the reader-import seam,
