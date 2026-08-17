@@ -1,7 +1,7 @@
 ---
 id: R671
 title: "Producer domain types are placeholders, so a shared class-backed type read as a record component can never pass the multi-producer conflict check"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: diagnostics
