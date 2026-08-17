@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-17 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | Spec | 2026-08-17 | [plan](flatten-grouping-input-onto-service-bean.md) |
-| `R680` | Gather the fact-store test harnesses of all four modules onto one shared home <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md), [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)</sub> | Spec | 2026-08-15 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
+| `R680` | Gather the fact-store test harnesses of all four modules onto one shared home <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | Spec | 2026-08-17 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
@@ -535,7 +535,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### testing
 
 - `R561` [**ConditionGluePipelineTest still scans glue bodies for the shared decode-helper call**](condition-glue-pipeline-body-scans.md) — Backlog, test-quality
-- `R680` [**Gather the fact-store test harnesses of all four modules onto one shared home**](fact-store-test-harness-consolidation.md) — Spec, cleanup, blocked by [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md), [catalog-facts-readers-move-to-the-store](catalog-facts-readers-move-to-the-store.md)
+- `R680` [**Gather the fact-store test harnesses of all four modules onto one shared home**](fact-store-test-harness-consolidation.md) — Spec, cleanup, blocked by [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)
 - `R550` [**Pin around the Quarkus ArC unused-bean removal flake**](quarkus-arc-removal-flake.md) — Backlog, bug
 - `R554` [**Retire the generated-body string-scan helpers in TypeSpecAssertions**](generated-body-string-assertion-helpers.md) — Backlog, test-quality
 - `R669` [**RootLauncherRendererTest asserts on generated body strings**](renderer-test-code-string-sweep.md) — Backlog, tech-debt

@@ -5,9 +5,9 @@ status: Spec
 bucket: cleanup
 priority: 3
 theme: testing
-depends-on: [lsp-reads-the-fact-store, catalog-facts-readers-move-to-the-store]
+depends-on: [lsp-reads-the-fact-store]
 created: 2026-08-14
-last-updated: 2026-08-15
+last-updated: 2026-08-17
 ---
 
 # Gather the fact-store test harnesses of all four modules onto one shared home
@@ -17,11 +17,14 @@ last-updated: 2026-08-15
 Four modules stand a fact store up in their tests, and each arrived at its own way of doing it. No
 two modules share a line of it.
 
-### The eight copies inside `graphitron`
+### The copies inside `graphitron`, and the rate they arrive at
 
-Eight `@PipelineTier` test classes each hand-roll their own harness for the same thing: open a fact
-store, capture one SDL fixture into it, run assertions against the resulting `DSLContext`. The
-helper is called `withCapturedStore` in seven of them and is close to verbatim across those seven:
+Fifteen test classes each hand-roll their own harness for the same thing: open a fact store, capture
+one SDL fixture into it, run assertions against the resulting `DSLContext`. The helper is called
+`withCapturedStore` in most of them and is close to verbatim across those. Eight were counted when
+this section was first written; the other seven landed in the three days after, which is the fact
+this item should be read on rather than the total. The list below is the original eight, kept because
+each entry carries a reason; treat it as a sample of a population the counts under it measure:
 
 * `derive/ColumnMatchClaimTest`, `derive/DemandShadowTest`, `derive/InputOccurrenceShadowTest`,
   `derive/ReferenceStepTargetTest`, `derive/AuthoredClaimConflictsTest`
@@ -32,9 +35,31 @@ helper is called `withCapturedStore` in seven of them and is close to verbatim a
   `ClasspathScanner` census
 * `diagnostics/DiagnosticFactsTest.withStore`, the same shape with the capture step removed
 
+The seven that arrived after: `derive/AccessorHopTest`, `derive/SeparateFetchTest`,
+`derive/ProducerCardinalityTest`, `derive/FieldProducerMethodTest`, `derive/ClassAssignableTest`,
+`derive/TypeBackingClassTest`, `derive/TypeBackingShadowTest`. Three of them
+(`AccessorHopTest`, `ClassAssignableTest`, `FieldProducerMethodTest`) also feed capture a real
+`ClasspathScanner` census, which is the shape the census-as-an-argument decision below rests on: four
+independent sites now, not two.
+
 Alongside them, `private static Path write(Path directory, String sdl)` (writing `fixture.graphqls`)
-is duplicated verbatim across all eight, and each of the eight declares its own
-`private static final String GRAPH = "<OwnClassName>"`.
+is duplicated verbatim across **eighteen** classes, and **fifteen** declare their own
+`private static final String GRAPH = "<OwnClassName>"`. The counts as of 2026-08-17, all four
+verifiable in one grep each:
+
+| Population | When specced | Now |
+|---|---|---|
+| classes hand-rolling a capture harness in `graphitron` | 8 | 15 |
+| classes duplicating `private static Path write(` | 8 | 18 |
+| classes declaring their own `GRAPH` constant | 8 | 15 |
+| files referencing `CapturedStore` | 9 | 24 |
+| test classes reading `graphitron-lsp`'s `StoreFixture` | 28 | 36 |
+
+**The rate is the argument, not the total.** Roughly two to three new copies a week, all of them
+inside `graphitron` and none of them in either dependency's scope, means this item's cost grows while
+it waits and its inventory rots while it is read. Two consequences are designed for below: the guard
+lands *first* rather than last, so no further copy can arrive during the item's own lifetime, and the
+inventory becomes a count the guard maintains rather than a list a reader has to trust.
 
 The utility these classes want **already exists**. `capture/CapturedStore` is an `AutoCloseable`
 handle offering `of(Path, String)`, `ofPipeline(Path, String)`, `registryOf`, `attributionOf` and
@@ -68,8 +93,9 @@ module, and the prediction this item made about the catalog-facts item, that it 
 `StoreBackedBuild`, was wrong in a direction worth noting: what a consumer reaches for when the shared
 home cannot express its shape is not the nearest existing fixture but a new one.
 
-`graphitron-maven-plugin` has no fixture type at all. `DevMojoTest` and `dev/CatalogRefreshTest` open
-`GraphitronModelStore.open()` inline and write to it directly, two sites. Small, and exactly the shape
+`graphitron-maven-plugin` has no fixture type at all. `DevMojoTest:291` and
+`dev/CatalogRefreshTest:133` open `GraphitronModelStore.open()` inline and write to it directly, two
+sites. Small, and exactly the shape
 that becomes another named harness the moment a third site appears.
 
 ### What the inventory does not count
@@ -96,6 +122,12 @@ assertion is built from*, and the sites disagree without anything saying why. Pa
 | catalog, node inference off | `ColumnMatchClaimTest`, `ReferenceStepTargetTest`, `FieldColumnTableTest`, `StoreFixture.ofCatalog`, `StoreFixture.ofMultiSchemaCatalog` |
 | catalog, node inference on | `DemandShadowTest`, `InputOccurrenceShadowTest` |
 | catalog, node inference off, real classpath census | `ClassMemberSlotTest`, `StoreFixture.ofCatalog(directory, sdl, classpath)` |
+
+The table above is a sample rather than a census, and the population it was drawn from has since
+doubled. What the additions do not do is add a shape: every one of the seven passes a `JooqCatalog`,
+and all but the shadow tests pass `new NodeDeclaration(null)`, so the dominant shape in the tree is
+now catalog-with-inference-off, which is the deviation from production rather than the norm. That
+sharpens the arm question below rather than changing it.
 
 That split is not cosmetic. `NodeDeclaration` changes what capture writes, and `DemandShadowTest`'s
 own sweep comment says its equality is "also the enforcer for the node-inference seed's
@@ -222,7 +254,41 @@ rule is stated in `CapturedStore`'s class javadoc, as the orientation note a rea
 the author in another module who will never open it, javadoc is worth nothing, and that is the
 audience this item is really about. They get a guard.
 
-### The guard, because discoverability alone has been tried and lost
+### The guard lands first, as a ratchet
+
+The guard is written below as the item's enforcer, which reads as something that arrives once the
+migration is done. Take it first instead, and take it before any other level, for a reason the counts
+in the Problem section make concrete: copies arrive at two or three a week, so an item that migrates
+fifteen classes over several sessions will be migrating seventeen by the time it finishes, and a
+reader of its inventory cannot tell which number is current.
+
+A ratchet inverts that. It lands with every existing site named in its allow-list, each entry carrying
+its reason, and it fails on any site not named. From that moment the population is frozen: no new copy
+can land while the item is in flight, the inventory is a machine-maintained count rather than a list
+somebody has to re-grep, and every subsequent slice's acceptance is arithmetic, so many entries
+removed. `CommandSeamRatchetTest` is the shape already in the tree and the precedent for the
+allow-list-that-drains form.
+
+The count at the moment of landing is what the item is sized against, so the guard slice states it in
+its own message: an author who trips it reads how many sites are still allow-listed and where the
+shared home is, which is a better first contact with this item than its title.
+
+### What the guard counts, which is both halves of L0
+
+`GraphitronModelStore.open()` in test sources is the store half, and on its own it leaves the item's
+actual thesis unenforced. A class can take its store from the shared home and still hand-roll the
+fixture file, the graph constant and the capture call, which is exactly what the eighteen `write(`
+copies and fifteen `GRAPH` constants are. So the ratchet counts two things under one allow-list: a
+test-source store open, and a test-source fixture write, the latter recognised as a
+`resolve("....graphqls")` in a test source outside the shared home.
+
+It deliberately does **not** count `FactCapture.capture` calls in test sources. The primitives layer
+below the factories exists precisely so a test whose axis combination no factory names can write that
+call itself, and a guard forbidding it would forbid the layer this item ships. The two counters above
+catch the same authors by the resources they stand up rather than by the call they make, which is the
+distinction that keeps the guard from policing the design it is protecting.
+
+### Why a guard at all, since discoverability alone has been tried and lost
 
 Within one module, "the utility is public and sits next to `TestSchemaHelper` in a package you
 already import" would be enough, and a grep ratchet would be maintenance surface bought for nothing.
@@ -312,7 +378,7 @@ most likely to be dropped for being small, which is precisely why it is written 
 fail on these two sites, and an allow-list entry added to silence it would be this item defeating
 itself on its first day.
 
-### Sequencing against the two in-flight items
+### Sequencing against the in-flight items
 
 Both dependencies are live in code this item touches, and both are declared in `depends-on`.
 
@@ -323,23 +389,19 @@ Both dependencies are live in code this item touches, and both are declared in `
   reason the inventory above records, so what it hands over is one more L1 copy rather than a grown L2
   one.
 
-**A case for taking L0 and the `graphitron` half of L1 ahead of both, rather than behind them.** The
-sequencing above assumes the shared home arrives last, and the cost of that assumption is now visible:
-the catalog-facts item has five tool slices left, and each needs capture shapes the LSP's fixture
-already has. The classpath census the code-tools slice reads is `StoreFixture.ofClasspath`, the source
-locations it renders come from `withJavaSource` / `refreshJavaSources`, and the diagnostics axes the
-status slice reads come from `withBuildWarnings`. Left as it is, that item will re-derive most of the
-LSP's fixture inside `graphitron-mcp` one slice at a time, and this item's job grows by a copy per
-slice. Whoever picks this up should weigh doing L0 plus the `graphitron` half of L1 first, then the MCP
-delegation, and leaving the LSP's fixture for last where the in-flight item still holds it. That is the
-order this section already licenses for an early start; what is new is that waiting has a measurable
-price rather than merely a deferred one.
+**Only the LSP slice waits, and `depends-on` says so now.** The catalog-facts dependency is dropped: its
+MCP fixture stopped moving when its catalog slices landed, and everything this item does inside
+`graphitron` touches no file either in-flight item holds. Waiting on both was costing what the counts
+above measure. The LSP dependency stays, because that item is still growing the post-capture writers
+this one moves, and its slice is last anyway.
 
-The expected case needs no special handling: this item is in Spec behind both, so both land first and
-this item picks up settled files. If work starts here before they land, take the levels in order and
-stop at the module line that is still moving; L0 and the `graphitron` half of L1 stand on their own
-and depend on neither. What must not happen is a rehome landing on top of a file another item is
-still rewriting. This item does not reach Done until all four modules are on the shared home.
+The price of waiting is also concrete rather than a preference. The catalog-facts item has five tool
+slices left and each needs capture shapes the LSP's fixture already carries: the classpath census its
+code-tools slice reads is `StoreFixture.ofClasspath`, the source locations it renders are
+`withJavaSource` / `refreshJavaSources`, and the diagnostics axes its status slice reads are
+`withBuildWarnings`. Left alone, that item re-derives most of the LSP's fixture inside `graphitron-mcp`
+one slice at a time, and this item's job grows by a copy per slice on top of the two or three a week
+already arriving in `graphitron`.
 
 ### Name the shapes; do not flag them
 
@@ -361,6 +423,15 @@ is the same argument the registry-source section below runs, applied to the othe
 Watch the direction of evidence while resolving it. Switching a test to inference-on and finding the
 suite still green does not show the axis is inert; it shows this fixture does not reach it, which is
 the weaker claim and not the one a collapsed factory set would be asserting.
+
+**An arm nothing distinguishes is decoration, so the resolution owes a discriminating case.** The
+counts above sharpen this: eleven of the fifteen sites pass `new NodeDeclaration(null)` while every
+production capture path passes `new NodeDeclaration(jooq)`, so inference-off is both the deviation and
+the majority. Keeping it as a named arm is only honest if at least one case in the suite *fails* when
+the arm flips. `DemandShadowTest` is the natural home, its own sweep comment already claiming to be
+"the enforcer for the node-inference seed's over-approximation". If no such case can be written, that
+is the finding and the two arms collapse into one, which is the outcome this section says it is willing
+to reach.
 
 ### Layered: a closure convenience over a resource handle over the primitives
 
@@ -446,9 +517,18 @@ document with two memberships, both true. Subdirectory-per-graph cannot express 
 it makes the file's location a function of the graph. Filename-per-graph expresses it by letting a
 caller hand over a file it already has.
 
-Nothing asserts on the literal `fixture.graphqls`, in either module, so the rename is free. The
-sweeps then stop minting subdirectories, which is a small hand-rolled step deleted rather than
-moved.
+One site asserts on the literal `fixture.graphqls` and the first draft of this section said none did.
+`capture/WarmStartRefreshTest` writes its own fixture under that name and then asserts the re-expansion
+finds it, comparing the absolute normalized path as a string (`containsExactlyInAnyOrder(tmp.resolve(
+"fixture.graphqls")...)`). Its subject is the stamp and the recipe expansion, so the filename is
+incidental to what it pins and the assertion moves with the rename; what matters is that the
+implementer meets this site knowingly. It is also the one place where this item's acceptance rule, that
+an assertion needing to change signals a load-bearing axis, does not apply: here the changed assertion
+is the fixture's own name, which is what the rename is. Say so at the call site when it changes.
+
+Eight further classes hardcode `directory.resolve("fixture.graphqls")` inside their own `write` copies,
+so the rename is not one line but one line per copy, taken as each copy migrates. The sweeps then stop
+minting subdirectories, which is a small hand-rolled step deleted rather than moved.
 
 One line of the eight copies has to survive the merge: each of them calls `Files.createDirectories`
 before writing and `CapturedStore.write` does not, because every `capture/` caller hands it a
@@ -509,15 +589,62 @@ writes, and a DDL change adding a non-null column should break one place rather 
 
 ### Update the agreement anchors
 
-`FactCaptureAgreementTest`'s class javadoc cites seven of the migrated classes by name as the
-registered per-view agreement anchors: `ColumnMatchClaimTest`, `ReferenceStepTargetTest`,
-`FieldColumnTableTest`, `ClassMemberSlotTest`, `DemandShadowTest`, `InputOccurrenceShadowTest` and
-`AuthoredClaimConflictsTest`, each as a fully qualified `{@code}` name.
+`FactCaptureAgreementTest`'s class javadoc cites the migrated classes by name as the registered
+per-view agreement anchors, and the list has grown with the population: **fourteen** fully qualified
+`{@code}` names as of 2026-08-17, the original seven (`ColumnMatchClaimTest`,
+`ReferenceStepTargetTest`, `FieldColumnTableTest`, `ClassMemberSlotTest`, `DemandShadowTest`,
+`InputOccurrenceShadowTest`, `AuthoredClaimConflictsTest`) plus `AccessorHopTest`,
+`ClassAssignableTest`, `FieldProducerMethodTest`, `ProducerCardinalityTest`, `TypeBackingClassTest`,
+`TypeBackingClassesTest` and `TypeBackingShadowTest`.
+
+Convert them to `{@link}` while touching them, which is the cheap half of this finding. The reason
+this section exists is that `{@code}` is invisible to the javadoc reference gate, so a rename or move
+rots the citation silently; every one of the fourteen names a live class today, so the conversion is
+mechanical and the gate maintains the list from then on. Doing it in this item is what stops the same
+paragraph having to be written again for the next consolidation.
 `docs/architecture/explanation/fact-model.adoc` cites four of them the same way
 (`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`, `DemandShadowTest`,
 `InputOccurrenceShadowTest`) plus `DiagnosticFactsTest` on the diagnostics stratum. Because the
 citations are `{@code}` and not `{@link}`, the javadoc reference gate will not catch a rename or move,
 so any class rename in this item must update both surfaces by hand.
+
+## Slices
+
+Six slices, ordered so each lands on settled files and each has an arithmetic acceptance. The item is
+too large for one session: fifteen classes in `graphitron`, thirty-six call sites in the language
+server, four modules and an open design question.
+
+**S1: the ratchet.** The guard, both counters, every current site allow-listed with its reason, and the
+count in its failure message. Nothing migrates. Acceptance: the build fails on a new site, proved by a
+negative case, and passes on the tree as it stands.
+
+**S2: L0.** The store's lifetime, the fixture file with the filename keyed on the graph name, the
+caller-supplied graph identity, `registryOf` / `attributionOf` / `fixtureFile` public, and
+`CapturedStore` widened and moved beside `TestSchemaHelper`. Its current `capture/` readers move with
+it. Acceptance: those readers pass untouched except for the import, and the `WarmStartRefreshTest`
+filename assertion moves knowingly.
+
+**S3: L1 inside `graphitron`.** The named capture factories, the census as an argument, the registry
+arm, and the fifteen hand-rolled harnesses drained in batches. This is the slice that resolves the
+node-inference arm, and it owes the discriminating case. Acceptance: allow-list entries removed per
+batch, and no assertion content changed.
+
+**S4: `graphitron-mcp`.** Its `StoreFixture` becomes an L3 delegator and `StoreBackedBuild` adopts L0,
+keeping its file-store arm named rather than flagged. Acceptance: no MCP test class is edited, and two
+allow-list entries go.
+
+**S5: `graphitron-maven-plugin`.** The two inline sites adopt L0. Acceptance: two allow-list entries go,
+and neither is silenced instead.
+
+**S6: `graphitron-lsp`.** `StoreFixture` keeps its name and its thirty-six call sites and delegates its
+capture half, including the post-capture writers, which is the part that waits on the LSP item. This is
+also where the seeding consolidation and the hand-written `graphql_type` / `graphql_field` twins land,
+both of them cross-cutting enough to want the whole set in view. Acceptance: the allow-list is empty and
+no LSP test class is edited.
+
+What must not happen is a rehome landing on top of a file another item is still rewriting, which the
+slice order below is arranged to avoid. This item does not reach Done until all four modules are on the
+shared home and the allow-list is empty.
 
 ## Tests
 
