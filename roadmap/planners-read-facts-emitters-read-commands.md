@@ -427,11 +427,10 @@ populations are enumerated under "The facts to plan against are available" above
   the worked example the emitter half generalises from. If it lands first, this item inherits a
   proven recipe and one fewer family; if this item is picked up first, that stage should be lifted
   onto it.
-* `roadmap/decompose-typefetchergenerator.md` asks how to break up `TypeFetcherGenerator` and offers
-  decomposing along the field taxonomy as its leading option. That option is superseded: the file
-  does not get decomposed along the leaves, it empties into `render` as the families migrate. It
-  should be re-scoped or discarded when this item reaches Ready, and should not be picked up
-  independently in the meantime.
+* The former decompose-`TypeFetcherGenerator` item (R7, see `roadmap/changelog.md`) asked how to
+  break up that file and offered decomposing along the field taxonomy as its leading option. It was
+  discarded in this item's favour: the file does not get decomposed along the leaves, it empties
+  into `render` as the families migrate.
 
 ## Retired vocabulary
 

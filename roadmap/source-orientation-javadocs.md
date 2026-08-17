@@ -75,8 +75,11 @@ argument-resolution code immediately learns what it is and why it stays.
 
 ## Out of scope
 
-- `TypeFetcherGenerator` decomposition. Tracked separately under
-  [`decompose-typefetchergenerator.md`](decompose-typefetchergenerator.md).
+- `TypeFetcherGenerator` decomposition. The item that tracked it (R7, see
+  [`changelog.md`](changelog.md)) was discarded in favour of
+  [`planners-read-facts-emitters-read-commands.md`](planners-read-facts-emitters-read-commands.md):
+  the file empties into `render` as emitter families migrate onto command
+  relations, rather than being decomposed along the field taxonomy.
 - `FieldBuilder` decomposition. Shipped under R6; see
   [`changelog.md`](changelog.md).
 - Method-level Javadoc within these classes. The class-level pass is
