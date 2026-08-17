@@ -9,7 +9,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,6 +41,15 @@ class SourceCadenceHoverAndDefinitionTest {
 
     /** The graph is beside the point in every case here; the subject is the {@code .java} files. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
+
+    /**
+     * The graph the declaration-name case needs, which is the one case where it is not beside the
+     * point: the type name that case puts a cursor on resolves through the store's own binding.
+     */
+    private static final String DECLARED_FILM_SDL = """
+        type Query { film: Film }
+        type Film @table(name: "film") { title: String }
+        """;
 
     @Test
     void serviceMethodHoverAndGotoBothReadTheWalkedSource(@TempDir Path srcRoot) throws IOException {
@@ -175,7 +183,7 @@ class SourceCadenceHoverAndDefinitionTest {
         // Cursor on the 'i' of the Film declaration's own name token.
         var namePos = new Point(0, "type Fi".length());
 
-        try (var store = StoreFixture.ofCatalog(srcRoot, PLACEHOLDER_SDL)) {
+        try (var store = StoreFixture.ofCatalog(srcRoot, DECLARED_FILM_SDL)) {
             String filmFqn = store.tableClassFqn("film");
             store.withJavaSource(srcRoot, filmFqn, """
                 /** The film table. */
@@ -184,9 +192,10 @@ class SourceCadenceHoverAndDefinitionTest {
                 }
                 """);
             var workspace = workspaceWithTableCatalog(filmFqn);
+            // Which declaration the type name binds to is the store's answer off the captured
+            // binding, so the projection this arm still takes carries nothing.
             var snapshot = new LspSchemaSnapshot.Built.Current(
-                List.of(), Map.of("Film", new TypeBackingShape.TableBacking("film")),
-                Map.of(), Map.of(), Map.of());
+                List.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
             assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
                 .contains("The film table.");

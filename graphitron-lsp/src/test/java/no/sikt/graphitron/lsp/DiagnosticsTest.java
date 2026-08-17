@@ -333,8 +333,11 @@ class DiagnosticsTest {
 
     @Test
     void sourceSigil_atNonCarrierSite_producesCanonicalNotDefinedHereDiagnostic() {
-        // Parent has a known TypeBackingShape (RecordBacking) but no entry in the carrier
-        // projection — the LSP emits the canonical "$source is not defined here" message.
+        // The parent has an entry in the projection but none in the carrier projection, so the LSP
+        // emits the canonical "$source is not defined here" message. The entry is load-bearing as
+        // membership and not as a backing: the sigil arm speaks only about a type the projection has
+        // seen, so that a site whose classification is merely stale is left alone. Which variant the
+        // entry carries is beside the point, nothing reading a backing off the projection any more.
         var file = file("""
             type Foo {
                 bar: Int @field(name: "$source")

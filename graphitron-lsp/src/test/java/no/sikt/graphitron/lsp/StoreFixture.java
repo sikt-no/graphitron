@@ -354,6 +354,21 @@ final class StoreFixture implements AutoCloseable {
     }
 
     /**
+     * A no-argument method whose return type names one qualified class, which is what a producer
+     * grounding an SDL type on a class needs. {@link #method} cannot stand in for it: the return type
+     * it takes is the erased display form, and a package-less name cannot be compared for identity, so
+     * the census carries the qualified names a declared type mentions as their own rows and that is
+     * what the store's peel reads.
+     */
+    static CompletionData.Method producing(String name, String returnClassFqn) {
+        var erased = method(name, returnClassFqn.substring(returnClassFqn.lastIndexOf('.') + 1));
+        return new CompletionData.Method(
+            erased.name(), erased.returnType(), erased.description(), erased.parameters(),
+            erased.returnsCondition(), erased.descriptor(), erased.returnType(),
+            List.of(new CompletionData.TypeRef("", returnClassFqn, "NONE")));
+    }
+
+    /**
      * A method whose declared return form differs from the erasure beside it, which is what a
      * generic return looks like in the census: the descriptor says {@code List} and the classfile's
      * signature says {@code List<Film>}. Separate from {@link #method} so a fixture that means the

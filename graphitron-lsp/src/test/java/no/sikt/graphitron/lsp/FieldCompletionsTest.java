@@ -7,7 +7,6 @@ import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -24,9 +23,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Coverage for {@code @field(name: "...")} column autocomplete. Two things meet at this arm: which
- * table a site's columns come from, which is a classification question answered off the snapshot,
- * and what columns that table has, which is a read of the graph's {@code sql_column} census.
+ * Coverage for {@code @field(name: "...")} column autocomplete. Two things meet at this arm: what the
+ * site's members resolve against, which is one read of the store's own relations, and what that table
+ * or class then offers, which is a read of the graph's {@code sql_column} or classpath census.
  *
  * <p>The census is the fixture module's real generated jOOQ model, captured once for the class. A
  * hand-built column list could state a table the catalog does not have, or state a jOOQ field name
@@ -36,10 +35,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FieldCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
-
-    /** The captured census's record and POJO, whose members the class-backed arms resolve against. */
-    private static final String RECORD_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
-    private static final String POJO_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157FilmPojo";
 
     /** The census's producer, whose return types ground the class-backed cases' own SDL. */
     private static final String SERVICE_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157Service";
@@ -178,10 +173,10 @@ class FieldCompletionsTest {
     }
 
     /**
-     * The snapshot says the parent is class-backed, the store says which class, and the census says
-     * what that class offers. So the document itself has to be the captured one: the class is the
-     * store's answer for a type this SDL declares, grounded by a producer of its own, and the
-     * candidates are the components a compiler recorded for it.
+     * The store says the parent resolves against a class and which class, and the census says what
+     * that class offers. So the document itself has to be the captured one: the class is the store's
+     * answer for a type this SDL declares, grounded by a producer of its own, and the candidates are
+     * the components a compiler recorded for it.
      */
     @Test
     void recordBackingCompletionReturnsRecordComponents() {
@@ -197,8 +192,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = runBacked(source, cursor, classBacking(
-            "FilmCard", new TypeBackingShape.RecordBacking(RECORD_FIXTURE)));
+        var items = runBacked(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("filmId", "title");
@@ -218,8 +212,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = runBacked(source, cursor, classBacking(
-            "FilmPojoView", new TypeBackingShape.PojoBacking(POJO_FIXTURE)));
+        var items = runBacked(source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactly("filmId", "title");
@@ -245,8 +238,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = runBacked(source, cursor, classBacking(
-            "Contested", new TypeBackingShape.RecordBacking(RECORD_FIXTURE)));
+        var items = runBacked(source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -279,10 +271,8 @@ class FieldCompletionsTest {
 
     @Test
     void sourceSigil_atCarrierDataField_isSuggested() {
-        // Carrier projection declares FilmListPayload.films as the carrier data field; the
-        // parent's TypeBackingShape is NoBacking.UnbackedResult (the promoted-Pojo carrier
-        // shape). $source ships as the only completion (no column / accessor list applies on
-        // NoBacking).
+        // Carrier projection declares FilmListPayload.films as the carrier data field, and the store
+        // scopes the type to neither a table nor a class, so $source ships as the only completion.
         String source = """
             type FilmListPayload {
                 films: [Film!] @field(name: "")
@@ -294,7 +284,7 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("FilmListPayload", new TypeBackingShape.NoBacking.UnbackedResult()),
+            Map.of(),
             Map.of("FilmListPayload", "films")
         );
         var items = run(STORE.handle(), snapshot, source, cursor);
@@ -303,11 +293,18 @@ class FieldCompletionsTest {
             .containsExactly(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
     }
 
+    /**
+     * The same site with no carrier entry for it: the sigil is not suggested, and nothing else is
+     * either, the type being one the store scopes to neither a table nor a class. The LSP's narrow
+     * predicate matches the build's narrow predicate.
+     *
+     * <p>A second case stood beside this one for a projection carrying no entry for the type at all,
+     * which was a distinguishable state while the column arm read the projection for the parent's
+     * backing. It is the same state as this one now: the sigil arm reads the carrier map alone, and
+     * the arm beside it reads the store, so a projection has no third thing to say here.
+     */
     @Test
-    void sourceSigil_atNonCarrierSite_isNotSuggested() {
-        // Same SDL shape (a NoBacking.UnbackedResult parent), but no entry in the carrier
-        // projection — $source is NOT suggested. The LSP's narrow predicate matches the
-        // build's narrow predicate.
+    void sourceSigil_awayFromTheCarrierDataField_isNotSuggested() {
         String source = """
             type FilmListPayload {
                 films: [Film!] @field(name: "")
@@ -317,34 +314,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("FilmListPayload", new TypeBackingShape.NoBacking.UnbackedResult()),
-            Map.of()
-        );
-        var items = run(STORE.handle(), snapshot, source, cursor);
-
-        assertThat(items).extracting(c -> c.getLabel())
-            .doesNotContain(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
-    }
-
-    @Test
-    void sourceSigil_snapshotUncertainty_silent() {
-        // Parent type has no entry in typesByName AND no entry in carrierDataFieldByType:
-        // the snapshot's view is "shape unknown" (mid-edit / not-yet-classified rename).
-        // The LSP arm is silent on both axes — no completion, no diagnostic. Mirrors the
-        // existing snapshot-uncertainty behaviour for the column/accessor arms.
-        String source = """
-            type RenamedMidEdit {
-                films: [Film!] @field(name: "")
-            }
-            """;
-        int line = 1;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        Point cursor = new Point(line, col);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-        var items = run(STORE.handle(), snapshot, source, cursor);
+        var items = run(STORE.handle(), emptySnapshot(), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -614,15 +584,10 @@ class FieldCompletionsTest {
      * which is what a class-backed case needs: the class the arm resolves is the store's answer for
      * a type the document declares, so the document and the capture have to be the same schema.
      */
-    private List<CompletionItem> runBacked(String source, Point cursor, LspSchemaSnapshot snapshot) {
+    private List<CompletionItem> runBacked(String source, Point cursor) {
         try (var store = StoreFixture.of(sharedDirectory, source, StoreFixture.backingClasses())) {
-            return run(store.handle(), snapshot, source, cursor);
+            return run(store.handle(), emptySnapshot(), source, cursor);
         }
-    }
-
-    /** The projection's routing arm alone: which class it names is no longer read. */
-    private static LspSchemaSnapshot classBacking(String typeName, TypeBackingShape backing) {
-        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(typeName, backing), Map.of());
     }
 
     /** No projection at all: the cases using it resolve their scope from the store. */

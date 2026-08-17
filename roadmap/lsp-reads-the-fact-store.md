@@ -2001,7 +2001,11 @@ walk is evidence here, not the specification.
     arm is done with it: `TypeMemberScope` answers the whole fork, the three surfaces read it, and
     `Diagnostics.validateFieldMember` is off the projection with them. The second reader turned out
     to be the one that could not lift the precedence, for a reason the section below carries, so
-    `TypeBackingShape` leaves the language server with `DeclTarget` rather than before it.
+    `TypeBackingShape` leaves the language server with `DeclTarget` rather than before it. It has:
+    `DeclTarget` reads the scope, no main source in `graphitron-lsp` names the permit hierarchy, and
+    the sixteen switch cases the two resolver cores carried became two arms. One question stayed with
+    the projection there and it is not a backing, which the section below states along with the fact
+    that would close it.
 
 ## Settled while building: a declared type is a tree, so resolving it is a relation per position
 
@@ -2672,6 +2676,64 @@ declare `type Foo @table(name: "film")` in a buffer while the captured graph kno
 each such case captures its own document or names a type the shared capture binds. The census was
 also short of a producer returning a generated jOOQ record, so the class-is-a-table arm had nothing
 to be tested against, and `R157Service.makeFilmRow` is that producer.
+
+## Settled while building: the projection's backing leaves the language server, and what stayed is not one
+
+`DeclTarget` reads `TypeMemberScope`, so goto-definition and the declaration-name hover overlay
+resolve a coordinate the same way completion, hover and the field-member diagnostic already do. No
+main source in `graphitron-lsp` names `TypeBackingShape` any more. That was the milestone the naming
+table set for this step, and it landed with one shape less than the plan expected and one question
+more.
+
+**The two switches collapsed into two arms, and the count is the argument.** `ofType` and `ofField`
+each switched over eight permits, sixteen cases naming five payload shapes between them, to reach
+four outcomes: a table's generated class, a column on it, a class, a member of one. The scope has two
+arms and the outcomes are unchanged, because most of those cases differed only in which permit
+carried the name. A jOOQ record with a table and a `@table` binding were two cases reaching one arm; a
+record backing and a POJO backing were two more, and which of a component or an accessor a member
+name lands on was already the store's answer rather than the permit's. Three silences were three
+cases for one absence. What the sixteen encoded was where a value was parked, not a decision anyone
+made.
+
+**The degrade for a class with no members was standing in for facts, so it went.** A field cursor
+inside a type backed by a jOOQ record no table claims used to jump to the class, and the reason was
+stated in the code: the projection held no member keys for a record. The class it jumped to had never
+been asked whether it declares the member, so the jump was a guess wearing a resolution's clothes.
+The store answers that question for any class it holds and holds nothing for a generated one by
+design, so the same coordinate now resolves to nothing, and the type name still names the class. Both
+halves are pinned, and against the real population rather than a stand-in: a workspace whose jOOQ
+model was generated but whose catalog this graph never captured, which is a configuration and not a
+mistake.
+
+**A candidate list resolves a column an early pick cannot.** `columnTarget` tries the binding's
+candidates in order and answers with the first that declares the column, where the incumbent picked
+one table up front and looked the column up only there. So an ambiguous `@table` whose column exists
+on the second candidate jumps now instead of declining. The column named at the site is evidence
+about which table the author meant, and that only became available to use once ambiguity arrived as
+rows rather than as a spelling.
+
+**One question is left with the projection and it is not a backing.** Which Java method a
+method-backed field binds to is still `FieldClassification`'s, so `DeclTarget` still takes a `Built`
+and the two declaration-name providers still gate on having one. The fact that would close it exists,
+`intent_field_producer_method`, which is what `intent_type_backing_seed` already grounds itself on;
+what makes it its own increment rather than a clause of this one is that the classification variants
+carry more than a method between them, and the arm's arity read would meet the relation's own
+`candidates` column. The remaining `typesByName()` read in the language server is a different thing
+again: the `$source` sigil arm asks it whether the projection has seen a type at all, so that a site
+whose classification is merely stale is left alone. That guard belongs with the question it gates, and
+it should stay on the same substrate that answers it rather than being moved to the store while the
+sigil admission stays behind.
+
+**Inert fixtures are drift, so they went with the readers.** Five test classes were still building
+permit maps and handing them to providers that no longer read one, which reads as though the backing
+still mattered; they hand an empty projection now, and the cases that need a scope get it from a
+capture. Two of them turned out to be one case: completion had a case for a projection with no entry
+for the type beside a case for a non-carrier site, and with the column arm off the projection those
+are the same input, the sigil arm reading the carrier map alone and having no membership guard of its
+own. The diagnostic's guard keeps its own case, where the guard actually lives. The census also gained
+a producer whose return type names a qualified class, `StoreFixture.producing`: a synthetic method
+carries an erased display name, and a package-less name cannot ground anything, which is exactly why
+the census records the qualified names a declared type mentions as rows of their own.
 
 ## Retired vocabulary
 

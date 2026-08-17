@@ -5,32 +5,34 @@ import no.sikt.graphitron.lsp.hover.DeclarationHovers;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The declaration-name hover overlay and its agreement with goto-definition. Both falsifiable pieces
- * are separable: the shared {@link DeclTarget} resolver names a declaration from the {@code Built}
- * backing projection and the store's censuses, and the two projections of it,
+ * are separable: the shared {@link DeclTarget} resolver names a declaration from what the store says
+ * a coordinate resolves against, and the two projections of it,
  * {@link DeclarationHovers#overlay} and {@link DeclarationDefinitions#locate}, are queries against one
  * store. The only tree-sitter-bound step, the {@code @field(name:)} trigger, is shared with goto and
  * covered by the live {@code DeclarationHoversTest}.
  *
- * <p>The overlay cases stand up a real store: real capture of the fixture module's generated jOOQ
- * catalog for the two catalog arms, and a real parse of {@code .java} files on disk for the arms that
- * answer about Java. No row is inserted by hand, so a fixture cannot claim a state capture never
- * writes, and every doc comment and position in an assertion came from parsing source.
+ * <p>Every case stands up a real store: real capture of the fixture module's generated jOOQ catalog
+ * and of the fixture classes for the resolver arms, and a real parse of {@code .java} files on disk
+ * for the arms that answer about Java. No row is inserted by hand, so a fixture cannot claim a state
+ * capture never writes, and every doc comment and position in an assertion came from parsing source.
+ * One projection value is still hand-built, and it carries exactly the one question the resolver still
+ * puts to the projection: which Java method a method-backed field binds to.
  *
  * <p>The drift guard is the parity claim, and it is structural in both halves again. Both projections
  * switch exhaustively over the <em>same</em> resolved target, so neither can point at a different
- * declaration and a new backing permit breaks both at compile time; and both read the same row of the
+ * declaration and a new scope arm breaks both at compile time; and both read the same row of the
  * java-source family, one for its doc comment and one for its position, so neither can be answering
  * about a state of the source the other has not seen. One asymmetry is left, and the guard is what
  * pins it: goto jumps for every declaration the parse positioned, hover overlays only those it read a
@@ -46,58 +48,112 @@ class DeclarationHoverOverlayParityTest {
     /** The graph is beside the point in the overlay cases; the subject is the catalog and the source. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
+    private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
+    private static final String FIXTURE_RECORD = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
+    private static final String FIXTURE_POJO = "no.sikt.graphitron.lsp.fixtures.R157FilmPojo";
+    private static final String FIXTURE_JOOQ_RECORD =
+        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
+
+    /**
+     * One graph covering every arm the resolver has: a type bound to a table, a type a producer
+     * grounds on a record, one it grounds on a bean, one it grounds on the row type of a table, and a
+     * field whose own {@code @service} names a method. Each backing is a real producer return read off
+     * the fixture classes, so no assertion below rests on a shape only a hand-built store could have.
+     */
+    private static final String RESOLVER_SDL = """
+        type Query {
+            film: Film
+            card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            pojo: FilmPojoView @service(service: {className: "%1$s", method: "makeFilmPojo"})
+            row: FilmRow @service(service: {className: "%1$s", method: "makeFilmRow"})
+            priced: Priced
+        }
+        type Film @table(name: "film") { title: String }
+        type FilmCard { title: String }
+        type FilmPojoView { title: String }
+        type FilmRow { title: String }
+        type Priced { price: Int @service(service: {className: "%2$s", method: "price"}) }
+        """.formatted(FIXTURE_SERVICE, SERVICE_CLASS);
+
     // ===== resolver: SDL coordinate -> named declaration =====
 
     @Test
-    void typeNameResolvesPerBacking(@TempDir Path root) {
-        var built = built();
+    void typeNameResolvesPerScope(@TempDir Path root) {
         try (var store = resolverStore(root)) {
             var handle = store.handle();
-            assertThat(DeclTarget.ofType("Film", built, handle))
-                .isEqualTo(new DeclTarget.CatalogTable("film", store.tableClassFqn("film")));
-            assertThat(DeclTarget.ofType("Standalone", built, handle))
-                .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
-            assertThat(DeclTarget.ofType("Person", built, handle))
-                .isEqualTo(new DeclTarget.SourceClass(RECORD_CLASS));
-            assertThat(DeclTarget.ofType("PersonPojo", built, handle))
-                .isEqualTo(new DeclTarget.SourceClass(POJO_CLASS));
-            assertThat(DeclTarget.ofType("Query", built, handle)).isInstanceOf(DeclTarget.None.class);
-            assertThat(DeclTarget.ofType("Unknown", built, handle)).isInstanceOf(DeclTarget.None.class);
+            var film = new DeclTarget.CatalogTable("film", store.tableClassFqn("film"));
+            assertThat(DeclTarget.ofType("Film", handle)).isEqualTo(film);
+            assertThat(DeclTarget.ofType("FilmCard", handle))
+                .isEqualTo(new DeclTarget.SourceClass(FIXTURE_RECORD));
+            assertThat(DeclTarget.ofType("FilmPojoView", handle))
+                .isEqualTo(new DeclTarget.SourceClass(FIXTURE_POJO));
+            // A type grounded on the row type of a table names that table, not the generated class as
+            // a class: the same declaration the @table-bound type above resolves to.
+            assertThat(DeclTarget.ofType("FilmRow", handle)).isEqualTo(film);
+            assertThat(DeclTarget.ofType("Query", handle)).isInstanceOf(DeclTarget.None.class);
+            assertThat(DeclTarget.ofType("Unknown", handle)).isInstanceOf(DeclTarget.None.class);
         }
     }
 
     /**
-     * The class-backed arms read the store: which of a record's components or a class's accessors a
+     * The class-scoped arms read the store: which of a record's components or a class's accessors a
      * member name resolves to, and therefore whether the declaration behind it is a field or a
-     * method, is the member-slot relation's answer rather than the permit's.
+     * method, is the member-slot relation's answer.
      */
     @Test
-    void fieldNameResolvesPerBacking(@TempDir Path root) {
-        var built = built();
+    void fieldNameResolvesPerScope(@TempDir Path root) {
         try (var store = resolverStore(root)) {
             var handle = store.handle();
+            var built = built();
+            var title = new DeclTarget.CatalogColumn("film", store.tableClassFqn("film"), "TITLE");
             // The author's spelling is the SQL name; the target carries the generated field's, which
             // is what the class declares and what either consumer then reads about it.
-            assertThat(DeclTarget.ofField("Film", "title", built, handle))
-                .isEqualTo(new DeclTarget.CatalogColumn("film", store.tableClassFqn("film"), "TITLE"));
-            // A standalone-jOOQ field degrades to its backing class, where goto jumps.
-            assertThat(DeclTarget.ofField("Standalone", "anything", built, handle))
-                .isEqualTo(new DeclTarget.SourceClass(STANDALONE_CLASS));
-            // Record component and POJO accessor field arms.
-            assertThat(DeclTarget.ofField("Person", "firstName", built, handle))
-                .isEqualTo(new DeclTarget.SourceField(RECORD_CLASS, "firstName"));
-            assertThat(DeclTarget.ofField("PersonPojo", "firstName", built, handle))
-                .isEqualTo(new DeclTarget.SourceMethod(POJO_CLASS, "getFirstName", 0));
+            assertThat(DeclTarget.ofField("Film", "title", built, handle)).isEqualTo(title);
+            assertThat(DeclTarget.ofField("FilmRow", "title", built, handle)).isEqualTo(title);
+            // Record component and bean accessor field arms.
+            assertThat(DeclTarget.ofField("FilmCard", "title", built, handle))
+                .isEqualTo(new DeclTarget.SourceField(FIXTURE_RECORD, "title"));
+            assertThat(DeclTarget.ofField("FilmPojoView", "title", built, handle))
+                .isEqualTo(new DeclTarget.SourceMethod(FIXTURE_POJO, "getTitle", 0));
             // A method-backed (@service) field name resolves to its bound method, with
-            // the arity read off the census, taking precedence over the parent backing.
+            // the arity read off the census, taking precedence over the parent's scope.
             assertThat(DeclTarget.ofField("Priced", "price", built, handle))
                 .isEqualTo(new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1));
-            // Unknown column / unknown member / no backing all yield no target.
+            // Unknown column / unknown member / no scope all yield no target.
             assertThat(DeclTarget.ofField("Film", "no_such_column", built, handle))
                 .isInstanceOf(DeclTarget.None.class);
-            assertThat(DeclTarget.ofField("Person", "noSuchMember", built, handle))
+            assertThat(DeclTarget.ofField("FilmCard", "noSuchMember", built, handle))
                 .isInstanceOf(DeclTarget.None.class);
             assertThat(DeclTarget.ofField("Query", "whatever", built, handle))
+                .isInstanceOf(DeclTarget.None.class);
+        }
+    }
+
+    /**
+     * A workspace whose jOOQ model has been generated but whose catalog this graph never captured: the
+     * row type is then a class no table claims, so the type is scoped to it as a class, and the class
+     * census holds no slots for it because it excludes the generated package by design. The type name
+     * still names the class, and a member name written inside it names nothing.
+     *
+     * <p>This is where the incumbent projection answered with the backing class for <em>any</em> member
+     * name, a jOOQ record being the one shape it held no member keys for. That degrade was standing in
+     * for facts it did not have rather than naming a declaration the field binds to, and the store has
+     * the same silence for a reason it can state.
+     */
+    @Test
+    void aFieldOnAClassTheCensusHoldsNoSlotsForResolvesToNothing(@TempDir Path root) {
+        String sdl = """
+            type Query {
+                row: FilmRow @service(service: {className: "%s", method: "makeFilmRow"})
+            }
+            type FilmRow { title: String }
+            """.formatted(FIXTURE_SERVICE);
+
+        try (var store = StoreFixture.of(root, sdl, StoreFixture.backingClasses())) {
+            var handle = store.handle();
+            assertThat(DeclTarget.ofType("FilmRow", handle))
+                .isEqualTo(new DeclTarget.SourceClass(FIXTURE_JOOQ_RECORD));
+            assertThat(DeclTarget.ofField("FilmRow", "title", built(), handle))
                 .isInstanceOf(DeclTarget.None.class);
         }
     }
@@ -275,30 +331,27 @@ class DeclarationHoverOverlayParityTest {
 
     /**
      * The store the resolver cases read: the fixture module's generated catalog for the table and
-     * column arms, plus a census carrying the record's component, the POJO's accessor and the service
-     * method whose parameter count is the arity a method-backed field resolves at.
+     * column arms, the fixture classes for the ones a producer grounds, and one census entry the
+     * fixtures cannot supply, a method taking a parameter, whose count is the arity a method-backed
+     * field resolves at.
      */
     private static StoreFixture resolverStore(Path root) {
-        return StoreFixture.ofCatalog(root, PLACEHOLDER_SDL, List.of(
-            StoreFixture.jarRecord(RECORD_CLASS, StoreFixture.component("firstName", "String")),
-            StoreFixture.jarClass(POJO_CLASS, List.of(
-                StoreFixture.method("getFirstName", "String"))),
-            StoreFixture.jarClass(SERVICE_CLASS, List.of(
+        return StoreFixture.ofCatalog(root, RESOLVER_SDL, Stream.concat(
+            StoreFixture.backingClasses().stream(),
+            Stream.of(StoreFixture.jarClass(SERVICE_CLASS, List.of(
                 StoreFixture.method("price", "Field",
-                    StoreFixture.parameter("ctx", "DSLContext"))))));
+                    StoreFixture.parameter("ctx", "DSLContext")))))).toList());
     }
 
+    /**
+     * The one thing the resolver still asks the projection, which is not a backing: the classification
+     * of {@code Priced.price} names the Java method that field binds to, and the resolution prefers it
+     * over the parent type's own scope. Every other map is empty, and the cases above pass whatever
+     * they get from it.
+     */
     private static LspSchemaSnapshot.Built built() {
-        Map<String, TypeBackingShape> backings = Map.of(
-            "Film", new TypeBackingShape.TableBacking("film"),
-            "Standalone", new TypeBackingShape.JooqRecordBacking.Standalone(STANDALONE_CLASS),
-            "Person", new TypeBackingShape.RecordBacking(RECORD_CLASS),
-            "PersonPojo", new TypeBackingShape.PojoBacking(POJO_CLASS),
-            "Query", new TypeBackingShape.NoBacking.Root());
-        // "Priced.price" is a field-level @service field; its classification names the
-        // bound method, which the field-name resolution prefers over any backing.
         Map<String, FieldClassification> classifications = Map.of(
             "Priced.price", new FieldClassification.ServiceBacked(SERVICE_CLASS, "price", false, null, null));
-        return new LspSchemaSnapshot.Built.Current(List.of(), backings, Map.of(), classifications, Map.of());
+        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of(), classifications, Map.of());
     }
 }

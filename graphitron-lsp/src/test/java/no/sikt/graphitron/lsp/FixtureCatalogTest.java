@@ -152,19 +152,16 @@ class FixtureCatalogTest {
     }
 
     /**
-     * Snapshot mapping {@code Foo → TableBacking("film")}: the {@code @field(name:)} arm still reads
-     * the classifier-projected backing for which table a type is bound to, that binding being the one
-     * piece with no relation; what the table then holds comes from the store.
+     * A projection carrying nothing. The {@code @field(name:)} arm reads which table {@code Foo} is
+     * bound to off the captured binding and what that table holds off the census, so a projection has
+     * nothing to contribute and handing it one would only let a case pass on a fall-back.
      */
-    private static LspSchemaSnapshot fooFilmSnapshot() {
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
-        Map.of());
+    private static LspSchemaSnapshot noProjection() {
+        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
     }
 
     private static List<Diagnostic> diagnose(no.sikt.graphitron.lsp.state.FileSnapshot file) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file, fooFilmSnapshot(),
+        return Diagnostics.compute(LspVocabulary.load(), "", file, noProjection(),
             ValidationReport.empty(), Optional.of(store.handle()));
     }
 }

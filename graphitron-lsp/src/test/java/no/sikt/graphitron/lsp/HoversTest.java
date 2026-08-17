@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupKind;
 import org.junit.jupiter.api.AfterAll;
@@ -229,11 +228,11 @@ class HoversTest {
     }
 
     /**
-     * That the parent is class-backed comes from the snapshot's name-keyed projection, not from any
-     * SDL directive, so the member hover resolves without an applied {@code @record}. Which class
-     * that is comes from the store, a producer in the captured graph grounding {@code FilmCard} on
-     * the fixture record, and what the class offers comes from the census, so the rendered type is
-     * the one a compiler recorded for the component rather than one this fixture chose.
+     * That the parent resolves against a class, and which one, comes from the store: a producer in the
+     * captured graph grounds {@code FilmCard} on the fixture record, with no SDL directive saying so,
+     * so the member hover resolves without an applied {@code @record}. What the class offers comes from
+     * the census, so the rendered type is the one a compiler recorded for the component rather than one
+     * this fixture chose, and the projection passed in says nothing at all.
      */
     @Test
     void fieldHoverOnRecordBackingShowsComponentMetadata() {
@@ -243,7 +242,7 @@ class HoversTest {
             }
             """);
         var pos = pointAt(file, 1, "title");
-        var snapshot = recordBackedFilmCard();
+        var snapshot = noProjection();
 
         var md = markdownAt(file, snapshot, pos);
 
@@ -264,15 +263,16 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        assertThat(hoverWithoutStore(file, recordBackedFilmCard(), pos)).isEmpty();
+        assertThat(hoverWithoutStore(file, noProjection(), pos)).isEmpty();
     }
 
-    /** A type the store grounds on the fixture record, whose members the census answers for. */
-    private static LspSchemaSnapshot.Built.Current recordBackedFilmCard() {
-        return new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            java.util.Map.of("FilmCard", new TypeBackingShape.RecordBacking("no.sikt.graphitron.lsp.fixtures.R157FilmRecord")),
-            Map.of());
+    /**
+     * A projection carrying nothing, which is what the member arm needs from one: what a type resolves
+     * against and what it then offers are both the store's, so a case about either can only be weakened
+     * by handing the surface a shape to fall back on.
+     */
+    private static LspSchemaSnapshot.Built.Current noProjection() {
+        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
     }
 
     @Test

@@ -8,7 +8,6 @@ import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -24,10 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Goto-definition from an SDL declaration name (a type name or a field / input-value name, not a
- * directive argument) to the Java the model bound it to. Dispatches on the enclosing type's
- * {@code TypeBackingShape} and resolves each target against the fact store's java-source family,
- * joined by the census's structural keys, exactly like {@code Definitions} does for the
- * directive-argument half. Covers one case per backing shape per axis.
+ * directive argument) to the Java the model bound it to. Dispatches on what the store says the
+ * enclosing type's members resolve against and resolves each target against the fact store's
+ * java-source family, joined by the census's structural keys, exactly like {@code Definitions} does
+ * for the directive-argument half. Covers one case per scope per axis.
  *
  * <p>Every position asserted here came from parsing a real {@code .java} file written to disk: the
  * sources below are the fixture, and their line numbers are the expectations. That matters for a
@@ -48,13 +47,29 @@ class DeclarationDefinitionsTest {
     private static StoreFixture store;
     private static StoreFixture bare;
 
-    /** The schema is beside the point in every case here; the subject is the {@code .java} files. */
-    private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
-
     private static final String RECORD_FQN = "com.example.FilmDto";
     private static final String POJO_FQN = "com.example.FilmPojo";
     private static final String STD_FQN = "com.example.FilmRecord";
     private static final String SVC_FQN = "com.example.FilmService";
+
+    /**
+     * The captured graph, which is what says what each buffer's type resolves against: one
+     * {@code @table} binding, and three types a producer of the census's own grounds on a class. The
+     * subject of every case is still the {@code .java} files, but the scope a coordinate resolves in is
+     * the store's answer now, so a schema saying so has to exist.
+     */
+    private static final String CAPTURED_SDL = """
+        type Query {
+            table: FilmTable
+            dto: FilmRecord @service(service: {className: "%1$s", method: "makeDto"})
+            pojo: FilmPojo @service(service: {className: "%1$s", method: "makePojo"})
+            std: FilmStd @service(service: {className: "%1$s", method: "makeStd"})
+        }
+        type FilmTable @table(name: "film") { title: String }
+        type FilmRecord { firstName: String }
+        type FilmPojo { firstName: String }
+        type FilmStd { value: String }
+        """.formatted(SVC_FQN);
 
     // 0-based lines, as LSP counts them, in the sources written below; line 0 is the package
     // declaration every one of them opens with.
@@ -75,8 +90,8 @@ class DeclarationDefinitionsTest {
 
     @BeforeAll
     static void parseSources() {
-        store = StoreFixture.ofCatalog(sourceRoot, PLACEHOLDER_SDL, census());
-        bare = StoreFixture.ofCatalog(bareRoot, PLACEHOLDER_SDL, census());
+        store = StoreFixture.ofCatalog(sourceRoot, CAPTURED_SDL, census());
+        bare = StoreFixture.ofCatalog(bareRoot, CAPTURED_SDL, census());
         filmFqn = store.tableClassFqn("film");
         // The column constant is the census's own spelling of it, which is what the class declares
         // and what the resolution keys the position lookup by.
@@ -147,7 +162,7 @@ class DeclarationDefinitionsTest {
     }
 
     @Test
-    void typeNameOnStandaloneJooqRecordJumpsToBackingClass() {
+    void typeNameOnAClassWithNoMembersInTheCensusStillJumpsToIt() {
         var file = file("type FilmStd { value: String }");
         var loc = compute(file, pointAt(file, 0, "FilmStd")).orElseThrow();
         assertThat(loc.getUri()).endsWith("FilmRecord.java");
@@ -200,12 +215,16 @@ class DeclarationDefinitionsTest {
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(COMPONENT_LINE);
     }
 
+    /**
+     * The type is scoped to a class the census holds no members for, so a member name inside it names
+     * no declaration. The incumbent projection jumped to the class itself here, that being the one
+     * shape it held no member keys for; the class it jumped to had not been asked whether it declares
+     * the member, so the jump was a guess dressed as a resolution.
+     */
     @Test
-    void fieldNameOnStandaloneJooqRecordDegradesToBackingClass() {
-        // No table (no column join) and no member key: degrade to the class.
+    void fieldNameOnAClassWithNoMembersInTheCensusJumpsNowhere() {
         var file = file("type FilmStd { value: String }");
-        var loc = compute(file, pointAt(file, 0, "value")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmRecord.java");
+        assertThat(compute(file, pointAt(file, 0, "value"))).isEmpty();
     }
 
     @Test
@@ -336,9 +355,14 @@ class DeclarationDefinitionsTest {
     /**
      * The classpath census half: which names are references, and with what members. The record's
      * component and the POJO's accessor are what a member name resolves through; the service's four
-     * one-argument methods are the arities a method-backed field resolves at. {@code greet} and
-     * {@code twin} are deliberately absent, so the cases that name them exercise the arity-0 fallback
-     * on a method the census does not carry. Positions are the parse's answer, joined to this by name.
+     * one-argument methods are the arities a method-backed field resolves at, and its three factories
+     * are what ground the captured graph's three class-scoped types. {@code greet} and {@code twin} are
+     * deliberately absent, so the cases that name them exercise the arity-0 fallback on a method the
+     * census does not carry. Positions are the parse's answer, joined to this by name.
+     *
+     * <p>{@link #STD_FQN} is deliberately not a reference here. It is the class a type is grounded on
+     * whose members the census does not hold, which is the population a generated jOOQ record falls
+     * into: the type name still names the class, and a member name inside it names nothing.
      */
     private static List<CompletionData.ExternalReference> census() {
         var oneArg = StoreFixture.parameter("ctx", "DSLContext");
@@ -349,24 +373,26 @@ class DeclarationDefinitionsTest {
                 StoreFixture.method("price", "Field", oneArg),
                 StoreFixture.method("discount", "Field", oneArg),
                 StoreFixture.method("computeCol", "Field", oneArg),
-                StoreFixture.method("viaMethod", "Film", oneArg))));
+                StoreFixture.method("viaMethod", "Film", oneArg),
+                StoreFixture.producing("makeDto", RECORD_FQN),
+                StoreFixture.producing("makePojo", POJO_FQN),
+                StoreFixture.producing("makeStd", STD_FQN))));
     }
 
+    /**
+     * The projection, carrying the one question the declaration-name resolution still puts to it:
+     * which Java method a method-backed field binds to. No backing, that being the store's.
+     */
     private static LspSchemaSnapshot snapshot() {
-        Map<String, TypeBackingShape> types = Map.of(
-            "FilmTable", new TypeBackingShape.TableBacking("film"),
-            "FilmRecord", new TypeBackingShape.RecordBacking(RECORD_FQN),
-            "FilmPojo", new TypeBackingShape.PojoBacking(POJO_FQN),
-            "FilmStd", new TypeBackingShape.JooqRecordBacking.Standalone(STD_FQN),
-            "Query", new TypeBackingShape.NoBacking.Root());
         // Method-backed field classifications, one per named variant. Each takes precedence over the
-        // enclosing type's backing in the field-name arm.
+        // enclosing type's own scope in the field-name arm.
         Map<String, FieldClassification> classifications = Map.of(
             "Query.price", new FieldClassification.QueryService(SVC_FQN, "price", false, null, null),
             "FilmTable.discount", new FieldClassification.ServiceBacked(SVC_FQN, "discount", false, null, null),
             "FilmTable.computed", new FieldClassification.Computed(SVC_FQN, "computeCol"),
             "Query.viaMethod", new FieldClassification.RoutineBacked("film", SVC_FQN, "viaMethod"));
-        return new LspSchemaSnapshot.Built.Current(List.of(), types, Map.of(), classifications, Map.of());
+        return new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(), classifications, Map.of());
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {

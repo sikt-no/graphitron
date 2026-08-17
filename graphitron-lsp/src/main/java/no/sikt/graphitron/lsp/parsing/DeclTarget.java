@@ -5,10 +5,10 @@ import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 
 import java.util.Optional;
 
@@ -20,15 +20,21 @@ import java.util.Optional;
  * each to a Javadoc overlay.
  *
  * <p>Sharing the resolution is what keeps the two consumers pointing at one
- * declaration: a single backing-switch ({@link #resolve}) produces the target,
+ * declaration: a single scope-switch ({@link #resolve}) produces the target,
  * and each consumer switches over the <em>same</em> {@code DeclTarget}
- * exhaustively, so a new {@link TypeBackingShape} permit breaks both switches at
- * compile time. What differs is where each then reads: hover asks the fact
+ * exhaustively, so a new {@link TypeMemberScope.Scope} arm breaks both switches
+ * at compile time. What differs is where each then reads: hover asks the fact
  * store's java-source family for the declaration's doc comment, goto still asks
  * the LSP-owned source index for its position, and the two agree while both are
  * refreshed off the same parse. The variants name the resolved declaration and
  * nothing else, so neither read can be short-circuited by a value the
  * resolution happened to have in hand.
+ *
+ * <p>What a coordinate resolves against is {@link TypeMemberScope}'s, shared with
+ * completion, hover's coordinate arm and the field-member diagnostic. The
+ * projection answers one question that is left here, and it is not a backing:
+ * which Java method a method-backed field binds to, which is the field's own
+ * classification.
  */
 public sealed interface DeclTarget {
 
@@ -42,7 +48,7 @@ public sealed interface DeclTarget {
     /** A named column on a jOOQ table class, under the census's own spelling of the column. */
     record CatalogColumn(String tableName, String classFqn, String columnName) implements DeclTarget {}
 
-    /** A reflection-bound backing class, or a standalone-jOOQ field degrading to its class. */
+    /** The class a type resolves against, where the store scopes it to a class and not to a table. */
     record SourceClass(String fqClassName) implements DeclTarget {}
 
     /**
@@ -59,20 +65,20 @@ public sealed interface DeclTarget {
     record None() implements DeclTarget {}
 
     /**
-     * Resolves the declaration {@code declaration} binds to against the backing
-     * projection on {@code built} and the store's censuses. The only tree-sitter-bound step
-     * is reading a field's {@code @field(name:)} override off its node; the backing
-     * switch itself is the {@link #ofType} / {@link #ofField} core, so the
-     * source-index read is left to the per-consumer projection. The store answers what every
-     * backing offers: a table's generated class and columns, a class's member slots, a method's
-     * arity. Where the declaration <em>is</em> is still the consumer's own read.
+     * Resolves the declaration {@code declaration} binds to against the store's own relations, and
+     * against {@code built} for the one question the projection still answers. The only
+     * tree-sitter-bound step is reading a field's {@code @field(name:)} override off its node; the
+     * scope switch itself is the {@link #ofType} / {@link #ofField} core, so the source-index read is
+     * left to the per-consumer projection. The store answers both what a coordinate resolves against
+     * and what that scope then offers: a table's generated class and columns, a class's member slots,
+     * a method's arity. Where the declaration <em>is</em> is still the consumer's own read.
      */
     static DeclTarget resolve(
         SdlDeclaration declaration, LspSchemaSnapshot.Built built,
         StoreHandle store, byte[] source
     ) {
         return switch (declaration) {
-            case SdlDeclaration.TypeName t -> ofType(t.typeName(), built, store);
+            case SdlDeclaration.TypeName t -> ofType(t.typeName(), store);
             case SdlDeclaration.FieldName f -> {
                 // The bound member is named by the field's @field(name:) override
                 // when it carries one, else by the SDL field name itself. The
@@ -86,50 +92,49 @@ public sealed interface DeclTarget {
         };
     }
 
-    /** Pure resolver core for a type-name coordinate (no tree-sitter, no source index). */
-    static DeclTarget ofType(String typeName, LspSchemaSnapshot.Built built, StoreHandle store) {
-        var shapeOpt = built.typeBacking(typeName);
-        if (shapeOpt.isEmpty()) return new None();
-        return switch (shapeOpt.get()) {
-            case TypeBackingShape.TableBacking t -> tableTarget(store, t.tableName());
-            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableTarget(store, j.tableName());
-            case TypeBackingShape.JooqRecordBacking.Standalone s -> new SourceClass(s.fqClassName());
-            case TypeBackingShape.RecordBacking r -> new SourceClass(r.fqClassName());
-            case TypeBackingShape.PojoBacking p -> new SourceClass(p.fqClassName());
-            case TypeBackingShape.NoBacking.Root ignored -> new None();
-            case TypeBackingShape.NoBacking.UnbackedResult ignored -> new None();
-            case TypeBackingShape.NoBacking.UnclassifiedInterface ignored -> new None();
+    /**
+     * Resolver core for a type-name coordinate: no tree-sitter, no source index, and no projection
+     * either. A type scoped to tables names the generated class of the table it resolves against; a
+     * type scoped to a class names that class; a type the store scopes to neither names nothing,
+     * which is what every unbacked type and every root operation type gets.
+     */
+    static DeclTarget ofType(String typeName, StoreHandle store) {
+        var scope = TypeMemberScope.of(store, typeName);
+        if (scope.isEmpty()) return new None();
+        return switch (scope.get()) {
+            case TypeMemberScope.Scope.Tables tables -> tableTarget(store, tables);
+            case TypeMemberScope.Scope.Members(var className) -> new SourceClass(className);
         };
     }
 
     /**
      * Resolver core for a field-name coordinate, given the already-resolved
      * member name ({@code @field(name:)} override or SDL field name). No
-     * tree-sitter, no source index; the store read is the member-slot relation, which names the
-     * declaration a member binds to without saying where it is written.
+     * tree-sitter, no source index; the store reads are the parent's scope and then, inside it, the
+     * column census or the member-slot relation, each of which names the declaration a member binds
+     * to without saying where it is written.
+     *
+     * <p>A member name the scope offers no declaration for resolves to nothing, and that is now the
+     * answer for a jOOQ record class no table claims too. The projection routed such a type's field
+     * cursor to the backing class instead, because it held no member keys for a record; the class
+     * census holds them where the class is a consumer's own, and holds nothing where it is generated,
+     * which the catalog census already answers about. So the degrade was standing in for absent
+     * facts rather than naming a declaration a field binds to.
      */
     static DeclTarget ofField(
         String parentTypeName, String memberName, LspSchemaSnapshot.Built built, StoreHandle store
     ) {
         // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
-        // classification takes precedence over the parent-type backing below.
+        // classification takes precedence over the parent's scope below.
         var methodBacked = methodBackedTarget(parentTypeName, memberName, built, store);
         if (methodBacked.isPresent()) return methodBacked.get();
-        var shapeOpt = built.typeBacking(parentTypeName);
-        if (shapeOpt.isEmpty()) return new None();
-        return switch (shapeOpt.get()) {
-            case TypeBackingShape.TableBacking t -> columnTarget(store, t.tableName(), memberName);
-            case TypeBackingShape.JooqRecordBacking.WithTable j -> columnTarget(store, j.tableName(), memberName);
-            case TypeBackingShape.PojoBacking p -> memberTarget(store, p.fqClassName(), memberName);
-            case TypeBackingShape.RecordBacking r -> memberTarget(store, r.fqClassName(), memberName);
-            // A standalone jOOQ record has no table (no column join) and no
-            // member-key projection, so a field cursor degrades to the backing
-            // class, the same target as its type name.
-            case TypeBackingShape.JooqRecordBacking.Standalone s -> new SourceClass(s.fqClassName());
-            case TypeBackingShape.NoBacking.Root ignored -> new None();
-            case TypeBackingShape.NoBacking.UnbackedResult ignored -> new None();
-            case TypeBackingShape.NoBacking.UnclassifiedInterface ignored -> new None();
+        var scope = TypeMemberScope.of(store, parentTypeName);
+        if (scope.isEmpty()) return new None();
+        return switch (scope.get()) {
+            case TypeMemberScope.Scope.Tables tables -> columnTarget(store, tables, memberName);
+            case TypeMemberScope.Scope.Members(var className) ->
+                memberTarget(store, className, memberName);
         };
     }
 
@@ -179,41 +184,47 @@ public sealed interface DeclTarget {
     }
 
     /**
-     * The generated class for a table the parent is bound to. A name two schemas both declare takes
-     * the first in schema order, as the other surfaces resolving a spelling to one declaration do:
-     * which one was meant is a resolution question, and a single declaration target cannot hold both.
+     * The generated class for the table the parent resolves against. An ambiguous binding takes the
+     * first candidate in schema order, as the other surfaces resolving to one declaration do: which
+     * one was meant is a resolution question, and a single declaration target cannot hold both.
      */
-    private static DeclTarget tableTarget(StoreHandle store, String tableName) {
-        return switch (CatalogTables.named(store, tableName)) {
-            case CatalogTables.Match.Tables(var tables) -> {
-                var table = tables.getFirst();
-                yield new CatalogTable(table.tableName(), table.classFqn());
-            }
-            case CatalogTables.Match.Unknown ignored -> new None();
-            case CatalogTables.Match.NoCensus ignored -> new None();
-        };
-    }
-
-    /**
-     * The generated field for a column on that table, named the way the class declares it: the census
-     * carries the SQL name and the jOOQ one, an author may have written either, and what a consumer
-     * then reads about the declaration is keyed by the second.
-     */
-    private static DeclTarget columnTarget(StoreHandle store, String tableName, String memberName) {
-        if (!(tableTarget(store, tableName) instanceof CatalogTable table)) return new None();
-        return CatalogColumns.of(store, tableName).stream()
-            .filter(column -> column.isNamed(memberName))
-            .findFirst()
-            .<DeclTarget>map(column ->
-                new CatalogColumn(table.tableName(), table.classFqn(), column.jooqName()))
+    private static DeclTarget tableTarget(StoreHandle store, TypeMemberScope.Scope.Tables scope) {
+        return CatalogTables.of(store, scope.candidates().getFirst())
+            .<DeclTarget>map(table -> new CatalogTable(table.tableName(), table.classFqn()))
             .orElseGet(None::new);
     }
 
     /**
-     * The declaration behind a member name on a class-backed type. Which of the two it is follows the
-     * slot the store answered with rather than the permit that routed the arm here: a record
-     * component is written as a field, a bean accessor as a method, and the relation says which kind
-     * the name came from. A name the class offers no slot for resolves to no target, as before.
+     * The generated field for a column of one of the tables the parent resolves against, named the
+     * way the class declares it: the census carries the SQL name and the jOOQ one, an author may have
+     * written either, and what a consumer then reads about the declaration is keyed by the second.
+     *
+     * <p>Candidates are tried in order and the first that declares the column answers, so an
+     * ambiguous binding where only the second table has the column still jumps. That is where a
+     * candidate list says more than picking one table up front does: the column named here is
+     * evidence about which table the author meant.
+     */
+    private static DeclTarget columnTarget(
+        StoreHandle store, TypeMemberScope.Scope.Tables scope, String memberName
+    ) {
+        for (var candidate : scope.candidates()) {
+            var column = CatalogColumns.of(store, candidate).stream()
+                .filter(c -> c.isNamed(memberName))
+                .findFirst();
+            if (column.isEmpty()) continue;
+            var table = CatalogTables.of(store, candidate);
+            if (table.isEmpty()) continue;
+            return new CatalogColumn(
+                table.get().tableName(), table.get().classFqn(), column.get().jooqName());
+        }
+        return new None();
+    }
+
+    /**
+     * The declaration behind a member name on a class-scoped type. Which of the two it is follows the
+     * slot the store answered with and not the arm that routed it here: a record component is written
+     * as a field, a bean accessor as a method, and the relation says which kind the name came from.
+     * A name the class offers no slot for resolves to no target.
      */
     private static DeclTarget memberTarget(StoreHandle store, String fqClassName, String memberName) {
         return ClassMemberSlots.named(store, fqClassName, memberName)
