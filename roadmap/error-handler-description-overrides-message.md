@@ -240,6 +240,27 @@ The how-to's "captured but currently unused" section and its matching pitfall bu
 out, replaced by the resolution order and by the one thing that stays true: the *other*
 fields on the error type still read off the live exception.
 
+"True as written" has to mean the whole `ErrorHandler` field table, not just its `description` row.
+Three of the other rows are already false against the tree, in the same five-row table this move
+edits, so leaving them would make the move's own success criterion unmet:
+
+* The `handler` row says `DATABASE` "matches `org.jooq.exception.DataAccessException` (or a
+  configured subclass)". `TypeBuilder`'s DATABASE arm lifts a no-discriminator entry to
+  `ExceptionHandler("java.sql.SQLException")`, and `SqlStateHandler` / `VendorCodeHandler` match any
+  `java.sql.SQLException` in the cause chain. No `@error` path names `DataAccessException`, and
+  nothing makes the base class configurable.
+* The `className` row says it "defaults to `org.jooq.exception.DataAccessException` for `DATABASE`".
+  The DATABASE arm rejects `className` outright, so there is no default to state.
+* The same row says `className` is "ignored for `VALIDATION`". That arm's `disallowed` list rejects
+  it.
+
+The last two matter more than the first: they promise an author a build that fails. The first reads
+as harmless because jOOQ wraps the driver's `SQLException` as its cause and the matcher walks the
+chain, so the documented class routes anyway right up until someone relies on the documented
+`className:`. Correcting three table rows in a file already open is smaller than a second pass over
+the same table; the facts above are the whole change, so no re-derivation is needed. Nothing else on
+the page is in scope, and no behaviour changes here.
+
 ## Settled questions
 
 **A `VALIDATION` handler's `description:` is rejected, not honoured and not ignored.**
