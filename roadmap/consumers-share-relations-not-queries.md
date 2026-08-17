@@ -1,12 +1,12 @@
 ---
 id: R684
 title: "fact-model doctrine: consumers share relations, not queries"
-status: Spec
+status: Ready
 bucket: architecture
 theme: classification-model
 depends-on: [catalog-facts-readers-move-to-the-store]
 created: 2026-08-16
-last-updated: 2026-08-16
+last-updated: 2026-08-17
 ---
 
 # fact-model doctrine: consumers share relations, not queries
