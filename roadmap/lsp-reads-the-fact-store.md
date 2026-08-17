@@ -2005,7 +2005,11 @@ walk is evidence here, not the specification.
     `DeclTarget` reads the scope, no main source in `graphitron-lsp` names the permit hierarchy, and
     the sixteen switch cases the two resolver cores carried became two arms. One question stayed with
     the projection there and it is not a backing, which the section below states along with the fact
-    that would close it.
+    that would close it. The class-backed-parent arm of `intent_field_separate_fetch` is done: the
+    relation now names the split no author writes a marker for, the editor marks it and says why, and
+    the arm's own prose owns two departures from the walk. What did not close is the prohibition the
+    arm was blamed for, because a second population turned out to be missing and nobody had written
+    it down; the section below names it and hands it on.
 
 ## Settled while building: a declared type is a tree, so resolving it is a relation per position
 
@@ -2734,6 +2738,74 @@ own. The diagnostic's guard keeps its own case, where the guard actually lives. 
 a producer whose return type names a qualified class, `StoreFixture.producing`: a synthetic method
 carries an erased display name, and a package-less name cannot ground anything, which is exactly why
 the census records the qualified names a declared type mentions as rows of their own.
+
+## Settled while building: the implicit split is three joins, and the hole it was blamed for was two
+
+The round-trip relation deferred one arm on the ground that the census could not resolve a backing
+class. That ground was gone, closed by this item's own earlier step, and the arm turned out to be
+small. What the arm did not do is what its own comment promised it would.
+
+**The arm is a join, an anti-join and no new fact.** A field whose parent the backing closure grounds
+on a class, naming a type of its own that is bound to a table, is fetched separately. There is no
+enclosing statement for such a field to be projected out of: the parent's value is a Java object a
+producer handed back, so the child's table is a trip of its own. Everything that predicate needs was
+already in the store the day `intent_type_backing_class` landed, which is the pattern this whole item
+keeps producing. A consumer's gap reads as a missing arm and is a missing fact; once the fact is
+captured the arm is three lines of SQL.
+
+**The anti-join is the walk's precedence transcribed, and it reads the binding rather than the
+coalesce.** A type both populations answer is one the walk reads as a table row and never as a handed
+object, so the arm excludes a parent carrying its own `@table` binding. Two things about that. It is
+a transcription and not a new opinion, which is why the disagreement stays visible on
+`intent_type_backing_conflict` instead of being folded in. And it reads `intent_bound_table`, not the
+coalesced view's `BOUND_TABLE` arm, because that arm drops a table jOOQ generated no record class for,
+and what makes a parent a table row is its binding rather than whether a record exists for it. The
+two relations would agree on every realistic schema and disagree on the one that matters.
+
+**Two readings depart from the walk, and both are the intended rule.** An ambiguously bound child
+splits here where the walk mints no table-backed verdict for it at all: an ambiguous binding is
+contested, not projected into the parent's row, and an editor working on a half-written schema is
+better served by the split than by silence. A `@table` interface child splits at either cardinality
+where the walk inlines the single-valued one, the walk's discriminated-interface arm running before its
+record-handed one. Both are recorded in the view's comment, following the root arm's precedent: state
+the intended rule, name the difference, leave the adjudication to whoever owns the walk. The
+alternative, transcribing the arm order, would have required a kind guard on the child and bought
+nothing an author can use.
+
+**The parent's kind is guarded and the child's is not, for a reason worth stating once.** The closure
+holds input objects beside objects, and an input coordinate is not a fetch, so the parent is guarded to
+`OBJECT`. The child needs no guard at all: `@table` on an input object is captured and ignored, and an
+object's field cannot name an input type, so the child join is its own kind guard. Reaching for the
+symmetric guard would have read as thoroughness and been noise.
+
+**The seal over the rule vocabulary was accidentally correct.** It read every quoted upper-case word
+in the view's stored definition and required a rendering for each, which held only for as long as no
+arm compared a column against a literal. The parent-kind guard is exactly that, so `OBJECT` would have
+arrived at the assertion as a rule the editor cannot render. The pattern now anchors on the rule
+position, which is a structural property rather than a convention: `rule` is the view's last column, so
+the literal standing for it is the select item immediately before its arm's `FROM`. A seal that passes
+because nothing has yet violated an unstated assumption is worth tightening the first time the
+assumption is tested.
+
+**The prohibition survives the arm it was written for, because the comment had named one hole and there
+were two.** The relation told its readers not to treat absence as "this field inlines", and blamed the
+class-backed parent for it. With that arm in, a second population is still missing and no artifact had
+recorded it: the polymorphic fan-in, where a list-valued interface or union child with a table-bound
+participant batches through a DataLoader. The connection wrapper is a third, smaller one, a child
+reached through `@asConnection` whose element type no relation names. So the DDL comment, the reader's
+javadoc and the manual now name both rather than dropping the warning, and the fan-in arm is left to
+whoever states the delivery rules; it is the same population `intent_field_delivery_rule` will carry,
+and adding a fourth arm here first would have duplicated that work in the relation that asks the
+neighbouring question. The lesson is about the shape of the disclosure rather than about this arm: an
+incomplete relation should enumerate what is missing, because a comment naming one absence reads as a
+census of them.
+
+**The view moved down its own file, and landed next to its sibling.** H2 requires a view's referents to
+exist when it is created, so reading the backing closure meant placing the definition after it. The
+new neighbour is `intent_field_demand_rule`, the other coordinate-grained rule view, the one this
+relation shares two literals with and whose comments already cross-reference each other. The
+constraint was mechanical and the outcome is the ordering a reader wants, which is worth noting only
+because the reverse happens often enough to be worth checking for.
 
 ## Retired vocabulary
 

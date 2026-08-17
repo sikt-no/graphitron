@@ -27,8 +27,14 @@ class SeparateFetchVocabularyTest {
     @TempDir
     static Path tmp;
 
-    /** Every quoted literal in the view body: its arms select nothing else. */
-    private static final Pattern LITERAL = Pattern.compile("'([A-Z_]+)'");
+    /**
+     * The quoted literal each arm selects last. {@code rule} is the view's final column, so the
+     * literal standing for it is the select item that immediately precedes its arm's {@code FROM};
+     * a literal anywhere else in the body is a predicate's and not a rule. The looser pattern this
+     * replaces read every quoted upper-case word, which held only for as long as no arm needed to
+     * compare a column against one, and an arm guarding a parent's kind needs exactly that.
+     */
+    private static final Pattern LITERAL = Pattern.compile("'([A-Z_]+)'\\s*FROM");
 
     @Test
     void everyRuleTheViewEmitsHasARendering() {

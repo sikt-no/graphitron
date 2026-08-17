@@ -29,18 +29,32 @@ import static org.assertj.core.api.Assertions.assertThat;
  * it: an inlined child, a root field whose marker would repeat down the whole type, and a schema
  * with the toggle off.
  *
- * <p>One silence is <em>not</em> a claim and is deliberately not asserted here. The implicit split
- * on a table-typed child of a class-backed parent carries no row yet, the backing-class resolution
- * being unbuilt, so an unmarked field is "the store has no rule for this" rather than "this
- * inlines". Pinning that would take a fixture whose parent really is class-backed; until the arm
- * lands, the prohibition lives where it binds every reader, in the relation's own comment.
+ * <p>The implicit split is marked here too, and it takes a real producer to pin: {@code FilmCard} is
+ * grounded on a scanned class by the {@code @service} return the census resolves, so the marker on
+ * its table-typed field comes from the store's own closure rather than from anything authored at the
+ * coordinate. That case is the one an author cannot see in the schema text, which is the strongest
+ * argument the arm has for existing.
+ *
+ * <p>Two silences remain not-a-claim and are deliberately not asserted: a child reached through a
+ * connection wrapper, and the polymorphic fan-in. An unmarked field is "the store has no rule for
+ * this" and never "this inlines", and the prohibition lives where it binds every reader, in the
+ * relation's own comment.
  */
 class SeparateFetchHintsTest {
+
+    /** The scanned producer whose return grounds {@code FilmCard} on a class. */
+    private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
 
     private static final String SDL = """
         type Query {
             films: [Film!]!
             filmsBySearch: [Film!]! @service(service: {className: "com.example.FilmService", method: "all"})
+            card: FilmCard @service(service: {className: "%s", method: "makeFilmRecord"})
+        }
+
+        type FilmCard {
+            title: String
+            film: Film
         }
 
         type Film @table(name: "film") {
@@ -53,7 +67,7 @@ class SeparateFetchHintsTest {
         type Language @table(name: "language") {
             name: String
         }
-        """;
+        """.formatted(FIXTURE_SERVICE);
 
     @TempDir
     static Path tmp;
@@ -62,7 +76,7 @@ class SeparateFetchHintsTest {
 
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofCatalog(tmp, SDL);
+        store = StoreFixture.ofCatalog(tmp, SDL, StoreFixture.backingClasses());
     }
 
     @AfterAll
@@ -91,6 +105,20 @@ class SeparateFetchHintsTest {
             }
             """);
         assertThat(markedLines(file)).containsExactly(1);
+    }
+
+    @Test
+    void aTableTypedFieldOfAClassBackedParentIsMarkedWithNothingAuthoredAtIt() {
+        // Neither line carries a directive. The marker is on the one whose type is a table's,
+        // because its parent arrives as a Java object a producer handed back and there is no
+        // enclosing statement for that field's rows to come out of.
+        var file = file("""
+            type FilmCard {
+                title: String
+                film: Film
+            }
+            """);
+        assertThat(markedLines(file)).containsExactly(2);
     }
 
     @Test

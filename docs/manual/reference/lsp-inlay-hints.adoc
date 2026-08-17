@@ -97,13 +97,19 @@ The `separateFetch` inlay toggle marks the fields, one word each, so a type can 
 | A field of a root operation type
 | a root operation field is its own entry point
 | no
+
+| A `@table`-typed field whose parent is backed by a Java class
+| the parent hands back a Java object, so this field's table is a fetch of its own
+| yes
 |===
+
+The last row is the one rule an author writes nothing for. A type reached through a `@service` return, or through a member of a class one returns, is delivered as a Java object rather than as a row of a running `SELECT`; a field of such a type that names a `@table` type has no enclosing statement to be projected out of, so its rows cost a fetch. Graphitron does this without being asked, which is exactly why the marker is worth showing: the cost is real and nothing in the schema text hints at it.
 
 A root field is never marked inline. Every field of a root type is its own entry point, so the marker would repeat down the whole type without distinguishing anything; the hover still states it, because a reader who asked about one declaration should get the whole answer. A `@splitQuery` on a root field is likewise unmarked: the generator ignores the directive there, so marking the field would advertise a split that never happens.
 
 A field several rules reach lists all of them in the hover and still gets one marker inline: the marker is a signal, and which rules produced it is what the hover answers.
 
-A field no rule reaches gets neither, and that silence is not yet the opposite claim. The implicit split on a `@table`-typed child of a class-backed parent is not reported yet, so read a marker that appears and do not read the absence of one as "this inlines".
+A field no rule reaches gets neither, and that silence is not yet the opposite claim. Two splits are still unreported: a child reached through an `@asConnection` wrapper, and a list-valued interface or union child whose members are `@table` types, which batches through a DataLoader. So read a marker that appears, and do not read the absence of one as "this inlines".
 
 == Freshness
 

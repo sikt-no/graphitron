@@ -8,9 +8,9 @@ import java.util.Optional;
  * why it lives here rather than as prose in the DDL beside the rule's definition.
  *
  * <p>Both surfaces render through it, so the inlay marker and the hover line cannot come to
- * disagree about which fields cost a round trip. {@code ClaimFactVocabularyTest} pins the constant
- * set against the literals the view's own definition emits, so a rule added in SQL fails the build
- * here rather than reaching a user as a raw {@code SCREAMING_SNAKE} token.
+ * disagree about which fields cost a round trip. {@code SeparateFetchVocabularyTest} pins the
+ * constant set against the literals the view's own definition emits, so a rule added in SQL fails
+ * the build here rather than reaching a user as a raw {@code SCREAMING_SNAKE} token.
  *
  * <p>{@link #ROOT_OPERATION} is <em>universal</em>: it is true of every field of its parent, so an
  * inline marker carrying it would repeat itself down a whole root type and tell a reader nothing.
@@ -24,7 +24,9 @@ public enum SeparateFetchRule {
     SPLIT_QUERY("`@splitQuery` defers the fetch to a batched DataLoader call", false),
     TENANT_FAN_OUT("`@tenantFanOut` runs the fetch once per tenant, off the parent's statement", false),
     SERVICE("the service fetches independently of the parent's SELECT", false),
-    ROOT_OPERATION("a root operation field is its own entry point", true);
+    ROOT_OPERATION("a root operation field is its own entry point", true),
+    RECORD_HANDED_PARENT(
+        "the parent hands back a Java object, so this field's table is a fetch of its own", false);
 
     private final String description;
     private final boolean universal;

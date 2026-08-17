@@ -82,10 +82,10 @@ public final class ClaimFacts {
      * Why each field of {@code typeNames} is fetched by a statement of its own, keyed by
      * {@code Type.field}, one rule per reason. A coordinate no rule reaches is absent.
      *
-     * <p>Absence is not the claim that the field inlines. The implicit split on a class-backed
-     * parent's table-typed child is not in the relation yet, so a surface may report a rule it finds
-     * and must not report the absence of one. The relation's own comment carries the same
-     * prohibition, since it outlives this reader.
+     * <p>Absence is not the claim that the field inlines. Two populations are still outside the
+     * relation, a child reached through a connection wrapper and the polymorphic fan-in, so a
+     * surface may report a rule it finds and must not report the absence of one. The relation's own
+     * comment carries the same prohibition and names both, since it outlives this reader.
      *
      * <p>Bulk, like the classifier readers and for the same reason: the inlay arm annotates a whole
      * visible region and a query per field would pay per declaration on the screen.
