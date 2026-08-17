@@ -11,70 +11,55 @@ last-updated: 2026-08-17
 
 # FK-target @nodeId JOIN-with-translation filter emission
 
-## Review feedback (In Review -> Ready, second pass)
+## Second-pass rework (the blocking defect, closed)
 
-The delivery at `6a7b22d` is complete against the contract below and the full reactor is green under
-`-Plocal-db`. One introduced defect blocks the gate; everything else in this section is a note, not a
-requirement.
+The second-pass review passed the delivery at `6a7b22d` against the contract below but blocked the gate
+on one introduced defect: `FieldBuilder.classifyArgument`'s plain-`@reference` arm passed
+`new FilterBinding.Remote()` unconditionally, on a precondition it had not checked.
+`@reference(path: [])` is legal SDL (`path` is `[ReferenceElement!]!`), and on an *argument*
+`parsePath` runs with a null `targetSqlTableName`, so the FK-inference block is skipped and the path
+stays empty with no error. `resolveColumnForReference` then resolves the column against the field's own
+table, and `ColumnBackedArg`'s compact constructor throws
+`IllegalArgumentException: ColumnBackedArg 'title' binds Remote but carries an empty joinPath` out of
+classification. Before this item the same schema classified fine and emitted a bare local `Eq`, so it
+was a regression from "works" to "the generator crashes", surfacing as an untyped exception rather than
+a named build-time diagnostic.
 
-**Blocking: the argument-side plain-`@reference` arm asserts `Remote` on a path it has not checked.**
-`FieldBuilder.classifyArgument`'s `DIR_REFERENCE` arm passes `new FilterBinding.Remote()`
-unconditionally, under a comment claiming "this arm is reached only for a path that leaves the field's
-own table". That precondition does not hold. `@reference(path: [])` is legal SDL (`path` is
-`[ReferenceElement!]!`, and an empty list is the documented "infer the FK" spelling on a field), and on
-an *argument* `parsePath` is called with a null `targetSqlTableName`, so the FK-inference block is
-skipped and the path stays empty with no error. `resolveColumnForReference` then resolves the column
-against the field's own table, and `ColumnBackedArg`'s new compact constructor throws.
+The invariant was right and the call site was wrong. Of the two closes the reviewer offered, this took
+the first: bind `Local(List.of(refColumnRef))` when `refPath.elements()` is empty, mirroring the
+input-field sibling in `BuildContext.classifyInputField` whose `path.elements().isEmpty() ? Local(...)
+: Remote()` fork was the tell. Reasoning for that choice over rejecting an element-less `@reference` as
+a structural author error:
 
-Reproducer, verified against `6a7b22d`:
+- It restores the pre-item behavior exactly, so the item stays a decode-side emission change and adds
+  no user-visible SDL rejection of its own.
+- The asymmetry the reviewer pointed at is the actual defect, and this removes it. Rejecting on the
+  argument side alone would have re-created it pointing the other way, because an element-less
+  `@reference` is equally inert on an input field (that site also passes a null target, so its empty
+  path also falls back to the own table).
+- "The directive is inert here, reject it" is therefore not an argument-arm question but one decision
+  over both positions, with a validator mirror and a manual note. That is its own item, filed as
+  `inert-element-less-reference-rejection`; the cost of deferring it is one arm that emits the same
+  predicate the directive-less arm would.
 
-```graphql
-type Film @table(name: "film") { title: String }
-type Query { films(title: String @reference(path: [])): [Film!]! }
-```
+Both surfaces are now pinned in `ReferenceFilterRemoteColumnPipelineTest`
+(`surface2_scalarArg_elementLessPath_bindsLocal`, `surface1_inputFilterField_elementLessPath_bindsLocal`),
+in the file that already owns the local-vs-remote discrimination matrix for plain `@reference` filters
+rather than in the `@nodeId`-scoped `NodeIdPipelineTest`. The argument case was confirmed to fail with
+exactly the reviewer's exception before the fix and to pass after it.
 
-yields `IllegalArgumentException: ColumnBackedArg 'title' binds Remote but carries an empty joinPath;
-a remote predicate has no terminal table to reach`, thrown out of classification. Before this item the
-same schema classified fine and emitted a bare local `Eq` on `film.title` (the retired
-`ca.joinPath().isEmpty() ? inner : RemoteColumnPredicate(...)` fork handled it), so this is a
-regression from "works" to "the generator crashes", and it crashes as an untyped exception rather than
-the named build-time diagnostic the "Rejections: validator mirrors classifier invariants" principle
-asks for.
+The reviewer's two non-blocking notes: the fully-qualified `QueryField.QueryTableField` /
+`GeneratedConditionFilter` references in `NodeIdPipelineTest`'s rewritten translated-FK argument case
+now use the file's imports, and that file's `parent_node` fixture bullet no longer describes the
+decode-side shape as the deferred JOIN-with-projection path (a sweep miss: the phrase legitimately
+survives on the encode-side hits, which is why a bare grep read clean). The `multi-hop-nodeid-filter.adoc`
+imprecision the reviewer flagged is filed as `multi-hop-nodeid-filter-single-fk-claim` rather than
+folded in, since that page was out of this item's doc scope.
 
-The compact-constructor invariant is right; the call site is what is wrong. The sibling input-field
-site in `BuildContext` already has the correct shape (`path.elements().isEmpty() ? Local(...) :
-Remote()`), and that asymmetry is the tell. Two ways to close it, and the choice is the implementer's:
-
-- Mirror `BuildContext`: bind `Local(List.of(refColumnRef))` when `refPath.elements()` is empty. Keeps
-  the pre-item behavior exactly, at the cost of an arm that emits a predicate for a directive that
-  said nothing.
-- Reject an element-less `@reference` on an argument as a structural author error, beside the existing
-  repeated-`@reference` rejection a few lines above. Arguably the better answer, since the directive is
-  inert in that position, but it is a user-visible behavior change and wants a sentence in the spec.
-
-Either way the case wants a pipeline-tier test; there is none today, which is why the delivery's own
-green build did not catch it. This also retires the spec's "of the four construction sites in
-`FieldBuilder`, three pass an empty `joinPath` and the fourth ... is always remote" claim, which the
-implementation faithfully encoded and which is simply false.
-
-**Non-blocking, file separately if worth it.** `docs/manual/how-to/multi-hop-nodeid-filter.adoc` says
-"With a single direct FK, that property is automatic: the FK source columns are on the parent's row, so
-the predicate is `WHERE parent.fk_columns IN (decoded_keys)`. No JOIN, no subquery". That was already
-imprecise (the translated single-hop shape never had the property) and this item makes it wrong in a new
-way: the shape now emits an `EXISTS`. The page is scoped to multi-hop chains and was not in this item's
-doc scope, so it is a follow-up, not rework.
-
-**Non-blocking.** `NodeIdPipelineTest`'s rewritten translated-FK argument case reaches for
-`no.sikt.graphitron.rewrite.model.QueryField.QueryTableField` and `GeneratedConditionFilter` by fully
-qualified name inline where the file imports its other model types. Cosmetic.
-
-Everything else checks out: all four rail gates present and exhaustive with the shared message text,
-`FilterBinding` collapsing all three spellings of the axis, the `public`-schema fixture pairs and their
-`METADATA` entries, the widened `code-generation-triggers.adoc` row, and a retirement sweep that comes
-back clean (the surviving `JOIN-with-projection` hits are all the encode-side deferral this item
-explicitly left alone, and `liftedSourceColumns` survives only on `DirectFk` and the resolver internals
-as the spec allowed). No code-string assertions on generated method bodies anywhere in the new tests;
-the execution tier's SQL-token checks are the sanctioned `ExecuteListener` structural approach.
+Everything else the second pass checked out stays as delivered: all four rail gates present and
+exhaustive with the shared message text, `FilterBinding` collapsing all three spellings of the axis,
+the `public`-schema fixture pairs and their `METADATA` entries, the widened
+`code-generation-triggers.adoc` row, and a retirement sweep that comes back clean.
 
 ## What shipped
 
@@ -118,6 +103,10 @@ Landing notes worth keeping:
   payload-free arm, which is the only place that can see the path.
 - `FilterBinding` needed a `HierarchyKindRegistryTest` entry (`WALKED_FACT`: the binding is decided
   by the same walk that produces the carrier).
+- Naming the axis put every construction site on the hook for answering it, and one site answered
+  from a stale precondition rather than from the path (see the rework section above). The lesson is
+  that a `Remote` construction is only ever safe next to a non-empty-path check, so every one of them
+  reads the path locally; none infers it from which arm it sits in.
 
 ## Out of scope (file separately if a real schema reaches them)
 
@@ -140,7 +129,9 @@ Landing notes worth keeping:
   `TranslatedFkTargetRailGatesPipelineTest` covers all four rail gates plus a direct-FK carrier that
   must still be admitted, and asserts the shared message text rather than four substrings.
   `ColumnBackedArgInvariantTest` / `InputColumnBackedFieldInvariantTest` cover the new
-  compact-constructor invariants.
+  compact-constructor invariants. `ReferenceFilterRemoteColumnPipelineTest` gains the element-less
+  `@reference(path: [])` cell on both surfaces, beside the direct-FK-stays-local guard that already
+  lived there: the two together pin that the binding follows the path, in both directions.
 - Execution tier: `TranslatedFkTargetFilterExecutionTest` pins semantics over the new `public` pairs:
   list and scalar argument forms, the input-field form, empty and omitted lists contributing no
   conjunct, a childless parent, the composite twin, and malformed / wrong-type ids throwing.
@@ -166,7 +157,13 @@ Grep targets for the sweep at the Done gate.
 - "reference carriers stay outside the permits set" (`TableInputArg`'s javadoc), which was already
   false before this item.
 - "the test surface for the rooted-at-parent JOIN-with-projection emission path"
-  (`NodeIdFixtureGenerator`'s `parent_node` metadata comment).
+  (`NodeIdFixtureGenerator`'s `parent_node` metadata comment) and, from the rework pass, the same
+  fixture described as "forcing the rooted-at-parent JOIN-with-projection path" in
+  `NodeIdPipelineTest`'s class javadoc. Both named a decode-side shape by the deferred encode-side
+  emitter; the encode-side hits on that phrase are legitimate, which is what let this one read clean
+  under a bare grep.
+- "This arm is reached only for a path that leaves the field's own table" (`FieldBuilder`'s
+  plain-`@reference` argument arm), which was false for `@reference(path: [])`.
 - `translatedFkRejection` and `remoteIfReferenceJoin`, including the latter's two-meanings framing
   ("the two `liftedSourceColumns` meanings stay un-conflated", "The `Direct`-vs-`NodeIdDecodeKeys`
   extraction split is the discriminator").

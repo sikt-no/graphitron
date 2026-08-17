@@ -43,8 +43,11 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  *   <li>{@code qux}: plain table, no metadata; negative-case fixture.</li>
  *   <li>{@code parent_node}: single-key NodeType keyed on {@code PK_ID}, with a separate unique
  *       {@code ALT_KEY} targeted by {@code child_ref.parent_alt_key}'s FK. The FK target does
- *       not positionally match the keyColumn, forcing the rooted-at-parent
- *       JOIN-with-projection path.</li>
+ *       not positionally match the keyColumn, which drives both directions of the translated
+ *       shape ({@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk}):
+ *       the decode-side filter, where the child's row holds no column the decoded key can bind
+ *       against so the predicate reaches {@code parent_node} through the FK, and the encode-side
+ *       projection, still deferred.</li>
  *   <li>{@code child_ref}: plain table; FK {@code parent_alt_key -> parent_node.alt_key} drives
  *       the rooted-at-parent fixtures.</li>
  *   <li>{@code shared_node}: single-key NodeType whose {@code __NODE_TYPE_ID} is the customized
@@ -1380,12 +1383,10 @@ class NodeIdPipelineTest {
             }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
-                    schema.field("Query", "childRefsByParent");
-                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
-                    f.filters().stream()
-                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
-                        .findFirst().orElseThrow();
+                var f = (QueryField.QueryTableField) schema.field("Query", "childRefsByParent");
+                var gcf = (GeneratedConditionFilter) f.filters().stream()
+                    .filter(GeneratedConditionFilter.class::isInstance)
+                    .findFirst().orElseThrow();
                 var remote = (BodyParam.RemoteColumnPredicate) gcf.bodyParams().stream()
                     .filter(BodyParam.RemoteColumnPredicate.class::isInstance)
                     .findFirst().orElseThrow();

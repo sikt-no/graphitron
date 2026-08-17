@@ -1718,12 +1718,13 @@ class FieldBuilder {
             }
         }
 
-        // Scalar arg carrying @reference(path:) reaching a column on a *joined* table.
+        // Scalar arg carrying @reference(path:), normally reaching a column on a *joined* table.
         // A plain @reference filter resolves the column against the *terminal* table and binds
         // Remote, so it emits a correlated EXISTS. That is the same binding a translated FK-target
         // @nodeId takes; what differs is only where the value comes from (a wire scalar here, a
         // decoded node key there). Read the path before the local findColumn so the column never
-        // mis-binds against the field's own table. FK-derived paths only; a condition-join hop
+        // mis-binds against the field's own table. An element-less path is the degenerate case and
+        // binds Local; see the construction site below. FK-derived paths only; a condition-join hop
         // rejects (mirrors the condition glue renderer's reach emission).
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
             // @reference is repeatable, so field-level applications compose the table
@@ -1769,9 +1770,18 @@ class FieldBuilder {
             return new ArgumentRef.ScalarArg.ColumnBackedArg(
                 name, typeName, nonNull, list, List.of(refColumnRef), refExtraction,
                 argCondition, fieldOverride, refIsLookupKey, refPath.elements(),
-                // This arm is reached only for a path that leaves the field's own table, so the
-                // resolved column is the terminal one and the predicate goes through the EXISTS.
-                new FilterBinding.Remote());
+                // Which table the resolved column lives on follows the path, not the directive's
+                // presence. A non-empty path leaves the field's own table, so the column is the
+                // terminal one and the predicate goes through the EXISTS. An element-less
+                // `@reference(path: [])` is legal SDL and inert here: empty-path FK inference needs
+                // a target table, an argument site has none (parsePath is called with a null
+                // target), so the path stays empty and resolveColumnForReference falls back to the
+                // field's own table. That column binds Local, which is the bare predicate the
+                // directive-less arm below would have produced. Same fork, same reason, as the
+                // input-field sibling in BuildContext.classifyInputField.
+                refPath.elements().isEmpty()
+                    ? new FilterBinding.Local(List.of(refColumnRef))
+                    : new FilterBinding.Remote());
         }
 
         // Scalar arg: bind to column

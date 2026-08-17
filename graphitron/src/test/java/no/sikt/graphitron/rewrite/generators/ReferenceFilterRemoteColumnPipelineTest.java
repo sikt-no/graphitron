@@ -35,7 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * design principles; the EXISTS body shape itself is locked at the unit tier in
  * the glue renderer's per-arm tests, and semantic correctness at the execution tier in
  * {@code GraphQLQueryTest}. The discrimination guard (a <em>direct</em> nodeId FK-target stays
- * local) and the condition-join-path rejection round out the matrix.
+ * local), the element-less {@code path: []} degenerate case on both surfaces, and the
+ * condition-join-path rejection round out the matrix.
  */
 @PipelineTier
 class ReferenceFilterRemoteColumnPipelineTest {
@@ -194,6 +195,50 @@ class ReferenceFilterRemoteColumnPipelineTest {
             .as("nodeId FK-target lifts to a local column predicate, not a remote EXISTS")
             .isInstanceOf(BodyParam.Eq.class)
             .isNotInstanceOf(BodyParam.RemoteColumnPredicate.class);
+    }
+
+    // ===== Element-less path: the directive is inert, the binding is Local =====
+
+    @Test
+    void surface2_scalarArg_elementLessPath_bindsLocal() {
+        // `@reference(path: [])` is legal SDL (`path` is `[ReferenceElement!]!`) and on an argument
+        // it is inert: empty-path FK inference needs a target table, and an argument site has none,
+        // so the path stays empty and the column resolves against the field's own table. The
+        // predicate is therefore the bare local Eq the directive-less arm emits, not an EXISTS with
+        // no terminal table to reach. Both halves matter: the emitted shape, and that classification
+        // completes at all (binding Remote over an empty path trips the carrier's own invariant and
+        // throws out of classify).
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Query { films(title: String @reference(path: [])): [Film!]! }
+            """);
+
+        var bodyParams = bodyParams(schema, "films");
+        assertThat(bodyParams).hasSize(1);
+        assertThat(bodyParams.get(0))
+            .isInstanceOf(BodyParam.Eq.class)
+            .isNotInstanceOf(BodyParam.RemoteColumnPredicate.class);
+        assertThat(((BodyParam.Eq) bodyParams.get(0)).column().sqlName()).isEqualTo("title");
+    }
+
+    @Test
+    void surface1_inputFilterField_elementLessPath_bindsLocal() {
+        // The input-field sibling of the case above, same reasoning and same answer. Pinned
+        // alongside it because the two sites classify the same directive independently, and it was
+        // their divergence (one forking on path emptiness, the other asserting Remote outright)
+        // that let the argument arm ship a crash.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter { title: String @reference(path: []) }
+            type Query { films(filter: FilmFilter): [Film!]! }
+            """);
+
+        var bodyParams = bodyParams(schema, "films");
+        assertThat(bodyParams).hasSize(1);
+        assertThat(bodyParams.get(0))
+            .isInstanceOf(BodyParam.Eq.class)
+            .isNotInstanceOf(BodyParam.RemoteColumnPredicate.class);
+        assertThat(((BodyParam.Eq) bodyParams.get(0)).column().sqlName()).isEqualTo("title");
     }
 
     // ===== Condition-join reference-filter path: clean rejection =====
