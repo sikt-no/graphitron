@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-16
+last-updated: 2026-08-17
 ---
 
 # graphitron-mcp reads only the store
@@ -122,8 +122,9 @@ server's `StoreAccess`. The rule is worth stating out loud because a module that
 queries looks like a module that might reasonably open its own connection, and it must not: the
 lifetime, the isolation level and the teardown belong to the process that owns the session. Ownership
 of a *query* and ownership of a *connection* are separate things, and this item moves only the first.
-(`DevQueryExecutor`'s own `DriverManager` handling is about the consumer's database, which the
-`execute` tool reaches on the user's behalf, and is unrelated.)
+(`DevQueryExecutor`'s own driver loading, a `ServiceLoader` sweep that deliberately bypasses
+`DriverManager`, is about the consumer's database, which the `execute` tool reaches on the user's
+behalf, and is unrelated.)
 
 Together the four properties set the price of the next tool, which is what this item is really
 buying. Today a new datum on the MCP wire is a pipeline change: extend a projection in `graphitron`,
@@ -509,9 +510,10 @@ resource has no rows, where today it degrades to the bundled grammar. It reports
 catalog tools report an unbuilt census rather than answering with a partial vocabulary, since a
 directive list missing the user's own declarations reads as a grammar that forbids them.
 
-**Deletes.** The `bundledDirectives` field computed at construction, which is the module's only
-`workspace.vocabulary()` call and therefore the whole of its `LspVocabulary` coupling; the
-resource's `workspace.snapshot()` read; and `DirectiveShape` as a type `graphitron-mcp` names.
+**Deletes.** The `bundledDirectives` list the server computes at construction and the resource
+lambda captures, which is the module's only `workspace.vocabulary()` call and therefore the whole
+of its `LspVocabulary` coupling; the `workspace.snapshot()` read at the resource's call site; and
+`DirectiveShape` as a type `graphitron-mcp` names.
 
 `TypeShape` and the `renderType` recursion over it go with them, and that one is worth naming
 because it is a `graphitron` type rather than an LSP one, so it survives the edge deletion and would
@@ -668,7 +670,7 @@ more honest than the projection:
 ## The MCP writes its own queries
 
 The obvious move is to reuse the LSP's readers. `graphitron-lsp`'s `facts` package already holds
-`CatalogTable`, `CatalogColumns` and `CatalogKeys` over `StoreHandle`, and `graphitron-mcp` compiles
+`CatalogTables`, `CatalogColumns` and `CatalogKeys` over `StoreHandle`, and `graphitron-mcp` compiles
 against `graphitron-lsp` today, so the imports would resolve. This item does not do that, and the
 reason is the whole point of having built a store.
 
@@ -769,7 +771,7 @@ It is not, because nothing consumes any of them as a union. Every use site is a 
 
 * `InlayHints.columnNameOf` asks "what column name" across four arms and lets the rest fall through.
   `InlayHints.fkPathOf` asks "what FK path" across two.
-* `DeclTarget.methodTarget` asks "what class and method" across four. `DeclTarget.typeTarget` is
+* `DeclTarget.methodBackedTarget` asks "what class and method" across five. `DeclTarget.ofType` is
   the clearest case: eight `TypeBackingShape` arms collapse into `tableTarget`, `SourceClass` and
   `None`, which is a three-way question wearing an eight-way costume.
 * `EdgeProducer`'s ninety-odd lines of switch produce five edge kinds. Nineteen of its arms produce
@@ -879,9 +881,9 @@ The tool output is the acceptance surface, so the deltas are named rather than d
   `Table.fields()` states; the projection carried the reflective field walk's order, which is
   documented as no order in particular.
 * **No edge target is emitted unqualified any more.** `resolveTable` renders a degraded `TableNode`
-  with an empty schema whenever a bare classifier name is ambiguous or unfound, and `wireId()` drops
-  the qualifier entirely, so `edges` answers today with a bare `film` where every other table node
-  is `schema.film`. Both arms read keyed relations after this, so the degraded node has no producer
+  with an empty schema whenever a bare classifier name is ambiguous or unfound, and the degraded
+  node's `wireId()` has no qualifier to render, so `edges` answers today with a bare `film` where
+  every other table node is `schema.film`. Both arms read keyed relations after this, so the degraded node has no producer
   left. An ambiguously bound type emits the candidates `intent_bound_table` carries, each a full
   key. This is the one wire change in this item that is a fix rather than a translation: an
   unqualified table ID is not a node any other tool can be handed back.
@@ -948,8 +950,9 @@ Three doc surfaces state where the tools read from and change with them.
 carries the tool table, where the `catalog.describe` row is the place the unique-key delta becomes a
 user-facing sentence and the `schema` row carries the classifier-vocabulary change. And
 `graphitron-mcp/src/main/resources/mcp/instructions.txt` is the agent-facing routing text: its
-`schema` bullet names `Unresolvable`, `Unclassified` and `Conflicted` as the readings that send an
-agent to `diagnostics`, so it changes with the vocabulary. That file is an acceptance surface
+`schema` bullet names `Unresolvable`, `Unclassified` and the snapshot's `Unavailable` / `Previous`
+as the readings that send an agent to `diagnostics`, and gives `Conflicted` its own sentence
+carrying the rival claims, so both change with the vocabulary. That file is an acceptance surface
 `ServerInstructionsTest` boots a real server against, so it changes in the same commit or the test
 fails.
 
@@ -985,9 +988,12 @@ generator imports (`GraphQLRewriteGenerator`, `RewriteContext`, `FactCapture`, t
 family, the diagnostics fact writers), because producing a capture is running the generator and
 there is no cheaper substitute that survives the substrate. What the *cases* lose as they convert is
 different and is the item's actual subject: `GraphitronMcpServerTest`, `ServerInstructionsTest`,
-`ConflictedReverseEdgeTest`, `EdgeCoverageTest` and the three RAG tests import `CatalogFacts`,
-`CompletionData`, `SourceWalker`, `LspSchemaSnapshot` and the three permits today purely to
-hand-build inputs, and every one of those imports goes with the fixture it served. An implementer
+`ConflictedReverseEdgeTest`, `EdgeCoverageTest`, `DiagnosticsAggregateTest`,
+`DiagnosticsToolCompileSourceTest` and the three RAG tests import `CatalogFacts`,
+`CompletionData`, `SourceWalker`, `LspSchemaSnapshot` and the three permits today, nearly all of it
+to hand-build inputs (`EdgeCoverageTest` reflects over the permits instead, and retires for the
+successor below rather than converting), and every one of those imports goes with the fixture it
+served. An implementer
 can use that as a progress signal: when the only `graphitron` imports left in the module's test
 sources are the ones that drive a build or write facts, the conversion is done.
 
@@ -1117,16 +1123,19 @@ slice's stated behaviour rather than a regression.
   touched by every slice, so it is the item's rather than any one slice's. Its `pagedWorkspace`
   fixture hand-builds a two-table `CatalogFacts` purely so a `limit=1` call on `catalog.tables`
   pages, beside hand-built projections giving five other tools two entries each, and the test boots
-  a real server and asserts every tool's leading `N item(s)` line against what came back. As slices
+  a real server and asserts every tool's leading count line (`catalog.tables: 2 table(s)` and its
+  per-tool siblings) against what came back. As slices
   land, those hand-built projections lose their readers one by one, so the fixture converts to
   `StoreBackedBuild` in slice 1 and each later slice drops the projection it stopped needing. The
   constraint is a per-tool minimum count, which a real capture does not promise by construction, so
   the SDL the fixture captures is chosen to yield at least two entries per paged tool. That is a
   fixture-authoring job rather than a design decision, but it has to be done once at the front
   rather than discovered when an assertion fails mid-slice.
-* The member-slot query gets `SchemaView`'s existing case pointed at it, unchanged. The read is the
-  same relation with the same ordering, so what the case pins is that the resource still renders the
-  slots, not that a new rule was introduced.
+* The member-slot query gets a case rather than a repoint, because there is none to repoint:
+  `SchemaView.members` is production code with no test exercising it, the module's one `backingShape`
+  assertion pinning `TableBacking`, the arm without members. Slice 6's backing-class cases are where
+  the slots get asserted; the read is the same relation with the same ordering, so what they pin is
+  that the entry still renders the slots, not that a new rule was introduced.
 * Nothing in this item writes an agreement test between the permits and the relations. Two Java
   spellings of one taxonomy is what the permit partition was; a second one keyed on rows would be
   the same mistake with a store underneath it. The per-tool cases against a real capture are what
@@ -1281,10 +1290,11 @@ deliberate and reads absence as "the parent's own scope answers". An implementer
 substrate at pickup rather than trusting this document, since the store moves under the item, but
 the direction of every correction so far has been that more is readable than the item claimed.
 
-`depends-on` stays empty and should remain so. Two items depend on this one, which is the coupling
-running the right way: `consumers-share-relations-not-queries.md` for the reader-import seam, and
-the LSP fact-store item's retirement sweep for `CatalogFacts`, whose term survives that item's own
-diff until slice 4 lands here. Whoever takes the LSP item to Done should expect that and read it as
+`depends-on` stays empty and should remain so. Three items lean on this one, which is the coupling
+running the right way: `consumers-share-relations-not-queries.md` for the reader-import seam,
+`fact-store-test-harness-consolidation.md` for the settled `StoreBackedBuild` it lifts onto the
+shared harness home, and the LSP fact-store item's retirement sweep for `CatalogFacts`, whose term
+survives that item's own diff until slice 4 lands here. Whoever takes the LSP item to Done should expect that and read it as
 a sequencing fact rather than a failed sweep.
 
 The pom edges are deleted in slice 9 with both halves of the guard, and that is a change from an
