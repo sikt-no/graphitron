@@ -53,7 +53,7 @@ verifiable in one grep each:
 | classes duplicating `private static Path write(` | 8 | 18 |
 | classes declaring their own `GRAPH` constant | 8 | 15 |
 | files referencing `CapturedStore` | 9 | 24 |
-| test classes reading `graphitron-lsp`'s `StoreFixture` | 28 | 36 |
+| test classes reading `graphitron-lsp`'s `StoreFixture` | 28 | 35 |
 
 **The rate is the argument, not the total.** Roughly two to three new copies a week, all of them
 inside `graphitron` and none of them in either dependency's scope, means this item's cost grows while
@@ -62,17 +62,23 @@ lands *first* rather than last, so no further copy can arrive during the item's 
 inventory becomes a count the guard maintains rather than a list a reader has to trust.
 
 The utility these classes want **already exists**. `capture/CapturedStore` is an `AutoCloseable`
-handle offering `of(Path, String)`, `ofPipeline(Path, String)`, `registryOf`, `attributionOf` and
-`fixtureFile`, and ten test classes inside `capture/` use it happily. It is package-private,
+handle offering `of(Path, String)`, `ofPipeline(Path, String)`, a third arm
+`ofPipeline(Path, String, String tag)` that puts a tag on the input so `TagLinkSynthesiser` fires (its
+only caller is `capture/TaggedCaptureStampTest`, and it has to survive the move intact rather than be
+folded into the two-argument arm), `registryOf`, `attributionOf` and `fixtureFile`. Ten test classes
+inside `capture/` use it happily. It is package-private,
 so `derive/` and `diagnostics/` cannot see it at all. Each of them reinvented it independently.
 
 ### The three modules downstream
 
-`graphitron-lsp` has `no.sikt.graphitron.lsp.StoreFixture`, read by 28 test classes. It is not a
+`graphitron-lsp` has `no.sikt.graphitron.lsp.StoreFixture`, read by 35 test classes. It is not a
 degraded copy: it is largely this item's target design, reached independently, and the section on it
 below treats it as prior art rather than as debt.
 
-`graphitron-mcp` has `no.sikt.graphitron.mcp.StoreBackedBuild`, read by five test classes. This one is
+`graphitron-mcp` has `no.sikt.graphitron.mcp.StoreBackedBuild`, read by four test classes
+(`GraphitronMcpServerTest`, `LintSuppressionDiagnosticsParityTest`, `DiagnosticsAggregateTest`,
+`ServerInstructionsTest`; the fifth reference to the name is the sibling `StoreFixture`'s javadoc,
+pointing at it rather than calling it). This one is
 *not* another copy of the capture harness, and the difference is the most important structural fact in
 this item. It stands up a **file** store and runs a real `GraphQLRewriteGenerator.buildOutput()` into
 it, then plays `DevMojo`'s part over the result. Its javadoc says why the substrate is the point:
@@ -192,7 +198,7 @@ what keeps the shared home from becoming that type:
 **L0 through L2 are shared. L3 is always local.** Each module keeps its named fixture as a thin L3
 layer over the level below it, which is why `StoreFixture` and `StoreBackedBuild` survive this item
 under their own names rather than being deleted into a common type. It is also what keeps the call
-sites still: the thing 28 LSP tests and five MCP tests are calling is L3, and L3 is not moving.
+sites still: the thing 35 LSP tests and four MCP tests are calling is L3, and L3 is not moving.
 
 The levels are ordered, so the work is ordered. L0 is the floor everything else stands on, L1 is the
 consolidation with the most copies behind it, and L2 is one fixture rehomed onto the floor. An
@@ -203,8 +209,8 @@ implementer who tries L2 before L0 is settled will be rebuilding it.
 The obvious shape for reactor-wide shared test support is a dedicated `graphitron-test-fixtures`
 module. It cannot exist, and the reason is worth stating so nobody spends a week rediscovering it.
 
-The harness needs `FactCapture`, which lives in `graphitron`'s main sources. `graphitron`'s own eight
-tests need the harness. So a fixtures module would have to depend on `graphitron`, while
+The harness needs `FactCapture`, which lives in `graphitron`'s main sources. `graphitron`'s own
+fifteen copies need the harness. So a fixtures module would have to depend on `graphitron`, while
 `graphitron`'s tests depend on the fixtures module: a reactor cycle Maven cannot express, because a
 module is a single build unit and cannot be both before and after another. The only escape would be
 moving capture down into `graphitron-model`, which is a far larger change and the wrong one anyway,
@@ -270,7 +276,7 @@ that have quietly diverged is the expensive state, and it is expensive because n
 test author at the existing answer. A `CapturedStore` carrying more factories than any one reader needs is
 the cheap state: the factories are in one file, visible together, and consolidating two that turned
 out to be the same is a mechanical afternoon. Growth is expected and fine. If the set gets unwieldy,
-clean it then, with the whole set in view, which is exactly the vantage point the current eight
+clean it then, with the whole set in view, which is exactly the vantage point the current fifteen
 copies deny.
 
 So the shape set below is a starting point, not a closed taxonomy, and a later item adding a factory
@@ -293,8 +299,11 @@ A ratchet inverts that. It lands with every existing site named in its allow-lis
 its reason, and it fails on any site not named. From that moment the population is frozen: no new copy
 can land while the item is in flight, the inventory is a machine-maintained count rather than a list
 somebody has to re-grep, and every subsequent slice's acceptance is arithmetic, so many entries
-removed. `CommandSeamRatchetTest` is the shape already in the tree and the precedent for the
-allow-list-that-drains form.
+removed. Two ratchet shapes are already in the tree and the right one is the allow-list, not the
+count. `CommandSeamRatchetTest` pins measured *numbers* and lowers them commit by commit, which suits
+a boundary with no enumerable site list; `RetiredVocabularyGuardTest` holds a named allow-list of
+sites that drains to empty, with a record per entry and a staleness assertion on each. This item has
+an enumerable list of 33 sites, so `RetiredVocabularyGuardTest` is the precedent to follow.
 
 The count at the moment of landing is what the item is sized against, so the guard slice states it in
 its own message: an author who trips it reads how many sites are still allow-listed and where the
@@ -332,23 +341,52 @@ call itself, and a guard forbidding it would forbid the layer this item ships. T
 catch the same authors by the resources they stand up rather than by the call they make, which is the
 distinction that keeps the guard from policing the design it is protecting.
 
-### The allow-list is two lists, and only one of them drains
+### The allow-list is three lists, and only one of them drains
 
-With the recognisers above, the guard reaches roughly thirty test classes outside the shared home. The
-entries are not all of one kind, and conflating them is what would make the ratchet's acceptance
-unreadable:
+With the recognisers above, the guard reaches **33** test classes outside the shared home, and the
+number is exact rather than approximate because the ratchet's acceptance is arithmetic: 25 inside
+`graphitron` (every file there referencing `GraphitronModelStore` except `CapturedStore` itself), two
+in `graphitron-lsp`, four in `graphitron-mcp`, two in `graphitron-maven-plugin`. The entries are not
+all of one kind, and conflating them is what would make the acceptance unreadable. Every one of the 33
+carries exactly one of these three markers, and the guard fails if a reached site carries none:
 
-* **Draining entries**, the fifteen capture harnesses in `graphitron`, `graphitron-lsp`'s
-  `StoreFixture`, `graphitron-mcp`'s `StoreFixture` and `StoreBackedBuild`, and the maven plugin's two
-  inline sites. Each slice below removes some of these, and the count reaching zero is the item's
-  completion.
-* **Permanent entries**, the store-mechanics and direct-writer classes named in the edge section
-  above. These are exceptions on the merits and stay after the item is Done. Each carries its reason,
-  and the reason is what makes it an exception rather than a backlog.
+* **Draining (20).** The fifteen capture harnesses in `graphitron` (the fourteen in `derive/` plus
+  `diagnostics/DiagnosticFactsTest`), `graphitron-lsp`'s `StoreFixture`, `graphitron-mcp`'s
+  `StoreFixture` and `StoreBackedBuild`, and the maven plugin's `DevMojoTest` and
+  `dev/CatalogRefreshTest`. Each slice below removes some of these, and this count reaching zero is
+  the item's completion.
+* **Permanent (11).** The store-mechanics classes (`capture/PersistentStoreTest`,
+  `capture/StoreReaderTest`, `capture/WarmStartRefreshTest`,
+  `capture/BrokenSourceStillCapturesPipelineTest`), the direct writers (`compile/CompileFactsTest`,
+  `capture/CommentRenderabilityGateTest`, `capture/JavaSourceFactsTest`,
+  `capture/SourceGraphScopingTest`), and the three downstream edge classes
+  (`graphitron-lsp`'s `RejectionSeverityCoverageTest`, `graphitron-mcp`'s `DiagnosticsAggregateTest`
+  and `DiagnosticsToolCompileSourceTest`). These are exceptions on the merits and stay after the item
+  is Done. Each carries its reason, and the reason is what makes it an exception rather than a
+  backlog.
+* **Deferred (2).** The capture-oracle pair, `capture/FactCaptureAgreementTest` (26 opens) and
+  `capture/FactSchemaGateTest` (8). The edge section places them in scope for L0 in principle, low
+  value, and last in any order, and that is a third disposition rather than either of the two above:
+  making them draining would put 34 open sites the item itself calls low-value inside its completion
+  gate, and calling them permanent would assert an exception on the merits that the edge section does
+  not claim. So they are permitted to stay and not required to drain. Migrating either is a bonus a
+  slice may take and no slice owes.
 
 The failure message names the draining count only, since that is the number an author tripping the
-guard is being asked about, and the permanent set is a property of the guard rather than of the
-migration.
+guard is being asked about; the permanent and deferred sets are properties of the guard rather than of
+the migration.
+
+**Every entry is self-validating, or the list rots exactly as the inventory did.** The precedent is
+`RetiredVocabularyGuardTest`, whose `ALLOWED` set holds a record per entry and then asserts each
+entry is still real (the file exists, the term is still registered) so a stale entry fails the build
+rather than lingering. Take that shape: an allow-list entry naming a class that no longer stands a
+store up must fail, which is what makes the draining count a measurement instead of a claim, and what
+stops a migrated class keeping its entry and hiding the progress.
+
+Note that the walk covers all ten of `GuardScope.IN_SCOPE_MODULES`, not just the four modules this
+item is about. Nothing in the other six references `GraphitronModelStore` in test sources today, so
+the guard lands green over them, and that breadth is the point: a fifth module standing a store up
+trips the guard on its first commit rather than becoming the next entry in this inventory.
 
 ### Why a guard at all, since discoverability alone has been tried and lost
 
@@ -395,7 +433,7 @@ factory argument rather than an axis. Its placeholder SDL constant is character-
 files, no contact, converging on the same answers and disagreeing on the rest by accident: that is
 the state this item exists to end, and it does not stop at a module line.
 
-**The name and the call sites stay.** 28 LSP test classes call `StoreFixture`, so the move is not a
+**The name and the call sites stay.** 35 LSP test classes call `StoreFixture`, so the move is not a
 migration of those call sites. `StoreFixture` remains, under its own name, as `graphitron-lsp`'s
 local layer: it keeps its factory signatures and delegates the store's lifetime, the fixture file and
 the capture call to the shared handle. Its own tests should not need editing, and the references to
@@ -504,7 +542,7 @@ to reach.
 closure form as the one most tests reach for.
 
 The goal here is good common tools, not a single sanctioned way to open a store. The closure form is
-genuinely the nicer call site for the common case, which is most of the eight classes: hand it SDL,
+genuinely the nicer call site for the common case, which is most of the fifteen classes: hand it SDL,
 get a `DSLContext`, assert. It should stay, and it should be the shortest thing to type. The
 resource handle sits underneath it as the primitive, for the tests that need more than one step
 against the open store.
@@ -596,7 +634,7 @@ the literal in all, the other two being `CapturedStore` itself and `WarmStartRef
 rename is not one line but one line per copy, taken as each copy migrates. The sweeps then stop
 minting subdirectories, which is a small hand-rolled step deleted rather than moved.
 
-One line of the eight copies has to survive the merge: each of them calls `Files.createDirectories`
+One line of the fifteen copies has to survive the merge: each of them calls `Files.createDirectories`
 before writing and `CapturedStore.write` does not, because every `capture/` caller hands it a
 `@TempDir` that already exists. Every incoming caller writes into a directory it named itself, so the
 shared `write` needs that line or the sweeps and the sibling-partition negatives fail on the first
@@ -682,13 +720,15 @@ so any class rename in this item must update both surfaces by hand.
 ## Slices
 
 Six slices, ordered so each lands on settled files and each has an arithmetic acceptance. The item is
-too large for one session: fifteen classes in `graphitron`, thirty-six call sites in the language
+too large for one session: fifteen classes in `graphitron`, thirty-five reader classes in the language
 server, four modules and an open design question.
 
-**S1: the ratchet.** The guard, both counters, every current site allow-listed with its reason and
-marked draining or permanent, and the draining count in its failure message. Nothing migrates.
-Acceptance: the build fails on a new site, proved by a negative case, and passes on the tree as it
-stands.
+**S1: the ratchet.** The guard, both counters, all 33 current sites allow-listed with their reasons
+and marked draining, permanent or deferred, each entry self-validating, and the draining count in its
+failure message. Nothing migrates. Acceptance: the build fails on a new site, proved by a negative
+case; it fails on a stale entry, proved the same way; it passes on the tree as it stands; and the
+three markers partition the 33 with nothing unmarked, so 20 + 11 + 2 is the number the guard itself
+reports.
 
 **S2: L0.** The store's lifetime, the fixture file with the filename keyed on the graph name, the
 caller-supplied graph identity, `registryOf` / `attributionOf` / `fixtureFile` public, and
@@ -708,23 +748,27 @@ allow-list entries go.
 **S5: `graphitron-maven-plugin`.** The two inline sites adopt L0. Acceptance: two allow-list entries go,
 and neither is silenced instead.
 
-**S6: `graphitron-lsp`.** `StoreFixture` keeps its name and its thirty-six call sites and delegates its
-capture half, including the post-capture writers, which is the part that waits on the LSP item. This is
-also where the seeding consolidation and the hand-written `graphql_type` / `graphql_field` twins land,
+**S6: `graphitron-lsp`.** `StoreFixture` keeps its name and its thirty-five reader classes and delegates
+its capture half, including the post-capture writers, which is the part that waits on the LSP item. This
+is also where the seeding consolidation and the hand-written `graphql_type` / `graphql_field` twins land,
 both of them cross-cutting enough to want the whole set in view. Acceptance: the allow-list's draining
-half is empty, only the permanent entries remain, and no LSP test class is edited.
+section is empty, only the permanent and deferred entries remain, and no LSP test class is edited.
 
 What must not happen is a rehome landing on top of a file another item is still rewriting, which the
-slice order below is arranged to avoid. This item does not reach Done until all four modules are on the
-shared home and the allow-list is empty.
+slice order above is arranged to avoid. This item does not reach Done until all four modules are on the
+shared home and the allow-list's draining section is empty. The permanent and deferred entries stay,
+which is why the guard reports the draining count rather than the list's length.
 
 ## Tests
 
 This item changes test-support code only, so its acceptance is the existing suite across all four
-modules, passing with its assertion content unchanged: the eight migrated `graphitron` classes, the
-nine `capture/` classes that already read `CapturedStore`, the 28 `graphitron-lsp` classes that read
-`StoreFixture`, the five `graphitron-mcp` classes that read `StoreBackedBuild`, and the
-`graphitron-maven-plugin` pair. An assertion that has to change to accommodate the shared home is the
+modules, passing with its assertion content unchanged: the fifteen migrated `graphitron` classes, the
+ten `capture/` classes that already read `CapturedStore`, the 35 `graphitron-lsp` classes that read
+`StoreFixture`, the four `graphitron-mcp` classes that read `StoreBackedBuild`, and the
+`graphitron-maven-plugin` pair. Those five numbers are the same populations the Problem section's
+table measures, and they are the ones each slice's acceptance is counted against; a slice that
+declares itself done against the pre-review counts (eight, nine, 28) is done against a population
+that no longer exists. An assertion that has to change to accommodate the shared home is the
 signal that an axis was load-bearing after all and must stay expressible, not that the assertion
 should be relaxed. The node-inference axis is the one to watch.
 
