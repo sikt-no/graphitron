@@ -606,7 +606,8 @@ The parent here is a type whose backing class is reflection-derived from its pro
 | `@field(name:)` or matching column name | `InputField.ColumnBackedField` (arity 1) | Maps input argument to a table column
 | `@reference` on input scalar | `InputField.ColumnBackedReferenceField` (arity 1) | Maps input argument to a FK column
 | `@nodeId` on input scalar | `InputField.ColumnBackedField` (`NodeIdDecodeKeys` extraction; arity = the node key's column count) | Decodes a NodeId into the consumer table's key columns
-| `@nodeId(typeName:)` on input scalar | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction; arity = the target key's column count) | Decodes a NodeId into FK columns referencing the typeName target
+| `@nodeId(typeName:)` on input scalar, FK targets the target's key columns | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction, `FilterBinding.Local`; arity = the target key's column count) | Decodes a NodeId into FK columns on the consumer's own table; the predicate compares those columns directly
+| `@nodeId(typeName:)` on input scalar, FK targets other columns | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction, `FilterBinding.Remote`) | Decodes a NodeId whose value no column of the consumer's table holds, so the filter compares the *target's* key columns inside a correlated `EXISTS` over the FK. Read-side only: writing such a carrier, or using it as a `@lookupKey` column, is rejected at validate time (it would need a subquery translating the key back into an FK-column value)
 | Nested input object | `InputField.NestingField` | Expands nested input fields inline against the same table
 |===
 

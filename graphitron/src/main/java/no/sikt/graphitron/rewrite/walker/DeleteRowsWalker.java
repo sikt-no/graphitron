@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
 import no.sikt.graphitron.rewrite.model.DeleteRowsError;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.MatchedKey;
@@ -111,8 +112,20 @@ public final class DeleteRowsWalker {
             switch (f) {
                 case InputField.ColumnBackedField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
-                case InputField.ColumnBackedReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                // Same binding gate as UpdateRowsWalker: a Remote-bound reference carrier has no
+                // column on this table for the DELETE's WHERE to key on, so it needs the same
+                // key-to-FK-column subquery and reports the same shared cause.
+                case InputField.ColumnBackedReferenceField c -> {
+                    switch (c.binding()) {
+                        case FilterBinding.Local(var ownTableColumns) -> classifyColumnCarrier(
+                            c.name(), c.list(), ownTableColumns, wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                        case FilterBinding.Remote ignored ->
+                            errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
+                                c.name(), "translated FK-target @nodeId reference",
+                                FilterBinding.remoteBindingUnsupported(c.name(),
+                                    "used to key @mutation(typeName: DELETE)")));
+                    }
+                }
                 case InputField.ConditionOwnedField c ->
                     errors.add(new DeleteRowsError.OverrideConditionNotSupported(c.name(), c.location()));
                 case InputField.UnboundField u ->

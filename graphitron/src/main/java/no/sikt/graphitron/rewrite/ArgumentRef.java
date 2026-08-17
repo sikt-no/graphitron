@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -82,9 +83,14 @@ public sealed interface ArgumentRef {
          * table, it holds the resolved FK join path from the field's own table to the terminal
          * table that holds the column; {@code projectFilters} then wraps the predicate in a
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.RemoteColumnPredicate} (correlated
-         * EXISTS). This is distinct from {@link ColumnBackedReferenceArg}, whose {@code @nodeId}
-         * join path lifts to local FK columns (no join); here the column is the terminal column
-         * and the join is genuinely emitted.
+         * EXISTS). Which of the two applies is stated by {@code binding} rather than inferred from
+         * the path being empty, so the local-vs-remote fork is one exhaustive switch shared with
+         * {@link ColumnBackedReferenceArg}; see {@link FilterBinding}.
+         *
+         * <p>On this carrier both arms bind {@code columns()} (there is one column slot, and the
+         * composite-PK node key rides it), so {@link FilterBinding.Local} restates {@code columns()}
+         * and the compact constructor checks the two agree. That is a derived slot, which the
+         * constructor can police; the empty-path sentinel it replaces was invisible to every switch.
          */
         record ColumnBackedArg(
             String name,
@@ -96,15 +102,29 @@ public sealed interface ArgumentRef {
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride,
             boolean isLookupKey,
-            List<JoinStep> joinPath
+            List<JoinStep> joinPath,
+            FilterBinding binding
         ) implements ScalarArg {
 
             public ColumnBackedArg {
                 requireNonNull(columns, "columns");
+                requireNonNull(binding, "binding");
                 columns = List.copyOf(columns);
                 joinPath = List.copyOf(joinPath);
                 if (columns.isEmpty()) {
                     throw new IllegalArgumentException("ColumnBackedArg requires at least one column");
+                }
+                if (binding instanceof FilterBinding.Remote && joinPath.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "ColumnBackedArg '" + name + "' binds Remote but carries an empty joinPath;"
+                        + " a remote predicate has no terminal table to reach");
+                }
+                if (binding instanceof FilterBinding.Local(var ownTableColumns)
+                        && ownTableColumns.size() != columns.size()) {
+                    throw new IllegalArgumentException(
+                        "ColumnBackedArg '" + name + "' binds Local over " + ownTableColumns.size()
+                        + " column(s) but carries " + columns.size()
+                        + "; on this carrier the local tuple is columns()");
                 }
                 // Deferred-generalization seam, not a modeling truth: @nodeId is currently the
                 // only multi-column trigger, so a multi-column carrier always decodes a node key.
@@ -133,12 +153,12 @@ public sealed interface ArgumentRef {
          * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
          * shape-for-shape on the argument side. {@code columns} are the target NodeType's key
          * columns; {@code joinPath} resolves the single-hop FK from the field's containing table
-         * to {@code T.table()}. The body emitter pairs the carrier with
-         * {@link no.sikt.graphitron.rewrite.model.BodyParam.Eq} (scalar) or
-         * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
-         * columns when those columns positionally match the target's NodeType key columns
-         * (the simple direct-FK case); cases where they differ are rejected at
-         * classify time with a deferred-emission hint.
+         * to {@code T.table()}. {@code binding} decides where the value predicate lands:
+         * {@link FilterBinding.Local} when the FK's target-side columns are the target's key columns
+         * so the decoded keys lift to FK-child columns on this table (bare
+         * {@link no.sikt.graphitron.rewrite.model.BodyParam.Eq} / {@code In} / {@code RowEq} /
+         * {@code RowIn}), {@link FilterBinding.Remote} when they genuinely differ so the predicate
+         * binds {@code columns} on the target table inside a correlated {@code EXISTS}.
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys} at every
          * arity, whose one failure mode throws: a malformed or wrong-type id on an authored filter
@@ -155,7 +175,7 @@ public sealed interface ArgumentRef {
             boolean list,
             List<ColumnRef> columns,
             List<JoinStep> joinPath,
-            List<ColumnRef> liftedSourceColumns,
+            FilterBinding binding,
             CallSiteExtraction.NodeIdDecodeKeys extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride
@@ -163,11 +183,16 @@ public sealed interface ArgumentRef {
 
             public ColumnBackedReferenceArg {
                 requireNonNull(columns, "columns");
+                requireNonNull(binding, "binding");
                 columns = List.copyOf(columns);
                 joinPath = List.copyOf(joinPath);
-                liftedSourceColumns = List.copyOf(liftedSourceColumns);
                 if (columns.isEmpty()) {
                     throw new IllegalArgumentException("ColumnBackedReferenceArg requires at least one column");
+                }
+                if (binding instanceof FilterBinding.Remote && joinPath.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "ColumnBackedReferenceArg '" + name + "' binds Remote but carries an empty"
+                        + " joinPath; a remote predicate has no terminal table to reach");
                 }
             }
             /**
@@ -206,9 +231,14 @@ public sealed interface ArgumentRef {
          * composite-key lookup (UPDATE and DELETE ride their walker carriers); for both,
          * {@code setFields} is empty and every admissible input field flows into
          * {@code lookupKeyFields}. Both lists are sealed on {@link InputField.LookupKeyField} /
-         * {@link InputField.SetField} respectively (admitted carrier: {@code ColumnBackedField});
-         * reference carriers stay outside the permits set. Construct
-         * via {@link #of} so the partition has a single derivation path.
+         * {@link InputField.SetField} respectively; each permits the value carrier
+         * ({@code ColumnBackedField}) and the FK-target reference carrier
+         * ({@code ColumnBackedReferenceField}). Admissibility of a reference carrier is per-instance
+         * rather than per-type: only a {@link FilterBinding.Local} one has own-table columns to bind,
+         * and the rails gate on that ({@code MutationInputResolver.admitMutationInputFields} for
+         * INSERT, {@code FieldBuilder.classifyPlainLookupKeyArg} for the query-side lookup), because
+         * {@link #of} is a pure factory with no diagnostic channel and no verb to distinguish them.
+         * Construct via {@link #of} so the partition has a single derivation path.
          *
          * <p>{@code fieldBindings} is {@code List<InputColumnBindingGroup>}: one group per
          * WHERE-bound input field. {@link InputColumnBindingGroup.MapGroup} for an arity-1

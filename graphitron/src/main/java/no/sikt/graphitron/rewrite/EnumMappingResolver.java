@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
@@ -236,14 +237,22 @@ final class EnumMappingResolver {
                         new InputColumnBinding.MapBinding(cf.name(), cfColumn, extraction))));
                 }
                 case InputField.ColumnBackedReferenceField crf -> {
-                    // FK-target @nodeId reference carrier. The target columns are the lifted
-                    // source columns on the input's own table (i.e. the FK columns; permuted
-                    // into NodeType key order by the DirectFk classifier), not the joined-table
-                    // columns carried by crf.columns(). Arity-gated on isComposite(): the
-                    // single-column shape produces the same MapGroup an arity-1 NodeId-decoded
-                    // ColumnBackedField does; the composite shape pairs slot-for-slot with the
-                    // decoded record's value<i+1>() accessors, same DecodedRecordGroup as the
-                    // same-table composite arm.
+                    // FK-target @nodeId reference carrier. The bound columns are the binding's
+                    // own-table tuple (the FK columns, permuted into NodeType key order by the
+                    // DirectFk classifier), not the target-table columns carried by crf.columns().
+                    // Arity-gated on isComposite(): the single-column shape produces the same
+                    // MapGroup an arity-1 NodeId-decoded ColumnBackedField does; the composite shape
+                    // pairs slot-for-slot with the decoded record's value<i+1>() accessors, same
+                    // DecodedRecordGroup as the same-table composite arm.
+                    if (!(crf.binding() instanceof FilterBinding.Local(var ownTableColumns))) {
+                        // Unreachable: FieldBuilder.classifyPlainLookupKeyArg, the one caller, gates
+                        // a Remote-bound carrier off this rail. Throwing keeps that gate the single
+                        // decision point; this method accumulates prose into `errors` and has no
+                        // typed channel to report the deferral through.
+                        throw new IllegalStateException("lookup binding walk reached a remote-bound"
+                            + " reference carrier '" + crf.name() + "'; the lookup-rail gate should"
+                            + " have rejected it");
+                    }
                     if (crf.list()) {
                         errors.add("input type '" + crf.parentTypeName() + "' field '" + crf.name()
                             + "': list-typed input field is not supported in this binding position; "
@@ -252,9 +261,9 @@ final class EnumMappingResolver {
                     }
                     if (crf.isComposite()) {
                         var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
-                        for (int i = 0; i < crf.liftedSourceColumns().size(); i++) {
+                        for (int i = 0; i < ownTableColumns.size(); i++) {
                             recordBindings.add(new InputColumnBinding.RecordBinding(i,
-                                crf.liftedSourceColumns().get(i)));
+                                ownTableColumns.get(i)));
                         }
                         groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
                             crf.name(), (CallSiteExtraction.NodeIdDecodeKeys) crf.extraction(), recordBindings));
@@ -262,7 +271,7 @@ final class EnumMappingResolver {
                     }
                     groups.add(new InputColumnBindingGroup.MapGroup(List.of(
                         new InputColumnBinding.MapBinding(crf.name(),
-                            crf.liftedSourceColumns().get(0), crf.extraction()))));
+                            ownTableColumns.get(0), crf.extraction()))));
                 }
                 case InputField.NestingField ignored -> {
                     // Nesting carriers are not admissible binding shapes here; the caller's

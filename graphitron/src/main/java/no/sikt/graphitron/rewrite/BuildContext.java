@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -2701,13 +2702,18 @@ class BuildContext {
                 .<InputFieldResolution>map(col -> {
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
                     // Plain (non-@nodeId) @reference: the predicate fires against the resolved
-                    // column directly. liftedSourceColumns carries that single column so the
-                    // emitter has one slot to read for both nodeId and non-nodeId carriers.
+                    // column. An empty path means the column is on the field's own table, so it
+                    // binds Local; a non-empty path means `col` is the terminal column on a joined
+                    // table, which is the carrier's own columns() and so binds Remote.
                     // selfReference=false: the self-FK fact (the all-SET routing) is decided only
                     // at the @nodeId discrimination site; a bare @reference is not a self-FK carrier.
                     return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        List.of(col), path.elements(), List.of(col), false, cond,
+                        List.of(col), path.elements(),
+                        path.elements().isEmpty()
+                            ? new FilterBinding.Local(List.of(col))
+                            : new FilterBinding.Remote(),
+                        false, cond,
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
                 })
                 .orElseGet(() -> unresolved(field, name, Rejection.unknownColumn(
@@ -2902,11 +2908,22 @@ class BuildContext {
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     direct.keyColumns(), direct.joinPath(),
-                    direct.liftedSourceColumns(), direct.selfReference(), cond, extraction));
+                    new FilterBinding.Local(direct.liftedSourceColumns()),
+                    direct.selfReference(), cond, extraction));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
-                return unresolved(field, name, FieldBuilder.translatedFkRejection(
-                    translated.refTypeName(), resolvedTable.tableName()));
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(translated.decodeMethod());
+                // The FK targets columns other than the NodeType's key columns, so the decoded key
+                // reaches the row only through the join: a Remote binding, lowered to the correlated
+                // EXISTS the joined plain-@reference filter already uses. selfReference is false
+                // because TranslatedFk records no self-FK fact and the read path needs none; the
+                // slot's one reader is the UPDATE SET partition, which refuses a Remote binding
+                // before reading it, so the value is unreachable rather than merely unused.
+                return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                    translated.keyColumns(), translated.joinPath(),
+                    new FilterBinding.Remote(), false, cond, extraction));
             }
         }
     }

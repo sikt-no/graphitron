@@ -594,6 +594,74 @@ INSERT INTO split_filter_parent (parent_id, target_id, include) VALUES
     (1, 1, true),    -- passes the hop-0 filter → resolves the target
     (2, 1, false);   -- fails the hop-0 filter → resolves null, though it shares target_id=1
 
+-- Translated FK-target @nodeId execution fixtures. A child whose foreign key targets a column
+-- of the parent that is NOT the parent's node key: decoding an incoming parent id yields a node-key
+-- value the child table holds nowhere, so filtering the child requires SQL to translate that key
+-- into the FK's value by visiting the parent (a correlated EXISTS). The `nodeidfixture` schema
+-- already carries this shape for the classifier, but it is not wired into the execution module at
+-- all; these live in `public`, which the execution module's generator and the pipeline tier's
+-- catalog both already read, so the coverage costs table definitions and seed rows rather than a
+-- second jOOQ codegen execution. Both pairs need a matching NodeIdFixtureGenerator.METADATA entry
+-- publishing __NODE_TYPE_ID / __NODE_KEY_COLUMNS (that map is keyed on the bare table name across
+-- every codegen execution, so these names must not collide with a `nodeidfixture` table's).
+--
+-- Single-key pair. `xlat_parent`'s node key is `pk_id`; `xlat_child.parent_alt_key` references the
+-- unrelated unique column `alt_key`. Seeds give parent P1 two children and P2 one, so filtering by
+-- a list of parent ids has an asymmetric expected result rather than "everything".
+CREATE TABLE xlat_parent (
+    pk_id   varchar(50) PRIMARY KEY,
+    alt_key varchar(50) NOT NULL UNIQUE,
+    name    varchar(50) NOT NULL
+);
+
+CREATE TABLE xlat_child (
+    child_id       varchar(50) PRIMARY KEY,
+    parent_alt_key varchar(50) NOT NULL REFERENCES xlat_parent(alt_key),
+    note           varchar(50) NOT NULL
+);
+
+INSERT INTO xlat_parent (pk_id, alt_key, name) VALUES
+    ('P1', 'AK-1', 'first parent'),
+    ('P2', 'AK-2', 'second parent'),
+    ('P3', 'AK-3', 'childless parent');
+
+INSERT INTO xlat_child (child_id, parent_alt_key, note) VALUES
+    ('C1', 'AK-1', 'first of P1'),
+    ('C2', 'AK-1', 'second of P1'),
+    ('C3', 'AK-2', 'only child of P2');
+
+-- Composite twin. `xlat_comp_parent`'s node key is its PK (pk_a, pk_b); the child's FK targets a
+-- *different* composite unique constraint (alt_a, alt_b). Two key slots make the correlated EXISTS
+-- AND both FK columns and the decode produce a Row2, which the single-key pair cannot exercise.
+-- Distinct from `nodeidfixture.reordered_pk_parent`, whose FK targets the same columns in a
+-- different order: that is a permutation of a direct FK, not a translation.
+CREATE TABLE xlat_comp_parent (
+    pk_a  varchar(50) NOT NULL,
+    pk_b  varchar(50) NOT NULL,
+    alt_a varchar(50) NOT NULL,
+    alt_b varchar(50) NOT NULL,
+    name  varchar(50) NOT NULL,
+    PRIMARY KEY (pk_a, pk_b),
+    UNIQUE (alt_a, alt_b)
+);
+
+CREATE TABLE xlat_comp_child (
+    child_id varchar(50) PRIMARY KEY,
+    fk_a     varchar(50) NOT NULL,
+    fk_b     varchar(50) NOT NULL,
+    note     varchar(50) NOT NULL,
+    FOREIGN KEY (fk_a, fk_b) REFERENCES xlat_comp_parent(alt_a, alt_b)
+);
+
+INSERT INTO xlat_comp_parent (pk_a, pk_b, alt_a, alt_b, name) VALUES
+    ('A1', 'B1', 'X1', 'Y1', 'first composite parent'),
+    ('A2', 'B2', 'X2', 'Y2', 'second composite parent');
+
+INSERT INTO xlat_comp_child (child_id, fk_a, fk_b, note) VALUES
+    ('CC1', 'X1', 'Y1', 'first of A1/B1'),
+    ('CC2', 'X1', 'Y1', 'second of A1/B1'),
+    ('CC3', 'X2', 'Y2', 'only child of A2/B2');
+
 -- R300 routine fixture: the driving table-valued read function. A side-effect-free
 -- PostgreSQL function with three TEXT IN parameters and RETURNS TABLE(...), the shape
 -- @routine binds day-one. jOOQ generates this as a table-valued-function Table class in

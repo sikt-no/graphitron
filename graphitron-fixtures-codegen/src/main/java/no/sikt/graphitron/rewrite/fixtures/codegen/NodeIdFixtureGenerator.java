@@ -59,11 +59,19 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // GraphQLQueryTest's filmActorByNodeId round-trip for the LookupArg.DecodedRecord
         // arm. PK column order matches `init.sql`'s declaration: actor_id first, film_id second.
         Map.entry("film_actor", new Metadata("FilmActor", List.of("ACTOR_ID", "FILM_ID"))),
-        // Rooted-at-parent fixture. NodeId keys on PK_ID only; the table also
+        // Translated FK-target fixture. NodeId keys on PK_ID only; the table also
         // exposes a unique ALT_KEY column targeted by `child_ref.parent_alt_key`'s FK. The
-        // FK does not positionally match __NODE_KEY_COLUMNS — that mismatch is the test
-        // surface for the rooted-at-parent JOIN-with-projection emission path.
+        // FK's target column is not a key column, so a decoded id yields a value no child column
+        // holds: the classifier's test surface for the translated FK-target arm (read-side filter
+        // through a correlated EXISTS, refused on the write and @lookupKey rails).
         Map.entry("parent_node", new Metadata("ParentNode", List.of("PK_ID"))),
+        // The execution-tier twins of the pair above, in the `public` schema, which the
+        // graphitron-sakila-example generator execution reads. Same shape as `parent_node`
+        // (node key PK_ID, FK targeting the unrelated unique ALT_KEY) plus a composite variant
+        // whose node key is (PK_A, PK_B) while the child's FK targets the (ALT_A, ALT_B) unique
+        // constraint. Table definitions and seed rows are in `init.sql`.
+        Map.entry("xlat_parent", new Metadata("XlatParent", List.of("PK_ID"))),
+        Map.entry("xlat_comp_parent", new Metadata("XlatCompParent", List.of("PK_A", "PK_B"))),
         // Arity > 22 rejection fixture. NodeIdLeafResolver.resolve rejects any
         // NodeType with > 22 key columns (jOOQ's typed Record/Row caps at Row22); this
         // 23-column composite-PK table is the smallest case that exercises that guard.

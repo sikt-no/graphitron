@@ -1056,10 +1056,10 @@ class NodeIdPipelineTest {
     //     to @lookupKey-synthesised carriers (extraction is ThrowOnMismatch to match the
     //     lookup-key dispatch contract).
     //   - FK-target (T.table() reachable via single-hop FK): filter semantics; projects to
-    //     ColumnBackedReferenceArg with the resolved joinPath. The emitter ships the simple
-    //     direct-FK case (FK targetColumns positionally equal NodeType keyColumns); pathological
-    //     cases are rejected at classify time with a deferred-emission hint, parallel to the
-    //     still-deferred output-side JOIN-with-projection.
+    //     ColumnBackedReferenceArg with the resolved joinPath and a FilterBinding saying where the
+    //     predicate lands. Local when the FK's target columns are the NodeType key columns (the
+    //     decoded keys lift to this table, bare Eq / In / RowEq / RowIn); Remote when they differ,
+    //     so the predicate binds the key columns on the target table inside a correlated EXISTS.
 
     enum ArgumentSameTableNodeIdCase {
         SAME_TABLE_SCALAR_SINGLE_PK(
@@ -1364,10 +1364,12 @@ class NodeIdPipelineTest {
                 assertThat(bp.column().sqlName()).isEqualTo("id_1");
             }),
 
-        FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED(
+        FK_TARGET_TRANSLATED_KEY_MISMATCH_BINDS_REMOTE(
             "@nodeId(typeName: ParentNode) on a child_ref-returning field where the FK targets "
                 + "parent_node.alt_key but ParentNode's keyColumn is parent_node.pk_id (FK target ≠ "
-                + "NodeType key) → UnclassifiedField with deferred-emission hint, parallel to R24",
+                + "NodeType key) → a ColumnBackedReferenceArg binding Remote, projected to a "
+                + "RemoteColumnPredicate whose inner In binds parent_node.pk_id inside the "
+                + "correlated EXISTS (child_ref has no column holding a pk_id value)",
             """
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
             type ChildRef @table(name: "child_ref") {
@@ -1378,19 +1380,29 @@ class NodeIdPipelineTest {
             }
             """,
             schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "childRefsByParent");
-                assertThat(f.reason())
-                    .contains("FK's target columns do not positionally match")
-                    .contains("deferred");
-                // One cause, one identity: the argument site and the input-field site below both
-                // classify this as Deferred, the arm the message itself asks for.
-                assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "childRefsByParent");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var remote = (BodyParam.RemoteColumnPredicate) gcf.bodyParams().stream()
+                    .filter(BodyParam.RemoteColumnPredicate.class::isInstance)
+                    .findFirst().orElseThrow();
+                // The join is the translation: reach parent_node through the FK, then compare its
+                // pk_id against the decoded keys.
+                assertThat(remote.joinPath()).hasSize(1);
+                var inner = (BodyParam.In) remote.inner();
+                assertThat(inner.column().sqlName()).isEqualTo("pk_id");
+                assertThat(inner.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                assertThat(((CallSiteExtraction.ThrowOnMismatch) inner.extraction())
+                    .decodeMethod().methodName()).isEqualTo("decodeParentNode");
             }),
 
         MULTI_HOP_IDENTITY_CARRYING(
             "R114: 2-hop @reference path from level_c to level_a via level_b. Both adjacent hops "
                 + "satisfy the lift predicate, so the carrier ships a composite ColumnBackedReferenceArg "
-                + "whose joinPath has size 2 and whose liftedSourceColumns lives on level_c (the "
+                + "whose joinPath has size 2 and whose Local binding names a tuple on level_c (the "
                 + "parent's own table) and aligns positionally with LevelA's NodeType keys. The "
                 + "emitted BodyParam.RowIn binds against level_c.(K1, K2), not joinPath[0].",
             """
@@ -1448,15 +1460,18 @@ class NodeIdPipelineTest {
      * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} or
      * {@link no.sikt.graphitron.rewrite.NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk}
      * once; both {@link FieldBuilder#classifyArgument} and {@link BuildContext#classifyInputField}
-     * consume the variant, so the arg side and the input side gate identically.
+     * consume the variant, so the arg side and the input side lower identically. The write and
+     * {@code @lookupKey} rails, which refuse the translated shape rather than lowering it, are pinned
+     * by {@link TranslatedFkTargetRailGatesPipelineTest}.
      */
     enum InputFieldFkTargetNodeIdCase {
-        FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED_INPUT(
+        FK_TARGET_TRANSLATED_KEY_MISMATCH_BINDS_REMOTE_INPUT(
             "input-field `[ID!] @nodeId(typeName: ParentNode)` consumed on child_ref where the "
                 + "FK targets parent_node.alt_key but ParentNode's keyColumn is parent_node.pk_id "
-                + "(FK target ≠ NodeType key) → the consuming field rejects, and the deferred-emission "
-                + "hint is minted at the input field carrying the typed Deferred rejection, parallel "
-                + "to the arg-side ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED",
+                + "(FK target ≠ NodeType key) → the field resolves to a ColumnBackedReferenceField "
+                + "binding Remote, projected to the same one-hop RemoteColumnPredicate over "
+                + "parent_node.pk_id the arg-side "
+                + "ArgumentFkTargetNodeIdCase.FK_TARGET_TRANSLATED_KEY_MISMATCH_BINDS_REMOTE pins",
             """
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
             type ChildRef @table(name: "child_ref") { childId: String! @field(name: "child_id") }
@@ -1466,24 +1481,21 @@ class NodeIdPipelineTest {
             type Query { childRefs(in: ChildRefFilterInput): [ChildRef!] }
             """,
             schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "childRefs");
-                assertThat(f.reason()).contains("1 input field could not be resolved");
-                // Same cause, same identity as the arg-side case above, reported at the input
-                // field that carries it rather than on the consuming field.
-                var causes = schema.diagnostics().stream()
-                    .filter(d -> "ChildRefFilterInput.parentIds".equals(d.coordinate()))
-                    .toList();
-                assertThat(causes).hasSize(1);
-                assertThat(causes.getFirst().rejection()).isInstanceOf(Rejection.Deferred.class);
-                assertThat(causes.getFirst().message())
-                    .contains("FK's target columns do not positionally match")
-                    .contains("deferred");
+                var remote = inputBodyParam(schema, "childRefs", BodyParam.RemoteColumnPredicate.class);
+                assertThat(remote.joinPath()).hasSize(1);
+                var inner = (BodyParam.In) remote.inner();
+                assertThat(inner.name()).isEqualTo("parentIds");
+                assertThat(inner.column().sqlName()).isEqualTo("pk_id");
+                assertThat(leafDecodeMethodName(remote)).isEqualTo("decodeParentNode");
+                assertThat(schema.diagnostics())
+                    .as("the read-side translated filter is supported, so nothing is reported")
+                    .noneMatch(d -> "ChildRefFilterInput.parentIds".equals(d.coordinate()));
             }),
 
         MULTI_HOP_IDENTITY_CARRYING_INPUT(
             "R114: input-field `[ID!] @nodeId(typeName: LevelA) @reference(path: [..., ...])` "
                 + "consumed on level_c — 2-hop chain that satisfies the lift predicate. The "
-                + "projected predicate is a RowIn bound to liftedSourceColumns on the parent's own "
+                + "projected predicate is a RowIn bound to the Local binding's tuple on the parent's own "
                 + "table (level_c.(k1, k2)), SQL-name-equal to LevelA's NodeType keys "
                 + "(identity-carrying). Mirror of the arg-side multi-hop case.",
             """
@@ -1500,7 +1512,7 @@ class NodeIdPipelineTest {
             schema -> {
                 var bp = inputBodyParam(schema, "levelCs", BodyParam.RowIn.class);
                 assertThat(bp.name()).isEqualTo("levelAIds");
-                // liftedSourceColumns are SQL-name-equal to the NodeType keys (identity-carrying);
+                // The bound columns are SQL-name-equal to the NodeType keys (identity-carrying);
                 // the table affinity is positional (parent's own table), not encoded on ColumnRef.
                 assertThat(bp.columns())
                     .extracting(c -> c.sqlName())
@@ -1514,7 +1526,7 @@ class NodeIdPipelineTest {
                 + " reordered_fk_child where the FK references the parent PK columns"
                 + " in (pk_b, pk_c, pk_a) order but the NodeType's __NODE_KEY_COLUMNS publish"
                 + " them in PK declaration order (pk_a, pk_b, pk_c). Same set, different order →"
-                + " DirectFk (not TranslatedFk); the resolver permutes liftedSourceColumns into"
+                + " DirectFk (not TranslatedFk); the resolver permutes the lifted tuple into"
                 + " __NODE_KEY_COLUMNS order so the emitter can pair them positionally with"
                 + " decoded values (which come out of the encoder in __NODE_KEY_COLUMNS order"
                 + " too).",
@@ -1528,7 +1540,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var bp = inputBodyParam(schema, "children", BodyParam.RowIn.class);
-                // The predicate binds liftedSourceColumns, permuted into __NODE_KEY_COLUMNS
+                // The predicate binds the Local tuple, permuted into __NODE_KEY_COLUMNS
                 // order; unpermuted they would come out in FK declaration order
                 // (fk_b, fk_c, fk_a), which the emitter would bind position-wise against
                 // (pk_a, pk_b, pk_c)-ordered decoded values, which is semantically wrong.
@@ -1541,7 +1553,7 @@ class NodeIdPipelineTest {
         FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK_SINGULAR(
             "R131: same shape as the list case above, but with a singular `id: ID!` carrier."
                 + " Confirms the singular branch also picks DirectFk with permuted"
-                + " liftedSourceColumns (and not TranslatedFk-rejected), matching the list"
+                + " lifted columns (binding Local rather than Remote), matching the list"
                 + " branch's classification.",
             """
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }

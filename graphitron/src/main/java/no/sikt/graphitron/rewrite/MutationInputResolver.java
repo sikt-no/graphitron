@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -444,12 +445,23 @@ final class MutationInputResolver {
                 continue;
             }
             // FK-target reference carriers (@nodeId(typeName: T) pointing at another @table's
-            // NodeType, classified to DirectFk) admit on INSERT, UPDATE and DELETE at every
-            // arity. The carrier's liftedSourceColumns live on the input's own table (no JOIN at
-            // the emit site) and the extraction is narrowed to NodeIdDecodeKeys, so the emitters
-            // bind decoded keys against liftedSourceColumns positionally, the same shape the
-            // same-table NodeId carriers drive.
-            if (f instanceof InputField.ColumnBackedReferenceField) {
+            // NodeType) are writable exactly when their binding is Local: the decoded keys then
+            // land on FK-child columns of the input's own table, which is what the emitters put in
+            // the column list and the VALUES cells. A Remote binding has no such column, so the
+            // write would need a subquery translating the target's key back to an FK-column value.
+            //
+            // The switch is exhaustive on purpose. This arm reads no binding-sensitive slot, so
+            // retiring an accessor would not have surfaced it as a compile error; the gate has to be
+            // written by hand, and an exhaustive switch is what makes a future third binding arm
+            // break it loudly instead of failing open into the emitter.
+            if (f instanceof InputField.ColumnBackedReferenceField crf) {
+                switch (crf.binding()) {
+                    case FilterBinding.Local ignored -> { }
+                    case FilterBinding.Remote ignored -> {
+                        return Rejection.deferred("@mutation input '" + typeName + "' "
+                            + FilterBinding.remoteBindingUnsupported(crf.name(), "written by a @mutation"));
+                    }
+                }
                 continue;
             }
             // ConditionOwnedField admits on UPDATE / DELETE; the developer takes over the WHERE
@@ -539,7 +551,7 @@ final class MutationInputResolver {
      * Accumulates the SET-side carriers writing the input's own columns as
      * {@link ColumnOverlap.ColumnWriter}s, recursing into {@link InputField.NestingField} grouping
      * inputs and threading the access-path prefix. Value carriers source columns from
-     * {@code columns()}, FK-reference carriers from {@code liftedSourceColumns()}; a
+     * {@code columns()}, FK-reference carriers from their {@link FilterBinding.Local} tuple; a
      * {@link InputField.ColumnBackedField} carries a decode only when its extraction is a
      * {@link CallSiteExtraction.NodeIdDecodeKeys}.
      */
@@ -560,7 +572,16 @@ final class MutationInputResolver {
                     decode = cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys;
                 }
                 case InputField.ColumnBackedReferenceField crf -> {
-                    columns = crf.liftedSourceColumns();
+                    if (!(crf.binding() instanceof FilterBinding.Local(var ownTableColumns))) {
+                        // Unreachable: admitMutationInputFields refuses a Remote-bound reference
+                        // carrier before any collision check runs. Throwing rather than skipping
+                        // keeps the gate the single place that decides, so a reordering that moved
+                        // this walk ahead of it fails loudly instead of under-reporting collisions.
+                        throw new IllegalStateException("SET-side walk reached a remote-bound"
+                            + " reference carrier '" + f.name() + "'; the write gate should have"
+                            + " rejected it");
+                    }
+                    columns = ownTableColumns;
                     decode = crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys;
                 }
                 default -> { continue; } // UnboundField and other non-column carriers contribute nothing

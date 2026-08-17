@@ -426,6 +426,14 @@ type Query {
         ids: [ID!]! @nodeId(typeName: "Film"),
         first: Int, after: String
     ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+    # Translated FK-target @nodeId filters: the child's FK targets a column of the parent that is
+    # not the parent's node key, so the decoded id yields a value no child column holds and the
+    # predicate has to visit the parent. The emitted SQL is a correlated EXISTS over the FK, not a
+    # local column comparison; see the argument and input-field forms plus the composite twin.
+    xlatChildrenByParentIds(parentIds: [ID!] @nodeId(typeName: "XlatParent")): [XlatChild!]!
+    xlatChildByParentId(parentId: ID @nodeId(typeName: "XlatParent")): [XlatChild!]!
+    xlatChildrenByFilter(filter: XlatChildFilter): [XlatChild!]!
+    xlatCompChildrenByParentIds(parentIds: [ID!] @nodeId(typeName: "XlatCompParent")): [XlatCompChild!]!
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
     # filter input has no explicit @condition on its fields. The enclosingOverride flag
@@ -2152,6 +2160,45 @@ type FilmActor implements Node @table(name: "film_actor") {
     noteTranslations: TranslatedTexts
         @reference(path: [{table: "film_actor_note"}])
         @pivot(on: "lang_code", value: "note_txt", vocabulary: "PivotLang")
+}
+
+# ===== translated FK-target @nodeId fixtures =====
+# Paired with `xlatChildrenByParentIds` and friends above, and with the `xlat_*` tables in
+# `init.sql`. `xlat_child.parent_alt_key` references `xlat_parent(alt_key)`, a unique column that is
+# not XlatParent's node key (`pk_id`), so a decoded XlatParent id carries a `pk_id` value that
+# `xlat_child` holds nowhere: the filter can only be written by visiting the parent. The composite
+# pair does the same over two key slots, with the child's FK targeting the (alt_a, alt_b) unique
+# constraint rather than the (pk_a, pk_b) node key.
+#
+# Read-side filters are supported. Writing such a carrier, or using it as a @lookupKey column, is
+# refused at each rail's gate, because the statement would need a subquery translating the target's
+# key back into an FK-column value; no coordinate here exercises that, by design.
+
+type XlatParent implements Node @table(name: "xlat_parent") @node {
+    id: ID! @nodeId
+    name: String!
+}
+
+type XlatChild @table(name: "xlat_child") {
+    childId: String! @field(name: "child_id")
+    note: String!
+}
+
+type XlatCompParent implements Node @table(name: "xlat_comp_parent") @node {
+    id: ID! @nodeId
+    name: String!
+}
+
+type XlatCompChild @table(name: "xlat_comp_child") {
+    childId: String! @field(name: "child_id")
+    note: String!
+}
+
+# The input-field form of the same filter: the carrier reaches the classifier through
+# BuildContext's input-field walk rather than FieldBuilder's argument walk, and both must lower to
+# the same correlated EXISTS.
+input XlatChildFilter {
+    parentIds: [ID!] @nodeId(typeName: "XlatParent")
 }
 
 # R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path

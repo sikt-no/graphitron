@@ -112,10 +112,16 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
     }
 
     /**
-     * A column predicate whose target column lives on a joined table, reached from the field's
-     * own table through a {@code @reference(path:)} join path. The wrapped {@link #inner}
-     * predicate is an ordinary {@link ColumnPredicate} whose {@link ColumnRef}s are bound to
-     * the terminal table; {@link #joinPath} carries how to reach that table.
+     * A column predicate whose target columns live on a joined table, reached from the field's own
+     * table through a join path. The wrapped {@link #inner} predicate is an ordinary
+     * {@link ColumnPredicate} whose {@link ColumnRef}s are bound to the terminal table;
+     * {@link #joinPath} carries how to reach that table.
+     *
+     * <p>Two filter shapes lower to this, both of them a {@link FilterBinding.Remote} carrier: a
+     * {@code @reference(path:)} whose resolved column is on the joined table, and an FK-target
+     * {@code @nodeId(typeName:)} whose foreign key targets columns other than the target NodeType's
+     * key columns, so the decoded key can only be compared on the target table. They differ in where
+     * the bound value comes from, not in the SQL shape.
      *
      * <p>{@link no.sikt.graphitron.render.ConditionGlueRenderer} emits this as a correlated
      * {@code DSL.exists(...)} ANDed into the glue method's condition. The call-site extraction

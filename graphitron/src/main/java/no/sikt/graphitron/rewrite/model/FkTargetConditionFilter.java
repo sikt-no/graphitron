@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A developer-supplied {@code @condition} method on an FK-target {@code @nodeId} filter input
@@ -27,9 +28,12 @@ import java.util.List;
  *       terminal table of {@link #joinPath()}.</li>
  *   <li>{@link #joinPath()}: the resolved FK-derived {@link JoinStep.Hop}s from the input's own table
  *       to {@code X}. Single-hop for the common case; multi-hop walked inside the {@code EXISTS}.</li>
- *   <li>{@link #liftedSourceColumns()}: the FK-child column tuple on the input's own table
- *       (the {@code override: false} implicit-predicate path binds decoded keys against these
- *       directly, with no join; carried here for symmetry and validation).</li>
+ *   <li>{@link #binding()}: where the field's own implicit value predicate lands, carried through
+ *       from the input field for symmetry and validation. {@link FilterBinding.Local} names the
+ *       FK-child tuple on the input's own table that an {@code override: false} implicit predicate
+ *       binds decoded keys against with no join; {@link FilterBinding.Remote} means that predicate
+ *       goes through the same correlated {@code EXISTS} this filter's authored call does, so there is
+ *       no own-table tuple and none is invented.</li>
  *   <li>{@link #keyColumns()}: {@code X}'s key columns the decoded NodeId maps to.</li>
  * </ul>
  *
@@ -43,13 +47,13 @@ public record FkTargetConditionFilter(
     ConditionFilter delegate,
     TableRef targetTable,
     List<JoinStep> joinPath,
-    List<ColumnRef> liftedSourceColumns,
+    FilterBinding binding,
     List<ColumnRef> keyColumns
 ) implements WhereFilter {
 
     public FkTargetConditionFilter {
         joinPath = List.copyOf(joinPath);
-        liftedSourceColumns = List.copyOf(liftedSourceColumns);
+        Objects.requireNonNull(binding, "binding");
         keyColumns = List.copyOf(keyColumns);
     }
 

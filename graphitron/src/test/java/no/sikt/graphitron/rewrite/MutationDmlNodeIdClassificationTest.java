@@ -505,10 +505,10 @@ class MutationDmlNodeIdClassificationTest {
     //
     // An ID input field carrying @nodeId(typeName:) for an FK-target NodeType is admitted
     // across INSERT, UPDATE, DELETE; UPSERT is refused outright. The carrier classifies as
-    // InputField.ColumnBackedReferenceField whose liftedSourceColumns are the FK child columns
+    // InputField.ColumnBackedReferenceField whose FilterBinding.Local tuple is the FK child columns
     // (arity matches the target NodeType's key arity). EnumMappingResolver.buildLookupBindings
-    // emits MapGroup / DecodedRecordGroup over liftedSourceColumns() so PK-coverage counts the
-    // reference contribution.
+    // emits MapGroup / DecodedRecordGroup over that tuple so PK-coverage counts the reference
+    // contribution.
 
     @Test
     void fkTargetNodeIdRef_arity1_insert_admitted() {
@@ -535,7 +535,7 @@ class MutationDmlNodeIdClassificationTest {
         assertThat(fields).hasSize(2);
         var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("bazRef")).findFirst().orElseThrow();
-        assertThat(ref.liftedSourceColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+        assertThat(ownTableColumns(ref)).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
             .containsExactly("id_1");
         assertThat(ref.extraction())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
@@ -543,7 +543,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_arity1_delete_admitted_pkCoverage() {
-        // DELETE on `bar` with PK (id_1, id_2): bazRef contributes id_1 via liftedSourceColumns()
+        // DELETE on `bar` with PK (id_1, id_2): bazRef contributes id_1 via its Local binding
         // and id2 contributes id_2 directly, so together they cover the PK. Guards that the
         // validator counts reference contributions; dropping them fires a false
         // "missing PK column id_1" rejection on this exact shape.
@@ -666,14 +666,14 @@ class MutationDmlNodeIdClassificationTest {
             insertInputOf(f).fields().stream()
                 .filter(x -> x.name().equals("parentRef"))
                 .findFirst().orElseThrow();
-        assertThat(ref.liftedSourceColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+        assertThat(ownTableColumns(ref)).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
             .containsExactly("fk_a", "fk_b", "fk_c");
     }
 
     @Test
     void fkTargetNodeIdRef_pkCoverage_underCount_negativeRejectionFixture() {
-        // Under-counting guard: bar's PK is (id_1, id_2); bazRef contributes id_1 via
-        // liftedSourceColumns and id2 contributes id_2 directly. The schema is valid, so the
+        // Under-counting guard: bar's PK is (id_1, id_2); bazRef contributes id_1 via its Local
+        // binding and id2 contributes id_2 directly. The schema is valid, so the
         // resolver must NOT fire a "missing PK column" rejection, which would surface as
         // UnclassifiedField.
         var schema = TestSchemaHelper.buildSchema("""
@@ -693,7 +693,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = schema.field("Mutation", "deleteBarPkCov");
         assertThat(f)
-            .as("FK-target nodeId reference must contribute liftedSourceColumns toward PK coverage")
+            .as("FK-target nodeId reference must contribute its bound columns toward PK coverage")
             .isInstanceOf(MutationField.DmlTableField.class);
     }
 
@@ -758,7 +758,7 @@ class MutationDmlNodeIdClassificationTest {
     void selfFkNodeIdReference_insert_admitsAsCompositeColumnReference_surfacingSharedColumn() {
         // Self-FK on an INSERT: `email` has composite PK (mailbox_id, message_no). `inReplyTo`
         // is a same-table @nodeId @reference naming the self-FK email_in_reply_to_fk, admitted
-        // as a composite ColumnBackedReferenceField whose liftedSourceColumns are the self-FK's
+        // as a composite ColumnBackedReferenceField whose bound tuple is the self-FK's
         // child columns (mailbox_id, in_reply_to_no), NOT the row's own PK. `mailboxRef`
         // (cross-table FK to mailbox) also writes mailbox_id; the shared-column overlap is
         // deduped and agreement-checked at runtime, not rejected at classify time, because both
@@ -781,7 +781,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var selfRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("inReplyTo")).findFirst().orElseThrow();
-        assertThat(selfRef.liftedSourceColumns())
+        assertThat(ownTableColumns(selfRef))
             .as("self-FK reference lifts the FK child columns on email's own table")
             .extracting(ColumnRef::sqlName)
             .containsExactly("mailbox_id", "in_reply_to_no");
@@ -790,7 +790,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var mailboxRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("mailboxRef")).findFirst().orElseThrow();
-        assertThat(mailboxRef.liftedSourceColumns())
+        assertThat(ownTableColumns(mailboxRef))
             .as("cross-table FK reference shares the mailbox_id child column with the self-FK")
             .extracting(ColumnRef::sqlName)
             .containsExactly("mailbox_id");
@@ -861,4 +861,19 @@ class MutationDmlNodeIdClassificationTest {
         var f = (UnclassifiedField) schema.field("Mutation", "deleteQux");
         assertThat(f.reason()).contains("no @node type is declared for table 'qux'");
     }
+
+    /**
+     * The own-table column tuple a reference carrier binds, read off its
+     * {@link no.sikt.graphitron.rewrite.model.FilterBinding}. Every carrier in this class is a
+     * direct FK-target (or self-FK) reference, so the binding is always {@code Local}; the
+     * narrowing is itself the assertion that it is.
+     */
+    private static List<ColumnRef> ownTableColumns(
+            no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField ref) {
+        assertThat(ref.binding())
+            .as("a writable FK-target reference carrier binds its own table")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.FilterBinding.Local.class);
+        return ((no.sikt.graphitron.rewrite.model.FilterBinding.Local) ref.binding()).ownTableColumns();
+    }
+
 }

@@ -53,6 +53,7 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -1612,14 +1613,16 @@ class FieldBuilder {
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
                     return new ArgumentRef.ScalarArg.ColumnBackedArg(
                         name, typeName, nonNull, list, st.keyColumns(), extraction,
-                        argCondition, fieldOverride, isLookupKey, List.of());
+                        argCondition, fieldOverride, isLookupKey, List.of(),
+                        new FilterBinding.Local(st.keyColumns()));
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                     // FK-target @nodeId arg = filter semantics. Throw extraction (malformed or
                     // wrong-type ids surface a GraphitronClientException rather than dropping
-                    // silently to "no match"). projectFilters emits BodyParam.In/Eq/RowIn/RowEq
-                    // using DirectFk's fkSourceColumns directly — no JOIN, the resolver has already
-                    // verified the FK's targetColumns positionally match the NodeType key columns.
+                    // silently to "no match"). The binding is Local: the resolver has verified the
+                    // FK's targetColumns are the NodeType key columns as a multiset, so the decoded
+                    // keys lift to a tuple on the field's own table and projectFilters emits a bare
+                    // BodyParam.In/Eq/RowIn/RowEq with no JOIN.
                     if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
                         return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                             Rejection.structural("@lookupKey is meaningless on an FK-target @nodeId arg; FK-target"
@@ -1628,15 +1631,25 @@ class FieldBuilder {
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
                     return new ArgumentRef.ScalarArg.ColumnBackedReferenceArg(
                         name, typeName, nonNull, list, direct.keyColumns(), direct.joinPath(),
-                        direct.liftedSourceColumns(),
+                        new FilterBinding.Local(direct.liftedSourceColumns()),
                         extraction, argCondition, fieldOverride);
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
-                    // Pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. the
-                    // parent_node + child_ref fixture). Emission requires JOIN-with-translation
-                    // and is deferred until output-side JOIN-with-projection emission ships.
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        translatedFkRejection(translated.refTypeName(), rt.tableName()));
+                    // The FK targets columns other than the NodeType's key columns, so no column on
+                    // this table holds the decoded value and the predicate has to visit the target
+                    // table: a Remote binding, which projectFilters lowers to the same correlated
+                    // EXISTS a joined plain @reference filter uses. The @lookupKey guard is the
+                    // DirectFk one (FK-target is a filter, not a lookup) and applies unchanged.
+                    if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                            Rejection.structural("@lookupKey is meaningless on an FK-target @nodeId arg; FK-target"
+                            + " @nodeId is a filter, not a lookup"));
+                    }
+                    var extraction = new CallSiteExtraction.ThrowOnMismatch(translated.decodeMethod());
+                    return new ArgumentRef.ScalarArg.ColumnBackedReferenceArg(
+                        name, typeName, nonNull, list, translated.keyColumns(), translated.joinPath(),
+                        new FilterBinding.Remote(),
+                        extraction, argCondition, fieldOverride);
                 }
             }
         }
@@ -1699,15 +1712,17 @@ class FieldBuilder {
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(node.decodeMethod());
                     return new ArgumentRef.ScalarArg.ColumnBackedArg(
                         name, typeName, nonNull, list, keyColumns, extraction,
-                        argCondition, fieldOverride, isLookupKey, List.of());
+                        argCondition, fieldOverride, isLookupKey, List.of(),
+                        new FilterBinding.Local(keyColumns));
                 }
             }
         }
 
         // Scalar arg carrying @reference(path:) reaching a column on a *joined* table.
-        // Unlike the @nodeId FK-target arm above (which lifts to local FK columns and emits no
-        // join), a plain @reference filter resolves the column against the *terminal* table and
-        // emits a correlated EXISTS. Read the path before the local findColumn so the column never
+        // A plain @reference filter resolves the column against the *terminal* table and binds
+        // Remote, so it emits a correlated EXISTS. That is the same binding a translated FK-target
+        // @nodeId takes; what differs is only where the value comes from (a wire scalar here, a
+        // decoded node key there). Read the path before the local findColumn so the column never
         // mis-binds against the field's own table. FK-derived paths only; a condition-join hop
         // rejects (mirrors the condition glue renderer's reach emission).
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
@@ -1753,7 +1768,10 @@ class FieldBuilder {
             boolean refIsLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
             return new ArgumentRef.ScalarArg.ColumnBackedArg(
                 name, typeName, nonNull, list, List.of(refColumnRef), refExtraction,
-                argCondition, fieldOverride, refIsLookupKey, refPath.elements());
+                argCondition, fieldOverride, refIsLookupKey, refPath.elements(),
+                // This arm is reached only for a path that leaves the field's own table, so the
+                // resolved column is the terminal one and the predicate goes through the EXISTS.
+                new FilterBinding.Remote());
         }
 
         // Scalar arg: bind to column
@@ -1782,7 +1800,8 @@ class FieldBuilder {
         CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName);
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnBackedArg(
-            name, typeName, nonNull, list, List.of(columnRef), extraction, argCondition, fieldOverride, isLookupKey, List.of());
+            name, typeName, nonNull, list, List.of(columnRef), extraction, argCondition,
+            fieldOverride, isLookupKey, List.of(), new FilterBinding.Local(List.of(columnRef)));
     }
 
     /**
@@ -1825,6 +1844,25 @@ class FieldBuilder {
                 Rejection.structural("@lookupKey argument '" + name + "': input field(s) '"
                 + String.join("', '", unbound) + "' do not resolve to a lookup column on table '"
                 + rt.tableName() + "'"));
+        }
+        // The lookup rail's binding gate. A LookupKeyField's admissibility used to be a type fact,
+        // but a reference carrier now qualifies per instance: the lookup shape is a VALUES join over
+        // columns on `rt`, and a Remote-bound carrier names none. This is the gate rather than
+        // TableInputArg.of (a pure factory on a model record, with no diagnostic channel and no verb
+        // to tell the lookup route from the INSERT one that shares it) or buildLookupBindings (which
+        // accumulates prose into a List<String> and cannot carry a typed rejection).
+        for (var f : resolvedFields) {
+            if (f instanceof InputField.ColumnBackedReferenceField crf) {
+                switch (crf.binding()) {
+                    case FilterBinding.Local ignored -> { }
+                    case FilterBinding.Remote ignored -> {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                            Rejection.deferred("@lookupKey argument '" + name + "' "
+                                + FilterBinding.remoteBindingUnsupported(crf.name(),
+                                    "used as a @lookupKey column")));
+                    }
+                }
+            }
         }
         var bindings = enumMappingResolver.buildLookupBindings(resolvedFields, errors);
         return ArgumentRef.InputTypeArg.TableInputArg.of(
@@ -2062,68 +2100,56 @@ class FieldBuilder {
                             // invariant); LookupMappingResolver consumes the isLookupKey branch
                             // separately.
                             var rowExtraction = (CallSiteExtraction.NodeIdDecodeKeys) ca.extraction();
-                            bodyParams.add(ca.list()
+                            BodyParam.ColumnPredicate rowInner = ca.list()
                                 ? new BodyParam.RowIn(ca.name(), ca.columns(), ca.nonNull(), rowExtraction)
-                                : new BodyParam.RowEq(ca.name(), ca.columns(), ca.nonNull(), rowExtraction));
+                                : new BodyParam.RowEq(ca.name(), ca.columns(), ca.nonNull(), rowExtraction);
+                            // Wrapped through the same switch as the arity-1 branch, so a composite
+                            // remote carrier would route without re-editing; today every composite
+                            // ColumnBackedArg is the same-table NodeId key and binds Local.
+                            bodyParams.add(wrapIfRemote(rowInner, ca.binding(), ca.joinPath()));
                         } else {
                             var caColumn = ca.columns().get(0);
                             String javaType = javaTypeFor(ca.extraction(), caColumn);
                             BodyParam.ColumnPredicate inner = ca.list()
                                 ? new BodyParam.In(ca.name(), caColumn, javaType, ca.nonNull(), ca.extraction())
                                 : new BodyParam.Eq(ca.name(), caColumn, javaType, ca.nonNull(), ca.extraction());
-                            // A non-empty joinPath means @reference reached the terminal column on
-                            // a joined table — wrap the predicate in a correlated EXISTS. Empty path is
-                            // the local-column case (today's behavior); the column already binds to the
-                            // field's own table.
-                            bodyParams.add(ca.joinPath().isEmpty()
-                                ? inner
-                                : new BodyParam.RemoteColumnPredicate(ca.joinPath(), inner));
+                            bodyParams.add(wrapIfRemote(inner, ca.binding(), ca.joinPath()));
                         }
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
                 case ArgumentRef.ScalarArg.ColumnBackedReferenceArg cra when !cra.isComposite() -> {
-                    // FK-target arm. The carrier's column is the target NodeType's key column;
-                    // joinPath[0] holds the FK whose sourceColumns sit on the field's own
-                    // containing table. When the FK targetColumns positionally match the NodeType
-                    // key columns (the simple direct-FK case), emit the predicate against the FK
-                    // source columns directly — no JOIN needed, the decoded keys feed
-                    // BodyParam.Eq / In against table.<fkSourceColumn>.
-                    //
-                    // The pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. the
-                    // parent_node + child_ref fixture where the FK targets a non-PK unique
-                    // column) is rejected at classify time, so this arm only sees the simple
-                    // case. JOIN-with-translation emission for the pathological case is deferred
-                    // until output-side JOIN-with-projection emission ships.
+                    // FK-target arm. The carrier's column is the target NodeType's key column and
+                    // the binding says where the predicate lands. Local means the FK's target-side
+                    // columns are that key, so the decoded key lifted to a column on the field's
+                    // own table and BodyParam.Eq / In binds it with no JOIN. Remote means the FK
+                    // targets something else, so the predicate binds the key column on the target
+                    // table inside a correlated EXISTS.
                     boolean autoSuppressed = cra.suppressedByFieldOverride()
                         || (cra.argCondition().isPresent() && cra.argCondition().get().override());
                     if (!autoSuppressed) {
-                        // Read the resolver's liftedSourceColumns directly — the column tuple on
-                        // the parent's own table positionally aligned with the decoded NodeType
-                        // keys. Length-1 single-hop or length-≥2 identity-carrying chain lift to
-                        // the same shape; chain length is purely a classifier-time concept.
-                        ColumnRef liftedColumn = cra.liftedSourceColumns().get(0);
-                        String javaType = javaTypeFor(cra.extraction(), liftedColumn);
-                        bodyParams.add(cra.list()
-                            ? new BodyParam.In(cra.name(), liftedColumn, javaType, cra.nonNull(), cra.extraction())
-                            : new BodyParam.Eq(cra.name(), liftedColumn, javaType, cra.nonNull(), cra.extraction()));
+                        ColumnRef column = predicateColumns(cra.binding(), cra.columns()).get(0);
+                        String javaType = javaTypeFor(cra.extraction(), column);
+                        BodyParam.ColumnPredicate inner = cra.list()
+                            ? new BodyParam.In(cra.name(), column, javaType, cra.nonNull(), cra.extraction())
+                            : new BodyParam.Eq(cra.name(), column, javaType, cra.nonNull(), cra.extraction());
+                        bodyParams.add(wrapIfRemote(inner, cra.binding(), cra.joinPath()));
                     }
                     cra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
                 case ArgumentRef.ScalarArg.ColumnBackedReferenceArg ccra -> {
-                    // FK-target composite arm. Analogous to the single-column arm above but with
-                    // a RowEq / RowIn predicate against the lifted source-column tuple on the
-                    // parent's own table. Same direct-FK precondition (terminal hop's target
-                    // columns positionally match NodeType keys); intermediate hops, if any, are
-                    // constrained by the lift predicate. Pathological cases are rejected at
-                    // classify time.
+                    // FK-target composite arm. Same fork as the single-column arm above, with a
+                    // RowEq / RowIn predicate over the whole tuple: the lifted tuple on the field's
+                    // own table when the binding is Local, the target's key columns inside the
+                    // EXISTS when it is Remote.
                     boolean autoSuppressed = ccra.suppressedByFieldOverride()
                         || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
                     if (!autoSuppressed) {
-                        List<ColumnRef> liftedColumns = ccra.liftedSourceColumns();
-                        bodyParams.add(ccra.list()
-                            ? new BodyParam.RowIn(ccra.name(), liftedColumns, ccra.nonNull(), ccra.extraction())
-                            : new BodyParam.RowEq(ccra.name(), liftedColumns, ccra.nonNull(), ccra.extraction()));
+                        List<ColumnRef> columns = predicateColumns(ccra.binding(), ccra.columns());
+                        BodyParam.ColumnPredicate inner = ccra.list()
+                            ? new BodyParam.RowIn(ccra.name(), columns, ccra.nonNull(), ccra.extraction())
+                            : new BodyParam.RowEq(ccra.name(), columns, ccra.nonNull(), ccra.extraction());
+                        bodyParams.add(wrapIfRemote(inner, ccra.binding(), ccra.joinPath()));
                     }
                     ccra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -2238,33 +2264,28 @@ class FieldBuilder {
                             ? rewrapped
                             : new FkTargetConditionFilter(rewrapped,
                                 ((JoinStep.HasTargetTable) rf.joinPath().get(rf.joinPath().size() - 1)).targetTable(),
-                                rf.joinPath(), rf.liftedSourceColumns(), rf.columns()));
+                                rf.joinPath(), rf.binding(), rf.columns()));
                     });
                     if (!enclosingOverride
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {
-                        // Predicate fires against liftedSourceColumns — the column tuple on the
-                        // parent's own table positionally aligned with the decoded NodeType keys
-                        // (nodeId direct-fk, single-hop or identity-carrying multi-hop), or the
-                        // resolved reference column for plain @reference. Single source of truth.
-                        // For a plain @reference (Direct extraction) reaching a column on a
-                        // joined table, liftedSourceColumns().get(0) is the *terminal* column, so
-                        // wrap the predicate in a RemoteColumnPredicate (correlated EXISTS). The
-                        // @nodeId-lift case (NodeIdDecodeKeys extraction) binds locally and stays
-                        // unwrapped — see remoteIfReferenceJoin's discrimination note. The wrap is
-                        // applied symmetrically at both arities so that if a composite plain
-                        // @reference ever appears (Direct extraction over a terminal tuple) it
-                        // routes to a RowEq/RowIn-inner RemoteColumnPredicate without re-editing.
-                        var inner = rf.isComposite()
+                        // The binding names the table the predicate binds against: a Local tuple on
+                        // the parent's own table (a direct FK-target @nodeId's lift, or a plain
+                        // @reference resolving locally), or the carrier's own columns on the
+                        // terminal table, which then go through the correlated EXISTS. The wrap is
+                        // applied symmetrically at both arities, so a composite remote carrier
+                        // routes to a RowEq / RowIn inner without re-editing.
+                        var columns = predicateColumns(rf.binding(), rf.columns());
+                        BodyParam.ColumnPredicate inner = rf.isComposite()
                             ? compositeImplicitBodyParam(
-                                rf.liftedSourceColumns(), rf.name(),
+                                columns, rf.name(),
                                 effectiveNonNull && rf.nonNull(), rf.list(),
                                 (CallSiteExtraction.NodeIdDecodeKeys) rf.extraction(), outerArgName, leafPath)
                             : implicitBodyParam(
-                                rf.liftedSourceColumns().get(0), rf.name(), rf.typeName(),
+                                columns.get(0), rf.name(), rf.typeName(),
                                 effectiveNonNull && rf.nonNull(), rf.list(),
                                 rf.extraction(), outerArgName, leafPath);
-                        implicitBodyParams.add(remoteIfReferenceJoin(inner, rf.extraction(), rf.joinPath()));
+                        implicitBodyParams.add(wrapIfRemote(inner, rf.binding(), rf.joinPath()));
                     }
                 }
                 case InputField.NestingField nf -> {
@@ -2344,25 +2365,6 @@ class FieldBuilder {
     }
 
     /**
-     * Shared rejection for the {@code TranslatedFk} arm, used by both the argument site and the
-     * input-field site so one cause has one identity. {@link Rejection#deferred(String)} is the arm
-     * the message itself asks for: the shape is legitimate and support is absent, not structurally
-     * impossible. The no-{@code StubKey} factory applies because an input-field coordinate has no
-     * stubbed variant class to anchor on. The message naming is asserted on by
-     * {@code NodeIdPipelineTest.ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED}
-     * and the parallel input-field-side case via the substrings {@code "FK's target columns do
-     * not positionally match"} and {@code "deferred"}.
-     */
-    static Rejection translatedFkRejection(String refTypeName, String containingTableName) {
-        return Rejection.deferred("@nodeId(typeName: '" + refTypeName + "') FK-target on table '"
-            + containingTableName + "': the FK's target columns do not positionally"
-            + " match NodeType '" + refTypeName + "''s key columns,"
-            + " so emission requires JOIN-with-translation."
-            + " This pathological case is deferred until output-side"
-            + " JOIN-with-projection emission ships.");
-    }
-
-    /**
      * Mints every validator-mirrored input-field rejection into the diagnostic channel and returns
      * the consequence rejection for the consuming field. The write-target paths used to take
      * {@code mirrored.getFirst().rejection()} and drop the rest, so a second broken input field on
@@ -2383,7 +2385,7 @@ class FieldBuilder {
      * are delivered as {@code String} by graphql-java; all other types use the column's own
      * Java class.
      */
-    private static BodyParam implicitBodyParam(ColumnRef column, String fieldName,
+    private static BodyParam.ColumnPredicate implicitBodyParam(ColumnRef column, String fieldName,
                                                String graphqlTypeName, boolean nonNull, boolean list,
                                                CallSiteExtraction leaf,
                                                String outerArgName, List<String> leafPath) {
@@ -2421,7 +2423,7 @@ class FieldBuilder {
      * {@code columns}, and the call-site extraction projects each decoded record's typed
      * {@code valuesRow()} into it.
      */
-    private static BodyParam compositeImplicitBodyParam(List<ColumnRef> columns, String fieldName,
+    private static BodyParam.ColumnPredicate compositeImplicitBodyParam(List<ColumnRef> columns, String fieldName,
                                                         boolean nonNull, boolean list,
                                                         CallSiteExtraction.NodeIdDecodeKeys leaf,
                                                         String outerArgName, List<String> leafPath) {
@@ -2432,35 +2434,37 @@ class FieldBuilder {
     }
 
     /**
-     * Wraps an implicit predicate in a {@link BodyParam.RemoteColumnPredicate} when the
-     * reference carrier is a plain {@code @reference} ({@link CallSiteExtraction.Direct} extraction)
-     * reaching a column on a <em>joined</em> table; otherwise returns {@code inner} unchanged.
+     * The column tuple a carrier's value predicate binds, read off its {@link FilterBinding}:
+     * the {@link FilterBinding.Local} arm's own-table tuple, or the carrier's own {@code columns}
+     * (which for a {@link FilterBinding.Remote} carrier are the columns on the terminal table).
      *
-     * <p>The discrimination is load-bearing. {@link InputField.ColumnBackedReferenceField} is
-     * produced (at either arity) for two cases whose {@code liftedSourceColumns} mean different
-     * tables:
-     * <ul>
-     *   <li><b>{@code @nodeId} FK-target (DirectFk)</b> — {@link CallSiteExtraction.NodeIdDecodeKeys}
-     *       extraction; the lifted columns are FK-child columns on the parent's <em>own</em> table,
-     *       positionally aligned with the decoded NodeType keys. The predicate is correctly bound to
-     *       the local {@code table} (the lift means no join is needed), so this stays unwrapped.</li>
-     *   <li><b>plain {@code @reference}</b> — {@link CallSiteExtraction.Direct} extraction; the
-     *       lifted column is the <em>terminal</em> column on the joined table, so it must go through
-     *       the correlated EXISTS.</li>
-     * </ul>
-     * The {@code Direct}-vs-{@code NodeIdDecodeKeys} extraction split is the discriminator,
-     * recorded here so the two {@code liftedSourceColumns} meanings stay un-conflated. An empty
-     * {@code joinPath} means the column is local (start table == terminal table), so it is also
-     * left unwrapped.
+     * <p>The two arms cannot share one accessor on the carrier because they name columns on
+     * different tables; naming the fork here keeps every emit site honest about which table it is
+     * binding.
      */
-    private static BodyParam remoteIfReferenceJoin(BodyParam inner,
-            CallSiteExtraction referenceExtraction, List<JoinStep> joinPath) {
-        if (referenceExtraction instanceof CallSiteExtraction.Direct
-                && !joinPath.isEmpty()
-                && inner instanceof BodyParam.ColumnPredicate cp) {
-            return new BodyParam.RemoteColumnPredicate(joinPath, cp);
-        }
-        return inner;
+    private static List<ColumnRef> predicateColumns(FilterBinding binding, List<ColumnRef> carrierColumns) {
+        return switch (binding) {
+            case FilterBinding.Local(var ownTableColumns) -> ownTableColumns;
+            case FilterBinding.Remote ignored -> carrierColumns;
+        };
+    }
+
+    /**
+     * Wraps a predicate in a {@link BodyParam.RemoteColumnPredicate} (a correlated EXISTS) exactly
+     * when the carrier binds {@link FilterBinding.Remote}; a {@link FilterBinding.Local} carrier's
+     * columns already bind to the field's own table and the bare predicate stands.
+     *
+     * <p>The single discrimination for the local-vs-remote axis on every filter carrier. It replaces
+     * three implicit spellings: an empty-{@code joinPath} sentinel on the plain scalar carrier, an
+     * extraction-type test on the reference carriers, and the assumption that a {@code @nodeId} lift
+     * is always local.
+     */
+    private static BodyParam wrapIfRemote(BodyParam.ColumnPredicate inner,
+            FilterBinding binding, List<JoinStep> joinPath) {
+        return switch (binding) {
+            case FilterBinding.Local ignored -> inner;
+            case FilterBinding.Remote ignored -> new BodyParam.RemoteColumnPredicate(joinPath, inner);
+        };
     }
 
     /**

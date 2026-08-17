@@ -4,6 +4,7 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.ArgConditionRef;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -26,10 +27,16 @@ public sealed interface InputField extends GraphitronField
      * Carriers admissible as filter input fields on a {@code TableInputArg}. Sibling sealed root
      * to {@link SetField}: both permit the value-bearing scalar carrier
      * ({@link ColumnBackedField}) and the FK-target reference carrier
-     * ({@link ColumnBackedReferenceField}) whose {@code liftedSourceColumns} live on the input's
-     * own table. The admissible-carrier shape is "no JOIN context at the emit site": the value
-     * carrier sources its column(s) from {@link ColumnBackedField#columns()}, the reference
-     * carrier from {@link ColumnBackedReferenceField#liftedSourceColumns()}.
+     * ({@link ColumnBackedReferenceField}). The admissible-carrier shape is "own-table columns at
+     * the emit site": the value carrier sources its column(s) from
+     * {@link ColumnBackedField#columns()}, the reference carrier from its
+     * {@link FilterBinding.Local} binding.
+     *
+     * <p>Membership in this permits set is therefore necessary but no longer sufficient for a
+     * reference carrier: a {@link FilterBinding.Remote} one reaches its value through a join and has
+     * no own-table tuple, so the rail that admits it gates per instance
+     * ({@code FieldBuilder.classifyPlainLookupKeyArg} on the lookup side,
+     * {@code MutationInputResolver.admitMutationInputFields} on INSERT).
      *
      * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
      * A nested grouping flattens to its leaf carriers at the gate, each
@@ -43,8 +50,8 @@ public sealed interface InputField extends GraphitronField
     /**
      * Carriers admissible as set-side input fields on a {@code TableInputArg} (the INSERT
      * column-list / UPDATE SET / UPSERT INSERT-arm dispatch surface). Same admitted-carrier
-     * set as {@link LookupKeyField}: the value-bearing scalar carrier and the FK-target
-     * reference carrier whose {@code liftedSourceColumns} live on the input's own table.
+     * set as {@link LookupKeyField}, and the same per-instance qualification: a reference carrier
+     * is writable only when its {@link FilterBinding} is {@link FilterBinding.Local}.
      */
     sealed interface SetField extends InputField permits ColumnBackedField,
             ColumnBackedReferenceField {}
@@ -114,8 +121,13 @@ public sealed interface InputField extends GraphitronField
      * terminal table that holds {@code columns}. The path is produced by the same reference-path
      * parser as {@link ChildField.ColumnBackedReferenceField}.
      *
-     * <p>When generating WHERE predicates against this field, the generator must JOIN through
-     * {@code joinPath} before applying the column predicate.
+     * <p>{@code binding} says where the implicit value predicate lands. {@link FilterBinding.Local}
+     * carries a tuple on the consuming field's own table: the resolved column for a plain
+     * {@code @reference}, or the FK-child columns a direct FK-target {@code @nodeId} lifts to.
+     * {@link FilterBinding.Remote} means the predicate binds {@code columns} on the terminal table
+     * inside a correlated {@code EXISTS} (a plain {@code @reference} reaching a joined column, or a
+     * translated FK-target {@code @nodeId} whose target-side FK columns are not the NodeType's key
+     * columns). Only a {@code Local} carrier is writable; see {@link LookupKeyField}.
      *
      * @param extraction translates the wire-format value to the columns' typed Java values at the
      *     call-site root. {@link CallSiteExtraction.Direct} (the {@code @reference}-resolved
@@ -130,7 +142,9 @@ public sealed interface InputField extends GraphitronField
      *     points at", never identity), in contrast to a cross-table FK reference whose lifted column
      *     can legitimately be the row's own identity. The fact is decided once at the {@code @nodeId}
      *     discrimination site ({@link no.sikt.graphitron.rewrite.NodeIdLeafResolver}); every non-self-FK
-     *     construction site sets {@code false}.
+     *     construction site sets {@code false}. On a {@link FilterBinding.Remote} carrier the value is
+     *     unreachable rather than merely unused: the flag's one reader is the UPDATE SET partition,
+     *     which refuses a remote binding at its own gate before reading it.
      */
     record ColumnBackedReferenceField(
         String parentTypeName,
@@ -141,7 +155,7 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         List<ColumnRef> columns,
         List<JoinStep> joinPath,
-        List<ColumnRef> liftedSourceColumns,
+        FilterBinding binding,
         boolean selfReference,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction extraction
@@ -150,9 +164,14 @@ public sealed interface InputField extends GraphitronField
         public ColumnBackedReferenceField {
             columns = List.copyOf(columns);
             joinPath = List.copyOf(joinPath);
-            liftedSourceColumns = List.copyOf(liftedSourceColumns);
+            Objects.requireNonNull(binding, "binding");
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("InputField.ColumnBackedReferenceField requires at least one column");
+            }
+            if (binding instanceof FilterBinding.Remote && joinPath.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "InputField.ColumnBackedReferenceField '" + name + "' binds Remote but carries an"
+                    + " empty joinPath; a remote predicate has no terminal table to reach");
             }
             // Same deferred-generalization seam as ColumnBackedField: no plain multi-column
             // input reference exists today, so a multi-column carrier always decodes a node key.

@@ -62,10 +62,11 @@ class InputColumnBackedFieldInvariantTest {
     @Test
     void inputColumnBackedReferenceField_acceptsAnyArityUnderNodeIdDecodeKeys() {
         var single = new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
-            List.of(ID_1), List.of(), List.of(ID_1), false, Optional.empty(), decode(List.of(ID_1)));
+            List.of(ID_1), List.of(), new FilterBinding.Local(List.of(ID_1)), false,
+            Optional.empty(), decode(List.of(ID_1)));
         var composite = new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
-            List.of(ID_1, ID_2), List.of(), List.of(ID_1, ID_2), false, Optional.empty(),
-            decode(List.of(ID_1, ID_2)));
+            List.of(ID_1, ID_2), List.of(), new FilterBinding.Local(List.of(ID_1, ID_2)), false,
+            Optional.empty(), decode(List.of(ID_1, ID_2)));
         assertThat(single.isComposite()).isFalse();
         assertThat(composite.isComposite()).isTrue();
     }
@@ -73,7 +74,8 @@ class InputColumnBackedFieldInvariantTest {
     @Test
     void inputColumnBackedReferenceField_rejectsEmptyColumns() {
         assertThatThrownBy(() -> new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
-                List.of(), List.of(), List.of(), false, Optional.empty(), new CallSiteExtraction.Direct()))
+                List.of(), List.of(), new FilterBinding.Local(List.of(ID_1)), false,
+                Optional.empty(), new CallSiteExtraction.Direct()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("at least one column");
     }
@@ -81,9 +83,21 @@ class InputColumnBackedFieldInvariantTest {
     @Test
     void inputColumnBackedReferenceField_rejectsMultiColumnSingleScalarExtraction() {
         assertThatThrownBy(() -> new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
-                List.of(ID_1, ID_2), List.of(), List.of(ID_1, ID_2), false, Optional.empty(),
-                new CallSiteExtraction.Direct()))
+                List.of(ID_1, ID_2), List.of(), new FilterBinding.Local(List.of(ID_1, ID_2)), false,
+                Optional.empty(), new CallSiteExtraction.Direct()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("NodeIdDecodeKeys");
+    }
+
+    @Test
+    void inputColumnBackedReferenceField_rejectsRemoteBindingWithEmptyJoinPath() {
+        // A Remote binding says the predicate reaches the terminal table of joinPath; with no path
+        // there is no terminal table to reach, so the state is unconstructible rather than caught
+        // later by BodyParam.RemoteColumnPredicate at emit.
+        assertThatThrownBy(() -> new InputField.ColumnBackedReferenceField("In", "ref", LOC, "ID", true, false,
+                List.of(ID_1), List.of(), new FilterBinding.Remote(), false, Optional.empty(),
+                new CallSiteExtraction.Direct()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("empty joinPath");
     }
 }

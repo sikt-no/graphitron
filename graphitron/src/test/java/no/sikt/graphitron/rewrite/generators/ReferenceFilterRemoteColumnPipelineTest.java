@@ -34,8 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Assertions are at the model level (the {@link GeneratedConditionFilter}'s body params), per the
  * design principles; the EXISTS body shape itself is locked at the unit tier in
  * the glue renderer's per-arm tests, and semantic correctness at the execution tier in
- * {@code GraphQLQueryTest}. The discrimination guard (nodeId FK-target stays local) and the
- * condition-join-path rejection round out the matrix.
+ * {@code GraphQLQueryTest}. The discrimination guard (a <em>direct</em> nodeId FK-target stays
+ * local) and the condition-join-path rejection round out the matrix.
  */
 @PipelineTier
 class ReferenceFilterRemoteColumnPipelineTest {
@@ -174,9 +174,11 @@ class ReferenceFilterRemoteColumnPipelineTest {
 
     @Test
     void nodeIdFkTargetInputField_staysLocal_notRemote() {
-        // An @nodeId FK-target field lifts the decoded keys to FK-child columns on the input's *own*
-        // table (no join needed); it must NOT be wrapped in a RemoteColumnPredicate. This is the
-        // proof the nodeId-vs-plain-@reference fork (Direct vs NodeIdDecodeKeys extraction) holds.
+        // A *direct* @nodeId FK-target field lifts the decoded keys to FK-child columns on the
+        // input's own table, so it binds FilterBinding.Local and must NOT be wrapped in a
+        // RemoteColumnPredicate. This is the proof that the fork is the binding rather than the
+        // carrier type: the same carrier reaching a translated FK binds Remote and does wrap
+        // (NodeIdPipelineTest's translated-FK cases).
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Bar @table(name: "bar") { idOne: String @field(name: "ID_1") }

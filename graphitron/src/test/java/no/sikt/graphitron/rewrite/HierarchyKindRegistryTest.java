@@ -16,6 +16,7 @@ import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.ErrorsSlot;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HasInputRecordShape;
@@ -144,6 +145,10 @@ class HierarchyKindRegistryTest {
         Map.entry(QueryField.class, HierarchyKind.WALKED_FACT),
         Map.entry(MutationField.class, HierarchyKind.WALKED_FACT),
         Map.entry(InputField.class, HierarchyKind.WALKED_FACT),
+        // Which table a filter carrier's value predicate binds. Decided by the same walk that
+        // produces the carrier, comparing the FK's target-side columns against the NodeType's key
+        // columns, so it is a fact read off the SDL and catalog rather than a choice made at emit.
+        Map.entry(FilterBinding.class, HierarchyKind.WALKED_FACT),
         // Walked, with the synthesised-permit impurity carried in SYNTHESISED_TYPE_PERMITS.
         Map.entry(GraphitronType.class, HierarchyKind.WALKED_FACT),
         // The three classification axes and their shapes.

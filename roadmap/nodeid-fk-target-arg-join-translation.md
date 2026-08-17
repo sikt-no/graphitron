@@ -1,7 +1,7 @@
 ---
 id: R57
 title: "FK-target @nodeId JOIN-with-translation filter emission (argument + input field)"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 5
 theme: nodeid
@@ -11,134 +11,104 @@ last-updated: 2026-08-17
 
 # FK-target @nodeId JOIN-with-translation filter emission
 
-## Problem
+## What shipped
 
-`@nodeId(typeName: X)` on an argument or filter input field whose containing table reaches `X.table()` through a foreign key classifies into one of two `NodeIdLeafResolver.Resolved.FkTarget` arms. `DirectFk` (the FK's terminal target-side columns equal `X`'s keyColumns as a multiset) shipped with R40: the resolver lifts the FK source columns into `liftedSourceColumns` and `projectFilters` emits a plain `Eq` / `In` / `RowEq` / `RowIn` against the field's own table, no join. `TranslatedFk` (target-side columns genuinely differ from the keyColumns) is rejected at classify time by `FieldBuilder.translatedFkRejection`, routing to `UnclassifiedArg` on the argument side and `InputFieldResolution.Unresolved` on the input-field side.
+`@nodeId(typeName: X)` on an argument or filter input field whose containing table reaches
+`X.table()` through a foreign key that targets columns *other than* `X`'s key columns
+(`NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk`) now emits a read-side filter instead of a
+rejection. The decoded key has no column on the field's own table to bind against, so the predicate
+binds `X`'s key columns on `X.table()` inside a correlated `EXISTS` over the FK: the same
+`BodyParam.RemoteColumnPredicate` machinery a plain joined `@reference` filter already used. The
+write and `@lookupKey` rails keep a deferral, now stated in their own words.
 
-The canonical reproducer is the `nodeidfixture` pair `parent_node` + `child_ref`: `child_ref.parent_alt_key` references `parent_node.alt_key` (a non-PK unique column) while `ParentNode`'s node key is `parent_node.pk_id`. Decoding the incoming id yields a `pk_id` value; `child_ref` has no column holding that value, so the predicate cannot be written without visiting `parent_node`. That is the translation: SQL must convert `pk_id` into `alt_key` before it can filter `child_ref`.
+The local-vs-remote axis had three implicit spellings (an empty-`joinPath` sentinel on
+`ColumnBackedArg`, a `Direct`-vs-`NodeIdDecodeKeys` extraction test in `remoteIfReferenceJoin`, and a
+column slot whose referent depended on which case produced it). All three collapsed onto one sealed
+component, `FilterBinding`, with arms `Local(List<ColumnRef> ownTableColumns)` and a payload-free
+`Remote`. It replaced `liftedSourceColumns` on both reference carriers and went onto `ColumnBackedArg`
+alongside its `joinPath`; `remoteIfReferenceJoin` and `translatedFkRejection` are gone.
 
-## Stale premise to retire
+Four rails gate on the binding with an exhaustive switch, sharing one message text minted by
+`FilterBinding.remoteBindingUnsupported`: `MutationInputResolver.admitMutationInputFields` (INSERT),
+`UpdateRowsWalker.classifyInto` and `DeleteRowsWalker.classifyInto` (UPDATE / DELETE, through their
+own `UnsupportedInputFieldShape` arms, since a `Rejection.Deferred` does not type-check against their
+`Rejection.AuthorError` channel), and `FieldBuilder.classifyPlainLookupKeyArg` (the query-side
+lookup). Write-side emitters read their columns through a single `Local`-destructuring accessor that
+throws on `Remote`, so a bypassed gate fails loudly instead of emitting a wrong statement.
 
-The rejection message and this item's previous body both defer to output-side JOIN-with-projection emission (R24). That coupling is wrong. R24 is the encode direction: project the parent's key columns into a result column. This item is the decode direction: turn already-decoded key values into a predicate. The decode direction does not need R24's emitter; it needs a correlated EXISTS, and that machinery already ships twice over:
+Execution-tier fixtures landed in the `public` schema as planned (`xlat_parent` / `xlat_child` and the
+composite `xlat_comp_parent` / `xlat_comp_child`), which needed `CREATE TABLE`s plus seed rows in
+`init.sql`, two `NodeIdFixtureGenerator.METADATA` entries, and SDL in
+`graphitron-sakila-example`'s existing `schema.graphqls`: no new Maven execution, `jooqPackage` or
+`.graphqls`.
 
-- `BodyParam.RemoteColumnPredicate(joinPath, inner)` wraps an ordinary `ColumnPredicate` whose columns bind to the terminal table; `ConditionCommands.termOf` narrows it into a `ColumnTerm` with a non-empty reach, and `ConditionGlueRenderer.reachExists` renders `DSL.exists(selectOne().from(terminal)<walk-back joins>.where(<correlation>.and(<inner>)))`. Plain `@reference` filters over a joined terminal column use this today.
-- `FkTargetConditionFilter` (authored `@condition` on an FK-target `@nodeId` field) already emits the same correlated EXISTS, handing the developer method an alias for the target table.
+Landing notes worth keeping:
 
-So the emission mechanism for this item is reuse, not new SQL shaping. The spec drops the R24 dependency entirely; R24's output side is unaffected and stays filed on its own.
-
-The false dependency is authored into several places, all retired by this item:
-
-- `FieldBuilder.translatedFkRejection`'s message text ("deferred until output-side JOIN-with-projection emission ships") and its javadoc.
-- The comment in `FieldBuilder.classifyArgument`'s `TranslatedFk` case arm, carrying the same sentence.
-- The comment in `FieldBuilder.projectFilters`' `ColumnBackedReferenceArg` arm, carrying it a third time.
-- The `TranslatedFk` arm javadoc ("which no emitter supports") and the `FkTarget` doc bullet ("the only shape the projection arms emit") in `NodeIdLeafResolver`.
-- The `ColumnBackedReferenceArg` javadoc's "rejected at classify time with a deferred-emission hint", and the `ColumnBackedArg` javadoc's contrast clause ("whose `@nodeId` join path lifts to local FK columns (no join)"), which stops being true once the reference carrier can bind `Remote`.
-- The `ColumnBackedReferenceField` arm comment in `MutationInputResolver.admitMutationInputFields` ("classified to DirectFk … admit on INSERT, UPDATE and DELETE at every arity … no JOIN at the emit site"), which asserts the very fact the new gate there refutes.
-- The `TableInputArg` javadoc's admissibility sentence, "(admitted carrier: `ColumnBackedField`); reference carriers stay outside the permits set". That is already false today (`LookupKeyField` and `SetField` both permit `ColumnBackedReferenceField`, and the sibling `LookupKeyField` javadoc says so), so it is a pre-existing drift rather than one this item creates. It sits directly above the lookup rail's gate and restates the contract the gate changes, so fix it here rather than leave a second, contradicting statement of admissibility next to the new one.
-- The `parent_node` metadata comment in `NodeIdFixtureGenerator` ("that mismatch is the test surface for the rooted-at-parent JOIN-with-projection emission path"), which describes the decode-side fixture in encode-side terms.
-- The arg-side FK-target commentary in `NodeIdPipelineTest` ("parallel to the still-deferred output-side JOIN-with-projection") and the `FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` case description.
-
-Not on that list, deliberately: `docs/architecture/reference/code-generation-triggers.adoc` carries no row for this deferral. Its one deferral row is the output-side `@nodeId(typeName:)`, non-FK-mirror target row pending `nodeidreferencefield-join-projection-form`, which is the encode direction and stays as-is; the input-side `@nodeId(typeName:) on input scalar` row describes the DirectFk decode and never mentions the rejection. That row does need widening, and this item does it (it is a Scope bullet below): as written it reads as though the FK columns on the input's own table are always the emission target, which stops being the whole truth once the translated variant emits a correlated EXISTS instead. Widened, not retired.
-
-EXISTS is also the semantically correct shape over a real JOIN here: no row multiplication when the target is reached through a non-unique path, and a NULL FK column simply fails the correlation instead of duplicating or dropping rows.
-
-## Design
-
-### Carrier fork: a sealed binding component
-
-Both carriers, `ArgumentRef.ScalarArg.ColumnBackedReferenceArg` and `InputField.ColumnBackedReferenceField`, carry `columns` (the target NodeType's keyColumns), `joinPath`, and `liftedSourceColumns`. The `liftedSourceColumns` slot is already overloaded with two meanings, recorded in `FieldBuilder.remoteIfReferenceJoin`'s javadoc: for `@nodeId` DirectFk it is FK-child columns on the field's own table (bind locally), while for a plain joined `@reference` it is the terminal column on the joined table (wrap in `RemoteColumnPredicate`). Today the two are told apart by extraction type (`Direct` vs `NodeIdDecodeKeys`), which encodes "nodeId implies local"; the TranslatedFk case falsifies exactly that implication.
-
-Replace the slot with a small sealed component that names the axis outright:
-
-- `Local(List<ColumnRef> ownTableColumns)`: the predicate binds to the field's own table; bare `Eq` / `In` / `RowEq` / `RowIn`. DirectFk's lifted tuple and the local plain-`@reference` column land here. The arm name carries the referent so the record never again admits a slot whose table is implicit.
-- `Remote`: payload-free. It means "the predicate binds the carrier's `columns()` against the terminal table of `joinPath`"; the emitter wraps in `RemoteColumnPredicate(joinPath, inner)`. The joined plain-`@reference` case and TranslatedFk both land here, structurally identical. Payload-free on purpose: in both cases the terminal tuple is already the carrier's `columns()` (TranslatedFk's predicate columns are the keyColumns; the joined plain-`@reference` today stores the same single column in both slots, `BuildContext` input-field construction), and a second slot holding a copy of `columns()` is a drift risk with no enforcer. Only `Local` carries a tuple that `columns()` cannot supply.
-
-The compact constructor enforces what the sentinel could not: `Remote` requires a non-empty `joinPath`. `remoteIfReferenceJoin` switches on the binding instead of the extraction and its two-meanings javadoc retires.
-
-`joinPath` stays orthogonal to the binding and does not fold into the `Remote` arm: a `Local`-bound FK-target `@nodeId` with an authored `@condition` still needs the path for the `FkTargetConditionFilter` correlation, so "Local + non-empty joinPath" is a legitimate state and `Remote` means specifically "the value predicate reaches through the path". The arm javadoc states this so the two readers of `joinPath` stay un-conflated.
-
-The same axis has a third spelling today: the arg-side plain-`@reference` carrier (`ColumnBackedArg`) discriminates local-vs-remote by an empty-`joinPath` sentinel in `projectFilters`. That is the same implicit fork this item rejects for the new slot, so `FilterBinding` goes onto `ColumnBackedArg` in the same change and the three discrimination sites (`ColumnBackedArg` sentinel, `remoteIfReferenceJoin`'s extraction test, the new component) collapse to one switch. If this leg grows during implementation it may split into a sibling item, but the spec's default is unification.
-
-One asymmetry to decide at implementation, because it is what would make that leg grow. `ColumnBackedArg` has one column slot where the reference carriers have two (its `columns` is still a list, and the composite-PK node key rides it; read "one slot", not "arity 1"), so on that carrier *both* arms are payload-free: local means "`columns()` bind to the own table", remote means "`columns()` bind to the terminal table". On the reference carriers only `Remote` is payload-free; `Local` has to carry the lifted tuple, which `columns()` cannot supply. So a `Local(List<ColumnRef> ownTableColumns)` shared by both families makes `ColumnBackedArg` copy its own `columns()` into the arm, which is the same unenforced-duplicate risk this section rejects for `Remote`. Three ways out, in preference order: give `Local` an accessor that reads through to `columns()` when the arm's list is empty (rejected, that is the sentinel again); keep `Local`'s tuple and have `ColumnBackedArg`'s construction sites pass `columns()` explicitly, accepting a derivable-but-restated slot on one family; or split the leg out and leave `ColumnBackedArg` on its sentinel for now. The middle option is the spec's default: the duplication is confined to construction sites the compact constructor can check (`Local`'s tuple must be non-empty, and on `ColumnBackedArg` it is the same arity as `columns()`), which is strictly better than a sentinel no switch can see.
-
-Weigh one fact against all three options first, because it is the argument for splitting rather than unifying. On `ColumnBackedArg` the binding is *derivable* today: of the four construction sites in `FieldBuilder`, three pass an empty `joinPath` and the fourth is the `@reference`-reaching-a-joined-table arm, which is always remote, so `Remote` iff non-empty `joinPath` holds on that carrier by construction. The component's justification is naming an axis the reader cannot recover from the other slots, and that is what makes it right on the reference carriers, where `Local` with a non-empty `joinPath` is a legitimate state. On `ColumnBackedArg` the axis is already recoverable, so the slot buys legibility and a switch rather than a fact, and it introduces a derived-slot invariant to police. That is not fatal, and unification stays the default because three spellings of one axis is its own cost, but it is the trigger to watch: if holding `Remote` and `joinPath` consistent on that carrier costs more than one compact-constructor line, split the leg out and let the sibling item carry this paragraph, leaving the reference carriers with the clean two-arm component.
-
-Strangler position: `FilterBinding` is not a new leaf type and not a walk-side registry; it de-overloads an existing slot on existing leaves and deletes two ad-hoc discriminations, net-subtractive.
-
-Alternatives rejected: an empty-`liftedSourceColumns` sentinel (an implicit fork where an empty list means "read the other slot", invisible to the constructor and to every switch); splitting each carrier into two records (doubles every switch in `TypeFetcherGenerator`, `CatalogBuilder`, `UpdateRowsWalker`, and the validator for what is a single emission fork). The wrapping-over-flag posture follows `RemoteColumnPredicate`'s own javadoc, which keeps the local-vs-remote axis off the operator/value-arity taxonomy; that javadoc currently names only `@reference(path:)` and broadens to name the FK-target `@nodeId` path.
-
-### Classifier unchanged, consumers stop rejecting on the read path
-
-`NodeIdLeafResolver` keeps producing `TranslatedFk`; the classification truth is unchanged. The two consumer sites stop converting it into a rejection:
-
-- Argument site (`FieldBuilder`, the `TranslatedFk` case arm beside DirectFk's): build `ColumnBackedReferenceArg` with the `Remote` binding (`columns` already carry the keyColumns). The existing `@lookupKey` guard applies unchanged (FK-target is a filter, not a lookup).
-- Input-field site (`BuildContext`, the parallel case arm): build `InputField.ColumnBackedReferenceField` with the same binding. `TranslatedFk` carries no `selfReference` flag and the read path does not need one, so the construction site passes `false`, matching the carrier's own javadoc ("every non-self-FK construction site sets `false`"). The slot's one reader is the UPDATE SET partition, which rejects a `Remote` binding before it gets there, so the value is unreachable rather than merely unused; the write path is out of scope below.
-
-Extraction stays `CallSiteExtraction.ThrowOnMismatch(decodeMethod)` at both sites: a malformed or wrong-type id on an authored filter throws rather than narrowing the result set.
-
-### Emission is composition of shipped parts
-
-`projectFilters` (arguments) and the implicit-predicate half of `walkInputFieldConditions` (input fields) build the inner predicate against the binding's columns and wrap when the binding is `Remote`. Everything downstream already handles the wrapped shape: `bodyParamCallTypeName` delegates to the inner predicate, `TenantBindingIndex` has a `RemoteColumnPredicate` arm, `ConditionCommands.termOf` recurses into the inner predicate so composite keys ride the existing `RowEq` / `RowIn` handling, `appendGuardedAnd` keeps the null-scalar and empty-list guards, and `reachExists` renders the EXISTS.
-
-An authored `@condition` on a translated field wraps in `FkTargetConditionFilter` exactly as it does for DirectFk, and the emitter path is unchanged since it already correlates through `joinPath`. Its `liftedSourceColumns` slot is carried "for symmetry and validation" and has no own-table tuple to hold in the Remote case; the implementation threads the binding through (or narrows the slot) rather than inventing a placeholder tuple. The validator arm in `GraphitronSchemaValidator.validateInputColumnBackedReferenceField` requiring every hop to be FK-derived applies as-is.
-
-### Write and lookup rails keep a deferral, gated uniformly and compile-checked
-
-Every consumer that reads the lifted tuple as own-table columns must refuse a `Remote` binding. This spec deliberately does not enumerate them. Retiring the `liftedSourceColumns()` accessor (the destructuring rule below) makes `javac` produce that list exactly, at implementation time, against the tree as it actually is; a list written here is a completeness claim about a moving target that a reviewer would have to re-derive to check, and re-deriving it is strictly worse than reading the compile errors. For blast-radius sizing only, and not as a set to verify: roughly ten call sites, in the two DML walkers, `MutationInputResolver`, `EnumMappingResolver`, `TypeFetcherGenerator` and `FieldBuilder`.
-
-One site does *not* appear in that compile-error list, and it is the reason this paragraph exists at all. `MutationInputResolver.admitMutationInputFields` decides INSERT admissibility on the carrier without ever reading the tuple: its `ColumnBackedReferenceField` arm is a bare `instanceof` falling straight through to `continue`, under a comment asserting exactly the fact this item falsifies ("classified to DirectFk … no JOIN at the emit site"). Retiring the accessor will not break it, so after this item it silently admits a `Remote` carrier into INSERT and nothing stops it until `TypeFetcherGenerator.setFieldColumns`, which is an emitter, not a validator. It is also the *right* INSERT gate: it already returns a plain `Rejection`, and already returns `Rejection.deferred` for the structurally-analogous composite-key-`@nodeId`-on-INSERT case. Its comment is a stale-premise site as well as a gate site. The general rule the implementer applies: a compile error names a reader, but a site that dispatches on the carrier and reads no binding-sensitive slot needs finding by hand. Two others were checked and need no gate (`ContextArgumentClassifier` reads only `condition()`; `CatalogBuilder`'s input arm already projects the terminal view, correct under both bindings).
-
-The lookup rail is the one place where the type system stops helping: `ArgumentRef.TableInputArg.of` admits the carrier by `instanceof LookupKeyField`, `ColumnBackedReferenceField` is in that permits set, and the `LookupKeyField` javadoc's "no JOIN context at the emit site" contract is true by type today but becomes per-instance once the carrier can bind `Remote`. `of` is where the fact becomes unrecoverable, not where the gate goes; see the gate-shape rule below.
-
-Honest write support would mean scalar-subquery SET / INSERT values with new failure modes (an id naming no target row); that is a separate feature.
-
-Two structural rules keep this from becoming scattered `instanceof Remote` tests:
-
-- Gate at each seam that decides admissibility for a rail, with an exhaustive `switch` over `FilterBinding`, so a future third arm breaks every gate at compile time. There are four such seams, not one, one per rail: `MutationInputResolver.admitMutationInputFields` (INSERT), `UpdateRowsWalker.classifyInto` (UPDATE), `DeleteRowsWalker.classifyInto` (DELETE), and the query-side lookup rail. "Gate once" is the shape of each gate, not their count; the count is the price of four independent walks over the same field list, and collapsing them is its own item, not this one.
-
-  Two of those seams need naming more precisely than "the method that reads the tuple". On the INSERT rail the gate is `admitMutationInputFields`, *not* `ArgumentRef.TableInputArg.of`: `of` is a pure factory on a model record with no diagnostic channel and no `DmlKind`, so it cannot distinguish the INSERT route from the query-lookup route that shares it, and gating inside the model would put an admissibility decision in the wrong layer. On the lookup rail the gate is `FieldBuilder.classifyPlainLookupKeyArg`, which already returns an `UnclassifiedArg` carrying a `Rejection` for its non-`LookupKeyField` case and is the one caller of `EnumMappingResolver.buildLookupBindings`; `buildLookupBindings` itself accumulates into a `List<String>` and cannot carry a typed rejection.
-
-- One cause, one identity, but not one `Rejection` instance: the four seams do not share an error channel, and the sealed `Rejection` hierarchy makes that a type fact rather than a style choice. `Rejection` permits three disjoint arms (`AuthorError`, `InvalidSchema`, `Deferred`), and `Rejection.deferred(...)` produces a `Deferred`. `admitMutationInputFields` and `classifyPlainLookupKeyArg` both return a bare `Rejection`, so a `Deferred` lands there directly. Both walkers' `classifyInto` take `List<Rejection.AuthorError>`, a sibling arm, so a `Deferred` does not type-check at all; the precedent this section cites resolves it the same way, with per-family arms (`UnboundField` surfaces as `UpdateRowsError.UnsupportedInputFieldShape` / the `DeleteRowsError` twin; `ConditionOwnedField` gets its own `OverrideConditionNotSupported` arm in each family, and the walkers' `UnsupportedInputFieldShape` messages for the nesting cases already read as deferrals). Decided: keep the identity in *one shared message-text helper* (the shape `translatedFkRejection` already has), minted into a `Rejection.deferred` on the two seams that take a `Rejection` and into each walker's existing `UnsupportedInputFieldShape` arm on the other two. Do not widen the walkers' channel to bare `Rejection` to force a single instance; that trades a precisely-shaped type for a cosmetic uniformity. The shared text no longer cites output-side projection emission; it states that a translated FK-target `@nodeId` cannot be written (or used as a lookup key) without a key-to-FK-column subquery, which is unimplemented. The `LookupKeyField` javadoc's admissibility sentence is updated to name the gate.
-- Every write-side accessor destructures `case FilterBinding.Local(var ownTableColumns)` rather than calling a shared getter, so no consumer can read a Remote tuple as own-table columns without a compile error. This is the rule that lets the section above refuse to enumerate: retiring `liftedSourceColumns()` breaks every reader of it, so a missed reader surfaces as a compile error at implementation time rather than as a wrong predicate at runtime. Sites that turn out to be unreachable behind an earlier gate say so in a comment and throw; they do not silently `continue`.
-
-This moves the admissibility decision from classification (context-free) to the consumers that actually cannot emit, the established pattern for context-dependent admissibility (`ConditionOwnedField` and `UnboundField` are fired by the filter walk and rejected by the DML walkers at their own arms). The precedent forks on leaf type where exhaustive switches do the enforcing; this fork is on a component value, which is exactly what the destructuring rule restores. `translatedFkRejection` itself retires from the read path; if no caller remains it is deleted.
-
-## Scope
-
-- Single-hop `TranslatedFk` paths (all the classifier produces for this arm today), argument and input-field sites, scalar and list arity, single-column and composite node keys.
-- `FilterBinding` unification across all three current spellings of the local-vs-remote axis, including the `ColumnBackedArg` empty-`joinPath` sentinel (see the carrier-fork section).
-- Fixture placement, decided here so implementation does not reopen it: **every new fixture table for this item lands in the `public` schema**, and `nodeidfixture` stays unwired from the execution module. One pair then serves both tiers with no build wiring, because three things are already true: pipeline-tier tests classify against the `public` catalog (`TestFixtures`' `no.sikt.graphitron.rewrite.test.jooq` root, e.g. its `film` table refs), `graphitron-sakila-example`'s main generator execution runs over that same catalog via `${jooqPackage}`, and `NodeIdFixtureGenerator` already runs over `public` (the `jooq-codegen` execution in `graphitron-sakila-db/pom.xml`, `<inputSchema>public</inputSchema>` into `${jooqPackage}`) with a public-schema entry in its schema-blind `METADATA` map (the composite-PK `film_actor`, consumed by `GraphQLQueryTest`'s `filmActorByNodeId` round-trip), so synthetic node-key metadata is available there. Because `METADATA` is keyed on the bare table name across every execution, the new tables need names no `nodeidfixture` table already uses. The existing `nodeidfixture.parent_node` + `child_ref` pair keeps driving the pipeline cases it drives today, unchanged, and gets no execution twin. Rejected alternative: wiring `nodeidfixture` into `graphitron-sakila-example` on the `multischemafixture` precedent (a new `<execution>` with its own `jooqPackage`, a dedicated `.graphqls`, seed rows, a test class), which is comparable in size to the rest of this item and buys only schema separation.
-- Two new `public` pairs on that decision, each a parent plus a child whose FK targets something other than the parent's node key. A single-key pair (the `public` twin of `parent_node` + `child_ref`, which is what the execution tier filters on) and a composite pair (parent with a composite node key, child FK targeting a *different* composite unique constraint). `reordered_pk_parent` + `reordered_fk_child` does not cover the composite case: it is the permuted DirectFk shape, not a translation. Three files move together per pair: the `CREATE TABLE`s plus seed rows in `graphitron-sakila-db/src/main/resources/init.sql`, the matching `NodeIdFixtureGenerator.METADATA` entry publishing `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS`, and the types in `graphitron-sakila-example`'s existing `src/main/resources/graphql/schema.graphqls`. The `too_wide` comment in `init.sql` already records the first two files' coupling.
-- Widen the `@nodeId(typeName:) on input scalar` row in `docs/architecture/reference/code-generation-triggers.adoc` to name the translated variant and its EXISTS emission alongside the DirectFk lift.
-- Retire the stale message: the read path stops rejecting; the write-path deferral gets its own wording as above.
+- The `ColumnBackedArg` unification held at one compact-constructor line per invariant, so the
+  spec's split-the-leg trigger never fired. `Local`'s tuple is restated from `columns()` on that
+  carrier and the constructor checks the arity agrees.
+- `FkTargetConditionFilter` took the binding rather than a placeholder tuple; its old
+  `liftedSourceColumns` slot had no reader.
+- The `Remote`-requires-a-non-empty-`joinPath` invariant lives on the carriers, not on the
+  payload-free arm, which is the only place that can see the path.
+- `FilterBinding` needed a `HierarchyKindRegistryTest` entry (`WALKED_FACT`: the binding is decided
+  by the same walk that produces the carrier).
 
 ## Out of scope (file separately if a real schema reaches them)
 
-- Write-target translation (scalar-subquery SET / INSERT emission).
-- Multi-hop translated paths and condition-join hops. The rejection surface for condition-join `@nodeId` paths is `NodeIdLeafResolver.resolveFkJoinPath`'s condition-step gate, upstream at classify time; `FkHop.narrow` is only the plan-time backstop (its own message says the validator must reject first) and the validator mirrors in `GraphitronSchemaValidator.validateInputColumnBackedReferenceField` stay as-is.
-- R24's output-side JOIN-with-projection emitter.
+- Write-target translation (scalar-subquery SET / INSERT emission), which is what the four rail
+  gates defer.
+- Multi-hop translated paths and condition-join hops. The rejection surface for condition-join
+  `@nodeId` paths is `NodeIdLeafResolver.resolveFkJoinPath`'s condition-step gate, upstream at
+  classify time; `FkHop.narrow` is only the plan-time backstop and the validator mirrors in
+  `GraphitronSchemaValidator.validateInputColumnBackedReferenceField` stay as-is.
+- The output-side (encode-direction) JOIN-with-projection emitter, filed on its own as
+  `nodeidreferencefield-join-projection-form`. This item is the decode direction and never depended
+  on it; the false dependency in the old rejection message and its paraphrases is retired.
 
 ## Test surface
 
-- `NodeIdLeafResolverTest`: TranslatedFk classification assertions unchanged.
-- Pipeline tier: `NodeIdPipelineTest.ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` and the parallel input-field case flip from asserting the rejection substrings to asserting classification (carrier shape, `Remote` binding). No assertions on generated method bodies; that tier rule is absolute.
-- Execution tier: what this tier uniquely pins is semantics, that the translation returns the right rows. The emitted SQL *shape* is reachable more cheaply: `ReferenceFilterRemoteColumnPipelineTest` already pins the `RemoteColumnPredicate` lowering for this exact machinery at the pipeline tier, and `ConditionRenderTestSupport` (produce then render) reaches the rendered glue method. Assert shape there and semantics here, using the `ExecuteListener` structural-token approach documented in `docs/architecture/reference/argument-resolution.adoc`. Cases over the new single-key `public` pair: filter child rows by parent ids, scalar and list, empty list contributes no conjunct, malformed / wrong-type id throws `GraphitronClientException`. Composite twin over the new composite `public` pair lands in the same item.
-
-  **Do not size this bullet as four assertions.** It also stands up two fixture pairs, and the fixture cost is a Scope bullet above rather than a detail hidden here. The reason it is not larger still is the placement decision recorded there: because the new pairs go in `public`, which the execution module's main generator execution and the pipeline tier's catalog both already read, the wiring cost is `CREATE TABLE`s, seed rows, two `METADATA` entries and some SDL, with no new Maven `<execution>`, no new `jooqPackage` and no new `.graphqls`. The same coverage rooted in `nodeidfixture` would need all four, which is what made the original framing of this bullet misleading: that schema has never been wired into the execution module at all (`parent_node` and `child_ref` carry no seed rows and no test in `graphitron-sakila-example` names them).
-- Write and lookup rails: one case per gate, so all four seams are covered rather than the two that happen to be easiest to reach. A translated carrier on an UPDATE input (`UpdateRowsWalker.classifyInto`), on a DELETE input (`DeleteRowsWalker.classifyInto`), on an INSERT input (`MutationInputResolver.admitMutationInputFields`), and on a `@lookupKey` coordinate (`FieldBuilder.classifyPlainLookupKeyArg`) each surfaces the new deferral at validate time. Assert the shared message text, not four different substrings: the one-cause-one-identity claim above is only worth making if a test pins that the four rails say the same thing.
+- `NodeIdLeafResolverTest`: `TranslatedFk` classification assertions unchanged.
+- Pipeline tier: `NodeIdPipelineTest`'s `FK_TARGET_TRANSLATED_KEY_MISMATCH_BINDS_REMOTE` (argument)
+  and `..._INPUT` (input field) assert the carrier shape and the one-hop `RemoteColumnPredicate`
+  over `parent_node.pk_id` where they previously asserted a rejection.
+  `TranslatedFkTargetRailGatesPipelineTest` covers all four rail gates plus a direct-FK carrier that
+  must still be admitted, and asserts the shared message text rather than four substrings.
+  `ColumnBackedArgInvariantTest` / `InputColumnBackedFieldInvariantTest` cover the new
+  compact-constructor invariants.
+- Execution tier: `TranslatedFkTargetFilterExecutionTest` pins semantics over the new `public` pairs:
+  list and scalar argument forms, the input-field form, empty and omitted lists contributing no
+  conjunct, a childless parent, the composite twin, and malformed / wrong-type ids throwing.
 
 ## Retired vocabulary
 
-Grep targets for the sweep at the Done gate. The "Stale premise to retire" section above lists the *sites*; this lists the *terms*, since the sweep is a grep and prose paraphrases of the retired mechanism live outside the enumerated sites.
+Grep targets for the sweep at the Done gate.
 
-- The phrase "deferred until output-side JOIN-with-projection emission ships", and every paraphrase pairing this decode-side deferral with output-side projection ("parallel to the still-deferred output-side JOIN-with-projection", "parallel to R24"). The *encode*-side deferral keeps its own wording and is not a sweep target, so the sweep needs the decode-side coordinates, not a bare grep for "JOIN-with-projection".
-- "which no emitter supports" and "This is the only shape the projection arms emit" (`NodeIdLeafResolver`'s `TranslatedFk` arm javadoc and `FkTarget` doc bullet).
-- "rejected at classify time with a deferred-emission hint" and the bare "deferred-emission hint" (`ColumnBackedReferenceArg` javadoc, plus the pipeline-test case descriptions).
-- "lifts to local FK columns (no join)" (`ColumnBackedArg`'s contrast clause), and the same claim restated in `FieldBuilder.classifyArgument`'s `@reference` comment ("Unlike the @nodeId FK-target arm above (which lifts to local FK columns and emits no join)") and in `MutationInputResolver.admitMutationInputFields`' reference-carrier arm ("no JOIN at the emit site"). There is no single string that finds all of these, and the obvious candidate is a trap: `"no JOIN at the emit site"` greps to zero hits, because `MutationInputResolver` line-wraps it after "no JOIN at" and the `LookupKeyField` javadoc's admissibility sentence spells it "no JOIN context at the emit site". Grep `emit site` and `no join` case-insensitively and read the hits; the noise is tolerable and the wrap is not.
-- "reference carriers stay outside the permits set" (`TableInputArg`'s javadoc), a statement that is already false and becomes actively misleading next to the new lookup-rail gate.
-- "the test surface for the rooted-at-parent JOIN-with-projection emission path" (`NodeIdFixtureGenerator`'s `parent_node` metadata comment, which describes a decode-side fixture in encode-side terms).
-- `translatedFkRejection`, if no caller remains after the read path stops rejecting.
-- `remoteIfReferenceJoin`, and its javadoc's two-meanings framing: "the two `liftedSourceColumns` meanings stay un-conflated", "The `Direct`-vs-`NodeIdDecodeKeys` extraction split is the discriminator".
-- `liftedSourceColumns` as a slot and accessor name on `ArgumentRef.ScalarArg.ColumnBackedReferenceArg` and `InputField.ColumnBackedReferenceField`, together with prose calling it "the lifted tuple" or "the lifted columns" as a slot that exists unconditionally. The name survives on `NodeIdLeafResolver.Resolved.FkTarget.DirectFk`, which still computes the lift; only the carrier-side slot goes.
-- The `_DEFERRED` suffix on `NodeIdPipelineTest.ArgumentFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED` and `InputFieldFkTargetNodeIdCase.FK_TARGET_PATHOLOGICAL_KEY_MISMATCH_DEFERRED_INPUT`. Both cases stop asserting a rejection, so the constant names stop being true; rename rather than leave them describing the opposite verdict.
-- "pathological" as a synonym for "unsupported" on this shape. The word is fine as a description of the schema (the FK genuinely targets a non-key column), and stays in fixture prose; what retires is its use to mean "the case we reject", which is how `translatedFkRejection` and both test-case descriptions currently read.
+- The phrase "deferred until output-side JOIN-with-projection emission ships", and every paraphrase
+  pairing this decode-side deferral with output-side projection ("parallel to the still-deferred
+  output-side JOIN-with-projection"). The *encode*-side deferral keeps its own wording and is not a
+  sweep target, so the sweep needs the decode-side coordinates, not a bare grep for
+  "JOIN-with-projection".
+- "which no emitter supports" and "This is the only shape the projection arms emit"
+  (`NodeIdLeafResolver`'s `TranslatedFk` arm javadoc and `FkTarget` doc bullet).
+- "rejected at classify time with a deferred-emission hint" and the bare "deferred-emission hint".
+- "lifts to local FK columns (no join)" and the same claim restated in `FieldBuilder`'s `@reference`
+  comment and in `MutationInputResolver.admitMutationInputFields`' reference-carrier arm ("no JOIN at
+  the emit site"). No single string finds all of these, and the obvious candidate is a trap: `"no
+  JOIN at the emit site"` greps to zero hits because `MutationInputResolver` line-wrapped it and the
+  `LookupKeyField` javadoc spelled it "no JOIN context at the emit site". Grep `emit site` and `no
+  join` case-insensitively and read the hits.
+- "reference carriers stay outside the permits set" (`TableInputArg`'s javadoc), which was already
+  false before this item.
+- "the test surface for the rooted-at-parent JOIN-with-projection emission path"
+  (`NodeIdFixtureGenerator`'s `parent_node` metadata comment).
+- `translatedFkRejection` and `remoteIfReferenceJoin`, including the latter's two-meanings framing
+  ("the two `liftedSourceColumns` meanings stay un-conflated", "The `Direct`-vs-`NodeIdDecodeKeys`
+  extraction split is the discriminator").
+- `liftedSourceColumns` as a slot and accessor name on
+  `ArgumentRef.ScalarArg.ColumnBackedReferenceArg` and `InputField.ColumnBackedReferenceField`,
+  together with prose calling it "the lifted tuple" as a slot that exists unconditionally. The name
+  survives on `NodeIdLeafResolver.Resolved.FkTarget.DirectFk`, which still computes the lift.
+- The `_DEFERRED` suffix on the two `NodeIdPipelineTest` case constants (renamed).
+- "pathological" as a synonym for "unsupported" on this shape. The word is fine as a description of
+  the schema and stays in fixture prose; what retires is its use to mean "the case we reject".

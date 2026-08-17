@@ -37,6 +37,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
@@ -2311,11 +2312,12 @@ public class TypeFetcherGenerator {
                 }
                 case InputField.ColumnBackedReferenceField crf -> {
                     // FK-target reference; same per-slot shape as the NodeId-decoded value
-                    // carrier, but walks liftedSourceColumns() (input's own FK columns, permuted
-                    // into NodeType key order) instead of columns().
+                    // carrier, but walks the binding's own-table tuple (the input's own FK columns,
+                    // permuted into NodeType key order) instead of columns().
                     String recLocal = localPrefix + "_" + fi;
-                    for (int ci = 0; ci < crf.liftedSourceColumns().size(); ci++) {
-                        var col = crf.liftedSourceColumns().get(ci);
+                    var refColumns = localColumnsOf(crf);
+                    for (int ci = 0; ci < refColumns.size(); ci++) {
+                        var col = refColumns.get(ci);
                         if (!first) b.add(",\n");
                         first = false;
                         b.add("$L ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
@@ -2364,7 +2366,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case InputField.ColumnBackedReferenceField crf -> {
-                    for (var col : crf.liftedSourceColumns()) {
+                    for (var col : localColumnsOf(crf)) {
                         if (!first) b.add(", ");
                         first = false;
                         b.add("$T.$L.$L",
@@ -2585,12 +2587,31 @@ public class TypeFetcherGenerator {
     /**
  * Target columns a {@code SetField} carrier writes to on the input's own table. The
      * walk is uniform across both admissible SetField shapes: the value carrier sources from
-     * {@code columns()}, the reference carrier from {@code liftedSourceColumns()}.
+     * {@code columns()}, the reference carrier from its {@link FilterBinding.Local} tuple.
      */
     private static List<no.sikt.graphitron.rewrite.model.ColumnRef> setFieldColumns(InputField.SetField sf) {
         return switch (sf) {
             case InputField.ColumnBackedField cf -> cf.columns();
-            case InputField.ColumnBackedReferenceField crf -> crf.liftedSourceColumns();
+            case InputField.ColumnBackedReferenceField crf -> localColumnsOf(crf);
+        };
+    }
+
+    /**
+     * The own-table column tuple a reference carrier writes to. Every write-side emitter reads its
+     * columns through here, so the {@link FilterBinding.Remote} case has exactly one place to fail:
+     * a remote-bound carrier identifies its target through a join and owns no column on this table,
+     * which the write rails' gates ({@code MutationInputResolver.admitMutationInputFields},
+     * {@code UpdateRowsWalker.classifyInto}, {@code DeleteRowsWalker.classifyInto}) reject before any
+     * emitter runs. Reaching here means a gate was bypassed, so it throws rather than inventing a
+     * tuple and emitting a silently wrong statement.
+     */
+    private static List<no.sikt.graphitron.rewrite.model.ColumnRef> localColumnsOf(
+            InputField.ColumnBackedReferenceField crf) {
+        return switch (crf.binding()) {
+            case FilterBinding.Local(var ownTableColumns) -> ownTableColumns;
+            case FilterBinding.Remote ignored -> throw new IllegalStateException(
+                "write-side emit reached the remote-bound reference carrier '" + crf.name()
+                + "'; the rail's validate-time gate should have rejected it");
         };
     }
 
@@ -2864,8 +2885,9 @@ public class TypeFetcherGenerator {
      *       declares a per-field decode local and reads {@code decodeLocal.value<i+1>()} for
      *       slot i.</li>
      *   <li>{@link InputField.ColumnBackedReferenceField} (either arity) — same as the
-     *       same-table NodeId arms but target columns are {@code liftedSourceColumns()} (FK
-     *       columns on the input's own table) rather than {@code columns()}.</li>
+     *       same-table NodeId arms but target columns come from the carrier's
+     *       {@link FilterBinding.Local} binding (FK columns on the input's own table) rather than
+     *       {@code columns()}.</li>
      * </ul>
      *
      * <p>{@code presenceLocal} is the local consulted by {@code containsKey} / {@code contains}

@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MatchedKey;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -365,19 +366,20 @@ class UpdateRowsWalkerTest {
     private static InputField.ColumnBackedReferenceField columnReferenceField(String name, List<ColumnRef> lifted) {
         // Cross-table FK reference (selfReference = false): partitions by key membership.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
-            List.of(lifted.getFirst()), List.of(), lifted, false, Optional.empty(), new CallSiteExtraction.Direct());
+            List.of(lifted.getFirst()), List.of(), new FilterBinding.Local(lifted), false,
+            Optional.empty(), new CallSiteExtraction.Direct());
     }
 
     private static InputField.ColumnBackedReferenceField compositeReferenceField(String name, List<ColumnRef> lifted) {
         // Cross-table FK reference (selfReference = false): a genuine straddle still rejects.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
-            lifted, List.of(), lifted, false, Optional.empty(), dummyDecode(lifted));
+            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted));
     }
 
     private static InputField.ColumnBackedReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {
         // Self-FK reference (selfReference = true): routes all lifted columns to SET.
         return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
-            lifted, List.of(), lifted, true, Optional.empty(), dummyDecode(lifted));
+            lifted, List.of(), new FilterBinding.Local(lifted), true, Optional.empty(), dummyDecode(lifted));
     }
 
     // A plain (non-list) NestingField is admitted by flattening it; a list-typed nesting stays

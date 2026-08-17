@@ -113,22 +113,24 @@ final class NodeIdLeafResolver {
 
         /**
          * FK-target arm: {@code @nodeId(typeName: T)} where {@code T.table()} is reachable from
-         * the containing table via a single foreign key. The predicate filters on the FK source
-         * columns reachable through {@code joinPath}; decoded keys feed the
+         * the containing table via a single foreign key. The predicate filters rows using the FK
+         * reachable through {@code joinPath}; decoded keys feed the
          * {@code In} / {@code RowIn} / {@code Eq} / {@code RowEq} body params.
          *
          * <p>Sealed into two arms on the positional-correspondence question between the FK's
-         * target-side columns and {@code T}'s {@code keyColumns}:
+         * target-side columns and {@code T}'s {@code keyColumns}. Both arms are emittable on the
+         * read side; they differ in which table the predicate binds, which the consuming carriers
+         * record as a {@link no.sikt.graphitron.rewrite.model.FilterBinding}:
          *
          * <ul>
-         *   <li>{@link DirectFk}: FK target-side columns positionally match {@code T}'s key
-         *       columns. Emission binds decoded keys directly against
-         *       {@code joinPath[0].sourceSideColumns()} on the field's own table; no JOIN, no
-         *       translation. This is the only shape the projection arms emit.</li>
+         *   <li>{@link DirectFk}: FK target-side columns are {@code T}'s key columns as a multiset.
+         *       The decoded keys lift to a tuple on the field's own table, so the predicate binds
+         *       locally with no JOIN ({@code FilterBinding.Local}).</li>
          *   <li>{@link TranslatedFk}: FK target-side columns differ from {@code T}'s key columns
          *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
-         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation, which no
-         *       emitter supports; see the arm's routing.</li>
+         *       NodeType key is parent.pk_id). No column on the field's own table holds the decoded
+         *       value, so the predicate binds {@code keyColumns} on {@code T.table()} inside a
+         *       correlated {@code EXISTS} ({@code FilterBinding.Remote}).</li>
          * </ul>
          */
         sealed interface FkTarget extends Resolved {
@@ -188,10 +190,14 @@ final class NodeIdLeafResolver {
                 implements FkTarget {}
 
             /**
-             * Translated-FK arm: FK target columns differ from {@code T}'s key columns.
-             * Emission requires JOIN-with-translation, which no emitter supports; carriers route
-             * to {@code UnclassifiedArg} (argument side) / {@code InputFieldResolution.Unresolved}
-             * (input-field side) with a deferred-emission hint.
+             * Translated-FK arm: FK target columns differ from {@code T}'s key columns, so SQL has
+             * to convert a decoded key into an FK-column value before it can filter. Read-side
+             * carriers take a {@code FilterBinding.Remote} and lower to the correlated {@code EXISTS}
+             * a joined {@code @reference} filter already uses; no own-table tuple exists, which is
+             * why the write and {@code @lookupKey} rails refuse the shape at their own gates.
+             *
+             * <p>Carries no {@code liftedSourceColumns} and no {@code selfReference}: there is
+             * nothing to lift, and the self-FK fact only routes write-side partitions.
              *
              * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable  resolved {@link TableRef} for {@code T.table()}

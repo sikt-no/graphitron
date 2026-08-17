@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.MatchedKey;
@@ -200,8 +201,21 @@ public final class UpdateRowsWalker {
             switch (f) {
                 case InputField.ColumnBackedField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), false, c.condition(), c.location(), errors, contributions);
-                case InputField.ColumnBackedReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
+                // A reference carrier contributes the tuple its binding names on this table. A
+                // Remote binding has none: its decoded key identifies a target row and reaches this
+                // table only through the join, so there is nothing to put in a SET or a WHERE
+                // without a subquery. The switch is exhaustive so a third binding arm breaks here.
+                case InputField.ColumnBackedReferenceField c -> {
+                    switch (c.binding()) {
+                        case FilterBinding.Local(var ownTableColumns) -> classifyColumnCarrier(
+                            c.name(), c.list(), ownTableColumns, wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
+                        case FilterBinding.Remote ignored ->
+                            errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                                c.name(), "translated FK-target @nodeId reference",
+                                FilterBinding.remoteBindingUnsupported(c.name(),
+                                    "written by @mutation(typeName: UPDATE)")));
+                    }
+                }
                 case InputField.ConditionOwnedField c ->
                     errors.add(new UpdateRowsError.OverrideConditionNotSupported(c.name(), c.location()));
                 case InputField.UnboundField u ->
