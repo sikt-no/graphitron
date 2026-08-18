@@ -1,7 +1,7 @@
 ---
 id: R704
 title: "The @routine read surface: unwire the carve-outs, then derive them from facts"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 2
 theme: routine
@@ -136,6 +136,24 @@ would make this item unshippable. Track A deletes carve-outs; Track B adds a fac
 therefore *not* leaf-zoo expansion, which is why it can ship first without violating the drain rule:
 it removes pins and literals from the transitional surface rather than adding a leaf to it.
 
+**Delivery: one item, Track A first, then Track B.** Not two items, and not B first. Three reasons,
+all of which a reviewer is free to overturn.
+
+Sequencing A then B repeats no work, because the tracks act on the same sites in opposite
+directions: A deletes hardcoded emptiness, B re-sources what survives the deletion. Doing B first
+would mean deriving the four verdicts from facts while the pins that override them are still in
+place, so the derivation would be unobservable until A landed anyway.
+
+Splitting into two items would put the census, the vocabulary and the one-catalog-property diagnosis
+in one item and the fix for half the census in another. That is the factoring this item was created
+to undo, and it is what let R659 and R622 drift to opposite verdicts on the same relation between the
+same two catalog objects.
+
+Keeping one item does mean Track A's landing is a phase note rather than a Done transition. That is
+the ordinary shape for a multi-phase item here, and it is worth the cost: the live defect stops
+shipping unsorted rows at the end of Track A, without the item claiming completion while the
+generator of the holes is still in place.
+
 ### Track A: unwire the read surface
 
 One pass, because the axes touch the same handful of sites and splitting them means writing the pin
@@ -192,7 +210,8 @@ carries the one axis that cannot be done by deletion.
     recursive `intent_field_reference_step_target` then walks multi-hop paths out of a routine
     result with no further work.
 11. **The carrier's explicit data-field path**, single- and multi-hop, reading slice 10 rather than
-    parsing at a grounding seat. Needs the residual-path correlation arm described above.
+    parsing at a grounding seat. Needs the residual-path correlation arm described under "What stays
+    genuinely open" below, which is the one part of this slice the view does not hand over.
 12. **Retire the duplicated derivations.** `synthesizeNameMatchedJoin` and
     `deriveRoutineCarrierPairs` both become reads of slice 10.
 13. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf.
@@ -200,7 +219,8 @@ carries the one axis that cannot be done by deletion.
 ## The redundant `@reference`
 
 Reaching a `@table`-bound child from a routine-result parent requires an explicit `@reference`
-naming a table the child's own return type already names:
+naming a table the child's own return type already names. Reported from a consumer schema, so the
+type and table names below are theirs and resolve against no fixture in this repo:
 
 ```graphql
 type Brukertilgang @table(name: "mine_tilganger") {
@@ -609,9 +629,6 @@ wrong and should change first.
 
 ## Open questions
 
-* **Track split, or one delivery?** Track A is shippable without Track B and fixes a live production
-  defect. Track B is the reason the defect existed. Sequencing A then B repeats no work (A deletes,
-  B re-sources what remains), but a reviewer may prefer B first so A lands already store-derived.
 * **Which node does a filter target on a multi-node chain?** Ordering resolves against the terminus
   and `@condition` should match, but both aliases are live in the emitted query and the author may
   reasonably want to filter the routine result before the hop. Same shape as R662's question, one
