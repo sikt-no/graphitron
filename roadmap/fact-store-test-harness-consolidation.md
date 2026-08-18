@@ -195,15 +195,23 @@ facts writers by hand. There are exactly four such writers, and the census is no
 
 | Writer | Relations | Hand-driven from |
 |---|---|---|
-| `RejectionFacts` | the rejection family | `diagnostics/DiagnosticFactsTest`, LSP's `RejectionSeverityCoverageTest`, MCP's `DiagnosticsAggregateTest`, `StoreBackedBuild` |
+| `RejectionFacts` | the rejection family | `diagnostics/DiagnosticFactsTest`, `capture/FactCaptureAgreementTest`, LSP's `RejectionSeverityCoverageTest`, MCP's `DiagnosticsAggregateTest`, `StoreBackedBuild` |
 | `CompileFacts` | the javac round | `compile/CompileFactsTest`, `capture/FactCaptureAgreementTest`, `diagnostics/DiagnosticFactsTest`, MCP's `DiagnosticsToolCompileSourceTest`, `DevMojoTest` |
 | `JavaSourceFacts` | the `java_` declaration family | `capture/JavaSourceFactsTest`, `dev/CatalogRefreshTest`, both `StoreFixture`s |
-| `BuildWarningFacts` | the warning family | `diagnostics/DiagnosticFactsTest`, `StoreBackedBuild`, LSP's `StoreFixture` |
+| `BuildWarningFacts` | the warning family | `diagnostics/DiagnosticFactsTest`, `capture/FactSchemaGateTest`, `StoreBackedBuild`, LSP's `StoreFixture` |
 
-Twenty-two construction sites across twelve files and all five modules, every one of them spelling
-`new <X>Facts(dsl, new FactCapture.GraphIdentity(name, dir))` and calling `write` or `refresh`.
-`RejectionSeverityCoverageTest` reaches for its writer by fully qualified name inline, which is what
-a test does when the thing it needs has no home worth importing.
+The table names the files rather than counting the calls, and deliberately: two earlier drafts carried
+a total, and the census is a moving surface like the MCP fixture's factory set above. Read the current
+count off `grep -rn "new \(no\.sikt\.graphitron\.rewrite\.[a-z]*\.\)\?\(RejectionFacts\|CompileFacts\|JavaSourceFacts\|BuildWarningFacts\)("`
+over the test sources. It runs well past twenty sites across every one of the five modules, every one
+of them spelling `new <X>Facts(dsl, new FactCapture.GraphIdentity(name, dir))` and calling `write` or
+`refresh`.
+
+Three of those sites spell the writer's fully qualified name inline rather than importing it, which is
+what a test does when the thing it needs has no home worth importing: LSP's
+`RejectionSeverityCoverageTest`, and `capture/FactCaptureAgreementTest` and `capture/FactSchemaGateTest`
+between them. The first migrates. The other two are on the exception list and keep their spelling,
+which the S6 acceptance below has to say rather than leave to be inferred.
 
 **The item currently routes this one population four different ways, and that is the mistake to fix
 before anything else.** The standalone tests are called direct writers and sent to M0; the identical
@@ -253,8 +261,25 @@ across the failure itself.
 `CapturedStore` where a factory fits and open directly where none does, which is the primitives layer
 this item ships, working as intended. Nothing here needs to change for the item to be finished.
 
-Those two groups are the whole of the exception list the guard carries. A harness that tried to serve them
-would be the does-everything type the next section exists to avoid.
+**And one group that does not stay, which is why it is named beside them.** `capture/`
+holds a third population that reads like an exception and is not: the DDL gates.
+`capture/CommentRenderabilityGateTest` opens a bare store and reads the model's own metadata, the
+`REMARKS` of every table and column in `INFORMATION_SCHEMA` and every character-typed value of every
+`meta_` relation. It captures nothing, drives no writer, and asserts over no rows but the ones the DDL
+ships with. Its subject is `graphitron-model`'s comment prose end to end, so the axis sends it down,
+and it is the cheapest mover in the item: it needs M0 and nothing else, there being nothing to seed.
+S1 takes it, and its `@UnitTier` annotation goes away with the move, `graphitron`'s tier vocabulary
+not travelling to a module that has none.
+
+`capture/FactSchemaGateTest` is the same family and stays anyway, which is worth stating because its
+own javadoc calls its gates "siblings of the comment-coverage gate". Six of its seventeen cases are
+bare-store DDL queries like that sibling's; the rest read `CapturedStore`, and the class is a capture
+oracle first. It keeps one entry for the whole class on the capture-oracle reason rather than earning
+the exception list a third reason, and its bare-store cases ride on that entry.
+
+So the exception list carries two groups and this section names three, the third being where the
+guard fires on a class the sort had not placed. A harness that tried to serve any of them would be
+the does-everything type the next section exists to avoid.
 
 ### What the capture-shaped tests still disagree about
 
@@ -493,8 +518,9 @@ got wrong by a test author who does not know the convention.
 in `no.sikt.graphitron.rewrite`, which already hosts `TestSchemaHelper`, `TestFixtures` and the
 `*RenderTestSupport` classes. That package is also tier-neutral, which matters: the incoming
 `graphitron` consumers are all `@PipelineTier`, while the `capture/` classes that already read the
-handle straddle both tiers (`FactCaptureAgreementTest`, `TaggedCaptureStampTest` and
-`WarmStartRefreshTest` are `@PipelineTier`, the rest `@UnitTier`). A home that reads as belonging to
+handle straddle both tiers (`FactCaptureAgreementTest`, `TaggedCaptureStampTest`,
+`WarmStartRefreshTest` and `BrokenSourceStillCapturesPipelineTest` are `@PipelineTier`, the rest
+`@UnitTier`). A home that reads as belonging to
 one tier's family invites the next reader to infer a tier rule that does not exist, and the mixed
 readership is already the status quo rather than something this item introduces.
 
@@ -929,6 +955,13 @@ name, so the migration tests M1 rather than the migrator. If it cannot be done w
 something M1 does not have, the harness is not finished and the finding belongs in this slice rather
 than in stage 2.
 
+`capture/CommentRenderabilityGateTest` moves in this slice too, and it is the one mover that tests M0
+alone: it reads the DDL's own comment prose off an empty store, so it needs the store's lifetime and no
+seeding at all. It drops its `@UnitTier` annotation on the way, and it goes here rather than in stage 2
+because a class needing nothing but M0 proves M0 is reachable from another module the moment M0 exists.
+Acceptance: it passes in `graphitron-model` with its assertions unchanged, and `graphitron` no longer
+holds a test whose only subject is the model's DDL comments.
+
 **S2: G1 and G2, `graphitron`'s harness.** `CapturedStore` widened and moved beside `TestSchemaHelper`,
 taking its store from M0 rather than opening one. The fixture file with its filename keyed on the graph
 name, the caller-supplied graph identity, `registryOf` / `attributionOf` / `fixtureFile` public, the
@@ -1006,16 +1039,19 @@ Acceptance for every split class: `FactCaptureAgreementTest`'s registry note for
 rewritten to say which half now carries the reason, since as written each describes a class that no
 longer exists in one piece.
 
-**S6: the facts writers adopt G0.** Every site in the writer census: `graphitron`'s
-`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest`, `capture/JavaSourceFactsTest` and
+**S6: the facts writers adopt G0.** Every site in the writer census that is not already on the
+exception list: `graphitron`'s `compile/CompileFactsTest`, `capture/JavaSourceFactsTest` and
 `diagnostics/DiagnosticFactsTest`, the maven plugin's `DevMojoTest` and `dev/CatalogRefreshTest`, and
 downstream `RejectionSeverityCoverageTest`, `DiagnosticsToolCompileSourceTest` and
-`DiagnosticsAggregateTest`'s three own-store cases. Acceptance: none of them still names
-`GraphitronModelStore` or constructs a `*Facts` writer by hand, no site still spells a writer's fully
-qualified name inline, and the maven-plugin pair is not left inline on the grounds that it is only two,
-which is the way this slice fails. `capture/FactCaptureAgreementTest` keeps its own writer calls, being
-a capture oracle on the exception list, but it may adopt G0 for the construction if that reads better;
-that is the implementer's call and not an acceptance condition.
+`DiagnosticsAggregateTest`'s three own-store cases. Read the population off the census grep in the
+Problem section rather than off this list, which is the same rule S7 follows for the MCP fixture.
+Acceptance: none of the migrating sites still names `GraphitronModelStore` or constructs a `*Facts`
+writer by hand, `RejectionSeverityCoverageTest` no longer spells its writer's fully qualified name
+inline, and the maven-plugin pair is not left inline on the grounds that it is only two, which is the
+way this slice fails. `capture/FactCaptureAgreementTest` and `capture/FactSchemaGateTest` keep their own
+writer calls and their inline fully qualified spellings, being capture oracles on the exception list;
+either may adopt G0 for the construction if that reads better, which is the implementer's call and not
+an acceptance condition.
 
 **S7: `graphitron-mcp`.** Its `StoreFixture` becomes a local layer over G1 and G0, keeping **whatever
 factory set it has when the slice starts** intact, each one delegating its capture to G1 and its writer
