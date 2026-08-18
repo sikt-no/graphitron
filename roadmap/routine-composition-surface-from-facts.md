@@ -260,9 +260,12 @@ carries the one axis that cannot be done by deletion.
    answers a routine-terminal child from the `@table` ceremony slice 9 removes. A fourth
    `CHAIN_TERMINAL` rule reading `intent_field_chain_terminus` belongs there, and it has to arrive
    with guards on the other two, since a chain field can satisfy either. That is a change to a
-   view with live consumers and its own anchor, so it is named here rather than folded in: it
-   belongs with slice 12's retirement pass or beside slice 9, whichever reaches the column-scope
-   readers first.
+   view with live consumers and its own anchor, so it is named here rather than folded in.
+   *Re-homed at the self-review pass.* The plan put it "with slice 12's retirement pass or beside
+   slice 9, whichever reaches the column-scope readers first", and the re-plan moved that pass out
+   with slice 13, so both homes are gone. It travels to
+   `roadmap/column-scope-admits-the-chain-terminus.md` together with the `PATH_TERMINAL` defect
+   below, which it cannot land without.
 
    *Narrowed by slice 9's store half, to two cases and one defect.* With both binding rules reading
    the resolution, a child-position single-node routine field now resolves through `NAMED_TYPE_TABLE`
@@ -911,6 +914,46 @@ wrong and should change first.
 * `roadmap/lsp-reads-the-fact-store.md` (R638), and R642 in `roadmap/changelog.md`: the two
   consumers that have already made this move, and the evidence the re-plan leans on that a reader
   migrates by leaving the walk rather than by teaching the walk to read.
+* `roadmap/column-scope-admits-the-chain-terminus.md` (R718) and
+  `roadmap/routine-carrier-discriminator-from-payload-shape.md` (R719): the two items the
+  self-review below filed. Both are downstream of this one, R718 reading the terminus and the
+  resolution this item derived, R719 reading the carrier facts.
+
+## Self-review
+
+One pass over the whole item's delivery before the Done handoff, in the shape R642's took. Findings
+and what was done with each.
+
+**Two residues had lost their home, and are now filed.** Slice 8's `CHAIN_TERMINAL` note pointed at
+"slice 12's retirement pass or beside slice 9", and the Track B re-plan moved that pass out with
+slice 13, so the note pointed at nothing; the `PATH_TERMINAL` guard defect recorded beside it had no
+home to begin with, and slice 12's landing added a third of the same kind, the carrier relation's
+inherited `element_kind` gate. All three travel to R718, which states why the first two have to land
+together. **One carve-out this item did not unwire is filed as R719.** On a `Mutation` root, both the
+classifier's fork and `intent_routine_return_binding`'s seat exclusion decide carrier-versus-chained
+by whether the author wrote `@reference`, which is a syntactic accident standing in for a question
+about the returned type's shape, and it makes the discouraged spelling the load-bearing one at that
+one position. The item's census did not have it because the census was written from the read
+surface, and this seat is where the read surface meets the write one. The facts to decide it
+properly are the carrier relations slice 12 leaves.
+
+**One manual page was missing a rule the item added to it.** Track A made
+`@defaultOrder(primaryKey: true)` over a table with no primary key a build error naming the table and
+listing its columns. That is not routine-specific, `film_list` being the ordinary case, so it belongs
+in `defaultOrder.adoc`'s constraints where an author who hits it will read it, and only its
+consequence for a function result belongs on the `@routine` page. Fixed in this pass.
+
+**One open question was stale.** "Two routines, one return type" was written as a question slice 9
+would settle, and slice 9 settled it in the item's own text without the question being marked.
+Marked.
+
+**The retirement sweep is empty, and that is the correct outcome rather than a skipped step.** The
+item deletes no type and no method: Track A's unwirings are pin and message rewrites, Track B adds
+relations. What slice 12 would have retired, the two Java copies of the keying rule, is not this
+item's to retire and the re-plan says so, so `synthesizeNameMatchedJoin` and
+`deriveRoutineCarrierPairs` still run and the two new relations have no generator consumer yet. A
+reviewer should see that as the stated state and not as an omission; the store's own tests are what
+read them today.
 
 ## Open questions
 
@@ -961,7 +1004,13 @@ wrong and should change first.
 * **Grain of the verdict relation.** One relation per axis, or one keyed by (coordinate, axis) with a
   closed axis vocabulary? The latter is tempting and probably wrong: the axes carry different
   payloads, so a shared relation goes wide and sparse or pushes payload to a side table per axis.
-* **Two routines, one return type.** Fine under an edge-scoped binding, a conflict under a
+* **Two routines, one return type.** *Answered by slice 9: type scope, and it is not the conflict
+  the question assumed.* Two routines landing differently are two rows with `candidates = 2`, which
+  is `intent_bound_table`'s own discipline, so the shape a reader must refuse is stated rather than
+  forbidden, and a reader may later accept an arity above one where every candidate exposes the
+  column it needs. The reasoning is under slice 9. The original framing stands below.
+
+  Fine under an edge-scoped binding, a conflict under a
   type-scoped one. Follows from where the binding fact is keyed, which is slice 9's real decision.
   The read side constrains that decision and is the reason to answer both at once: an edge-scoped
   binding cannot feed the type-keyed `intent_bound_table` the hop recursion anchors on, so choosing

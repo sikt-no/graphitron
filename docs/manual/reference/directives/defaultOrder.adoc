@@ -85,6 +85,7 @@ type Query {
 == Constraints
 
 * Exactly one of `index`, `fields`, or `primaryKey` must be set. Multiple or none fails the build.
+* `primaryKey: true` needs the target table to have one. Over a table with no primary key it fails the build, naming the table and listing the columns available, so the `fields:` spelling is one edit away. A table-valued function's result is the standing case: it declares no key, so a routine-backed field orders by naming the function's own result columns (see xref:routine.adoc[`@routine`]).
 * Applies to fields only. Apply it to the connection-bearing field, not the synthesised `Connection` / `Edge` types.
 * When combined with xref:orderBy.adoc[`@orderBy`] on the same field, the client's argument value (when present) takes precedence; `@defaultOrder` is the fallback.
 * `direction` is global across the spec. Per-column direction requires xref:orderBy.adoc[`@orderBy`] (the enum input carries its own `SortDirection`).
