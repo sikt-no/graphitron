@@ -47,7 +47,32 @@ stratum it lives in is decided by what produces its rows". Rewording that senten
 test therefore lands inside the vocabulary already in use rather than beside a second one, which is
 the argument for the word and not just an absence of collisions.
 
-One stratum use does need reconciling rather than adopting, and the Implementation section takes it:
+The count is not the whole argument, though, and the section would be dishonest if it stopped there:
+the same collision analysis run on "tier" has to be run on "stratum", and it does not come back empty.
+The word is spent on two other things.
+
+- A coarser sectional partition, in the DDL's own section headers: `-- ==== Semantic stratum: the
+  decoded graphitron and federation inventory`, `-- ==== Derived stratum: claims`, `-- ==== Diagnostics
+  stratum`, and a back-reference to "the transcription strata above". That partition and this item's
+  disagree in three places. Semantic and Derived are separate strata there and both are stratum two
+  here, and the Semantic header sits directly above the family this item reclassifies as derivation.
+  Diagnostics is a stratum there and cuts across all of this item's buckets here: `javac_` and
+  `graphql_syntax_error` in stratum one, `lint_` and `intent_authored_claim_conflict` and
+  `graphql_schema_error`'s `ASSEMBLY` arm in stratum two, `rejection_` in no stratum. And transcription
+  is plural there where stratum one is singular, while stratum three has no section at all.
+- A layering *within* a family: `meta_family`'s `intent_` charter has "The stratum has two layers",
+  `intent_resolved_field_claim`'s comment has "The stratum's second layer", and three block comments
+  inside the `Derived stratum` section say "The stratum's second / third / fourth resident group".
+
+None of that argues for a different word, because the numbered form is the disambiguator and it is
+free: **stratum one / two / three** is this axis and only this axis, and an unnumbered "the X stratum"
+is a section of the DDL or a layer inside one family. State that rule where the strata are named,
+because a reader who meets "the diagnostics stratum" a few paragraphs from "stratum one" will
+otherwise count four. What the rule cannot paper over is a header that positively teaches the wrong
+partition, and one of the three does; Implementation takes that one, and argues the other two are safe
+under the rule. These are comment-grade edits, the same category as the `meta_family` rows.
+
+One further stratum use needs reconciling rather than adopting, and Implementation takes it too:
 `meta_family`'s `intent_` charter calls the three-family stack `graphql_` / `graphitron_` / `intent_`
 "the SDL strata stack", with `intent_` as its third layer. That stack is real and it is a depth
 ordering, not this item's partition: `graphitron_` and `intent_` are both derivation, so the family
@@ -110,22 +135,36 @@ reconstructed by string surgery, twice.
 
 Naming the strata is only useful if every family is assigned, so this section assigns all thirteen the
 roster holds plus its one placement exemption. One family's assignment is currently misread in the
-tree and was misread in this item's own siblings before they were corrected; a second turns out to be
-inverted in the schema the way the macro case is, which is a conclusion the assignment reaches rather
-than a premise it starts from.
+tree and was misread in this item's own siblings before they were corrected; two more turn out to be
+inverted in the schema the way the macro case is, and one of those two splits inside a single relation.
+Those are conclusions the assignment reaches rather than premises it starts from, which is the point of
+assigning every family rather than the ones the frame was built on.
 
-- Stratum one, transcription: `graphql_` (including the generic directive definitions and
-  applications at all five locations, with argument values), `jvm_`, `sql_`, `java_`, and the verdict
-  residents `graphql_syntax_error` / `graphql_schema_error`. Each is what a walk read from one
-  corpus.
+- Stratum one, transcription: `graphql_`'s declaration relations (including the generic directive
+  definitions and applications at all five locations, with argument values), `jvm_`, `sql_`, and
+  `java_`. Each is what a walk read from one corpus. `graphql_`'s two verdict residents are the
+  exception, and the verdict rule below does not settle them together.
 - Stratum two, derivation: `intent_`, and **`graphitron_`**. The `graphitron_` relations are decodes
   of the generic directive applications stratum one transcribes: `graphitron_field_reference_step`
   decomposes a `@reference` path argument, `graphitron_service_arg_mapping_sigil` extracts a sigil
-  from an argument value, `graphitron_table` reads a `name:`. Each is a function of captured rows.
-  `MacroCapture`'s javadoc already uses the right word for it, distinguishing what "transcribes into
-  `graphql_type_directive`" from what "decodes into `graphitron_federation_key`".
-- Stratum three, queries: the views a consumer reads, which the document already covers under "One
-  base, many views". `diagnostic` is the worked case and the roster's one placement exemption, a read
+  from an argument value, `graphitron_table` reads a `name:`. Each of those is a function of captured
+  rows. One column in the family is not, and it is the macro inversion again rather than a second
+  exception: `graphitron_field_synthesis.authored_type_sdl` holds a pre-expansion type expression that
+  appears in no `graphql_` row, so a stratum-one fact currently sits inside the stratum-two family.
+  Say the family is derivation and name that column as the inversion's residue, rather than letting
+  "each is a function of captured rows" stand over every relation the prefix covers; correcting the
+  assignment is what removes the exception. `MacroCapture`'s javadoc already uses the right word for
+  the decode half, distinguishing what "transcribes into `graphql_type_directive`" from what "decodes
+  into `graphitron_federation_key`".
+- Stratum three, queries: the reads a consumer shapes to its own goal, which the document already
+  covers under "One base, many views". The two-versus-three boundary needs its own sentence, because
+  "a view a consumer reads" describes plenty of stratum two: `intent_resolved_field_claim` is a view
+  over captured facts and its own comment calls it "what a planning reader eventually joins". The
+  discriminator is the roster's own naming rule, which is gate-closed rather than newly minted: a
+  relation named for whose vocabulary its rows are written in is a fact the store owns, so stratum
+  two, while a relation that exists because one consumer wanted one read has no vocabulary of its own
+  to be named for. That is why no family lands in stratum three and why the one relation that does is
+  prefix-less. `diagnostic` is that worked case and the roster's one placement exemption, a read
   surface unioning arms from several families' vocabularies; both its own comment and its exemption row
   already call it "the diagnostics stratum's read surface", so the word is in place here too. Cite it
   without an arm count: the two comments already disagree on how many arms there are, which is the
@@ -133,15 +172,21 @@ than a premise it starts from.
 - No stratum, scaffolding: `walk_` and `rejection_`, each reifying the legacy walk's answer so a
   derivation can be diffed against it during migration. `rejection_`'s charter already ties itself to
   `walk_`'s clock, "transitional by construction, drained family by family as detections migrate
-  store-native", so this is reading the roster rather than deciding against it.
+  store-native", so this is reading the roster rather than deciding against it. This bucket is decided
+  before the strata question, and the ordering has to be stated because either test would otherwise
+  pull both families into stratum two: `walk_`'s rows are recomputable by construction, that being
+  what a differential is for, and the roster titles `rejection_` "The legacy walk's verdicts", so the
+  verdict rule reaches it as well. A relation that exists to be diffed against its own replacement has
+  no stratum whatever its inputs are; that is what scaffolding means here.
 - No stratum, and permanently: `store_` and `meta_`, whose subject is the store itself rather than any
   corpus or any fact about one. `store_` records the run (what it read, what it was built from, which
   graphs it holds) and its charter already disclaims transcription in those words; `meta_` records the
   schema. Both need saying because "no stratum" otherwise reads as "transitional", which is what
-  `walk_` and `rejection_` are and these two are not. The `meta_` views are also the reason stratum
-  three has to be stated as *a view over facts a consumer reads* and not merely as "a view":
-  `meta_relation_family` is a derivation, but over the schema's own catalog rather than over captured
-  facts, so it sits here and not in stratum two.
+  `walk_` and `rejection_` are and these two are not. The `meta_` views are also the reason stratum two
+  has to be stated as a derivation *over captured facts* and not merely as "a derivation":
+  `meta_relation_family` is a derivation, but over the schema's own catalog rather than over anything a
+  walk read, so it sits here and not in stratum two. It is not stratum three either, `meta_` being a
+  family with a vocabulary of its own under the discriminator above.
 
 The stratum is decided by what a relation's rows are computed *from*, not by what computes them. A
 materialized derivation whose producer is a Java program is stratum two if its inputs are captured
@@ -150,17 +195,38 @@ same breath as the assignment matters, because "`graphitron_` is a derivation" o
 demand that a thousand lines of decoding become SQL, which is not what the stratum claims.
 
 That covers ten of the roster's thirteen families and its one exemption. The remaining three are the
-verdict families, and with `graphql_`'s two verdict residents they are the interesting cases, because
-a verdict is a conclusion and the recompute test was stated over declarations. One rule extends it and
-assigns all five: **a transcribed verdict is stratum one exactly while the store does not hold the
-inputs the verdict was computed from, and stratum two once it does.** That is why they do not all land
-together:
+verdict families the scaffolding bucket did not already take; `rejection_` is the fourth family the
+roster titles as verdicts, and it is bucketed above. With `graphql_`'s two verdict residents these are
+the interesting cases, because a verdict is a conclusion and the recompute test was stated over
+declarations. One rule extends it and reaches all five: **a transcribed verdict is stratum one exactly
+while the store does not hold the inputs the verdict was computed from, and stratum two once it does.**
+That is why they do not all land together:
 
-- `graphql_syntax_error` and `graphql_schema_error` are stratum one because their input is a document
-  that has not parsed yet. There is no transcription of an unparseable file to recompute a syntax
-  error from, which is the real reason those two are `graphql_` residents rather than a family of
-  their own; the roster's reader-neutrality argument for them is compatible with this and does not
-  replace it.
+- `graphql_syntax_error` is stratum one because its input is a document that has not parsed. There is
+  no transcription of an unparseable file to recompute a syntax error from, and that is a firmer
+  reason for its `graphql_` residency than a family of its own would have; the roster's
+  reader-neutrality argument is compatible with this and does not replace it.
+- `graphql_schema_error` does not join it, and the rule splits it along a column the relation already
+  carries. Its `stage` is a closed `CHECK` over `REGISTRY` and `ASSEMBLY`, and the two differ in
+  exactly what the rule asks. A `REGISTRY` refusal is a second base declaration whose loser the
+  registry, per `graphql_duplicate_declaration`'s comment, "reports ... as a verdict without
+  offering its declaration to capture", so the store does not hold the input: stratum one. An
+  `ASSEMBLY` refusal is the opposite case, the same comment saying "the same pass captures both the
+  verdict and the retained duplicate this relation holds", and the four checks this relation's own
+  comment enumerates are each a predicate over captured rows: that every named type resolves
+  (`graphql_field` against `graphql_type`), that an object satisfies the interfaces it claims
+  (`graphql_implements`), that a directive sits where its definition permits
+  (`graphql_directive_location` against the five application relations, which `graphql_directive_site`
+  already unions), and that the schema has a query root (`graphql_root_operation`). So the `ASSEMBLY`
+  arm is stratum two, by the same rule and for the same reason as `lint_` below. Stating it is what
+  keeps the rule honest: the argument that carries `graphql_syntax_error` covers the parse stage only,
+  and applying it to both residents because they share a table is exactly the family-grain rounding
+  `build_warning_` is disclosed for. This split has the better shape of the two, being already visible
+  data rather than a per-resident judgment. Say plainly what the assignment does and does not demand:
+  it says the `ASSEMBLY` verdicts are recomputable from captured facts, not that they should be
+  recomputed. The producer here is graphql-java's own validator, so migrating this arm would mean
+  restating the specification's structural rules in the store, which is a far larger question than
+  `lint_`'s and not one this assignment answers.
 - `javac_` is stratum one: the store holds neither a compiler nor a transcription of the emitted
   sources. Worth one clause, because it is the only stratum-one family whose corpus the run itself
   produced rather than read from the consumer.
@@ -202,15 +268,24 @@ that is the discipline it generalises. It carries:
   the decision procedure: a row that can be recomputed from captured facts alone is a derived fact
   and must not be captured. Note that the test decides mechanically what the derived-reads section
   argues case by case.
+- The numbering rule, in the same breath as the names: the numbered form is this axis and only this
+  axis, and an unnumbered "the X stratum" in the DDL or on this page is a section of the schema file or
+  a layer inside one family. This page itself carries three of the unnumbered uses ("the claim
+  stratum", "the diagnostics stratum" twice, "the derived stratum"), and "the derived stratum" is
+  stratum two under another name, so say which of those the numbering replaces and leave the rest
+  reading as what they are. Without this rule the page names three strata and then uses the word four
+  more times for something else.
 - The family assignment from "Which stratum each family is in" above: all thirteen families and the
   one placement exemption, the four buckets (transcription, derivation, queries, and the two
   no-stratum reasons), and the verdict rule that a transcribed verdict is stratum one exactly while
   the store does not hold the inputs it was computed from. Write it as prose that *defers to*
   `meta_family` rather than as a second copy of the roster: the roster is gate-closed against the
   observed relations and renders one page per row, where a prose prefix list is an unguarded census.
-  Carry the two results a reader will not expect, since they are what the rule earns: `lint_` is a
-  derivation whose findings are captured today, and `build_warning_` is settled per resident rather
-  than per family.
+  Carry the three results a reader will not expect, since they are what the rule earns: `lint_` is a
+  derivation whose findings are captured today, `graphql_schema_error` is stratum two on its
+  `ASSEMBLY` stage and stratum one on its `REGISTRY` stage, and `build_warning_` is settled per
+  resident rather than per family. State the two-versus-three discriminator in the same breath as the
+  buckets, since "a view a consumer reads" otherwise reads onto the whole `intent_` family.
 - The clarification that a relation's stratum is decided by what its rows are a function of, not by
   what program computes them: a materialization whose producer is a Java walk is stratum two if its
   inputs are captured facts. The sentence later in the same document that currently says the
@@ -300,6 +375,34 @@ transcription", with both verdict residents argued in on the reader-neutrality t
 (rules as "predicates over classified facts that should be free to migrate store-native", which names
 stratum two as its destination without this item having to argue it in). This item adds no stratum
 word to a charter that manages without one; the roster keeps its own voice.
+
+### The DDL section headers that also say stratum
+
+The schema file's section headers name three strata of their own. One of them contradicts the assignment
+and is reworded; the other two are safe under the numbering rule, and the argument for leaving them is
+worth stating so a later reader does not read the asymmetry as an oversight. These are block comments,
+the same category of edit as the `Macro synthesis provenance` header below.
+
+- `-- ==== Semantic stratum: the decoded graphitron and federation inventory`, above the `graphitron_`
+  family. It names as a stratum in its own right the family this item files under derivation, sitting a
+  few thousand lines from `-- ==== Derived stratum: claims`, which is the same numbered stratum. Fold
+  the two into one reading rather than renumbering the file: keep the sections, and reword this header
+  so it names what the section holds (the decoded graphitron and federation inventory, a derivation over
+  the transcription) without claiming a stratum of its own. The `Derived stratum: claims` header is
+  consistent with the assignment as written and needs no edit, though it is worth checking that its
+  block prose ("rows derive on read from the transcription strata above") still reads right beside a
+  singular stratum one.
+- `-- ==== Diagnostics stratum`, whose section prose already says "nothing reads a base relation of this
+  stratum directly". This grouping genuinely spans stratum one, stratum two and no stratum, so it is not
+  a wrong claim about any relation, it is the word doing a second job at the widest possible spread.
+  Preferred: leave the header alone and let the numbering rule carry it, because "the diagnostics
+  stratum" is the tree's established name for that arm set, is load-bearing in the `diagnostic`
+  exemption row this item deliberately reads rather than edits, and renaming it reaches further than a
+  naming item should. If the author would rather remove the ambiguity at the source, the alternative is
+  to say diagnostics is a subject grouping and not a stratum, and that edit reaches the two verdict
+  relations' comments ("alone among this stratum's arms", "this stratum's other arms", "this stratum's
+  other message columns"), `diagnostic`'s own comment, the exemption row, and `fact-model.adoc` twice.
+  Pick one; do not half-apply it.
 
 ### `MacroCapture` and `SdlFactCapture`
 
@@ -403,9 +506,9 @@ different sense of the same words and stay:
   accurate there and the sites that use it are load-bearing. They stay:
   `graphitron_type_directive_synthesis`'s table comment ("synthesized rather than authored"),
   `graphql_field.declaration_line`'s comment ("an authored row sits lexically inside its site; a
-  synthesized row shares its synthesis site"), the two comments saying a synthesized `@key` hangs off
-  the type's "causing authored site" (`graphql_type_directive.declaration_line` and
-  `graphitron_federation_key.source_name`),
+  synthesized row shares its synthesized site's inherited position"), the two comments saying a
+  synthesized `@key` hangs off the type's "causing authored site"
+  (`graphql_type_directive.declaration_line` and `graphitron_federation_key.source_name`),
   `graphitron_undecoded_argument.source_name`'s "authored applications always have one",
   `graphitron_connection`'s "the macro's spec, as authored", `SdlFactCapture`'s ordinal-counter
   javadoc ("place a synthesized application after every authored one"), and `MacroCaptureTest`'s
@@ -449,6 +552,15 @@ four `intent_` sites named in Implementation match none of the fixed phrases. Ru
 `effective` over those files. The fences above are what makes the wider grep readable, and the fourth
 one carries the bulk of the DDL's hits.
 
+`roadmap/` is deliberately outside that grep, the three sibling bodies being reached by Implementation
+instruction instead. Four other items use the retired pre-expansion sense in plan prose
+(`delivery-verdict-derives-from-the-store.md`, `lsp-reads-the-fact-store.md` at two sites, and
+`name-matching-stratum.md`), and one of those sites quotes the `intent_field_reference_discovery`
+comment this item rewrites, so the quotation goes stale here. They stay: a plan body is re-read when
+its own item runs, and sweeping plan prose for a vocabulary each item's implementation will restate
+anyway is churn rather than adoption. The three siblings are in because they restate *the frame* in
+the retired word, which is a different thing from using the retired noun.
+
 Deliberately *not* retired here, because they are relation and column names with their own scope: the
 three `intent_authored_*` views, and `graphitron_field_synthesis.authored_type_sdl`. The stratum reading
 predicts all four become unnecessary rather than merely misnamed, so renaming them now would be work
@@ -465,9 +577,10 @@ thrown away. They are listed in the sibling items that would retire them.
   prose is the shape the roster's own design argues for, and it would let a gate close the assignment
   the way the roster already closes the family list. It is a DDL change and a gate, so it is not this
   item; the prose carries the assignment meanwhile. Worth filing separately, and the assignment above
-  is what such a column would have to encode, including the two cases a plain per-family column cannot
-  hold: `build_warning_`, which the rule settles per resident, and a family whose stratum is the
-  destination its charter names rather than where its rows sit today.
+  is what such a column would have to encode, including the three cases a plain per-family column
+  cannot hold: `build_warning_`, which the rule settles per resident; `graphql_schema_error`, which it
+  settles per `stage` value; and a family whose stratum is the destination its charter names rather
+  than where its rows sit today.
 - Correcting `lint_finding` from a captured table to a derivation. The assignment above concludes that
   `lint_` is stratum two and that capturing its findings is the inverted assignment; acting on that
   moves rows, so it is a separate item exactly as the `CONNECTION` macro's correction is. Naming the
