@@ -1,8 +1,5 @@
 package no.sikt.graphitron.mcp;
 
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -163,22 +160,14 @@ final class McpWire {
 
     // ---- source-location wire shape ----
 
-    /** Maps a {@link CompletionData.SourceLocation} onto the {@code {uri, line, column}} wire shape. */
-    static Map<String, Object> location(CompletionData.SourceLocation loc) {
-        var m = new LinkedHashMap<String, Object>();
-        m.put("uri", loc.uri());
-        m.put("line", loc.line());
-        m.put("column", loc.column());
-        return m;
-    }
-
     /**
      * A source position as the store's transcription families record one: a {@code file:} URI and a
      * 1-based line and column.
      *
-     * <p>The same wire shape {@link #location} composes, reached from a different input. Every family
-     * that positions anything spells the position as a {@code source_name} plus a pair, so the
-     * conversion is one and it lives here rather than once per reader.
+     * <p>Every family that positions anything spells the position as a {@code source_name} plus a
+     * pair, so the conversion is one and it lives here rather than once per reader. It used to sit
+     * beside a second converter off the generator's own location type, whose last caller left with
+     * the projection readers.
      */
     record Position(String uri, int line, int column) {}
 
@@ -225,24 +214,15 @@ final class McpWire {
     // ---- snapshot availability / freshness axes ----
 
     /**
-     * Writes the live snapshot's two orthogonal axes onto a result so a reader can tell whether
-     * the projection it just read is current relative to the schema (the benign
-     * same-cadence story). Keyed {@code snapshotAvailability} / {@code snapshotFreshness} so the
-     * axes never collide with a tool's own payload fields. Exhaustive over the
-     * {@link LspSchemaSnapshot} sealed permits; a new arm forces a choice here.
+     * Writes the {@link SchemaLifecycle} axes onto a result so a reader can tell whether the rows it
+     * just read are current relative to the schema (the benign same-cadence story). Keyed
+     * {@code snapshotAvailability} / {@code snapshotFreshness} so the axes never collide with a
+     * tool's own payload fields, and the freshness key is omitted rather than null-valued where
+     * nothing has captured the graph.
      */
-    static void writeSnapshotAxes(Map<String, Object> fields, LspSchemaSnapshot snapshot) {
-        switch (snapshot) {
-            case LspSchemaSnapshot.Unavailable ignored -> fields.put("snapshotAvailability", "Unavailable");
-            case LspSchemaSnapshot.Built.Current ignored -> {
-                fields.put("snapshotAvailability", "Built");
-                fields.put("snapshotFreshness", "Current");
-            }
-            case LspSchemaSnapshot.Built.Previous ignored -> {
-                fields.put("snapshotAvailability", "Built");
-                fields.put("snapshotFreshness", "Previous");
-            }
-        }
+    static void writeSnapshotAxes(Map<String, Object> fields, SchemaLifecycle lifecycle) {
+        fields.put("snapshotAvailability", lifecycle.availability());
+        lifecycle.freshness().ifPresent(freshness -> fields.put("snapshotFreshness", freshness));
     }
 
     /** Puts {@code value} under {@code key} only when non-null; keeps absent fields out of the wire shape. */

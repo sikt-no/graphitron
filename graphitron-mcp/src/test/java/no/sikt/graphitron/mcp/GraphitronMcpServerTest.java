@@ -15,10 +15,6 @@ import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -104,12 +100,17 @@ class GraphitronMcpServerTest {
     }
 
     @Test
-    void statusToolIsAdvertisedAndReportsUnavailableByDefault() throws Exception {
-        // A fresh workspace has produced no build, so the snapshot defaults to Unavailable:
-        // the freshness axis is absent, not null-valued. That this tool is advertised at all is
-        // asserted where the whole advertised surface is named, in ServerInstructionsTest, rather
-        // than by a second hardcoded list here that would have to be edited twice.
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+    void statusToolIsAdvertisedAndReportsAGraphNothingHasCapturedAsUnavailable(@TempDir Path tmp)
+        throws Exception {
+        // The store holds a captured graph and the server is pointed at a different name, which is
+        // the pre-capture state: the anchor row is what availability turns on, so a graph with no
+        // anchor is Unavailable and the freshness axis is absent rather than null-valued. That this
+        // tool is advertised at all is asserted where the whole advertised surface is named, in
+        // ServerInstructionsTest, rather than by a second hardcoded list here that would have to be
+        // edited twice.
+        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: Int }");
+             var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null,
+                 null, fixture.handleFor("never-captured"), fixture.reader());
              var client = connect(server.port())) {
             client.initialize();
 
@@ -176,16 +177,13 @@ class GraphitronMcpServerTest {
     }
 
     @Test
-    void statusToolReflectsLiveBuiltCurrentSnapshot() throws Exception {
-        // Drive a successful build into the live workspace before the call: the same handle the
-        // server holds, so the tool reads Built/Current off it without any re-push.
-        var workspace = new Workspace();
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-        workspace.setBuildOutput(
-            new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), snapshot),
-            ValidationReport.empty());
-
-        try (var server = new GraphitronMcpServer(loopback(0), workspace);
+    void statusToolReportsACleanCaptureAsBuiltAndCurrent(@TempDir Path tmp) throws Exception {
+        // A capture that refused nothing: both SDL verdict relations are empty over this graph's
+        // partition, and that emptiness is the freshness axis. The relations are written on every
+        // pass, so it is "read clean" rather than "nothing looked yet".
+        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: Int }");
+             var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null,
+                 null, fixture.handle(), fixture.reader());
              var client = connect(server.port())) {
             client.initialize();
 
@@ -199,6 +197,70 @@ class GraphitronMcpServerTest {
                 .containsEntry("availability", "Built")
                 .containsEntry("freshness", "Current");
         }
+    }
+
+    /**
+     * The divergence this slice accepts rather than ports. A projection minted only on a successful
+     * build had nothing to report on a first pass that met a refusal, so the incumbent answered
+     * {@code Unavailable}; the store holds every fact the parseable sources yielded, so the answer is
+     * {@code Built} with the facts marked {@code Previous}. Both halves are real here: the surviving
+     * source's coordinates are in the store and the refused one left a verdict row.
+     */
+    @Test
+    void statusToolReportsARefusedNewestReadAsBuiltAndPrevious(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofRefusedSchema(tmp,
+                "type Query { film: Film }\ntype Film { title: String }\n",
+                "type Actor { name: String\n")) {
+            var result = GraphitronMcpServer.statusResult(fixture.handle());
+            var structured = structured(result);
+
+            assertThat(structured)
+                .containsEntry("toolsReady", true)
+                .containsEntry("availability", "Built")
+                .containsEntry("freshness", "Previous");
+            assertThat(firstLine(result)).contains("refused a source or the document");
+
+            // What Previous means, on a tool that carries a payload: the parseable source's
+            // coordinates answer, marked as the facts from before the refusal rather than withheld.
+            var schema = structured(schemaResult(fixture, Map.of()));
+            assertThat(schema)
+                .containsEntry("snapshotAvailability", "Built")
+                .containsEntry("snapshotFreshness", "Previous");
+            assertThat(typeRefs(schema)).contains("Film");
+        }
+    }
+
+    /**
+     * The other arm of the freshness derivation: a document-wide verdict rather than a refused source.
+     * Both sources parse here and the registry declines the second declaration of one type, so the
+     * axis is only {@code Previous} if it reads {@code graphql_schema_error} beside the syntax
+     * relation. One relation would have answered every case above and none of this one.
+     */
+    @Test
+    void statusToolReadsADocumentWideVerdictAsPreviousToo(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofRefusedSchema(tmp,
+                "type Query { film: Film }\ntype Film { title: String }\n",
+                "type Film { subtitle: String }\n")) {
+            assertThat(structured(GraphitronMcpServer.statusResult(fixture.handle())))
+                .containsEntry("availability", "Built")
+                .containsEntry("freshness", "Previous");
+        }
+    }
+
+    /**
+     * The handle-less arm, which every other store-backed surface answers with a refusal and this one
+     * does not: the call itself settles liveness, so {@code toolsReady} stands and the axes are
+     * omitted with the reason named. Reporting {@code Unavailable} would state a fact about a store
+     * this server cannot read.
+     */
+    @Test
+    void statusToolReportsLivenessWithoutTheAxesWhenItHoldsNoStore() {
+        var result = GraphitronMcpServer.statusResult(null);
+
+        assertThat(structured(result))
+            .containsEntry("toolsReady", true)
+            .doesNotContainKeys("availability", "freshness");
+        assertThat(firstLine(result)).contains("no fact store handle");
     }
 
     // ---- catalog.tables / catalog.describe ----
@@ -1172,7 +1234,7 @@ class GraphitronMcpServerTest {
     void schemaRefusesWithoutAStoreToRead() {
         // An empty answer would read as a schema declaring no types at all, which is the reading the
         // catalog and diagnostics tools refuse for the same reason.
-        var result = SchemaView.schemaResult(LspSchemaSnapshot.unavailable(), null, null, Map.of());
+        var result = SchemaView.schemaResult(null, null, Map.of());
         assertThat(result.isError()).isTrue();
         assertThat(firstLine(result)).contains("schema").contains("holds no fact store handle");
     }
@@ -1233,8 +1295,7 @@ class GraphitronMcpServerTest {
     private static McpSchema.CallToolResult schemaResult(
         StoreFixture fixture, Map<String, Object> args
     ) {
-        return SchemaView.schemaResult(LspSchemaSnapshot.unavailable(), fixture.handle(),
-            fixture.reader(), args);
+        return SchemaView.schemaResult(fixture.handle(), fixture.reader(), args);
     }
 
     /**

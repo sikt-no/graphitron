@@ -3,7 +3,6 @@ package no.sikt.graphitron.mcp;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -41,13 +40,14 @@ final class SchemaView {
      * in it. A store present and holding nothing is a different thing and answers, that being the
      * pre-capture state a consumer is genuinely in before their first build.
      *
-     * <p>The snapshot's two axes ride along rather than gating the answer, which is the diagnostics
-     * tools' arrangement as well. The store holds every fact the parseable sources yielded whatever the
-     * newest parse did, so answering as well as the facts allow and reporting how current they are is
-     * strictly better than declining to answer at all.
+     * <p>The {@link SchemaLifecycle} axes ride along rather than gating the answer, which is the
+     * diagnostics tools' arrangement as well. The store holds every fact the parseable sources yielded
+     * whatever the newest parse did, so answering as well as the facts allow and reporting how current
+     * they are is strictly better than declining to answer at all. They are read with the payload
+     * rather than beside it; {@link SchemaQueries#read} says why.
      */
     static McpSchema.CallToolResult schemaResult(
-        LspSchemaSnapshot snapshot, StoreHandle store, StoreReader reader, Map<String, Object> args
+        StoreHandle store, StoreReader reader, Map<String, Object> args
     ) {
         if (store == null || reader == null) {
             return DiagnosticFacets.refusal("schema");
@@ -61,7 +61,7 @@ final class SchemaView {
         var page = answer.page();
 
         var fields = new LinkedHashMap<String, Object>();
-        McpWire.writeSnapshotAxes(fields, snapshot);
+        McpWire.writeSnapshotAxes(fields, answer.lifecycle());
         var types = new ArrayList<Map<String, Object>>(page.types().size());
         for (var type : page.types()) {
             types.add(mapType(type, answer.fieldsByType().getOrDefault(type.typeName(), List.of())));

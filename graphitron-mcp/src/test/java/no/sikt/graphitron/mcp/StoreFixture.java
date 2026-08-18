@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
 import java.io.IOException;
@@ -144,6 +145,41 @@ public final class StoreFixture implements AutoCloseable {
         var fixture = new StoreFixture(store, GRAPH, directory);
         fixture.capture(sdl, JOOQ_PACKAGE, false, codeFixtureCensus());
         return fixture;
+    }
+
+    /**
+     * A graph whose newest read refused something: the first source parses and is transcribed, the
+     * second is spelled so a stage objects to it, whether the parser (a source it cannot read) or the
+     * registry (a declaration it will not admit beside the first one's).
+     *
+     * <p>The state the {@code Previous} freshness axis is about, reached the way an author reaches it,
+     * by leaving a file mid-edit. Both halves have to be real for the axis to mean anything: the
+     * refusal row is what makes the read not-clean, and the surviving source's coordinates are what
+     * the tools go on answering from while it is.
+     *
+     * <p>Through {@link RewriteSchemaLoader#parsePerSource} rather than {@code load}, because a
+     * refusal is what this fixture is for and {@code load} is the entry point whose contract is to
+     * throw on one.
+     */
+    public static StoreFixture ofRefusedSchema(Path directory, String sdl, String refusedSdl) {
+        var store = GraphitronModelStore.open();
+        var fixture = new StoreFixture(store, GRAPH, directory);
+        fixture.captureRefused(sdl, refusedSdl);
+        return fixture;
+    }
+
+    private void captureRefused(String sdl, String refusedSdl) {
+        List<Path> files = List.of(write(graphName, sdl), write(graphName + "-refused", refusedSdl));
+        var parse = RewriteSchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
+        if (parse.failures().isEmpty() && parse.registryErrors().isEmpty()) {
+            throw new AssertionError("nothing objected to the second source; this fixture's whole "
+                + "subject is a read that refused something");
+        }
+        FactCapture.capture(store.dsl(), false,
+            new FactCapture.GraphIdentity(graphName, directory), FactCapture.SubjectConfig.none(),
+            parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
+            SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList()),
+            new JooqCatalog(JOOQ_PACKAGE), List.of(), new NodeDeclaration(null));
     }
 
     /**

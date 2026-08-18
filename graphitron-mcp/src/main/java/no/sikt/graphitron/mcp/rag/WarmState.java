@@ -2,8 +2,9 @@ package no.sikt.graphitron.mcp.rag;
 
 /**
  * The warm lifecycle of a RAG handle: a value resolves the prose
- * "loading / ready / failed" into a typed shape, mirroring the exhaustive {@code LspSchemaSnapshot}
- * switch posture. "Bind sync, warm async, never block the dev loop" is the cross-cutting
+ * "loading / ready / failed" into a typed shape, so a consumer switches exhaustively over the arms
+ * instead of asking a boolean and re-deriving the rest. "Bind sync, warm async, never block the dev
+ * loop" is the cross-cutting
  * principle this slice owns the state machine for; the consuming tools report through it.
  *
  * <p><strong>Generic over the warmed handle</strong> because one harness drives two distinct warms:

@@ -17,6 +17,6 @@ Three things hold across these tools:
 
 - A paged result's first line summarises the whole set, including the total before paging. Read it before you page or post-process: the count you want is usually already there.
 - IDs are stable and shared. A schema-qualified SQL table name, a `Type.field` coordinate, and a `fqcn#method/arity` method ref select the same thing in every tool that takes one, so follow the ids out of one result into the next call instead of searching again by name.
-- Every tool reads the live build, and `schema`, `diagnostics`, and `status` report whether the build behind their answer is current. After a save, re-call rather than reasoning about whether an earlier answer went stale.
+- Every tool reads what the dev session captured on its latest pass, and `schema`, `diagnostics`, and `status` report whether that pass read the schema clean or refused part of it, in which case the answer is the last clean facts rather than nothing. After a save, re-call rather than reasoning about whether an earlier answer went stale.
 
 Run the `about` prompt for an explainer of the project and the dev loop. The graphitron documentation site is the reference for the directive vocabulary, the generation pipeline, and the schema conventions.

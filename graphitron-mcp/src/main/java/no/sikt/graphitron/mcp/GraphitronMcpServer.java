@@ -15,7 +15,6 @@ import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
@@ -41,7 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * servlet-based Streamable HTTP transport in an embedded Jetty {@link Server} bound on a
  * loopback address. It serves the ambient {@code instructions} string returned in the MCP
  * {@code initialize} handshake, a single argument-less {@code about} prompt, and tools and
- * resources that read the live generator model.
+ * resources that read the session's fact store.
  *
  * <p>Mirrors the sibling {@code DevServer}'s transport-glue shape: one instance per Mojo
  * invocation, {@link AutoCloseable}, constructed with an {@link InetSocketAddress} so production
@@ -50,10 +49,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * instructions are composed from two of those resources so the {@code execute} routing sentence
  * tracks that tool's conditional registration; the composition is fixed for the server's lifetime.
  *
- * <p>The server holds the same live {@link Workspace} handle the LSP {@code DevServer}
- * holds: the one instance {@code DevMojo} builds and the schema / classpath / source watchers
- * mutate in place on every save and recompile. Tools read off that shared reference on every
- * call, so each call observes the latest build state without any new trigger or refresh path.
+ * <p>Every tool answers from the fact store, reading the session's handle or its reader on each
+ * call, so each call observes what the latest capture committed without any new trigger or refresh
+ * path. The {@link Workspace} the LSP {@code DevServer} holds is still a constructor parameter and
+ * no tool reads it any more: the last two readers of a generator projection were the lifecycle axes
+ * and the directive vocabulary, and both are queries now.
  *
  * <p>The MCP spec serves the Streamable HTTP transport over a single endpoint. The provider
  * matches an incoming request by {@code getRequestURI().equals("/mcp")}, so the servlet is
@@ -200,11 +200,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
         // (the one conditional entry, the execute tool, is present exactly when a dev database is
         // configured), so they stay false even though the tools and resource read live state.
         var tools = new java.util.ArrayList<>(List.of(
-            statusTool(workspace),
+            statusTool(storeHandle),
             catalogTablesTool(storeHandle), catalogDescribeTool(storeHandle, storeReader),
             codeTool(storeHandle, storeReader),
-            schemaTool(workspace, storeHandle, storeReader), diagnosticsTool(workspace, storeHandle),
-            diagnosticsAggregateTool(workspace, storeHandle),
+            schemaTool(storeHandle, storeReader), diagnosticsTool(storeHandle),
+            diagnosticsAggregateTool(storeHandle),
             docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader)));
         if (executeConfig != null) {
             tools.add(new ExecuteTool(executeConfig).specification());
@@ -319,58 +319,70 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The liveness {@code status} tool: takes no arguments and reads {@link Workspace#snapshot()}
-     * off the live handle on every call, so the answer reflects the latest build state.
+     * The liveness {@code status} tool: takes no arguments and reads the session graph's lifecycle
+     * axes on every call, so the answer reflects the latest capture.
      *
-     * <p>The snapshot is reported on its two orthogonal axes rather than a flattened tri-state:
+     * <p>Reported on two orthogonal axes rather than a flattened tri-state:
      * {@code availability} ({@code Built} vs {@code Unavailable}) and {@code freshness}
-     * ({@code Current} vs {@code Previous}, absent when unavailable). The two fields are mapped
-     * exhaustively off the {@link LspSchemaSnapshot} sealed permits, so the MCP view never
-     * re-derives a fork the model owns. Domain counts (tables, references, diagnostics) are
-     * deliberately out of scope: the structured tools own those wire schemas.
+     * ({@code Current} vs {@code Previous}, absent when unavailable). {@link SchemaLifecycle} owns
+     * both derivations and every tool reporting them reads it, so the axes cannot fork between the
+     * tool whose whole subject they are and the tools that carry them alongside a payload. Domain
+     * counts (tables, references, diagnostics) are deliberately out of scope: the structured tools
+     * own those wire schemas.
      */
-    private static McpServerFeatures.SyncToolSpecification statusTool(Workspace workspace) {
+    private static McpServerFeatures.SyncToolSpecification statusTool(StoreHandle storeHandle) {
         // The (name, inputSchema) builder overload is the non-deprecated entry point; the explicit
         // empty object schema is the no-argument input the MCP spec requires every tool to carry.
         var tool = McpSchema.Tool.builder("status", Map.of("type", "object", "properties", Map.of()))
             .title("Dev-loop status")
-            .description("Reports graphitron:dev MCP server liveness plus the live schema-snapshot "
-                + "state on two axes: availability (Built / Unavailable) and, when built, freshness "
-                + "(Current / Previous). Takes no arguments.")
+            .description("Reports graphitron:dev MCP server liveness plus the state of this graph's "
+                + "captured facts on two axes: availability (Built once anything has captured the "
+                + "graph, Unavailable before) and, when built, freshness (Current when the newest "
+                + "read of the schema refused nothing, Previous when it refused and the tools are "
+                + "answering from the last clean facts). Takes no arguments.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> statusResult(workspace.snapshot()))
+            .callHandler((exchange, request) -> statusResult(storeHandle))
             .build();
     }
 
     /**
-     * Maps the live snapshot to the {@code status} tool result. Exhaustive over the
-     * {@link LspSchemaSnapshot} sealed permits so a new freshness/availability arm forces a
-     * compile-time choice here rather than silently flattening. {@code freshness} is omitted
-     * (not null-valued) on the unavailable arm: there is no freshness axis before the first build.
+     * Answers the {@code status} call from the graph's lifecycle axes. {@code freshness} is omitted
+     * (not null-valued) where nothing has captured the graph: there is no freshness of facts that
+     * are not there.
+     *
+     * <p>The handle-less boot is the one arm this tool does not share with its store-backed
+     * siblings, and it does not refuse. Liveness is the question a caller asks {@code status} first
+     * and this call answering at all has settled it, so {@code toolsReady} stands and the axes are
+     * omitted with the reason named. Reporting {@code Unavailable} instead would state a fact about
+     * the store, that nothing has captured this graph, on the strength of having no store to ask.
      */
-    private static McpSchema.CallToolResult statusResult(LspSchemaSnapshot snapshot) {
+    static McpSchema.CallToolResult statusResult(StoreHandle storeHandle) {
         var fields = new LinkedHashMap<String, Object>();
         fields.put("toolsReady", true);
-        String summary = switch (snapshot) {
-            case LspSchemaSnapshot.Unavailable ignored -> {
-                fields.put("availability", "Unavailable");
-                yield "graphitron:dev MCP server live; schema snapshot Unavailable "
-                    + "(no successful build yet).";
-            }
-            case LspSchemaSnapshot.Built.Current ignored -> {
-                fields.put("availability", "Built");
-                fields.put("freshness", "Current");
-                yield "graphitron:dev MCP server live; schema snapshot Built/Current.";
-            }
-            case LspSchemaSnapshot.Built.Previous ignored -> {
-                fields.put("availability", "Built");
-                fields.put("freshness", "Previous");
-                yield "graphitron:dev MCP server live; schema snapshot Built/Previous "
-                    + "(last good parse; latest edit failed to parse).";
-            }
-        };
+        if (storeHandle == null) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent("graphitron:dev MCP server live; this server holds no fact store "
+                    + "handle, so the schema axes cannot be read. A dev session (mvn graphitron:dev) "
+                    + "always wires its session store handle in.")
+                .structuredContent(Map.copyOf(fields))
+                .build();
+        }
+        var lifecycle = SchemaLifecycle.read(storeHandle);
+        fields.put("availability", lifecycle.availability());
+        lifecycle.freshness().ifPresent(freshness -> fields.put("freshness", freshness));
+        String gloss;
+        if (!lifecycle.captured()) {
+            gloss = " (nothing has captured this graph yet).";
+        } else if (lifecycle.refused()) {
+            gloss = " (the newest read of the schema refused a source or the document; the facts the "
+                + "parseable sources yielded are what the tools answer from).";
+        } else {
+            gloss = ".";
+        }
+        String summary = "graphitron:dev MCP server live; schema " + lifecycle.availability()
+            + lifecycle.freshness().map(freshness -> "/" + freshness).orElse("") + gloss;
         return McpSchema.CallToolResult.builder()
             .addTextContent(summary)
             .structuredContent(Map.copyOf(fields))
@@ -750,11 +762,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * site it is declared at.
      *
      * <p>The reader as well as the handle, an answer here being one statement per grain. The
-     * {@link Workspace} is left for the snapshot's two axes alone, which say how current the facts behind
-     * the answer are without deciding whether there is one.
+     * lifecycle axes are one more statement inside the same read, and they say how current the facts
+     * behind the answer are without deciding whether there is one.
      */
     private static McpServerFeatures.SyncToolSpecification schemaTool(
-        Workspace workspace, StoreHandle storeHandle, StoreReader storeReader
+        StoreHandle storeHandle, StoreReader storeReader
     ) {
         var tool = McpSchema.Tool.builder("schema", Map.of(
                 "type", "object",
@@ -779,8 +791,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> SchemaView.schemaResult(
-                workspace.snapshot(), storeHandle, storeReader, request.arguments()))
+            .callHandler((exchange, request) ->
+                SchemaView.schemaResult(storeHandle, storeReader, request.arguments()))
             .build();
     }
 
@@ -789,14 +801,12 @@ public final class GraphitronMcpServer implements AutoCloseable {
     /**
      * {@code diagnostics}: the current diagnostics as a projection of the fact store's
      * {@code diagnostic} view, read through the session's {@link StoreHandle} and scoped to its
-     * graph, with the live snapshot's availability / freshness reported alongside so an agent
-     * can tell whether the diagnostics are current relative to the schema it just read. The
+     * graph, with the {@link SchemaLifecycle} axes reported alongside so an agent can tell
+     * whether the diagnostics are current relative to the schema it just read. The
      * {@code where} filter shares {@code diagnostics.aggregate}'s dimension vocabulary and
      * null-safe translation, so an aggregate group's key is this tool's exact drill-down.
      */
-    private static McpServerFeatures.SyncToolSpecification diagnosticsTool(
-        Workspace workspace, StoreHandle storeHandle
-    ) {
+    private static McpServerFeatures.SyncToolSpecification diagnosticsTool(StoreHandle storeHandle) {
         var tool = McpSchema.Tool.builder("diagnostics", Map.of(
                 "type", "object",
                 "properties", Map.of(
@@ -827,8 +837,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> DiagnosticsTool.diagnosticsResult(
-                storeHandle, workspace.snapshot(), request.arguments()))
+            .callHandler((exchange, request) ->
+                DiagnosticsTool.diagnosticsResult(storeHandle, request.arguments()))
             .build();
     }
 
@@ -841,7 +851,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * documentation cannot drift from the enum.
      */
     private static McpServerFeatures.SyncToolSpecification diagnosticsAggregateTool(
-        Workspace workspace, StoreHandle storeHandle
+        StoreHandle storeHandle
     ) {
         var tool = McpSchema.Tool.builder("diagnostics.aggregate", Map.of(
                 "type", "object",
@@ -883,8 +893,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> DiagnosticFacets.aggregateResult(
-                storeHandle, workspace.snapshot(), request.arguments()))
+            .callHandler((exchange, request) ->
+                DiagnosticFacets.aggregateResult(storeHandle, request.arguments()))
             .build();
     }
 

@@ -1039,8 +1039,38 @@ anyway. The wire shape is unchanged: `statusResult` and `McpWire.writeSnapshotAx
 two fields from the query's answer, `toolsReady` stays the liveness bit no relation can carry (a
 tool that answers has proved it), and the `LspSchemaSnapshot` import goes the way every other
 projection import went, replaced by a query rather than by a value. The exhaustive switches over
-the sealed permits retire with the type; the three cases in the tests section are what pins the
-wire instead.
+the sealed permits retire with the type; the cases in the tests section are what pins the wire
+instead.
+
+**Both derivations land in one type, `SchemaLifecycle`, rather than at the four call sites.** One
+statement carrying three `EXISTS` predicates and nothing counted, since the axes turn on whether a
+partition is empty. It also owns the wire vocabulary, which the plan had left where it was: the four
+words used to be spelled in `statusResult`'s switch arms and again in `writeSnapshotAxes`'s, and the
+tool whose whole subject the axes are is exactly the one that must not be able to disagree with the
+tools that carry them beside a payload.
+
+`schema` reads them inside its reader transaction rather than beside it, which the plan's
+"same helper, four call sites" framing did not settle. `SchemaQueries.read` already opens one
+transaction so a page and its fields cannot come from different commits, and axes read after it
+would have had the same defect one level up: a document reported read clean beside coordinates from
+the read that refused it. So the axes ride in `SchemaAnswer` and the helper renders what the answer
+carries. The two diagnostics tools read off the session handle beside their own query, as they
+already do for everything else.
+
+**A fifth arm the plan did not name: `status` on a server holding no handle.** Every other
+store-backed surface refuses there, and this one must not, because the call answering at all is the
+liveness the caller asked for. So `toolsReady` stands, the axes are omitted, and the text names the
+missing handle. `Unavailable` would have been the tempting reuse and it is a lie of a specific kind:
+it states a fact about the store, that nothing has captured this graph, on the strength of having no
+store to ask.
+
+**What availability actually reads, stated because it is broader than "a capture has run".** The
+anchor is also minted by the diagnostics loaders through `OwnedGraphPartition`, so a session that
+recorded javac diagnostics under a graph no schema capture ever reached reads `Built`. Left as it
+is rather than sharpened to an SDL-specific predicate: the store does hold that graph and its
+compile diagnostics are readable, so `Built` is the anchor's own meaning, and the freshness axis is
+the one that speaks about the schema read. `DiagnosticsToolCompileSourceTest` is precisely that
+state and its axes now say so.
 
 One behavioural divergence is accepted rather than ported. A first capture that met a refusal
 reported `Unavailable` before, because no snapshot object had ever been built; it reports `Built` /
@@ -1063,10 +1093,21 @@ What `valueOf` adds beyond the transform is validation, and the store already pe
 time on the model's own closed-CHECK convention. So the enum was standing in for a constraint the
 DDL states. `graphitron-mcp` renders the stored kind itself, and the `diagnostic.kind` column
 comment (`RejectionKind.name()` on rejection-bearing rows, `NULL` elsewhere) is what the rendering
-is written against. The wire is unchanged.
+is written against. The wire is unchanged in every locale but one, and there it is repaired: the
+enum's own transform lower-cased with the default locale, so a Turkish-locale JVM rendered
+`INVALID_SCHEMA` with a dotless i. The transform here names the root locale.
 
-**Leaves behind.** Nothing. `Workspace` has no reader left in `graphitron-mcp`, and no main source
-names a type from `graphitron`.
+**One more deletion the plan missed, and slice 10's guard would have caught it too late.**
+`McpWire.location` mapped the generator's own location type onto the wire shape and lost its last
+caller when the projection readers left, so it sat as the module's remaining `CompletionData`
+reference with nothing calling it. Deleted here, where the leaves-behind claim below is made, rather
+than found by the import scan two slices after it went dead. The `WarmState` javadoc that described
+its own arms by comparison to `LspSchemaSnapshot` is rewritten to state the posture directly; a
+`{@code}` mention needs no import, which is exactly why it survived every slice that moved an import.
+
+**Leaves behind.** Nothing readable. `Workspace` has no reader left in `graphitron-mcp` and no main
+source names a type from `graphitron`; the constructor parameter itself is still there, unread, and
+goes with slice 10's pom edge, which is what forces it.
 
 ## Slice 10: the edge deletes
 
@@ -1430,6 +1471,16 @@ them remove a surface rather than change one, and they lead because they are the
   them. The registry hands capture its definitions in parse order, which puts every bundled one
   first; a vocabulary in that order reads as two vocabularies, which is the distinction this slice
   exists to stop drawing.
+* **`status` reports on the graph's captured facts, not on a build the process is holding.** Two
+  answers change for a consumer. A first read that refused something reports `Built` / `Previous`
+  where it reported `Unavailable`, the facts the parseable sources yielded being genuinely there. And
+  a session that recorded compile diagnostics before any schema capture reports `Built` / `Current`
+  rather than `Unavailable`, because the anchor is what availability reads and the freshness axis is
+  the one about the schema. The four wire words are unchanged and so are the keys.
+* **`status` on a server with no store handle omits the axes** and reports liveness alone, naming the
+  missing handle in its text. The one store-backed surface that answers rather than refusing there,
+  because the call answering is the liveness the caller asked for; `Unavailable` would state a fact
+  about a store the server cannot read.
 * **A missing handle refuses instead of answering empty.** The server can be built without a store
   handle; the diagnostics tools already refuse per call there, on the grounds that an empty answer
   reads as a clean schema. An empty catalog reads as a database with no tables, so the catalog
@@ -1474,9 +1525,9 @@ reached by the `{@link}` gate. `graphitron-mcp/pom.xml` carries a block explaini
 edge on `graphitron-lsp` exists because "the server now holds the live Workspace and reads
 `LspSchemaSnapshot` off it", along with the acyclicity argument that justified it; the dependency it
 explains is the one being deleted, so the block is rewritten to state the allowlist and why the
-module needs only the two. And `GraphitronMcpServer`'s class javadoc describes its tools and
-resources as reading "the live generator model", which after this item they do not: they read the
-store and three values the host hands in.
+module needs only the two. `GraphitronMcpServer`'s class javadoc described its tools and resources
+as reading "the live generator model", which stopped being true of the last of them in slice 9 and
+was corrected there rather than left standing for this one: it is the store they read.
 
 Three doc surfaces state where the tools read from and change with them.
 `docs/architecture/how-to/dev-loop-internals.adoc` says the MCP tools are backed by the warm
@@ -1729,15 +1780,30 @@ by contract, whatever this substrate does today, and a cheat-sheet whose argumen
 reordered between backends would be a real defect. What cannot be pinned is left unpinned rather than
 pinned against a coincidence.
 
-**Slice 9, `status` and the diagnostics axes.** Three cases, one per arm, driven through the
-store: a pre-capture store answers `Unavailable`, a clean capture answers `Built` / `Current`, and
-a capture whose source set includes one refused file answers `Built` / `Previous` off the refusal
-rows. The third case is the one the fixture has to earn, since `StoreBackedBuild`'s default
-sources all parse; whether the fixture can run a capture over a deliberately broken source is a
-substrate check at pickup (the verdict stratum is written on every pass, but the fixture drives
-`buildOutput`, whose refusal behaviour is the sibling item's ground). The divergence this case
-pins, `Built` / `Previous` where the incumbent said `Unavailable` on a first failed parse, is the
-slice's stated behaviour rather than a regression.
+**Slice 9, `status` and the diagnostics axes.** Five cases, driven through the store: a graph with
+no anchor answers `Unavailable` with the freshness key absent, a clean capture answers `Built` /
+`Current`, a capture whose source set includes one refused file answers `Built` / `Previous`, a
+capture the registry refused a duplicate declaration in answers the same off the *other* refusal
+relation, and a server holding no handle answers liveness with the axes omitted. The fourth exists
+because one relation would have answered every other case: freshness is an `OR` over two, and only a
+document-wide verdict distinguishes them. The `Previous` case also reads the `schema` tool, which is
+what the axis is a claim about: the parseable source's coordinates come back, marked as the facts
+from before the refusal rather than withheld. That divergence, `Built` / `Previous` where the
+incumbent said `Unavailable` on a first failed parse, is the slice's stated behaviour rather than a
+regression.
+
+The substrate question the earlier reading flagged is answered, and the fixture is cheaper than
+feared. `FactCapture.capture` has an overload taking `SdlVerdicts`, so `StoreFixture.ofRefusedSchema`
+writes two sources, parses them with `RewriteSchemaLoader.parsePerSource` (rather than `load`, whose
+contract is to throw on exactly what this fixture is for), and hands the real parse's failures and
+registry errors to the real writer. No build is driven and no row is hand-inserted: the refusal rows
+are production's, and both halves of the state are real, the surviving source's coordinates included.
+
+Three mutation checks, each caught by the case meant to catch it and no other: dropping the
+`graphql_schema_error` half fails only the document-verdict case, neutering the
+`graphql_syntax_error` half fails only the refused-source case, and dropping the graph filter on the
+anchor read fails only the uncaptured-graph case, a store holding any captured graph otherwise
+answering `Built` for a name nothing ever wrote.
 
 **The item's own cases**, which belong to no single tool.
 
@@ -1982,8 +2048,10 @@ is the kind that survives in prose long after the code goes, so it leads.
   same two every other tool reports under `snapshot`-prefixed names, and they never described the
   answer's own availability
 * `CodeQueries.Position` as a type the `code` reader owns. A store-read source position is one wire
-  shape reached from one kind of triple, so it sits in `McpWire` beside the projection-fed spelling and
-  both readers compose it there
+  shape reached from one kind of triple, so it sits in `McpWire`, which is where every reader composes
+  it. Written first as sitting "beside the projection-fed spelling", and that spelling
+  (`McpWire.location`, over the generator's own location type) is retired vocabulary too: its last
+  caller left with the projection readers and the position conversion is one, not a pair
 * "several queries in one read transaction" as the shape of an answer, with the multi-query tearing
   argument that justified it, the `FkId` grouping key, the `Keys` pair record, and "folding the rows"
   as a step a reader has. What replaces all of it is one nested projection. The reader's justification
@@ -2051,6 +2119,16 @@ is the kind that survives in prose long after the code goes, so it leads.
 * the pom comment's justification of the compile edge on `graphitron-lsp`, with "the server now
   holds the live Workspace" as the reason for it and the acyclicity argument that made it safe;
   there is no edge left for either to be about
+* "the snapshot" as the subject of the two axes, in every spelling that made them a value's arms
+  rather than a partition's state: "the live snapshot's availability", "reflects the live `Workspace`
+  snapshot state", and "no successful build yet" as what `Unavailable` reports. The keys keep their
+  `snapshot`-prefixed names, the wire being unchanged, and what they report is a graph's anchor and
+  its refusal rows
+* `WarmState`'s framing of its own arms as "mirroring the exhaustive `LspSchemaSnapshot` switch
+  posture". A cross-module comparison in a `{@code}` mention, which is how it outlived every slice
+  that moved an import
+* "Dev-loop status (ports, warm state)" as the manual's description of the `status` tool. It named
+  two things the result never carried, and the two it does carry are now the whole of the entry
 
 ## Scope boundary
 

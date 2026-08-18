@@ -2,7 +2,6 @@ package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -259,22 +258,20 @@ final class DiagnosticFacets {
 
     // ---- the aggregate ----
 
-    static McpSchema.CallToolResult aggregateResult(
-        StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
-    ) {
+    static McpSchema.CallToolResult aggregateResult(StoreHandle store, Map<String, Object> args) {
         if (store == null) {
             return refusal("diagnostics.aggregate");
         }
         try {
-            return aggregate(store.dsl(), store.graphName(), snapshot, args);
+            return aggregate(store, args);
         } catch (BadRequest e) {
             return error("diagnostics.aggregate: " + e.getMessage());
         }
     }
 
-    private static McpSchema.CallToolResult aggregate(
-        DSLContext dsl, String graphName, LspSchemaSnapshot snapshot, Map<String, Object> args
-    ) {
+    private static McpSchema.CallToolResult aggregate(StoreHandle store, Map<String, Object> args) {
+        DSLContext dsl = store.dsl();
+        String graphName = store.graphName();
         List<Dimension> dims = groupByDimensions(args);
         boolean preset = dims == TRIAGE_PRESET;
         List<Condition> base = conditions(graphName, args);
@@ -353,7 +350,7 @@ final class DiagnosticFacets {
         fields.put("totalGroups", totalGroups);
         fields.put("elidedGroups", elidedGroups);
         fields.put("elidedCount", elidedCount);
-        McpWire.writeSnapshotAxes(fields, snapshot);
+        McpWire.writeSnapshotAxes(fields, SchemaLifecycle.read(store));
 
         String summary = summarize(dsl, base, dims, preset, total, totalGroups, groups.size(),
             elidedGroups, elidedCount);

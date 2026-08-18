@@ -66,7 +66,7 @@ A set of **tools** the agent calls to answer questions:
 | Counts those same diagnostics grouped by dimensions you choose (what kind of error, which attempted name, which file or directory) instead of listing them. On a schema mid-migration this answers "what is broken, in what proportion" in one small result, and each group's key feeds back into `diagnostics` to read just that group.
 
 | `status`
-| Dev-loop status (ports, warm state).
+| Whether the dev-loop tools are answering, plus how the facts behind them stand: whether anything has captured this module yet, and whether the newest read of your schema refused a file. When it did, the other tools go on answering from the last clean read rather than falling silent, and this is where you see that they are.
 
 | `execute`
 | Runs a GraphQL query or mutation against your generated resolvers in-process, on the dev database you configure, and returns exactly what the query returns. Mutations always roll back. Appears only when a dev database is configured; see xref:#execute-tool[Run a query without an app server] below.

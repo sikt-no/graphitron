@@ -3,10 +3,7 @@ package no.sikt.graphitron.mcp;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.tables.records.DiagnosticRecord;
-import no.sikt.graphitron.rewrite.RejectionKind;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.jooq.Condition;
-import org.jooq.DSLContext;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,8 +29,8 @@ import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
  *
  * <p>Reads go through the session's store handle and are scoped to the session's graph; a
  * server booted without the handle refuses rather than answering an empty list that would read
- * as a clean schema. Reports the live snapshot's availability / freshness axes alongside, so an
- * agent can tell whether the diagnostics are current relative to the schema it just read.
+ * as a clean schema. Reports the {@link SchemaLifecycle} axes alongside, so an agent can tell
+ * whether the diagnostics are current relative to the schema it just read.
  */
 final class DiagnosticsTool {
 
@@ -42,22 +39,20 @@ final class DiagnosticsTool {
     /** Default page size: diagnostics can be large on a broken schema, so they page like the rest. */
     static final int DEFAULT_LIMIT = 100;
 
-    static McpSchema.CallToolResult diagnosticsResult(
-        StoreHandle store, LspSchemaSnapshot snapshot, Map<String, Object> args
-    ) {
+    static McpSchema.CallToolResult diagnosticsResult(StoreHandle store, Map<String, Object> args) {
         if (store == null) {
             return DiagnosticFacets.refusal("diagnostics");
         }
         try {
-            return list(store.dsl(), store.graphName(), snapshot, args);
+            return list(store, args);
         } catch (DiagnosticFacets.BadRequest e) {
             return DiagnosticFacets.error("diagnostics: " + e.getMessage());
         }
     }
 
-    private static McpSchema.CallToolResult list(
-        DSLContext dsl, String graphName, LspSchemaSnapshot snapshot, Map<String, Object> args
-    ) {
+    private static McpSchema.CallToolResult list(StoreHandle store, Map<String, Object> args) {
+        var dsl = store.dsl();
+        String graphName = store.graphName();
         Optional<String> severity = McpWire.stringArg(args, "severity");
         Optional<String> coordinate = McpWire.stringArg(args, "coordinate");
         List<Condition> conditions = DiagnosticFacets.conditions(graphName, args);
@@ -79,7 +74,7 @@ final class DiagnosticsTool {
         var fields = new LinkedHashMap<String, Object>();
         fields.put("diagnostics", paged.items());
         paged.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
-        McpWire.writeSnapshotAxes(fields, snapshot);
+        McpWire.writeSnapshotAxes(fields, SchemaLifecycle.read(store));
 
         String summary = "diagnostics: " + entries.size() + " entr(ies)"
             + severity.map(s -> " of severity '" + s + "'").orElse("")
@@ -94,11 +89,17 @@ final class DiagnosticsTool {
 
     /**
      * Maps one view row onto the wire entry. The shape is the tool's shipped vocabulary
-     * unchanged: {@code rejectionKind} renders the stored {@link RejectionKind} name in its
-     * kebab-case display form and appears only on rejection-bearing rows, {@code lintRule} only
-     * on lint rows, and the location (the view's canonical file URI plus its 1-based position
-     * mapped to the 0-based wire shape every goto-definition consumer reads) only when the row
-     * has one.
+     * unchanged: {@code rejectionKind} renders the stored kind in its kebab-case display form and
+     * appears only on rejection-bearing rows, {@code lintRule} only on lint rows, and the location
+     * (the view's canonical file URI plus its 1-based position mapped to the 0-based wire shape
+     * every goto-definition consumer reads) only when the row has one.
+     *
+     * <p>The kind is transformed rather than parsed into an enum first. Parsing added validation the
+     * store performs at write time, the {@code rejection_validation_error.kind} column carrying a
+     * closed {@code CHECK} over exactly the three values, so the whole of what the enum contributed
+     * to this wire was lower-casing a stored name and swapping underscores for hyphens. Lower-cased
+     * in the root locale, where the enum's own transform used the default one: on a Turkish-locale
+     * JVM {@code INVALID_SCHEMA} came out with a dotless i.
      */
     private static Map<String, Object> entry(DiagnosticRecord row) {
         var entry = new LinkedHashMap<String, Object>();
@@ -107,7 +108,7 @@ final class DiagnosticsTool {
         McpWire.putIfNotNull(entry, "coordinate", row.getCoordinate());
         entry.put("message", row.getMessage());
         if (row.getKind() != null) {
-            entry.put("rejectionKind", RejectionKind.valueOf(row.getKind()).displayName());
+            entry.put("rejectionKind", row.getKind().toLowerCase(Locale.ROOT).replace('_', '-'));
         }
         McpWire.putIfNotNull(entry, "lintRule", row.getLintRule());
         if (row.getFile() != null) {

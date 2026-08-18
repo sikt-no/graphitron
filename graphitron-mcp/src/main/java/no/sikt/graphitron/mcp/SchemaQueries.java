@@ -341,16 +341,23 @@ final class SchemaQueries {
      * emptiness being the same answer to "what fields does this type have" and the map's own
      * {@code getOrDefault} being where the two meet.
      */
-    record SchemaAnswer(TypePage page, Map<String, List<FieldEntry>> fieldsByType) {}
+    record SchemaAnswer(
+        TypePage page, Map<String, List<FieldEntry>> fieldsByType, SchemaLifecycle lifecycle
+    ) {}
 
     /**
-     * Reads one page of the graph's types and the fields of exactly the types on it.
+     * Reads one page of the graph's types, the fields of exactly the types on it, and the lifecycle
+     * axes the answer is reported under.
      *
      * <p>Through {@code reader} rather than the handle the single-query tools use, for the reason every
      * multi-statement read here takes one: a second statement on the session writer's connection is a
      * savepoint rather than a transaction boundary, so a capture commit could land between the page and
      * its fields and the fields would come back for a schema the page no longer describes. A reader's
      * own connection makes the pairing structural.
+     *
+     * <p>The axes are read inside the same transaction, for that same reason: axes off a later commit
+     * could report a document read clean beside coordinates from the read that refused it, which is
+     * the one disagreement the two halves of this answer must not be able to have.
      *
      * @param typeFilter narrows to one type, which returns it or nothing; the page's own bound and
      *     cursor are then beside the point, one type being one entry
@@ -363,7 +370,8 @@ final class SchemaQueries {
             var store = new StoreHandle(dsl, graphName);
             var page = types(store, typeFilter, cursor, limit);
             return new SchemaAnswer(page,
-                fields(store, page.types().stream().map(TypeEntry::typeName).toList()));
+                fields(store, page.types().stream().map(TypeEntry::typeName).toList()),
+                SchemaLifecycle.read(store));
         });
     }
 

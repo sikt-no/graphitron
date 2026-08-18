@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
@@ -62,7 +61,7 @@ class DiagnosticsAggregateTest {
     @Test
     void zeroArgumentCallIsTheTriagePresetAndItsCountsSumToTheTotal() {
         try (var build = StoreBackedBuild.run(tmp, "aggregate-preset", SDL)) {
-            var result = aggregate(build.handle(), build.workspace.snapshot(), Map.of());
+            var result = aggregate(build.handle(), Map.of());
             var structured = structured(result);
 
             assertThat(structured.get("groupBy")).isEqualTo(List.of("actionable", "kind"));
@@ -86,8 +85,8 @@ class DiagnosticsAggregateTest {
     @Test
     void aggregateAndDrillDownAgreeOnEveryGroupsCount() {
         try (var build = StoreBackedBuild.run(tmp, "aggregate-parity", SDL)) {
-            var structured = structured(aggregate(build.handle(), build.workspace.snapshot(),
-                Map.of("groupBy", List.of("attemptKind", "attempt"))));
+            var structured = structured(aggregate(
+                build.handle(), Map.of("groupBy", List.of("attemptKind", "attempt"))));
             var groups = groups(structured);
             assertThat(groups).isNotEmpty();
             // The two-type badOne attempt proves the group key spans coordinates.
@@ -101,8 +100,8 @@ class DiagnosticsAggregateTest {
                 var args = new LinkedHashMap<String, Object>();
                 args.put("where", key(group));
                 args.put("limit", 10_000);
-                var drilled = structured(DiagnosticsTool.diagnosticsResult(
-                    build.handle(), build.workspace.snapshot(), args));
+                var drilled = structured(
+                    DiagnosticsTool.diagnosticsResult(build.handle(), args));
                 assertThat(entries(drilled))
                     .as("filtering diagnostics to the group key %s returns exactly that group's "
                         + "count; the two tools share one where translation", key(group))
@@ -114,8 +113,8 @@ class DiagnosticsAggregateTest {
     @Test
     void truncationReportsTheElidedGroupsAndTheirCombinedCount() {
         try (var build = StoreBackedBuild.run(tmp, "aggregate-truncation", SDL)) {
-            var limited = structured(aggregate(build.handle(), build.workspace.snapshot(),
-                Map.of("groupBy", List.of("coordinate"), "limit", 1)));
+            var limited = structured(aggregate(
+                build.handle(), Map.of("groupBy", List.of("coordinate"), "limit", 1)));
             assertThat(groups(limited)).hasSize(1);
             int totalGroups = (Integer) limited.get("totalGroups");
             assertThat(totalGroups).isGreaterThan(1);
@@ -125,8 +124,8 @@ class DiagnosticsAggregateTest {
 
             // A minCount past every group elides everything, and the accounting still balances:
             // an empty aggregate over a broken schema never reads as a clean one.
-            var folded = structured(aggregate(build.handle(), build.workspace.snapshot(),
-                Map.of("groupBy", List.of("coordinate"), "minCount", 999)));
+            var folded = structured(aggregate(
+                build.handle(), Map.of("groupBy", List.of("coordinate"), "minCount", 999)));
             assertThat(groups(folded)).isEmpty();
             assertThat(folded.get("elidedGroups")).isEqualTo(folded.get("totalGroups"));
             assertThat(longOf(folded.get("elidedCount"))).isEqualTo(longOf(folded.get("totalDiagnostics")));
@@ -138,8 +137,8 @@ class DiagnosticsAggregateTest {
         try (var build = StoreBackedBuild.run(tmp, "aggregate-absent", SDL)) {
             // Warnings carry no coordinate: they group into one null-keyed bucket instead of
             // dropping out of the totals.
-            var byCoordinate = structured(aggregate(build.handle(), build.workspace.snapshot(),
-                Map.of("groupBy", List.of("coordinate"))));
+            var byCoordinate = structured(aggregate(
+                build.handle(), Map.of("groupBy", List.of("coordinate"))));
             assertThat(groups(byCoordinate)).anySatisfy(group -> {
                 var key = key(group);
                 assertThat(key).containsKey("coordinate");
@@ -151,8 +150,7 @@ class DiagnosticsAggregateTest {
 
             // The whole-build no-session-state finding carries no location either, so file gets
             // the same stated bucket, and the null-safe where reads it back as a drill-down.
-            var byFile = structured(aggregate(build.handle(), build.workspace.snapshot(),
-                Map.of("groupBy", List.of("file"))));
+            var byFile = structured(aggregate(build.handle(), Map.of("groupBy", List.of("file"))));
             var absent = groups(byFile).stream()
                 .filter(group -> key(group).get("file") == null)
                 .findFirst().orElseThrow();
@@ -160,8 +158,7 @@ class DiagnosticsAggregateTest {
             where.put("file", null);
             var args = new LinkedHashMap<String, Object>();
             args.put("where", where);
-            var drilled = structured(DiagnosticsTool.diagnosticsResult(
-                build.handle(), build.workspace.snapshot(), args));
+            var drilled = structured(DiagnosticsTool.diagnosticsResult(build.handle(), args));
             assertThat(entries(drilled)).hasSize((Integer) absent.get("count"));
         }
     }
@@ -178,7 +175,7 @@ class DiagnosticsAggregateTest {
             var handle = volumeHandle(store, errors);
 
             var args = Map.<String, Object>of("groupBy", List.of("attempt"), "limit", 10_000);
-            var structured = structured(aggregate(handle, LspSchemaSnapshot.unavailable(), args));
+            var structured = structured(aggregate(handle, args));
             var groups = groups(structured);
             assertThat(groups)
                 .as("however large the requested limit, the group count stays under the stated cap")
@@ -199,8 +196,7 @@ class DiagnosticsAggregateTest {
                 ValidationError.forType("B",
                     Rejection.directiveConflict(List.of("routine", "splitQuery"), "conflict"), loc)));
 
-            var structured = structured(aggregate(handle, LspSchemaSnapshot.unavailable(),
-                Map.of("groupBy", List.of("directives"))));
+            var structured = structured(aggregate(handle, Map.of("groupBy", List.of("directives"))));
             assertThat(groups(structured)).singleElement().satisfies(group -> {
                 assertThat(key(group)).containsEntry("directives", "routine,splitQuery");
                 assertThat(group.get("count")).isEqualTo(2);
@@ -212,8 +208,7 @@ class DiagnosticsAggregateTest {
     void anUnknownDimensionIsRefusedWithTheFullVocabulary() {
         try (var store = GraphitronModelStore.open()) {
             var handle = volumeHandle(store, List.of());
-            var result = DiagnosticFacets.aggregateResult(handle, LspSchemaSnapshot.unavailable(),
-                Map.of("groupBy", List.of("nope")));
+            var result = DiagnosticFacets.aggregateResult(handle, Map.of("groupBy", List.of("nope")));
             assertThat(result.isError()).isTrue();
             String message = firstLine(result);
             assertThat(message).contains("unknown dimension 'nope'");
@@ -225,10 +220,8 @@ class DiagnosticsAggregateTest {
 
     // ---- helpers ----
 
-    private McpSchema.CallToolResult aggregate(
-        StoreHandle handle, LspSchemaSnapshot snapshot, Map<String, Object> args
-    ) {
-        var result = DiagnosticFacets.aggregateResult(handle, snapshot, args);
+    private McpSchema.CallToolResult aggregate(StoreHandle handle, Map<String, Object> args) {
+        var result = DiagnosticFacets.aggregateResult(handle, args);
         assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
         return result;
     }
