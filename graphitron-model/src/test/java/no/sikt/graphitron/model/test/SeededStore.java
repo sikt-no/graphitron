@@ -9,19 +9,25 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -223,6 +229,31 @@ public final class SeededStore {
     }
 
     /**
+     * One nullable single-valued argument on a field that already exists. Named types are spelled
+     * rather than resolved, as on {@link #seedField}, and the case seeds the type it names if
+     * anything it asserts reads that type.
+     *
+     * <p>The arm a case reaches for when a relation's subject is whether arguments are read at all.
+     */
+    public static void seedArgument(DSLContext dsl, String graphName, String typeName,
+                                    String fieldName, String argumentName, String namedType) {
+        dsl.insertInto(GRAPHQL_ARGUMENT)
+            .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ARGUMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_ARGUMENT.FIELD_NAME, fieldName)
+            .set(GRAPHQL_ARGUMENT.ARGUMENT_NAME, argumentName)
+            .set(GRAPHQL_ARGUMENT.ORDINAL, 0)
+            .set(GRAPHQL_ARGUMENT.TYPE_SDL, namedType)
+            .set(GRAPHQL_ARGUMENT.NAMED_TYPE, namedType)
+            .set(GRAPHQL_ARGUMENT.NON_NULL, false)
+            .set(GRAPHQL_ARGUMENT.IS_LIST, false)
+            .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_ARGUMENT.SOURCE_LINE, 2)
+            .set(GRAPHQL_ARGUMENT.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
      * What a macro left behind when it rewrote a field's type expression: the field's own row now
      * carries the effective type and this one carries the type the author wrote. A relation reading
      * the authored expression joins here, so a case about that reading states both spellings and the
@@ -259,6 +290,24 @@ public final class SeededStore {
             .set(GRAPHITRON_TABLE.SOURCE_LINE, 1)
             .set(GRAPHITRON_TABLE.SOURCE_COLUMN, 20)
             .set(GRAPHITRON_TABLE.TABLE_REF, tableRef)
+            .execute();
+    }
+
+    /**
+     * A {@code @field} application on a field: the name the slot binds to, as the author wrote it.
+     * What that name resolves against is the backing's business, so a spelling matching no column
+     * and no member is an ordinary row here.
+     */
+    public static void seedFieldBinding(DSLContext dsl, String graphName, String typeName,
+                                        String fieldName, String nameRef) {
+        dsl.insertInto(GRAPHITRON_FIELD_BINDING)
+            .set(GRAPHITRON_FIELD_BINDING.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_BINDING.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_BINDING.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_BINDING.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_BINDING.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_BINDING.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FIELD_BINDING.NAME_REF, nameRef)
             .execute();
     }
 
@@ -571,6 +620,97 @@ public final class SeededStore {
                 .set(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH, typePath)
                 .set(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_METHOD_RETURN_TYPE_REF.VARIANCE, "NONE")
+                .execute());
+    }
+
+    /**
+     * One position of a declared return type at a variance the map form cannot state, the method
+     * and its remaining positions having been seeded by {@link #seedMethod}. A case about variance
+     * states this row for the position it is about and leaves the rest invariant.
+     *
+     * @param variance {@code NONE}, {@code EXTENDS} or {@code SUPER}
+     */
+    public static void seedReturnTypeRef(DSLContext dsl, String sourceName, String className,
+                                         String methodName, String descriptor, String typePath,
+                                         String referencedClass, String variance) {
+        dsl.insertInto(JVM_METHOD_RETURN_TYPE_REF)
+            .set(JVM_METHOD_RETURN_TYPE_REF.SOURCE_NAME, sourceName)
+            .set(JVM_METHOD_RETURN_TYPE_REF.CLASS_NAME, className)
+            .set(JVM_METHOD_RETURN_TYPE_REF.METHOD_NAME, methodName)
+            .set(JVM_METHOD_RETURN_TYPE_REF.DESCRIPTOR, descriptor)
+            .set(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH, typePath)
+            .set(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS, referencedClass)
+            .set(JVM_METHOD_RETURN_TYPE_REF.VARIANCE, variance)
+            .execute();
+    }
+
+    /**
+     * One parameter of a census method, which must already be one, with the classes its declared
+     * type names on {@link #seedMethod}'s terms for the position map. A parameter naming no class
+     * anywhere, a primitive one, is stated with an empty map.
+     *
+     * <p>Two rules read these rows and read them differently: the peel decomposes the declared type
+     * under the parameter's own ordinal, and the member-slot rule reads the mere presence of a
+     * parameter row as the method being no slot. A case wanting only the second states an empty map.
+     *
+     * <p>The parameter's own name is deliberately not an argument here. It is NULL for a consumer
+     * compiled without {@code -parameters}, so the ordinal is the identity and nothing reading these
+     * rows may depend on a name being there.
+     */
+    public static void seedMethodParameter(DSLContext dsl, String sourceName, String className,
+                                           String methodName, String descriptor, int position,
+                                           Map<String, String> declaredType) {
+        dsl.insertInto(JVM_METHOD_PARAMETER)
+            .set(JVM_METHOD_PARAMETER.SOURCE_NAME, sourceName)
+            .set(JVM_METHOD_PARAMETER.CLASS_NAME, className)
+            .set(JVM_METHOD_PARAMETER.METHOD_NAME, methodName)
+            .set(JVM_METHOD_PARAMETER.DESCRIPTOR, descriptor)
+            .set(JVM_METHOD_PARAMETER.POSITION, position)
+            .set(JVM_METHOD_PARAMETER.PARAMETER_TYPE, "Object")
+            .set(JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE, "Object")
+            .execute();
+        declaredType.forEach((typePath, referencedClass) ->
+            dsl.insertInto(JVM_METHOD_PARAMETER_TYPE_REF)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.SOURCE_NAME, sourceName)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.CLASS_NAME, className)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.METHOD_NAME, methodName)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.DESCRIPTOR, descriptor)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.POSITION, position)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.TYPE_PATH, typePath)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.REFERENCED_CLASS, referencedClass)
+                .set(JVM_METHOD_PARAMETER_TYPE_REF.VARIANCE, "NONE")
+                .execute());
+    }
+
+    /**
+     * A record component on a census class, which must already be one and must have been declared a
+     * {@code RECORD} for anything above the census to read the component. The classes its declared
+     * type names are stated on {@link #seedMethod}'s terms.
+     *
+     * <p>The component's position in the record header is the order components are seeded in. No
+     * relation above the census reads it: declaration order is deliberately not carried up, so a
+     * case that asserted on it would be asserting on this helper.
+     */
+    public static void seedRecordComponent(DSLContext dsl, String sourceName, String className,
+                                           String componentName, Map<String, String> declaredType) {
+        dsl.insertInto(JVM_RECORD_COMPONENT)
+            .set(JVM_RECORD_COMPONENT.SOURCE_NAME, sourceName)
+            .set(JVM_RECORD_COMPONENT.CLASS_NAME, className)
+            .set(JVM_RECORD_COMPONENT.COMPONENT_NAME, componentName)
+            .set(JVM_RECORD_COMPONENT.POSITION, dsl.fetchCount(JVM_RECORD_COMPONENT,
+                JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName)
+                    .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))))
+            .set(JVM_RECORD_COMPONENT.DISPLAY_TYPE, "Object")
+            .set(JVM_RECORD_COMPONENT.DECLARED_TYPE, "Object")
+            .execute();
+        declaredType.forEach((typePath, referencedClass) ->
+            dsl.insertInto(JVM_RECORD_COMPONENT_TYPE_REF)
+                .set(JVM_RECORD_COMPONENT_TYPE_REF.SOURCE_NAME, sourceName)
+                .set(JVM_RECORD_COMPONENT_TYPE_REF.CLASS_NAME, className)
+                .set(JVM_RECORD_COMPONENT_TYPE_REF.COMPONENT_NAME, componentName)
+                .set(JVM_RECORD_COMPONENT_TYPE_REF.TYPE_PATH, typePath)
+                .set(JVM_RECORD_COMPONENT_TYPE_REF.REFERENCED_CLASS, referencedClass)
+                .set(JVM_RECORD_COMPONENT_TYPE_REF.VARIANCE, "NONE")
                 .execute());
     }
 

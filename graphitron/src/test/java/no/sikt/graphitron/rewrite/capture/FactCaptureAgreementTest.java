@@ -189,12 +189,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       against being names and nothing else; half its cases pin what the resolution refuses to
  *       decide (an overloaded name is rows and an arity, never a pick) and two pin what survives it,
  *       a reference the census matched nothing for still being a reference;
- *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the five relations an
+ *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the five relations an
  *       accessor hop is built from ({@code intent_delivery_container}, {@code intent_declared_type_ref},
  *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
- *       {@code intent_field_accessor_hop}) to a census built reference by reference, one accessor
- *       per delivery shape, with the two directions in which the hop differs from the reflective
- *       walk pinned as pins rather than expectations;
+ *       {@code intent_field_accessor_hop}) to a census stated as rows in the module whose DDL
+ *       declares them, one accessor per delivery shape beside the arrangements no scan of compiled
+ *       fixtures offers side by side (one class name declared on two classpath entries, one slot
+ *       name offered by two classes, a nesting one position deeper than the descent goes), with the
+ *       two directions in which the hop differs from the reflective walk pinned as pins rather than
+ *       expectations;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
  *       {@code intent_type_backing_class}, the closure over those hops, together with
  *       {@code intent_type_backing_seed} naming the groundings it closes over,
