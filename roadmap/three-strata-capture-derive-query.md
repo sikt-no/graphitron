@@ -108,8 +108,11 @@ reconstructed by string surgery, twice.
 
 ## Which stratum each family is in
 
-Naming the strata is only useful if the families are assigned, and one assignment is currently
-misread in the tree and was misread in this item's own siblings before they were corrected.
+Naming the strata is only useful if every family is assigned, so this section assigns all thirteen the
+roster holds plus its one placement exemption. One family's assignment is currently misread in the
+tree and was misread in this item's own siblings before they were corrected; a second turns out to be
+inverted in the schema the way the macro case is, which is a conclusion the assignment reaches rather
+than a premise it starts from.
 
 - Stratum one, transcription: `graphql_` (including the generic directive definitions and
   applications at all five locations, with argument values), `jvm_`, `sql_`, `java_`, and the verdict
@@ -122,9 +125,23 @@ misread in the tree and was misread in this item's own siblings before they were
   `MacroCapture`'s javadoc already uses the right word for it, distinguishing what "transcribes into
   `graphql_type_directive`" from what "decodes into `graphitron_federation_key`".
 - Stratum three, queries: the views a consumer reads, which the document already covers under "One
-  base, many views".
-- Scaffolding, in no stratum: `walk_`, which reifies the Java pipeline's answer so a derivation can
-  be diffed against it during migration.
+  base, many views". `diagnostic` is the worked case and the roster's one placement exemption, a read
+  surface unioning arms from several families' vocabularies; both its own comment and its exemption row
+  already call it "the diagnostics stratum's read surface", so the word is in place here too. Cite it
+  without an arm count: the two comments already disagree on how many arms there are, which is the
+  unguarded-inventory smell rather than anything this item introduces.
+- No stratum, scaffolding: `walk_` and `rejection_`, each reifying the legacy walk's answer so a
+  derivation can be diffed against it during migration. `rejection_`'s charter already ties itself to
+  `walk_`'s clock, "transitional by construction, drained family by family as detections migrate
+  store-native", so this is reading the roster rather than deciding against it.
+- No stratum, and permanently: `store_` and `meta_`, whose subject is the store itself rather than any
+  corpus or any fact about one. `store_` records the run (what it read, what it was built from, which
+  graphs it holds) and its charter already disclaims transcription in those words; `meta_` records the
+  schema. Both need saying because "no stratum" otherwise reads as "transitional", which is what
+  `walk_` and `rejection_` are and these two are not. The `meta_` views are also the reason stratum
+  three has to be stated as *a view over facts a consumer reads* and not merely as "a view":
+  `meta_relation_family` is a derivation, but over the schema's own catalog rather than over captured
+  facts, so it sits here and not in stratum two.
 
 The stratum is decided by what a relation's rows are computed *from*, not by what computes them. A
 materialized derivation whose producer is a Java program is stratum two if its inputs are captured
@@ -132,15 +149,38 @@ facts; the document already accepts materialization where a view cannot serve. S
 same breath as the assignment matters, because "`graphitron_` is a derivation" otherwise reads as a
 demand that a thousand lines of decoding become SQL, which is not what the stratum claims.
 
-The list above is deliberately partial and must say so where it is written, because the store has a
-gate-closed roster of thirteen families and this item assigns seven of them. The remaining six are
-the bookkeeping and verdict families (`store_`, `meta_`, `javac_`, `rejection_`, `lint_`,
-`build_warning_`), and each needs an argument this item does not have to make: `store_` and `meta_`
-are a run's own record and the schema's self-description rather than a reading of any corpus, and the
-four verdict families would each be assigned by the same reader-neutrality argument that puts
-`graphql_syntax_error` in stratum one, which is a call for whoever next touches those charters. An
-assignment that covers seven of thirteen and reads as complete is the failure mode here, so the
-prose names the gap.
+That covers ten of the roster's thirteen families and its one exemption. The remaining three are the
+verdict families, and with `graphql_`'s two verdict residents they are the interesting cases, because
+a verdict is a conclusion and the recompute test was stated over declarations. One rule extends it and
+assigns all five: **a transcribed verdict is stratum one exactly while the store does not hold the
+inputs the verdict was computed from, and stratum two once it does.** That is why they do not all land
+together:
+
+- `graphql_syntax_error` and `graphql_schema_error` are stratum one because their input is a document
+  that has not parsed yet. There is no transcription of an unparseable file to recompute a syntax
+  error from, which is the real reason those two are `graphql_` residents rather than a family of
+  their own; the roster's reader-neutrality argument for them is compatible with this and does not
+  replace it.
+- `javac_` is stratum one: the store holds neither a compiler nor a transcription of the emitted
+  sources. Worth one clause, because it is the only stratum-one family whose corpus the run itself
+  produced rather than read from the consumer.
+- `lint_` is **stratum two**, and this is the assignment that pays for the rule. `LintEngine` is one
+  traversal over the parsed graphql-java AST, which is exactly the corpus `graphql_` transcribes, so a
+  lint finding is recomputable from captured facts and the recompute test says it must not be
+  captured. `lint_finding` is a table today, which makes this the second inverted assignment in the
+  store after the macro case, and the family's own charter already names the destination: lint rules
+  are "predicates over classified facts that should be free to migrate store-native".
+- `build_warning_` is the one family the rule does not settle at family grain, and the prose should
+  say so rather than round it to its sibling. The roster pairs it with `lint_` as the other arm of the
+  `BuildWarning` hierarchy, but the arm is defined by carrying *no* rule, so its residents share a
+  channel rather than an input set, and whether a given advisory is a function of captured facts is a
+  per-producer question. Stratum one until a producer's inputs are shown to be captured, decided per
+  resident rather than per family. A disclosed gap at one of thirteen is the honest form; the failure
+  mode is a clean-looking answer that a reader cannot check.
+
+Only two of the thirteen charters ever disagreed with any of this, and both are edited in
+Implementation. The rest are being read, not overruled, which is the strongest evidence available that
+the frame is already the store's own.
 
 The corollary worth writing down: the 48 foreign keys from `graphitron_` into `graphql_` are a
 derivation's edges to its inputs. They are correct and permanent, and they are not an argument for or
@@ -162,12 +202,15 @@ that is the discipline it generalises. It carries:
   the decision procedure: a row that can be recomputed from captured facts alone is a derived fact
   and must not be captured. Note that the test decides mechanically what the derived-reads section
   argues case by case.
-- The family assignment from "Which stratum each family is in" above, including the two verdict
-  residents in stratum one, `graphitron_` in stratum two, and `walk_` as scaffolding in no stratum.
-  Write the assignment as prose that *defers to* `meta_family` rather than as a second copy of the
-  roster: the roster is gate-closed against the observed relations and renders one page per row,
-  where a prose prefix list is an unguarded census. Name the six families this item does not assign,
-  per the closing paragraph of that section, so the list reads as deliberately partial.
+- The family assignment from "Which stratum each family is in" above: all thirteen families and the
+  one placement exemption, the four buckets (transcription, derivation, queries, and the two
+  no-stratum reasons), and the verdict rule that a transcribed verdict is stratum one exactly while
+  the store does not hold the inputs it was computed from. Write it as prose that *defers to*
+  `meta_family` rather than as a second copy of the roster: the roster is gate-closed against the
+  observed relations and renders one page per row, where a prose prefix list is an unguarded census.
+  Carry the two results a reader will not expect, since they are what the rule earns: `lint_` is a
+  derivation whose findings are captured today, and `build_warning_` is settled per resident rather
+  than per family.
 - The clarification that a relation's stratum is decided by what its rows are a function of, not by
   what program computes them: a materialization whose producer is a Java walk is stratum two if its
   inputs are captured facts. The sentence later in the same document that currently says the
@@ -250,10 +293,13 @@ row, the same category of edit as the table comments below:
   derivation and is consistent as written; leave it, and let the reworded opening make clear which
   of the two layerings each sentence means.
 
-The `graphql_` row ("The family is a total transcription", with both verdict residents argued in on
-the reader-neutrality test) and the `walk_` row (named for the retiring walk, with its own
-retirement clock) already agree with this item and are not edited. Nor are the six unassigned
-families' rows: this item does not put a stratum in a charter that has none.
+The other eleven rows are read rather than overruled and none is edited. Three are worth naming
+because they carry the argument the assignment leans on: `graphql_`'s ("The family is a total
+transcription", with both verdict residents argued in on the reader-neutrality test), `rejection_`'s
+(the retirement clock it shares with `walk_`, which is what files it as scaffolding), and `lint_`'s
+(rules as "predicates over classified facts that should be free to migrate store-native", which names
+stratum two as its destination without this item having to argue it in). This item adds no stratum
+word to a charter that manages without one; the roster keeps its own voice.
 
 ### `MacroCapture` and `SdlFactCapture`
 
@@ -418,10 +464,13 @@ thrown away. They are listed in the sibling items that would retire them.
 - A stratum column on `meta_family`. Making each family's stratum queryable data rather than charter
   prose is the shape the roster's own design argues for, and it would let a gate close the assignment
   the way the roster already closes the family list. It is a DDL change and a gate, so it is not this
-  item; the charter prose carries the assignment meanwhile. Worth filing separately, together with the
-  six families this item leaves unassigned, since an unassigned family is what a gate would have to
-  either accept or argue in.
-- Assigning `store_`, `meta_`, `javac_`, `rejection_`, `lint_` or `build_warning_` to a stratum. Named
-  as unassigned per "Which stratum each family is in"; each needs an argument this item does not make.
+  item; the prose carries the assignment meanwhile. Worth filing separately, and the assignment above
+  is what such a column would have to encode, including the two cases a plain per-family column cannot
+  hold: `build_warning_`, which the rule settles per resident, and a family whose stratum is the
+  destination its charter names rather than where its rows sit today.
+- Correcting `lint_finding` from a captured table to a derivation. The assignment above concludes that
+  `lint_` is stratum two and that capturing its findings is the inverted assignment; acting on that
+  moves rows, so it is a separate item exactly as the `CONNECTION` macro's correction is. Naming the
+  inversion is this item's job and fixing it is not.
 - Renaming the `tier` column on `intent_resolved_field_claim`, or the test-tier annotations. Adopting
   "stratum" for this axis leaves both alone: they name different axes and neither becomes wrong.
