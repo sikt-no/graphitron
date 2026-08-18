@@ -82,8 +82,25 @@ final class StoreBackedBuild implements AutoCloseable {
         return run(tmp, graphName, sdl, LintConfig.empty(), jooqPackage);
     }
 
+    /**
+     * The classpath-roots overload, for a case whose subject includes the {@code jvm_} class census. A
+     * run with no roots captures no classes at all, the walk's fallback being a
+     * {@code <basedir>/target/classes} that a temporary directory does not have, so a case reading the
+     * census has to name the entry it means.
+     */
+    static StoreBackedBuild run(Path tmp, String graphName, String sdl, List<Path> classpathRoots) {
+        return run(tmp, graphName, sdl, LintConfig.empty(), JOOQ_PACKAGE, classpathRoots);
+    }
+
     static StoreBackedBuild run(
         Path tmp, String graphName, String sdl, LintConfig lintConfig, String jooqPackage
+    ) {
+        return run(tmp, graphName, sdl, lintConfig, jooqPackage, List.of());
+    }
+
+    static StoreBackedBuild run(
+        Path tmp, String graphName, String sdl, LintConfig lintConfig, String jooqPackage,
+        List<Path> classpathRoots
     ) {
         try {
             Path schema = tmp.resolve("schema.graphqls");
@@ -95,7 +112,7 @@ final class StoreBackedBuild implements AutoCloseable {
             var ctx = new RewriteContext(
                 inputs,
                 tmp, graphName, out, out.resolve("resources"), "fake.output", jooqPackage,
-                List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
+                classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
                 lintConfig, null, null, null, storeHome,
                 SchemaRecipe.literalOver(inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
                 null);

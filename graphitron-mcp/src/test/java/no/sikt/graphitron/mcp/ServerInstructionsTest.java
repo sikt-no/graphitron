@@ -196,9 +196,7 @@ class ServerInstructionsTest {
         new Advertised(TOOL, "schema"),
         new Advertised(TOOL, "diagnostics"),
         new Advertised(TOOL, "diagnostics.aggregate"),
-        new Advertised(TOOL, "services"),
-        new Advertised(TOOL, "conditions"),
-        new Advertised(TOOL, "records"),
+        new Advertised(TOOL, "code"),
         new Advertised(TOOL, "docs.search"),
         new Advertised(TOOL, "execute"),
         new Advertised(RESOURCE, "directives"),
@@ -283,26 +281,44 @@ class ServerInstructionsTest {
 
     // ---- convention 1: a paged tool's first line carries the total before paging ----
 
-    /** A paged tool paired with the structured-content key its page lands under. */
-    private record PagedTool(String name, String resultKey) {}
+    /**
+     * A paged tool paired with the structured-content key its page lands under, and whatever else the
+     * tool requires to answer at all: {@code code} takes a mandatory {@code kind}, the convention under
+     * test being about the summary line rather than about an argument-free call.
+     */
+    private record PagedTool(String name, String resultKey, Map<String, Object> required) {
+
+        PagedTool(String name, String resultKey) {
+            this(name, resultKey, Map.of());
+        }
+
+        /** The tool's arguments for a call bounded at {@code limit}. */
+        Map<String, Object> arguments(int limit) {
+            var args = new LinkedHashMap<String, Object>(required);
+            args.put("limit", limit);
+            return args;
+        }
+    }
 
     /**
-     * Exactly the tools that page through {@code McpWire.page}. The scope is the claim's honest
-     * grain: {@code docs.search} and {@code catalog.search} do carry counts but take no cursor, so
-     * "the total before paging" names nothing for them, and their warm-degradation arms return a
-     * bare notice with no tool prefix and no number.
+     * Exactly the tools that take a cursor. The scope is the claim's honest grain:
+     * {@code docs.search} and {@code catalog.search} do carry counts but take no cursor, so "the total
+     * before paging" names nothing for them, and their warm-degradation arms return a bare notice with
+     * no tool prefix and no number.
      */
     private static final List<PagedTool> PAGED_TOOLS = List.of(
         new PagedTool("catalog.tables", "tables"),
         new PagedTool("schema", "types"),
         new PagedTool("diagnostics", "diagnostics"),
-        new PagedTool("services", "services"),
-        new PagedTool("conditions", "conditions"),
-        new PagedTool("records", "records"));
+        new PagedTool("code", "classes", Map.of("kind", "service")));
 
     @Test
     void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
-        try (var build = StoreBackedBuild.run(tmp, "paged", PAGED_SDL);
+        // The classpath root is the census half of the fixture: the code tool answers from jvm_class,
+        // and a build with no classpath roots captures no classes at all. This module's own compiled
+        // test classes are more than one, which is what the limit=1 call needs.
+        try (var build = StoreBackedBuild.run(tmp, "paged", PAGED_SDL,
+                 List.of(StoreFixture.testClassesRoot()));
              var server = server(pagedWorkspace(), null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -320,7 +336,7 @@ class ServerInstructionsTest {
                     .isGreaterThan(1);
 
                 var firstPage = client.callTool(McpSchema.CallToolRequest.builder(tool.name())
-                    .arguments(Map.of("limit", 1)).build());
+                    .arguments(tool.arguments(1)).build());
                 assertThat(items(firstPage, tool.resultKey()))
                     .as("%s honours limit=1", tool.name())
                     .hasSize(1);
@@ -441,7 +457,7 @@ class ServerInstructionsTest {
 
     private static List<?> page(McpSyncClient client, PagedTool tool, int limit) {
         var result = client.callTool(McpSchema.CallToolRequest.builder(tool.name())
-            .arguments(Map.of("limit", limit)).build());
+            .arguments(tool.arguments(limit)).build());
         return items(result, tool.resultKey());
     }
 

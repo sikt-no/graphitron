@@ -56,8 +56,8 @@ A set of **tools** the agent calls to answer questions:
 | `schema`
 | Describes the classified GraphQL schema.
 
-| `services`, `conditions`, `records`
-| List the `@service` classes, `@condition` methods, and `@record` classes the generator resolved on the classpath.
+| `code`
+| Lists the consumer Java classes on the compile classpath, selected by `kind`: `service`, `condition` or `record`. One class per entry, carrying its public methods and its record components, so a class that is more than one of those is one answer rather than two. Each class and method also carries where a parsed `.java` declares it and the doc comment it was written with.
 
 | `diagnostics`
 | The current schema validation diagnostics, the same `(file, location, message)` triples the LSP delivers to your editor.

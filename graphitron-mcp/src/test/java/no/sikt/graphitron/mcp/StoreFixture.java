@@ -6,6 +6,10 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
+import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
@@ -13,6 +17,7 @@ import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -94,8 +99,90 @@ public final class StoreFixture implements AutoCloseable {
     private static StoreFixture ofJooqPackage(Path directory, String sdl, String jooqPackage) {
         var store = GraphitronModelStore.open();
         var fixture = new StoreFixture(store, GRAPH, directory);
-        fixture.capture(sdl, jooqPackage, false);
+        fixture.capture(sdl, jooqPackage, false, List.of());
         return fixture;
+    }
+
+    /** The package the code fixtures live under; the census is narrowed to it. */
+    private static final String CODE_FIXTURE_PACKAGE = "no.sikt.graphitron.mcp.fixtures.";
+
+    /** The one code-fixture source root a walk covers; see {@link #codeFixtureSources()}. */
+    private static final String WALKED_FIXTURE_PATH = "src/test/java/no/sikt/graphitron/mcp/fixtures/code";
+
+    /** Scanned once; see {@link #codeFixtureCensus()}. */
+    private static List<CompletionData.ExternalReference> codeFixtureCensus;
+
+    /**
+     * The shape the {@code code} tool's cases read: the census of the fixture classes under
+     * {@code no.sikt.graphitron.mcp.fixtures}, plus the {@code java_} declaration family for the one
+     * source root a walk covers.
+     *
+     * <p>Two inputs on purpose, because the tool joins two families that refresh on independent
+     * cadences and the fixtures have to be able to disagree. The census reaches every fixture class;
+     * the walk reaches only the {@code fixtures.code} directory, so the {@code fixtures.library} class
+     * is a class the store knows and no source positions, which is what a dependency jar is.
+     */
+    public static StoreFixture ofCodeFixtures(Path directory) {
+        var store = GraphitronModelStore.open();
+        var fixture = new StoreFixture(store, GRAPH, directory);
+        fixture.capture(PLACEHOLDER_SDL, null, false, codeFixtureCensus());
+        fixture.refreshJavaSources(codeFixtureSources());
+        return fixture;
+    }
+
+    /**
+     * The census of the fixture classes as a real classfile scan produced it. A scan rather than
+     * hand-built rows because everything the {@code code} tool projects is a classfile fact the store
+     * holds verbatim: the descriptors that key an overload, the un-erased {@code org.jooq.Condition}
+     * match, the declared type forms off the {@code Signature} attribute, and a record's mandated
+     * members. A hand-built reference can spell all of those differently from any real compiler.
+     *
+     * <p>Scanned once per JVM: the scan reads every class this module compiled and the answer does not
+     * change between tests.
+     */
+    static synchronized List<CompletionData.ExternalReference> codeFixtureCensus() {
+        if (codeFixtureCensus == null) {
+            codeFixtureCensus = ClasspathScanner.scan(testClassesRoot(), JOOQ_PACKAGE).stream()
+                .filter(reference -> reference.className().startsWith(CODE_FIXTURE_PACKAGE))
+                .toList();
+        }
+        return codeFixtureCensus;
+    }
+
+    /**
+     * The walked source root: this module's own {@code fixtures.code} sources, derived from the
+     * compiled-classes root rather than spelled as a build path, so the fixture classes and the sources
+     * the family reads are the same code.
+     */
+    static Path codeFixtureSources() {
+        Path root = testClassesRoot().getParent().getParent().resolve(WALKED_FIXTURE_PATH);
+        if (!Files.isDirectory(root)) {
+            throw new AssertionError("code fixture sources are not where the module layout puts them: " + root);
+        }
+        return root;
+    }
+
+    /**
+     * This module's compiled test classes, which is the classpath entry every code fixture is read
+     * from. Shared with the fixtures that need a census with real classes on it rather than an empty
+     * one.
+     */
+    static Path testClassesRoot() {
+        try {
+            return Path.of(StoreFixture.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("test classes root is not a file path", e);
+        }
+    }
+
+    /**
+     * Reads the {@code .java} files under {@code sourceRoot} into this store's {@code java_} family,
+     * the way a dev session's source watcher does. The real writer, so a fixture cannot record a
+     * declaration shape a parse never produces.
+     */
+    private void refreshJavaSources(Path sourceRoot) {
+        var roots = List.of(sourceRoot);
+        new JavaSourceFacts(store.dsl()).refresh(roots, new SourceWalker().walkFiles(roots));
     }
 
     /**
@@ -108,21 +195,26 @@ public final class StoreFixture implements AutoCloseable {
      * @param jooqPackage the generated model to capture, or {@code null} for none
      */
     public StoreFixture recaptureCatalog(String jooqPackage) {
-        capture(PLACEHOLDER_SDL, jooqPackage, true);
+        capture(PLACEHOLDER_SDL, jooqPackage, true, List.of());
         return this;
     }
 
     /** Captures a second graph into this same store, for the cases whose subject is one graph's scope. */
     public StoreFixture andGraph(String otherGraph, String jooqPackage) {
-        capture(otherGraph, PLACEHOLDER_SDL, jooqPackage, false);
+        capture(otherGraph, PLACEHOLDER_SDL, jooqPackage, false, List.of());
         return this;
     }
 
-    private void capture(String sdl, String jooqPackage, boolean warm) {
-        capture(graphName, sdl, jooqPackage, warm);
+    private void capture(
+        String sdl, String jooqPackage, boolean warm, List<CompletionData.ExternalReference> classpath
+    ) {
+        capture(graphName, sdl, jooqPackage, warm, classpath);
     }
 
-    private void capture(String graph, String sdl, String jooqPackage, boolean warm) {
+    private void capture(
+        String graph, String sdl, String jooqPackage, boolean warm,
+        List<CompletionData.ExternalReference> classpath
+    ) {
         Path file = write(graph, sdl);
         var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(file)));
         var attribution = SchemaInputAttribution.build(List.of(SchemaInput.file(file)));
@@ -130,7 +222,7 @@ public final class StoreFixture implements AutoCloseable {
             new FactCapture.GraphIdentity(graph, directory), FactCapture.SubjectConfig.none(),
             registry, attribution,
             jooqPackage == null ? null : new JooqCatalog(jooqPackage),
-            List.of(), new NodeDeclaration(null));
+            classpath, new NodeDeclaration(null));
     }
 
     private Path write(String graph, String sdl) {

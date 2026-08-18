@@ -18,7 +18,6 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.junit.jupiter.api.Test;
@@ -28,16 +27,17 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -567,69 +567,302 @@ class GraphitronMcpServerTest {
             .orElseThrow(() -> new AssertionError("no column named " + sqlName));
     }
 
-    // ---- services / conditions / records ----
+    // ---- code ----
 
+    // One census, three predicates over it. Every case below reads a store captured from this module's
+    // own fixture sources: a real classfile scan for the census and a real parse for the declaration
+    // family, over the same code, which is what makes the descriptors, the Condition match, the
+    // declared type forms and a record's mandated members the ones a consumer's compiler produces.
+
+    /**
+     * The service kind: the class and its methods, with the method-ref grammar the instructions promise
+     * and the class's own source location and doc comment. What replaces the shipped {@code services}
+     * case, at the same grain, off relations instead of a scan.
+     *
+     * <p>The parameter's {@code name} is absent because this module compiles without
+     * {@code -parameters}, which is the census's documented NULL arm and the wire's stated contract:
+     * omit rather than synthesise a positional stand-in. Its {@code type} is the declared form, so the
+     * element type the erasure drops survives to the wire.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void servicesListsClassesWithMethodRefsAndResolvedClassLocation() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
+    void codeServiceKindListsAClassWithItsMethodsAndItsDeclaration(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var entry = onlyClass(fixture, "service", FILM_SERVICE);
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("services").build()));
-            var services = (List<Map<String, Object>>) structured.get("services");
-            // The record-only FilmCard is not a service (no methods); only FilmService surfaces here.
-            assertThat(services).singleElement().satisfies(s -> {
-                assertThat(s).containsEntry("classRef", "com.example.FilmService")
-                    .containsEntry("className", "com.example.FilmService");
-                var methods = (List<Map<String, Object>>) s.get("methods");
-                // Condition methods appear here too: services is the un-filtered class view.
-                assertThat(methods).extracting(m -> m.get("methodRef"))
-                    .containsExactly("com.example.FilmService#list/0", "com.example.FilmService#activeFilms/0");
-                // Class location resolved off the source index.
-                var location = (Map<String, Object>) s.get("location");
-                assertThat(location).containsEntry("uri", "file:///src/FilmService.java").containsEntry("line", 4);
-                assertThat(s).doesNotContainKey("locationStatus");
+            assertThat(entry).containsEntry("classRef", FILM_SERVICE).containsEntry("className", FILM_SERVICE);
+            assertThat((String) entry.get("description"))
+                .as("the doc comment the parse retained, off the declaration the location came from")
+                .startsWith("A service host the code tool reads.");
+            assertThat((Map<String, Object>) entry.get("location"))
+                .containsEntry("uri", fixtureUri("FilmService.java"))
+                .containsEntry("line", fixtureLine("FilmService.java", "public class FilmService"));
+
+            var methods = (List<Map<String, Object>>) entry.get("methods");
+            assertThat(methods).extracting(m -> m.get("methodRef"))
+                .as("every public method, condition ones included, ordered by name then descriptor")
+                .containsExactly(
+                    FILM_SERVICE + "#activeFilms/0",
+                    FILM_SERVICE + "#describe/1",
+                    FILM_SERVICE + "#describe/1",
+                    FILM_SERVICE + "#titles/1");
+
+            assertThat(methodNamed(methods, "titles")).satisfies(m -> {
+                assertThat(m).containsEntry("returnType", "List<String>");
+                var parameters = (List<Map<String, Object>>) m.get("parameters");
+                assertThat(parameters).singleElement().satisfies(p -> assertThat(p)
+                    .containsEntry("type", "int")
+                    .doesNotContainKey("name"));
+                assertThat((String) m.get("description"))
+                    .startsWith("The titles of at most the given number of films.");
+                assertThat((Map<String, Object>) m.get("location"))
+                    .containsEntry("line", fixtureLine("FilmService.java", "public List<String> titles"));
+            });
+
+            assertThat((List<Map<String, Object>>) entry.get("components")).isEmpty();
+        }
+    }
+
+    /**
+     * The condition kind: the same class, with the method list narrowed to the methods whose return type
+     * is a jOOQ {@code Condition}. The kind is the only one that narrows what the entry carries, being
+     * the only one that names a method population rather than a class one.
+     *
+     * <p>The match is on the un-erased descriptor at capture, so this asserts what the store holds
+     * rather than a name comparison: {@code titles} and both {@code describe} overloads drop out.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void codeConditionKindNarrowsTheMethodListToTheConditionMethods(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var entry = onlyClass(fixture, "condition", FILM_SERVICE);
+
+            var methods = (List<Map<String, Object>>) entry.get("methods");
+            assertThat(methods).singleElement().satisfies(m -> {
+                assertThat(m).containsEntry("methodRef", FILM_SERVICE + "#activeFilms/0")
+                    .containsEntry("name", "activeFilms")
+                    .containsEntry("returnType", "Condition");
+                assertThat((String) m.get("description")).startsWith("Films still on the shelf.");
+                assertThat((Map<String, Object>) m.get("location"))
+                    .containsEntry("uri", fixtureUri("FilmService.java"))
+                    .containsEntry("line", fixtureLine("FilmService.java", "public Condition activeFilms"));
             });
         }
     }
 
+    /**
+     * The record kind: the components in declaration order, with their declared types.
+     *
+     * <p>And the arm the shipped fixture could not express, because it declared a record with no
+     * methods and a real record has five. Every one of them is {@code notDeclared}: the classfile
+     * carries the accessors and the mandated {@code equals} / {@code hashCode} / {@code toString}, this
+     * record's source declares none of them, and the two populations are documented as allowed to
+     * disagree. The class itself still resolves, which is the whole point of keeping the two absences
+     * apart: nothing here is stale, and re-walking the source would change nothing.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void conditionsListsOnlyConditionMethodsWithResolvedLocation() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
+    void codeRecordKindListsComponentsAndReportsMandatedMembersAsUndeclared(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var entry = onlyClass(fixture, "record", FILM_CARD);
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("conditions").build()));
-            var conditions = (List<Map<String, Object>>) structured.get("conditions");
-            assertThat(conditions).singleElement().satisfies(c -> {
-                assertThat(c).containsEntry("methodRef", "com.example.FilmService#activeFilms/0")
-                    .containsEntry("className", "com.example.FilmService")
-                    .containsEntry("name", "activeFilms");
-                var location = (Map<String, Object>) c.get("location");
-                assertThat(location).containsEntry("uri", "file:///src/FilmService.java").containsEntry("line", 10);
-            });
+            var components = (List<Map<String, Object>>) entry.get("components");
+            assertThat(components).containsExactly(
+                Map.of("name", "filmId", "type", "Integer"),
+                Map.of("name", "title", "type", "String"));
+
+            assertThat((Map<String, Object>) entry.get("location"))
+                .as("the record's own declaration is where the parse read it")
+                .containsEntry("uri", fixtureUri("FilmCard.java"))
+                .containsEntry("line", fixtureLine("FilmCard.java", "public record FilmCard"));
+
+            var methods = (List<Map<String, Object>>) entry.get("methods");
+            assertThat(methods).extracting(m -> m.get("name"))
+                .as("the classfile's own members, which is more than the source writes")
+                .containsExactly("equals", "filmId", "hashCode", "title", "toString");
+            assertThat(methods)
+                .as("a source that declares none of them is notDeclared, never notIndexed")
+                .allSatisfy(m -> assertThat(m)
+                    .containsEntry("locationStatus", "notDeclared")
+                    .doesNotContainKey("location"));
         }
     }
 
+    /**
+     * A class the census reaches and no walked source root does, which is every class a consumer gets
+     * from a dependency jar. Reported {@code notIndexed}, and kept apart from the record case above:
+     * one says the source cadence has not covered this file, the other that the file does not declare
+     * the member. The shipped wire had one word for both.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void recordsListsComponentsAndYieldsNotIndexedLocationArm() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
+    void codeReportsAClassWithNoWalkedSourceAsNotIndexed(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var entry = onlyClass(fixture, "service", REMOTE_LOOKUP);
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("records").build()));
-            var records = (List<Map<String, Object>>) structured.get("records");
-            assertThat(records).singleElement().satisfies(r -> {
-                assertThat(r).containsEntry("classRef", "com.example.FilmCard");
-                var components = (List<Map<String, Object>>) r.get("components");
-                assertThat(components).extracting(c -> c.get("name")).containsExactly("filmId", "title");
-                // FilmCard is not in the source index: the degraded arm is location-absent, not an error.
-                assertThat(r).doesNotContainKey("location").containsEntry("locationStatus", "notIndexed");
-            });
+            assertThat(entry).containsEntry("locationStatus", "notIndexed")
+                .doesNotContainKey("location")
+                .doesNotContainKey("description");
+            var methods = (List<Map<String, Object>>) entry.get("methods");
+            assertThat(methods).singleElement().satisfies(m -> assertThat(m)
+                .containsEntry("methodRef", REMOTE_LOOKUP + "#lookup/0")
+                .containsEntry("locationStatus", "notIndexed"));
         }
+    }
+
+    /**
+     * Two declarations of one name at one arity: the count is the answer the declaration family
+     * defines, so both overloads report {@code ambiguous} rather than one of them winning the slot.
+     * Arity is the only ground the two families share, a parse reading parameter types as written where
+     * the classfile carries erased ones, so there is nothing narrower to match on.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void codeReportsASameArityOverloadPairAsAmbiguousRatherThanPickingOne(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var entry = onlyClass(fixture, "service", FILM_SERVICE);
+            var methods = (List<Map<String, Object>>) entry.get("methods");
+
+            assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
+                .hasSize(2)
+                .allSatisfy(m -> assertThat(m)
+                    .containsEntry("locationStatus", "ambiguous")
+                    .doesNotContainKey("location"));
+            assertThat(methods).filteredOn(m -> "describe".equals(m.get("name")))
+                .as("the census still tells the overloads apart, the descriptor keying them")
+                .extracting(m -> m.get("returnType")).containsOnly("String");
+        }
+    }
+
+    /**
+     * One call answers for a class that is more than one kind, where two tools each answered half. The
+     * record is a service too, its accessors being public methods, which is the classpath's own answer
+     * rather than a guess at what the schema wires to.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void codeAnswersOnceForAClassThatIsBothAServiceAndARecord(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var asService = onlyClass(fixture, "service", FILM_CARD);
+            var asRecord = onlyClass(fixture, "record", FILM_CARD);
+
+            assertThat((List<Map<String, Object>>) asService.get("components"))
+                .as("the service kind carries the components too, so neither half is missing")
+                .isEqualTo(asRecord.get("components"));
+            assertThat((List<Map<String, Object>>) asService.get("methods"))
+                .isEqualTo(asRecord.get("methods"));
+        }
+    }
+
+    /** A kind the census has no population for is an argument error naming what it accepts. */
+    @Test
+    void codeRefusesAnAbsentOrUnknownKind(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var missing = GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), Map.of());
+            assertThat(missing.isError()).isTrue();
+            assertThat(firstLine(missing)).startsWith("code:").contains("service, condition, record");
+
+            var unknown = GraphitronMcpServer.codeResult(
+                fixture.handle(), fixture.reader(), Map.of("kind", "conditions"));
+            assertThat(unknown.isError()).isTrue();
+        }
+    }
+
+    /** A store-less server refuses rather than answering an empty classpath, as the catalog tools do. */
+    @Test
+    void codeRefusesWithoutAStoreToRead() {
+        var result = GraphitronMcpServer.codeResult(null, null, Map.of("kind", "service"));
+
+        assertThat(result.isError()).isTrue();
+        assertThat(firstLine(result)).startsWith("code:").contains("holds no fact store handle");
+    }
+
+    /** Paging is keyset on the class name, so following the cursor visits the census once, in order. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void codePagesByKeysetAndVisitsEveryClassOnce(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var expected = codeClasses(fixture, Map.of("kind", "service")).stream()
+                .map(c -> (String) c.get("className")).toList();
+            assertThat(expected).hasSizeGreaterThan(1).isSorted();
+
+            var walked = new java.util.ArrayList<String>();
+            Optional<String> cursor = Optional.empty();
+            int pages = 0;
+            do {
+                var args = new LinkedHashMap<String, Object>();
+                args.put("kind", "service");
+                args.put("limit", 1);
+                cursor.ifPresent(c -> args.put("cursor", c));
+                var result = GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), args);
+                assertThat(firstLine(result))
+                    .as("the total is the whole census on every page, not the remainder")
+                    .startsWith("code: " + expected.size() + " service class(es)");
+
+                var page = structured(result);
+                var entries = (List<Map<String, Object>>) page.get("classes");
+                assertThat(entries).hasSize(1);
+                walked.add((String) entries.getFirst().get("className"));
+                cursor = Optional.ofNullable((String) page.get("nextCursor"));
+            } while (cursor.isPresent() && ++pages < expected.size());
+
+            assertThat(walked).containsExactlyElementsOf(expected);
+        }
+    }
+
+    // ---- code fixture helpers ----
+
+    private static final String FIXTURE_PACKAGE = "no.sikt.graphitron.mcp.fixtures.";
+    private static final String FILM_SERVICE = FIXTURE_PACKAGE + "code.FilmService";
+    private static final String FILM_CARD = FIXTURE_PACKAGE + "code.FilmCard";
+    private static final String REMOTE_LOOKUP = FIXTURE_PACKAGE + "library.RemoteLookup";
+
+    /**
+     * The one entry the {@code code} tool returns for {@code className} under {@code kind}, reached
+     * through the name filter rather than by position, so a fixture class added later cannot shift a
+     * case onto a different entry.
+     */
+    private static Map<String, Object> onlyClass(StoreFixture fixture, String kind, String className) {
+        var classes = codeClasses(fixture, Map.of("kind", kind, "name", className));
+        assertThat(classes).as("%s under kind=%s", className, kind).hasSize(1);
+        return classes.getFirst();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> codeClasses(StoreFixture fixture, Map<String, Object> args) {
+        var structured = structured(
+            GraphitronMcpServer.codeResult(fixture.handle(), fixture.reader(), args));
+        return (List<Map<String, Object>>) structured.get("classes");
+    }
+
+    /** The {@code file:} URI of one walked fixture source, as the declaration family spells it. */
+    private static String fixtureUri(String fileName) {
+        return StoreFixture.codeFixtureSources().resolve(fileName).toUri().toString();
+    }
+
+    /**
+     * The 1-based line the fixture source writes {@code declaration} on, read out of the file rather
+     * than pinned as a number. That keeps the assertion exact about the one thing that can go wrong
+     * here, an off-by-one against the parse's own 1-based convention, without breaking every time the
+     * fixture file is edited.
+     */
+    private static int fixtureLine(String fileName, String declaration) {
+        Path file = StoreFixture.codeFixtureSources().resolve(fileName);
+        try {
+            var lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).contains(declaration)) return i + 1;
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        throw new AssertionError("no line of " + file + " declares " + declaration);
+    }
+
+    /** One method's entry by name, for the cases whose subject is a single method of a class. */
+    private static Map<String, Object> methodNamed(List<Map<String, Object>> methods, String name) {
+        return methods.stream().filter(m -> name.equals(m.get("name"))).findFirst()
+            .orElseThrow(() -> new AssertionError("no method named " + name));
     }
 
     // ---- schema ----
@@ -931,20 +1164,19 @@ class GraphitronMcpServerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void methodRefIdsMatchTheSourceIndexJoinKeys() throws Exception {
-        // The methodRef a tool emits is exactly fqcn#method/arity over the (className, name,
-        // paramCount) triple the SourceWalker.MethodKey carries; pin the grammar the instructions promise.
-        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
+    void methodRefIdsCarryTheArityTheDeclarationFamilyIsMatchedOn(@TempDir Path tmp) {
+        // The methodRef a tool emits is exactly fqcn#method/arity over the triple the java_ family is
+        // matched on, arity being the only ground it and the census share. Pinned against the tool's own
+        // parameter list rather than a second spelling of the grammar, so the id and the arity it
+        // promises cannot drift apart: an id claiming an arity the entry does not carry is the failure.
+        try (var fixture = StoreFixture.ofCodeFixtures(tmp)) {
+            var entry = onlyClass(fixture, "service", FILM_SERVICE);
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("conditions").build()));
-            var conditions = (List<Map<String, Object>>) structured.get("conditions");
-            String methodRef = (String) conditions.getFirst().get("methodRef");
-
-            var key = new SourceWalker.MethodKey("com.example.FilmService", "activeFilms", 0);
-            String fromKey = key.className() + "#" + key.methodName() + "/" + key.paramCount();
-            assertThat(methodRef).isEqualTo(fromKey);
+            assertThat((List<Map<String, Object>>) entry.get("methods")).allSatisfy(m -> {
+                int arity = ((List<?>) m.get("parameters")).size();
+                assertThat(m).containsEntry("methodRef",
+                    FILM_SERVICE + "#" + m.get("name") + "/" + arity);
+            });
         }
     }
 
@@ -1206,31 +1438,6 @@ class GraphitronMcpServerTest {
         public int dimension() {
             return dimension;
         }
-    }
-
-    private static Workspace codeWorkspace() {
-        var service = new CompletionData.ExternalReference(
-            "com.example.FilmService", "com.example.FilmService", "",
-            List.of(
-                new CompletionData.Method("list", "Film", "", List.of(), false),
-                new CompletionData.Method("activeFilms", "Condition", "", List.of(), true)),
-            List.of());
-        var card = new CompletionData.ExternalReference(
-            "com.example.FilmCard", "com.example.FilmCard", "",
-            List.of(),
-            List.of(new CompletionData.RecordComponent("filmId", "Integer"),
-                new CompletionData.RecordComponent("title", "String")));
-        var catalog = new CompletionData(List.of(), List.of(), List.of(service, card), Map.of());
-        var workspace = builtWorkspace(catalog, new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()),
-            ValidationReport.empty());
-        // FilmService class + its activeFilms method are indexed; FilmCard is not (not-yet-indexed arm).
-        var classes = Map.of("com.example.FilmService",
-            new SourceWalker.Decl(new CompletionData.SourceLocation("file:///src/FilmService.java", 4, 0), ""));
-        var methods = Map.of(
-            new SourceWalker.MethodKey("com.example.FilmService", "activeFilms", 0),
-            new SourceWalker.Decl(new CompletionData.SourceLocation("file:///src/FilmService.java", 10, 4), ""));
-        workspace.setSourceIndex(new SourceWalker.Index(classes, methods, Map.of(), Set.of()));
-        return workspace;
     }
 
     private static Workspace schemaWorkspace() {

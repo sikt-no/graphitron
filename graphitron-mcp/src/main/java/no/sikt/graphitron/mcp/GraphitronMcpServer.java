@@ -33,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -210,7 +211,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         var tools = new java.util.ArrayList<>(List.of(
             statusTool(workspace),
             catalogTablesTool(storeHandle), catalogDescribeTool(storeHandle, storeReader),
-            servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
+            codeTool(storeHandle, storeReader),
             schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
             diagnosticsAggregateTool(workspace, storeHandle),
             docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader)));
@@ -601,84 +602,154 @@ public final class GraphitronMcpServer implements AutoCloseable {
         return m;
     }
 
-    // ---- code tools (services / conditions / records) ----
-
-    /** Common {@code {name?, limit?, cursor?}} input schema shared by the three code tools. */
-    private static Map<String, Object> nameLimitCursorSchema(String nameDescription) {
-        return Map.of(
-            "type", "object",
-            "properties", Map.of(
-                "name", Map.of("type", "string", "description", nameDescription),
-                "limit", Map.of("type", "integer",
-                    "description", "Maximum entries per page (default " + CodeTools.DEFAULT_LIMIT + ")."),
-                "cursor", Map.of("type", "string",
-                    "description", "Opaque page cursor from a prior call's nextCursor.")));
-    }
+    // ---- code tool ----
 
     /**
-     * {@code services}: the consumer service / condition-host classes the schema wires to. Reads
-     * {@link Workspace#catalog()} external references joined with {@link Workspace#sourceIndex()}
-     * for class source locations, both live on every call.
+     * {@code code}: the consumer Java the schema binds to, read off the {@code jvm_} classpath census
+     * and the {@code java_} declaration family. One tool over one census with a {@code kind} selector,
+     * where three tools once shared one argument schema and differed by a predicate each.
+     *
+     * <p>Takes both the handle and the reader, on {@code catalog.describe}'s terms: the graph whose
+     * partition the census read is confined to, and a connection two statements can share.
      */
-    private static McpServerFeatures.SyncToolSpecification servicesTool(Workspace workspace) {
-        var tool = McpSchema.Tool.builder("services",
-                nameLimitCursorSchema("Case-insensitive substring filter on the class FQN."))
-            .title("List service classes")
-            .description("Lists the consumer Java classes the schema wires to as services, each with "
-                + "its public methods (name, return type, parameters) and stable method-ref IDs "
-                + "(fqcn#method/arity). Condition-returning methods appear here too; the conditions "
-                + "tool is the condition-filtered view. Each class carries its source location when "
-                + "the .java source index has it; an absent location reflects an un-rewalked source "
-                + "(the source cadence is independent of the build cadence), not a missing class.")
+    private static McpServerFeatures.SyncToolSpecification codeTool(
+        StoreHandle store, StoreReader reader
+    ) {
+        var tool = McpSchema.Tool.builder("code", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "kind", Map.of("type", "string",
+                        "enum", List.of("service", "condition", "record"),
+                        "description", "What to look for: service (classes with callable methods), "
+                            + "condition (classes with jOOQ Condition-returning methods), or record "
+                            + "(classes with record components)."),
+                    "name", Map.of("type", "string",
+                        "description", "Case-insensitive substring filter on the class FQN."),
+                    "limit", Map.of("type", "integer",
+                        "description", "Maximum classes per page (default "
+                            + CodeQueries.DEFAULT_LIMIT + ")."),
+                    "cursor", Map.of("type", "string",
+                        "description", "Opaque page cursor from a prior call's nextCursor.")),
+                "required", List.of("kind")))
+            .title("List consumer Java classes")
+            .description("Lists the consumer Java classes on the compile classpath, selected by kind: "
+                + "service, condition, or record. Each entry is one class with its public methods "
+                + "(name, declared return type, parameters) carrying stable method-ref IDs "
+                + "(fqcn#method/arity) and its record components, so a class that is more than one of "
+                + "those answers once with all of it. kind=condition narrows the method list to the "
+                + "Condition-returning methods, matched on the un-erased return type so a consumer's "
+                + "own type named Condition is not mistaken for one. Types are the declared forms, so "
+                + "a container's element type survives. Classes and methods carry their source "
+                + "location and doc comment where a parsed .java declares them; locationStatus names "
+                + "the other outcomes (notIndexed: no source walk reached the class; notDeclared: the "
+                + "class is parsed and does not declare that method; ambiguous: more than one "
+                + "declaration answers to the name), none of which is an error. Ordered by class name, "
+                + "which is also what the cursor is keyed by.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> CodeTools.servicesResult(
-                workspace.catalog().externalReferences(), workspace.sourceIndex(), request.arguments()))
-            .build();
-    }
-
-    /**
-     * {@code conditions}: the methods whose typed {@code returnsCondition} fact is set (return type
-     * is jOOQ {@code org.jooq.Condition}), classified at the parse boundary in
-     * {@code ClasspathScanner}. Same live reads and source-location join as {@code services}, keyed
-     * per method.
-     */
-    private static McpServerFeatures.SyncToolSpecification conditionsTool(Workspace workspace) {
-        var tool = McpSchema.Tool.builder("conditions",
-                nameLimitCursorSchema("Case-insensitive substring filter on the owning class FQN."))
-            .title("List condition methods")
-            .description("Lists the consumer methods returning a jOOQ Condition (classified exactly "
-                + "from the un-erased return type, so a consumer's own type named Condition is not "
-                + "mistaken for one), each with its owning class, parameters, and stable method-ref "
-                + "ID. Each carries its source location when the .java source index has it; an absent "
-                + "location reflects an un-rewalked source or an overload the (class, name, arity) key "
-                + "could not disambiguate, not an error.")
-            .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-            .tool(tool)
-            .callHandler((exchange, request) -> CodeTools.conditionsResult(
-                workspace.catalog().externalReferences(), workspace.sourceIndex(), request.arguments()))
+            .callHandler((exchange, request) -> codeResult(store, reader, request.arguments()))
             .build();
     }
 
     /**
-     * {@code records}: the consumer classes with a non-empty record-component list (a Java
-     * {@code record} / POJO backing), each with its components and a class source location.
+     * Maps one {@code code} page onto the wire. A store-less server refuses rather than answering an
+     * empty census, an empty class list reading identically to a classpath with nothing on it.
      */
-    private static McpServerFeatures.SyncToolSpecification recordsTool(Workspace workspace) {
-        var tool = McpSchema.Tool.builder("records",
-                nameLimitCursorSchema("Case-insensitive substring filter on the class FQN."))
-            .title("List record classes")
-            .description("Lists the consumer Java record classes the schema can bind to, each with "
-                + "its components (name, display type) and source location when the .java source "
-                + "index has it.")
+    static McpSchema.CallToolResult codeResult(
+        StoreHandle store, StoreReader reader, Map<String, Object> args
+    ) {
+        if (store == null || reader == null) {
+            return DiagnosticFacets.refusal("code");
+        }
+        var kind = CodeQueries.Kind.parse(McpWire.stringArg(args, "kind").orElse(null));
+        if (kind.isEmpty()) {
+            return DiagnosticFacets.error("code: the kind argument is required and names one of "
+                + CodeQueries.Kind.spellings() + ".");
+        }
+        Optional<String> name = McpWire.stringArg(args, "name");
+        int limit = McpWire.intArg(args, "limit", CodeQueries.DEFAULT_LIMIT);
+        if (limit < 1) limit = CodeQueries.DEFAULT_LIMIT;
+
+        var answer = CodeQueries.read(reader, store.graphName(), kind.get(), name,
+            McpWire.stringArg(args, "cursor"), limit);
+        var page = answer.page();
+
+        var classes = new ArrayList<Map<String, Object>>(page.classes().size());
+        for (var c : page.classes()) {
+            classes.add(mapCodeClass(c, answer.declarations()));
+        }
+
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("classes", classes);
+        page.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
+
+        String summary = "code: " + page.total() + " " + kind.get().name().toLowerCase(Locale.ROOT)
+            + " class(es)" + name.map(n -> " matching '" + n + "'").orElse("")
+            + "; showing " + page.classes().size()
+            + (page.nextCursor().isPresent() ? " (more available)" : "") + ".";
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(summary)
+            .structuredContent(fields)
             .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-            .tool(tool)
-            .callHandler((exchange, request) -> CodeTools.recordsResult(
-                workspace.catalog().externalReferences(), workspace.sourceIndex(), request.arguments()))
-            .build();
+    }
+
+    /**
+     * One class's wire entry: what the census says it declares, with the declaration family's answer
+     * written onto the class and onto each method.
+     */
+    private static Map<String, Object> mapCodeClass(
+        CodeQueries.ClassEntry entry, CodeQueries.Declarations declarations
+    ) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("classRef", entry.className());
+        m.put("className", entry.className());
+        writeDeclaration(m, declarations.ofClass(entry.className()));
+
+        var methods = new ArrayList<Map<String, Object>>(entry.methods().size());
+        for (var method : entry.methods()) {
+            int arity = method.parameters().size();
+            var mm = new LinkedHashMap<String, Object>();
+            mm.put("methodRef", McpWire.methodRef(entry.className(), method.name(), arity));
+            mm.put("name", method.name());
+            mm.put("returnType", method.returnType());
+            mm.put("parameters", method.parameters().stream().map(p -> {
+                var pm = new LinkedHashMap<String, Object>();
+                // Absent where the class was compiled without -parameters; never synthesised.
+                McpWire.putIfNotNull(pm, "name", p.name());
+                pm.put("type", p.type());
+                return pm;
+            }).toList());
+            writeDeclaration(mm, declarations.ofMethod(entry.className(), method.name(), arity));
+            methods.add(mm);
+        }
+        m.put("methods", methods);
+
+        m.put("components", entry.components().stream()
+            .map(c -> Map.<String, Object>of("name", c.name(), "type", c.type()))
+            .toList());
+        return m;
+    }
+
+    /**
+     * Writes a declaration outcome onto a wire entry: {@code location} and {@code description} where a
+     * source declares it, and a {@code locationStatus} marker on each of the other outcomes so an agent
+     * can tell a source walk that has not caught up from a method the source genuinely does not declare.
+     * Exhaustive over the {@link CodeQueries.Declaration} permits.
+     */
+    private static void writeDeclaration(Map<String, Object> entry, CodeQueries.Declaration declaration) {
+        switch (declaration) {
+            case CodeQueries.Declaration.Declared d -> {
+                d.position().ifPresentOrElse(
+                    p -> entry.put("location", Map.of("uri", p.uri(), "line", p.line(),
+                        "column", p.column())),
+                    () -> entry.put("locationStatus", "notPositioned"));
+                if (!d.javadoc().isBlank()) entry.put("description", d.javadoc());
+            }
+            case CodeQueries.Declaration.Ambiguous ignored -> entry.put("locationStatus", "ambiguous");
+            case CodeQueries.Declaration.NotDeclared ignored -> entry.put("locationStatus", "notDeclared");
+            case CodeQueries.Declaration.NotIndexed ignored -> entry.put("locationStatus", "notIndexed");
+        }
     }
 
     // ---- schema tool ----

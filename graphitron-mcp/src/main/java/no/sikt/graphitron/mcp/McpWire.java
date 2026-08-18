@@ -2,7 +2,6 @@ package no.sikt.graphitron.mcp;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -15,8 +14,7 @@ import java.util.Optional;
  * Shared MCP wire helpers for the structured read-tools (catalog tools, code / schema /
  * diagnostics tools). One home for the conventions the slices agree on so they
  * cannot drift: argument coercion, the opaque page-cursor convention, the stable-ID grammar the
- * server instructions promise, the source-location wire shape, and the typed source-location join
- * the code tools layer over the LSP source index.
+ * server instructions promise, and the source-location wire shape.
  *
  * <p>Package-private: these are wire-mapping mechanics internal to the MCP module, not part of
  * the server's public surface.
@@ -139,9 +137,9 @@ final class McpWire {
     // no composer, being what the schema carries already.
 
     /**
-     * Method-ref ID: {@code fqcn#method/arity}. Carries the {@link SourceWalker.MethodKey}
-     * {@code (className, methodName, paramCount)} triple the source join uses; the {@code /arity}
-     * suffix disambiguates overloads.
+     * Method-ref ID: {@code fqcn#method/arity}. Carries the {@code (className, methodName, arity)}
+     * triple the {@code java_} declaration family is matched on, arity being the only ground that
+     * family and the classpath census share; the {@code /arity} suffix disambiguates overloads.
      */
     static String methodRef(String className, String methodName, int arity) {
         return className + "#" + methodName + "/" + arity;
@@ -170,50 +168,6 @@ final class McpWire {
         m.put("line", loc.line());
         m.put("column", loc.column());
         return m;
-    }
-
-    /**
-     * Typed outcome of joining a code reference against the LSP source index, mirroring the LSP
-     * {@code DefinitionTarget}: a resolved location, a not-yet-indexed degraded state (the
-     * {@code .java} source cadence has not caught up), or an overload-ambiguous outcome (the
-     * {@code (class, name, arity)} key cannot pick one overload). Never a silent drop and never a
-     * hard failure; the tool handlers map each arm to the wire shape (location present / absent).
-     */
-    sealed interface SourceJoin permits SourceJoin.Resolved, SourceJoin.NotIndexed, SourceJoin.Ambiguous {
-        record Resolved(CompletionData.SourceLocation location) implements SourceJoin {}
-
-        record NotIndexed() implements SourceJoin {}
-
-        record Ambiguous() implements SourceJoin {}
-    }
-
-    /** Joins a method against the source index by its {@code (className, name, arity)} key. */
-    static SourceJoin joinMethod(SourceWalker.Index index, String className, String methodName, int arity) {
-        var key = new SourceWalker.MethodKey(className, methodName, arity);
-        var decl = index.methods().get(key);
-        if (decl != null) return new SourceJoin.Resolved(decl.location());
-        if (index.ambiguousMethods().contains(key)) return new SourceJoin.Ambiguous();
-        return new SourceJoin.NotIndexed();
-    }
-
-    /** Joins a class against the source index by FQN. Classes carry no overload-ambiguity arm. */
-    static SourceJoin joinClass(SourceWalker.Index index, String fqn) {
-        var decl = index.classes().get(fqn);
-        return decl != null ? new SourceJoin.Resolved(decl.location()) : new SourceJoin.NotIndexed();
-    }
-
-    /**
-     * Writes a join outcome onto a wire entry: {@code location} present when resolved, a
-     * {@code locationStatus} marker ({@code "notIndexed"} / {@code "ambiguous"}) on the degraded
-     * arms so an agent can tell an un-rewalked {@code .java} from a missing method, without the
-     * read failing. Exhaustive over the {@link SourceJoin} permits.
-     */
-    static void writeLocation(Map<String, Object> entry, SourceJoin join) {
-        switch (join) {
-            case SourceJoin.Resolved r -> entry.put("location", location(r.location()));
-            case SourceJoin.NotIndexed ignored -> entry.put("locationStatus", "notIndexed");
-            case SourceJoin.Ambiguous ignored -> entry.put("locationStatus", "ambiguous");
-        }
     }
 
     // ---- snapshot availability / freshness axes ----

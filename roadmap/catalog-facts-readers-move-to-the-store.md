@@ -610,7 +610,15 @@ passed the whole suite.
 **Reads.** One nested projection per class over the `jvm_` census: the class row carries a `MULTISET`
 of its callable methods, each with a nested `MULTISET` of parameters for the arity in the
 `fqcn#method/arity` ref and its `declared_return_type` for the signature an author reads, and a
-`MULTISET` of record components.
+`MULTISET` of record components. The rendering against H2 is one `SELECT ... FROM jvm_class` carrying
+two correlated `json_arrayagg` subqueries, the method one nesting a second for the parameters, beside
+the graph-scope `EXISTS` and the kind's own `EXISTS`.
+
+Paging is keyset on the class name rather than an offset into a materialised list, which is what
+`catalog.tables` established and for the same reason: an offset is only meaningful against an order
+that is stable between calls. The name identifies a row within a graph because a class present under
+more than one classpath entry is captured once per run, at the entry a classloader would resolve it
+from.
 
 Source locations are a second read and not a nested child, which is the one place in this item where a
 tool legitimately fires two queries for one wire entry. "Every tool's grain, and the relation at it"
@@ -619,6 +627,14 @@ the `jvm_` census, deliberately, so the `location` / `locationStatus` fields com
 `(class_name, method_name, parameter_count)` whose row count is itself the resolution outcome. Do not
 try to fold it into the nesting, and do not treat an unmatched side as an error in either direction.
 
+That second read is itself one nested projection, at the class-declaration grain: a
+`java_class_declaration` row for each of the page's class names, carrying a `MULTISET` of the
+`java_method_declaration` rows written in that same file. Correlated on the whole `(file, class_name)`
+key rather than on the name, which is what stops a method declaration being reported under a class
+declaration in a different file, exactly the pairing a name two files declare would otherwise invite.
+Only the two row counts the family defines as resolution outcomes are read in Java, and they are read
+as counts rather than resolved into a pick.
+
 The three-way split the old tools performed becomes a `kind` argument over one answer rather than
 three tools over one census: a class with `jvm_record_component` rows is a record, a method whose
 `jvm_method.returns_condition` is set is a condition, and a class with callable methods is a service,
@@ -626,12 +642,58 @@ condition methods included, since the same class is both. That split was always 
 derivation and `CodeTools`' javadoc says so; it stays a derivation and becomes three predicates over
 one read instead of three handlers over three.
 
+**What the `service` predicate actually says, and what the shipped fixture pretended.** Over a real
+census, "has callable methods" is satisfied by every record too: a record's classfile carries its
+accessors and its mandated `equals` / `hashCode` / `toString`, all public and none synthetic, so the
+scan captures them. The shipped `records` test asserted the opposite ("the record-only FilmCard is not
+a service (no methods)") and it was asserting a property of its own hand-built reference, not of
+production. Nothing about that changes here except the honesty of the description: the kind names a
+population the census can answer for, and whether the schema wires to a class as a `@service` is a
+classification fact this census does not hold at all. The tool description says that now instead of
+promising "the classes the schema wires to as services".
+
+**One entry per class, carrying everything the class has.** The kind selects which classes appear; it
+does not carve the entry down to the old tool's half of one. So a record's entry reports its components
+*and* its methods, and a service's reports its methods *and* its components, which is what makes "one
+call where a class that is both needed two" true rather than aspirational. The single exception is
+`condition`, and the rule behind it is stated once: a kind naming a *method* population narrows the
+method list to it, and a kind naming a *class* population narrows nothing.
+
 **Wire.** This is a breaking change on three tools and the argument for it is in "The surface shrinks
 first". The `code` tool takes the same name filter, limit and cursor the three took (they shared one
-argument schema), plus the `kind` selector, and its entries carry the same class refs, method refs,
-components and location fields. What an agent loses is three tool names; what it gains is one call
-where a class that is both a service and a record needed two. The instructions' three bullets become
-one and the manual's three rows become one.
+argument schema), plus a required `kind` selector, and its entries carry the same class refs, method
+refs, components and location fields. What an agent loses is three tool names; what it gains is one
+call where a class that is both a service and a record needed two. The instructions' three bullets
+become one and the manual's three rows become one.
+
+Four further wire changes, each following from reading the store rather than a scan:
+
+* **`locationStatus` gains two values, and one of them is the point.** The shipped wire had
+  `notIndexed` and `ambiguous`, where `notIndexed` covered both "no source walk reached this class"
+  and "the class is parsed and declares no such method". The store keeps those apart, so the wire does
+  too: `notIndexed` and `notDeclared`. The difference matters to an agent because one is fixed by a
+  re-walk and the other never will be. The fourth value, `notPositioned`, is defensive and matches
+  what the family keeps room for: a declaration the parse could not position still carries a doc
+  comment, so reporting it as un-indexed would be a lie about a file the store holds.
+* **Every type on the wire is the declared form.** `returnType` comes from
+  `jvm_method.declared_return_type`, a parameter's `type` from `declared_parameter_type`, and a
+  component's from `jvm_record_component.declared_type`. The census carries both forms deliberately,
+  neither being a function of the other, and they answer different questions: the erasure is what a
+  check on a type's identity compares, which is store-side work, and the declared form is what an
+  author reads in a signature. One rule rather than a per-field choice, which is why the component
+  field is renamed `displayType` to `type`: keeping the old name while changing the content would
+  have been the worse half of a breaking change.
+* **`description` goes from a dead field to a live one.** The shipped tools emitted it from
+  `ExternalReference.description()` / `Method.description()`, which the classfile scan writes as `""`
+  for every class and every method, a classfile carrying no doc comment. So the field never appeared
+  on the wire at all. The declaration read that answers `location` also answers `javadoc`, at the same
+  grain and in the same statement, so the field now carries the doc comment the source was written
+  with, for classes and for methods, at no extra query.
+* **`parameters[].source` retires.** It was always `null` from the scan, so like `description` it
+  never reached the wire, and unlike `description` it has no store column to come from: which
+  `ParamSource` a parameter binds to is decided per directive application, not per method, which
+  `jvm_method_parameter` states as its reason for not carrying one. A field that never appeared and
+  has no relation behind it is a removal, not a regression.
 
 **Why here rather than in a separate item.** An earlier reading deferred these three to a Backlog
 item on the grounds that their acceptance surface is source locations and they share no query with
@@ -639,6 +701,28 @@ the catalog reads. Both facts are true and neither is a reason to defer: the goa
 reading only the store, and a tool left on `CompletionData` keeps a `Workspace` accessor alive, which
 keeps the module edge alive, which is what the item is for. That separate item is discarded and its
 scope absorbed here.
+
+**Deletes.** `CodeTools` whole, and with it `McpWire`'s `SourceJoin` permits, `joinMethod`,
+`joinClass` and `writeLocation`, which had no other caller: the join they performed was against the
+in-memory source index, and the outcome type they carried had three arms where the family has four.
+`McpWire.location(SourceLocation)` stays, `SchemaView` rendering SDL positions through it, and so does
+`page`, two projection-reading tools still holding lists.
+
+**A fixture, because the shipped one could not express the case.** The cases read a store captured
+from this module's own fixture sources: a real classfile scan of `no.sikt.graphitron.mcp.fixtures` for
+the census, and a real parse of the `fixtures.code` directory for the declaration family. Two inputs
+on purpose, because the tool joins two families that refresh on independent cadences and the fixtures
+have to be able to disagree. `fixtures.code.FilmService` is reached by both, so it answers with a
+location and a doc comment; it declares two same-arity overloads of one name, which is the `ambiguous`
+outcome the family defines as a count rather than a pick. `fixtures.code.FilmCard` is a record, so its
+classfile carries five members its source declares none of, which is `notDeclared` on real code rather
+than on a contrivance. `fixtures.library.RemoteLookup` sits outside the walked root, which is every
+class a consumer gets from a dependency jar and is the `notIndexed` outcome.
+
+A real scan rather than hand-built references because everything projected here is a classfile fact the
+store holds verbatim: the descriptors that key an overload, the un-erased `org.jooq.Condition` match,
+the declared forms off the `Signature` attribute, and a record's mandated members. The shipped fixture
+got the last of those wrong, which is how its `services` assertion came to be false about production.
 
 **Leaves behind.** `sourceIndex` has no reader left. `catalog` keeps one, `schema`'s `nodeMetadata`
 read, which slice 7 takes. `snapshot` keeps its five (`schema`, `status`, both diagnostics tools,
@@ -1407,8 +1491,22 @@ against a store captured from the test sources rather than against a hand-built 
 because the merge makes it expressible: a class that is both a service and a record answers once with
 both, where two tools each answered half. Two more are new because the store distinguishes what the
 scan did not, a class the census never reached and a class it reached that declares no such method
-being separate answers on `intent_field_producer_method`'s stated terms, with `locationStatus` the
-field where that surfaces.
+being separate answers, with `locationStatus` the field where that surfaces.
+
+Three more join them, and one of the three old assertions does not survive. The overload pair covers
+the `ambiguous` outcome as a count rather than a pick; a keyset case walks the cursor to exhaustion and
+asserts the census is visited once, in order, with the unpaged total on every page; and the bad-`kind`
+case covers the argument error. What is dropped is the shipped `records` case's claim that a
+record-only class is not a service, which was false about production and true only of its own mock.
+
+Two absent arms are declared rather than left as gaps. A class name declared in two files is
+`ambiguous` at the class grain and makes every method on it ambiguous too, and neither is reachable
+from a compiled fixture: two files declaring one fully-qualified name is malformed Java, which is
+exactly why the relation is keyed by file and name and why the arm exists. It is defensive on the same
+terms the language server's own reader is. The other is a parameter name being present, which needs
+`-parameters` on the fixture module and would make the documented NULL arm unreachable instead; the
+absent arm is the surprising one and is the one covered, and the shipped tests covered neither, their
+fixture methods taking no parameters at all.
 
 **Slice 7, `schema`.**
 
@@ -1666,6 +1764,19 @@ is the kind that survives in prose long after the code goes, so it leads.
 * `services`, `conditions` and `records` as three tool names, and `CodeTools`' three-result framing
   with them; "the conditions tool is the condition-filtered view" retires as a cross-reference between
   tools and returns as a sentence about one tool's `kind` argument
+* `SourceJoin` with its `Resolved` / `NotIndexed` / `Ambiguous` permits, `McpWire.joinMethod`,
+  `joinClass` and `writeLocation`, and "the source index" as a thing this module joins against. What
+  replaces the type has four arms where it had three, so its own name would have been a lie about the
+  outcome space; and the phrase "an un-rewalked `.java`" stops covering every absent location, that
+  being one of two absences the family reports and the only one a re-walk changes
+* "the classes the schema wires to as services" as what a `jvm_` predicate answers. Whether a class is
+  wired to is a classification fact and this census holds none; the predicate answers which classes
+  declare callable methods, which every record does too
+* `displayType` as a wire field name, and per-field choices between a type's erased and declared forms.
+  Every type the `code` tool emits is the declared form, stated once
+* `ParamSource` on a method's parameter as something a discovery read can report. It is decided per
+  directive application, so the relation deliberately carries no column for it, and the field it fed
+  never reached the wire at all
 * "several queries in one read transaction" as the shape of an answer, with the multi-query tearing
   argument that justified it, the `FkId` grouping key, the `Keys` pair record, and "folding the rows"
   as a step a reader has. What replaces all of it is one nested projection. The reader's justification

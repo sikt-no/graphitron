@@ -10,7 +10,7 @@ Ask these tools before grepping the schema or reading generated sources. They an
 - What is in my schema, what did graphitron make of a type or field, which table backs it, which mutations write and to what: `schema`. A field reported `Unresolvable`, a type reported `Unclassified`, or a snapshot reported `Unavailable` or `Previous`, means graphitron could not read the intent you are asking about: go to `diagnostics` for why, rather than back to the schema text. A field reported `Conflicted` still carries what each rival directive claims (verb, table, method), plus the violation to fix.
 - What is broken right now: `diagnostics`.
 - What is broken in proportion, when there is more than a page of it: `diagnostics.aggregate`. Its group keys feed back into `diagnostics` to read one cluster's entries.
-- Which consumer Java the schema binds to: `services`, `conditions`, `records`.
+- Which consumer Java the schema binds to: `code`, called with `kind=service`, `kind=condition` or `kind=record`. One class per entry, carrying its methods and its record components, so a class that is more than one of those answers once with all of it.
 - Is the dev session live, and is its answer current: `status`.
 
 Three things hold across these tools:
