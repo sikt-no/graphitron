@@ -38,36 +38,71 @@ capture one SDL fixture into it, assert against the resulting `DSLContext`. The 
 `private static final String GRAPH = "<OwnClassName>"`. New copies keep arriving, because there is
 nothing for a new test author to reach for instead.
 
-What each one actually asserts is an `intent_*` relation, and the DDL says which kind:
+### Three subjects, one axis, and the sort falls out
 
-| Test class | Asserts on | Declared as |
-|---|---|---|
-| `ColumnMatchClaimTest` | `intent_column_match_claim` and three feeders | view |
-| `ReferenceStepTargetTest` | `intent_field_reference_step_target`, `intent_spelled_table` | view |
-| `FieldColumnTableTest` | `intent_field_column_scope`, `intent_field_column_table` | view |
-| `ClassMemberSlotTest` | `intent_class_member_slot` | view |
-| `ClassAssignableTest` | `intent_class_assignable` | view |
-| `FieldProducerMethodTest` | `intent_field_producer_method` | view |
-| `AccessorHopTest` | `intent_field_accessor_hop` and four feeders | view |
-| `ProducerCardinalityTest` | `intent_producer_cardinality_conflict` | view |
-| `AuthoredClaimConflictsTest` | `intent_authored_claim_conflict`, `intent_authored_type_claim` | view |
-| `DemandShadowTest` | the demand views, **and** `intent_type_domain` | view + table |
-| `InputOccurrenceShadowTest` | `intent_input_occurrence_override`, **and** the path tables | view + table |
-| `SeparateFetchTest` | `intent_field_separate_fetch`, **and** `intent_type_backing_class` | view + table |
-| `TypeBackingClassTest` | `intent_type_backing`, `_seed`, `_conflict`, **and** `_class` | view + table |
-| `TypeBackingShadowTest` | `intent_type_backing_seed`, **and** `intent_type_backing_class` | view + table |
+What each class asserts is an `intent_*` relation, but the relation is not what decides where the
+test belongs. **The subject does**, and across these fourteen classes there are exactly three
+subjects. Naming them is the whole of the classification work, because every case in the population
+carries one of them and the module boundary follows.
 
-Nine of the fourteen assert only on SQL views declared in `graphitron-model.sql`. They run a crawler
-they are not testing in order to populate rows a view reads, and the crawler is in a different module
-from the thing under assertion. The remaining five are mixed: `intent_type_domain`,
-`intent_input_occurrence_path` / `_path_step` and `intent_type_backing_class` are `CREATE TABLE`,
-written by
-`ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` in `graphitron`'s main sources. Those
-halves are genuinely `graphitron`'s, and testing them through a real capture is right.
+* **Algebra.** What a relation returns given rows: a view's joins, its outer edges, a check
+  constraint's boundary. The subject is the DDL, and the inputs are stateable as rows.
+* **Writer.** That a `graphitron` writer puts the right rows in a `CREATE TABLE` relation at its own
+  cadence, or that a reach from an external input lands as a row at all. The subject is
+  `graphitron`'s code, and the inputs are a real capture.
+* **Walk agreement.** That a store-native relation and the transitional classification walk answer
+  the same question the same way. The subject is the *equivalence of two implementations*, one of
+  them `graphitron`'s.
 
-That is the count by relation kind, and one of the nine splits anyway on a second axis. The slices
-name it: `ClassMemberSlotTest` reads only views, but part of what it pins is that the rows those views
-read came off a real classfile scan, which is capture's and stays.
+Algebra goes to `graphitron-model` and gets seeded. Writer and walk agreement stay in `graphitron`
+and keep a real capture. That is the sort, and it is mechanical:
+
+| Test class | Asserts on | Declared as | Subject |
+|---|---|---|---|
+| `ReferenceStepTargetTest` | `intent_field_reference_step_target`, `intent_spelled_table` | view | algebra |
+| `FieldColumnTableTest` | `intent_field_column_scope`, `intent_field_column_table` | view | algebra |
+| `ClassAssignableTest` | `intent_class_assignable` | view | algebra |
+| `FieldProducerMethodTest` | `intent_field_producer_method` | view | algebra |
+| `AccessorHopTest` | `intent_field_accessor_hop` and four feeders | view | algebra |
+| `ProducerCardinalityTest` | `intent_producer_cardinality_conflict` | view | algebra |
+| `ClassMemberSlotTest` | `intent_class_member_slot` | view | algebra + writer |
+| `TypeBackingClassTest` | `intent_type_backing`, `_seed`, `_conflict`, **and** `_class` | view + table | algebra + writer |
+| `ColumnMatchClaimTest` | `intent_column_match_claim` and three feeders | view | algebra + walk agreement |
+| `AuthoredClaimConflictsTest` | `intent_authored_claim_conflict`, `intent_authored_type_claim` | view | algebra + walk agreement |
+| `DemandShadowTest` | the demand views, **and** `intent_type_domain` | view + table | writer + walk agreement |
+| `InputOccurrenceShadowTest` | `intent_input_occurrence_override`, **and** the path tables | view + table | writer + walk agreement |
+| `SeparateFetchTest` | `intent_field_separate_fetch`, **and** `intent_type_backing_class` | view + table | writer + walk agreement |
+| `TypeBackingShadowTest` | `intent_type_backing_seed`, **and** `intent_type_backing_class` | view + table | walk agreement |
+
+Six classes are algebra and nothing else, and they move whole. Seven carry two subjects and split.
+The fourteenth, `TypeBackingShadowTest`, is walk agreement end to end and stays whole where it is: it writes the
+walk's reach with `TypeBackingClassRows.write(dsl, GRAPH, TypeBackingClasses.of(bundle.model()))`
+and diffs `walk_type_backing_class` against `intent_type_backing_class` and `intent_type_backing_seed`,
+so its view read is one side of a comparison rather than a claim about the view.
+
+**Read the axis rather than the relation kind, because the two disagree.** Relation kind is a good
+proxy and it is wrong in three places. `ColumnMatchClaimTest` and `AuthoredClaimConflictsTest` assert
+only on views yet are the registered walk-agreement anchors:
+`maskedClaimsAgreeWithTheColumnMatchArmOverTheCorpus` sweeps `ClassifiedCorpus.examples()` and
+compares the view against the walk's `ColumnBackedField` carrying `CallSiteCompaction.Direct`, and
+`AuthoredClaimConflictsTest` routes nearly every case through `AuthoredClaimConflicts.detect`,
+asserting `ValidationError` and `Rejection` values with `GatheredFacts.gather` over
+`SchemaReachability.walk` as the other side. `TypeBackingShadowTest` asserts on a table and a view
+and still has no algebra half at all. Sorting on relation kind puts the first two in the whole-mover
+batch and splits the third, and all three are the wrong answer.
+
+The seeded/captured choice follows from the subject and not the other way round. Algebra's inputs
+are rows by definition, so it can be seeded and therefore should be. Walk agreement's inputs are an
+SDL document both implementations read, so it cannot be seeded without deleting one side of the
+comparison.
+
+**Walk agreement is transient, and that is why it must not go down.** These anchors exist for the
+strangler window. `FactCaptureAgreementTest`'s own javadoc says so: "These tests retire as consumers
+migrate off `GraphitronSchema` piece by piece; they pin a shadow copy, and a shadow with a reader
+does not need one." A walk-agreement half seeded into `graphitron-model` would be a permanent
+fixture in the module that outlives the thing it polices, and it would have to be deleted again
+later by somebody with less context. Keeping these halves in `graphitron`, thin and beside the
+implementation they shadow, means they retire with it.
 
 **The tree already contains the correction, and reads it as a hazard.** `ColumnMatchClaimTest` carries
 `withSeededStore` plus `seedGraph` / `seedSource` / `seedField` / `seedTable` / `seedSchema` /
@@ -84,9 +119,9 @@ right. Whether the column-match view is node-inference-sensitive is a question a
 only arises because the test reaches the view through a crawler that takes a `NodeDeclaration`. The
 classpath census has to be threaded through eight `derive/` classes only so capture will put
 `graphql_class_*` rows in place. Seeded, you insert the rows the view reads and assert on what it
-returns. One case is the exception that proves it: `ClassMemberSlotTest` pins a rule that reads a
-class's *declared form*, so for that one the real scan is the subject and not the plumbing, which is
-why the slices keep it and drop the other seven.
+returns. Both questions are about the algebra subject, and the census and the `NodeDeclaration` are
+capture plumbing that a seeded case does not have. Where the census *is* the subject, as in
+`ClassMemberSlotTest`'s reach from a classfile to a slot row, the axis says writer and the scan stays.
 
 The utility the *capture-shaped* tests want already exists. `capture/CapturedStore` is an
 `AutoCloseable` handle offering `of(Path, String)`, `ofPipeline(Path, String)`, a third arm
@@ -116,13 +151,25 @@ real pipeline run." It shares the bottom of the stack with the others and nothin
 catalog-facts item added `no.sikt.graphitron.mcp.StoreFixture` while migrating the catalog tools: an
 in-memory store plus a direct `FactCapture.capture` call with a `JooqCatalog`, named after the LSP's
 fixture and arriving at its `ofCatalog` / `ofMultiSchemaCatalog` / `andGraph` shapes independently for
-the second time. It carries two shapes the LSP's does not, and both are requirements on G1 rather than
-curiosities: `withoutCatalog`, and `recaptureCatalog(String jooqPackage)`, which re-captures a graph
-into an already-populated store by passing `warm = true` to `FactCapture.capture`.
-`CatalogSearchIndexTest` calls the latter four times, once with a null package. A warm re-capture into
-an already-open store is
-therefore a live G1 shape with named callers, not an oddity to be discovered mid-migration, and the
-factory set below has to carry it from the first day of that slice.
+the second time. It carries three shapes the LSP's does not, and all three are requirements on the
+shared levels rather than curiosities:
+
+* `withoutCatalog`, the pre-codegen state where a graph is captured and its census is empty.
+* `recaptureCatalog(String jooqPackage)`, which re-captures a graph into an already-populated store by
+  passing `warm = true` to `FactCapture.capture`. `CatalogSearchIndexTest` calls it four times, once
+  with a null package, so a warm re-capture into an already-open store is a live G1 shape with named
+  callers rather than an oddity to be discovered mid-migration.
+* `ofCodeFixtures`, which pairs a `ClasspathScanner` census over its own fixture package with a
+  `JavaSourceFacts` refresh over one source root, deliberately reaching two families on independent
+  cadences so the fixtures can disagree. Its census half is G1 and its refresh half is G0.
+
+That third one arrived after this section was first written, and it is worth saying so plainly rather
+than quietly correcting the count: the catalog-facts item grew its fixture again while this item sat
+in Spec, and the shape it grew is a second copy of `refreshJavaSources`, the exact member the LSP's
+fixture already had. This item predicted that in the sequencing section below and then assumed it had
+stopped. It had not, and the lesson is the one G0 answers: a population with no named home keeps
+being rebuilt, and the fix is to name the home, not to time the migration around when the copying
+happens to pause.
 
 The MCP fixture exists for a good reason, which is that a census read does not need a build and
 `StoreBackedBuild` was pricing the generator into every catalog case, so the fixture is not the mistake;
@@ -135,28 +182,46 @@ for when no shared harness expresses its shape is not the nearest existing fixtu
 `GraphitronModelStore.open()` inline and write to it directly, one site each. Small, and exactly the
 shape that becomes another named harness the moment a third site appears.
 
-### The direct writers, which want M0 and nothing else
+### The facts writers, which are one population the tree splits four ways
 
-A second population opens a store and writes rows to it directly, with no SDL captured into it at all:
-`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest` and `capture/JavaSourceFactsTest`
-inside `graphitron`, and downstream `graphitron-lsp`'s
-`RejectionSeverityCoverageTest` and `graphitron-mcp`'s `DiagnosticsToolCompileSourceTest` and
-`DiagnosticsAggregateTest` (which is a `StoreBackedBuild` reader *and* a direct writer, opening its own
-store in three cases and driving `RejectionFacts` by hand).
+A second population never captures SDL at all. It opens a store and drives one of `graphitron`'s own
+facts writers by hand. There are exactly four such writers, and the census is not small:
 
-They are not a separate design problem from the maven-plugin's two inline sites. They are the same
-code. `DevMojoTest` opens a store and constructs `new CompileFacts(store.dsl(), new GraphIdentity(…))`,
-and `compile/CompileFactsTest` opens a store and constructs the same writer the same way.
-`dev/CatalogRefreshTest` opens a store and constructs `new JavaSourceFacts(store.dsl())`;
-`capture/JavaSourceFactsTest` does the same. Whatever the item does with the maven-plugin pair it has
-to do with these, or it is routing identical code two opposite ways on the accident of which module it
-sits in.
+| Writer | Relations | Hand-driven from |
+|---|---|---|
+| `RejectionFacts` | the rejection family | `diagnostics/DiagnosticFactsTest`, LSP's `RejectionSeverityCoverageTest`, MCP's `DiagnosticsAggregateTest`, `StoreBackedBuild` |
+| `CompileFacts` | the javac round | `compile/CompileFactsTest`, `capture/FactCaptureAgreementTest`, `diagnostics/DiagnosticFactsTest`, MCP's `DiagnosticsToolCompileSourceTest`, `DevMojoTest` |
+| `JavaSourceFacts` | the `java_` declaration family | `capture/JavaSourceFactsTest`, `dev/CatalogRefreshTest`, both `StoreFixture`s |
+| `BuildWarningFacts` | the warning family | `diagnostics/DiagnosticFactsTest`, `StoreBackedBuild`, LSP's `StoreFixture` |
 
-So they migrate, and the level they migrate to is M0, the store's lifetime, and nothing above it.
-What they get out of it is modest, an opened store and a `GraphIdentity` they currently hand-build, and
-that is worth stating plainly rather than overselling. The reason to convert them anyway is that the
-alternative is a guard exception list holding six classes that are not exceptions on the merits,
-merely unconverted, which is the quiet second inventory this item exists to stop.
+Twenty-two construction sites across twelve files and all five modules, every one of them spelling
+`new <X>Facts(dsl, new FactCapture.GraphIdentity(name, dir))` and calling `write` or `refresh`.
+`RejectionSeverityCoverageTest` reaches for its writer by fully qualified name inline, which is what
+a test does when the thing it needs has no home worth importing.
+
+**The item currently routes this one population four different ways, and that is the mistake to fix
+before anything else.** The standalone tests are called direct writers and sent to M0; the identical
+calls inside `graphitron-lsp`'s `StoreFixture` are called "the capture half" and sent to G1; the ones
+inside `capture/` and `diagnostics/` are left alone as oracles; the maven-plugin's two are called
+inline sites. They are the same code. `DevMojoTest` constructs
+`new CompileFacts(store.dsl(), new GraphIdentity(…))` and `compile/CompileFactsTest` constructs the
+same writer the same way; `dev/CatalogRefreshTest` constructs `new JavaSourceFacts(store.dsl())` and
+so do `capture/JavaSourceFactsTest` and both downstream fixtures.
+
+So they get a level of their own, **G0: the facts writers over an open store**, sitting between M0
+and G1. It needs `graphitron` (the writers and `GraphIdentity` are `graphitron`'s) and it needs no
+SDL, no registry, no catalog and no capture. That is a real level rather than a convenience: the
+model itself draws this line, and `FactCaptureAgreementTest`'s registry states it, the `java_` family
+being "written by neither capture nor a graph, so its lifecycle anchor is partitioned by source file
+where the oracle families' are partitioned by graph". Capture cadence and writer cadence are
+different facts about the store, and the harness layering should mirror that rather than fold the
+writers into the capture handle.
+
+Naming G0 is what makes the rest of this item cheap. The writers stop being a scattered exception
+population, the twenty-two sites become calls, `DiagnosticFactsTest` stops hand-rolling three
+writers, and the two downstream fixtures keep their own named methods over a shared implementation
+instead of each holding a copy. It also decouples two slices that had no business being coupled;
+see the sequencing section.
 
 `capture/SourceGraphScopingTest` reads like one of them and is not. It opens a store and never calls
 a factory, but every case fills it through `CapturedStore.registryOf` and a `FactCapture.capture` per
@@ -187,9 +252,10 @@ would be the does-everything type the next section exists to avoid.
 
 ### What the capture-shaped tests still disagree about
 
-The section above removes most of `derive/` from the capture level. What remains capture-shaped is
-real and still has a shared problem: the `capture/` tests, `diagnostics/DiagnosticFactsTest`, the
-derivation-writer halves of the five mixed classes, and both downstream fixtures.
+The section above removes the algebra half of `derive/` from the capture level. What remains
+capture-shaped is real and still has a shared problem: the `capture/` tests,
+`diagnostics/DiagnosticFactsTest`, the writer and walk-agreement halves of the seven splitting classes,
+`TypeBackingShadowTest` whole, and both downstream fixtures.
 
 The decision being re-made at every one of those sites is *which capture inputs the store under
 assertion is built from*, and the sites disagree without anything saying why. Past the 5-arg
@@ -233,8 +299,10 @@ it is carried the way `StoreFixture` already carries it, on the factories that t
 ### The goal architecture: each module tests what it owns
 
 One rule decides everything below. **The way a test populates the store follows what the test is
-about.** If the subject is a view or a constraint, seed the rows it reads. If the subject is the
-crawler, run the crawler. If the subject is the dev loop's wiring, run a build.
+about.** If the subject is algebra, seed the rows the relation reads. If it is a writer, drive the
+writer. If it is agreement with the walk, run a real capture and compare. If it is the dev loop's
+wiring, run a build. The three subjects named in the Problem section are the same three the harness
+levels answer to, which is why the sort is mechanical rather than a judgment call per class.
 
 | Module | What its tests are about | How its store gets populated |
 |---|---|---|
@@ -258,12 +326,13 @@ rows, so a fixture that skips that step stops testing the thing. This is a decis
 seeded fixture above the model line is possible and occasionally right, but it owes a reason at the
 call site, which is precisely the obligation being lifted from seeded cases inside `graphitron-model`.
 
-### Two homes, one per layer
+### Two homes, five levels
 
 | Home | Level | What it carries |
 |---|---|---|
 | `graphitron-model` test-jar | M0 | the store's lifetime, in-memory and file-backed, as named entry points |
 | `graphitron-model` test-jar | M1 | seeding: named row-inserting helpers over the generated model tables |
+| `graphitron` test-jar | G0 | writer-level population: the four facts writers driven over an open store, with the graph identity |
 | `graphitron` test-jar | G1 | capture-level population: `FactCapture.capture` into an open store, with the fixture file and its graph identity |
 | `graphitron` test-jar | G2 | build-level population: a real `buildOutput()` run into a file store |
 | each module, local | L | the module's own read boundary over a populated store |
@@ -273,10 +342,11 @@ Each module keeps its named fixture as a thin local layer, which is why `StoreFi
 `StoreBackedBuild` survive under their own names rather than being deleted into a common type, and what
 keeps the downstream call sites still.
 
-**M0 and M1 have to be usable apart, and M0 alone has to be usable.** The direct writers want an open
-store and a graph key and never seed or capture; a view test wants M0 and M1; a crawler test wants M0
-and G1. A store handle that always came with rows already in it would leave the direct writers exactly
-where they are.
+**Every level has to be usable without the one above it.** A facts-writer test wants M0 and G0 and
+never seeds or captures; a view test wants M0 and M1; a crawler test wants M0 and G1; a dev-loop test
+wants M0 and G2. G1 does not stand on G0 either: the two are siblings over M0, because capture writes
+its own rows and a writer test has no capture to run. A store handle that always came with rows
+already in it would leave the writers exactly where they are.
 
 ### Why the model can host a harness, and why capture cannot move down
 
@@ -496,17 +566,18 @@ leaving it unqualified sweeps in every watcher, emitter, mojo and parse test tha
 without going near a store, which is a large permanent exception list bought for nothing. The guard
 answers one question, "did you stand a store up outside a harness", and it should never grow a second.
 
-**The failure message routes by layer, and that is the guard's whole job.** It should not say "use the
-shared home", because there are two and picking the wrong one is exactly the mistake this item is
-correcting. It should ask the question the architecture answers: if what you are testing is a view or a
-constraint, seed it with the model's harness; if it is the crawler, capture with `graphitron`'s; if it
-is your module's own reads, put a fixture over one of those. An author who trips this guard should come
-away knowing which layer their test belongs to, not merely that they typed the wrong class name.
+**The failure message asks for the subject, and that is the guard's whole job.** It should not say "use
+the shared home", because there are two and picking the wrong one is exactly the mistake this item is
+correcting. It should ask the one question that decides the layer, *what is this test about*, and give
+the four answers: a relation's algebra, seed it with the model's harness; a facts writer, drive it
+through G0; the crawler or agreement with the walk, capture through G1; your module's own reads, put a
+fixture over one of those. An author who trips this guard should come away having classified their own
+test, not merely knowing they typed the wrong class name.
 
 **Exceptions are named, with reasons, and there is no arithmetic over them.** Only the classes in
 "Where the harnesses stop" earn an entry, and there are exactly two reasons: the store's lifetime is
-the subject, or the class is a capture oracle driving `FactCapture` per arm. The direct writers are not
-on this list, because they migrate. Follow `RetiredVocabularyGuardTest`'s shape, a record per entry with
+the subject, or the class is a capture oracle driving `FactCapture` per arm. The facts writers are not
+on this list, because they migrate to G0. Follow `RetiredVocabularyGuardTest`'s shape, a record per entry with
 an assertion that the entry is still real, so an entry naming a class that no longer stands a store up
 fails the build instead of lingering. That is the only bookkeeping the guard owes: the list stays
 honest, and nobody has to count it.
@@ -556,12 +627,19 @@ taking over, so its value is a fact about the shared level while its callers are
 method in `graphitron-lsp` and have it delegate to G1's `fixtureFile`, so the LSP does not hold a
 second opinion about where the fixture lives.
 
-**The post-capture writers move too, and they are the reason the LSP item is a dependency.**
-`withBuildWarnings`, `withJavaSource` and `refreshJavaSources` write into the store after capture, and
-`capture/JavaSourceFactsTest` already drives the same `JavaSourceFacts` writer by hand, so they are a
-consolidation of exactly the kind this item exists for. They are also the surface the LSP item is
-still actively growing, which is a sequencing constraint rather than a reason to leave them: they move
-once that item is Done, not before.
+**The post-capture writers move to G0, not to G1, and the distinction is what unblocks the slice.**
+`withBuildWarnings`, `withJavaSource` and `refreshJavaSources` do not capture anything. They construct
+`BuildWarningFacts` and `JavaSourceFacts` over an already-open store, which is G0's whole job, and
+`capture/JavaSourceFactsTest`, `dev/CatalogRefreshTest` and MCP's own fixture drive the same two
+writers the same way. Calling them a capture half was the error that made this slice look like it had
+to wait for the LSP item: G1's factory set was going to have to grow arms for them, so it mattered
+whether their signatures were still moving. At G0 they are three named methods delegating to one
+writer layer, and a fourth arriving later is a call site rather than a redesign.
+
+`withJavaSource` is the one that does not fully sort: it writes a `.java` file to disk and then
+refreshes, so it is a fixture-authoring convenience over G0 rather than G0 itself. Keep it in
+`graphitron-lsp` writing the file, and have it delegate the refresh, the same way `sourceName()`
+delegates `fixtureFile`.
 
 ### `graphitron-mcp`: `StoreBackedBuild` onto the shared floor
 
@@ -582,12 +660,12 @@ named, the same way the capture shapes are named rather than flagged.
 ### `graphitron-maven-plugin`: two inline sites, converted
 
 `DevMojoTest` and `dev/CatalogRefreshTest` open a store inline and write to it directly. They adopt
-M0 and nothing else; neither needs a capture factory. This is the smallest part of the
+M0 and G0; neither needs a capture factory. This is the smallest part of the
 item and the one most likely to be dropped for being small, which is precisely why it is written down:
 the guard will fail on these two sites, and an exception entry added to silence it would be this item
 defeating itself.
 
-They are also the reason the direct writers elsewhere are converted rather than excepted. These two are
+They are also the reason the facts writers elsewhere are converted rather than excepted. These two are
 line-for-line what `compile/CompileFactsTest` and `capture/JavaSourceFactsTest` do, down to the writer
 class each constructs. A rule that converts them and excepts their twins is not a rule, it is a
 coincidence of which module the file happens to sit in.
@@ -604,17 +682,33 @@ the reason the paragraphs below give.
   reason the Problem section records, so what it hands over is one more capture-level copy rather than a
   grown build-level one.
 
-**Only the LSP slice waits, and `depends-on` says so.** The catalog-facts dependency is dropped: its
-MCP fixture stopped moving when its catalog slices landed, and everything this item does inside
-`graphitron` touches no file either in-flight item holds. The LSP dependency stays, because that item
-is still growing the post-capture writers this one moves, and its slice is last anyway.
+**Neither dependency should be predicated on a fixture having stopped moving, and an earlier draft of
+this section was.** It said the catalog-facts fixture had settled, and it had not: that item grew
+`ofCodeFixtures` and a second `refreshJavaSources` afterwards. A premise about what another item is
+currently typing decays between the Spec gate and the slice, so this item does not carry one. Two
+structural facts carry the sequencing instead, and both survive the other items continuing to grow:
+
+* **A local layer absorbs growth; a shared factory set does not.** S7 and S8 leave every call site
+  standing and turn each fixture into a delegation. A shape the other item adds meanwhile is one more
+  delegating method, not a redesign, so neither slice needs the other item to be finished. This is
+  what the "no caller is edited" acceptance already buys, made explicit.
+* **The levels are sized so growth lands on a call site.** G0 takes writers by name and G1 takes the
+  census as an argument rather than an axis, which is exactly why `ofCodeFixtures` needed nothing new
+  from either level when it appeared. A level that had enumerated combinations would have needed an
+  arm per arrival.
+
+So `depends-on` keeps the LSP item and drops the catalog-facts one, on file overlap alone: the LSP
+item is actively rewriting `StoreFixture` and S8 would collide with it in the editor, while nothing
+this item does inside `graphitron` touches a file either in-flight item holds. That is a merge
+concern with a clear resolution, which is why S8 is last.
 
 The cost of waiting on the catalog-facts item would have been concrete rather than a preference. Its
-remaining tool slices each need capture shapes the LSP's fixture already carries: the classpath census
-its code-tools slice reads is `StoreFixture.ofClasspath`, the source locations it renders are
+remaining tool slices each need shapes the LSP's fixture already carries: the classpath census its
+code-tools slice reads is `StoreFixture.ofClasspath`, the source locations it renders are
 `withJavaSource` / `refreshJavaSources`, and the diagnostics axes its status slice reads are
 `withBuildWarnings`. Left to wait, that item re-derives most of the LSP's fixture inside
-`graphitron-mcp` one slice at a time, which is this item's own thesis running again.
+`graphitron-mcp` one slice at a time, which is this item's own thesis running again. It has now done
+exactly that once, which is the argument holding rather than failing.
 
 ### Name the shapes; do not flag them
 
@@ -673,8 +767,12 @@ lets each case drive capture itself, which is how the one case carrying real `Sd
 explicit `warm` flag stays expressible without either argument reaching the shared harness.
 
 So: reach for the closure form first, drop to the handle when a test needs a second step against the
-open store. `withCapturedStoreAndClaimDomain`, the two hand-rolled re-opens, `DiagnosticFactsTest`
-and `ClassMemberSlotTest` are the first callers of the handle. Neither layer is capped; per the rule
+open store. `DiagnosticFactsTest`, `ClassMemberSlotTest`'s surviving scan case, and
+`AuthoredClaimConflictsTest`'s two hand-rolled re-opens are the first callers of the handle.
+`FieldColumnTableTest`'s `withCapturedStoreAndClaimDomain` is not among them: that class is a whole
+mover to M1, where `ClaimDomainRows.write(dsl, GRAPH, ClaimDomain.of(...))` is replaced by seeding
+the `intent_type_domain` rows it was there to produce, and the boolean flag disappears with it. It
+earns a mention here only as the clearest example of the pressure the handle relieves. Neither layer is capped; per the rule
 above, a genuinely common new shape earns a `with(...)` arm rather than being pushed down to the
 handle on principle.
 
@@ -837,66 +935,93 @@ knowingly.
 **S3: the guard.** One recogniser, the layer-routing failure message, and an exception list carrying
 both the permanent entries and temporary ones for every stage 2 population not yet migrated. Acceptance:
 it fails on a source that stands a store up outside a harness, proved by a negative case; it fails on a
-stale entry, proved the same way; it passes on the tree; and its message names the three layers rather
-than one home.
+stale entry, proved the same way; it passes on the tree; and its message routes by subject rather than
+naming one home.
 
 Stage 1 is done when a new test has an obvious home. That is also the point at which this item could be
 stopped without leaving a mess.
 
 ### Stage 2: cleanup
 
-**S4: the eight pure-view classes that move whole.** `ColumnMatchClaimTest`, `ReferenceStepTargetTest`,
-`FieldColumnTableTest`, `ClassAssignableTest` (already moved in S1),
-`FieldProducerMethodTest`, `AccessorHopTest`, `ProducerCardinalityTest` and `AuthoredClaimConflictsTest`
-move to `graphitron-model` and become seeded. Take them in batches. Acceptance: every case is either
-kept with its assertion content intact or deleted under the mutation bar with the mutations recorded,
-and each class loses its `write(`, its `GRAPH` constant, its census plumbing and its `NodeDeclaration`
-argument, because a seeded view test needs none of them. A class that cannot lose those is telling you
-it was not a pure view test after all, which is a finding worth recording rather than working around.
+**S4: the six pure-algebra classes that move whole.** `ReferenceStepTargetTest`,
+`FieldColumnTableTest`, `ClassAssignableTest` (already moved in S1), `FieldProducerMethodTest`,
+`AccessorHopTest` and `ProducerCardinalityTest` move to `graphitron-model` and become seeded. Take
+them in batches. Acceptance: every case is either kept with its assertion content intact or deleted
+under the mutation bar with the mutations recorded, and each class loses its `write(`, its `GRAPH`
+constant, its census plumbing and its `NodeDeclaration` argument, because a seeded view test needs
+none of them. A class that cannot lose those is telling you the subject axis was read wrong for it,
+which is a finding worth recording rather than working around.
 
-`ClassMemberSlotTest` is not in this batch. It splits, and S5 takes it, for the reason recorded
-there.
+**S5: the seven classes that split.** `ColumnMatchClaimTest`, `ClassMemberSlotTest`,
+`AuthoredClaimConflictsTest`, `DemandShadowTest`, `InputOccurrenceShadowTest`, `SeparateFetchTest` and
+`TypeBackingClassTest` split on the subject axis rather than on relation kind, which is the same
+seam in every case: the algebra cases go down to M1 and become seeded; the writer and walk-agreement
+cases stay in `graphitron` on G0 or G1 and keep a real capture. Take them one class at a time, since
+each one's seam has to be read case by case. Acceptance: each half asserts what its cases always
+asserted, minus whatever the mutation bar condemns; the `graphitron` half still runs a real capture;
+and the seeded half names no `graphitron` type at all, which is the mechanical check that the seam was
+cut in the right place.
 
-**S5: the classes that split.** `DemandShadowTest`, `InputOccurrenceShadowTest`, `SeparateFetchTest`,
-`TypeBackingClassTest` and `TypeBackingShadowTest` split on relation kind: the view assertions go down
-and become seeded, the assertions on `intent_type_domain`, `intent_input_occurrence_path` /
-`_path_step` and `intent_type_backing_class` stay in `graphitron` on G1, because those rows are
-written by `ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` and the crawler is the
-subject. Acceptance: each half asserts what its cases always asserted, minus whatever the mutation bar
-condemns, and the `graphitron` half still runs a real capture.
+`TypeBackingShadowTest` is not in this slice and does not move. It is walk agreement end to end:
+`TypeBackingClassRows.write(dsl, GRAPH, TypeBackingClasses.of(bundle.model()))` puts the walk's own
+reach in the store and the cases diff it against `intent_type_backing_class` and
+`intent_type_backing_seed`. Its view read is one side of a comparison, so there is no algebra half to
+send down. It stays where it is, unedited beyond the G0 call for its writer.
 
-`ClassMemberSlotTest` joins them and splits on a different axis, which is where its input comes from
-rather than which relation it reads. Both its relations are views, so on relation kind alone it would
-have moved whole in S4. It does not, because `FactCaptureAgreementTest`'s registry states a reason for
-this anchor that neither of the two the Problem section dissolves covers: it binds
-`intent_class_member_slot` "over a real classfile scan of its own fixtures rather than seeded census
-rows, because a rule that reads a class's declared form cannot be pinned against a fixture that
-declares its own." That is a claim about the subject rather than an escape note, and it is true of one
-half of the class.
+Where each seam runs, so the implementer is not rediscovering it:
 
-The seam is the census. Cases that state member rows and assert what the view makes of them go down to
-M1, which is most of the class and is where the view's algebra belongs. One case stays in `graphitron`
-on G1, running a real `ClasspathScanner.scan` over the three fixture classes and asserting that the
-slots the view reads arrive from a class whose declared form the test did not write. That case is the
-reach from classfile to slot row, which is capture's, and it is the only thing the census plumbing was
-ever buying. Keeping it small is the point: `FactCaptureAgreementTest`'s `EQUALITY` arm already pins
-the scanner census against the walk, so this case is the end-to-end witness rather than a second census
-oracle. Acceptance: the registry's note for this anchor is rewritten to say which half now carries the
-reason, since as written it describes a class that no longer exists in one piece.
+* `ColumnMatchClaimTest`. Its seeded cases already exist under `withSeededStore` and are the algebra
+  half nearly verbatim. Staying: `maskedClaimsAgreeWithTheColumnMatchArmOverTheCorpus`, which sweeps
+  `ClassifiedCorpus.examples()` and compares the view against the walk's `ColumnBackedField` carrying
+  `CallSiteCompaction.Direct`, and the `AuthoredClaim.values()` vocabulary round trip. Both name
+  `graphitron` main-source types as the *expected* value, which is the tell.
+* `AuthoredClaimConflictsTest`. Mostly walk agreement, and the exception to the usual proportion:
+  nearly every case reads `AuthoredClaimConflicts.detect(dsl, GRAPH)` and asserts `ValidationError`
+  and `Rejection` values, with `GatheredFacts.gather` over `SchemaReachability.walk` as the other
+  side. Going down: only cases that read `intent_authored_field_claim` or `intent_authored_type_claim`
+  and assert on rows. Expect that to be a small minority, and expect the class to stay in
+  `graphitron` under its own name.
+* `ClassMemberSlotTest`. The seam is the census, and `FactCaptureAgreementTest`'s registry already
+  states the reason: it binds `intent_class_member_slot` "over a real classfile scan of its own
+  fixtures rather than seeded census rows, because a rule that reads a class's declared form cannot
+  be pinned against a fixture that declares its own." Cases that state member rows and assert what
+  the view makes of them go down to M1, which is most of the class. One case stays on G1, running a
+  real `ClasspathScanner.scan` over the three fixture classes and asserting the slots arrive from a
+  class whose declared form the test did not write. Keeping it to one is the point:
+  `FactCaptureAgreementTest`'s `EQUALITY` arm already pins the scanner census against the walk, so
+  this is the end-to-end witness rather than a second census oracle.
+* `DemandShadowTest`, `InputOccurrenceShadowTest`, `SeparateFetchTest`, `TypeBackingClassTest`. The
+  staying halves are the assertions on `intent_type_domain`, `intent_input_occurrence_path` /
+  `_path_step` and `intent_type_backing_class`, whose rows `ReachabilityRows`, `InputOccurrencePaths`
+  and `TypeBackingRows` write, plus `DemandShadowTest`'s and `InputOccurrenceShadowTest`'s corpus
+  sweeps and `SeparateFetchTest`'s `GatheredFacts.delivery` differential.
 
-**S6: the direct writers.** `graphitron`'s three, the maven plugin's two, and downstream
-`RejectionSeverityCoverageTest`, `DiagnosticsToolCompileSourceTest` and `DiagnosticsAggregateTest`'s
-three own-store cases adopt M0 and nothing else. Acceptance: none of them still names
-`GraphitronModelStore`, and the maven-plugin pair is not left inline on the grounds that it is only two,
-which is the way this slice fails.
+Acceptance for every split class: `FactCaptureAgreementTest`'s registry note for that anchor is
+rewritten to say which half now carries the reason, since as written each describes a class that no
+longer exists in one piece.
 
-**S7: `graphitron-mcp`.** Its `StoreFixture` becomes a local layer over G1, keeping `withoutCatalog` and
-`recaptureCatalog` intact; `StoreBackedBuild` adopts M0 and sits at G2, keeping its file-store arm named
-rather than flagged. Acceptance: no class that *calls* `StoreFixture` or `StoreBackedBuild` is edited.
+**S6: the facts writers adopt G0.** Every site in the writer census: `graphitron`'s
+`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest`, `capture/JavaSourceFactsTest` and
+`diagnostics/DiagnosticFactsTest`, the maven plugin's `DevMojoTest` and `dev/CatalogRefreshTest`, and
+downstream `RejectionSeverityCoverageTest`, `DiagnosticsToolCompileSourceTest` and
+`DiagnosticsAggregateTest`'s three own-store cases. Acceptance: none of them still names
+`GraphitronModelStore` or constructs a `*Facts` writer by hand, no site still spells a writer's fully
+qualified name inline, and the maven-plugin pair is not left inline on the grounds that it is only two,
+which is the way this slice fails. `capture/FactCaptureAgreementTest` keeps its own writer calls, being
+a capture oracle on the exception list, but it may adopt G0 for the construction if that reads better;
+that is the implementer's call and not an acceptance condition.
 
-**S8: `graphitron-lsp`.** `StoreFixture` keeps its name and its readers and delegates its capture half,
-including the post-capture writers, which is the part that waits on the LSP item. Acceptance: no class
-that calls `StoreFixture` is edited.
+**S7: `graphitron-mcp`.** Its `StoreFixture` becomes a local layer over G1 and G0, keeping
+`withoutCatalog`, `recaptureCatalog` and `ofCodeFixtures` intact, its census half delegating to G1 and
+its `refreshJavaSources` to G0; `StoreBackedBuild` adopts M0 and sits at G2, keeping its file-store arm
+named rather than flagged. Acceptance: no class that *calls* `StoreFixture` or `StoreBackedBuild` is
+edited. This slice does not wait on S8: G0 is what both fixtures delegate their writers to, so neither
+needs the other's file touched.
+
+**S8: `graphitron-lsp`.** `StoreFixture` keeps its name and its readers and delegates its capture half
+to G1 and its writer half to G0. Last, because the LSP item is actively rewriting this file and the
+constraint is a merge conflict rather than a design dependency. Acceptance: no class that calls
+`StoreFixture` is edited.
 
 Two notes for whoever takes stage 2. Folding the corpus sweeps off their per-example subdirectories
 moves their `GraphIdentity.baseDir` from `tmp/<id>` to `tmp`, and `FactCapture.ownsGraph` compares a
@@ -953,7 +1078,7 @@ that edits a class *calling* one of those fixtures is reporting that the shared 
 shape that module needs. Treat that as the finding and widen the shared level, rather than adjusting
 the test to suit it.
 
-The rule is about consumers, and the direct writers downstream are not consumers: they stand their own
+The rule is about consumers, and the facts writers downstream are not consumers: they stand their own
 store up and never call the module's fixture, so converting them is the work rather than a violation of
 it. Reading the rule as "no downstream test class changes" would strand exactly the classes the
 maven-plugin pair are being converted for.
@@ -986,7 +1111,7 @@ serves every module." The guard catches the author who reads none of it.
 ## Out of scope
 
 * Editing the call sites of `graphitron-lsp`'s or `graphitron-mcp`'s own fixtures. The downstream
-  direct writers are not such call sites; they call no fixture, and converting them is in scope per
+  facts writers are not such call sites; they call no fixture, and converting them is in scope per
   the slices above. Deleting a case that carries no weight is also in scope, under the mutation bar
   the Tests section sets; what stays out is relaxing an assertion a harness found inconvenient.
 * Changing any main source. Nothing here moves production code between modules, including
