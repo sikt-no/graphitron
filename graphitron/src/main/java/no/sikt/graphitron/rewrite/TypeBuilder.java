@@ -412,6 +412,29 @@ class TypeBuilder {
     }
 
     /**
+     * The {@link GraphitronType.TableType} verdict for a type bound by being what a hop-less
+     * {@code @routine} read field returns, or {@code null} when no such field returns it. The
+     * derived form of the {@code @table} an author writes on a routine's return type: the same
+     * verdict the directive would produce, from the producing edge rather than from the type's own
+     * directives, which is how {@link #carrierVerdict} already binds a payload carrier.
+     *
+     * <p>A {@link GraphitronType.TableType} and not a
+     * {@link GraphitronType.JooqTableRecordType}, because the rows are projected out of the
+     * statement that calls the routine rather than handed back by a producer; that is the same
+     * shape the directive gives today, so nothing downstream of the verdict changes.
+     *
+     * <p>Which fields land in this population, and why the boundary is hop-less, is
+     * {@code RecordBindingResolver.groundRoutineReturnType}'s.
+     */
+    GraphitronType routineReturnVerdict(String name) {
+        if (bindings == null) return null;
+        return bindings.resolveRoutineReturn(name)
+            .<GraphitronType>map(table -> new GraphitronType.TableType(
+                name, locationOf(ctx.schema.getObjectType(name)), table))
+            .orElse(null);
+    }
+
+    /**
      * Registry-free verdict for whether an SDL object reached at an embedding edge is a
      * directiveless nesting target: a plain object with no competing classification, projected as
      * a {@link GraphitronType.NestingType} from the embedding parent's table context. Computed
@@ -427,6 +450,10 @@ class TypeBuilder {
         if (!(ctx.schema.getType(name) instanceof GraphQLObjectType obj)) return false;
         if (bindings.rejection(name).isPresent()) return false;
         if (classifyType(obj) != null) return false;
+        // A routine's return type is table-backed from its producing edge, so it is no more a
+        // nesting target than a @table type is; excluding it here is the same exclusion the
+        // carrier gets below, and for the same reason (the registration gate is this predicate).
+        if (routineReturnVerdict(name) != null) return false;
         return carrierBinding(name) instanceof CarrierBinding.NotACarrier;
     }
 
@@ -463,9 +490,12 @@ class TypeBuilder {
      * share one enter-only walk where a field's output target is a not-yet-visited child of the
      * field's parent.
      *
-     * <p>The carrier fallback covers the one verdict {@link #classifyType} leaves {@code null} but
-     * the registry holds non-null: the directiveless single-record carrier, bound at the producing
-     * edge from {@link #carrierVerdict}. A directiveless nesting target / orphan classifies to
+     * <p>The two fallbacks cover the verdicts {@link #classifyType} leaves {@code null} but the
+     * registry holds non-null, both bound at the producing edge rather than by the type's own
+     * directives: the directiveless single-record carrier ({@link #carrierVerdict}), and the return
+     * type of a hop-less {@code @routine} read, bound to the routine's result
+     * ({@link #routineReturnVerdict}). They cannot both answer, the routine grounding skipping a
+     * carrier-shaped return. A directiveless nesting target / orphan classifies to
      * {@code null} under both, matching the registry's absent entry; the nesting branch in
      * {@link FieldBuilder} is decided separately by {@link #isDirectivelessNestingTarget}, not by
      * this verdict.
@@ -504,7 +534,9 @@ class TypeBuilder {
         }
         var verdict = classifyType(named);
         if (verdict != null) return verdict;
-        return carrierVerdict(typeName);
+        var carrier = carrierVerdict(typeName);
+        if (carrier != null) return carrier;
+        return routineReturnVerdict(typeName);
     }
 
     private void validateNodeTypeIdUniqueness() {

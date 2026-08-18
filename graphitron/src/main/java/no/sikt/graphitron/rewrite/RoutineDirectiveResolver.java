@@ -19,6 +19,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLUMN_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
@@ -28,8 +29,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * table-valued read function:
  *
  * <ul>
- *   <li>Shape invariant: the return type must be {@code @table}-annotated (a
- *       {@link ReturnTypeRef.TableBoundReturnType}). The Connection-wrapper verdicts and the
+ *   <li>Shape invariant: the return type must be table-bound (a
+ *       {@link ReturnTypeRef.TableBoundReturnType}), which for a hop-less read the routine's own
+ *       result already makes it ({@link TypeBuilder#routineReturnVerdict}), so {@code @table} on
+ *       such a return is redundant rather than demanded. The Connection-wrapper verdicts and the
  *       terminus rule are chain-level facts, evaluated by the caller over the landed chain.</li>
  *   <li>{@link JooqCatalog#resolveTableValuedFunction} resolves the routine name to a catalog
  *       table-valued function and its {@code Routines}-class call surface. The deferred scalar-read
@@ -96,20 +99,46 @@ final class RoutineDirectiveResolver {
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot,
             String previousNodeTableSqlName) {
+        return switch (resolveNode(parentTypeName, fieldDef, isRoot, previousNodeTableSqlName)) {
+            case NodeResolved.Rejected r -> new Resolved.Rejected(r.rejection());
+            case NodeResolved.Node n -> bindReturn(fieldDef, n);
+        };
+    }
+
+    /**
+     * The return-shape invariant, applied to a resolved node. Runs after the node so a field whose
+     * routine name is wrong hears about the name: the return binding of a hop-less chain is derived
+     * from the routine's own result, so an unresolvable name and an unbindable return would
+     * otherwise reach the author as the same complaint about the return type.
+     *
+     * <p>Nothing is derived here. A hop-less {@code @routine} read's return type is already bound to
+     * the routine's result by {@code TypeBuilder.routineReturnVerdict}, so it arrives as a
+     * {@link ReturnTypeRef.TableBoundReturnType} whether or not the author restated the routine's
+     * name in a {@code @table}; deriving at this seat instead would mean binding a return the
+     * mutation carrier fork tells apart by its <em>not</em> being table-bound.
+     */
+    private Resolved bindReturn(GraphQLFieldDefinition fieldDef, NodeResolved.Node node) {
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName)
             : rawTypeName;
         ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, fb.buildWrapper(fieldDef));
 
-        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tableBound)) {
-            return new Resolved.Rejected(Rejection.structural("@routine requires a @table-annotated return type"));
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tableBound) {
+            return new Resolved.TableBound(tableBound, node.routine(), node.resultTable());
         }
-
-        return switch (resolveNode(parentTypeName, fieldDef, isRoot, previousNodeTableSqlName)) {
-            case NodeResolved.Rejected r -> new Resolved.Rejected(r.rejection());
-            case NodeResolved.Node n -> new Resolved.TableBound(tableBound, n.routine(), n.resultTable());
-        };
+        // Two shapes reach here and they fail for different reasons, so they say different things.
+        // A chain's landing is a catalog table the author names on the return type; a hop-less
+        // routine's landing is its own result, which binds the return type for them, and what is
+        // left to fail is the return not being a type a table binding can attach to.
+        return new Resolved.Rejected(Rejection.structural(
+            fieldDef.hasAppliedDirective(DIR_REFERENCE)
+                ? "@routine with @reference requires a @table-annotated return type — the chain "
+                    + "lands on a catalog table and the return type must name it"
+                : "@routine could not bind the return type '" + elementTypeName + "' to its result "
+                    + "table — the routine's result binds its return type, so no @table is needed, "
+                    + "but the return must be a plain object type; a scalar, an interface, a union "
+                    + "or a payload-carrier return has no binding to take"));
     }
 
     /**

@@ -591,6 +591,14 @@ public class GraphitronSchemaBuilder {
     private static void registerProducerBackedCarrier(BuildContext ctx, TypeBuilder typeBuilder, String name) {
         if (ctx.typeRegistry.contains(name)) return;
         var verdict = typeBuilder.carrierVerdict(name);
+        if (verdict == null) {
+            // The second producing-edge verdict, on the same terms: a hop-less @routine read's
+            // return type is bound to the routine's result whether or not the author restated that
+            // as a @table. Also registry-free and also idempotent, so the same edge-order argument
+            // holds; the two never both answer, the routine grounding skipping a carrier-shaped
+            // return.
+            verdict = typeBuilder.routineReturnVerdict(name);
+        }
         if (verdict == null) return;
         ctx.typeRegistry.register(name, verdict);
     }
@@ -1154,10 +1162,14 @@ public class GraphitronSchemaBuilder {
             return "consumer '" + carrierCoordinate + "' is not a root Query field";
         }
         var element = GraphQLTypeUtil.unwrapAll(field.getType());
+        // The verdict and not the directive: a hop-less @routine read's element is bound to the
+        // routine's result at the producing edge, so reading the SDL here would tell an author who
+        // stopped restating the routine as a @table that their element is not table-backed.
         if (!(element instanceof GraphQLObjectType elementObj)
-                || !elementObj.hasAppliedDirective(DIR_TABLE)) {
+                || !(ctx.lookAheadVerdict(elementObj.getName())
+                        instanceof GraphitronType.TableBackedType)) {
             return "consumer '" + carrierCoordinate
-                + "' does not return a @table-backed object element";
+                + "' does not return a table-backed object element";
         }
         return null;
     }

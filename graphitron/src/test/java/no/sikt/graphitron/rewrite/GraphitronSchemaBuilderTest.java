@@ -7745,6 +7745,145 @@ class GraphitronSchemaBuilderTest {
             .doesNotContain("no foreign key");
     }
 
+    // ===== The return binding, derived rather than written =====
+
+    private static final String TILGANG_TYPE_UNBOUND = """
+        type Tilgang {
+          organisasjonskode: Int
+          rollekode: String
+        }
+        """;
+
+    @Test
+    void aRoutineResultReturnTypeNeedsNoTableDirective() {
+        // The ceremony the derived binding removes: the routine's result binds its return type,
+        // so the type classifies as table-backed and its columns project exactly as they do when
+        // the author restates the routine's name in a @table.
+        var schema = build(TILGANG_TYPE_UNBOUND + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @defaultOrder(fields: [{name: "organisasjonskode"}])
+            }
+            """);
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(f.returnType().table().tableName())
+            .isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+        assertThat(routineChainOf(f).hops()).isEmpty();
+        assertThat(schema.type("Tilgang"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableType.class);
+    }
+
+    @Test
+    void theDerivedBindingCarriesTheWholeReadSurface() {
+        // Nothing downstream of the verdict changes, which is why the binding is a TableType and
+        // not a record-handed stand-in: the ordering, the filter and the child column all resolve
+        // against the same terminus they would have with the directive written.
+        var schema = build(TILGANG_TYPE_UNBOUND + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @defaultOrder(fields: [{name: "rollekode"}])
+            }
+            """);
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Fixed.class);
+        var column = (no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField)
+            schema.field("Tilgang", "organisasjonskode");
+        assertThat(column.columns().getFirst().sqlName())
+            .isEqualToIgnoringCase("organisasjonskode");
+    }
+
+    @Test
+    void aHopsThenRoutineChainAlsoBindsItsReturnFromTheRoutine() {
+        // Hops before the routine move where the chain starts and never where it ends, so the
+        // landing is still the routine's result and the derivation covers the shape.
+        var schema = build("""
+            type ActorFilmRow { title: String }
+            type Film @table(name: "film") {
+              rows(minLength: Int!): [ActorFilmRow!]
+                @reference(path: [{key: "film_actor_film_id_fkey"}])
+                @routine(name: "films_for_actor", argMapping: "pMinLength: minLength", columnMapping: "pActorId: actor_id")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
+            type Query { film: Film }
+            """);
+        assertThat(schema.field("Film", "rows"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.TableField.class);
+    }
+
+    @Test
+    void aChainHoppingPastTheRoutineStillNamesItsLandingOnTheReturnType() {
+        // The boundary, and the message that states it. Where the chain hops after the routine
+        // the landing is a catalog table only the walk knows, so the return type names it; the
+        // rejection says that rather than repeating the removed demand.
+        var schema = build("""
+            type FilmRow { title: String }
+            type Query {
+              recentFilms(actorId: Int!, minLength: Int!): [FilmRow!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "recentFilms");
+        assertThat(f.reason())
+            .contains("@routine with @reference requires a @table-annotated return type")
+            .contains("the return type must name it");
+    }
+
+    @Test
+    void anUnresolvableRoutineNameStillReportsTheName() {
+        // The reason the return check runs after the node resolves: with the binding derived from
+        // the routine's own result, a wrong name would otherwise reach the author as a complaint
+        // about their return type.
+        var schema = build(TILGANG_TYPE_UNBOUND + """
+            type Query {
+              tilganger(env: String!): [Tilgang!]! @routine(name: "no_such_function", argMapping: "pEnv: env")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("no table-valued function named 'no_such_function'")
+            .doesNotContain("return type");
+    }
+
+    @Test
+    void aScalarReturnOnARoutineFieldSaysWhatCannotBeBound() {
+        // What is left to fail once the binding is derived: a return the binding cannot attach
+        // to. The message names the type and says no @table is needed, so an author does not add
+        // one to a scalar and try again.
+        var schema = build("""
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [String!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("could not bind the return type 'String'")
+            .contains("no @table is needed");
+    }
+
+    @Test
+    void aMutationCarrierReturnIsStillToldApartFromABoundReturn() {
+        // The seat the derivation stays out of. The carrier fork separates the direct shape from
+        // the carrier by the return not being table-bound, so binding a mutation root's hop-less
+        // @routine return would collapse the fork; the carrier still classifies as one.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            type Query { film: Film }
+            type Mutation {
+              filmsForActor(actorId: Int!, minLength: Int!): FilmsPayload
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+            }
+            """);
+        assertThat(schema.field("Mutation", "filmsForActor"))
+            .isInstanceOf(MutationField.MutationRoutineWriteRecordField.class);
+        assertThat(schema.type("FilmsPayload"))
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableType.class);
+    }
+
     @Test
     void rootRoutineChainTerminusMismatchRejectsAsStructural() {
         // Terminus rule for multi-node chains: the last node must be the field's @table type.

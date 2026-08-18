@@ -28,7 +28,11 @@ type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
 
 # R435: the result type of the correlated table-valued read function films_for_actor. Backs the
 # child-positioned @routine on Actor.films (the single-node chain with an implicit head).
-type ActorFilm @table(name: "films_for_actor") {
+# The derived return binding, kept as one of each form beside Tilgang's written @table above.
+# No @table here: every chain returning this type ends on the routine, so the type is bound to
+# films_for_actor by the producing edge and restating the routine's name would be the second
+# spelling the binding exists to remove.
+type ActorFilm {
     filmId: Int    @field(name: "FILM_ID")
     title:  String
 }

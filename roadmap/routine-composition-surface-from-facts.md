@@ -275,8 +275,7 @@ carries the one axis that cannot be done by deletion.
    absence either; it is the first rule missing a guard for a field whose path does not depart the
    parent.
 9. **The return binding.** With slice 7 in hand, the `@table` demand becomes "the terminus is
-   resolvable", not "the author wrote a directive". See below. *Store half landed; the classifier
-   half is what remains.*
+   resolvable", not "the author wrote a directive". See below. *Landed, both halves.*
 
    **The keying decision is type scope, and the read side is what settles it.** Every relation that
    holds a binding today is keyed by type, and every reader of one holds a type: the position-0 seed
@@ -307,12 +306,40 @@ carries the one axis that cannot be done by deletion.
    chain nothing, that shape carrying `@reference` by construction, and it narrows to the carrier
    itself the day a carrier relation lands.
 
-   **The classifier half has a shape constraint the plan did not have.** The derived binding cannot
-   be minted inside `BuildContext.resolveReturnType`, because `classifyMutationRoutineCarrier`
-   separates the direct shape from the carrier by asking whether the return is already
-   `TableBoundReturnType`. A globally derived binding would answer yes for every carrier and collapse
-   that fork. So the derivation is minted at the chain read seat and `resolveReturnType` keeps
-   meaning "what the author declared", which is the same seat-locality the store's own exclusion has.
+   **The classifier half had a shape constraint the plan did not have, and it moved where the
+   derivation sits.** The binding cannot be minted inside `BuildContext.resolveReturnType`, because
+   `classifyMutationRoutineCarrier` separates the direct shape from the carrier by asking whether
+   the return is already `TableBoundReturnType`; a globally derived binding answers yes for every
+   carrier and collapses that fork. Nor at the routine resolver, for the same reason one step later.
+   It sits at the *producing edge*, as a second fixed point beside the carrier's:
+   `RecordBindingResolver.groundRoutineReturnType` records the routine's result against the type its
+   field returns, `TypeBuilder.routineReturnVerdict` projects that into the same `TableType` the
+   directive would have produced, and `lookAheadVerdict` plus the producing-edge registration read
+   it exactly where `carrierVerdict` is already read. Which is what the item said the precedent was.
+   Nothing downstream of the verdict moved.
+
+   **The generator's boundary is narrower than the store's, and it is a resolvability boundary.**
+   The store states where any chain lands, because it walks. The verdict is grounded before any
+   field is walked, so it covers the chains whose landing is the routine's own result: the bare
+   `@routine` field, and a chain whose `@reference` applications all come *before* the routine,
+   since hops written before it move where the chain starts and never where it ends. A chain that
+   hops after the routine keeps naming its landing on the return type, and that costs an author
+   nothing, the landing there being a catalog table that is a table type in the schema in its own
+   right. The rejection at that boundary says so instead of repeating the removed demand, and the
+   return check moved after the node resolution so a wrong routine name is still reported as a wrong
+   routine name rather than as a complaint about the return type.
+
+   **Three readers of the written directive moved with it**, each found by asking what the reader
+   actually wants to know: `isDirectivelessNestingTarget` (a bound type is no more a nesting target
+   than a `@table` type is), the producing-edge registration, and
+   `GraphitronSchemaBuilder.unsupportedFacetCarrierReason`, which the item flagged and which would
+   otherwise have told an author who dropped the directive that their connection element is not
+   table-backed.
+
+   **The sakila fixtures keep one of each form**, which answers the open question below. `ActorFilm`
+   drops the directive and is bound by four producing edges across the child, correlated, batched
+   and hops-then-routine shapes; `Tilgang` keeps it. Both run in the execution tier, so the two
+   spellings are proven equivalent against a real database rather than asserted to be.
 10. **The name-matched arm on the hop view.** *The arm landed with slice 8; the anchor half is what
     remains.* `via = 'NAME_MATCH'` is the third arm, gated on slice 7's `table_type` discriminator,
     enumerating as candidate departures every FUNCTION-typed table in the graph's sources that
@@ -581,6 +608,11 @@ One more syntactic reader to catch, because a fix that only moves the resolver l
 `GraphitronSchemaBuilder.unsupportedFacetCarrierReason` reads `hasAppliedDirective(DIR_TABLE)` off
 the SDL directly, so a resolved binding is invisible to it.
 
+*Landed with slice 9.* That reader now asks the verdict, and it was not the only one: two more read
+the directive where they meant the binding, both found by asking what the reader wants to know
+rather than by grepping the constant. The section above is the diagnosis; what shipped is recorded
+in slice 9.
+
 ## Why this family is the right plan-tier pilot
 
 `roadmap/planners-read-facts-emitters-read-commands.md` (R682) owns driving the plan tier onto facts
@@ -834,6 +866,10 @@ wrong and should change first.
   binding cannot feed the type-keyed `intent_bound_table` the hop recursion anchors on, so choosing
   edge scope entails the anchor work slice 10 describes. Type scope avoids that and buys the
   conflict instead.
-* **Does `@table` on a routine return stay legal?** Assume yes so existing schemas keep compiling.
-  Confirm nothing starts flagging the now-redundant annotation, and decide whether the sakila
-  fixtures migrate or keep one of each form.
+* **Does `@table` on a routine return stay legal?** *Answered by slice 9: yes, and nothing flags
+  it.* The two populations coexist as rows rather than as a precedence, so a type carrying both is
+  one binding where they agree and a visible pair where they do not; no lint fires on the redundant
+  annotation, and none should while the store has no verdict relation to say which reading wins.
+  The sakila fixtures keep one of each form, `ActorFilm` derived and `Tilgang` written, so the
+  execution tier proves the two spellings equivalent rather than the item asserting it. The manual's
+  canonical example moved to the derived form and states what the directive costs where it is kept.

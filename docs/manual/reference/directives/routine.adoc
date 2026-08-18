@@ -2,7 +2,7 @@
 :description: Back a field with a jOOQ database routine (a stored function or procedure).
 :!toc:
 
-Backs a field with a database *routine* rather than a catalog table. Supported today is the table-valued function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's `@table`-bound element type resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$project(...)` against it with the same selection narrowing. The difference from a plain catalog read is the row source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments (`argMapping`) or from columns of the previous table in the chain (`columnMapping`).
+Backs a field with a database *routine* rather than a catalog table. Supported today is the table-valued function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's element type is bound to the routine's result and resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$project(...)` against it with the same selection narrowing. That binding comes from the routine, not from a directive: an element type whose chain ends on the routine needs no `@table` of its own. The difference from a plain catalog read is the row source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments (`argMapping`) or from columns of the previous table in the chain (`columnMapping`).
 
 `@routine` is the seam for reading from a stored function whose result set parameterises on its inputs, such as an access-control function that returns the rows a caller may see, and, on `Mutation`, for writing through a stored function that performs the mutation itself (see <<write,Writes on Mutation>>). The routine's shape (table-valued) is read off its jOOQ kind, not declared.
 
@@ -31,11 +31,11 @@ directive @routine(
 
 == Canonical example
 
-A table-valued access-control function backing a root list field. The `@table`-bound element type names the jOOQ-generated table-valued-function table; the three TEXT IN parameters bind from GraphQL arguments:
+A table-valued access-control function backing a root list field. The element type carries no directive of its own: the routine ends the field's chain, so its result binds the type. The three TEXT IN parameters bind from GraphQL arguments:
 
 [source,graphql]
 ----
-type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+type Tilgang {
     organisasjonskode: Int
     rollekode: String
 }
@@ -54,10 +54,12 @@ The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeide
 
 The `@defaultOrder` is required here rather than decorative: the routine result is the chain's last node and a function result carries no primary key, so nothing can supply a deterministic order unless the schema names it. See <<read-surface,The read surface>>.
 
+Writing `@table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` on `Tilgang` is still accepted and changes nothing, so schemas that carry it keep working. It is worth removing: the two spellings of the routine's name have to agree, the annotation reads as a claim that the type is a stored table, and it welds the type to one routine, so two functions returning the same row shape cannot share it.
+
 [[read-surface]]
 == The read surface: filtering, ordering and pagination
 
-A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the `@table` type the field projects). The field's remaining arguments are unaffected: an argument bound to a routine IN parameter is spent on the call and is never read as a filter.
+A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the table the field's element type is bound to). The field's remaining arguments are unaffected: an argument bound to a routine IN parameter is spent on the call and is never read as a filter.
 
 One rule governs the ordering, and it is the rule every list field already lives under:
 
@@ -227,7 +229,9 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 
 == Constraints
 
-* With `@reference` on the field, the return type must be `@table`-bound, and the chain's last node must be that table. A non-`@table`, non-carrier return is rejected with `@routine requires a @table-annotated return type`; a routine-terminus mismatch is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`. Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field); the carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
+* Where the chain ends on the routine, the return type needs no `@table`: the routine's result binds it. That covers a bare `@routine` field and a chain whose `@reference` applications all come *before* the routine, since hops written before it move where the chain starts and never where it ends. Writing `@table(name:)` naming the same function stays legal and means the same thing, so existing schemas keep working; what it buys is nothing, and what it costs is that the two names must agree, that the type reads as a stored table, and that the type is welded to one routine. A return the binding cannot attach to (a scalar, an interface, a union) is rejected with `@routine could not bind the return type ... to its result table`.
+* Where the chain hops *after* the routine, the return type must be `@table`-bound and the chain's last node must be that table. The landing there is a catalog table, which is a table type in the schema in its own right, so its `@table` is that type's own binding rather than a second spelling of the routine's name. A non-`@table` return is rejected with `@routine with @reference requires a @table-annotated return type`; a mismatch between the return and the landing is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`.
+* Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field). A carrier is not bound to the routine's result: its rows are what the data field re-reads post-commit, not what the field returns. The carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
 * `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.
 * On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. `columnMapping` is likewise illegal at the head of a root chain (there is no previous table to bind from); bind root routine parameters from GraphQL arguments.
 * `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is leaving a parameter with nothing bound to it. On the right-hand side, a path whose head is not an argument of the field, or whose later segment is not a field of the input type at that depth, is a build error listing the candidates; a `columnMapping` naming a column the previous table does not carry likewise lists that table's columns. A `columnMapping` right-hand side has no path form, since a column has no nested fields.

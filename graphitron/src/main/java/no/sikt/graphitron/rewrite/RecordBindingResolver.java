@@ -110,6 +110,19 @@ final class RecordBindingResolver {
     private final Map<String, ProducerBinding.RoutineEmitted> routineEmittedMemo = new LinkedHashMap<>();
 
     /**
+     * The table a type is bound to by being what a hop-less {@code @routine} read field returns:
+     * the routine's own result. A separate axis from {@link #routineEmittedMemo}, which is the
+     * carrier's binding and answers a different question (which table the payload's data field
+     * re-reads post-commit); the two populations are disjoint by seat.
+     *
+     * <p>First observation wins, as on the emitted memos. A type two routines return is a
+     * disagreement the observations cannot settle, and settling it by picking would hide it; the
+     * fact store states the same population with one row per landing and an arity beside them, so
+     * that is where the disagreement is legible until a verdict relation carries it here.
+     */
+    private final Map<String, TableRef> routineReturnMemo = new LinkedHashMap<>();
+
+    /**
      * The {@code @service} producer's arrival cardinality per carrier field, keyed by the field's
      * {@code parentType.fieldName} coordinate, decided once at this reflection boundary (from
      * {@link #isMultiCardinalityReturn}) and read by the classify-time shape verdict. Keyed by the
@@ -197,6 +210,15 @@ final class RecordBindingResolver {
      */
     Optional<ProducerBinding.RoutineEmitted> resolveRoutineEmitted(String sdlTypeName) {
         return Optional.ofNullable(routineEmittedMemo.get(sdlTypeName));
+    }
+
+    /**
+     * The table an SDL type is bound to by being a hop-less {@code @routine} read field's return,
+     * or empty when no such field returns it. See {@link #groundRoutineReturnType} for the
+     * population.
+     */
+    Optional<TableRef> resolveRoutineReturn(String sdlTypeName) {
+        return Optional.ofNullable(routineReturnMemo.get(sdlTypeName));
     }
 
     /**
@@ -664,8 +686,57 @@ final class RecordBindingResolver {
             if (named.getName().startsWith("__")) return;
             for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
                 groundRoutineMutationField(obj, field);
+                groundRoutineReturnType(obj, field);
             }
         });
+    }
+
+    /**
+     * Grounds the return binding of a hop-less {@code @routine} read field: the type it returns is
+     * bound to the routine's own result table, which is the fact an author states by hand when they
+     * repeat the routine's name in a {@code @table} on that type. Nothing is grounded where the
+     * author did write it, {@code @table} being read by the ordinary type classification, so this
+     * fills the silence rather than competing with a directive.
+     *
+     * <p>The boundary is that the chain's last application is the {@code @routine}, so the landing
+     * is the routine's own result: hops before it move where the chain starts and never where it
+     * ends, so a hops-then-routine chain grounds here exactly as a hop-less one does. A chain that
+     * hops <em>after</em> the routine lands somewhere only the chain walk knows, and this pass runs
+     * before any field is walked, so it is left alone. That is also where the directive costs an
+     * author nothing: such a chain's return type names a catalog table that is a table type in the
+     * schema already, so its {@code @table} is that type's own binding rather than a second spelling
+     * of the routine's name.
+     *
+     * <p>Skipped cases, each silent for the reason {@link #groundRoutineMutationField} states: a
+     * return the author bound with {@code @table}, a non-object return, a chain landing past the
+     * routine (the walk's), a second routine node (deferred at classification anyway), the mutation
+     * root (whose {@code @routine}-terminal seat is the payload carrier's, whose rows are what the
+     * data field re-reads rather than what the field returns), a carrier-shaped return reached from
+     * anywhere else, and a routine name that resolves to no table-valued function.
+     */
+    private void groundRoutineReturnType(GraphQLObjectType parent, GraphQLFieldDefinition field) {
+        if ("Mutation".equals(parent.getName())) return;
+        var chain = field.getAppliedDirectives().stream()
+            .filter(d -> DIR_ROUTINE.equals(d.getName()) || DIR_REFERENCE.equals(d.getName()))
+            .toList();
+        if (chain.isEmpty() || !DIR_ROUTINE.equals(chain.getLast().getName())) return;
+        if (chain.stream().filter(d -> DIR_ROUTINE.equals(d.getName())).count() != 1) return;
+
+        String returnSdl = unwrappedTypeName(field.getType());
+        if (returnSdl == null) return;
+        if (!(ctx.schema.getType(returnSdl) instanceof GraphQLObjectType returnObj)) return;
+        if (returnObj.hasAppliedDirective(DIR_TABLE)) return;
+        if (ctx.scanStructuralRoutineCarrierPayload(returnSdl)
+                instanceof BuildContext.DmlPayloadScan.Admit) return;
+
+        GraphQLAppliedDirective dir = field.getAppliedDirective(DIR_ROUTINE);
+        String routineName = Optional.ofNullable(dir.getArgument(ARG_NAME))
+            .map(a -> a.getValue()).map(Object::toString).orElse(null);
+        if (routineName == null || routineName.isBlank()) return;
+        if (!(ctx.catalog.resolveTableValuedFunction(routineName)
+                instanceof JooqCatalog.RoutineResolution.Resolved fn)) return;
+
+        routineReturnMemo.putIfAbsent(returnSdl, fn.resultTable());
     }
 
     /**
