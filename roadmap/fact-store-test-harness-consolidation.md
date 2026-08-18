@@ -58,7 +58,8 @@ What each one actually asserts is an `intent_*` relation, and the DDL says which
 Nine of the fourteen assert only on SQL views declared in `graphitron-model.sql`. They run a crawler
 they are not testing in order to populate rows a view reads, and the crawler is in a different module
 from the thing under assertion. The remaining five are mixed: `intent_type_domain`,
-`intent_input_occurrence_path` / `_step` and `intent_type_backing_class` are `CREATE TABLE`, written by
+`intent_input_occurrence_path` / `_path_step` and `intent_type_backing_class` are `CREATE TABLE`,
+written by
 `ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` in `graphitron`'s main sources. Those
 halves are genuinely `graphitron`'s, and testing them through a real capture is right.
 
@@ -129,8 +130,8 @@ shape that becomes another named harness the moment a third site appears.
 ### The direct writers, which want M0 and nothing else
 
 A second population opens a store and writes rows to it directly, with no SDL captured into it at all:
-`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest`, `capture/JavaSourceFactsTest` and
-`capture/SourceGraphScopingTest` inside `graphitron`, and downstream `graphitron-lsp`'s
+`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest` and `capture/JavaSourceFactsTest`
+inside `graphitron`, and downstream `graphitron-lsp`'s
 `RejectionSeverityCoverageTest` and `graphitron-mcp`'s `DiagnosticsToolCompileSourceTest` and
 `DiagnosticsAggregateTest` (which is a `StoreBackedBuild` reader *and* a direct writer, opening its own
 store in three cases and driving `RejectionFacts` by hand).
@@ -146,8 +147,14 @@ sits in.
 So they migrate, and the level they migrate to is M0, the store's lifetime, and nothing above it.
 What they get out of it is modest, an opened store and a `GraphIdentity` they currently hand-build, and
 that is worth stating plainly rather than overselling. The reason to convert them anyway is that the
-alternative is a guard exception list holding seven classes that are not exceptions on the merits,
+alternative is a guard exception list holding six classes that are not exceptions on the merits,
 merely unconverted, which is the quiet second inventory this item exists to stop.
+
+`capture/SourceGraphScopingTest` reads like one of them and is not. It opens a store and never calls
+a factory, but every case fills it through `CapturedStore.registryOf` and a `FactCapture.capture` per
+graph name, which makes it capture-shaped and a G1 consumer. It is worth naming here because it is the
+cleanest caller-supplied graph identity already in the tree: three graphs captured into one store from
+one directory, which is exactly the shape the section below lifts to a parameter.
 
 ### Where the harnesses stop
 
@@ -285,12 +292,20 @@ test-jars it needs at test scope. The jOOQ fixture packages the capture-level fi
 come from `graphitron-sakila-db`, which `graphitron-lsp` and `graphitron-mcp` already depend on at test
 scope, so the catalog shapes need no new dependency at all.
 
-Two beneficiaries fall out of putting M0 and M1 in `graphitron-model` rather than in `graphitron`.
+One beneficiary falls out of putting M0 and M1 in `graphitron-model` rather than in `graphitron`.
 `roadmap-tool` depends on `graphitron-model` and not on `graphitron`, and its
 `SchemaReferencePagesTest` opens a store; under a single `graphitron`-hosted home that site is
-unreachable by construction. And `capture/StoreReaderTest`, which imports `GraphitronModelStore` and a
-tier annotation and nothing else, is a `graphitron-model` test currently living in `graphitron`; it can
-go home.
+unreachable by construction. What it gains is reach and not enforcement: `GuardScope` excludes
+`roadmap-tool` by design, for a reason belonging to the roadmap-reference guard, and the store-fixture
+guard inherits that exclusion because the module list is shared.
+
+No `graphitron` test goes home with the harness, and `capture/StoreReaderTest` is the one that looks
+like it should. Its subject is the reader's boundary and its imports are nearly bare, but all five of
+its cases fill the store through `CapturedStore.registryOf` and `FactCapture.capture`, and that is
+load-bearing rather than incidental: a reader's snapshot boundary is only interesting against a real
+capture round, because a single insert is not a round in flight. Moving it down would need
+graphql-java and `graphitron` itself under `graphitron-model`, which is the cycle this section has
+just ruled out. It stays where it is, on the exception list, reading G1's primitives.
 
 The guard needs a matching change: `GuardScope.IN_SCOPE_MODULES` does not list `graphitron-model`
 today, so a module that is about to become a test home sits outside the walk. Add it.
@@ -712,7 +727,16 @@ converting to `{@link}` still buys the compiler's own resolution of the referenc
 the silent rot.
 
 `docs/architecture/explanation/fact-model.adoc` cites several of the same classes in backticks, which
-nothing checks at all, so any class rename in this item must update that surface by hand.
+nothing checks at all, so any class rename in this item must update that surface by hand. It also
+places them: "per-view anchors (`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`,
+`DemandShadowTest`, `InputOccurrenceShadowTest` in `rewrite/derive`)". S4 and S5 falsify the location
+as well as the citation, so both need the same pass.
+
+This section has no slice of its own on purpose, because there is no moment at which it is the work.
+It is acceptance on S4 and S5 instead: a batch that moves an anchor class updates
+`FactCaptureAgreementTest`'s citation for it, in the class javadoc and in the `TypeBackingClassesTest`
+method javadoc further down, and updates `fact-model.adoc` in the same commit. A moved class whose
+citations still name the old home is the slice not finished.
 
 ## Slices
 
@@ -732,11 +756,14 @@ merged from `ColumnMatchClaimTest`'s six seed helpers and `ReferenceStepTargetTe
 `graphql_type` / `graphql_field` / `graphql_type_declaration` twins reconciled into one spelling.
 `GuardScope.IN_SCOPE_MODULES` gains `graphitron-model`.
 
-Proof, not assertion: this slice also moves `capture/StoreReaderTest` down, and migrates **one** pure
-view test end to end, from capture-driven to seeded, keeping its assertions. `ClassAssignableTest` is
-the natural pick, being the smallest single-view mover. If that migration cannot be done without
-reaching for something M1 does not have, the harness is not finished and the finding belongs in this
-slice rather than in stage 2.
+Proof, not assertion: this slice migrates **one** pure view test end to end, from capture-driven to
+seeded, keeping its assertions. `ClassAssignableTest` is the natural pick, and not merely for being
+small: `FactCaptureAgreementTest`'s registry already records that it binds `intent_class_assignable`
+"to a census built reference by reference", the chains it needs being "ones a scan of compiled
+fixtures cannot arrange". It is the one mover whose inputs are already stated as rows in all but
+name, so the migration tests M1 rather than the migrator. If it cannot be done without reaching for
+something M1 does not have, the harness is not finished and the finding belongs in this slice rather
+than in stage 2.
 
 **S2: G1 and G2, `graphitron`'s harness.** `CapturedStore` widened and moved beside `TestSchemaHelper`,
 taking its store from M0 rather than opening one. The fixture file with its filename keyed on the graph
@@ -766,15 +793,32 @@ content, and each loses its `write(`, its `GRAPH` constant, its census plumbing 
 argument, because a seeded view test needs none of them. A class that cannot lose those is telling you
 it was not a pure view test after all, which is a finding worth recording rather than working around.
 
+`ClassMemberSlotTest` is the one in the nine whose recorded reason for capturing has not been
+answered above, and it must be settled before the batch containing it is taken. Two of the nine
+argue for capture in their own javadoc, and this item answers both: `ReferenceStepTargetTest`'s
+"a fixture is free to seed a chain the catalog cannot connect" and `FieldColumnTableTest`'s "a
+seeded fixture could assert a combination no schema produces" are both the escape-note apparatus
+the Problem section dissolves. `FactCaptureAgreementTest`'s registry states a third and different
+one: this class binds `intent_class_member_slot` "over a real classfile scan of its own fixtures
+rather than seeded census rows, because a rule that reads a class's declared form cannot be pinned
+against a fixture that declares its own." That is a claim about the subject, not a hazard note.
+
+The likely resolution is that the registry's reason is already covered elsewhere and the class
+splits like the five in S5: `FactCaptureAgreementTest`'s `EQUALITY` arm pins the scanner census
+against the walk, so `graphql_class_member` fidelity does not rest on this class, and what is left
+is the view's algebra over rows, which seeds. If that holds, say so here and update the registry's
+note for this anchor as part of the slice. If it does not, `ClassMemberSlotTest` is a mixed class
+and belongs in S5, not S4.
+
 **S5: the five mixed classes.** `DemandShadowTest`, `InputOccurrenceShadowTest`, `SeparateFetchTest`,
 `TypeBackingClassTest` and `TypeBackingShadowTest` split: the view assertions go down and become seeded,
-the assertions on `intent_type_domain`, `intent_input_occurrence_path` / `_step` and
+the assertions on `intent_type_domain`, `intent_input_occurrence_path` / `_path_step` and
 `intent_type_backing_class` stay in `graphitron` on G1, because those rows are written by
 `ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` and the crawler is the subject.
 Acceptance: each half asserts what it always asserted, and the `graphitron` half still runs a real
 capture.
 
-**S6: the direct writers.** `graphitron`'s four, the maven plugin's two, and downstream
+**S6: the direct writers.** `graphitron`'s three, the maven plugin's two, and downstream
 `RejectionSeverityCoverageTest`, `DiagnosticsToolCompileSourceTest` and `DiagnosticsAggregateTest`'s
 three own-store cases adopt M0 and nothing else. Acceptance: none of them still names
 `GraphitronModelStore`, and the maven-plugin pair is not left inline on the grounds that it is only two,
