@@ -109,10 +109,12 @@ SDL, so it neither blocks this nor is fixed by it.
 
 ## Out of scope
 
-- Splitting `graphitron_` from `graphql_`. The eventual reason to split them is that one is a corpus
-  anyone can transcribe with no graphitron knowledge and the other is a claim layer needing jOOQ,
-  the classpath and configuration to resolve, which only becomes true once expansion has moved out
-  of capture. This item is a precondition for that argument, not the split.
+- Reclassifying the `graphitron_` family. Those relations are decodes of the generic directive
+  applications `graphql_` transcribes, so the family is a derivation over captured facts and not a
+  second corpus; the 48 foreign keys from it into `graphql_` are a derivation's edges to its inputs.
+  `graphitron_node` is the relation this item's nodehood derivation belongs in, which makes this item
+  the first instance of that reclassification rather than a special case. The rest of the family is
+  its own item.
 - The `CONNECTION` macro, and the general tier correction across every family. Also the three
   synthesis relations and `graphitron_field_synthesis.authored_type_sdl`, which the tier reading
   predicts become unnecessary but which this item does not touch.

@@ -70,6 +70,35 @@ it, pre-expansion" as unparsed text, because a derived value took the captured v
 `graphql_field`, and a view now recovers it with nested `REPLACE` calls stripping `[`, `]` and `!`. A
 captured fact is being reconstructed by string surgery.
 
+## Which tier each family is in
+
+Naming the tiers is only useful if the families are assigned, and one assignment is currently
+misread in the tree and was misread in this item's own siblings before they were corrected.
+
+- Tier one, transcription: `graphql_` (including the generic directive definitions and applications
+  at all five locations, with argument values), `jvm_`, `sql_`, `java_`, and the verdict residents
+  `graphql_syntax_error` / `graphql_schema_error`. Each is what a walk read from one corpus.
+- Tier two, derivation: `intent_`, and **`graphitron_`**. The `graphitron_` relations are decodes of
+  the generic directive applications tier one transcribes: `graphitron_field_reference_step`
+  decomposes a `@reference` path argument, `graphitron_service_arg_mapping_sigil` extracts a sigil
+  from an argument value, `graphitron_table` reads a `name:`. Each is a function of captured rows.
+  `MacroCapture`'s javadoc already uses the right word for it, distinguishing what "transcribes into
+  `graphql_type_directive`" from what "decodes into `graphitron_federation_key`".
+- Tier three, queries: the views a consumer reads, which the document already covers under "One base,
+  many views".
+- Scaffolding, in neither tier: `walk_`, which reifies the Java pipeline's answer so a derivation can
+  be diffed against it during migration.
+
+The tier is decided by what a relation's rows are computed *from*, not by what computes them. A
+materialized derivation whose producer is a Java program is tier two if its inputs are captured facts;
+the document already accepts materialization where a view cannot serve. Stating this in the same
+breath as the assignment matters, because "`graphitron_` is a derivation" otherwise reads as a demand
+that a thousand lines of decoding become SQL, which is not what the tier claims.
+
+The corollary worth writing down: the 48 foreign keys from `graphitron_` into `graphql_` are a
+derivation's edges to its inputs. They are correct and permanent, and they are not an argument for or
+against separating the two families.
+
 ## Shape
 
 - `fact-model.adoc` gains a short section naming the three tiers and the recompute test, placed ahead
