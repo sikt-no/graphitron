@@ -62,12 +62,12 @@ import java.util.Optional;
  * <p>The catalog carries the generated jOOQ table class FQN on each
  * {@link CompletionData.Table} and the {@code Keys} class FQN on each
  * {@link CompletionData.Reference}, but no source positions: the LSP joins those
- * FQNs against its own {@link SourceWalker.Index} at request time, so jOOQ
+ * FQNs against the store's {@code java_} family at request time, so jOOQ
  * goto-definition / hover ride the {@code .java} source cadence rather than the
  * generator build cadence. This builder does not walk sources: the
  * {@code description} slots carry the build-derivable fallback only (the table's
  * SQL comment; empty for columns and services), and the LSP overlays the source
- * Javadoc when its index has it.
+ * Javadoc when the store has it.
  */
 public final class CatalogBuilder {
 

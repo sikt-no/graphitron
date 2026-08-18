@@ -885,10 +885,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * follows, while the plugin coordinate and its configurable {@code <directory>} are not, so
      * a POM-config scan would be plugin-specific and fragile. Over-inclusion
      * (annotation-processor output, graphitron's own emitted resolvers) is cheap for the
-     * parse-only {@code SourceWalker} and harmless for the class / field maps; the one
-     * method-map hazard, a cross-file {@code (FQN, name, arity)} collision routing to
-     * {@code Ambiguous}, cannot arise because graphitron emits into the consumer's
-     * {@code outputPackage}, disjoint from the jOOQ table package the catalog joins against.
+     * parse-only {@code SourceWalker} and harmless for what it writes: the store's
+     * {@code java_} family holds a row per declaration, so a file that need not have been
+     * walked adds rows nobody joins rather than colliding with the ones somebody does.
      *
      * <p>Empty when the project has no build directory or no {@code generated-sources} on disk.
      * Sorted for a deterministic order across filesystems.

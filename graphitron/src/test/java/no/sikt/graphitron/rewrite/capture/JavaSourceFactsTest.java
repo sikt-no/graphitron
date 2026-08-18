@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
@@ -98,10 +97,10 @@ class JavaSourceFactsTest {
     }
 
     /**
-     * The improvement the relation's own key buys: a same-arity overload pair is two rows here,
-     * where the {@link SourceWalker.Index} projection can only drop the colliding key into its
-     * ambiguous set. The ordinals are dense from zero in declaration order, so a reader asking for
-     * a name gets both declarations and the count is the resolution outcome.
+     * The improvement the relation's own key buys: a same-arity overload pair is two rows, where a
+     * map keyed by {@code (class, name, arity)} can only hold one and has to invent a policy for
+     * the other. The ordinals are dense from zero in declaration order, so a reader asking for a
+     * name gets both declarations and the count is the resolution outcome.
      */
     @Test
     @DisplayName("a same-arity overload pair is two rows, ordered by declaration")
@@ -109,7 +108,7 @@ class JavaSourceFactsTest {
         write(root, "com/example/Widgets.java", WIDGETS);
 
         try (var store = GraphitronModelStore.open()) {
-            var walk = refresh(store.dsl(), root);
+            refresh(store.dsl(), root);
 
             assertThat(store.dsl()
                 .select(JAVA_METHOD_DECLARATION.ORDINAL, JAVA_METHOD_DECLARATION.JAVADOC)
@@ -119,10 +118,6 @@ class JavaSourceFactsTest {
                 .fetch(row -> tuple(row.value1(), row.value2())))
                 .as("both same-arity declarations, in the order the file declares them")
                 .containsExactly(tuple(0, "By name."), tuple(1, "By id."));
-
-            assertThat(SourceWalker.indexOf(walk).ambiguousMethods())
-                .as("the projection beside it can only call the pair ambiguous")
-                .contains(new SourceWalker.MethodKey("com.example.Widgets", "of", 1));
         }
     }
 

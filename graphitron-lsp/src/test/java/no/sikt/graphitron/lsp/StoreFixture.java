@@ -11,7 +11,7 @@ import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
+import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;

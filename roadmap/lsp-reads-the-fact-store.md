@@ -526,8 +526,8 @@ reader left and retires with the rest of the workspace bookkeeping.
 toggles; `didChangeWatchedFiles` is a no-op today. The open-buffer set stays in `Workspace`; the
 tree-derived type index (`refreshTypeIndex`'s declared/referenced sets) and the per-file
 recalculation bookkeeping it aims retire with the keystroke cadence (see the diagnostics
-paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retires with the
-java-source family: the LSP walks nothing.
+paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retired with the
+java-source family, settled below: the LSP walks nothing.
 
 **What still reads the projection.** One site, the residue of the inventory rather than a separate
 concern. Naming it here because "every feature moves" is checkable only against a list of what has
@@ -542,8 +542,8 @@ not.
 The second site was `FieldCompletions`'s source-sigil predicate, and it is settled below: the
 completion and the diagnostic beside it read `intent_carrier_data_field`, and the carrier projection
 retired with them. The projections nothing read at all went next, also settled below: the
-`CompletionData` catalog the workspace still held, and the snapshot's type-backing and
-declaration-location maps.
+`CompletionData` catalog the workspace still held, the snapshot's type-backing and
+declaration-location maps, and the source-position index the workspace held beside them.
 
 ## Resolved questions
 
@@ -2909,8 +2909,7 @@ Provisional until the cutover lands; the Done-gate sweep greps for these. `Compl
 `CatalogFacts`, `LspSchemaSnapshot`, the `Built.Current` / `Built.Previous` freshness seal,
 `typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo`'s keep-previous-and-demote
 path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
-`dependsOnDeclarations`, `SourceWalker.Index` with its `ambiguousMethods` and `methodsByName`, and
-`Workspace`'s `sourceIndex` / `setSourceIndex` / `refreshSourceIndex`. Gone already:
+`dependsOnDeclarations`. Gone already:
 `LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
 (`ofTable`, `ofColumn`, `classJavadoc`), `Definitions.methodLocation`, and
 `FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
@@ -2922,9 +2921,7 @@ and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
 `TypeContext.tableNameFromClassification` with the sealed `InferredDirectiveArgs.AbsentArm`
 and its `TableName` permit, and the relation `intent_class_member_type_ref`, whose union the
 owner-keyed `intent_declared_type_ref` states one key lower; `DirectiveResolution`
-follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
-language-server surface having asked it anything since goto-definition's positions moved.
-`typeDefinitionLocations` is gone outright, along with `CatalogBuilder`'s `projectTypeDefinitionLocations`
+follows when diagnostics moves. `typeDefinitionLocations` is gone outright, along with `CatalogBuilder`'s `projectTypeDefinitionLocations`
 and `putTypeLocation`: goto's intra-schema arm was its only reader, it reads the declaration sites now,
 and the comment naming the MCP schema view as a second reader was describing a reader that had already
 left. The
@@ -2958,7 +2955,12 @@ one: the sigil arm was its last reader. What the language server no longer recei
 constructors, the `CompletionData` parameters on `Hovers.compute` and `SdlActions.all`, and the
 snapshot's `typesByName` with its `typeBacking` lookup, which took `buildSnapshot`'s own
 `CompletionData` parameter with it. `CatalogBuilder.projectTypesByName` stays: its reader is the walk
-shadow, which is capture-time rather than a projection anyone ships.
+shadow, which is capture-time rather than a projection anyone ships. The source-position index went
+the same way and took its resolution policy with it: `SourceWalker.Index` with `ambiguousMethods`,
+`methodsByName`, `resolveMethod`, `methodByName` and the `Decl` / `MethodKey` / `MethodNameKey` /
+`FieldKey` shapes it was keyed by, `SourceWalker.walk` and `indexOf` that built it, and `Workspace`'s
+`sourceIndex` / `setSourceIndex`. `SourceWalker` itself stays, one product lighter, and moves to
+`rewrite/capture` beside `ClasspathScanner`.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -3784,3 +3786,54 @@ gate). One thing worth recording for whoever picks up the catalog itself: `Compl
 reference and scalar censuses now have no reader but two `DevMojo` log lines, while its
 `externalReferences` census is a live input to capture. Retiring the catalog is therefore a question
 about what the dev goal reports, not about what the language server reads.
+
+## Settled while building: the walk has one product again, and the projection outlived the readers its own comment named
+
+The workspace held one more projection: `SourceWalker.Index`, the keyed view of Java declaration
+positions and Javadoc, refreshed on the source cadence beside the store write. This retires it,
+along with the walk's second product and the resolution policy that product carried.
+
+**A comment naming a reader is not a reader.** The field's javadoc said "the MCP code tools are its
+readers", and that was true until the sibling item moved every `graphitron-mcp` reader onto the
+store and stopped constructing a `Workspace` at all. What was left was a projection whose
+documentation was the only thing still pointing at it. That is a worse state than an unused field,
+because the sentence tells the next reader the field is load-bearing; the check that catches it is
+asking who calls the accessor, not what the accessor's javadoc claims.
+
+**One walk had two sinks, and the second one is what needed defending.** The dev goal parsed each
+changed source once and wrote both the store's `java_` family and the index, precisely so the two
+could not answer from different reads of the same file. That was the right guard while both had
+readers. With one sink there is nothing to keep in step, so the guard goes with the projection and
+the walk's product is simply the rows.
+
+**The projection was a resolution policy wearing a data structure's clothes.** Keyed by
+`(class, name, arity)`, it could not hold two same-arity overloads, so it grew an `ambiguousMethods`
+side-set for the keys it dropped, a never-dropped name-level map as the floor a dropped key falls
+back to, and first-declaration-wins merges for classes and fields. Three inventions, all answering
+"which declaration did you mean" in advance of anyone asking. The store's row-per-declaration grain
+answers it by counting rows, at the moment a reader asks, so deleting the projection deletes the
+policy rather than relocating it.
+
+**The walker moves to the capture package, and the deletion is what made that a rename.** `Index`
+carried a `CompletionData.SourceLocation`, so while it stood, the parse-only walk could not leave
+the package it was retiring alongside. With the projection gone the walker's only main-source reader
+is `JavaSourceFacts`, so it now sits beside `ClasspathScanner` where the retirement doctrine says a
+capture-side reader belongs.
+
+**The tests moved from the keys to the declarations.** `SourceWalkerTest` asserted on the index's
+maps; it now asserts on the walk's `ParsedFile`s. Two cases change meaning rather than syntax. The
+overload case used to pin "the colliding key is dropped, so the caller keeps UNKNOWN" and now pins
+"both overloads are declarations", which is the fact the store keeps. The two-roots case used to
+pin that graphitron's output package cannot collide with the jOOQ table package in a shared method
+map; with no map there is no collision to rule out, so it pins what the walk does promise, that both
+roots are walked and each file keeps the root it was reached under. `JavaSourceFactsTest` lost its
+closing comparison against "the projection beside it", there being nothing beside it, and the
+dev-loop cadence case lost its index half and asserts the store row alone.
+
+**One behaviour the projection was hiding, found by asserting on the declarations.** The
+unparseable-file case used to read one key out of a map, so it could only say the good file was
+still there. Asserting the whole declaration list says more, and the answer was not what the case
+assumed: a file with a syntax error still contributes whatever the parse's error recovery reached
+before the malformed body, a class header here rather than nothing at all. Partial is the honest
+answer for a broken file and every consumer already reads absence as absence, so the case now pins
+that instead of a silence the walk never promised.

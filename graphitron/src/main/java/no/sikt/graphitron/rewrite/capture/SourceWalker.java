@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.catalog;
+package no.sikt.graphitron.rewrite.capture;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -24,12 +24,9 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
@@ -38,13 +35,14 @@ import java.util.stream.Stream;
  * {@code .java} sources: where each class, method and field is written, and
  * what its doc comment says.
  *
- * <p>The parse's own product is {@link #walkFiles}, one {@link ParsedFile} per
+ * <p>The parse's product is {@link #walkFiles}, one {@link ParsedFile} per
  * source in walk order carrying its {@link Declaration}s as the parse read
  * them. That is what the store's {@code java_} family is written from, and it
  * is the shape the facts have: every overload is its own declaration, and
- * nothing is dropped for being hard to key. {@link #walk} reduces the same
- * product to the {@link Index} the language server still reads, which is a
- * projection with a resolution policy baked in and retires with its readers.
+ * nothing is dropped for being hard to key. A keyed projection over the same
+ * declarations used to ship beside it, carrying a resolution policy the keys
+ * forced on it; the store's row grain answers the same questions without one,
+ * so the walk has a single product again.
  *
  * <p>The parse uses the JDK's own Compiler Tree API
  * ({@link com.sun.source.util}); there is no external dependency. The walk is
@@ -112,9 +110,9 @@ public final class SourceWalker {
 
         /**
          * A method declaration, arity-bearing. Every overload is its own
-         * declaration: the parse has no descriptor to key on and inventing a
-         * resolution policy here is what {@link Index} does and the store does
-         * not.
+         * declaration: the parse has no descriptor to key on, and a reader that
+         * needs one answer per name resolves that from the rows rather than
+         * having the walk pick for it.
          */
         record MethodDecl(
             String className, String methodName, int parameterCount,
@@ -136,110 +134,6 @@ public final class SourceWalker {
 
         public ParsedFile {
             declarations = List.copyOf(declarations);
-        }
-    }
-
-    /**
-     * Declaration position plus Javadoc for a class, method, or field, as the
-     * {@link Index} projection holds it. {@code javadoc} is the empty string
-     * when the declaration carries no doc comment.
-     */
-    public record Decl(CompletionData.SourceLocation location, String javadoc) {}
-
-    /** Join key for a method: fully-qualified class name, method name, parameter count. */
-    public record MethodKey(String className, String methodName, int paramCount) {}
-
-    /**
-     * Join key for the name-level method view: fully-qualified class name plus
-     * method name, with no arity. Unlike {@link MethodKey}, a key here is never
-     * dropped on an overload collision, so it is the floor a consumer falls back
-     * to when the arity-keyed lookup misses (an absent arity, or a same-arity
-     * overload collision the arity map discarded).
-     */
-    public record MethodNameKey(String className, String methodName) {}
-
-    /** Join key for a field: fully-qualified declaring class name plus the Java field name. */
-    public record FieldKey(String className, String fieldName) {}
-
-    /**
-     * The merged index over every source root: classes keyed by FQN, methods
-     * keyed by {@link MethodKey} (overload-ambiguous keys removed from
-     * {@code methods}), fields keyed by {@link FieldKey}.
-     *
-     * <p>A projection over {@link #walkFiles}'s declarations, not the parse's own
-     * product: the keys it can form decide what it can hold, so a same-arity
-     * overload pair becomes an entry in {@code ambiguousMethods} rather than two
-     * rows. It exists for the language-server readers that have not moved to the
-     * store's {@code java_} family yet, and retires with them.
-     *
-     * <p>{@code ambiguousMethods} lets a consumer tell "method genuinely not
-     * indexed" (key absent everywhere) from "method present but the
-     * {@code (class, name, arity)} key cannot pick one overload" (key in this
-     * set). The set is the union of intra-file and cross-file collisions,
-     * matching exactly the keys removed from {@code methods}.
-     *
-     * <p>{@code methodsByName} is the never-dropped name-level view (keyed by
-     * {@link MethodNameKey}, first declaration wins): the floor
-     * {@link #resolveMethod} falls back to when the arity-keyed lookup misses,
-     * so a same-arity overload still lands on a declaration adjacent to the
-     * overload set rather than declining.
-     */
-    public record Index(
-        Map<String, Decl> classes,
-        Map<MethodKey, Decl> methods,
-        Map<FieldKey, Decl> fields,
-        Set<MethodKey> ambiguousMethods,
-        Map<MethodNameKey, Decl> methodsByName
-    ) {
-        public static final Index EMPTY = new Index(Map.of(), Map.of(), Map.of(), Set.of());
-
-        /**
-         * Convenience constructor for collision-free fixtures: derives
-         * {@code methodsByName} from {@code methods}. The production index is built
-         * by {@link SourceWalker#indexOf} through the canonical constructor, which
-         * keeps overload-collided names that {@code methods} dropped; a derived
-         * view cannot recover those.
-         */
-        public Index(
-            Map<String, Decl> classes, Map<MethodKey, Decl> methods,
-            Map<FieldKey, Decl> fields, Set<MethodKey> ambiguousMethods
-        ) {
-            this(classes, methods, fields, ambiguousMethods, deriveByName(methods));
-        }
-
-        private static Map<MethodNameKey, Decl> deriveByName(Map<MethodKey, Decl> methods) {
-            var byName = new LinkedHashMap<MethodNameKey, Decl>();
-            methods.forEach((k, v) ->
-                byName.putIfAbsent(new MethodNameKey(k.className(), k.methodName()), v));
-            return Map.copyOf(byName);
-        }
-
-        /**
-         * Two-step method resolution: the precise {@code (class, name, arity)} key
-         * first, then the never-dropped {@code (class, name)} view as a floor. The
-         * arity key lands on the correct overload when it resolves; the name floor
-         * guarantees a jump when the arity key is absent or was dropped as a
-         * same-arity collision. Empty only when the class carries no declaration of
-         * that name at all (or is not indexed). Shared by goto-definition and the
-         * declaration-name hover overlay so the two cannot diverge.
-         */
-        public Optional<Decl> resolveMethod(String className, String methodName, int paramCount) {
-            var byArity = methods.get(new MethodKey(className, methodName, paramCount));
-            if (byArity != null) return Optional.of(byArity);
-            return methodByName(className, methodName);
-        }
-
-        /**
-         * The never-dropped name-level view: any indexed declaration of
-         * {@code methodName} on {@code className}, ignoring arity. The floor for a
-         * same-arity overload collision the arity-keyed {@link #methods} dropped.
-         */
-        public Optional<Decl> methodByName(String className, String methodName) {
-            return Optional.ofNullable(methodsByName.get(new MethodNameKey(className, methodName)));
-        }
-
-        public boolean isEmpty() {
-            return classes.isEmpty() && methods.isEmpty() && fields.isEmpty();
         }
     }
 
@@ -291,76 +185,12 @@ public final class SourceWalker {
         return List.copyOf(out);
     }
 
-    /**
-     * The {@link Index} projection over {@link #walkFiles}, for the readers that
-     * still take one. Empty when the walk found nothing.
-     */
-    public Index walk(List<Path> sourceRoots) {
-        return indexOf(walkFiles(sourceRoots));
-    }
-
     private static long mtimeOf(Path f) {
         try {
             return Files.getLastModifiedTime(f).toMillis();
         } catch (IOException e) {
             return -1L;
         }
-    }
-
-    /**
-     * Reduces the parse's declarations to the keyed projection. First declaration
-     * wins for a class or field key, within a file and across the walk (a
-     * duplicate top-level class is malformed Java; either copy is a fine jump
-     * target). A method key that repeats is ambiguous and is dropped from
-     * {@code methods}, whether the repeat came from one file's overload pair or
-     * from two files; the name-level view keeps the first either way, so a
-     * dropped key still has a floor.
-     */
-    public static Index indexOf(List<ParsedFile> parsed) {
-        var classes = new HashMap<String, Decl>();
-        var methods = new HashMap<MethodKey, Decl>();
-        var fields = new HashMap<FieldKey, Decl>();
-        var ambiguousMethods = new HashSet<MethodKey>();
-        var methodsByName = new LinkedHashMap<MethodNameKey, Decl>();
-        for (ParsedFile file : parsed) {
-            String uri = file.file().toUri().toString();
-            for (Declaration declaration : file.declarations()) {
-                var decl = new Decl(locationIn(uri, declaration), declaration.javadoc());
-                switch (declaration) {
-                    case Declaration.ClassDecl c -> classes.putIfAbsent(c.className(), decl);
-                    case Declaration.FieldDecl f ->
-                        fields.putIfAbsent(new FieldKey(f.className(), f.fieldName()), decl);
-                    case Declaration.MethodDecl m -> {
-                        var key = new MethodKey(m.className(), m.methodName(), m.parameterCount());
-                        if (methods.putIfAbsent(key, decl) != null) {
-                            ambiguousMethods.add(key);
-                        }
-                        methodsByName.putIfAbsent(
-                            new MethodNameKey(m.className(), m.methodName()), decl);
-                    }
-                }
-            }
-        }
-        for (MethodKey k : ambiguousMethods) {
-            methods.remove(k);
-        }
-        return new Index(
-            Map.copyOf(classes), Map.copyOf(methods),
-            Map.copyOf(fields), Set.copyOf(ambiguousMethods), Map.copyOf(methodsByName));
-    }
-
-    /**
-     * The projection's own position form: the file's URI plus 0-based line and
-     * column, converted from the parse's 1-based pair. A declaration the parse
-     * could not position keeps its Javadoc under the projection's unknown
-     * location, matching what the readers already handle.
-     */
-    private static CompletionData.SourceLocation locationIn(String uri, Declaration declaration) {
-        if (declaration.line() < 0 || declaration.column() < 0) {
-            return CompletionData.SourceLocation.UNKNOWN;
-        }
-        return new CompletionData.SourceLocation(
-            uri, Math.max(declaration.line() - 1, 0), Math.max(declaration.column() - 1, 0));
     }
 
     /**
@@ -425,9 +255,8 @@ public final class SourceWalker {
      *
      * <p>Nothing is deduplicated or dropped here: two same-arity overloads are two
      * declarations, because that is what the file says. What to do about a name
-     * that resolves to more than one declaration is a reader's question, answered
-     * by {@link Index} for the readers that need one answer and by a row count for
-     * the store.
+     * that resolves to more than one declaration is a reader's question, and the
+     * store answers it with a row count.
      */
     private static final class DeclarationScanner extends TreePathScanner<Void, Void> {
         private final Trees trees;

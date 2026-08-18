@@ -57,7 +57,7 @@ public record CompletionData(
      *                 (e.g. {@code <jooqPackage>.tables.Film}), or {@code null}
      *                 when the table is not resolvable in the catalog. The LSP
      *                 goto-definition / hover paths join this FQN against the
-     *                 LSP-owned {@link SourceWalker.Index} at request time, so the
+     *                 store's {@code java_} family at request time, so the
      *                 table / column position rides the {@code .java} source
      *                 cadence rather than the generator build cadence
      *                 (mirroring the service half). The catalog
@@ -73,8 +73,8 @@ public record CompletionData(
 
     /**
      * Column on a table. Holds no source position: goto-definition joins the
-     * {@code (owning-table classFqn, name)} key against the LSP-owned
- * {@link SourceWalker.Index} at request time.
+     * {@code (owning-table classFqn, name)} key against the store's
+     * {@code java_} family at request time.
      *
      * @param name        jOOQ Java field name (e.g. {@code "FILM_ID"}), not the SQL column name
      *                    (e.g. {@code "film_id"}). LSP completions suggest this form; diagnostics
@@ -96,8 +96,8 @@ public record CompletionData(
 
     /**
      * FK relation between tables. Holds no source position: goto-definition
-     * joins the {@code (keysClassFqn, keyName)} field key against the LSP-owned
- * {@link SourceWalker.Index} at request time.
+     * joins the {@code (keysClassFqn, keyName)} field key against the store's
+     * {@code java_} family at request time.
      *
      * @param targetTable  other table name
      * @param keyName      jOOQ Java field name of the FK ({@code <TABLE>__<FK>}),
@@ -343,10 +343,10 @@ public record CompletionData(
      * structure (name, return type, parameters); it holds no source position.
      * goto-definition for a method resolves its position at request time by
      * joining this method's {@code (className, name, paramCount)} key against
-     * the LSP-owned {@link SourceWalker.Index}, so a position that becomes
-     * available on a {@code .java} edit is seen without a generator rebuild.
-     * An overload collision the join key cannot disambiguate is a distinct
-     * outcome there, not a silent no-jump (see the LSP {@code DefinitionTarget}).
+     * the store's {@code java_} family, so a position that becomes available on
+     * a {@code .java} edit is seen without a generator rebuild. Two same-arity
+     * overloads are two rows there, so an ambiguous jump is a row count rather
+     * than a silent no-jump (see the LSP {@code DefinitionTarget}).
      *
      * <p>{@code returnsCondition} is the parse-boundary classification of
      * whether this method's return type is jOOQ's {@code org.jooq.Condition}.

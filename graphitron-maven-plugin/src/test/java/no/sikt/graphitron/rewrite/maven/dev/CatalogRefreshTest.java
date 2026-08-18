@@ -4,7 +4,7 @@ import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
+import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
@@ -105,12 +105,12 @@ class CatalogRefreshTest {
 
     @Test
     void javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass(@TempDir Path srcDir) throws Exception {
-        // Source cadence, at the store layer: a .java edit writes the java_ family and the index
-        // projection beside it, with no generator round in between. The workspace's build output
-        // must stay untouched (no buildOutput swap), which is what makes the pin about the cadence
-        // rather than about a build having happened to run.
+        // Source cadence, at the store layer: a .java edit writes the java_ family, with no
+        // generator round in between. The workspace's build output must stay untouched (no
+        // buildOutput swap), which is what makes the pin about the cadence rather than about a
+        // build having happened to run.
         var workspace = new Workspace();
-        assertThat(workspace.sourceIndex().isEmpty()).isTrue();
+        assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
 
         Path javaFile = srcDir.resolve("com/example/PriceService.java");
         Files.createDirectories(javaFile.getParent());
@@ -126,10 +126,8 @@ class CatalogRefreshTest {
             var walker = new SourceWalker();
             var fired = new CountDownLatch(1);
             Runnable refresher = () -> {
-                // The production path: one walk, the store and the index off it.
-                var walk = walker.walkFiles(List.of(srcDir));
-                facts.refresh(List.of(srcDir), walk);
-                workspace.setSourceIndex(SourceWalker.indexOf(walk));
+                // The production path: one walk, one sink.
+                facts.refresh(List.of(srcDir), walker.walkFiles(List.of(srcDir)));
                 fired.countDown();
             };
 
@@ -147,9 +145,9 @@ class CatalogRefreshTest {
                 .from(JAVA_CLASS_DECLARATION).fetch(0, String.class))
                 .as("the declaration is a store row on the source cadence")
                 .containsExactly("com.example.PriceService");
-            assertThat(workspace.sourceIndex().classes())
-                .containsKey("com.example.PriceService");
-            assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
+            assertThat(workspace.snapshot())
+                .as("a source-cadence refresh must not run a generator pass")
+                .isInstanceOf(LspSchemaSnapshot.Unavailable.class);
         }
     }
 

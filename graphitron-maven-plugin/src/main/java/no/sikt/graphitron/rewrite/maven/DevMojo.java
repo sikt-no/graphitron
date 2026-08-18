@@ -15,7 +15,7 @@ import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
+import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
@@ -76,11 +76,11 @@ import java.util.function.Consumer;
  *       in the schema module or a sibling reactor module — flow through
  *       the same rebuild trigger.</li>
  *   <li>Watches every reactor project's compile source roots for
- *       {@code .java} changes and refreshes the LSP's source-position index
+ *       {@code .java} changes and refreshes the store's {@code java_} family
  *       on that source cadence, decoupled from the {@code .class} rebuild.
- *       Service-half goto-definition reads positions from this index,
- *       so a declaration that moves in a hand-edited source file is jumpable
- *       without waiting for a recompile.</li>
+ *       Service-half goto-definition reads declaration positions from those
+ *       rows, so a declaration that moves in a hand-edited source file is
+ *       jumpable without waiting for a recompile.</li>
  * </ul>
  *
  * <p>Stop with Ctrl+C. See the "Dev loop" how-to in the user manual for the
@@ -189,8 +189,8 @@ public class DevMojo extends AbstractRewriteMojo {
     // the unit tier); reportCompile writes through it beside the console and workspace sinks.
     CompileFacts compileFacts;
     // The java_ family's writer over the same handle. The dev session owns the source walk because
-    // it owns the watcher that triggers it: the walk's product goes to the store, and its
-    // projection to the workspace, from one parse per changed file.
+    // it owns the watcher that triggers it, and the store is where the walk's product goes: one
+    // parse per changed file, one sink.
     JavaSourceFacts javaSourceFacts;
     // The walk itself, held across refreshes so its per-file cache stays warm. One instance per
     // session, which is what keeps the .java cadence from sharing state with anything else.
@@ -281,7 +281,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // Seed the source facts so goto-definition / hover work before the first .java edit; the
         // source watcher refreshes them on the source cadence thereafter. Path-only read on
         // initialCtx (no loader).
-        refreshSourceFacts(initialCtx, workspace, false);
+        refreshSourceFacts(initialCtx, false);
         // Diagnostic so a "completion works but goto-definition returns nothing"
         // report can be traced to a module whose classes are scanned but whose
         // source root is not walked: the two counts should track each other.
@@ -319,7 +319,7 @@ public class DevMojo extends AbstractRewriteMojo {
         maybeStartIncrementalCompiler(workspace);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
-        startSourceWatcher(initialCtx, workspace);
+        startSourceWatcher(initialCtx);
 
         Thread shutdown = new Thread(this::cleanup, "graphitron-dev-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdown);
@@ -535,13 +535,13 @@ public class DevMojo extends AbstractRewriteMojo {
     /**
      * Starts the {@code .java} source-root watcher. Walks the same
      * compile source roots the catalog build uses, but on the source cadence:
-     * a hand-edited service / condition source refreshes the LSP's
-     * source-position index without waiting for a {@code .class} rebuild. The
+     * a hand-edited service / condition source moves its declaration rows in the
+     * store's {@code java_} family without waiting for a {@code .class} rebuild. The
      * walk is parse-only (no reflection, no classpath resolution), so it runs
      * straight off the captured {@code ctx}'s path fields without a codegen
      * scope, unlike the regenerate / rebuildCatalog triggers.
      */
-    private void startSourceWatcher(RewriteContext ctx, Workspace workspace) throws MojoExecutionException {
+    private void startSourceWatcher(RewriteContext ctx) throws MojoExecutionException {
         Set<Path> roots = resolveSourceRoots(ctx);
         if (roots.isEmpty()) {
             getLog().info("graphitron:dev: skipping source watcher; "
@@ -551,7 +551,7 @@ public class DevMojo extends AbstractRewriteMojo {
         this.sourceDebounce = new DebounceExecutor(debounceMs);
         try {
             this.sourceWatcher = new SchemaWatcher(
-                roots, sourceDebounce, () -> refreshSourceFacts(ctx, workspace, true), ".java");
+                roots, sourceDebounce, () -> refreshSourceFacts(ctx, true), ".java");
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
@@ -563,22 +563,19 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * One parse of the changed sources, two sinks. The store's {@code java_} family is the standing
-     * record, refreshed file by file; the workspace index is the projection the language-server
-     * surfaces that have not moved to the store yet still read. Walking twice would parse twice and
-     * let the two answer from different reads of the same file, which is the tear this session owns
-     * the walk to avoid.
+     * One parse of the changed sources into the store's {@code java_} family, refreshed file by
+     * file. That family is the standing record every reader asks, so there is one sink and no
+     * second read of the same file to disagree with it.
      *
      * @param announce whether to say so on the console; the watcher's refresh is news, the startup
      *                 seed is not, the line after it already reporting how many roots were walked
      */
-    private void refreshSourceFacts(RewriteContext ctx, Workspace workspace, boolean announce) {
+    private void refreshSourceFacts(RewriteContext ctx, boolean announce) {
         try {
             var walk = sourceWalker.walkFiles(ctx.compileSourceRoots());
             if (javaSourceFacts != null) {
                 javaSourceFacts.refresh(ctx.compileSourceRoots(), walk);
             }
-            workspace.setSourceIndex(SourceWalker.indexOf(walk));
             if (announce) {
                 getLog().info(
                     "graphitron:dev: source change detected; refreshed goto-definition positions");

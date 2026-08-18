@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.capture;
 import no.sikt.graphitron.model.tables.records.JavaClassDeclarationRecord;
 import no.sikt.graphitron.model.tables.records.JavaFieldDeclarationRecord;
 import no.sikt.graphitron.model.tables.records.JavaMethodDeclarationRecord;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
