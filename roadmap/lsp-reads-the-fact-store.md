@@ -3151,14 +3151,16 @@ related-information at the other claiming directive's position. That composition
 that column.
 
 Two siblings also came out of the pass and are not this item's work:
-`folded-name-columns-on-base-relations.md` (R697) and R698 above.
+`name-matching-stratum.md` (R697) and R698 above.
 
 R697 is **not** sequenced ahead of the recomposition, though the pass that filed it proposed that it
-should be. Folded columns make the recomposed joins cleaner to read; they do not change what those
-joins return, so a statement written against `UPPER(...)` today takes the folded column mechanically
-when R697 lands. Sequencing it first would have parked this item behind a chain it does not depend on
-(R697 awaiting a third-party sign-off, and its own second step now belonging to a capture rewrite
-that has not started), for a cleanup whose value is in the predicates' spelling.
+should be. The matching-stratum views make the recomposed joins cleaner to read; they do not change
+what those joins return, so a statement written against `UPPER(...)` today takes the stratum's
+relations mechanically when R697 lands. Sequencing it first would have parked this item behind work
+it does not depend on (R697 awaiting a third-party sign-off), for a cleanup whose value is in where
+the matching rules live. (R697 has since been respecced from folded base-relation columns to derived
+match views, which removes the capture-rewrite coupling this paragraph originally also cited; the
+sequencing decision stands either way.)
 
 So the remaining order is the recomposition and then diagnostics, in that order and for one reason:
 diagnostics is the largest unmigrated surface left, so writing it before the recomposition would
