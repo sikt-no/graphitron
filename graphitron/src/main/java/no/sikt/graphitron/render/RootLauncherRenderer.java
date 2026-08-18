@@ -251,9 +251,8 @@ public final class RootLauncherRenderer {
     /**
      * The discriminated arm's chain: the source assembly already yielded the joined {@code step}
      * local, so the FROM prefix is that local and the tail is the same conditioned fetch the
-     * anchor arm chains. The routine arm stays outside this pair deliberately: its WHERE operand
-     * is the hop-filter fold, not the {@code condition} local, so folding it in would trade the
-     * shared invariant for a template.
+     * anchor arm chains. The routine arm composes its own FROM prefix (the routine call plus the
+     * forward-bridging joins) but shares this tail.
      */
     private static CodeBlock stepChain(boolean isList, boolean ordered) {
         return CodeBlock.builder()
@@ -487,10 +486,11 @@ public final class RootLauncherRenderer {
     /**
      * The routine-chain arm: the FROM source is the bound table-valued function (IN parameters
      * read off the field's arguments through the shared routine-call emitter), hops join forward
-     * out of the routine result through the shared bridging fragment, hop filters AND into one
-     * WHERE, and the projection targets the terminus alias. No condition local: the leaf carries
-     * no filter surface (the coordinate can have no condition row), and the chain's WHERE is the
-     * hop filters alone, exactly as the inline builder composed it.
+     * out of the routine result through the shared bridging fragment, and both the projection and
+     * the read surface target the terminus alias. Everything after the joins is the same
+     * {@link #conditionedFetchTail} the anchor and discriminated arms chain: the hop filters fold
+     * into the {@code condition} local rather than into a routine-shaped WHERE of their own, so
+     * one composition serves every source.
      */
     private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain,
             ArgPathHelperRegistry argHelpers) {
@@ -509,27 +509,31 @@ public final class RootLauncherRenderer {
         }
         String terminal = chain.hops().isEmpty() ? startLocal : chain.hops().getLast().alias();
         boolean isList = row.result() instanceof ResultShape.RecordList;
+        Ordering ordering = row.result() instanceof ResultShape.RecordList list ? list.ordering() : null;
 
-        var sel = CodeBlock.builder()
-            .add("return dsl\n")
-            .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(chain.projection()), terminal))
-            .add(".from($L)\n", startLocal);
-        var filters = new java.util.ArrayList<CodeBlock>();
+        var bridging = CodeBlock.builder();
+        var hopFilters = new java.util.ArrayList<CodeBlock>();
         for (int i = 0; i < chain.hops().size(); i++) {
             var hop = chain.hops().get(i);
             String prev = i == 0 ? startLocal : chain.hops().get(i - 1).alias();
-            sel.add("$L\n", PathFragments.emitForwardBridging(hop, prev, hop.alias()));
+            bridging.add("$L\n", PathFragments.emitForwardBridging(hop, prev, hop.alias()));
             if (hop.filter() != null) {
-                filters.add(PathFragments.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
+                hopFilters.add(PathFragments.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
             }
         }
-        if (!filters.isEmpty()) {
-            sel.add(".where($L)\n", filters.stream()
-                .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b)).orElseThrow());
+        code.add(conditionStatement(row, terminal, hopFilters));
+        if (ordering != null) {
+            code.add(orderByStatement(ordering, terminal));
         }
-        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
-        code.add(sel.build());
+        var chainCode = CodeBlock.builder()
+            .add("dsl\n")
+            .indent()
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(chain.projection()), terminal))
+            .add(".from($L)\n", startLocal)
+            .add(bridging.build())
+            .add(conditionedFetchTail(isList, ordering != null))
+            .unindent();
+        code.add(directReturn(chainCode.build()));
         return code.build();
     }
 
@@ -539,12 +543,24 @@ public final class RootLauncherRenderer {
      * coordinate has no condition row; absence is data, never an inline fold).
      */
     private static CodeBlock conditionStatement(LauncherCommand row, String tableLocal) {
-        if (row.where() == null) {
-            return CodeBlock.builder().addStatement("$T condition = $T.noCondition()", CONDITION, DSL).build();
+        return conditionStatement(row, tableLocal, java.util.List.of());
+    }
+
+    /**
+     * The condition local with {@code extraPredicates} ANDed onto it. The routine arm's hop
+     * filters ride here: they are predicates over aliases the body has already declared, and
+     * folding them into the one local is what lets the arm share
+     * {@link #conditionedFetchTail} with every other source.
+     */
+    private static CodeBlock conditionStatement(LauncherCommand row, String tableLocal,
+            java.util.List<CodeBlock> extraPredicates) {
+        var expr = row.where() == null
+            ? CodeBlock.of("$T.noCondition()", DSL)
+            : glueExpression(row.where(), tableLocal);
+        for (var predicate : extraPredicates) {
+            expr = CodeBlock.of("$L.and($L)", expr, predicate);
         }
-        return CodeBlock.builder()
-            .addStatement("$T condition = $L", CONDITION, glueExpression(row.where(), tableLocal))
-            .build();
+        return CodeBlock.builder().addStatement("$T condition = $L", CONDITION, expr).build();
     }
 
     /** {@code <Owner>.<method>(<table>, env.getArguments()[, env])} for any glue reference. */

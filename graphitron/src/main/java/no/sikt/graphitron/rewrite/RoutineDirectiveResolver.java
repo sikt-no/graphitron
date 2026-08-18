@@ -96,15 +96,6 @@ final class RoutineDirectiveResolver {
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot,
             String previousNodeTableSqlName) {
-        // Composition verdict: @orderBy / @condition key on the resolved table and are
-        // meaningful for catalog-terminus chains, but no filter/order surface ships for
-        // routine-backed fields yet — a capability gap, not a schema contradiction. @orderBy is
-        // argument-positioned; @condition appears on the field or its arguments.
-        var orderOrCondition = orderOrConditionDeferral(fieldDef);
-        if (orderOrCondition != null) {
-            return new Resolved.Rejected(orderOrCondition);
-        }
-
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName)
@@ -123,20 +114,29 @@ final class RoutineDirectiveResolver {
 
     /**
      * The carrier seat's resolution: the routine node with no return-shape demand (the caller
-     * already established the payload-carrier return). Same composition deferral and node
-     * resolution as {@link #resolve}; root position by definition (the carrier fork is a
-     * Mutation root shape), so {@code columnMapping} rejects through the shared root check.
+     * already established the payload-carrier return). Root position by definition (the carrier
+     * fork is a Mutation root shape), so {@code columnMapping} rejects through the shared root
+     * check. The write seat's read-surface deferral is the caller's
+     * ({@link #writeSeatReadSurfaceDeferral}), seat-gated the way the carrier's own directive
+     * conflict is.
      */
     NodeResolved resolveCarrierNode(String parentTypeName, GraphQLFieldDefinition fieldDef) {
-        var orderOrCondition = orderOrConditionDeferral(fieldDef);
-        if (orderOrCondition != null) {
-            return new NodeResolved.Rejected(orderOrCondition);
-        }
         return resolveNode(parentTypeName, fieldDef, /*isRoot=*/true, null);
     }
 
-    /** The no-filter-or-order-surface deferral, shared by both entry points; null when absent. */
-    private static Rejection orderOrConditionDeferral(GraphQLFieldDefinition fieldDef) {
+    /**
+     * The write seat's read-surface deferral, or {@code null} when the field declares no filter
+     * or order surface. Read fields resolve {@code @condition} and {@code @orderBy} against the
+     * chain terminus like any other table read; the Mutation write seats do not, because neither
+     * {@link no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField} nor
+     * {@link no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteRecordField}
+     * carries a filter or ordering component at all. Without this check the directives would
+     * classify clean on a write and silently do nothing.
+     *
+     * <p>{@code @orderBy} is argument-positioned; {@code @condition} appears on the field or on
+     * its arguments.
+     */
+    static Rejection writeSeatReadSurfaceDeferral(GraphQLFieldDefinition fieldDef) {
         boolean hasOrderOrCondition = fieldDef.hasAppliedDirective(DIR_CONDITION)
             || fieldDef.getArguments().stream().anyMatch(a ->
                 a.hasAppliedDirective(DIR_ORDER_BY) || a.hasAppliedDirective(DIR_CONDITION));
@@ -144,8 +144,9 @@ final class RoutineDirectiveResolver {
             return null;
         }
         return Rejection.deferred(
-            "@orderBy / @condition on a routine-backed field is not yet supported — "
-            + "no filter or order surface ships for routine-backed fields");
+            "@orderBy / @condition on a @routine Mutation field is not yet supported — the "
+            + "routine write's result shape carries no filter or order surface; compose the "
+            + "read surface on the Query field that reads the written rows");
     }
 
     /**

@@ -80,6 +80,7 @@ import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.RoutineChain;
+import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -715,11 +716,25 @@ class FieldBuilder {
     private TableFieldComponents resolveTableFieldComponents(
             String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
             boolean emitAsConnectionAdvisory) {
+        return resolveTableFieldComponents(parentTypeName, fieldDef, table, returnTypeName, plan,
+            emitAsConnectionAdvisory, Set.of());
+    }
+
+    /**
+     * @param argsBoundElsewhere argument names the field spends on something other than its read
+     *        surface, skipped by the argument classification so they cannot also be read as
+     *        filters, ordering or lookup keys. Non-empty only for a {@code @routine} chain, whose
+     *        arguments supply the routine's IN parameters; every other caller passes the empty set
+     *        and reads the whole argument list.
+     */
+    private TableFieldComponents resolveTableFieldComponents(
+            String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
+            boolean emitAsConnectionAdvisory, Set<String> argsBoundElsewhere) {
         if (emitAsConnectionAdvisory) {
             warnAsConnectionSameTable(fieldDef, plan);
         }
         var classifyErrors = new ArrayList<String>();
-        var refs = classifyArguments(fieldDef, table, returnTypeName, plan, classifyErrors);
+        var refs = classifyArguments(fieldDef, table, returnTypeName, plan, argsBoundElsewhere, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
         return projectForFilter(refs, parentTypeName, fieldDef, table, returnTypeName, rejections);
@@ -1461,10 +1476,24 @@ class FieldBuilder {
      */
     List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, String targetTypeName,
                                         NodeIdArgPlan plan, List<String> errors) {
+        return classifyArguments(fieldDef, rt, targetTypeName, plan, Set.of(), errors);
+    }
+
+    /**
+     * @param argsBoundElsewhere argument names the field spends outside its read surface (a
+     *        {@code @routine} chain's IN-parameter bindings), skipped entirely so they neither
+     *        yield a ref nor an unbound-argument error.
+     */
+    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, String targetTypeName,
+                                        NodeIdArgPlan plan, Set<String> argsBoundElsewhere,
+                                        List<String> errors) {
         var fieldCondition = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCondition != null && fieldCondition.override();
         var refs = new ArrayList<ArgumentRef>();
         for (var arg : fieldDef.getArguments()) {
+            if (argsBoundElsewhere.contains(arg.getName())) {
+                continue;
+            }
             refs.add(classifyArgument(fieldDef, arg, rt, targetTypeName, fieldOverride, plan, errors));
         }
         return List.copyOf(refs);
@@ -2637,10 +2666,14 @@ class FieldBuilder {
      * {@link RoutineResolution.Chain} source axis; the single-node shape is the degenerate
      * chain with no {@code @reference} applications ({@code hops = []}).
      *
-     * <p>Ordering note: like the single-node root, the chain root carries no ordering
-     * surface (the read surface is empty by the {@code Chain} arm's constructor pin; the
-     * {@code @orderBy} / {@code @condition} deferral fires in {@code RoutineDirectiveResolver}
-     * before this classifier runs).
+     * <p>Read surface: the chain resolves filters and ordering against its terminus through
+     * {@link #resolveTableFieldComponents}, the same call the ordinary root table arm makes, with
+     * the routine's own IN-parameter arguments excluded ({@link #routineBoundArgNames}). A
+     * catalog terminus therefore falls back to that table's primary key; a routine terminus has
+     * none, so a list-shaped field there must carry {@code @defaultOrder(fields:)} and the
+     * deterministic-order validator says so. Filtering is terminus-only: {@code @condition}
+     * resolves against the chain's last node, matching where the ordering resolves, even though
+     * intermediate aliases are live in the emitted query.
      */
     private GraphitronField classifyRootRoutineChain(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location) {
@@ -2653,14 +2686,51 @@ class FieldBuilder {
                 if (verdict != null) {
                     yield new UnclassifiedField(parentTypeName, name, location, verdict);
                 }
+                if (hasLookupKeyAnywhere(fieldDef)) {
+                    yield new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
+                        "@lookupKey on a routine-backed field classifies but does not emit yet"));
+                }
+                var components = routineChainComponents(parentTypeName, fieldDef, walk);
+                if (components instanceof TableFieldComponents.Rejected rj) {
+                    yield new UnclassifiedField(parentTypeName, name, location, rj.rejection());
+                }
+                var tfc = (TableFieldComponents.Ok) components;
                 yield new QueryField.QueryTableField(parentTypeName, name, location,
                     walk.tb().returnType(),
-                    List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), LookupResolution.None.INSTANCE,
                     new RoutineResolution.Chain(new RoutineChain(
                         new TableExpr.RoutineCall(walk.tb().routine(), walk.tb().resultTable()),
                         walk.steps())));
             }
         };
+    }
+
+    /**
+     * The read surface of a landed {@code @routine} chain, resolved against the chain's terminus
+     * (which the terminus rule has already pinned to the field's {@code @table} return). The one
+     * routine-specific input is the exclusion set: the field's arguments serve two masters, the
+     * routine's IN parameters and the read surface, and only the bindings know which is which.
+     */
+    private TableFieldComponents routineChainComponents(String parentTypeName,
+            GraphQLFieldDefinition fieldDef, ChainWalk.Ok walk) {
+        var terminus = walk.tb().returnType().table();
+        return resolveTableFieldComponents(parentTypeName, fieldDef, terminus,
+            walk.tb().returnType().returnTypeName(), buildNodeIdArgPlan(fieldDef, terminus),
+            /*emitAsConnectionAdvisory=*/true, routineBoundArgNames(walk.tb().routine()));
+    }
+
+    /**
+     * The field arguments a routine node spends on its IN parameters. Read off the resolved
+     * bindings rather than off the directive text, so an {@code argMapping} entry and an
+     * identity-bound parameter are excluded by one rule. A {@code columnMapping}-bound parameter
+     * reads a column of the previous chain node and claims no argument, so it contributes none.
+     */
+    private static Set<String> routineBoundArgNames(RoutineRef routine) {
+        return routine.argBindings().stream()
+            .map(RoutineRef.ArgBinding::source)
+            .filter(source -> source instanceof ParamSource.Arg)
+            .map(source -> ((ParamSource.Arg) source).path().headName())
+            .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -2708,6 +2778,10 @@ class FieldBuilder {
                     + "rows it fetches, not the field that runs the routine; drop @reference from "
                     + "the mutation field (the data field's single name-matched hop is implicit)"));
         }
+        var writeSurface = RoutineDirectiveResolver.writeSeatReadSurfaceDeferral(fieldDef);
+        if (writeSurface != null) {
+            return new UnclassifiedField(parentTypeName, name, location, writeSurface);
+        }
         return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null)) {
             case ChainWalk.Rejected r ->
                 new UnclassifiedField(parentTypeName, name, location, r.rejection());
@@ -2748,6 +2822,10 @@ class FieldBuilder {
      */
     private GraphitronField classifyMutationRoutineCarrier(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location) {
+        var writeSurface = RoutineDirectiveResolver.writeSeatReadSurfaceDeferral(fieldDef);
+        if (writeSurface != null) {
+            return new UnclassifiedField(parentTypeName, name, location, writeSurface);
+        }
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
@@ -2939,27 +3017,27 @@ class FieldBuilder {
                             + "parent would receive identical rows — drop @splitQuery or bind a "
                             + "parent column via columnMapping"));
                 }
-                // Ordering: @orderBy is rejected upstream (typed Deferred), so the only order
-                // surface is @defaultOrder, resolved against the chain's terminus. A
-                // routine-terminus chain requires it (a TVF result table carries no primary
-                // key, so the PK fallback lands None and a list-shaped field fails the
-                // deterministic-order validator); a catalog terminus orders like any table.
-                var orderResolved = orderByResolver.resolve(List.of(), fieldDef,
-                    walk.tb().returnType().table().tableName());
-                if (orderResolved instanceof OrderByResolver.Resolved.Rejected orderRejected) {
-                    yield new UnclassifiedField(parentTypeName, name, location, orderRejected.rejection());
+                // Read surface: filters and ordering resolve against the chain's terminus, the
+                // same call the ordinary child table arm makes, with the routine's own
+                // IN-parameter arguments excluded. A routine terminus carries no primary key, so
+                // the PK fallback lands None there and a list-shaped field needs an authored
+                // @defaultOrder; a catalog terminus orders like any table.
+                var components = routineChainComponents(parentTypeName, fieldDef, walk);
+                if (components instanceof TableFieldComponents.Rejected rj) {
+                    yield new UnclassifiedField(parentTypeName, name, location, rj.rejection());
                 }
-                var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
+                var tfc = (TableFieldComponents.Ok) components;
                 if (hasSplitQuery) {
                     yield new no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField(
                         parentTypeName, name, location, walk.tb().returnType(), walk.steps(),
-                        List.of(), orderBy, null,
+                        tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         SourceShape.Table,
                         splitSource.sourceKey(), splitSource.lift(),
                         splitSource.loaderRegistration(), LookupResolution.None.INSTANCE, pc);
                 }
                 yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
-                    walk.steps(), List.of(), orderBy, null, LookupResolution.None.INSTANCE, pc);
+                    walk.steps(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    LookupResolution.None.INSTANCE, pc);
             }
         };
     }

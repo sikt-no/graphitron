@@ -193,11 +193,36 @@ type Query {
     # R300: @routine table-valued read function. Binds the three TEXT IN parameters of
     # public.tilganger_for_feidebruker_med_fs_fiktivt_fnr from GraphQL arguments and reads the
     # RETURNS TABLE result through the existing selection-narrowing projection.
+    # The routine result is the terminus and carries no primary key, so the deterministic-order
+    # rule has no fallback to take and @defaultOrder over the function's own result columns is
+    # the only ordering spelling available.
     tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
         @routine(
             name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
         )
+        @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+    # R704 execution fixtures: the read surface over a routine terminus. WHERE and ORDER BY are
+    # different clauses of the same statement the function call sits in, so a routine-backed
+    # field filters and sorts like any other read; both resolve against the chain's terminus,
+    # which here is the function result itself. The routine's own IN parameters are spent on the
+    # call and are never read as filters.
+    tilgangerAdmin(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+        @routine(
+            name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
+            argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
+        )
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "tilgangAdminOnly"})
+        @defaultOrder(fields: [{name: "organisasjonskode"}])
+    tilgangerSortert(env: String!, serviceId: String!, feideId: String!,
+                     sort: TilgangOrderBy @orderBy): [Tilgang!]!
+        @routine(
+            name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
+            argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
+        )
+        @defaultOrder(fields: [{name: "organisasjonskode"}])
     # R435 execution fixture: plain root table read of actors, host for the correlated
     # child-positioned @routine Actor.films (films_for_actor).
     allActors: [Actor!]!
@@ -2361,6 +2386,19 @@ enum ActorSort {
 
 input ActorOrderBy {
     field: ActorSort!
+    direction: SortDirection
+}
+
+# R704: dynamic ordering over a routine result. The sort enum's columns resolve against the
+# terminus like any other @orderBy, the terminus here being the table-valued function's own
+# result table.
+enum TilgangSort {
+    ORGANISASJONSKODE @order(fields: [{name: "organisasjonskode"}])
+    ROLLEKODE         @order(fields: [{name: "rollekode"}])
+}
+
+input TilgangOrderBy {
+    field: TilgangSort!
     direction: SortDirection
 }
 

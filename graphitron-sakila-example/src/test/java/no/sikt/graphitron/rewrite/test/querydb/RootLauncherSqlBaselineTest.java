@@ -163,10 +163,14 @@ class RootLauncherSqlBaselineTest {
         execute("{ tilganger(env: \"e\", serviceId: \"s\", feideId: \"f\") { rollekode } }");
         assertThat(SQL_LOG)
             .as("routine root, single node: the FROM source is the bound table-valued function, "
-                + "IN parameters as binds, projection against the routine table")
+                + "IN parameters as binds, projection against the routine table, and the ORDER BY "
+                + "is the authored @defaultOrder over the function's own result columns (a "
+                + "function result has no primary key for the fallback to find)")
             .containsExactly(
                 "select \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\" "
-                    + "from \"public\".\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\"(?, ?, ?)");
+                    + "from \"public\".\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\"(?, ?, ?) "
+                    + "order by \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"organisasjonskode\" asc, "
+                    + "\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\" asc");
     }
 
     @Test
@@ -174,12 +178,27 @@ class RootLauncherSqlBaselineTest {
         execute("{ recentFilmsForActor(actorId: 1, minLength: 1) { title } }");
         assertThat(SQL_LOG)
             .as("routine root with a hop: the routine supplies FROM, the hop joins forward onto "
-                + "the catalog table, and the projection targets the terminus alias")
+                + "the catalog table, the projection targets the terminus alias, and the ORDER BY "
+                + "is that terminus's primary key through the ordinary fallback")
             .containsExactly(
                 "select \"recentfilmsforactor_0\".\"title\" "
                     + "from \"public\".\"films_for_actor\"(?, ?) "
                     + "join \"public\".\"film\" as \"recentfilmsforactor_0\" "
-                    + "on \"films_for_actor\".\"film_id\" = \"recentfilmsforactor_0\".\"film_id\"");
+                    + "on \"films_for_actor\".\"film_id\" = \"recentfilmsforactor_0\".\"film_id\" "
+                    + "order by \"recentfilmsforactor_0\".\"film_id\" asc");
+    }
+
+    @Test
+    void routineRoot_developerCondition_landsInTheSameStatementsWhere() {
+        execute("{ tilgangerAdmin(env: \"e\", serviceId: \"s\", feideId: \"f\") { rollekode } }");
+        assertThat(SQL_LOG)
+            .as("routine root with @condition: the predicate is a WHERE on the statement whose "
+                + "FROM is the function call, anchored on the function's own alias")
+            .containsExactly(
+                "select \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\" "
+                    + "from \"public\".\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\"(?, ?, ?) "
+                    + "where \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\" = ? "
+                    + "order by \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"organisasjonskode\" asc");
     }
 
     @Test

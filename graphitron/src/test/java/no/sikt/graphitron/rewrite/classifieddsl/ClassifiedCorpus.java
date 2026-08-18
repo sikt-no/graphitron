@@ -746,6 +746,12 @@ public final class ClassifiedCorpus {
          * (a routine-sourced QueryTableField, Query / Fetch / List(Table)); only the FROM source differs (the
          * generated Routines convenience method, with IN params bound from GraphQL arguments). The
          * routine resolves against the sakila-db fixture catalog.
+         *
+         * @defaultOrder is not decoration here, it is the only ordering spelling the shape has.
+         * A list result is ordered by the terminus primary key when there is one and by an
+         * authored @defaultOrder when there is not; a function result has no primary key, so the
+         * fallback finds nothing and the deterministic-order rule requires the columns be named.
+         * That is why the example mints an OrderBy operation the plain-catalog reads get for free.
          */
         new Example("routine-table-valued-read", """
             type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
@@ -755,7 +761,8 @@ public final class ClassifiedCorpus {
             type Query {
               tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
-                @classified(source: Query, operations: [Select], target: List, targetShape: Table)
+                @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+                @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
                 @commits(source: RoutineChain, result: RecordList)
             }
             """),

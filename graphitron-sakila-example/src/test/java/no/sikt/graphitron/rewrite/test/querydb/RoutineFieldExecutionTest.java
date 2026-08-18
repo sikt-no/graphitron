@@ -171,10 +171,69 @@ class RoutineFieldExecutionTest {
             """);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("recentFilmsForActor");
+        // Exact order, not any-order: the chain terminates on the film catalog table, so the
+        // ordinary primary-key fallback supplies ORDER BY film.film_id with no schema edit.
         assertThat(films).extracting(f -> f.get("filmId"))
-            .containsExactlyInAnyOrder(1, 3);
+            .containsExactly(1, 3);
         assertThat(films).extracting(f -> f.get("description"))
-            .containsExactlyInAnyOrder("A Epic Drama", "A Quirky Comedy");
+            .containsExactly("A Epic Drama", "A Quirky Comedy");
+    }
+
+    @Test
+    void routineTerminusListOrdersByItsAuthoredDefaultOrder() {
+        // The routine terminus has no primary key, so the authored @defaultOrder over the
+        // function's own result columns is the whole ordering contract. Row order is behaviour,
+        // and behaviour only closes at this tier: a dropped ORDER BY leaves the rows in whatever
+        // order the function body produced them.
+        var data = execute("""
+            { tilganger(env: "prod", serviceId: "svc", feideId: "feide-123") {
+                organisasjonskode
+                rollekode
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("tilganger");
+        assertThat(rows).extracting(r -> r.get("organisasjonskode")).containsExactly(184, 185);
+    }
+
+    @Test
+    void developerConditionFiltersTheRoutineResult() {
+        // @condition on a routine-backed field: the predicate lands in the WHERE of the same
+        // statement whose FROM is the function call. The unfiltered sibling returns both roles.
+        var data = execute("""
+            { tilgangerAdmin(env: "prod", serviceId: "svc", feideId: "feide-123") {
+                organisasjonskode
+                rollekode
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("tilgangerAdmin");
+        assertThat(rows).extracting(r -> r.get("rollekode")).containsExactly("admin");
+    }
+
+    @Test
+    void orderByArgumentSortsTheRoutineResultBothWays() {
+        // The argument order resolves against the terminus (the function result) and reverses
+        // on direction, which is what proves the emitted helper drives the statement's ORDER BY
+        // rather than the authored @defaultOrder falling through.
+        var ascending = execute("""
+            { tilgangerSortert(env: "prod", serviceId: "svc", feideId: "feide-123",
+                               sort: {field: ROLLEKODE, direction: ASC}) {
+                rollekode
+            } }
+            """);
+        var descending = execute("""
+            { tilgangerSortert(env: "prod", serviceId: "svc", feideId: "feide-123",
+                               sort: {field: ROLLEKODE, direction: DESC}) {
+                rollekode
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> asc = (List<Map<String, Object>>) ascending.get("tilgangerSortert");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> desc = (List<Map<String, Object>>) descending.get("tilgangerSortert");
+        assertThat(asc).extracting(r -> r.get("rollekode")).containsExactly("admin", "user");
+        assertThat(desc).extracting(r -> r.get("rollekode")).containsExactly("user", "admin");
     }
 
     @Test

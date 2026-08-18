@@ -65,7 +65,9 @@ public sealed interface QueryField extends RootField
      * A root table read whose FROM starts at the return type's own table or a routine chain.
      * The source axis is the sealed {@link RoutineResolution}: the {@code Chain} arm carries a
      * jOOQ database routine ({@code @routine}) whose table chain terminates on the field's
-     * {@code @table} return type, with the read surface constructor-pinned empty.
+     * {@code @table} return type. Source and read surface are independent: a chain-sourced read
+     * filters, sorts and paginates through the same components an anchor-sourced one does,
+     * resolved against the chain's terminus.
      */
     record QueryTableField(
         String parentTypeName,
@@ -82,17 +84,15 @@ public sealed interface QueryField extends RootField
             java.util.Objects.requireNonNull(lookup, "lookup");
             java.util.Objects.requireNonNull(routine, "routine");
             if (routine instanceof RoutineResolution.Chain c) {
-                // The shipped chain regime, pinned where source and read surface meet: a
-                // routine-sourced root read carries no graphitron read surface (@condition,
-                // @orderBy, connection shapes and @lookupKey on a routine chain are
-                // classify-time typed rejections), so a chain beside a populated surface is a
-                // classifier bug, not an author error.
-                if (!filters.isEmpty() || !(orderBy instanceof OrderBySpec.None)
-                        || pagination != null || !(lookup instanceof LookupResolution.None)) {
+                // The one read-surface axis a chain still cannot carry, stated against the axis
+                // that owns it rather than folded into a conjunction: keyed lookup over a
+                // routine chain is a classify-time typed deferral (the key tuple a lookup joins
+                // on is the terminus primary key, which a routine result has none of), so a
+                // resolved lookup beside a chain is a classifier bug, not an author error.
+                if (!(lookup instanceof LookupResolution.None)) {
                     throw new IllegalArgumentException(
-                        "QueryTableField with a routine chain must carry an empty read surface "
-                        + "(no filters, OrderBySpec.None, no pagination, LookupResolution.None); "
-                        + "the classifier rejects each of these surfaces on @routine before "
+                        "QueryTableField with a routine chain must carry LookupResolution.None; "
+                        + "the classifier defers @lookupKey on a routine-backed field before "
                         + "construction");
                 }
                 // Terminus invariant: the projected @table type is the chain's last node.

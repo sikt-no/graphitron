@@ -37,14 +37,13 @@ public sealed interface ResultShape {
 
     /**
      * A record list: the {@code fetch()} shape under {@link #ordering}. The slot is absent for
-     * three populations: the schema-free unit-tier assemblies; classified root {@code @routine}
-     * chains, whose lists are unordered by classification (the chain defers the {@code @orderBy}
-     * surface, and the deterministic-order validation keys on a capability the routine leaf does
-     * not implement, a gap recorded on the launcher item's hand-off); and keyed lookups
+     * two populations: the schema-free unit-tier assemblies, and keyed lookups
      * ({@link LaunchSource.KeyedLookup}), which carry input order by scattering the fetched rows
      * onto their keys' slots rather than by sorting, so there is no order for the classifier to
-     * derive. The renderer renders the absent arm with no ORDER BY clause, the same SQL an empty
-     * sort list produces.
+     * derive. Every other list coordinate carries an ordering, the deterministic-order validator
+     * being what makes that so; a {@code @routine} chain is no exception, ordering against its
+     * terminus like any other read. The renderer renders the absent arm with no ORDER BY clause,
+     * the same SQL an empty sort list produces.
      */
     record RecordList(Ordering ordering) implements ResultShape {}
 

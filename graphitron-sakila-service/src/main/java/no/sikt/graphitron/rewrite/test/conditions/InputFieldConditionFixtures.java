@@ -158,4 +158,15 @@ public final class InputFieldConditionFixtures {
         return table.FIRST_NAME.equalIgnoreCase(userId);
     }
 
+    /**
+     * Field-level {@code @condition} on a routine-backed read ({@code Query.tilgangerAdmin}).
+     * The table handed in is the table-valued function's result, aliased into the FROM of the
+     * statement that calls it, so the predicate lands in that statement's WHERE like any other
+     * developer condition. Resolving the column off the passed table (rather than off a catalog
+     * singleton) is what keeps it anchored to the caller's alias.
+     */
+    public static Condition tilgangAdminOnly(Table<?> table) {
+        return table.field("rollekode", String.class).eq("admin");
+    }
+
 }

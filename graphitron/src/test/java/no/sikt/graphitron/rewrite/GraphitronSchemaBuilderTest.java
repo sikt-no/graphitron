@@ -7662,6 +7662,87 @@ class GraphitronSchemaBuilderTest {
         var slot = pairs.slots().iterator().next();
         assertThat(slot.sourceSide().sqlName()).isEqualToIgnoringCase("film_id");
         assertThat(slot.targetSide().sqlName()).isEqualToIgnoringCase("film_id");
+        // The catalog terminus takes the ordinary primary-key fallback, pinned rather than
+        // assumed: the source axis does not reach the ordering slot.
+        var ordering = (OrderBySpec.Fixed) f.orderBy();
+        assertThat(ordering.columns()).extracting(c -> c.column().sqlName()).containsExactly("film_id");
+    }
+
+    @Test
+    void rootRoutineTerminusChainHasNoOrderingFallbackToTake() {
+        // The other terminus kind. A function result carries no primary key, so the fallback
+        // lands None and the deterministic-order validator (not the classifier) is what rejects
+        // the un-ordered list; the classifier itself resolves cleanly.
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(routineChainOf(f).hops()).isEmpty();
+        assertThat(f.orderBy()).isInstanceOf(OrderBySpec.None.class);
+    }
+
+    @Test
+    void defaultOrderPrimaryKeyOnRoutineTerminusNamesTheAbsenceAndTheAlternative() {
+        // @defaultOrder(primaryKey: true) over a function result asks for a key that cannot
+        // exist. The message says so and names the columns the author can order by instead,
+        // rather than reporting an unresolved column list.
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @defaultOrder(primaryKey: true)
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.reason())
+            .contains("has no primary key")
+            .contains("@defaultOrder(fields:")
+            .contains("organisasjonskode");
+    }
+
+    @Test
+    void tableChildOfARoutineResultParentNeedsNoReference() {
+        // The implicit name-matched hop. `film` is reachable from the films_for_actor result
+        // with no directive at all: the only thing an @reference would supply is the target
+        // table name, and the child's return type already carries it.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type ActorFilmRow @table(name: "films_for_actor") {
+              filmId: Int @field(name: "film_id")
+              film: Film
+            }
+            type Query { rows: ActorFilmRow }
+            """);
+        var f = (no.sikt.graphitron.rewrite.model.ChildField.TableField)
+            schema.field("ActorFilmRow", "film");
+        assertThat(f.joinPath()).hasSize(1);
+        var hop = (JoinStep.Hop) f.joinPath().get(0);
+        assertThat(hop.targetTable().tableName()).isEqualTo("film");
+        assertThat(((On.ColumnPairs) hop.on()).keying())
+            .isInstanceOf(On.Keying.NameMatchedKey.class);
+    }
+
+    @Test
+    void tableChildOfARoutineResultParentWithNoNameMatchPointsAtTheConditionElement() {
+        // Where the name-match cannot key, the rejection stays in the name-match vocabulary and
+        // points at the condition: element, rather than reporting a missing foreign key and
+        // steering the author toward an intermediate table.
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type ActorFilmRow @table(name: "films_for_actor") {
+              filmId: Int @field(name: "film_id")
+              language: Language
+            }
+            type Query { rows: ActorFilmRow }
+            """);
+        var f = (UnclassifiedField) schema.field("ActorFilmRow", "language");
+        assertThat(f.reason())
+            .contains("by name-match")
+            .contains("'condition:' element")
+            .doesNotContain("no foreign key");
     }
 
     @Test
@@ -8239,18 +8320,29 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void orderByArgumentOnRoutineFieldDefersAsCapabilityGap() {
+    void orderByArgumentOnRoutineFieldResolvesAgainstTheTerminus() {
+        // An @orderBy argument on a routine-backed field is an ordinary argument order over the
+        // chain's terminus: the sort enum's columns resolve against the routine result table,
+        // which is what the field projects. The routine's own IN-parameter arguments are spent
+        // on the call and never reach the read surface.
         var schema = build(TILGANG_TYPE + """
-            enum TilgangOrder { ROLLE }
+            enum TilgangOrderField { ROLLE @order(fields: [{name: "rollekode"}]) }
+            enum Direction { ASC DESC }
+            input TilgangOrder { sortField: TilgangOrderField! direction: Direction! }
             type Query {
               tilganger(env: String!, serviceId: String!, feideId: String!,
                         orderBy: TilgangOrder @orderBy): [Tilgang!]!
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
             }
             """);
-        var f = (UnclassifiedField) schema.field("Query", "tilganger");
-        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("@orderBy / @condition on a routine-backed field");
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(routineChainOf(f).hops()).isEmpty();
+        assertThat(f.filters()).isEmpty();
+        var orderBy = (OrderBySpec.Argument) f.orderBy();
+        assertThat(orderBy.namedOrders()).hasSize(1);
+        assertThat(orderBy.namedOrders().get(0).order().columns())
+            .extracting(c -> c.column().sqlName())
+            .containsExactly("rollekode");
     }
 
     @Test
@@ -8323,17 +8415,42 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void conditionOnRoutineFieldDefersAsCapabilityGap() {
+    void conditionOnRoutineFieldResolvesAgainstTheTerminus() {
+        // A developer @condition on a routine-backed field filters the chain's terminus, the
+        // same WHERE contribution it makes on any other table read. Nothing about a function in
+        // the FROM stops a WHERE from being written.
         var schema = build(TILGANG_TYPE + """
             type Query {
               tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @defaultOrder(fields: [{name: "rollekode"}])
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
-                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "fieldCondition"})
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
             }
             """);
-        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(routineChainOf(f).hops()).isEmpty();
+        assertThat(f.filters()).hasSize(1);
+        assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Fixed.class);
+    }
+
+    @Test
+    void conditionOnRoutineMutationFieldDefersOnTheWriteSeat() {
+        // The write seat keeps the deferral the read seats lose: neither routine-write leaf
+        // carries a filter or ordering component, so the directive would classify clean and do
+        // nothing. The message names the write seat rather than routine-backed fields at large.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rentals: [Rental!]! }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("@orderBy / @condition on a routine-backed field");
+        assertThat(f.reason()).contains("@orderBy / @condition on a @routine Mutation field");
     }
 
     @Test

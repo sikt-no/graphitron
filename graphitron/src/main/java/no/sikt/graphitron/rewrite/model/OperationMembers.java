@@ -113,10 +113,10 @@ public final class OperationMembers {
      */
     public static final Map<Class<? extends OutputField>, DeclaredShape> DECLARED_SHAPES = Map.ofEntries(
         // Query roots. The routine-sourced read shares this entry since the source axis folded
-        // onto the leaf: read alone that widens the routine coordinate's admitted image to the
-        // full optional set, but the real fence sits below the image check, in the leaf
-        // constructor, which rejects a Chain source beside any populated read surface, so a
-        // condition-, ordering-, paginate- or lookup-minting routine read is unconstructible
+        // onto the leaf, and the shared entry is now honest rather than merely wide: a
+        // chain-sourced read mints condition, ordering and pagination members like any other
+        // root table read. Lookup is the one member it cannot mint, fenced below the image
+        // check by the leaf constructor, so a lookup-minting routine read is unconstructible
         // rather than image-rejected.
         Map.entry(QueryField.QueryTableField.class,
             shape(Set.of(Kind.SELECT), withLookupOptional(TABLE_READ_OPTIONALS))),

@@ -1483,26 +1483,45 @@ class BuildContext {
                 && startSqlTableName != null
                 && targetSqlTableName != null
                 && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
-            var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
-            if (fks.size() == 1) {
-                var stepResolution = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList);
-                switch (stepResolution) {
-                    case FkJoinResolution.Resolved r -> resolvedElements.add(r.hop());
-                    case FkJoinResolution.UnknownTable u -> {
-                        return new ParsedPath(List.of(),
-                            unknownTableRejection(u.failure(), u.requestedName()).message(),
-                            new TerminalTargetVerdict.NotApplicable());
-                    }
-                    case FkJoinResolution.UnknownForeignKey uf -> {
-                        return new ParsedPath(List.of(),
-                            unknownForeignKeyRejection(uf.fkName()).message(),
-                            new TerminalTargetVerdict.NotApplicable());
-                    }
+            // The same catalog gate the {table:} element branch applies, hoisted onto the
+            // element-less arm: a routine result declares no foreign keys, so the FK inference
+            // below can only ever fail on one, and it fails with advice (an intermediate table,
+            // a condition: predicate) that names the wrong problem. The name-matched hop the
+            // explicit form resolves to takes only the target table name from the directive, and
+            // the field's return type already carries that, so on this source there is nothing
+            // left for the author to write.
+            if (catalog.isTableValuedFunction(startSqlTableName)) {
+                var nameMatched = new ArrayList<JoinStep>();
+                var nameMatchErrors = new ArrayList<String>();
+                synthesizeNameMatchedJoin(targetSqlTableName, startSqlTableName, fieldName,
+                    /*stepIndex=*/0, /*whereFilter=*/null, nameMatched, nameMatchErrors);
+                if (!nameMatchErrors.isEmpty()) {
+                    return new ParsedPath(List.of(), String.join("; ", nameMatchErrors),
+                        new TerminalTargetVerdict.NotApplicable());
                 }
+                resolvedElements.addAll(nameMatched);
             } else {
-                return new ParsedPath(List.of(),
-                    fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true),
-                    new TerminalTargetVerdict.NotApplicable());
+                var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
+                if (fks.size() == 1) {
+                    var stepResolution = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList);
+                    switch (stepResolution) {
+                        case FkJoinResolution.Resolved r -> resolvedElements.add(r.hop());
+                        case FkJoinResolution.UnknownTable u -> {
+                            return new ParsedPath(List.of(),
+                                unknownTableRejection(u.failure(), u.requestedName()).message(),
+                                new TerminalTargetVerdict.NotApplicable());
+                        }
+                        case FkJoinResolution.UnknownForeignKey uf -> {
+                            return new ParsedPath(List.of(),
+                                unknownForeignKeyRejection(uf.fkName()).message(),
+                                new TerminalTargetVerdict.NotApplicable());
+                        }
+                    }
+                } else {
+                    return new ParsedPath(List.of(),
+                        fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true),
+                        new TerminalTargetVerdict.NotApplicable());
+                }
             }
         }
         // Check 1: compute the terminal-target verdict — does the terminal hop land on the

@@ -46,10 +46,28 @@ type Query {
             name:       "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
         )
+        @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
 }
 ----
 
-The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(env, serviceId, feideId)).fetch()`. A query selecting only `organisasjonskode` projects only that routine-result column.
+The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(env, serviceId, feideId)).where(noCondition()).orderBy(...).fetch()`. A query selecting only `organisasjonskode` projects only that routine-result column.
+
+The `@defaultOrder` is required here rather than decorative: the routine result is the chain's last node and a function result carries no primary key, so nothing can supply a deterministic order unless the schema names it. See <<read-surface,The read surface>>.
+
+[[read-surface]]
+== The read surface: filtering and ordering
+
+A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the `@table` type the field projects). The field's remaining arguments are unaffected: an argument bound to a routine IN parameter is spent on the call and is never read as a filter.
+
+One rule governs the ordering, and it is the rule every list field already lives under:
+
+[quote]
+A list result is ordered, by the terminus primary key when there is one and by an authored `@defaultOrder` when there is not.
+
+A table-valued function's result table has no primary key, so the two terminus kinds land differently, and that is the whole of the routine-specific story:
+
+* *Catalog terminus* (a `@reference` hop follows the routine): the terminus is an ordinary table, the primary-key fallback applies, and a list field needs no ordering directive at all.
+* *Routine terminus* (the routine is the last node): there is no key to fall back on, so a list field must name its order over the function's own result columns with `@defaultOrder(fields: [...])`, or take one from an `@orderBy` argument. Omitting it is a build error naming the function; `@defaultOrder(primaryKey: true)` there is a build error too, and lists the result columns as candidates.
 
 == Child positions: correlated calls
 
@@ -70,7 +88,7 @@ type Actor @table(name: "actor") {
 
 `pActorId` reads each actor row's `actor_id`; `pMinLength` reads the GraphQL argument. Mixed calls like this emit the routine's `Field`-overload surface, so both bindings are typed at the call site.
 
-`@defaultOrder` with explicit `fields:` is the one ordering surface a routine-result list child has: a table-valued function's result table carries no primary key, so the usual primary-key fallback cannot apply and a list-shaped field must state its order over the result columns.
+The `@defaultOrder` here is not a child-position speciality; see <<read-surface,The read surface>> for the one rule that puts it there.
 
 [[chain]]
 == Composing with @reference: the table chain
@@ -106,6 +124,17 @@ castRecentFilms(minLength: Int!): [Film!]
 ----
 
 A hop *out of* a routine result has no foreign key to ride (a function result carries no FK metadata), so a `{table:}` element there keys by name matching: the target table's primary-key columns must be exposed, by SQL name, among the routine's result columns. `films_for_actor` exposes `film_id`, film's PK, so the hop above resolves; a `condition:` element is the escape hatch when names do not line up.
+
+The single name-matched hop is also *implicit*. A `@table`-bound child of a routine-result parent needs no `@reference` at all, because the only thing the directive would supply is the target table name, and the child's own return type already carries it:
+
+[source,graphql]
+----
+type Brukertilgang @table(name: "mine_tilganger") {   # mine_tilganger is a table-valued function
+    tilgangsrolle: Tilgangsrolle                      # Tilgangsrolle is @table(name: "rolle")
+}
+----
+
+An explicit `@reference(path: [{table: "rolle"}])` stays legal and resolves identically; writing it is optional, not wrong. What has no implicit spelling is a multi-hop path out of a routine result, or a join the name-match cannot key: both still need the directive, and the build error names the missing key column and points at the `condition:` element rather than at foreign keys.
 
 [[write]]
 == Writes on Mutation
@@ -200,7 +229,7 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is leaving a parameter with nothing bound to it. On the right-hand side, a path whose head is not an argument of the field, or whose later segment is not a field of the input type at that depth, is a build error listing the candidates; a `columnMapping` naming a column the previous table does not carry likewise lists that table's columns. A `columnMapping` right-hand side has no path form, since a column has no nested fields.
 * An `argMapping` path must land on a scalar or enum leaf. Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
-* Connection pagination does not compose with routine-terminus chains (`@asConnection` there is a build error: keyset pagination needs an ordering contract the routine result does not carry; use `[T]` or `T`). Over a catalog-terminus chain that merely contains a routine node it is reported as deferred, as are `@orderBy` and `@condition` on routine-backed fields and `@lookupKey` composition.
+* Connection pagination does not compose with routine-terminus chains (`@asConnection` there is a build error: keyset pagination needs an ordering contract the routine result does not carry; use `[T]` or `T`). Over a catalog-terminus chain that merely contains a routine node it is reported as deferred, as is `@lookupKey` composition. `@orderBy` and `@condition` compose normally on a read (see <<read-surface,The read surface>>); on a `Mutation` field they are reported as deferred, the write's result shape having no filter or order surface to compose onto.
 
 == See also
 

@@ -194,11 +194,46 @@ class LauncherCommandsPipelineTest {
         var chain = (no.sikt.graphitron.command.LaunchSource.RoutineChain) row.source();
         assertThat(chain.hops()).hasSize(1);
         assertThat(chain.projection().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".types.Film");
-        // No filter surface on the leaf, so no WHERE slot; unordered by classification (the
-        // @orderBy surface is deferred on the chain), so the list shape carries no ordering.
+        // The coordinate authored no filter, so no condition row exists and the WHERE slot is
+        // absent; the ordering is present and is the terminus primary key, the same fallback an
+        // anchor-sourced read of `film` would take. The source axis does not reach the read
+        // surface.
         assertThat(row.where()).isNull();
-        assertThat(((ResultShape.RecordList) row.result()).ordering()).isNull();
+        var ordering = (no.sikt.graphitron.command.Ordering.Columns)
+            ((ResultShape.RecordList) row.result()).ordering();
+        assertThat(ordering.spec().columns())
+            .extracting(c -> c.column().sqlName())
+            .containsExactly("film_id");
         assertThat(row.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Direct.class);
+    }
+
+    @Test
+    void routineRoot_terminusFilterMintsTheWhereSlotAndTheArgumentOrderMintsTheHelper() {
+        // The two slots the chain-sourced row used to hand as literal nulls. @condition on the
+        // field resolves against the terminus and mints the coordinate's condition row, whose
+        // glue the launcher copies; an @orderBy argument resolves to the helper arm. The
+        // routine's own IN-parameter arguments are spent on the call and contribute neither.
+        var schema = TestSchemaHelper.buildSchema("""
+            enum FilmOrderField { TITLE @order(fields: [{name: "title"}]) }
+            enum Direction { ASC DESC }
+            input FilmSort { sortField: FilmOrderField! direction: Direction! }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                recent(actorId: Int!, minLength: Int!, sort: FilmSort @orderBy): [Film!]!
+                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                    @reference(path: [{table: "film"}])
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
+            }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Query", "recent").orElseThrow();
+        assertThat(row.source()).isInstanceOf(no.sikt.graphitron.command.LaunchSource.RoutineChain.class);
+        assertThat(row.where()).isNotNull();
+        assertThat(row.where().method().methodName()).isEqualTo("recentCondition");
+        assertThat(((ResultShape.RecordList) row.result()).ordering())
+            .isInstanceOf(no.sikt.graphitron.command.Ordering.Helper.class);
     }
 
     @Test

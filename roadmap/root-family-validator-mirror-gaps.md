@@ -15,12 +15,12 @@ last-updated: 2026-07-30
 The root launcher migration (see `roadmap/changelog.md` when its item lands) surfaced two
 classifier-side invariants with no validate-time twin, both recorded on that item's slice logs
 and both cheap to close now that the launcher relation single-sources the relevant populations.
-(1) The deterministic-order validation keys on `SqlGeneratingField`, which the root
-`@routine`-chain leaf does not implement, so a classified list-returning routine root escapes
-the rule by capability non-membership, a membership silent skip nobody recorded as a decision;
-the launcher relation now carries exactly that population (`ResultShape.RecordList` with an
-absent ordering over the whole covered family), so the rule can re-source off the relation
-instead of the capability, or the capability can widen. (2) A `GraphitronType.TableInterfaceType`
+(1) is closed: the deterministic-order rule used to skip the root `@routine` chain, first by
+capability non-membership and later by an explicit carve-out on the source axis, and
+`roadmap/routine-composition-surface-from-facts.md` removed the carve-out rather than
+re-sourcing the rule off the launcher relation. A routine-backed list now fails the build
+unless it names an order, with a message forked on terminus kind. (2) A
+`GraphitronType.TableInterfaceType`
 participant without `@discriminator` classifies and renders the legacy silent shape (its
 projection contributes but its rows are unroutable and its gated JOIN arms are skipped), guarded
 only by one documented renderer gate in `render/DiscriminatedTableFragments`; the honest fix is

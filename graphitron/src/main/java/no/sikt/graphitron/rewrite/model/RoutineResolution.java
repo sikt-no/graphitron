@@ -11,11 +11,12 @@ import java.util.Objects;
  * side, where a routine chain has always ridden the shared table-read leaves as
  * {@link TableExpr.RoutineCall} hops in {@code joinPath()}.
  *
- * <p>The {@link Chain} arm's shipped regime is pinned where source and read surface meet, in
- * {@code QueryTableField}'s compact constructor: a chain-sourced read carries no filters, no
- * ordering, no pagination and no lookup ({@code @condition} / {@code @orderBy} / connection
- * shapes / {@code @lookupKey} on a routine chain are classify-time typed rejections), and the
- * chain's terminus is the field's {@code @table} type.
+ * <p>Source and read surface are independent: a chain-sourced read carries filters and ordering
+ * resolved against the chain terminus, exactly as an anchor-sourced one does. Two facts are
+ * still pinned in {@code QueryTableField}'s compact constructor, each against the axis that owns
+ * it: {@code @lookupKey} over a chain is a classify-time typed deferral (the key tuple it joins
+ * on is a terminus primary key, which a routine result has none of), and the chain's terminus is
+ * the field's {@code @table} type.
  */
 public sealed interface RoutineResolution {
 

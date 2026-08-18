@@ -96,7 +96,8 @@ final class OrderByResolver {
         if (fieldDef.hasAppliedDirective(DIR_DEFAULT_ORDER)) {
             var fixed = resolveColumnOrderSpec(fieldDef, tableSqlName);
             if (fixed == null) {
-                return new Resolved.Rejected(Rejection.structural("could not resolve @defaultOrder columns in table '" + tableSqlName + "'"));
+                return new Resolved.Rejected(Rejection.structural(defaultOrderFailure(
+                    fieldDef.getAppliedDirective(DIR_DEFAULT_ORDER), tableSqlName)));
             }
             return new Resolved.Ok(fixed);
         }
@@ -110,6 +111,47 @@ final class OrderByResolver {
                     OrderBySpec.SortDirection.ASC))
                 .toList(),
             true));
+    }
+
+    /**
+     * The message for a {@code @defaultOrder} that resolved to nothing. The generic arm says only
+     * that the columns did not resolve, which is the whole story for a misspelled column or a
+     * missing index. {@code primaryKey: true} over a table with no primary key is a different
+     * failure and gets its own arm: the author asked for a key the table does not have, which is
+     * the standing case on a table-valued function result, so the message names the absence and
+     * points at the surface that does work.
+     */
+    private String defaultOrderFailure(GraphQLAppliedDirective dir, String tableSqlName) {
+        boolean pkRequested = indexNameOf(dir) == null && readsPrimaryKey(dir);
+        if (pkRequested && ctx.catalog.findPkColumns(tableSqlName).isEmpty()) {
+            return "@defaultOrder(primaryKey: true) cannot resolve: '" + tableSqlName
+                + "' has no primary key. Name the ordering columns instead, with "
+                + "@defaultOrder(fields: [{name: \"...\"}]); the available columns are "
+                + String.join(", ", ctx.catalog.columnSqlNamesOf(tableSqlName)) + ".";
+        }
+        return "could not resolve @defaultOrder columns in table '" + tableSqlName + "'";
+    }
+
+    /**
+     * The directive's {@code index:} name, or {@code null} when it names none. Not the same
+     * question as "is the argument present": graphql-java hands back a declared argument whether
+     * or not the author wrote it, so absence is a null value, not a null argument.
+     */
+    private static String indexNameOf(GraphQLAppliedDirective dir) {
+        var indexArg = dir.getArgument(ARG_INDEX);
+        if (indexArg == null) {
+            return null;
+        }
+        Object indexVal = indexArg.getValue();
+        return indexVal instanceof StringValue sv ? sv.getValue().strip()
+            : indexVal instanceof String s ? s.strip() : null;
+    }
+
+    /** Whether the directive asks for the table's primary key. */
+    private static boolean readsPrimaryKey(GraphQLAppliedDirective dir) {
+        var pkArg = dir.getArgument(ARG_PRIMARY_KEY);
+        return pkArg != null && (pkArg.getValue() instanceof BooleanValue bv ? bv.isValue()
+            : Boolean.TRUE.equals(pkArg.getValue()));
     }
 
     /**
@@ -207,19 +249,12 @@ final class OrderByResolver {
      */
     private List<OrderBySpec.ColumnOrderEntry> resolveOrderEntries(
             GraphQLAppliedDirective dir, String tableSqlName, OrderBySpec.SortDirection defaultDirection) {
-        var indexArg = dir.getArgument(ARG_INDEX);
-        if (indexArg != null) {
-            Object indexVal = indexArg.getValue();
-            String indexName = indexVal instanceof StringValue sv ? sv.getValue().strip()
-                : indexVal instanceof String s ? s.strip() : null;
-            if (indexName != null) return resolveIndexColumns(tableSqlName, indexName, defaultDirection);
+        String indexName = indexNameOf(dir);
+        if (indexName != null) {
+            return resolveIndexColumns(tableSqlName, indexName, defaultDirection);
         }
 
-        var pkArg = dir.getArgument(ARG_PRIMARY_KEY);
-        boolean primaryKey = pkArg != null && (
-            pkArg.getValue() instanceof BooleanValue bv ? bv.isValue()
-            : Boolean.TRUE.equals(pkArg.getValue()));
-        if (primaryKey) {
+        if (readsPrimaryKey(dir)) {
             var pkCols = ctx.catalog.findPkColumns(tableSqlName);
             if (pkCols.isEmpty()) return null;
             return pkCols.stream()

@@ -21,8 +21,11 @@ whatever order the database happened to return.
 
 Five sites are known today:
 
-* Root `@routine` chain: the leaf is not a `SqlGeneratingField`, so a list-returning routine root
-  escapes by capability non-membership (`roadmap/routine-composition-surface-from-facts.md`).
+* Root `@routine` chain: **closed** by `roadmap/routine-composition-surface-from-facts.md`. The
+  escape was a carve-out, not a capability gap: the leaf is a `SqlGeneratingField` (the source
+  axis folded onto the shared root read leaf), and the rule named the `RoutineResolution.Chain`
+  arm as an explicit exemption. Removing the exemption closed the site; the four sites below are
+  the live census.
 * `@splitQuery` child list: a resolved `OrderBySpec.Fixed` is discarded at the model-to-command
   boundary (`roadmap/split-query-child-list-drops-default-order.md`).
 * `@lookupKey` child: `LauncherCommands.batchedLookupRow`'s ordering slot is left empty
@@ -33,7 +36,8 @@ Five sites are known today:
   so `@orderBy` and `@defaultOrder` are accepted and discarded and rows come back in participant
   primary-key order (`roadmap/multitable-interface-query-orderby-lowering.md`).
 
-Only the first produces `None`. The rest are invisible to the enforcer by construction.
+Only the first produced `None`, and it is now enforced. The rest are invisible to the enforcer
+by construction, which is what this item is for.
 
 ## Why this is its own item
 
@@ -43,8 +47,9 @@ no check compares the two ends", notes that its own fix cannot make the invarian
 the shared enforcement question should be "its own item rather than as a rider on either". The
 `@splitQuery` item repeats it and adds that the launcher relation is where every leak site is
 visible in one place, as `ResultShape.RecordList` with an absent `Ordering`. A third item
-(`roadmap/root-family-validator-mirror-gaps.md`) already proposes the same re-sourcing, but scoped
-to its own bullet, the routine-chain membership gap, not to the invariant.
+(`roadmap/root-family-validator-mirror-gaps.md`) proposed the same re-sourcing, but scoped to its
+own bullet, the routine-chain membership gap, not to the invariant; that bullet has since been
+closed by removing the carve-out, which leaves the invariant exactly where it was.
 
 So the fix has been named three times from three coordinates and owned by none of them. That is
 the gap this item closes: re-source the rule off the launcher relation's ordering slot, so
