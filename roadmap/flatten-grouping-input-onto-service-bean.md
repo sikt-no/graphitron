@@ -1,7 +1,7 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: service
@@ -478,6 +478,85 @@ Written at the In Progress → In Review handoff, for the reviewer.
 * **Changelog entry not written.** Left to the reviewer at the Done gate, per `roadmap/workflow.adoc`.
   The Behaviour changes section above lists the five JavaBean-arm failures to enumerate there, plus
   the deliberate scalar-axis asymmetry.
+
+## Review feedback: In Review → Ready, one bounded second pass
+
+Written at the In Review → Done gate by an independent reviewer session. The feature itself is
+accepted: `mvn install -Plocal-db` is green across all fourteen modules, D1 through D5 landed as
+specified, the three-way binding rule and all four rejections behave as designed on both arms, the
+user-facing doc passes the workflow's doc check, and the three deferrals the plan promised (R694,
+R695, R703) are all filed. Two things send it back, both narrow and both mechanical.
+
+### 1. Code-string assertions on generated method bodies (the blocking one)
+
+The Tests section of this plan says, in full, "No generated-body string assertions." Five delivered
+tests are exactly that, and the class javadoc carves out the exception rather than the plan doing so:
+
+* `InputBeanGroupingPipelineTest.java:192-204` `singularHelper_opensOneMapLocalPerGroup_...`
+* `InputBeanGroupingPipelineTest.java:210-215` `deepHelper_descendsParentBeforeChild`
+* `InputBeanGroupingPipelineTest.java:223-228` `singularNestedBean_isNarrowedByPattern_...`
+* `InputBeanGroupingPipelineTest.java:234-239` `unflattenedBean_emitsNoDescent_...`
+* `TypeFetcherGeneratorTest.java:2485-2489`, whose reworked assertion moves from one body string to
+  another (`createFoo((java.util.Map<?, ?>) e)`) instead of off the body
+
+`docs/architecture/explanation/development-principles.adoc` line 271 bans these "at every tier",
+and `docs/architecture/how-to/testing.adoc` repeats the ban for both the generator-unit and pipeline
+tiers. The rule is review-enforced, which is what this note is.
+
+Note for context, not as an excuse: `JooqRecordServiceParamPipelineTest` (the R336 sibling this file
+is modelled on) breaks the same rule at its lines 956-1007 and 1043-1044. Copying its shape is how
+this happened. That precedent is worth its own cleanup item; it does not license a plan that
+promised otherwise.
+
+Each of the four new assertions has a home that is stronger, not weaker:
+
+* The unchecked-cast pin belongs in `GeneratedSourcesLintTest` (compilation tier), whose stated job
+  is "generator-hygiene rules over emitted source text". It scans *every* emitted file rather than
+  one helper, so as a lint rule it catches the next occurrence too, which is the actual value.
+* Parent-before-child ordering is a compile error when violated. Give the `graphitron-sakila-example`
+  fixture a depth-2 group and the compiler is the assertion; no string matching needed.
+* The absent-group-yields-null contract that the empty-map default exists to deliver is already
+  pinned at the execution tier by `submitGroupedReview_flattensTheGroupOntoTheBean`. The "one descent
+  per group, not one per leaf" count, and the depth-1 no-op, are implementation shape rather than
+  behaviour; drop them, or re-express the no-op as an assertion on `accessPath` sizes.
+
+If some part of the descent genuinely cannot be reached from compile or execution, say which part
+and why in this section, and the next reviewer can weigh a narrow, argued exception. What cannot
+stand is the plan promising the ban and the delivery quietly taking it back.
+
+### 2. The retirement sweep is not finished
+
+The Retired vocabulary section promises "nothing should still spell `sdlFieldName` on either
+carrier". Three prose sites do, each describing exactly the `FieldBinding` encodings this item
+retired it from:
+
+* `graphitron/src/test/java/no/sikt/graphitron/rewrite/TestInputBeanRenamed.java:8`
+* `graphitron/src/test/java/no/sikt/graphitron/rewrite/TestServiceStub.java:417`
+* `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java:7360`, the
+  `SERVICE_MUTATION_FIELD_INPUT_BEAN_FIELD_RENAMED_RECORD` row description, whose own assertion
+  moved to `mapKey()` in this item
+
+The surviving `sdlFieldName` uses on `SetColumn`, `KeyColumn`, `GraphitronType` and
+`PayloadConstructionShape` are the out-of-scope ones the plan names, and are correctly untouched.
+
+### Not blocking, no action required to land
+
+* `InputBeanInstantiationEmitter.java:145` writes `java.util.LinkedHashSet` fully qualified inline
+  where every other collection in the file is imported. Cosmetic.
+* The test-layout deviation the implementer flagged (accepts and rejects in one
+  `InputBeanGroupingPipelineTest` rather than split across `GraphitronSchemaBuilderTest` rows and a
+  separate file) is the right call and needs no defence. Keeping one feature's accepts adjacent to
+  its rejections reads better, and the enum rows were not load-bearing for anything the new file
+  fails to cover.
+* Using `ClassifyContext` to carry what is really a bean-local `Set<String>` of SDL type names drags
+  an unrelated `enclosingOverride` flag along, but it is what D3 asked for and it mirrors
+  `buildJooqRecord`'s second axis. Leave it.
+
+### On the next pass
+
+Nothing above touches main-source behaviour except the emitter import nit, so the second pass should
+be test-and-prose only. The changelog entry stays unwritten for the Done gate, as the implementation
+notes say.
 
 ## Coordination with adjacent items
 
