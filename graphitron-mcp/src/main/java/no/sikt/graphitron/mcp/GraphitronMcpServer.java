@@ -15,8 +15,6 @@ import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
@@ -195,13 +193,6 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .mcpEndpoint(MCP_ENDPOINT)
             .build();
 
-        // The bundled directive grammar projected once off the frozen vocabulary registry
-        // (shape, not state). The directives resource unions this with the live snapshot's
-        // user-declared directives on every read; the bundled half never changes, so it is computed
-        // here rather than per read.
-        List<DirectiveShape> bundledDirectives =
-            CatalogBuilder.buildSnapshot(workspace.vocabulary().registry()).directives();
-
         // Build the sync server before mounting the servlet: this wires the session factory into
         // the transport provider, so it is ready before Jetty accepts the first request. The
         // tools(false) / resources(false, false) booleans are the listChanged (and, for resources,
@@ -225,7 +216,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 .prompts(false).tools(false).resources(false, false).build())
             .prompts(aboutPrompt(aboutText))
             .tools(tools)
-            .resources(directivesResource(workspace, bundledDirectives))
+            .resources(directivesResource(storeHandle))
             .build();
 
         this.httpServer = new Server();
@@ -1015,18 +1006,15 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // ---- directives resource ----
 
     /**
-     * The {@code directives} resource: the directive-vocabulary cheat-sheet, composed from the
-     * bundled grammar (frozen, projected once at construction) unioned with the live snapshot's
-     * user-declared directives. A resource, not a tool, because the directive grammar is shape, not
-     * state. Re-reads reflect the latest snapshot, degrading to the bundled grammar alone when no
-     * build has succeeded.
+     * The {@code directives} resource: the directive-vocabulary cheat-sheet, one statement over the
+     * graph's captured directive definitions. A resource, not a tool, because the directive grammar
+     * is shape, not state. Re-reads reflect the latest capture; a store holding no definitions
+     * reports that rather than answering with a partial vocabulary.
      */
-    private static McpServerFeatures.SyncResourceSpecification directivesResource(
-        Workspace workspace, List<DirectiveShape> bundledDirectives
-    ) {
+    private static McpServerFeatures.SyncResourceSpecification directivesResource(StoreHandle storeHandle) {
         return new McpServerFeatures.SyncResourceSpecification(
             DirectivesResource.resource(),
-            (exchange, request) -> DirectivesResource.read(bundledDirectives, workspace.snapshot()));
+            (exchange, request) -> DirectivesResource.read(storeHandle));
     }
 
     /**

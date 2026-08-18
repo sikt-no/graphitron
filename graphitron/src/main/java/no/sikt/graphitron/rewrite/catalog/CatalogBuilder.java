@@ -122,8 +122,7 @@ public final class CatalogBuilder {
             directives.add(new DirectiveShape(
                 def.getName(),
                 projectInputValues(def.getInputValueDefinitions()),
-                descriptionOf(def.getDescription()),
-                projectDirectiveLocations(def)
+                descriptionOf(def.getDescription())
             ));
         }
         var typesByName = (schema == null || catalog == null)
@@ -914,20 +913,6 @@ public final class CatalogBuilder {
         return tableName == null
             ? new TypeBackingShape.JooqRecordBacking.Standalone(fqClassName)
             : new TypeBackingShape.JooqRecordBacking.WithTable(fqClassName, tableName);
-    }
-
-    /**
-     * Projects a directive's applicable locations onto renderable strings (the
-     * graphql-java {@code DirectiveLocation} names, e.g. {@code "OBJECT"},
-     * {@code "FIELD_DEFINITION"}) for the {@code directives} MCP resource; they ride
-     * {@link DirectiveShape} from this single snapshot-construction site.
-     */
-    private static List<String> projectDirectiveLocations(graphql.language.DirectiveDefinition def) {
-        var out = new ArrayList<String>();
-        for (var loc : def.getDirectiveLocations()) {
-            out.add(loc.getName());
-        }
-        return List.copyOf(out);
     }
 
     private static List<InputValueShape> projectInputValues(List<InputValueDefinition> defs) {

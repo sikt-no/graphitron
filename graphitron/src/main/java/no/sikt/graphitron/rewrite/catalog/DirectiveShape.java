@@ -5,37 +5,22 @@ import java.util.Optional;
 
 /**
  * Projection of a {@link graphql.language.DirectiveDefinition} for the LSP
- * snapshot side-channel. Carries the arg surface and description prose. See
+ * snapshot side-channel. Carries the arg surface and description prose, which
+ * is what the hover, diagnostic and arg-completion readers ask of it. See
  * {@link LspSchemaSnapshot}.
  *
- * <p>{@code locations} carries the directive's applicable locations as
- * renderable strings (e.g. {@code "OBJECT"}, {@code "FIELD_DEFINITION"}),
- * projected from {@code DirectiveDefinition.getDirectiveLocations()} at the
- * one production construction site ({@code CatalogBuilder.buildSnapshot}).
- * Added for the {@code directives} MCP resource, which shows applicable
- * locations uniformly for both bundled and user-declared directives; the
- * user-declared half reaches the resource only through this projection, which
- * had previously thrown the locations away. The existing hover / diagnostic /
- * arg-completion readers (which read {@code name} / {@code args} /
- * {@code description}) are untouched.
+ * <p>Applicable locations are not projected. They were, for one reader that has
+ * since stopped reading the snapshot and reads
+ * {@code graphql_directive_location} instead; a permitted-location set is a
+ * captured fact about the definition, and this projection is the LSP's own
+ * working shape rather than a second place to hold one.
  */
 public record DirectiveShape(
     String name,
     List<InputValueShape> args,
-    Optional<String> description,
-    List<String> locations
+    Optional<String> description
 ) {
     public DirectiveShape {
         args = List.copyOf(args);
-        locations = List.copyOf(locations);
-    }
-
-    /**
-     * Back-compat constructor defaulting {@code locations} to empty. Keeps the
-     * LSP / snapshot test fixtures and any caller that does not supply
- * applicable locations compiling unchanged.
-     */
-    public DirectiveShape(String name, List<InputValueShape> args, Optional<String> description) {
-        this(name, args, description, List.of());
     }
 }

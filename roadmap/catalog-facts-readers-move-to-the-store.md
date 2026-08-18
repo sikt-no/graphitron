@@ -950,8 +950,17 @@ stands between here and the lifecycle arms being all that is left, which is why 
 ## Slice 8: the `directives` resource
 
 **Reads.** `graphql_directive` with `graphql_directive_argument` and `graphql_directive_location`:
-per directive its `repeatable` flag and description, per argument its `type_sdl`, `named_type` and
-description, and its applicable locations.
+per directive its `repeatable` flag and description, per argument its `type_sdl` and description, and
+its applicable locations. One statement, the two children correlated as multisets; both are base
+relations, so per-directive correlation is an index seek and the read-once rule slice 7 arrived at
+does not bite here.
+
+Two columns diverge from the plan's list, in opposite directions. `named_type` is not read: it is the
+decode of `type_sdl`, and a cheat-sheet showing the SDL spelling has already answered what the
+argument takes. `default_value_sdl` is read, which the plan did not ask for and the incumbent could
+not have shown: it is the value an application inherits by omitting the argument, it costs no further
+relation, and an agent writing a directive application is exactly who needs it. The `repeatable` flag
+is the same kind of gain, being a column the projection never carried.
 
 The bundled-plus-overlay structure goes with it, along with the `putIfAbsent` collision rule and the
 degrade-to-bundled path: capture writes every defined directive of the merged schema, so one query
@@ -975,6 +984,16 @@ otherwise be residue. `DirectivesResource.renderType` walks `TypeShape.Named` an
 to rebuild an argument's SDL spelling (`String!`, `[Foo!]`). `graphql_directive_argument.type_sdl`
 is that spelling, captured. The read replaces a recursion with a column.
 
+**One deletion the plan missed, on `TypeShape`'s own logic.** `DirectiveShape.locations` was added
+for this resource and had exactly one production reader, this resource. Reading the location relation
+leaves it unread, so it goes too, along with `CatalogBuilder.projectDirectiveLocations` that filled
+it, the back-compat three-argument constructor that existed only because the widening made a fourth,
+and the two `CatalogBuilderSnapshotTest` cases that pinned both. The LSP's own readers ask this
+projection for a name, an argument surface and description prose, which is what it is left holding.
+The same argument the plan made for `TypeShape` applies verbatim: a `graphitron`-side widening whose
+only reason to exist was a `graphitron-mcp` reader survives the edge deletion and is residue
+afterwards, so a slice that removes the reader removes the widening.
+
 There is no `LspVocabulary` import to delete, and that is the point rather than a detail.
 `GraphitronMcpServer` reaches the registry as `workspace.vocabulary().registry()`, so the coupling
 is spelled entirely in method calls. Slice 10's import scan would have passed a module that still
@@ -997,14 +1016,19 @@ itself and process liveness, and which is not true here: capture writes every de
 the merged schema, bundled and user-declared alike. Reaching for the pattern because it is available, rather than because the store
 is silent, would leave the merge in the module and buy nothing.
 
-**Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps three, all of them the
-lifecycle arms: `status` and the two diagnostics tools' axes.
+**Leaves behind.** `vocabulary` has no reader left. `snapshot` keeps four, and every one of them now
+reads only the lifecycle arms: `status`, both diagnostics tools' axes, and `schema`'s own two, which
+slice 7 left on the workspace precisely so all four would move together here rather than one of them
+moving early.
 
 ## Slice 9: `status` and the diagnostics axes
 
 These become queries too, and an earlier reading of this slice said they could not and reached for
 a host-supplied value instead. The scope boundary names that reading withdrawn and carries the
-argument; what this slice carries is the derivation.
+argument; what this slice carries is the derivation. Four call sites, not three: `schema` renders
+the same two axes through the same helper, and slice 7 left its read on the workspace so that every
+caller of `McpWire.writeSnapshotAxes` would change once, here, rather than one tool deriving them
+early while three kept reading a projection.
 
 Availability is `store_graph` presence: a graph no capture has written is `Unavailable`. Freshness
 is the SDL refusal relations' emptiness over the graph's partition: `graphql_syntax_error` and
@@ -1398,6 +1422,14 @@ them remove a surface rather than change one, and they lead because they are the
   the catalog and diagnostics tools: an empty type list reads as a schema declaring nothing.
 * **The `directives` resource is empty before the first capture** rather than degrading to the
   bundled grammar. Same posture as the catalog tools, for the reason the consumer section gives.
+* **A directive entry says whether it is repeatable and what an omitted argument defaults to.**
+  Neither is a new query; both are columns of the relations the resource already reads and neither
+  survived the projection it replaces. An agent writing an application is the reader who needs them,
+  which is the entire audience for a directive cheat-sheet.
+* **Directives are listed by name, so the author's own land among graphitron's** rather than after
+  them. The registry hands capture its definitions in parse order, which puts every bundled one
+  first; a vocabulary in that order reads as two vocabularies, which is the distinction this slice
+  exists to stop drawing.
 * **A missing handle refuses instead of answering empty.** The server can be built without a store
   handle; the diagnostics tools already refuse per call there, on the grounds that an empty answer
   reads as a clean schema. An empty catalog reads as a database with no tables, so the catalog
@@ -1680,10 +1712,22 @@ fixture methods taking no parameters at all.
   the store's own tests of `sql_table.record_class_fqn` and named here as a coverage limit, on the same
   terms as slice 6's two.
 
-**Slice 8, the directives resource.** One case: the resource renders a bundled directive and a
-user-declared one from one captured schema, with arguments and locations, and reports the
-pre-capture case rather than degrading. The bundled / user-declared distinction is not asserted,
-because after this item the resource does not draw one.
+**Slice 8, the directives resource.** Three cases rather than the one planned, because the resource
+has three arms and the two beside the render are each one assertion. The render case goes over the
+wire, a real client reading the resource off a real server, and asserts both a directive graphitron
+declares and one the fixture schema declares, each with its locations, arguments, defaults and prose.
+The bundled / user-declared distinction is not asserted, because after this item the resource does not
+draw one. The second case reads an uncaptured graph and asserts the report *and* that graphitron's own
+grammar is absent from it, which is what makes it a check on the degrade path rather than on a
+message. The third is the handle-less refusal, the arm every store-backed surface has.
+
+One coverage limit, on the same terms as the earlier slices': of the read's three `ORDER BY` clauses
+only the directive-name one is observable. Dropping either child ordering changes nothing, because H2
+returns the location rows in primary-key order and the argument rows in insertion order, and both
+happen to agree with what the clause asks for. The clauses stay: an unordered SQL result is unordered
+by contract, whatever this substrate does today, and a cheat-sheet whose argument list silently
+reordered between backends would be a real defect. What cannot be pinned is left unpinned rather than
+pinned against a coincidence.
 
 **Slice 9, `status` and the diagnostics axes.** Three cases, one per arm, driven through the
 store: a pre-capture store answers `Unavailable`, a clean capture answers `Built` / `Current`, and
@@ -1997,6 +2041,10 @@ is the kind that survives in prose long after the code goes, so it leads.
 * `RejectionKind` and `TypeShape` as types `graphitron-mcp` names, with `renderType` as a step the
   directives resource has; the stored kind is rendered here and an argument's SDL spelling is a
   captured column
+* `DirectiveShape.locations` and `CatalogBuilder.projectDirectiveLocations`, with "the widened
+  `DirectiveShape`" as prose for how a directive's applicable locations reach a reader, and the
+  three-argument `DirectiveShape` constructor as a "back-compat" form; three arguments is the whole
+  record now, and locations are read from `graphql_directive_location`
 * "a `graphitron` type on a dependency the module legitimately keeps" as a reason anything is
   reachable from `graphitron-mcp`'s main sources. Main sources keep no such dependency; the phrase
   survives only for `graphitron-model`'s relations, which is where the `walk_` guard uses it

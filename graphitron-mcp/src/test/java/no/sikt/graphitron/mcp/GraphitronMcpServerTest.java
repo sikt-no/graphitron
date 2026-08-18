@@ -13,6 +13,8 @@ import no.sikt.graphitron.mcp.rag.docs.DocChunk;
 import no.sikt.graphitron.mcp.rag.docs.DocsBundle;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -1413,23 +1415,88 @@ class GraphitronMcpServerTest {
     // ---- directives resource ----
 
     @Test
-    void directivesResourceIsAdvertisedAndListsBundledAndUserDeclared() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), directivesWorkspace());
+    void directivesResourceIsAdvertisedAndRendersTheCapturedVocabulary(@TempDir Path tmp) throws Exception {
+        // One relation family, one answer: graphitron's own definitions and the author's are rows
+        // alike, so the resource draws no distinction between them and neither does this case. What
+        // it pins is the four facts a definition carries past its name, each off its own column:
+        // where the directive may be applied, whether it repeats, its formal arguments with their
+        // SDL type and inherited default, and the prose the definition was written with.
+        try (var fixture = StoreFixture.ofSchema(tmp, """
+                directive @guard(role: String!) on OBJECT | FIELD_DEFINITION
+                type Query { film: Film }
+                type Film @table(name: "film") { title: String }
+                """);
+             var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null,
+                 null, fixture.handle(), fixture.reader());
              var client = connect(server.port())) {
             client.initialize();
 
             var resources = client.listResources().resources();
-            assertThat(resources).extracting(McpSchema.Resource::uri).contains("graphitron://directives");
+            assertThat(resources).extracting(McpSchema.Resource::uri).contains(DirectivesResource.URI);
 
-            var read = client.readResource(McpSchema.ReadResourceRequest.builder("graphitron://directives").build());
+            var read = client.readResource(
+                McpSchema.ReadResourceRequest.builder(DirectivesResource.URI).build());
             assertThat(read.contents()).hasSize(1);
             var text = ((McpSchema.TextResourceContents) read.contents().getFirst()).text();
-            // Bundled grammar present (off vocabulary()): the @table directive ships with graphitron.
-            assertThat(text).contains("@table");
-            // User-declared directive present (off the live snapshot), with its applicable locations
-            // rendered uniformly off the widened DirectiveShape.
-            assertThat(text).contains("@guard").contains("FIELD_DEFINITION");
+
+            // The author's own declaration, its permitted locations off graphql_directive_location.
+            assertThat(text)
+                .contains("## @guard\n\non FIELD_DEFINITION | OBJECT\n")
+                .contains("- `role: String!`");
+            // Graphitron's own, with the prose the bundled grammar carries on the deprecated location.
+            assertThat(text)
+                .contains("## @table\n\non INPUT_OBJECT | INTERFACE | OBJECT\n")
+                .contains("- `name: String`")
+                .contains("Deprecated on `INPUT_OBJECT`");
+            // The repeatable flag, which the projection this replaced did not carry at all.
+            assertThat(text).contains("## @reference\n\non ARGUMENT_DEFINITION | FIELD_DEFINITION "
+                + "| INPUT_FIELD_DEFINITION, repeatable\n");
+            // An argument's default, likewise new: the value an application inherits by omitting it.
+            // The whole block, so the arguments arrive in the order the definition declares them
+            // rather than in the order their key sorts, alphabetical being a different order here.
+            assertThat(text).contains("""
+                Arguments:
+                - `typeName: MutationType!`
+                - `multiRow: Boolean = false`
+                - `table: String`
+                """);
+            // An argument's own description, which the definition's does not subsume.
+            assertThat(text).contains("Default page size when the client omits the 'first' argument.");
+            // By name, so the author's declaration lands among graphitron's rather than after them:
+            // the registry hands capture its definitions in parse order, which puts every bundled
+            // one first, and a vocabulary listed in that order reads as two vocabularies.
+            var headings = text.lines().filter(l -> l.startsWith("## @")).toList();
+            assertThat(headings).contains("## @guard").isSorted();
         }
+    }
+
+    @Test
+    void directivesResourceReportsAnUncapturedGraphRatherThanTheGrammarItShipsWith() {
+        // Before the first capture there are no definitions, and the resource says that. Answering
+        // with graphitron's own grammar alone would be a vocabulary silently missing the author's
+        // declarations, which reads as a grammar that forbids them.
+        try (var store = GraphitronModelStore.open()) {
+            var text = onlyText(DirectivesResource.read(new StoreHandle(store.dsl(), "never-captured")));
+
+            assertThat(text).contains("No directive definitions have been captured");
+            assertThat(text).doesNotContain("@table");
+        }
+    }
+
+    @Test
+    void directivesResourceRefusesWithoutAStoreToRead() {
+        // The resource's own arm of the refusal posture the store-backed tools take: a wiring
+        // failure is named rather than answered around.
+        var text = onlyText(DirectivesResource.read(null));
+
+        assertThat(text).contains("no fact store handle");
+        assertThat(text).doesNotContain("@table");
+    }
+
+    /** The one text body a resource read carries. */
+    private static String onlyText(McpSchema.ReadResourceResult result) {
+        assertThat(result.contents()).hasSize(1);
+        return ((McpSchema.TextResourceContents) result.contents().getFirst()).text();
     }
 
     // ---- stable-ID round-trip ----
@@ -1710,26 +1777,6 @@ class GraphitronMcpServerTest {
         public int dimension() {
             return dimension;
         }
-    }
-
-    private static Workspace directivesWorkspace() {
-        // A user-declared directive lands in the snapshot's directive surface with its applicable
-        // locations carried (the DirectiveShape widening), via the production buildSnapshot path.
-        var registry = new graphql.schema.idl.SchemaParser().parse("""
-            directive @guard(role: String!) on OBJECT | FIELD_DEFINITION
-            type Query { x: Int }
-            """);
-        var snapshot = no.sikt.graphitron.rewrite.catalog.CatalogBuilder.buildSnapshot(registry);
-        return builtWorkspace(CompletionData.empty(), snapshot, ValidationReport.empty());
-    }
-
-    private static Workspace builtWorkspace(
-        CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot, ValidationReport report
-    ) {
-        var workspace = new Workspace();
-        workspace.setBuildOutput(
-            new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
-        return workspace;
     }
 
     @SuppressWarnings("unchecked")

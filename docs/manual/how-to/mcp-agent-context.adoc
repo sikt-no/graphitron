@@ -33,7 +33,7 @@ An MCP-aware agent connected to the server gets three kinds of context, all serv
 
 An **`about` prompt** (surfaced as the `+/mcp__graphitron__about+` slash command) that orients the agent on the dev loop and how to use the other tools. Run it first in a fresh session.
 
-A **`directives` resource**, the Graphitron directive vocabulary, so the agent knows what `@table`, `@field`, `@reference`, `@service`, and the rest mean without you pasting the reference in.
+A **`directives` resource**, your schema's directive vocabulary: per directive its arguments (with their types and defaults), the locations it may be applied at, whether it is repeatable, and its description. Every directive the schema defines, graphitron's own and any you declare yourself, so the agent knows what `@table`, `@field`, `@reference`, `@service` and your own `@guard` mean without you pasting a reference in. Read off the live build, so before the first successful build it says so rather than answering with a partial vocabulary.
 
 A set of **tools** the agent calls to answer questions:
 
