@@ -499,9 +499,9 @@ again whenever a build swaps the snapshot; save reaches it through the rebuild, 
 | Source | What it reports |
 |---|---|
 | Coordinate validation | Dispatches all eight `Behavior` arms; unresolved values against the catalog, classpath and SDL censuses, all eight reading the store |
-| Unknown args | Directive args not declared, bundled and user-declared paths separately |
+| Unknown args | Directive args not declared, one path over `graphql_directive_argument` for bundled and user-declared alike, descending `graphql_field` into object literals |
 | Required args | Declared-required args absent |
-| Unknown directive | Skipping the GraphQL spec built-ins |
+| Unknown directive | `graphql_directive`, skipping the GraphQL spec built-ins |
 | `ValidationReport` replay | Build errors and warnings for URIs the report covers |
 
 First-iteration cadence: diagnostics ride the capture cadence, not the keystroke. Every source in
@@ -3837,3 +3837,48 @@ assumed: a file with a syntax error still contributes whatever the parse's error
 before the malformed body, a class header here rather than nothing at all. Partial is the honest
 answer for a broken file and every consumer already reads absence as absence, so the case now pins
 that instead of a silence the walk never promised.
+
+## Settled while building: the directive surface is one relation, and the two validators were one rule written twice
+
+Diagnostics' three definition-shaped checks move to the store: whether an applied directive is
+declared at all, whether each argument written on it exists, and whether each argument its definition
+requires was written. They read `graphql_directive` and `graphql_directive_argument`, and
+`DirectiveResolution` retires with its three arms.
+
+**The bundled-versus-user fork had nothing left to decide.** Capture parses graphitron's own
+`directives.graphqls` like any other schema file, so one relation describes both populations and the
+two validators this replaced were one rule written twice. That is the same collapse the argument-name
+completion arm made, arriving here through the same door.
+
+**The asymmetry the fork carried went with it, which recovers behaviour.** Only the bundled validator
+descended into object literals, because the projection of user directives held argument names and no
+input shapes: `@auth(policy: {scpe: "all"})` was unchecked where `@reference(path: [{tabel: "x"}])`
+was not. Both descend `graphql_field` now, so an author's own input type nests exactly as
+`ReferenceElement` does.
+
+**The freshness gate leaves with the projection, and the flip is deliberate.** What silenced these
+arms was the snapshot being `Unavailable` or `Previous`; what silences them now is a graph holding no
+directive definitions, which is a graph nothing has captured, the bundled definitions being captured
+with every graph. The case that changes is the stale one: a buffer whose schema will not parse used
+to silence the whole arm, so a newly broken schema showed nothing at all, and it now reports against
+what the graph last captured. That is this item's stated posture for every other arm, and the two
+cases that pinned the old silence are replaced by one pinning each half of the new rule.
+
+**The descent looked like a chain and is asked as a set.** The batch's discipline is that no answer
+decides what to ask next, and a nested name's type is precisely what the level above answers. Three
+things resolve it. The walk flattens each literal into paths of names, which is also the only form a
+finding can carry once the tree it was read from is freed. The question is keyed on the names
+written, so the arm holds every input object declaring one of them and the descent picks its row by
+the type it arrived at. And each row carries the kind of its own named type, so "may a literal
+descend here" is answered by the row that produced the type rather than by a second question about
+it. The statement count is unchanged.
+
+**Only a path's last name is reported.** A name that fails to resolve is the last name of its own
+path, and the deeper paths running through it stop silently, which is how the flattened form
+reproduces what the recursive walk did by returning: report once, and stop descending that branch.
+
+**Two cases retire on a premise that cannot arise.** Both pinned bundled-shadows-user precedence, one
+asserting the bundled arm still validates when the snapshot carries a same-named shape. A
+redeclaration of a bundled directive loses at registry admission before capture sees it, so there is
+no shadow for a precedence rule to prefer against, and what the surviving case pins is the ordinary
+unknown-argument verdict.

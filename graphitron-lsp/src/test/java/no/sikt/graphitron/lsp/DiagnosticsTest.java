@@ -900,30 +900,24 @@ class DiagnosticsTest {
     }
 
     @Test
-    void unknownDirectiveSilencedByUnavailableSnapshot() {
-        // Pre-build state: the dev pipeline has not produced a snapshot yet,
-        // so any unknown directive could resolve to a user declaration on
-        // the next build. Silence avoids punishing the user for a typo that
-        // might actually be their own `@auth` / `@key` / similar.
+    void unknownDirectiveSilencedBeforeAnyCapture() {
+        // Pre-build state: nothing has been captured, so the graph holds no directive definitions
+        // to judge a name against. Silence avoids punishing the user for a typo that may well be
+        // their own `@auth` / `@key` / similar, declared in a schema no capture has read yet.
         var file = file("""
             type Foo @tabel(name: "film") {
                 bar: Int
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).isEmpty();
+        assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
     }
 
     @Test
-    void unknownDirectiveSilencedByStaleSnapshot() {
-        // Stale snapshot (parse failed after a prior success). Even when the
-        // snapshot does not contain the unknown directive, the warn arm
-        // silences: a typo introduced in the same edit that broke the parse
-        // is dominated by the parse error itself, and the user will fix
-        // that first. Pins the silence-on-Previous trade so any future
-        // policy flip surfaces here.
+    void unknownDirectiveReportedAgainstTheLastCapture() {
+        // The freshness gate the projection carried is gone: a buffer whose schema will not parse
+        // used to silence this whole arm, so a newly broken schema showed nothing. The verdict now
+        // comes from what the graph last captured, which is the same posture every value arm takes.
         var file = file("""
             type Foo @tabel(name: "film") {
                 bar: Int
@@ -933,60 +927,24 @@ class DiagnosticsTest {
         var diags = compute(file, catalogOnly,
             new LspSchemaSnapshot.Built.Previous(List.of()));
 
-        assertThat(diags).isEmpty();
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
     }
 
     @Test
-    void userDeclaredDirectiveSilencedBySnapshot() {
-        // Canonical motivating case: federation directives,
-        // @auth-style guards, etc. land in the snapshot and the
-        // unknown-directive arm silences instead of pelting one warning per
-        // use.
-        var keyShape = new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
-            "key",
-            List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
-                "fields",
-                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
-                java.util.Optional.empty())),
-            java.util.Optional.empty());
-        var file = file("""
+    void userDeclaredDirectiveSilencedByItsOwnDeclaration() {
+        // Canonical motivating case: federation directives, @auth-style guards and the rest are
+        // declarations in the consumer's own schema, so capture holds them exactly as it holds
+        // graphitron's, and the arm silences instead of pelting one warning per use.
+        var diags = computeCaptured("""
+            directive @key(fields: String!) on OBJECT
+            type Query { film: Film }
             type Film @key(fields: "id") {
                 id: ID
             }
             """);
 
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(keyShape)));
-
         assertThat(diags).isEmpty();
-    }
-
-    @Test
-    void userDeclaredDirectiveShadowedByBundledStillValidates() {
-        // Collision case: the user accidentally redeclares @table. The
-        // bundled SDL wins (overlay binds @table(name:) to the catalog), so
-        // the existing arg-validation arm still flags missing_table even
-        // though the snapshot also carries the same name.
-        var shadowTable = new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
-            "table",
-            List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
-                "name",
-                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", false),
-                java.util.Optional.empty())),
-            java.util.Optional.empty());
-        var file = file("""
-            type Foo @table(name: "missing_table") {
-                bar: Int
-            }
-            """);
-
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage())
-            .contains("missing_table").contains("table");
-        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
     }
 
     @Test
@@ -1150,22 +1108,19 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
-    // ---- Arg validation on user-declared directives. ----
+    // ---- Arg validation on user-declared directives, which is the same walk over the same rows. ----
 
     @Test
     void userDirectiveUnknownTopLevelArg_warns() {
-        // @auth(rle: "admin") against a snapshot that declares @auth(role: String!).
-        // Warns on `rle`. The typo also leaves `role` absent, so the
-        // required-arg arm fires a second warning — parallel to the bundled
-        // path's behaviour on the same shape.
-        var file = file("""
+        // @auth(rle: "admin") against a graph that declares @auth(role: String!). Warns on `rle`.
+        // The typo also leaves `role` absent, so the required-arg arm fires a second warning, which
+        // is the same pair graphitron's own directives produce on the same shape.
+        var diags = computeCaptured("""
+            directive @auth(role: String!) on FIELD_DEFINITION
             type Query {
                 customers: [String!]! @auth(rle: "admin")
             }
             """);
-
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).hasSize(2);
         assertThat(diags).extracting(d -> d.getMessage())
@@ -1176,14 +1131,12 @@ class DiagnosticsTest {
 
     @Test
     void userDirectiveMissingRequiredArg_warns() {
-        var file = file("""
+        var diags = computeCaptured("""
+            directive @auth(role: String!) on FIELD_DEFINITION
             type Query {
                 customers: [String!]! @auth
             }
             """);
-
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1193,72 +1146,48 @@ class DiagnosticsTest {
 
     @Test
     void userDirectivePresentRequiredArg_silent() {
-        var file = file("""
+        var diags = computeCaptured("""
+            directive @auth(role: String!) on FIELD_DEFINITION
             type Query {
                 customers: [String!]! @auth(role: "admin")
             }
             """);
 
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
-
         assertThat(diags).isEmpty();
     }
 
+    /**
+     * The asymmetry the two validators carried is gone with them: only the bundled one descended
+     * into object literals, the projection of user directives holding argument names and no input
+     * shapes. One relation describes both populations, so an author's own input type nests exactly
+     * as {@code ReferenceElement} does.
+     */
     @Test
-    void userDirectiveUnknownArgUnderUnavailableSnapshot_silent() {
-        // Pre-build state: no snapshot to consult. The typo is silenced
-        // even though it would warn under Built.Current.
-        var file = file("""
+    void userDirectiveUnknownNestedInputField_warns() {
+        var diags = computeCaptured("""
+            input Policy { scope: String }
+            directive @auth(policy: Policy) on FIELD_DEFINITION
             type Query {
-                customers: [String!]! @auth(rle: "admin")
+                customers: [String!]! @auth(policy: {scpe: "all"})
             }
             """);
-
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).isEmpty();
-    }
-
-    @Test
-    void userDirectiveUnknownArgUnderPreviousSnapshot_silent() {
-        // Stale-snapshot silence — same trade applied to user-declared directives.
-        var file = file("""
-            type Query {
-                customers: [String!]! @auth(rle: "admin")
-            }
-            """);
-
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous(List.of(authShape())));
-
-        assertThat(diags).isEmpty();
-    }
-
-    @Test
-    void bundledArgValidationStillFires_evenWhenSnapshotShadows() {
-        // Snapshot carries a different-shape @table; bundled-precedence
-        // means bundled arg validation still runs. The shadow's args do
-        // not leak into the bundled path.
-        var shadowTable = new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
-            "table",
-            List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
-                "differentArg",
-                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
-                java.util.Optional.empty())),
-            java.util.Optional.empty());
-        var file = file("""
-            type Foo @table(neme: "film") {
-                bar: Int
-            }
-            """);
-
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
 
         assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage())
-            .contains("'neme'").contains("Unknown argument").contains("@table");
+        assertThat(diags.get(0).getMessage()).contains("'scpe'").contains("'Policy'");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void userDirectiveArgsUnjudgedBeforeAnyCapture() {
+        // No capture, no definitions, no verdict: the typo is silent until the graph has been read,
+        // which is the same deferral the value arms take on an empty census.
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(rle: "admin")
+            }
+            """);
+
+        assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
     }
 
     // @node(keyColumns:) and @nodeId(typeName:) diagnostics.
@@ -1353,16 +1282,6 @@ class DiagnosticsTest {
         assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
     }
 
-
-    private static no.sikt.graphitron.rewrite.catalog.DirectiveShape authShape() {
-        return new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
-            "auth",
-            List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
-                "role",
-                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
-                java.util.Optional.empty())),
-            java.util.Optional.empty());
-    }
 
     private static FileSnapshot file(String source) {
         return WorkspaceFileTestSupport.snapshot(source);

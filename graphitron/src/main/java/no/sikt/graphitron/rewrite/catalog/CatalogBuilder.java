@@ -80,9 +80,9 @@ public final class CatalogBuilder {
      * registry parsed cleanly (callers in {@code GraphQLRewriteGenerator}
      * throw before reaching this method on parse failure) and reflects the
      * full multi-file {@code extend type} merge plus the bundled-directives
-     * overlay. No bundled-directive filter is applied; the LSP's
-     * {@code DirectiveResolution} encodes bundled-shadows-snapshot
-     * precedence so redundant entries are observationally invisible.
+     * overlay. No bundled-directive filter is applied: a redeclaration of a
+     * bundled directive loses at registry admission, so the two populations
+     * never collide in what reaches here.
      */
     public static LspSchemaSnapshot.Built.Current buildSnapshot(TypeDefinitionRegistry registry) {
         return buildSnapshot(registry, null);

@@ -1,9 +1,5 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
-import graphql.language.DirectiveDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InputValueDefinition;
-import graphql.language.NonNullType;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.parsing.ArgMapping;
 import no.sikt.graphitron.lsp.parsing.ArgMappingSupport;
@@ -15,7 +11,6 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
@@ -25,7 +20,6 @@ import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -118,6 +112,23 @@ public final class Diagnostics {
 
         /** A diagnostic the tree alone settled, carried so document order survives the split. */
         record Ready(Diagnostic diagnostic) implements Finding {}
+
+        /**
+         * A directive an author applied, against the definitions the graph captured. One finding for
+         * two verdicts, both of which are about the definition rather than about any value: whether
+         * the name is declared at all, and which of the arguments it requires went unwritten.
+         */
+        record DirectiveApplication(Range range, String directiveName, List<String> writtenArgs)
+            implements Finding {}
+
+        /**
+         * One argument name an author wrote, with the names enclosing it. A single element is a
+         * directive argument; a longer path descends an object literal, each name resolving against
+         * the input type the one before it named. The path is what a finding can carry across the
+         * stage boundary where the tree it was read from cannot.
+         */
+        record ArgumentPath(Range range, String directiveName, List<String> path)
+            implements Finding {}
 
         /** A {@code @table(name:)} value, against the table census. */
         record TableName(Range range, String spelling) implements Finding {}
@@ -256,7 +267,7 @@ public final class Diagnostics {
         private void add(String uri, FileSnapshot file, LspTrace.Span span) {
             var findings = new ArrayList<Finding>();
             var questions = new DiagnosticFacts.Questions();
-            walk(vocabulary, file, snapshot, findings, questions, span);
+            walk(vocabulary, file, findings, questions, span);
             // The validator's own findings are the tree's too, its ranges being re-anchored through
             // the document's description nodes, so they are settled here and appended last, which is
             // where they were emitted before.
@@ -339,7 +350,7 @@ public final class Diagnostics {
      * order and are judged in that order, so splitting the pass does not reorder what an editor shows.
      */
     private static void walk(
-        LspVocabulary vocabulary, FileSnapshot file, LspSchemaSnapshot snapshot,
+        LspVocabulary vocabulary, FileSnapshot file,
         List<Finding> findings, DiagnosticFacts.Questions questions, LspTrace.Span span
     ) {
         var out = new Settled(findings);
@@ -350,38 +361,69 @@ public final class Diagnostics {
             if (SPEC_BUILTIN_DIRECTIVES.contains(directiveName)) {
                 continue;
             }
-            var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
-            if (resolution instanceof DirectiveResolution.Bundled bundled) {
-                var dirDef = bundled.def();
-                validateUnknownArgs(directive, dirDef, vocabulary, file, out);
-                validateRequiredArgs(directive, dirDef, file, out);
-                var leaves = vocabulary.leafCoordinates(directive, file.source());
-                for (var leaf : leaves) {
-                    collect(directive, leaf, vocabulary, file, snapshot, findings, questions, out);
-                }
-                continue;
+            questions.directive(directiveName);
+            collectArgumentPaths(directive, directiveName, file, findings, questions);
+            findings.add(new Finding.DirectiveApplication(rangeOf(file, directive.nameNode()),
+                directiveName, writtenArgumentNames(directive, file)));
+            // Every leaf whose value carries graphitron's own semantics, which is what the bundled
+            // vocabulary declares: an author's own directive has arguments and no behaviour, so
+            // leafCoordinates answers with nothing for it and no value arm collects.
+            for (var leaf : vocabulary.leafCoordinates(directive, file.source())) {
+                collect(directive, leaf, vocabulary, file, findings, questions, out);
             }
-            // Freshness-aware silence policy: only Built.Current warns.
-            // Unavailable (pre-build) and Built.Previous (stale after parse
-            // failure) silence the warn arms to avoid punishing the user
-            // for what we cannot reliably see.
-            switch (snapshot) {
-                case LspSchemaSnapshot.Unavailable ignored -> { /* pre-build silence */ }
-                case LspSchemaSnapshot.Built.Previous ignored -> { /* stale-snapshot silence */ }
-                case LspSchemaSnapshot.Built.Current ignored -> {
-                    switch (resolution) {
-                        case DirectiveResolution.Bundled ignoredBundled -> { /* handled above */ }
-                        case DirectiveResolution.User user -> {
-                            validateUnknownArgsAgainstSnapshot(directive, user.shape(), file, out);
-                            validateRequiredArgsAgainstSnapshot(directive, user.shape(), file, out);
-                        }
-                        case DirectiveResolution.Unknown ignoredUnknown ->
-                            out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
-                                "Unknown directive '@" + directiveName
-                                    + "'. Not declared in any directive definition reachable from the parsed schema."));
-                    }
-                }
-            }
+        }
+    }
+
+    /** The top-level argument names an author wrote, which is what a required argument is missing from. */
+    private static List<String> writtenArgumentNames(
+        Directives.Directive directive, FileSnapshot file
+    ) {
+        var names = new ArrayList<String>(directive.arguments().size());
+        for (var arg : directive.arguments()) {
+            names.add(Nodes.text(arg.key(), file.source()));
+        }
+        return names;
+    }
+
+    /**
+     * Every argument name written on one directive, each with the path of names that reaches it. A
+     * top-level argument is a path of one; a name inside an object literal extends its enclosing
+     * path, so the judgement can resolve it a level at a time without holding the tree it was read
+     * from.
+     */
+    private static void collectArgumentPaths(
+        Directives.Directive directive, String directiveName, FileSnapshot file,
+        List<Finding> findings, DiagnosticFacts.Questions questions
+    ) {
+        for (var arg : directive.arguments()) {
+            var path = List.of(Nodes.text(arg.key(), file.source()));
+            findings.add(new Finding.ArgumentPath(rangeOf(file, arg.key()), directiveName, path));
+            collectNestedArgumentPaths(arg.value(), path, directiveName, file, findings, questions);
+        }
+    }
+
+    private static void collectNestedArgumentPaths(
+        Node node, List<String> enclosing, String directiveName, FileSnapshot file,
+        List<Finding> findings, DiagnosticFacts.Questions questions
+    ) {
+        if (node == null) return;
+        if (OBJECT_FIELD.matches(node)) {
+            Node nameNode = Nodes.childOfKind(node, NAME);
+            Node valueNode = Nodes.childOfKind(node, VALUE);
+            if (nameNode == null || valueNode == null) return;
+            String fieldName = Nodes.text(nameNode, file.source());
+            var path = new ArrayList<>(enclosing);
+            path.add(fieldName);
+            questions.nestedArgField(fieldName);
+            findings.add(new Finding.ArgumentPath(
+                rangeOf(file, nameNode), directiveName, List.copyOf(path)));
+            collectNestedArgumentPaths(
+                valueNode, path, directiveName, file, findings, questions);
+            return;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectNestedArgumentPaths(
+                node.getChild(i).orElse(null), enclosing, directiveName, file, findings, questions);
         }
     }
 
@@ -578,127 +620,6 @@ public final class Diagnostics {
     }
 
     /**
-     * Walks every argument the user wrote on {@code directive} and warns on
-     * any name (top-level or inside a nested object literal) that does not
-     * resolve in the parsed registry. Top-level miss = unknown directive
-     * arg; nested miss = unknown field on the enclosing input type.
-     */
-    private static void validateUnknownArgs(
-        Directives.Directive directive, DirectiveDefinition dirDef,
-        LspVocabulary vocabulary, FileSnapshot file, Settled out
-    ) {
-        for (var arg : directive.arguments()) {
-            String argName = Nodes.text(arg.key(), file.source());
-            var argDef = LspVocabulary.findInputValue(dirDef.getInputValueDefinitions(), argName);
-            if (argDef.isEmpty()) {
-                out.add(diagnostic(file, arg.key(), DiagnosticSeverity.Warning,
-                    "Unknown argument '" + argName + "' on @" + dirDef.getName() + "."));
-                continue;
-            }
-            String argType = LspVocabulary.unwrapToInputTypeName(argDef.get().getType());
-            if (argType != null) {
-                descendUnknownArgs(arg.value(), argType, vocabulary, file, out);
-            }
-        }
-    }
-
-    private static void descendUnknownArgs(
-        Node node, String currentType,
-        LspVocabulary vocabulary, FileSnapshot file, Settled out
-    ) {
-        if (node == null) return;
-        if (OBJECT_FIELD.matches(node)) {
-            Node nameNode = Nodes.childOfKind(node, NAME);
-            Node valueNode = Nodes.childOfKind(node, VALUE);
-            if (nameNode == null || valueNode == null) return;
-            String fieldName = Nodes.text(nameNode, file.source());
-            var inputType = vocabulary.registry().getTypeOrNull(currentType, InputObjectTypeDefinition.class);
-            if (inputType == null) return;
-            var fieldDef = LspVocabulary.findInputValue(inputType.getInputValueDefinitions(), fieldName);
-            if (fieldDef.isEmpty()) {
-                out.add(diagnostic(file, nameNode, DiagnosticSeverity.Warning,
-                    "Unknown field '" + fieldName + "' on input type '" + currentType + "'."));
-                return;
-            }
-            String nextType = LspVocabulary.unwrapToInputTypeName(fieldDef.get().getType());
-            if (nextType != null) {
-                descendUnknownArgs(valueNode, nextType, vocabulary, file, out);
-            }
-            return;
-        }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            descendUnknownArgs(node.getChild(i).orElse(null), currentType, vocabulary, file, out);
-        }
-    }
-
-    /**
-     * Warns when a {@code NonNullType} arg on {@code directive} is missing
-     * from the user's call. Nested required input-fields are out of scope —
-     * they require a present-vs-absent distinction on the enclosing input
-     * object that the top-level rule does not need.
-     */
-    private static void validateRequiredArgs(
-        Directives.Directive directive, DirectiveDefinition dirDef,
-        FileSnapshot file, Settled out
-    ) {
-        var presentNames = new LinkedHashSet<String>();
-        for (var arg : directive.arguments()) {
-            presentNames.add(Nodes.text(arg.key(), file.source()));
-        }
-        for (var argDef : dirDef.getInputValueDefinitions()) {
-            if (!(argDef.getType() instanceof NonNullType)) continue;
-            if (presentNames.contains(argDef.getName())) continue;
-            out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
-                "Missing required argument '" + argDef.getName() + "' on @" + dirDef.getName() + "."));
-        }
-    }
-
-    /**
-     * Snapshot-driven counterpart to {@link #validateUnknownArgs}. Walks
-     * every top-level arg the user wrote on a user-declared directive and
-     * warns on any name not declared in the snapshot's projection of that
-     * directive. Nested validation (`@foo(x: {misspelled: ...})`) is out
-     * of scope: the snapshot carries no input-object shapes.
-     */
-    private static void validateUnknownArgsAgainstSnapshot(
-        Directives.Directive directive, DirectiveShape shape,
-        FileSnapshot file, Settled out
-    ) {
-        for (var arg : directive.arguments()) {
-            String argName = Nodes.text(arg.key(), file.source());
-            boolean known = shape.args().stream().anyMatch(a -> a.name().equals(argName));
-            if (!known) {
-                out.add(diagnostic(file, arg.key(), DiagnosticSeverity.Warning,
-                    "Unknown argument '" + argName + "' on @" + shape.name() + "."));
-            }
-        }
-    }
-
-    /**
-     * Snapshot-driven counterpart to {@link #validateRequiredArgs}. Warns
-     * when an arg whose declared type is non-null is missing from the
-     * user's call. {@link no.sikt.graphitron.rewrite.catalog.TypeShape#nonNull()} lives on the sealed
-     * interface so the non-null check is one method call regardless of
-     * named-vs-list shape.
-     */
-    private static void validateRequiredArgsAgainstSnapshot(
-        Directives.Directive directive, DirectiveShape shape,
-        FileSnapshot file, Settled out
-    ) {
-        var presentNames = new LinkedHashSet<String>();
-        for (var arg : directive.arguments()) {
-            presentNames.add(Nodes.text(arg.key(), file.source()));
-        }
-        for (var argShape : shape.args()) {
-            if (!argShape.type().nonNull()) continue;
-            if (presentNames.contains(argShape.name())) continue;
-            out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
-                "Missing required argument '" + argShape.name() + "' on @" + shape.name() + "."));
-        }
-    }
-
-
-    /**
      * The per-leaf collection. Each arm records what it will need to know instead of looking it up, so
      * the walk over a document reads nothing at all. What an arm can settle without a census it still
      * settles here: a scalar reference with no dot in it will not resolve whatever the classpath holds,
@@ -706,7 +627,7 @@ public final class Diagnostics {
      */
     private static void collect(
         Directives.Directive directive, LspVocabulary.Leaf leaf, LspVocabulary vocabulary,
-        FileSnapshot file, LspSchemaSnapshot snapshot, List<Finding> findings,
+        FileSnapshot file, List<Finding> findings,
         DiagnosticFacts.Questions questions, Settled out
     ) {
         var behavior = vocabulary.behaviorAt(leaf.coord()).orElse(null);
@@ -891,6 +812,10 @@ public final class Diagnostics {
     ) {
         switch (finding) {
             case Finding.Ready(var diagnostic) -> out.add(diagnostic);
+            case Finding.DirectiveApplication(var range, var name, var writtenArgs) ->
+                judgeDirectiveApplication(answers, range, name, writtenArgs, out);
+            case Finding.ArgumentPath(var range, var directiveName, var path) ->
+                judgeArgumentPath(answers, range, directiveName, path, out);
             case Finding.TableName(var range, var spelling) -> {
                 if (answers.tableName(spelling) == DiagnosticFacts.Resolution.UNKNOWN) {
                     out.add(diagnostic(range, "Unknown table '" + spelling
@@ -928,6 +853,74 @@ public final class Diagnostics {
                 }
             }
             case Finding.ArgMappingValue value -> judgeArgMapping(answers, source, value, out);
+        }
+    }
+
+    /**
+     * Judges one directive application against the definition the graph captured. Bundled and
+     * user-authored directives are one population here, capture parsing graphitron's own
+     * {@code directives.graphqls} like any other schema file, so the two validators this replaced are
+     * one and an author's own directive gets the checks graphitron's have always had.
+     *
+     * <p>The freshness gate the incumbent applied is gone with the projection that carried it: a graph
+     * whose SDL has never been captured holds no directive definitions and is silent, and one that has
+     * reports against what it captured. That is the same posture every other arm here takes, and it is
+     * what lets a stale buffer show the verdicts of its last captured content rather than nothing.
+     */
+    private static void judgeDirectiveApplication(
+        DiagnosticFacts.Answers answers, Range range, String directiveName,
+        List<String> writtenArgs, List<Diagnostic> out
+    ) {
+        switch (answers.directiveName(directiveName)) {
+            case NO_CENSUS -> { /* nothing captured: no definition to judge against */ }
+            case UNKNOWN -> out.add(diagnostic(range, DiagnosticSeverity.Warning,
+                "Unknown directive '@" + directiveName
+                    + "'. Not declared in any directive definition reachable from the parsed schema."));
+            case RESOLVES -> {
+                for (String required : answers.requiredArgumentsOf(directiveName)) {
+                    if (writtenArgs.contains(required)) continue;
+                    out.add(diagnostic(range, DiagnosticSeverity.Warning,
+                        "Missing required argument '" + required + "' on @" + directiveName + "."));
+                }
+            }
+        }
+    }
+
+    /**
+     * Judges one written argument name by walking its path down from the directive's definition. Each
+     * step resolves a name against the type the step before it named, and the descent stops the moment
+     * a step reaches something a literal cannot descend into, which is what keeps an object written
+     * where a scalar belongs from being judged against fields no type declares.
+     *
+     * <p>Only a path's last name is reported. A name that fails to resolve is the last name of its own
+     * path, so the deeper paths running through it stop silently rather than reporting it again.
+     */
+    private static void judgeArgumentPath(
+        DiagnosticFacts.Answers answers, Range range, String directiveName, List<String> path,
+        List<Diagnostic> out
+    ) {
+        if (answers.directiveName(directiveName) != DiagnosticFacts.Resolution.RESOLVES) return;
+        var step = answers.argument(directiveName, path.getFirst());
+        if (step.isEmpty()) {
+            if (path.size() == 1) {
+                out.add(diagnostic(range, DiagnosticSeverity.Warning,
+                    "Unknown argument '" + path.getFirst() + "' on @" + directiveName + "."));
+            }
+            return;
+        }
+        for (int depth = 1; depth < path.size(); depth++) {
+            if (!step.get().descends()) return;
+            String enclosingType = step.get().typeName();
+            String name = path.get(depth);
+            var next = answers.inputField(enclosingType, name);
+            if (next.isEmpty()) {
+                if (depth == path.size() - 1) {
+                    out.add(diagnostic(range, DiagnosticSeverity.Warning,
+                        "Unknown field '" + name + "' on input type '" + enclosingType + "'."));
+                }
+                return;
+            }
+            step = next;
         }
     }
 

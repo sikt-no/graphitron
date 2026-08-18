@@ -26,6 +26,9 @@ import java.util.Set;
 import java.util.function.Function;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
@@ -70,6 +73,12 @@ import static org.jooq.impl.DSL.selectOne;
  * name resolves against whatever the site's scope turns out to be: that is a join from the coordinate
  * through the scope to the columns, and a join inside one arm is not a second statement.
  *
+ * <p>A nested directive-argument literal is the second one that looks like a chain, since the type a
+ * name inside it is checked against is the type the level above resolved to. It is asked as a set
+ * instead: the arm holds every input object declaring a name the document wrote, each row carrying its
+ * own type's kind, so the descent walks the rows it already has rather than asking one question per
+ * level.
+ *
  * <p>An empty question set costs nothing rather than a statement returning nothing: a document whose
  * directives name no value the store could resolve has nothing to ask, which is the honest reading of a
  * file carrying only {@code @deprecated}.
@@ -97,6 +106,9 @@ final class DiagnosticFacts {
         NO_CENSUS
     }
 
+    /** The {@code graphql_type.kind} a nested directive-argument literal descends through. */
+    private static final String INPUT_OBJECT_KIND = "INPUT_OBJECT";
+
     /** One method an author named, which is the grain the census answers about overloads at. */
     record MethodRef(String className, String methodName) {}
 
@@ -119,6 +131,8 @@ final class DiagnosticFacts {
         private final Set<String> memberTypeNames = new LinkedHashSet<>();
         private final Set<FieldCoord> sigilSites = new LinkedHashSet<>();
         private final Set<String> sigilTypeNames = new LinkedHashSet<>();
+        private final Set<String> directiveNames = new LinkedHashSet<>();
+        private final Set<String> nestedArgFieldNames = new LinkedHashSet<>();
 
         void tableName(String spelling) {
             tableNames.add(spelling);
@@ -172,6 +186,25 @@ final class DiagnosticFacts {
         }
 
         /**
+         * A directive an author applied, whose definition answers three things at once: whether the
+         * name is declared at all, which of its formal arguments are required, and what each argument's
+         * type is. One question rather than three, the definition being one row set.
+         */
+        void directive(String directiveName) {
+            directiveNames.add(directiveName);
+        }
+
+        /**
+         * A name written inside a directive argument's object literal, which resolves against whichever
+         * input type the level above turns out to be. Keyed on the name alone because the type is an
+         * answer: the arm returns every input object declaring the name, and the judgement picks the
+         * one its descent arrived at.
+         */
+        void nestedArgField(String fieldName) {
+            nestedArgFieldNames.add(fieldName);
+        }
+
+        /**
          * Folds another document's questions in. Sets throughout, so the union of what several
          * documents ask is what one statement answers for all of them, and two files naming the same
          * type ask about it once.
@@ -186,12 +219,14 @@ final class DiagnosticFacts {
             memberTypeNames.addAll(other.memberTypeNames);
             sigilSites.addAll(other.sigilSites);
             sigilTypeNames.addAll(other.sigilTypeNames);
+            directiveNames.addAll(other.directiveNames);
+            nestedArgFieldNames.addAll(other.nestedArgFieldNames);
         }
 
         boolean isEmpty() {
             return tableNames.isEmpty() && foreignKeyNames.isEmpty() && classNames.isEmpty()
                 && methods.isEmpty() && nodeTypeNames.isEmpty() && memberTypeNames.isEmpty()
-                && sigilTypeNames.isEmpty();
+                && sigilTypeNames.isEmpty() && directiveNames.isEmpty();
         }
     }
 
@@ -254,6 +289,26 @@ final class DiagnosticFacts {
     record SlotRow(String className, String slotName, String origin) {}
 
     /**
+     * One formal argument of one directive definition, bundled and user-authored alike, capture
+     * reading graphitron's own {@code directives.graphqls} like any other schema file.
+     *
+     * @param namedTypeKind the kind of the type the argument bottoms out in, or absent where the
+     *                      graph declares no such type. It rides on the row because whether a literal
+     *                      may descend under this argument is a fact about the argument's own type,
+     *                      and asking for it separately would mean asking a question whose key is an
+     *                      answer to this one.
+     */
+    record DirectiveArgRow(
+        String directiveName, String argumentName, Boolean nonNull, String namedType,
+        String namedTypeKind
+    ) {}
+
+    /** One field of one input object, carrying its own named type's kind for the reason above. */
+    record InputFieldRow(
+        String typeName, String fieldName, String namedType, String namedTypeKind
+    ) {}
+
+    /**
      * The store's answer to a whole document, and the only thing the judgement reads. The accessors are
      * the questions restated; the components are the arms, and nothing outside this class reads them.
      */
@@ -274,7 +329,11 @@ final class DiagnosticFacts {
         List<RedirectRow> redirects,
         List<SlotRow> slots,
         List<FieldCoord> sigilSites,
-        List<String> declaredSigilTypeNames
+        List<String> declaredSigilTypeNames,
+        List<String> declaredDirectiveNames,
+        boolean anyDirective,
+        List<DirectiveArgRow> directiveArguments,
+        List<InputFieldRow> inputFields
     ) {
 
         /**
@@ -367,6 +426,49 @@ final class DiagnosticFacts {
                         columnScope(candidates.getFirst().tableName(), columnsOf(typeName, candidates));
                     case TypeMemberScope.Scope.Members(var className) -> slotScope(className);
                 });
+        }
+
+        /**
+         * What the graph's captured SDL says about a directive an author applied. The census this arm
+         * defers on is the directive definitions themselves: graphitron's bundled ones are captured
+         * with every graph, so no row at all means nothing has been captured yet, while rows without
+         * this name mean the schema declares no such directive and the build will refuse it.
+         */
+        Resolution directiveName(String name) {
+            return resolution(declaredDirectiveNames.contains(name), anyDirective);
+        }
+
+        /** The formal arguments this directive's definition declares as non-null, in declaration order. */
+        List<String> requiredArgumentsOf(String directiveName) {
+            return directiveArguments.stream()
+                .filter(row -> row.directiveName().equals(directiveName) && Boolean.TRUE.equals(row.nonNull()))
+                .map(DirectiveArgRow::argumentName)
+                .toList();
+        }
+
+        /**
+         * The type one written argument resolves to, or empty where the definition declares no such
+         * argument. The two are told apart by the caller, an absent argument being the unknown-argument
+         * verdict and a present one the level a nested literal descends from.
+         */
+        Optional<Descent> argument(String directiveName, String argumentName) {
+            return directiveArguments.stream()
+                .filter(row -> row.directiveName().equals(directiveName)
+                    && row.argumentName().equals(argumentName))
+                .findFirst()
+                .map(row -> new Descent(row.namedType(), row.namedTypeKind()));
+        }
+
+        /**
+         * The type one written name resolves to inside {@code typeName}, or empty where that input
+         * object declares no such field. Keyed on the pair because the arm holds every input object
+         * declaring the name and only the descent knows which one it arrived at.
+         */
+        Optional<Descent> inputField(String typeName, String fieldName) {
+            return inputFields.stream()
+                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
+                .findFirst()
+                .map(row -> new Descent(row.namedType(), row.namedTypeKind()));
         }
 
         private static Resolution resolution(boolean resolves, boolean populated) {
@@ -470,6 +572,18 @@ final class DiagnosticFacts {
         }
     }
 
+    /**
+     * One step of a nested directive-argument literal: the type this level resolved to, and whether a
+     * literal may descend into it. Anything but an input object stops the descent, which is what keeps
+     * an object written where a scalar belongs from being judged against fields no type has.
+     */
+    record Descent(String typeName, String typeKind) {
+
+        boolean descends() {
+            return INPUT_OBJECT_KIND.equals(typeKind);
+        }
+    }
+
     /** What a member name written at a site resolves against, in the two forms a scope takes. */
     sealed interface MemberScope {
 
@@ -504,7 +618,7 @@ final class DiagnosticFacts {
     static Answers none() {
         return new Answers(false, List.of(), false, List.of(), false, List.of(), false, List.of(),
             List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of());
+            List.of(), List.of(), List.of(), false, List.of(), List.of());
     }
 
     /** Every question the document asked, answered in one statement. */
@@ -544,7 +658,17 @@ final class DiagnosticFacts {
                 redirectArm(store, questions.memberTypeNames),
                 slotArm(store, questions.memberTypeNames),
                 sigilSiteArm(store, questions.sigilSites),
-                declaredTypeArm(store, questions.sigilTypeNames))
+                declaredTypeArm(store, questions.sigilTypeNames),
+                multiset(selectDistinct(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_DIRECTIVE)
+                    .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
+                    .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.in(questions.directiveNames))
+                    .orderBy(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME))
+                    .convertFrom(rows -> rows.map(Record1::value1)),
+                censusHolds(selectOne().from(GRAPHQL_DIRECTIVE)
+                    .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))),
+                directiveArgumentArm(store, questions.directiveNames),
+                inputFieldArm(store, questions.nestedArgFieldNames))
             .fetchOne(Records.mapping(Answers::new));
     }
 
@@ -582,6 +706,56 @@ final class DiagnosticFacts {
             .and(SQL_CONSTRAINT.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME))
             .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))
             .and(CatalogKeys.spelledBy(spelling)));
+    }
+
+    /**
+     * Every formal argument of every directive the document applied, left-joined to the type each
+     * argument bottoms out in so the kind rides along. One arm answers three checks: a name with no
+     * rows is not a declared argument, a row whose {@code non_null} is set is a required one, and the
+     * kind decides whether a literal written under it may be descended into.
+     */
+    private static Field<List<DirectiveArgRow>> directiveArgumentArm(
+        StoreHandle store, Collection<String> directiveNames
+    ) {
+        var argumentType = GRAPHQL_TYPE.as("argument_type");
+        return multiset(select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
+                GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME, GRAPHQL_DIRECTIVE_ARGUMENT.NON_NULL,
+                GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE, argumentType.KIND)
+            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
+            .leftJoin(argumentType)
+            .on(argumentType.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME))
+            .and(argumentType.TYPE_NAME.eq(GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE))
+            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.in(directiveNames))
+            .orderBy(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME, GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL))
+            .convertFrom(rows -> rows.map(Records.mapping(DirectiveArgRow::new)));
+    }
+
+    /**
+     * Every input object declaring a name the document wrote inside a directive literal, with that
+     * field's own named type and kind. Keyed on the names rather than on the types, the type a nested
+     * name is checked against being what the level above resolves to; the descent picks its row from
+     * these by the type it arrived at. The parent kind join is what keeps output fields out, a field
+     * of an object type having the same shape in {@code graphql_field}.
+     */
+    private static Field<List<InputFieldRow>> inputFieldArm(
+        StoreHandle store, Collection<String> fieldNames
+    ) {
+        var fieldType = GRAPHQL_TYPE.as("field_type");
+        return multiset(select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME,
+                GRAPHQL_FIELD.NAMED_TYPE, fieldType.KIND)
+            .from(GRAPHQL_FIELD)
+            .join(GRAPHQL_TYPE)
+            .on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME))
+            .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME))
+            .leftJoin(fieldType)
+            .on(fieldType.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME))
+            .and(fieldType.TYPE_NAME.eq(GRAPHQL_FIELD.NAMED_TYPE))
+            .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_FIELD.FIELD_NAME.in(fieldNames))
+            .and(GRAPHQL_TYPE.KIND.eq(INPUT_OBJECT_KIND))
+            .orderBy(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.ORDINAL))
+            .convertFrom(rows -> rows.map(Records.mapping(InputFieldRow::new)));
     }
 
     /** One arm out of a probe per spelling, empty where the document asked about none of this kind. */
