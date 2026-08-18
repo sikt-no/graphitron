@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: []
+depends-on: [capture-declares-the-columns-it-writes]
 created: 2026-08-18
 last-updated: 2026-08-18
 ---
@@ -219,6 +219,30 @@ which is exactly the drift it was meant to catch. `IS NOT DISTINCT FROM` fixes t
 rejects the same row, so a written column is at least expressible; a generated column makes the
 question moot and deletes the writer duty, the constraint and the test together.
 
+**The generated column cannot land until capture stops writing every column.** The property that
+makes generation safe is the property that breaks the current write path, and it is the same
+property: `FactSink.flush()` builds one insert per relation as
+`dsl.insertInto(table).columns(table.fields()).values(...)`, naming every column the DDL declares,
+and binds it from `record.intoArray()`. Measured on h2 2.4.240, an insert that names a generated
+column is rejected outright, so the first `_upper` column added to a captured relation breaks that
+relation's whole write. Every relation this item folds goes through that path: the nine qualifiable
+references, `graphitron_table.type_name`, `graphitron_field_binding.name_ref`,
+`graphql_field.field_name`, and the `sql_` columns, which reach the same sink through
+`CatalogFactCapture`.
+
+The fix is not to teach `flush()` which columns to skip. Reconstructing the column list from jOOQ's
+readonly flag replaces one inference from the relation's shape with another, and leaves the insert
+assembled at runtime rather than written. What the write path owes is type-safe DML: a statement that
+names the columns the writer has data for, in generated constants the compiler checks, so a column
+the writer has nothing for cannot enter a column list by accident and cannot drift into one later.
+That is `roadmap/capture-declares-the-columns-it-writes.md`, which already records this item as the
+trigger that turns its hypothetical into a real one, already rejects the readonly-flag shortcut by
+name, and carries a build-time gate over the columns capture writes that would have caught the
+collision at review rather than at h2's error message. This item now depends on it. Nothing here
+argues for reopening the written-column alternative: a written fold column would pass through
+`flush()` today and fail the same gate later, for the drift reason the check-constraint measurement
+above already settles.
+
 The rule, stated over comparisons rather than over columns, because that is what decides:
 
 > **A column either side of a case-insensitive comparison in a composition view carries a folded
@@ -237,7 +261,7 @@ Read off the current view text, that is:
 | `intent_field_reference_step_hop`
 
 | `sql_constraint_column.column_name`, `sql_column.column_name`
-| `intent_field_reference_step_hop`'s name-match arm
+| `intent_field_reference_step_hop`'s name-match arm, and `intent_name_matched_key_pair`
 
 | `sql_column.jooq_name`, `sql_column.column_name`
 | `intent_column_match_claim`
@@ -339,6 +363,16 @@ a string.
 The key gains the coordinate: `(graph_name, type_name, field_name, argument_path, position)`, and the
 relation gains the foreign key that coordinate makes available.
 
+One view reads the relation today, and it is worth naming because the re-key changes what its join
+matches without changing what it returns. `intent_type_backing_seed` joins the segments on
+`(graph_name, argument_path, position = 0)`, which today matches at most one row and afterwards
+matches one per coordinate that spells the path. The extra rows are absorbed: the view's outer term
+is a `UNION`, and none of its three output columns varies with which coordinate matched, because the
+head segment of a path is a function of the path text. So the view is correct either way, which is
+the same total-function argument this section makes for the duplication itself. The join still gains
+`type_name` and `field_name`, because a join that is right by absorption is a join whose next editor
+has to rediscover why.
+
 ### Why the recorded rationale for the current key is wrong
 
 The table's own comment defends the interning, so this is a reversal and not a gap, and it has to be
@@ -390,7 +424,7 @@ What that buys and what it does not, stated so the next reader does not expect m
 segments addressable by the coordinate every consumer already holds. It leaves segment sets shared
 across the several pairs of one field that happen to use the same path text, which is harmless because
 the segmentation of a path is a pure function of that text. It does not identify *which* pair a segment
-set came from, and the seven owners are four shapes, not three:
+set came from, and the seven owners are five key shapes:
 `graphitron_service_arg_mapping_pair` and `graphitron_field_condition_arg_mapping_pair` are keyed
 `(graph, type, field, position)`, `graphitron_argument_condition_arg_mapping_pair` adds
 `argument_name`, `graphitron_routine_arg_mapping_pair` adds `ordinal`, and the three step-level pairs
@@ -401,7 +435,7 @@ string join it is today.
 
 All seven lead with `(graph_name, type_name, field_name)`, which is what makes the new key reachable
 from every owner and gives the relation a foreign key target it does not have today. It anchors on
-`graphql_field`, whose primary key is exactly that triple and which twenty-three relations already
+`graphql_field`, whose primary key is exactly that triple and which twenty-two relations already
 reference, rather than on any one of the seven pair relations: the coordinate is what the owners
 share, and picking one of them as the parent would be choosing a site for a fact that has several.
 Today the relation's only foreign key is to `store_graph`, so a segment set whose path no site spells
@@ -449,7 +483,10 @@ any more is not merely unreferenced, it is unconstrainable.
   claims `TABLE_COLUMN` through `intent_column_match_claim`. Both pass today through the per-row
   `UPPER` calls, so these pin behaviour the change must preserve rather than behaviour it adds.
 - Agreement: `intent_spelled_table` returns identical rows over the multi-schema fixture catalog
-  before and after, since this change is shape-only.
+  before and after, since this change is shape-only. Same pin on `intent_type_backing_seed`, the one
+  view reading `graphitron_argument_path_segment`, whose join the re-key widens; the fixture needs
+  two coordinates spelling one path for the pin to be worth anything, which the segment-coordinate
+  case above already sets up.
 - A negative pin: a dotted `columnMapping` right side still lands whole in
   `graphitron_routine_column_mapping_pair.column_ref` and still reaches its detection.
 
@@ -462,11 +499,20 @@ an index can serve what currently scans `sql_table` once per distinct spelling. 
 `COALESCE(t.table_ref_name_part_upper, t.type_name_upper)`, and the whole predicate is column against
 column. The six-way union over the decode relations stays: it costs little next to the predicate, and
 keeping each spelling on the relation that decoded it preserves locality a shared spelling table
-would trade for a join. Every other view reconciling a reference gets the same treatment; the
-schema-wide budget to work down is 30 `UPPER`, 10 `POSITION` and 9 `SUBSTRING`.
+would trade for a join. Every other view reconciling a reference gets the same treatment.
 
-Two of those 30 do not come off by folding a base column, and saying so now keeps the number from
-reading as a promise it is not. `intent_field_reference_discovery` compares
+The schema holds 30 `UPPER`, 10 `POSITION` and 9 `SUBSTRING`, and the budget this item works down is
+30, 8 and 5. The rest is not a remainder to get to later, it is string work that has nothing to do
+with a spelling, and stating it now keeps the totals from reading as a promise they are not.
+`intent_class_member_slot` spends four `SUBSTRING` on the bean-accessor rule, taking `get` or `is`
+off a method name and lowering the next letter, which its own view comment defends as a rule over the
+census rather than a match against anything. `intent_authored_field_claim` and
+`intent_class_assignable` spend one `POSITION` each on a recursion cycle guard, testing whether a name
+already appears in the path a recursive term has walked. Neither is a case fold nor a dot split, and
+no column this item adds touches either.
+
+Two of the 30 `UPPER` do come off, but not by folding a base column, which is worth separating for
+the same reason. `intent_field_reference_discovery` compares
 `UPPER(sc.table_name) <> UPPER(bt.table_name)` where both sides are columns of *derived views*, not
 of `sql_` relations. Those come off only if the views underneath project the folded column alongside
 the unfolded one, which they should, on the same rule: a view that carries a spelling carries its
@@ -478,11 +524,18 @@ proposed a schema gate asserting that every folded `sql_` column has an `_upper`
 guard against a writer forgetting to fill a written column. Generated columns cannot be forgotten and
 cannot be filled wrong, so that gate has nothing left to check. What is worth checking is the
 property the item is actually after, and it is simpler than the column-list gate and cannot drift
-with it: **no `UPPER(`, `POSITION(` or `SUBSTRING(` in a view definition.** One rule over the view
-text, no reference list to maintain, and it fails on the next per-row string operation whoever adds
-it and whatever columns are involved. Whether that lands as a gate now or as the natural successor
-once the budget reaches zero is an implementation call; a gate that fails on day one is not useful,
-so it arrives with the last of the 30.
+with it: **no `UPPER(` in a view definition.** One rule over the view text, no reference list to
+maintain, and it fails on the next per-row case fold whoever adds it and whatever columns are
+involved.
+
+`UPPER` alone, and that is the correction the budget above forces rather than a weakening. A rule
+naming `POSITION(` and `SUBSTRING(` too would have to carry an exemption for the bean-accessor rule
+and the two cycle guards, which puts a list of blessed views back into a gate whose whole appeal was
+having no list. `UPPER` is the operation this item is about, its reducible count and its total are
+both 30, and a fold is the one string operation whose absence a stored column can guarantee. The
+residual `POSITION` and `SUBSTRING` uses in those three views are then not exempted from a rule,
+they are outside it. Whether the gate lands now or once the count reaches zero is an implementation call; a gate that
+fails on day one is not useful, so it arrives with the last of the 30.
 
 ## Notes settled during spec
 
@@ -501,8 +554,15 @@ that does not hold: both decode the same document at the same cadence. That item
 records the same correction, so the two agree. The tier label describes what the family is; this item
 is the work the description was pointing at.
 
-Neither item depends on the other and `depends-on` stays empty in both directions. This one changes
-the shape a decode lands in, that one changes what a decode reads from, and either order works.
+Neither of those two depends on the other and neither declares the other. This one changes the shape
+a decode lands in, that one changes what a decode reads from, and either order works.
+
+The one real dependency is `roadmap/capture-declares-the-columns-it-writes.md`, for the reason the
+fold section gives: the generated `_upper` columns cannot be written through a path that names every
+column of the relation, and that item is where the write path learns to state its own column list.
+The ordering is strict rather than a preference, so it is the sole entry in `depends-on`. Nothing
+else here waits on it, and the parts columns, the field-set segments and the segment coordinate are
+all ordinary written columns that could land first if the fold were ever split out.
 
 ## Out of scope
 
