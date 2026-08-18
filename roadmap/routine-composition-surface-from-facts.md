@@ -166,7 +166,19 @@ intermediate version wrong.
    `RootLauncherRenderer.routineBody` emits `orderByStatement(ordering, terminal)` and
    `.orderBy(orderBy)`. `terminal` is the local the projection already targets, so sort columns and
    select list resolve against the same alias by construction.
-2. **`@condition` and `@orderBy`.** Delete `orderOrConditionDeferral`. The chain classifiers stop
+2. **`@condition` and `@orderBy`.** Retarget `orderOrConditionDeferral`, do not delete it. It has
+   two callers and only one of them is this item's. `resolve` reaches all three chain classifiers
+   through `walkRoutineChain`, so the read seats lose the deferral; but `resolveCarrierNode` is the
+   Mutation carrier seat, and neither `MutationRoutineWriteField` nor
+   `MutationRoutineWriteRecordField` carries a filter or ordering component at all. Deleting the
+   method outright would make `@condition` / `@orderBy` on a Mutation `@routine` field classify
+   clean and do nothing, which is this item's own defect restated on the write seat, and no test
+   would catch it: both deferral fixtures (`conditionOnRoutineFieldDefersAsCapabilityGap`,
+   `orderByArgumentOnRoutineFieldDefersAsCapabilityGap`) are root-`Query`. So the check survives,
+   seat-gated to the write classifiers the way `classifyMutationRoutineChain`'s payload-carrier
+   conflict already is, with a message naming the write seat rather than routine-backed fields at
+   large; the write-side read surface stays with `roadmap/routine-write-result-shapes.md` (R454),
+   which owns that seat's shapes. Then the chain classifiers stop
    passing `List.of()` for filters and route through `resolveTableFieldComponents` against the
    terminus, the same call the ordinary table arms make. `routineRow` gains its WHERE slot from the
    condition relation; `routineBody` declares the condition local and ANDs it with the hop filters
@@ -573,6 +585,12 @@ Every one of these asserts the absent read surface and must move in the same com
   alone rather than sprinkling `@defaultOrder` over fixtures asserting something else. Give
   `rootRoutineThenHopsChainClassifiesWithNameMatchedHop` an explicit slot assertion so the PK
   fallback is pinned rather than assumed, and add a case per terminus kind.
+* **Plan tier, existing pin to repoint**:
+  `LauncherCommandsPipelineTest.routineRoot_sourceArmCarriesTheChainAndTheTerminusProjection` is
+  the pin on exactly the two nulls slices 1 and 2 fill; it asserts `row.where()` and the
+  `RecordList` ordering are both null, over a catalog-terminus fixture (`@reference(path:
+  [{table: "film"}])`). It flips rather than breaks: the ordering becomes the PK fallback over
+  `film`, which is the same slot assertion the classification tier gains, one tier up.
 * **Validation**: a `ValidateListRequiresOrderingPipelineTest` case for the routine-terminus root,
   asserting the routine-specific message rather than the generic one.
 * **Execution**: the reported bug is a wrong-order result, so it only closes at the execution tier.
