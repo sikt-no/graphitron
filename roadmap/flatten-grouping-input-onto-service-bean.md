@@ -191,10 +191,29 @@ the message points at the SDL the author wrote.
 * **List-shaped grouping input.** A group that is a list of groups has no flat member to land
   on. Reject, mirroring the column axis; the message should say to make the field singular
   rather than suggesting a `List<X>` member, since there is no member at all.
+
+  *Considered and declined:* list-lifting the leaves, so `versions: [VersionInput!]` with a
+  `length: Int` leaf would hoist to a `List<Integer> length` member. It is a coherent reading (it
+  transposes a list of groups into a group of lists) and it is why D1 has to state that group
+  segments never list-lift. Declined: it silently reinterprets the client's wire shape as something
+  structurally different, one object per version becomes one array per field, so the SDL stops
+  describing what the Java side receives. That is the same class of implicitness this item exists to
+  remove. A schema that genuinely wants per-version lists can say so with a singular group whose
+  leaves are lists, which needs no inference. Fail loudly instead.
 * **Collision.** The existing duplicate-binding-key rejection in `buildInputBeanBody` is
   already the right home and already fires before either arm builds. It now also catches a
   hoisted leaf colliding with a top-level field, and two groups hoisting the same key.
   Extend its message to dotted paths so `varighet.antall` versus `antall` reads clearly.
+
+  **The governing principle: hoisting makes a leaf a peer of the enclosing type's own fields.** Once
+  a group flattens, its leaves are declared on the enclosing input type as far as binding is
+  concerned, and they collide with each other and with top-level fields by exactly the rule that
+  already governs two top-level fields. So this stays *one* rejection, not three variants for
+  top-level-versus-hoisted, hoisted-versus-hoisted, and top-level-versus-top-level. Implementation
+  consequence: do the collision check once, against the fully-built index after the descent
+  completes, rather than per arm or per descent level. The access path is carried for the message
+  and for the emitter's `Map` descent only; it is never part of the identity that decides whether two
+  bindings collide.
 * **Depth.** No limit, matching `collectJooqBindings`. The cycle guard bounds the descent:
   each level adds a distinct SDL type name to a finite set.
 
