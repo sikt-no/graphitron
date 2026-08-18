@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: [jooq-node-metadata-as-stated-facts]
+depends-on: [jooq-node-metadata-as-stated-facts, three-tiers-capture-derive-query]
 created: 2026-08-18
 last-updated: 2026-08-18
 ---
@@ -32,20 +32,47 @@ string a crawler transcribed, not a pointer at `sql_table`. But this coupling do
 reference. It changes *which rows exist*. No constraint expressible in the DDL could have rejected
 it, which is why the gate below is part of the deliverable rather than a nice-to-have.
 
-## The polarity inversion
+## A misplaced tier, not an inverted polarity
 
-`MacroCapture`'s javadoc states today's arrangement deliberately: running expansion inside capture
-"keeps the store's picture effective rather than authored, and keeps the authored picture recoverable
-as the anti-join against the provenance relations". This item inverts that for one macro. The
-authored picture becomes what the base relations hold; the effective picture becomes derived; and the
-anti-join stops being needed, because the derivation is the provenance.
+The store has three tiers. Capture transcribes facts from a corpus. Derivation computes further
+facts from captured ones. Queries read facts to serve a goal. Every relation belongs to exactly one
+tier, and the test is mechanical: a row that can be recomputed from captured facts alone is a
+derived fact and must not be captured.
+
+Federation-key synthesis fails that test. It consumes captured facts, the SDL claim rows and the
+node metadata the sibling item records, and produces a fact computable from them. It is tier two
+running inside tier one, and its output lands in tier-one relations where nothing distinguishes it
+from a transcription.
+
+`MacroCapture`'s javadoc defends the arrangement in different terms, as keeping "the store's picture
+effective rather than authored, and keeps the authored picture recoverable as the anti-join against
+the provenance relations". That framing does not survive contact with the other corpora and should
+not be carried forward. Everything in the store is authored by somebody: the DDL behind the jOOQ
+classes was authored, the service methods were authored, the configuration was authored. "Authored"
+therefore partitions nothing, and "effective" is singular where the truth is plural, since a
+round-trip emitter, a federation publisher and an LSP hover each want a different composition. Baking
+one of them into the base relations makes one goal's answer the store's shape.
+
+The consequence of the misplacement is visible in the schema, and is the clearest argument for the
+tier reading. `graphitron_field_synthesis.authored_type_sdl` exists because the connection macro
+overwrote a captured fact in `graphql_field` with a derived one, so the captured fact had to be
+stashed in the provenance table as unparsed text ("the type expression as the author wrote it,
+pre-expansion"), and a view now recovers it with nested `REPLACE` calls stripping `[`, `]` and `!`.
+A captured fact is being reconstructed by string surgery because a derived fact took its seat.
+
+The three synthesis relations, `graphitron_type_directive_synthesis`,
+`graphitron_field_synthesis` and `graphitron_type_declaration_synthesis`, each carry a foreign key to
+the tier-one relation whose rows they annotate. They exist only to mark which rows a macro put there.
+Under tier discipline a derived fact lives in a derived relation and the relation is its own
+provenance, so all three become unnecessary. Retiring them is out of scope here (this item moves one
+macro), but they are the measure of whether the frame is right.
 
 The wrinkle most likely to bite: `expandFederationKeys` writes through
 `SdlFactCapture.captureTypeDirective` with an ordinal drawn from the SDL walk's per-type counter, so
-a synthesized application is interleaved into a base relation's ordinal sequence. A derivation has to
-allocate above the maximum authored ordinal for its type instead. That is computable from the rows,
-but it is a real change to how a synthesized application is positioned, and any reader comparing
-ordinals across the two pictures has to be found.
+a synthesized application is interleaved into a tier-one relation's ordinal sequence. A derivation
+has to allocate above the maximum transcribed ordinal for its type instead. That is computable from
+the rows, but it changes where a synthesized application sits, and any reader comparing ordinals
+across the two tiers has to be found.
 
 ## Shape
 
@@ -58,7 +85,8 @@ ordinals across the two pictures has to be found.
 - The federation-key macro moves whole, not by arm. The rule is a disjunction over a declared arm
   (pure SDL) and an inferred arm (needs jOOQ), and splitting it across capture and derivation would
   give one rule two homes and two ordinal allocators.
-- Readers of the effective picture move to a view over base plus derived synthesis.
+- Readers wanting the composition including synthesized keys issue a tier-three query over the
+  transcribed rows plus the derived ones, rather than reading one composition off tier one.
 
 ## The gate that keeps it fixed
 
@@ -85,5 +113,7 @@ SDL, so it neither blocks this nor is fixed by it.
   anyone can transcribe with no graphitron knowledge and the other is a claim layer needing jOOQ,
   the classpath and configuration to resolve, which only becomes true once expansion has moved out
   of capture. This item is a precondition for that argument, not the split.
-- The `CONNECTION` macro, and the general authored/effective inversion across every family.
+- The `CONNECTION` macro, and the general tier correction across every family. Also the three
+  synthesis relations and `graphitron_field_synthesis.authored_type_sdl`, which the tier reading
+  predicts become unnecessary but which this item does not touch.
 - Splitting the capture transaction per crawler.
