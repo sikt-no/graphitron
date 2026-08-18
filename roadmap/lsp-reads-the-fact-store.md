@@ -2914,7 +2914,10 @@ language-server surface having asked it anything since goto-definition's positio
 intra-schema arm was the language server's only one, and it reads the declaration sites now. The
 `Built.Current` / `Built.Previous` seal has one language-server reader left, the diagnostics replay,
 the code-action branch having stopped asking the snapshot about freshness and started asking the store
-about this document's text.
+about this document's text. `TypeBackingClass.contested` is gone as well, along with
+`ClaimFacts.ofType`'s classifier parameter: the type hover was the only caller of either, and its
+block reads the conflict relation as one arm of a single statement now, with `TypeBackingClass.resolve`
+deciding whether that arm's arity is an answer.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -3212,6 +3215,45 @@ now, so a passing count is evidence the listener sees real executions rather tha
 it optional, deriving a `Configuration` reaches JAXB-annotated `Settings`, and the annotation methods
 javac cannot then resolve are warnings `-Werror` rejects.
 
-The type block is untouched and still reads a statement per claim, plus two more for an unclaimed
-type's backing. Its number is deliberately not pinned in the new test: asserting the count a defect
-currently has would read as sanctioning it, and the class gains a case when the block is recomposed.
+The type block was untouched at this point and still read a statement per claim, plus two more for an
+unclaimed type's backing. Its number was deliberately left unpinned rather than asserted at the value
+a defect had, and the section below is the recomposition that let the class state it.
+
+## Settled while building: the type block is one statement, and the backing rule outlived its query
+
+The type block cost one statement for the claim classifiers, one per claim for that claim's facts, and
+for a type no claim named, two more to resolve the backing plus a third to read the conflict behind a
+backing it declined to name. Worst case, an unclaimed type two producers disagree about, was five
+statements to render three lines. It is one now, on the same shape as the field block: six multisets
+over no driving table, the two claim arms beside the three backing arms.
+
+* **Reading the backing beside the claims is what made it one statement, and it is also the correct
+  gating.** The block used to decide it had no claims and only then ask for a backing, which is a
+  second round trip conditioned on the first one's answer. The two are independent questions about the
+  same type, so both are arms of the same statement and the choice of which to *show* is the renderer's
+  alone. That is the field block's ungated-facts finding at the type grain, and it arrived by the same
+  route: the case that broke the conditional shape was the payload type a `@service` return hands back,
+  which no claim names and which the store nonetheless knows a class for.
+* **The rule that chooses between the backing populations moved out of the query and stayed one
+  copy.** `TypeBackingClass` holds two rules the relation deliberately does not: a grounding beats a
+  hop, and a type still contested has no answer. Its bulk reader applied them while assembling rows,
+  so a second reader fetching the same populations its own way would have had to restate them.
+  `TypeBackingClass.resolve` now takes the two candidate populations and returns the answer or
+  declines; the bulk reader calls it per type, and the type block calls it on two of its arms. The rule
+  lives with the question rather than with either reading of it.
+* **`TypeBackingClass.contested` is gone, and the arity it reported is an arm.** It was the surface
+  that told the two absences apart, an unbacked type from a contested one, and it did so by resolving
+  the backing again to confirm the decline before reading the conflict relation. The block holds all
+  three populations already, so the decline is a local test and the conflict row is just another
+  multiset. `ClaimFacts.ofType` also lost its classifier parameter: it answers about a type now rather
+  than about one classifier of a type, which is what let the per-claim loop stop being a per-claim
+  query.
+* **The bound-table arm reads a relation `BoundTables` also reads.** Deliberately, and it takes only
+  the table name a hover line renders rather than the three columns that reader assembles. Two readers
+  of one relation is what composing a statement costs; the alternative is a round trip for a column
+  keyed on the coordinate already in hand.
+
+`DeclarationHoverStatementCountTest` gained four type cases: a claimed type, a type no claim names
+that a producer's return backs, a type two producers back differently, and a type the store knows
+nothing about. The third is the one worth having, being the five-statement case, and the class now
+states one statement per declaration hover at either grain rather than at one of them.
