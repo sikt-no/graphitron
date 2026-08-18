@@ -34,9 +34,10 @@ than being one more copy:
   `withCapturedStoreAndClaimDomain` sibling over a private boolean-flag core. That is what a
   hand-rolled harness turns into when the variation is left to grow inside one class.
 * `derive/ClassMemberSlotTest` takes no SDL argument, because its fixture SDL is a placeholder
-  constant and its subject is the classpath. It feeds capture a real `ClasspathScanner` census, as do
-  `derive/AccessorHopTest`, `derive/ClassAssignableTest` and `derive/FieldProducerMethodTest`. Four
-  independent sites want the census, which is what the census-as-an-argument decision below rests on.
+  constant and its subject is the classpath. It is one of eight `derive/` classes that hand capture a
+  classpath census, two of them (`ClassMemberSlotTest` and `TypeBackingShadowTest`) from a real
+  `ClasspathScanner.scan` and the other six hand-built out of `reference(...)` literals. That the
+  census is *per-fixture data* either way is what the census-as-an-argument decision below rests on.
 * `diagnostics/DiagnosticFactsTest.withStore` is the same shape with the capture step removed, so each
   case drives capture itself. It is the primitives layer this item ships, already existing in the tree.
 * The corpus sweeps in `derive/ColumnMatchClaimTest`, `derive/DemandShadowTest` and
@@ -69,8 +70,16 @@ real pipeline run." It shares the bottom of the stack with the others and nothin
 **And a second fixture beside it, which is this item's thesis demonstrating itself.** The
 catalog-facts item added `no.sikt.graphitron.mcp.StoreFixture` while migrating the catalog tools: an
 in-memory store plus a direct `FactCapture.capture` call with a `JooqCatalog`, named after the LSP's
-fixture and arriving at its `ofCatalog` / `ofMultiSchemaCatalog` / second-graph shapes independently for
-the second time. It exists for a good reason, which is that a census read does not need a build and
+fixture and arriving at its `ofCatalog` / `ofMultiSchemaCatalog` / `andGraph` shapes independently for
+the second time. It carries two shapes the LSP's does not, and both are requirements on L1 rather than
+curiosities: `withoutCatalog`, and `recaptureCatalog(String jooqPackage)`, which re-captures a graph
+into an already-populated store by passing `warm = true` to `FactCapture.capture`.
+`CatalogSearchIndexTest` calls the latter four times, once with a null package. A warm re-capture into
+an already-open store is
+therefore a live L1 shape with named callers, not an oddity to be discovered mid-migration, and the
+factory set below has to carry it from the first day of that slice.
+
+The MCP fixture exists for a good reason, which is that a census read does not need a build and
 `StoreBackedBuild` was pricing the generator into every catalog case, so the fixture is not the mistake;
 building it a fourth time is. It is a capture-level copy, so it belongs in the L1 row of the table below
 rather than beside `StoreBackedBuild`. The prediction this item first made about the catalog-facts item,
@@ -81,33 +90,49 @@ for when the shared home cannot express its shape is not the nearest existing fi
 `GraphitronModelStore.open()` inline and write to it directly, one site each. Small, and exactly the
 shape that becomes another named harness the moment a third site appears.
 
+### The direct writers, which want half of L0 and nothing else
+
+A second population opens a store and writes rows to it directly, with no SDL captured into it at all:
+`compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest`, `capture/JavaSourceFactsTest` and
+`capture/SourceGraphScopingTest` inside `graphitron`, and downstream `graphitron-lsp`'s
+`RejectionSeverityCoverageTest` and `graphitron-mcp`'s `DiagnosticsToolCompileSourceTest` and
+`DiagnosticsAggregateTest` (which is a `StoreBackedBuild` reader *and* a direct writer, opening its own
+store in three cases and driving `RejectionFacts` by hand).
+
+They are not a separate design problem from the maven-plugin's two inline sites. They are the same
+code. `DevMojoTest` opens a store and constructs `new CompileFacts(store.dsl(), new GraphIdentity(…))`,
+and `compile/CompileFactsTest` opens a store and constructs the same writer the same way.
+`dev/CatalogRefreshTest` opens a store and constructs `new JavaSourceFacts(store.dsl())`;
+`capture/JavaSourceFactsTest` does the same. Whatever the item does with the maven-plugin pair it has
+to do with these, or it is routing identical code two opposite ways on the accident of which module it
+sits in.
+
+So they migrate, and the level they migrate to is the store-lifetime half of L0 and nothing above it.
+What they get out of it is modest, an opened store and a `GraphIdentity` they currently hand-build, and
+that is worth stating plainly rather than overselling. The reason to convert them anyway is that the
+alternative is a guard exception list holding seven classes that are not exceptions on the merits,
+merely unconverted, which is the quiet second inventory this item exists to stop.
+
 ### Where the shared home stops
 
-A larger population opens a store for reasons that are not "populate a view and assert against it",
-and the edge matters because it tells the implementer which classes the levels below are *not*
-designed for.
+What is left over genuinely stays, and the edge matters because it tells the implementer which classes
+the levels below are *not* designed for.
 
 **Store-mechanics tests.** `capture/PersistentStoreTest`, `capture/StoreReaderTest` and
 `capture/WarmStartRefreshTest` have the store's own lifetime, its warm start, its reader and its
 file-backed home as their subject. They open and reopen the same directory deliberately, compare cold
 against warm, and hold two handles at once. These cannot adopt an L0 that owns the store's lifetime,
-because the lifetime is the thing under assertion. They stay as they are.
-`capture/BrokenSourceStillCapturesPipelineTest` sits beside them: its subject is what is true of the
-store when a run fails, so it too holds the store across the failure itself.
+because the lifetime is the thing under assertion. `capture/BrokenSourceStillCapturesPipelineTest`
+sits beside them: its subject is what is true of the store when a run fails, so it too holds the store
+across the failure itself.
 
 **Capture-oracle tests.** `capture/FactCaptureAgreementTest` and `capture/FactSchemaGateTest` drive
 `FactCapture` per view, per arm, with the store's population as the subject. They already read
 `CapturedStore` where a factory fits and open directly where none does, which is the primitives layer
 this item ships, working as intended. Nothing here needs to change for the item to be finished.
 
-**Direct writers.** `compile/CompileFactsTest`, `capture/CommentRenderabilityGateTest`,
-`capture/JavaSourceFactsTest` and `capture/SourceGraphScopingTest` open a store and write rows to it
-directly rather than capturing SDL into it. They want L0 and nothing above it. Downstream,
-`graphitron-lsp`'s `RejectionSeverityCoverageTest` and `graphitron-mcp`'s
-`DiagnosticsToolCompileSourceTest` are the same shape.
-
-Stating the edge is part of the item: an L1 that tried to serve these classes would be the
-does-everything type the next section exists to avoid.
+Those two groups are the whole of the exception list the guard carries. An L1 that tried to serve them
+would be the does-everything type the next section exists to avoid.
 
 ### The duplication is the symptom, not the item
 
@@ -158,7 +183,7 @@ what keeps the shared home from becoming that type:
 
 | Level | What it is | Who needs it |
 |---|---|---|
-| L0 | The store's lifetime, and writing an SDL fixture to a file with an identity | All four modules |
+| L0 | Two separable halves: the store's lifetime, and writing an SDL fixture to a file with an identity | All four modules |
 | L1 | Capture-level population: one or more `FactCapture.capture` calls into an open store | `CapturedStore`, LSP's `StoreFixture`, MCP's `StoreFixture` |
 | L2 | Build-level population: a real `buildOutput()` run into a file store | `StoreBackedBuild` |
 | L3 | The module's own read boundary over a populated store | LSP's `handle()` / `reader()`, MCP's `Workspace` and server wiring |
@@ -167,6 +192,13 @@ what keeps the shared home from becoming that type:
 layer over the level below it, which is why `StoreFixture` and `StoreBackedBuild` survive this item
 under their own names rather than being deleted into a common type. It is also what keeps the call
 sites still: what the downstream tests are calling is L3, and L3 is not moving.
+
+**L0's two halves have to be usable apart.** The direct writers want the store's lifetime and a
+`GraphIdentity` and never write an SDL fixture; every capture-level caller wants both halves together.
+An L0 that only hands out a store with a fixture already written into it would leave the direct writers
+where they are, which is the routing mistake the Problem section describes. Both halves also have to
+carry the in-memory and file-backed stores as named entry points rather than a flag, since
+`StoreBackedBuild` reaches `openAt(Path)` and everything else `open()`.
 
 The levels are ordered, so the work is ordered. L0 is the floor everything else stands on, L1 is the
 consolidation with the most copies behind it, and L2 is one fixture rehomed onto the floor. An
@@ -192,10 +224,11 @@ test scope. The jOOQ fixture packages these fixtures capture against come from `
 which `graphitron-lsp` and `graphitron-mcp` already depend on at test scope, so the catalog shapes
 need no new dependency at all.
 
-One objection deserves answering rather than ignoring, because the pom states it outright: the
-comment on `graphitron-lsp`'s `graphitron` dependency says the direction of travel is that this
-module sheds `graphitron` one type at a time. A test-jar edge appears to cut against that. It does
-not. `StoreFixture` already imports `FactCapture`, `RewriteSchemaLoader`, `JooqCatalog`,
+One objection deserves answering rather than ignoring, because the pom states it outright: the comment
+above `graphitron-lsp`'s `graphitron-model` dependency, referring forward to the `graphitron`
+dependency below it, says the direction of travel is that this module sheds `graphitron` one type at a
+time. A test-jar edge appears to cut against that. It does not. `StoreFixture` already imports
+`FactCapture`, `RewriteSchemaLoader`, `JooqCatalog`,
 `NodeDeclaration`, `ClasspathScanner`, `SourceWalker`, `BuildWarningFacts` and `JavaSourceFacts` from
 `graphitron`'s main sources, and `StoreBackedBuild` imports `GraphQLRewriteGenerator` itself. The edge
 this item adds is a second scope on a dependency already thick in exactly these files, not a new one.
@@ -225,7 +258,9 @@ duplicate `TestSchemaHelper.attribution` under a second name.
 Expose `registryOf` / `attributionOf` / `fixtureFile` publicly alongside the factories. The corpus
 sweeps drive `FactCapture.capture` themselves, per example, and need the primitives without a
 factory arm for every combination; so does `ClassMemberSlotTest` with its census, and so does
-`DiagnosticFactsTest` with the one case that passes real `SdlVerdicts` and an explicit `warm` flag.
+`DiagnosticFactsTest` with the one case that passes real `SdlVerdicts` alongside the `warm` flag.
+(The `warm` flag itself is not a primitives-only concern: MCP's `recaptureCatalog` is a named factory
+built on it, so L1 carries it as an arm and the primitives carry it for the cases no arm names.)
 That is the third layer, under the handle: a test whose axis combination no factory names writes the
 capture call itself off shared primitives instead of hand-rolling the file, the attribution and the
 store lifetime with it. Naming the primitives as a layer is what keeps the factory set from having to
@@ -287,13 +322,13 @@ answers one question, "did you stand a store up outside the shared home", and it
 second. The failure message names the shared home and says to add a factory there, because the guard's
 job is to route an author to the answer rather than merely to refuse them.
 
-**Exceptions are named, with reasons, and there is no arithmetic over them.** The classes in "Where
-the shared home stops" stand a store up on purpose and stay that way, so each gets an entry saying
-which of the three reasons it is: the lifetime is the subject, the test writes rows directly, or the
-test is a capture oracle driving `FactCapture` per arm. Follow `RetiredVocabularyGuardTest`'s shape,
-a record per entry with an assertion that the entry is still real, so an entry naming a class that no
-longer stands a store up fails the build instead of lingering. That is the only bookkeeping the guard
-owes: the list stays honest, and nobody has to count it.
+**Exceptions are named, with reasons, and there is no arithmetic over them.** Only the classes in
+"Where the shared home stops" earn an entry, and there are exactly two reasons: the store's lifetime is
+the subject, or the class is a capture oracle driving `FactCapture` per arm. The direct writers are not
+on this list, because they migrate. Follow `RetiredVocabularyGuardTest`'s shape, a record per entry with
+an assertion that the entry is still real, so an entry naming a class that no longer stands a store up
+fails the build instead of lingering. That is the only bookkeeping the guard owes: the list stays
+honest, and nobody has to count it.
 
 Nothing in the migration depends on when the guard lands, so the Slices section puts it last, where its
 exception list is only the classes that stay.
@@ -307,12 +342,15 @@ with the one-line note on what its shape carries that a sibling cannot that the 
 prescribes. It takes a caller-supplied graph name over a shared default, captures a second graph into
 an already-open store (`andGraph`, `andGraphSharingTheFile`), and takes the classpath census as a
 factory argument rather than an axis. Its placeholder SDL constant is character-for-character
-`ClassMemberSlotTest`'s, and it makes the same unexamined `new NodeDeclaration(null)` choice. Two
-files, no contact, converging on the same answers and disagreeing on the rest by accident: that is
-the state this item exists to end, and it does not stop at a module line.
+`ClassMemberSlotTest`'s, `ClassAssignableTest`'s and MCP's `StoreFixture`'s: four files declaring the
+same literal under three different constant names, with the same string written inline in a dozen more.
+It also makes the same unexamined `new NodeDeclaration(null)` choice. Independent files, no contact,
+converging on the same answers and disagreeing on the rest by accident: that is the state this item
+exists to end, and it does not stop at a module line.
 
 **The name and the call sites stay.** Most of the module's test classes call `StoreFixture`, so the
-move is not a migration of those call sites. `StoreFixture` remains, under its own name, as `graphitron-lsp`'s
+move is not a migration of those call sites. `StoreFixture` remains, under its own name, as
+`graphitron-lsp`'s
 local layer: it keeps its factory signatures and delegates the store's lifetime, the fixture file and
 the capture call to the shared handle. Its own tests should not need editing, and the references to
 it in the LSP item's body stay live. If a call site has to change, that is a signal the shared handle
@@ -323,9 +361,18 @@ cannot express a shape the LSP needs, which is the finding, not a licence to edi
 of a further graph into an open store, and the classpath-census argument.
 
 **What stays in `graphitron-lsp`** is everything whose subject is the LSP's own read boundary rather
-than the store's shape: `handle()`, `handleFor()`, `reader()`, `tableClassFqn`, `keysClassFqn`, the
-`CompletionData.ExternalReference` builders (`jarClass`, `reactorClass`, `scalarHolder`), the
-`no.sikt.graphitron.lsp.fixtures` census and the jOOQ fixture-package constants.
+than the store's shape: `handle()`, `handleFor()`, `reader()`, `tableClassFqn`, `keysClassFqn`,
+`backingClasses()`, the whole family of `CompletionData` builders (`jarClass`, `reactorClass`,
+`scalarHolder`, `jarRecord`, `reference`, `method`, `component`, `parameter`, `producing`,
+`genericMethod`, `genericParameter`), the `no.sikt.graphitron.lsp.fixtures` census and the jOOQ
+fixture-package constants. Treat that list as the shape of the answer rather than as exhaustive: the
+test is whether a member's subject is the LSP's reads or the store's construction.
+
+`sourceName()` is the one member that does not sort cleanly, and it is worth settling rather than
+discovering. It returns `SchemaSource.file(file).sourceName()`, derived from the fixture file L0 is
+taking over, so its value is a fact about the shared level while its callers are LSP reads. Keep the
+method in `graphitron-lsp` and have it delegate to L0's `fixtureFile`, so the LSP does not hold a
+second opinion about where the fixture lives.
 
 **The post-capture writers move too, and they are the reason the LSP item is a dependency.**
 `withBuildWarnings`, `withJavaSource` and `refreshJavaSources` write into the store after capture, and
@@ -352,11 +399,16 @@ named, the same way the capture shapes are named rather than flagged.
 
 ### `graphitron-maven-plugin`: two inline sites, converted
 
-`DevMojoTest` and `dev/CatalogRefreshTest` open a store inline and write to it directly. They adopt L0
-and nothing else; neither needs a capture factory. This is the smallest part of the item and the one
-most likely to be dropped for being small, which is precisely why it is written down: the guard will
-fail on these two sites, and an exception entry added to silence it would be this item defeating
-itself.
+`DevMojoTest` and `dev/CatalogRefreshTest` open a store inline and write to it directly. They adopt
+L0's store half and nothing else; neither needs a capture factory. This is the smallest part of the
+item and the one most likely to be dropped for being small, which is precisely why it is written down:
+the guard will fail on these two sites, and an exception entry added to silence it would be this item
+defeating itself.
+
+They are also the reason the direct writers elsewhere are converted rather than excepted. These two are
+line-for-line what `compile/CompileFactsTest` and `capture/JavaSourceFactsTest` do, down to the writer
+class each constructs. A rule that converts them and excepts their twins is not a rule, it is a
+coincidence of which module the file happens to sit in.
 
 ### Sequencing against the in-flight items
 
@@ -587,35 +639,49 @@ nothing checks at all, so any class rename in this item must update that surface
 Six slices, following the level order above so each lands on files the previous one has settled. The
 item is too large for one session: four modules, a stack of levels, and one open design question.
 
-**S1: L0.** The store's lifetime, the fixture file with the filename keyed on the graph name, the
-caller-supplied graph identity, `registryOf` / `attributionOf` / `fixtureFile` public, and
-`CapturedStore` widened and moved beside `TestSchemaHelper`. Its current `capture/` readers move with
-it. Acceptance: those readers pass untouched except for the import, and the `WarmStartRefreshTest`
-filename assertion moves knowingly.
+**S1: L0, both halves.** The store's lifetime and the `GraphIdentity`, the fixture file with the
+filename keyed on the graph name, the caller-supplied graph identity, `registryOf` / `attributionOf` /
+`fixtureFile` public, and `CapturedStore` widened and moved beside `TestSchemaHelper`. Its current
+`capture/` readers move with it, and `graphitron`'s four direct writers adopt the store-lifetime half,
+which is what proves that half stands alone. Acceptance: those readers pass untouched except for the
+import, no `graphitron` direct writer still calls `GraphitronModelStore` itself, and the
+`WarmStartRefreshTest` filename assertion moves knowingly.
+
+Note for the implementer: folding the corpus sweeps off their per-example subdirectories moves their
+`GraphIdentity.baseDir` from `tmp/<id>` to `tmp`, and `FactCapture.ownsGraph` compares a recorded
+`base_dir` per graph name. The sweeps use distinct graph names, so one shared `baseDir` is fine. It
+reads risky and it is not; saying so here saves the stop to check.
 
 **S2: L1 inside `graphitron`.** The named capture factories, the census as an argument, the registry
-arm, and the hand-rolled harnesses migrated in batches. This is the slice that resolves the
-node-inference arm, and it owes the discriminating case. Acceptance: every `derive/` and
-`diagnostics/` harness calls the shared home, no `private static Path write(` copy survives there, and
-no assertion content changed.
+arm, the warm re-capture arm MCP's `recaptureCatalog` needs, and the hand-rolled harnesses migrated in
+batches. This is the slice that resolves the node-inference arm, and it owes the discriminating case.
+Acceptance: every `derive/` and `diagnostics/` harness calls the shared home, no
+`private static Path write(` copy survives there, and no assertion content changed.
 
-**S3: `graphitron-mcp`.** Its `StoreFixture` becomes an L3 delegator and `StoreBackedBuild` adopts L0,
-keeping its file-store arm named rather than flagged. Acceptance: no MCP test class is edited.
+**S3: `graphitron-mcp`.** Its `StoreFixture` becomes an L3 delegator keeping `withoutCatalog` and
+`recaptureCatalog` intact, `StoreBackedBuild` adopts L0 keeping its file-store arm named rather than
+flagged, and the two direct writers (`DiagnosticsToolCompileSourceTest`, and `DiagnosticsAggregateTest`
+in its three own-store cases) adopt the store-lifetime half. Acceptance: no class that *calls*
+`StoreFixture` or `StoreBackedBuild` is edited. The direct writers are edited, deliberately: they are
+not L3 consumers, and the untouched-consumers rule below is about consumers.
 
-**S4: `graphitron-maven-plugin`.** The two inline sites adopt L0. Acceptance: neither is left inline
-on the grounds that it is only two, which is the way this slice fails.
+**S4: `graphitron-maven-plugin`.** The two inline sites adopt L0's store half, the same conversion
+their `graphitron` twins took in S1. Acceptance: neither is left inline on the grounds that it is only
+two, which is the way this slice fails.
 
 **S5: `graphitron-lsp`.** `StoreFixture` keeps its name and its readers, and delegates its capture
-half, including the post-capture writers, which is the part that waits on the LSP item. This is also
-where the seeding consolidation and the hand-written `graphql_type` / `graphql_field` twins land, both
-cross-cutting enough to want the whole set in view. Acceptance: no LSP test class is edited.
+half, including the post-capture writers, which is the part that waits on the LSP item.
+`RejectionSeverityCoverageTest` adopts the store-lifetime half as the other direct writers did. This
+is also where the seeding consolidation and the hand-written `graphql_type` / `graphql_field` twins
+land, both cross-cutting enough to want the whole set in view. Acceptance: no class that calls
+`StoreFixture` is edited.
 
 **S6: the guard.** Last, so its exception list is only the classes that stay: the store-mechanics
-tests, the direct writers and the capture oracles, each with its reason. Acceptance: it fails on a
-source that stands a store up outside the shared home, proved by a negative case; it fails on an
-exception entry whose class no longer stands a store up, proved the same way; and it passes on the tree.
-An implementer who wants the guard earlier may take it earlier, carrying temporary entries for the
-modules not yet migrated, but nothing later depends on that choice.
+tests and the capture oracles, each with its reason. Acceptance: it fails on a source that stands a
+store up outside the shared home, proved by a negative case; it fails on an exception entry whose class
+no longer stands a store up, proved the same way; and it passes on the tree. An implementer who wants
+the guard earlier may take it earlier, carrying temporary entries for the modules not yet migrated, but
+nothing later depends on that choice.
 
 What must not happen is a rehome landing on top of a file another item is still rewriting, which the
 slice order is arranged to avoid. The item reaches Done when all four modules are on the shared home
@@ -630,9 +696,14 @@ that the assertion should be relaxed. The node-inference axis is the one to watc
 
 The three downstream modules carry a second, sharper acceptance, because their call sites are not
 being migrated: `StoreFixture`'s and `StoreBackedBuild`'s own consumers should be untouched. A diff
-that edits an LSP or MCP test class is reporting that the shared level cannot express a shape that
-module needs. Treat that as the finding and widen the shared level, rather than adjusting the test to
-suit it.
+that edits a class *calling* one of those fixtures is reporting that the shared level cannot express a
+shape that module needs. Treat that as the finding and widen the shared level, rather than adjusting
+the test to suit it.
+
+The rule is about consumers, and the direct writers downstream are not consumers: they stand their own
+store up and never call the module's fixture, so converting them is the work rather than a violation of
+it. Reading the rule as "no downstream test class changes" would strand exactly the classes the
+maven-plugin pair are being converted for.
 
 The guard is the one genuinely new test, and it needs its own negative case: a fixture source that
 stands a store up outside the shared home must fail it. A guard whose passing state is the only state
@@ -655,7 +726,8 @@ takes on `CapturedStore`, and the guard is what catches the author who reads nei
 ## Out of scope
 
 * Changing what any migrated class asserts, and editing the L3 call sites in `graphitron-lsp` or
-  `graphitron-mcp` at all.
+  `graphitron-mcp` at all. The downstream direct writers are not L3 call sites; they call no fixture,
+  and converting them is in scope per the slices above.
 * Reshaping `FactCapture`'s own overload set. The 5-arg overload is a reasonable public default and
   this item consumes it.
 * Pushing `StoreBackedBuild` onto the L1 capture factories. Its population is a real `buildOutput()`
