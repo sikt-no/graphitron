@@ -4,9 +4,12 @@ import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.Record1;
+import org.jooq.Record2;
+import org.jooq.Records;
+import org.jooq.Select;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,7 +21,14 @@ import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static org.jooq.impl.DSL.concat;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.row;
+import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * This module's own reads over the {@code sql_} catalog census, shaped by what the structured catalog
@@ -137,8 +147,9 @@ final class CatalogQueries {
     }
 
     /**
-     * One table's description: everything the {@code sql_} family says about it, assembled inside one
-     * read transaction so the columns of one capture cannot appear beside the keys of the next.
+     * One table's description: everything the {@code sql_} family says about it, projected in one
+     * statement at the table's own grain, so the columns of one capture cannot appear beside the keys
+     * of the next.
      *
      * @param comment the database comment, {@code null} where the table carries none
      */
@@ -181,23 +192,31 @@ final class CatalogQueries {
      * @param otherTable the neighbour at the far end, schema-qualified: the referenced table for an
      *     outgoing key and the declaring table for an incoming one, so one row shape serves both
      *     directions and the wire names the slot
-     * @param columns the referencing table's columns, in the constraint's order
-     * @param targetColumns the referenced constraint's own columns, paired to {@link #columns} by
-     *     position
+     * @param columnPairs the constraint's columns in its own order, each paired with the referenced
+     *     column at the same position. One list of pairs rather than two parallel lists, because the
+     *     pairing is what the read guarantees: two lists can disagree in length or in order and still
+     *     look like an answer, where a pair cannot. The wire's two arrays are the transposition of
+     *     this, taken where the contract asks for them
      */
-    record ForeignKeyEntry(
-        String constraintName, String otherTable, List<String> columns, List<String> targetColumns
-    ) {}
+    record ForeignKeyEntry(String constraintName, String otherTable, List<ColumnPair> columnPairs) {}
+
+    /**
+     * One position of a foreign key: the referencing column and the referenced column that sits at the
+     * same position in the referenced constraint.
+     */
+    record ColumnPair(String column, String targetColumn) {}
 
     /**
      * Describes the table {@code tableArg} names, reading the census through {@code reader} inside one
      * transaction.
      *
      * <p>The reader rather than the handle the other tools query through, and that is the whole reason
-     * this method takes one. An answer here is six queries, so on a shared connection it would see one
-     * capture commit between its columns and its keys and report a table that never existed; the
-     * handle's connection belongs to the session's writer, where a nested transaction is a savepoint
-     * rather than a boundary. Reading through a second connection makes the consistency structural.
+     * this method takes one. An answer here is two statements, one resolving the spelling and one
+     * projecting the table, so on a shared connection a capture commit could land between them and the
+     * description would come back empty for a table the resolution had just found; the handle's
+     * connection belongs to the session's writer, where a nested transaction is a savepoint rather than
+     * a boundary. Reading through a second connection makes the consistency structural. What can no
+     * longer happen at all is a description tearing internally, the whole of it being one statement.
      * The reader is minted by the host and closed by the host, which is what keeps this module a store
      * client rather than a store owner.
      *
@@ -225,6 +244,13 @@ final class CatalogQueries {
      * <p>Ambiguity is reported only for a bare spelling. A qualified one names a schema, and within a
      * graph a {@code (schema, table)} pair identifies one row, so a second match there would mean one
      * schema generated into two packages rather than a question about which table was meant.
+     *
+     * <p>A read of its own rather than a grain of the description, which is where the one-projection
+     * rule draws its own boundary. Whether a spelling names one table, two or none decides between
+     * describing a table, naming candidate schemas and reporting nothing found: a different question
+     * from "describe this table", and the answer to it is what says whether the other question is worth
+     * asking. Folding the two would project a whole description per candidate to discover that the
+     * spelling was ambiguous.
      */
     private static TableResolution resolve(StoreHandle store, Spelling spelling) {
         var filters = new ArrayList<Condition>();
@@ -233,8 +259,7 @@ final class CatalogQueries {
         spelling.schema().ifPresent(s -> filters.add(SQL_TABLE.TABLE_SCHEMA.equalIgnoreCase(s)));
 
         var matches = store.dsl()
-            .select(SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME,
-                SQL_TABLE.DESCRIPTION)
+            .select(SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME)
             .from(SQL_TABLE)
             .where(filters)
             .orderBy(SQL_TABLE.TABLE_SCHEMA.asc())
@@ -248,14 +273,50 @@ final class CatalogQueries {
                 List.copyOf(matches.getValues(SQL_TABLE.TABLE_SCHEMA)));
         }
         var row = matches.getFirst();
-        var key = new TableKey(row.value1(), row.value2(), row.value3());
-        var keys = keys(store, key);
-        return new TableResolution.Resolved(new TableDetail(
-            key.schema(), key.name(), row.value4(),
-            columns(store, key),
-            keys.primaryKey(), keys.uniqueKeys(),
-            indexes(store, key),
-            outgoing(store, key), incoming(store, key)));
+        return new TableResolution.Resolved(
+            describeTable(store, new TableKey(row.value1(), row.value2(), row.value3())));
+    }
+
+    /**
+     * The whole description of one resolved table, projected in one statement at the table's own grain.
+     *
+     * <p>Every child list is a {@code MULTISET} correlated to the table row by the foreign key it
+     * already carries, and the two lists that are themselves lists of lists (a key's or an index's
+     * columns) nest a second {@code MULTISET} inside the first. Nothing is grouped afterwards, which is
+     * what removes the three ways a folded read goes wrong: a grouping key invented in Java can be
+     * invented wrong, a consistency the statement holds needs no argument, and a child list that
+     * multiplies the parent row count cannot arise from a projection that never joins siblings
+     * together.
+     *
+     * <p>{@code fetchSingle} rather than a fetch that tolerates nothing coming back: the key was
+     * resolved against this same census inside this same transaction, so no row here would mean the
+     * transaction is not the one the resolution ran in.
+     */
+    private static TableDetail describeTable(StoreHandle store, TableKey key) {
+        return store.dsl()
+            .select(
+                SQL_TABLE.TABLE_SCHEMA,
+                SQL_TABLE.TABLE_NAME,
+                SQL_TABLE.DESCRIPTION,
+                columns(),
+                primaryKey(),
+                uniqueKeys(),
+                indexes(),
+                foreignKeys(
+                    childOf(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME,
+                        SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA,
+                        SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME),
+                    qualified(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA,
+                        SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE)),
+                foreignKeys(
+                    childOf(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME,
+                        SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA,
+                        SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE),
+                    qualified(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA,
+                        SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME)))
+            .from(SQL_TABLE)
+            .where(scopedTo(key, SQL_TABLE.SOURCE_NAME, SQL_TABLE.TABLE_SCHEMA, SQL_TABLE.TABLE_NAME))
+            .fetchSingle(Records.mapping(TableDetail::new));
     }
 
     /**
@@ -267,9 +328,6 @@ final class CatalogQueries {
      */
     private record TableKey(String sourceName, String schema, String name) {}
 
-    /** A table's keys, split by the relation that says which one is the primary. */
-    private record Keys(Optional<KeyEntry> primaryKey, List<KeyEntry> uniqueKeys) {}
-
     /** The predicate binding one of the {@code sql_} relations to a resolved table. */
     private static Condition scopedTo(
         TableKey key, Field<String> source, Field<String> schema, Field<String> table
@@ -280,194 +338,196 @@ final class CatalogQueries {
     }
 
     /**
+     * The predicate correlating a child relation to the table row being described, which is the
+     * foreign key that relation declares against {@code sql_table} spelled as a join. Every nested
+     * list below hangs off this rather than off the key's values: a correlation the census guarantees
+     * cannot pair a child with the wrong parent, where a predicate over copied-down values is one
+     * transcription away from doing exactly that.
+     */
+    private static Condition childOf(
+        Field<String> source, Field<String> schema, Field<String> table
+    ) {
+        return source.eq(SQL_TABLE.SOURCE_NAME)
+            .and(schema.eq(SQL_TABLE.TABLE_SCHEMA))
+            .and(table.eq(SQL_TABLE.TABLE_NAME));
+    }
+
+    /** A schema-qualified table name composed in SQL, the form every catalog tool hands back. */
+    private static Field<String> qualified(Field<String> schema, Field<String> table) {
+        return concat(schema, inline("."), table);
+    }
+
+    /**
      * The table's columns in {@code ordinal} order, which is the position {@code Table.fields()}
      * states and therefore the table definition's. The projection this replaced carried a reflective
      * field walk's order, which is documented as no order in particular.
      */
-    private static List<ColumnEntry> columns(StoreHandle store, TableKey key) {
-        return store.dsl()
-            .select(SQL_COLUMN.COLUMN_NAME, SQL_COLUMN.JOOQ_NAME, SQL_COLUMN.SQL_TYPE,
+    private static Field<List<ColumnEntry>> columns() {
+        return multiset(
+            select(SQL_COLUMN.COLUMN_NAME, SQL_COLUMN.JOOQ_NAME, SQL_COLUMN.SQL_TYPE,
                 SQL_COLUMN.NULLABLE, SQL_COLUMN.DESCRIPTION)
-            .from(SQL_COLUMN)
-            .where(scopedTo(key, SQL_COLUMN.SOURCE_NAME, SQL_COLUMN.TABLE_SCHEMA,
-                SQL_COLUMN.TABLE_NAME))
-            .orderBy(SQL_COLUMN.ORDINAL.asc())
-            .fetch(r -> new ColumnEntry(r.value1(), r.value2(), r.value3(), r.value4(), r.value5()));
+                .from(SQL_COLUMN)
+                .where(childOf(SQL_COLUMN.SOURCE_NAME, SQL_COLUMN.TABLE_SCHEMA,
+                    SQL_COLUMN.TABLE_NAME))
+                .orderBy(SQL_COLUMN.ORDINAL.asc()))
+            .convertFrom(r -> r.map(Records.mapping(ColumnEntry::new)));
     }
 
     /**
-     * The table's primary and unique keys with their columns, ordered by constraint name and within a
-     * key by the constraint's own column position.
+     * The table's primary key, which is at most one constraint and so arrives as an {@code Optional}
+     * taken off a list the census can only fill with one row.
      *
      * <p>Which key is the primary comes from {@code sql_primary_key} rather than from the type
      * discriminator beside it, because that relation is keyed by the table and so answers with at most
      * one; reading the discriminator would leave a second {@code PRIMARY KEY} row to be picked between.
-     * The join to it is outer for the same reason it is a join at all: a table need not have one.
-     *
-     * <p>Every unique constraint the database declares is reported, including one whose columns the
-     * primary key already covers. Row-identity matching wants distinct column sets and dedups for
-     * itself; a description that dedupped was applying that consumer's rule to everyone asking.
      */
-    private static Keys keys(StoreHandle store, TableKey key) {
-        var rows = store.dsl()
-            .select(SQL_CONSTRAINT.CONSTRAINT_NAME, SQL_CONSTRAINT_COLUMN.COLUMN_NAME,
-                SQL_PRIMARY_KEY.CONSTRAINT_NAME)
+    private static Field<Optional<KeyEntry>> primaryKey() {
+        return multiset(keyConstraints(exists(primaryKeyRow())))
+            .convertFrom(r -> r.map(Records.mapping(KeyEntry::new)).stream().findFirst());
+    }
+
+    /**
+     * The table's unique constraints: every key the database declares except the one
+     * {@code sql_primary_key} names, which the complementary predicate takes out rather than a Java
+     * pass over one list.
+     *
+     * <p>Every unique constraint is reported, including one whose columns the primary key already
+     * covers. Row-identity matching wants distinct column sets and dedups for itself; a description
+     * that dedupped was applying that consumer's rule to everyone asking.
+     */
+    private static Field<List<KeyEntry>> uniqueKeys() {
+        return multiset(keyConstraints(notExists(primaryKeyRow())))
+            .convertFrom(r -> r.map(Records.mapping(KeyEntry::new)));
+    }
+
+    /**
+     * The table's primary and unique keys narrowed by {@code primaryness}, ordered by constraint name,
+     * each carrying its own columns in the constraint's column order.
+     *
+     * <p>The type predicate names {@code PRIMARY KEY} and {@code UNIQUE} rather than excluding
+     * {@code FOREIGN KEY}, so a type the census learns to write arrives as a row nobody asked for
+     * instead of as a key nobody declared.
+     */
+    private static Select<Record2<String, List<String>>> keyConstraints(Condition primaryness) {
+        return select(SQL_CONSTRAINT.CONSTRAINT_NAME, constraintColumns())
             .from(SQL_CONSTRAINT)
-            .join(SQL_CONSTRAINT_COLUMN).on(
-                SQL_CONSTRAINT_COLUMN.SOURCE_NAME.eq(SQL_CONSTRAINT.SOURCE_NAME)
+            .where(childOf(SQL_CONSTRAINT.SOURCE_NAME, SQL_CONSTRAINT.TABLE_SCHEMA,
+                SQL_CONSTRAINT.TABLE_NAME))
+            .and(SQL_CONSTRAINT.CONSTRAINT_TYPE.in(PRIMARY_KEY, UNIQUE))
+            .and(primaryness)
+            .orderBy(SQL_CONSTRAINT.CONSTRAINT_NAME.asc());
+    }
+
+    /** The {@code sql_primary_key} row for the constraint being projected, if it is the primary key. */
+    private static Select<?> primaryKeyRow() {
+        return selectOne()
+            .from(SQL_PRIMARY_KEY)
+            .where(SQL_PRIMARY_KEY.SOURCE_NAME.eq(SQL_CONSTRAINT.SOURCE_NAME)
+                .and(SQL_PRIMARY_KEY.TABLE_SCHEMA.eq(SQL_CONSTRAINT.TABLE_SCHEMA))
+                .and(SQL_PRIMARY_KEY.TABLE_NAME.eq(SQL_CONSTRAINT.TABLE_NAME))
+                .and(SQL_PRIMARY_KEY.CONSTRAINT_NAME.eq(SQL_CONSTRAINT.CONSTRAINT_NAME)));
+    }
+
+    /** One constraint's columns in its own column order, correlated to the constraint being projected. */
+    private static Field<List<String>> constraintColumns() {
+        return multiset(
+            select(SQL_CONSTRAINT_COLUMN.COLUMN_NAME)
+                .from(SQL_CONSTRAINT_COLUMN)
+                .where(SQL_CONSTRAINT_COLUMN.SOURCE_NAME.eq(SQL_CONSTRAINT.SOURCE_NAME)
                     .and(SQL_CONSTRAINT_COLUMN.TABLE_SCHEMA.eq(SQL_CONSTRAINT.TABLE_SCHEMA))
                     .and(SQL_CONSTRAINT_COLUMN.TABLE_NAME.eq(SQL_CONSTRAINT.TABLE_NAME))
                     .and(SQL_CONSTRAINT_COLUMN.CONSTRAINT_NAME.eq(SQL_CONSTRAINT.CONSTRAINT_NAME)))
-            .leftJoin(SQL_PRIMARY_KEY).on(
-                SQL_PRIMARY_KEY.SOURCE_NAME.eq(SQL_CONSTRAINT.SOURCE_NAME)
-                    .and(SQL_PRIMARY_KEY.TABLE_SCHEMA.eq(SQL_CONSTRAINT.TABLE_SCHEMA))
-                    .and(SQL_PRIMARY_KEY.TABLE_NAME.eq(SQL_CONSTRAINT.TABLE_NAME))
-                    .and(SQL_PRIMARY_KEY.CONSTRAINT_NAME.eq(SQL_CONSTRAINT.CONSTRAINT_NAME)))
-            .where(scopedTo(key, SQL_CONSTRAINT.SOURCE_NAME, SQL_CONSTRAINT.TABLE_SCHEMA,
-                SQL_CONSTRAINT.TABLE_NAME))
-            .and(SQL_CONSTRAINT.CONSTRAINT_TYPE.in(PRIMARY_KEY, UNIQUE))
-            .orderBy(SQL_CONSTRAINT.CONSTRAINT_NAME.asc(), SQL_CONSTRAINT_COLUMN.POSITION.asc())
-            .fetch();
-
-        var columnsByConstraint = new LinkedHashMap<String, List<String>>();
-        String primaryKeyName = null;
-        for (var row : rows) {
-            columnsByConstraint.computeIfAbsent(row.value1(), c -> new ArrayList<>()).add(row.value2());
-            if (row.value3() != null) {
-                primaryKeyName = row.value1();
-            }
-        }
-
-        Optional<KeyEntry> primaryKey = Optional.empty();
-        var uniqueKeys = new ArrayList<KeyEntry>();
-        for (var constraint : columnsByConstraint.entrySet()) {
-            var entry = new KeyEntry(constraint.getKey(), List.copyOf(constraint.getValue()));
-            if (entry.constraintName().equals(primaryKeyName)) {
-                primaryKey = Optional.of(entry);
-            } else {
-                uniqueKeys.add(entry);
-            }
-        }
-        return new Keys(primaryKey, List.copyOf(uniqueKeys));
+                .orderBy(SQL_CONSTRAINT_COLUMN.POSITION.asc()))
+            .convertFrom(r -> r.map(Record1::value1));
     }
 
     /**
      * The table's indexes with their columns, ordered by index name and within an index by position.
      *
-     * <p>The column join is inner and stays inner: an index has columns, so a left join would widen
-     * the shape to admit a row the census cannot write. What is genuinely absent here is the indexes
-     * backing a primary key or unique constraint, which {@code sql_index}'s own documentation records
-     * as excluded by what jOOQ reports; those appear among the keys above instead.
+     * <p>What is genuinely absent here is the indexes backing a primary key or unique constraint,
+     * which {@code sql_index}'s own documentation records as excluded by what jOOQ reports; those
+     * appear among the keys instead.
      */
-    private static List<IndexEntry> indexes(StoreHandle store, TableKey key) {
-        var rows = store.dsl()
-            .select(SQL_INDEX.INDEX_NAME, SQL_INDEX_COLUMN.COLUMN_NAME)
-            .from(SQL_INDEX)
-            .join(SQL_INDEX_COLUMN).on(
-                SQL_INDEX_COLUMN.SOURCE_NAME.eq(SQL_INDEX.SOURCE_NAME)
+    private static Field<List<IndexEntry>> indexes() {
+        return multiset(
+            select(SQL_INDEX.INDEX_NAME, indexColumns())
+                .from(SQL_INDEX)
+                .where(childOf(SQL_INDEX.SOURCE_NAME, SQL_INDEX.TABLE_SCHEMA, SQL_INDEX.TABLE_NAME))
+                .orderBy(SQL_INDEX.INDEX_NAME.asc()))
+            .convertFrom(r -> r.map(Records.mapping(IndexEntry::new)));
+    }
+
+    /** One index's columns in index order, correlated to the index being projected. */
+    private static Field<List<String>> indexColumns() {
+        return multiset(
+            select(SQL_INDEX_COLUMN.COLUMN_NAME)
+                .from(SQL_INDEX_COLUMN)
+                .where(SQL_INDEX_COLUMN.SOURCE_NAME.eq(SQL_INDEX.SOURCE_NAME)
                     .and(SQL_INDEX_COLUMN.TABLE_SCHEMA.eq(SQL_INDEX.TABLE_SCHEMA))
                     .and(SQL_INDEX_COLUMN.TABLE_NAME.eq(SQL_INDEX.TABLE_NAME))
                     .and(SQL_INDEX_COLUMN.INDEX_NAME.eq(SQL_INDEX.INDEX_NAME)))
-            .where(scopedTo(key, SQL_INDEX.SOURCE_NAME, SQL_INDEX.TABLE_SCHEMA, SQL_INDEX.TABLE_NAME))
-            .orderBy(SQL_INDEX.INDEX_NAME.asc(), SQL_INDEX_COLUMN.POSITION.asc())
-            .fetch();
-
-        var columnsByIndex = new LinkedHashMap<String, List<String>>();
-        for (var row : rows) {
-            columnsByIndex.computeIfAbsent(row.value1(), i -> new ArrayList<>()).add(row.value2());
-        }
-        return columnsByIndex.entrySet().stream()
-            .map(index -> new IndexEntry(index.getKey(), List.copyOf(index.getValue())))
-            .toList();
+                .orderBy(SQL_INDEX_COLUMN.POSITION.asc()))
+            .convertFrom(r -> r.map(Record1::value1));
     }
-
-    /** The foreign keys this table declares, reported by what each one references. */
-    private static List<ForeignKeyEntry> outgoing(StoreHandle store, TableKey key) {
-        return foreignKeys(store, scopedTo(key, SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME,
-            SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA, SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
-            .stream()
-            .map(fk -> new ForeignKeyEntry(
-                fk.constraintName(), fk.referencedTable(), fk.columns(), fk.targetColumns()))
-            .toList();
-    }
-
-    /** The foreign keys other tables declare against this one, reported by what declares each. */
-    private static List<ForeignKeyEntry> incoming(StoreHandle store, TableKey key) {
-        return foreignKeys(store, scopedTo(key, SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME,
-            SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA, SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
-            .stream()
-            .map(fk -> new ForeignKeyEntry(
-                fk.constraintName(), fk.declaringTable(), fk.columns(), fk.targetColumns()))
-            .toList();
-    }
-
-    /** One foreign key with both endpoints named, before a direction picks which end to report. */
-    private record Fk(
-        String constraintName, String declaringTable, String referencedTable,
-        List<String> columns, List<String> targetColumns
-    ) {}
-
-    /** The identity of a foreign key: the declaring table's whole key plus the constraint name. */
-    private record FkId(String source, String schema, String table, String name) {}
 
     /**
-     * The foreign keys at {@code endpoint}, whichever end that binds, with both column lists paired.
+     * The foreign keys whose {@code endpoint} end is this table, each naming its {@code neighbour} at
+     * the far end and carrying its column pairs.
      *
-     * <p>The pairing is a join on position rather than a zip in Java. A foreign key's target columns
-     * are the referenced constraint's own rows matched on position, which
-     * {@code sql_referential_constraint} documents as guaranteed by SQL semantics and never copied
-     * onto the referencing row; expressing that as {@code ON referenced.position =
-     * referencing.position} makes a mispairing unrepresentable, where two lists assembled separately
-     * and zipped afterwards can disagree in length or in order and still look like an answer.
+     * <p>One field per direction rather than one read that reports both, because the two ends are two
+     * lists on the wire and the predicate that selects each is the whole difference between them. Order
+     * is by the declaring table then the constraint name, which for the outgoing direction is the
+     * constraint name alone, this table being the only declarer there.
      *
-     * <p>Grouped by the declaring table's whole key rather than by the constraint name, which is
-     * unique per table and not per schema. In the incoming direction two tables declaring a
-     * same-named key against this one are two keys, and grouping by name would fold them into one
-     * with both column lists concatenated.
+     * <p>Never grouped by the constraint name, which is unique per table and not per schema: in the
+     * incoming direction two tables declaring a same-named key against this one are two keys, and a
+     * fold keyed by name would concatenate their column lists into one. The projection is keyed by the
+     * relation's own key, so the question does not arise.
      */
-    private static List<Fk> foreignKeys(StoreHandle store, Condition endpoint) {
+    private static Field<List<ForeignKeyEntry>> foreignKeys(
+        Condition endpoint, Field<String> neighbour
+    ) {
+        return multiset(
+            select(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME, neighbour, columnPairs())
+                .from(SQL_REFERENTIAL_CONSTRAINT)
+                .where(endpoint)
+                .orderBy(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA.asc(),
+                    SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME.asc(),
+                    SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME.asc()))
+            .convertFrom(r -> r.map(Records.mapping(ForeignKeyEntry::new)));
+    }
+
+    /**
+     * One foreign key's columns paired with the columns they reference, in the constraint's own order.
+     *
+     * <p>The pairing is a join on position. A foreign key's target columns are the referenced
+     * constraint's own rows matched on position, which {@code sql_referential_constraint} documents as
+     * guaranteed by SQL semantics and never copied onto the referencing row; expressing that as
+     * {@code ON referenced.position = referencing.position} makes a mispairing unrepresentable, and
+     * projecting the result as pairs carries that guarantee out of the query rather than dropping it at
+     * the boundary.
+     */
+    private static Field<List<ColumnPair>> columnPairs() {
         var referencing = SQL_CONSTRAINT_COLUMN.as("referencing");
         var referenced = SQL_CONSTRAINT_COLUMN.as("referenced");
 
-        var rows = store.dsl()
-            .select(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME, SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA,
-                SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME, SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME,
-                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA,
-                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE,
-                referencing.COLUMN_NAME, referenced.COLUMN_NAME)
-            .from(SQL_REFERENTIAL_CONSTRAINT)
-            .join(referencing).on(
-                referencing.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)
+        return multiset(
+            select(referencing.COLUMN_NAME, referenced.COLUMN_NAME)
+                .from(referencing)
+                .join(referenced).on(
+                    referenced.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME)
+                        .and(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
+                        .and(referenced.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
+                        .and(referenced.CONSTRAINT_NAME
+                            .eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME))
+                        .and(referenced.POSITION.eq(referencing.POSITION)))
+                .where(referencing.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)
                     .and(referencing.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
                     .and(referencing.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
-                    .and(referencing.CONSTRAINT_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME)))
-            .join(referenced).on(
-                referenced.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME)
-                    .and(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
-                    .and(referenced.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
-                    .and(referenced.CONSTRAINT_NAME
-                        .eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME))
-                    .and(referenced.POSITION.eq(referencing.POSITION)))
-            .where(endpoint)
-            .orderBy(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA.asc(),
-                SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME.asc(),
-                SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME.asc(), referencing.POSITION.asc())
-            .fetch();
-
-        // Accumulated with growable lists and rebuilt immutable below, one row per column position.
-        var byKey = new LinkedHashMap<FkId, Fk>();
-        for (var row : rows) {
-            var id = new FkId(row.value1(), row.value2(), row.value3(), row.value4());
-            var fk = byKey.computeIfAbsent(id, i -> new Fk(i.name(),
-                i.schema() + "." + i.table(), row.value5() + "." + row.value6(),
-                new ArrayList<>(), new ArrayList<>()));
-            fk.columns().add(row.value7());
-            fk.targetColumns().add(row.value8());
-        }
-        return byKey.values().stream()
-            .map(fk -> new Fk(fk.constraintName(), fk.declaringTable(), fk.referencedTable(),
-                List.copyOf(fk.columns()), List.copyOf(fk.targetColumns())))
-            .toList();
+                    .and(referencing.CONSTRAINT_NAME
+                        .eq(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME)))
+                .orderBy(referencing.POSITION.asc()))
+            .convertFrom(r -> r.map(Records.mapping(ColumnPair::new)));
     }
 
     /**

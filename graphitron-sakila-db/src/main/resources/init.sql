@@ -587,6 +587,39 @@ CREATE TABLE redundant_unique_key (
 
 ALTER TABLE redundant_unique_key ADD CONSTRAINT redundant_unique_key_entry_id_uk UNIQUE (entry_id);
 
+-- Catalog-discovery fixture: one table where every list a table description carries is non-empty at
+-- once. A description is projected as one query whose child lists are nested subqueries correlated to
+-- the table row, and the failure mode of that shape is a child list landing on the wrong parent or
+-- carrying a sibling's rows. Neither is visible unless there is something to confuse it with, so this
+-- table declares a primary key and a unique constraint over different columns, two indexes over
+-- different column lists, a multi-column outgoing foreign key, and an incoming one from the leaf
+-- below. Every other fixture here leaves at least one of those empty, which is why the shape had
+-- nowhere to be seen. No seed rows: nothing selects from these, their declarations being the whole of
+-- what they carry.
+--
+-- The indexes are the two declared here and no others. PostgreSQL builds a unique index behind each of
+-- the two constraints, and jOOQ's Table.getIndexes() excludes those, so the census reports exactly the
+-- two named ones. A description listing four would mean that exclusion had stopped holding.
+CREATE TABLE describe_hub (
+    hub_id     integer     PRIMARY KEY,
+    hub_code   varchar(64) NOT NULL,
+    org_id     integer     NOT NULL,
+    project_id integer     NOT NULL,
+    label      varchar(64) NOT NULL,
+    CONSTRAINT describe_hub_hub_code_uk UNIQUE (hub_code),
+    CONSTRAINT describe_hub_project_fkey FOREIGN KEY (org_id, project_id)
+        REFERENCES project(org_id, project_id)
+);
+
+CREATE INDEX describe_hub_label_idx ON describe_hub(label);
+CREATE INDEX describe_hub_org_label_idx ON describe_hub(org_id, label);
+
+CREATE TABLE describe_hub_leaf (
+    leaf_id integer PRIMARY KEY,
+    hub_id  integer NOT NULL,
+    CONSTRAINT describe_hub_leaf_hub_fkey FOREIGN KEY (hub_id) REFERENCES describe_hub(hub_id)
+);
+
 -- R338 execution-tier fixture: a parent referenced through a *non-PK unique key*, plus a child
 -- whose FK targets that unique column (split_parent_tag.parent_code -> split_parent.parent_code,
 -- the UNIQUE column, not the parent_id PK). A @splitQuery list field on the parent must project

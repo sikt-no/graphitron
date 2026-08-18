@@ -545,26 +545,63 @@ columns in constraint position order, the same for indexes, and a `MULTISET` per
 direction with the positional pairing of referencing to referenced columns expressed as the join it
 already is. `Records.mapping` lands each level on the record it already has.
 
+Every child list correlates to the table row through the foreign key the child relation already
+declares against `sql_table`, and every nested child to its own parent the same way, so the H2
+rendering is one `SELECT ... FROM sql_table WHERE <resolved key>` carrying six correlated
+`json_arrayagg` subqueries, two of which nest a second. Nothing is grouped after the fetch.
+
+The primary key and the unique keys are two fields rather than one list partitioned in Java, split by
+`EXISTS` / `NOT EXISTS` against `sql_primary_key`. That relation is keyed by the table, so it answers
+with at most one row and the complementary predicate is a partition the census guarantees. The
+schema-qualified neighbour name each foreign key reports is composed in SQL too, so the whole answer
+including its ids arrives shaped.
+
 The spelling resolution stays a separate read, and that is the rule's own boundary rather than an
 exception to it. Resolving `film` against the census asks whether one table, two or none match, and
 the answer decides between describing a table, naming candidate schemas and reporting nothing found.
 That is a different question from "describe this table", not a grain of the same answer.
 
 **Deletes.** Both `LinkedHashMap<String, List<String>>` accumulators (keys, indexes), the `FkId`
-grouping record, the mutable-list `Fk` built-then-rebuilt-immutable pass, and the `foreignKeys`
-fold. The `scopedTo` predicate helper survives as the nesting's correlation.
+grouping record, the mutable-list `Fk` built-then-rebuilt-immutable pass, the `foreignKeys` fold, and
+the `Keys` pair record that carried the split the two key fields now express directly. The `scopedTo`
+predicate helper survives, narrowing the outer read to the resolved key, beside a `childOf` helper
+that is the nesting's correlation.
 
-Two paragraphs of javadoc retire with them. The consistency argument for taking a `StoreReader` (five
-queries could straddle a capture commit) is answered by the statement being one statement; the reader
-stays, on the plainer ground that a read must not ride the session writer's connection, and its
-javadoc says that instead. And the note explaining why the foreign-key pairing is a positional join
-rather than a Java zip keeps its point but loses its contrast, the zip having no successor to be
-contrasted with.
+`ForeignKeyEntry` changes shape with them, from two parallel `List<String>` column lists to one
+`List<ColumnPair>`. The positional join already made a mispairing unrepresentable inside the query,
+and two parallel lists dropped that guarantee at the boundary the moment the read returned; a list of
+pairs carries it out. The wire still publishes two arrays, transposed from the pairs in the wire
+mapper, where the contract asks for them.
+
+One javadoc paragraph retires, the note contrasting the positional join with a Java zip, the zip
+having no successor to be contrasted with. The consistency argument for taking a `StoreReader` does
+*not* retire, and the earlier reading of this slice was wrong to say the statement being one
+statement answers it. An answer is still two statements: the spelling resolution and the description.
+A capture commit landing between them would have the description come back empty for a table the
+resolution had just found, so the transaction still does work. What can no longer happen is a
+description tearing internally, and the javadoc says that instead of counting five queries.
 
 **Wire.** Unchanged in every field and every order, which is what makes this slice cheap to verify:
 the existing `catalog.describe` cases pass untouched. The deltas this tool declared when it first
 landed (unique keys the primary key covers are reported, the key / index / foreign-key lists ordered
 by name, columns in `ordinal` order) were already delivered and are not revisited.
+
+**A fixture, because no table could express the case.** The failure mode of a nested projection is a
+child list landing on the wrong parent, or carrying a sibling's rows, and every such list still reads
+as an answer. So the new case needs a table where every list is non-empty at once, and the census had
+none: the whole fixture database declared exactly one index, on `actor`, and no test asserted the
+`indexes` field at all. With one index in the census, an index read that forgot its correlation
+entirely returns that one index for every table and looks correct.
+
+So `describe_hub` and `describe_hub_leaf` join the fixture, declaring between them a primary key and a
+unique constraint over *different* columns, two indexes over different column lists, a multi-column
+outgoing foreign key, and an incoming one. No seed rows; their declarations are the whole of what they
+carry, as `redundant_unique_key` already established. `jooq.codegen.schema.version` bumps with them,
+which is what forces regeneration on an incremental build.
+
+That closes a real gap rather than restating a passing test. Cutting the index-column correlation makes
+the new case report both indexes carrying both indexes' columns; before the fixture, the same cut
+passed the whole suite.
 
 **Leaves behind.** No accessor count changes; this slice reads no projection either before or after.
 
@@ -1359,6 +1396,11 @@ wrong: a table whose keys, indexes and both foreign-key directions are all non-e
 mis-correlated `MULTISET` shows up as a child list attached to the wrong parent rather than as an
 empty one. The existing foreign-key pairing case covers the ordering half.
 
+No fixture table could carry that case, which is what the slice discovered rather than assumed: the
+census declared one index in total and no case read the `indexes` field, so the whole index read was
+unguarded and a correlation cut anywhere in it passed. `describe_hub` and `describe_hub_leaf` exist for
+this, and the new case is mutation-checked against the cut it was written for.
+
 **Slice 6, the `code` tool.** The three old blocks' assertions survive and become three `kind` cases
 on one tool: the same class refs, method refs, components and `location` / `locationStatus` fields,
 against a store captured from the test sources rather than against a hand-built scan. One case is new
@@ -1625,9 +1667,13 @@ is the kind that survives in prose long after the code goes, so it leads.
   with them; "the conditions tool is the condition-filtered view" retires as a cross-reference between
   tools and returns as a sentence about one tool's `kind` argument
 * "several queries in one read transaction" as the shape of an answer, with the multi-query tearing
-  argument that justified it, the `FkId` grouping key, and "folding the rows" as a step a reader has.
-  What replaces all of it is one nested projection, and the reader's remaining justification is that a
-  read must not ride the writer's connection
+  argument that justified it, the `FkId` grouping key, the `Keys` pair record, and "folding the rows"
+  as a step a reader has. What replaces all of it is one nested projection. The reader's justification
+  narrows rather than retiring: a read must not ride the writer's connection, and two statements are
+  still two statements
+* two parallel column lists as a foreign key's shape, and "paired by position" as something a record's
+  javadoc has to promise about two of its own fields. A `List<ColumnPair>` holds the pairing the query
+  guarantees, and the wire's two arrays are its transposition rather than its source
 * `CatalogFacts`, and its nested `Table`, `Column`, `Key`, `Index`, `ForeignKeys`,
   `OutgoingForeignKey`, `IncomingForeignKey`, `TableResolution` (with `Resolved` / `Ambiguous` /
   `NotFound` arms specific to it)

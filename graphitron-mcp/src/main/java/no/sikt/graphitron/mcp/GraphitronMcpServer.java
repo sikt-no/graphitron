@@ -576,6 +576,10 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * One foreign key's wire entry. The neighbour's slot is named by the direction, an outgoing key
      * reporting what it targets and an incoming one what declares it, which is the one thing the two
      * directions do not share.
+     *
+     * <p>The two column arrays are this entry's transposition of the read's column pairs, taken here
+     * because the wire asks for two arrays and the read guarantees a pairing. Every pair contributes to
+     * both arrays at the same index, so the two cannot come out of step.
      */
     private static Map<String, Object> mapForeignKey(
         CatalogQueries.ForeignKeyEntry fk, String neighbourSlot
@@ -583,8 +587,10 @@ public final class GraphitronMcpServer implements AutoCloseable {
         var m = new LinkedHashMap<String, Object>();
         m.put("constraintName", fk.constraintName());
         m.put(neighbourSlot, fk.otherTable());
-        m.put("columns", fk.columns());
-        m.put("targetColumns", fk.targetColumns());
+        m.put("columns", fk.columnPairs().stream()
+            .map(CatalogQueries.ColumnPair::column).toList());
+        m.put("targetColumns", fk.columnPairs().stream()
+            .map(CatalogQueries.ColumnPair::targetColumn).toList());
         return m;
     }
 

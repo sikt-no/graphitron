@@ -444,6 +444,64 @@ class GraphitronMcpServerTest {
     }
 
     /**
+     * Every list a description carries is non-empty at once, which is the case a mis-correlated nested
+     * projection shows up in. The description is one query whose child lists are subqueries correlated
+     * to the table row, and the way that shape fails is a child landing on the wrong parent: an index
+     * carrying the other index's columns, a key carrying the other key's, the incoming keys appearing
+     * among the outgoing. Each of those is a list that still reads as an answer, so nothing catches it
+     * unless every slot has something in it to be confused with.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void catalogDescribeCorrelatesEveryNestedListToItsOwnParent(@TempDir Path tmp) {
+        try (var census = StoreFixture.ofCatalog(tmp)) {
+            var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+                census.handle(), census.reader(), Map.of("table", "public.describe_hub")));
+
+            assertThat(structured).containsEntry("resolution", "resolved");
+            assertThat((List<Map<String, Object>>) structured.get("columns"))
+                .extracting(c -> (String) c.get("sqlName"))
+                .containsExactly("hub_id", "hub_code", "org_id", "project_id", "label");
+
+            assertThat((Map<String, Object>) structured.get("primaryKey"))
+                .containsEntry("constraintName", "describe_hub_pkey")
+                .containsEntry("columns", List.of("hub_id"));
+            assertThat((List<Map<String, Object>>) structured.get("uniqueKeys"))
+                .as("the unique constraint carries its own column, not the primary key's beside it")
+                .singleElement()
+                .satisfies(key -> assertThat(key)
+                    .containsEntry("constraintName", "describe_hub_hub_code_uk")
+                    .containsEntry("columns", List.of("hub_code")));
+
+            assertThat((List<Map<String, Object>>) structured.get("indexes"))
+                .as("the two declared indexes, each with its own columns in index order, and neither "
+                    + "constraint's backing index")
+                .containsExactly(
+                    Map.of("name", "describe_hub_label_idx", "columns", List.of("label")),
+                    Map.of("name", "describe_hub_org_label_idx",
+                        "columns", List.of("org_id", "label")));
+
+            var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
+            assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
+                .as("the key this table declares, and not the leaf's key beside it")
+                .singleElement()
+                .satisfies(fk -> assertThat(fk)
+                    .containsEntry("constraintName", "describe_hub_project_fkey")
+                    .containsEntry("targetTable", "public.project")
+                    .containsEntry("columns", List.of("org_id", "project_id"))
+                    .containsEntry("targetColumns", List.of("org_id", "project_id")));
+            assertThat((List<Map<String, Object>>) foreignKeys.get("incoming"))
+                .as("the key the leaf declares against this table, reported by what declares it")
+                .singleElement()
+                .satisfies(fk -> assertThat(fk)
+                    .containsEntry("constraintName", "describe_hub_leaf_hub_fkey")
+                    .containsEntry("sourceTable", "public.describe_hub_leaf")
+                    .containsEntry("columns", List.of("hub_id"))
+                    .containsEntry("targetColumns", List.of("hub_id")));
+        }
+    }
+
+    /**
      * A bare spelling two schemas declare names the candidates instead of picking one. This is the
      * case a capture from the single-schema package cannot produce at all, every name there being
      * unique, so it reads a census the fixture module generates from two schemas that declare
