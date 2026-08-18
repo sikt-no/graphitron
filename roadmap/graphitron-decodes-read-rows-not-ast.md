@@ -81,5 +81,7 @@ moves work out of that transaction, which interacts with the per-crawler transac
   so the decision is recorded rather than rediscovered.
 - Retiring the three `graphitron_*_synthesis` provenance relations, which the tier reading predicts
   become unnecessary once synthesis is derived.
-- Anything about `graphql_type` and `graphql_field` being coordinate-keyed rather than site-keyed.
-  That is a question about tier one's own grain and is independent of this item.
+- Which producer owns the composed `graphql_` payload. The coordinate keys are the assembled
+  schema's own grain, and moving the payload's source from the `TypeDefinitionRegistry` to
+  `GraphQLSchema` is its own item. This item benefits from it (a decode over composed rows gets
+  directive-argument defaults already applied) but does not require it.
