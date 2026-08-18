@@ -4,6 +4,8 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -168,6 +170,56 @@ final class McpWire {
         m.put("line", loc.line());
         m.put("column", loc.column());
         return m;
+    }
+
+    /**
+     * A source position as the store's transcription families record one: a {@code file:} URI and a
+     * 1-based line and column.
+     *
+     * <p>The same wire shape {@link #location} composes, reached from a different input. Every family
+     * that positions anything spells the position as a {@code source_name} plus a pair, so the
+     * conversion is one and it lives here rather than once per reader.
+     */
+    record Position(String uri, int line, int column) {}
+
+    /**
+     * The position a {@code (source_name, line, column)} triple names, absent where the family
+     * recorded no position.
+     *
+     * <p>Absence rather than a coordinate is the honest answer to where an editor would jump: several
+     * relations declare the pair nullable precisely because an application can be recorded without a
+     * position (a closure-triggered claim sits on a remote site, a parse can read a declaration it
+     * cannot place), and a zero there would be a place.
+     */
+    static Optional<Position> position(String sourceName, Integer line, Integer column) {
+        if (sourceName == null || line == null || column == null || line < 0 || column < 0) {
+            return Optional.empty();
+        }
+        return Optional.of(new Position(uri(sourceName), line, column));
+    }
+
+    /**
+     * A source name as a {@code file:} URI. A source name that is not a path round-trips unchanged,
+     * which is what the store's own {@code canonical_uri} does for the same reason: a graph's sources
+     * are files today and the families do not promise it.
+     */
+    private static String uri(String sourceName) {
+        try {
+            return Path.of(sourceName).toUri().toString();
+        } catch (InvalidPathException ignored) {
+            return sourceName;
+        }
+    }
+
+    /** Writes an optional position onto {@code entry} under {@code key}, omitting it where absent. */
+    static void putPosition(Map<String, Object> entry, String key, Optional<Position> position) {
+        position.ifPresent(p -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("uri", p.uri());
+            map.put("line", p.line());
+            map.put("column", p.column());
+            entry.put(key, map);
+        });
     }
 
     // ---- snapshot availability / freshness axes ----

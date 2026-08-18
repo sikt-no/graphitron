@@ -1,501 +1,261 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
+import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
- * The {@code schema} read tool: current types / fields, classifications, backing
- * shapes, and definition locations off {@code Workspace.snapshot()}, joined with {@code @node}
- * metadata off {@code Workspace.catalog().nodeMetadata()} (the snapshot carries no {@code @node}
- * projection; the snapshot + catalog join is same-cadence, both written by one
- * {@code setBuildOutput}).
+ * The {@code schema} tool's wire shape: what {@link SchemaQueries} read, rendered.
  *
- * <p>The classification / backing-shape / snapshot mappings are exhaustive switches over the
- * sealed permits with no {@code default}, mirroring {@code statusResult}: a new permit forces a
- * compile-time choice here rather than silently flattening.
+ * <p>One entry per SDL coordinate, answering five questions and carrying a slot only where the store
+ * holds a row for it. An absent slot is therefore an answer rather than a gap, and it is the same
+ * answer at every coordinate: nothing claims this, nothing binds it, nothing demands a verdict of it.
+ *
+ * <p>What retired here was ninety-odd exhaustive switch arms over the classification permits, and the
+ * shape of what replaced them is the argument for it: the entry no longer names the generator's internal
+ * taxonomy at all. A permit name was a fact about how the classifier is written, promised on a wire that
+ * had no business promising it, and holding the arms inside this module was the price of keeping the
+ * label stable. The claim, binding and demand vocabularies are the store's, and they are about the
+ * author's schema.
  */
 final class SchemaView {
 
     private SchemaView() {}
 
-    /** Default page size when listing types (a {@code type} narrow returns the one type, unpaged). */
-    static final int DEFAULT_LIMIT = 100;
+    /** Default page size when listing types; a {@code type} narrow returns the one entry. */
+    static final int DEFAULT_LIMIT = SchemaQueries.DEFAULT_LIMIT;
 
+    /**
+     * Answers the {@code schema} call, or refuses where the server holds no store.
+     *
+     * <p>The refusal is the arm the diagnostics tools established and for their reason: a server built
+     * without a store handle can only answer empty, and an empty schema reads as a schema with no types
+     * in it. A store present and holding nothing is a different thing and answers, that being the
+     * pre-capture state a consumer is genuinely in before their first build.
+     *
+     * <p>The snapshot's two axes ride along rather than gating the answer, which is the diagnostics
+     * tools' arrangement as well. The store holds every fact the parseable sources yielded whatever the
+     * newest parse did, so answering as well as the facts allow and reporting how current they are is
+     * strictly better than declining to answer at all.
+     */
     static McpSchema.CallToolResult schemaResult(
-        LspSchemaSnapshot snapshot, Map<String, CompletionData.NodeMetadata> nodeMetadata,
-        StoreHandle store, Map<String, Object> args
+        LspSchemaSnapshot snapshot, StoreHandle store, StoreReader reader, Map<String, Object> args
     ) {
+        if (store == null || reader == null) {
+            return DiagnosticFacets.refusal("schema");
+        }
+        var typeFilter = McpWire.stringArg(args, "type");
+        int limit = McpWire.intArg(args, "limit", DEFAULT_LIMIT);
+        if (limit < 1) limit = DEFAULT_LIMIT;
+
+        var answer = SchemaQueries.read(reader, store.graphName(), typeFilter,
+            McpWire.stringArg(args, "cursor"), limit);
+        var page = answer.page();
+
         var fields = new LinkedHashMap<String, Object>();
-        return switch (snapshot) {
-            case LspSchemaSnapshot.Unavailable ignored -> {
-                fields.put("availability", "Unavailable");
-                fields.put("types", List.of());
-                yield result("schema: snapshot Unavailable (no successful build yet).", fields);
-            }
-            case LspSchemaSnapshot.Built.Current c -> built(c, "Current", nodeMetadata, store, args, fields);
-            case LspSchemaSnapshot.Built.Previous p -> built(p, "Previous", nodeMetadata, store, args, fields);
-        };
-    }
-
-    private static McpSchema.CallToolResult built(
-        LspSchemaSnapshot.Built b, String freshness,
-        Map<String, CompletionData.NodeMetadata> nodeMetadata, StoreHandle store,
-        Map<String, Object> args, LinkedHashMap<String, Object> fields
-    ) {
-        fields.put("availability", "Built");
-        fields.put("freshness", freshness);
-
-        Optional<String> typeFilter = McpWire.stringArg(args, "type");
-        // Stable ordering over the classification map keys (Map.copyOf does not preserve order).
-        var typeNames = new ArrayList<>(b.typeClassificationsByName().keySet());
-        typeNames.sort(String::compareTo);
+        McpWire.writeSnapshotAxes(fields, snapshot);
+        var types = new ArrayList<Map<String, Object>>(page.types().size());
+        for (var type : page.types()) {
+            types.add(mapType(type, answer.fieldsByType().getOrDefault(type.typeName(), List.of())));
+        }
+        fields.put("types", types);
+        page.nextCursor().ifPresent(cursor -> fields.put("nextCursor", cursor));
 
         if (typeFilter.isPresent()) {
-            String name = typeFilter.get();
-            if (!b.typeClassificationsByName().containsKey(name)) {
-                fields.put("types", List.of());
-                fields.put("notFound", name);
-                return result("schema: type '" + name + "' not found in the current snapshot.", fields);
+            if (types.isEmpty()) {
+                fields.put("notFound", typeFilter.get());
+                return result("schema: type '" + typeFilter.get() + "' is not declared in this graph.",
+                    fields);
             }
-            fields.put("types", List.of(typeEntry(name, b, nodeMetadata, store)));
-            return result("schema: type '" + name + "'.", fields);
+            return result("schema: type '" + typeFilter.get() + "'.", fields);
         }
-
-        var paged = McpWire.page(typeNames, args, DEFAULT_LIMIT);
-        var list = new ArrayList<Map<String, Object>>(paged.items().size());
-        for (var name : paged.items()) {
-            list.add(typeEntry(name, b, nodeMetadata, store));
-        }
-        fields.put("types", list);
-        paged.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
-        String summary = "schema: " + typeNames.size() + " type(s); showing " + paged.items().size()
-            + (paged.nextCursor().isPresent() ? " (more available)" : "") + ".";
-        return result(summary, fields);
+        return result("schema: " + page.total() + " type(s); showing " + types.size()
+            + (page.nextCursor().isPresent() ? " (more available)" : "") + ".", fields);
     }
 
-    private static Map<String, Object> typeEntry(
-        String name, LspSchemaSnapshot.Built b,
-        Map<String, CompletionData.NodeMetadata> nodeMetadata, StoreHandle store
+    // ---- the type grain ----
+
+    private static Map<String, Object> mapType(
+        SchemaQueries.TypeEntry type, List<SchemaQueries.FieldEntry> fields
     ) {
         var entry = new LinkedHashMap<String, Object>();
-        entry.put("typeRef", name);
-        var classification = b.typeClassificationsByName().get(name);
-        if (classification != null) entry.put("typeClassification", mapTypeClassification(classification));
-        b.typeBacking(name)
-            .ifPresent(backing -> entry.put("backingShape", mapBackingShape(backing, store)));
+        entry.put("typeRef", type.typeName());
+        entry.put("kind", type.kind());
 
-        var node = nodeMetadata.get(name);
-        if (node != null) {
-            var nm = new LinkedHashMap<String, Object>();
-            McpWire.putIfNotNull(nm, "typeId", node.typeId());
-            McpWire.putIfNotNull(nm, "keyColumns", node.keyColumns());
-            entry.put("node", nm);
-        }
+        putList(entry, "claims", type.claims(), SchemaView::mapTypeClaim);
+        putDemand(entry, type.demand());
+        putConflict(entry, type.conflict());
+        putList(entry, "tables", type.tables(), SchemaView::mapTable);
+        putList(entry, "backing", type.backing(), SchemaView::mapBacking);
+        type.backingConflict().ifPresent(conflict -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("classes", conflict.classNames());
+            map.put("candidates", conflict.candidates());
+            entry.put("backingConflict", map);
+        });
+        if (!type.unionMembers().isEmpty()) entry.put("unionMembers", type.unionMembers());
+        if (!type.implementors().isEmpty()) entry.put("implementors", type.implementors());
+        type.node().ifPresent(node -> {
+            var map = new LinkedHashMap<String, Object>();
+            McpWire.putIfNotNull(map, "typeId", node.typeId());
+            if (!node.keyColumns().isEmpty()) map.put("keyColumns", node.keyColumns());
+            entry.put("node", map);
+        });
+        putList(entry, "declarations", type.declarations(), SchemaView::mapDeclaration);
 
-        var fieldEntries = new ArrayList<Map<String, Object>>();
-        String prefix = name + ".";
-        var coords = new ArrayList<>(b.fieldClassificationsByCoord().keySet());
-        coords.sort(String::compareTo);
-        for (var coord : coords) {
-            if (!coord.startsWith(prefix)) continue;
-            var fc = new LinkedHashMap<String, Object>();
-            fc.put("fieldRef", coord);
-            fc.put("classification", mapFieldClassification(b.fieldClassificationsByCoord().get(coord)));
-            fieldEntries.add(fc);
+        // Always present, unlike every slot above: a type with no fields is an answer an agent reads
+        // off the same key as a type with twenty, where an absent list would need a second reading.
+        var fieldEntries = new ArrayList<Map<String, Object>>(fields.size());
+        for (var field : fields) {
+            fieldEntries.add(mapField(field));
         }
         entry.put("fields", fieldEntries);
-
-        b.typeDefinitionLocation(name).ifPresent(loc -> entry.put("definitionLocation", McpWire.location(loc)));
         return entry;
     }
 
-    // ---- type classification (exhaustive over TypeClassification permits) ----
-
-    private static Map<String, Object> mapTypeClassification(TypeClassification c) {
-        var m = new LinkedHashMap<String, Object>();
-        switch (c) {
-            case TypeClassification.Table t -> {
-                m.put("kind", "Table");
-                McpWire.putIfNotNull(m, "tableName", t.tableName());
-            }
-            case TypeClassification.Node n -> {
-                m.put("kind", "Node");
-                McpWire.putIfNotNull(m, "tableName", n.tableName());
-                McpWire.putIfNotNull(m, "typeId", n.typeId());
-                m.put("keyColumnNames", n.keyColumnNames());
-            }
-            case TypeClassification.TableInterface ti -> {
-                m.put("kind", "TableInterface");
-                McpWire.putIfNotNull(m, "tableName", ti.tableName());
-                McpWire.putIfNotNull(m, "discriminatorColumn", ti.discriminatorColumn());
-                m.put("participantTypeNames", ti.participantTypeNames());
-            }
-            case TypeClassification.Interface i -> {
-                m.put("kind", "Interface");
-                m.put("participantTypeNames", i.participantTypeNames());
-            }
-            case TypeClassification.Union u -> {
-                m.put("kind", "Union");
-                m.put("participantTypeNames", u.participantTypeNames());
-            }
-            case TypeClassification.JavaRecord r -> {
-                m.put("kind", "JavaRecord");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-            }
-            case TypeClassification.JavaRecordInput r -> {
-                m.put("kind", "JavaRecordInput");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-            }
-            case TypeClassification.JooqRecord r -> {
-                m.put("kind", "JooqRecord");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-            }
-            case TypeClassification.JooqRecordInput r -> {
-                m.put("kind", "JooqRecordInput");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-            }
-            case TypeClassification.JooqTableRecord r -> {
-                m.put("kind", "JooqTableRecord");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-                McpWire.putIfNotNull(m, "tableName", r.tableName());
-            }
-            case TypeClassification.JooqTableRecordInput r -> {
-                m.put("kind", "JooqTableRecordInput");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-                McpWire.putIfNotNull(m, "tableName", r.tableName());
-            }
-            case TypeClassification.PojoResult r -> {
-                m.put("kind", "PojoResult");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-            }
-            case TypeClassification.PojoInput r -> {
-                m.put("kind", "PojoInput");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-            }
-            case TypeClassification.Root r -> {
-                m.put("kind", "Root");
-                m.put("operation", r.operation());
-            }
-            case TypeClassification.Connection conn -> {
-                m.put("kind", "Connection");
-                m.put("elementTypeName", conn.elementTypeName());
-                m.put("edgeTypeName", conn.edgeTypeName());
-            }
-            case TypeClassification.Edge e -> {
-                m.put("kind", "Edge");
-                m.put("elementTypeName", e.elementTypeName());
-            }
-            case TypeClassification.PageInfo ignored -> m.put("kind", "PageInfo");
-            case TypeClassification.Error e -> {
-                m.put("kind", "Error");
-                m.put("handlerKinds", e.handlerKinds());
-            }
-            case TypeClassification.Enum ignored -> m.put("kind", "Enum");
-            case TypeClassification.Scalar s -> {
-                m.put("kind", "Scalar");
-                McpWire.putIfNotNull(m, "javaType", s.javaType());
-            }
-            case TypeClassification.PlainObject ignored -> m.put("kind", "PlainObject");
-            case TypeClassification.Unclassified u -> {
-                m.put("kind", "Unclassified");
-                McpWire.putIfNotNull(m, "reason", u.reason());
-            }
-        }
-        return m;
+    private static Map<String, Object> mapTypeClaim(SchemaQueries.TypeClaim claim) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("classifier", claim.classifier());
+        map.put("trigger", "@" + claim.trigger());
+        map.put("decoded", claim.decoded());
+        McpWire.putPosition(map, "location", claim.position());
+        return map;
     }
 
-    // ---- backing shape (exhaustive over TypeBackingShape permits, leaves matched directly) ----
-
-    private static Map<String, Object> mapBackingShape(TypeBackingShape s, StoreHandle store) {
-        var m = new LinkedHashMap<String, Object>();
-        switch (s) {
-            case TypeBackingShape.RecordBacking r -> {
-                m.put("kind", "RecordBacking");
-                McpWire.putIfNotNull(m, "fqClassName", r.fqClassName());
-                m.put("members", members(store, r.fqClassName()));
-            }
-            case TypeBackingShape.PojoBacking p -> {
-                m.put("kind", "PojoBacking");
-                McpWire.putIfNotNull(m, "fqClassName", p.fqClassName());
-                m.put("members", members(store, p.fqClassName()));
-            }
-            case TypeBackingShape.JooqRecordBacking.WithTable w -> {
-                m.put("kind", "JooqRecordBacking.WithTable");
-                McpWire.putIfNotNull(m, "fqClassName", w.fqClassName());
-                McpWire.putIfNotNull(m, "tableName", w.tableName());
-            }
-            case TypeBackingShape.JooqRecordBacking.Standalone st -> {
-                m.put("kind", "JooqRecordBacking.Standalone");
-                McpWire.putIfNotNull(m, "fqClassName", st.fqClassName());
-            }
-            case TypeBackingShape.TableBacking t -> {
-                m.put("kind", "TableBacking");
-                McpWire.putIfNotNull(m, "tableName", t.tableName());
-            }
-            case TypeBackingShape.NoBacking.Root ignored -> m.put("kind", "NoBacking.Root");
-            case TypeBackingShape.NoBacking.UnbackedResult ignored -> m.put("kind", "NoBacking.UnbackedResult");
-            case TypeBackingShape.NoBacking.UnclassifiedInterface ignored ->
-                m.put("kind", "NoBacking.UnclassifiedInterface");
-        }
-        return m;
+    private static Map<String, Object> mapTable(SchemaQueries.TableBinding table) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("table", table.table());
+        map.put("candidates", table.candidates());
+        return map;
     }
 
-    /**
-     * The member names the backing class offers, read from the store's member-slot relation. The
-     * projection used to carry them, which meant the bean rule ran per build in one place and was
-     * written out again wherever else a member list was needed; the relation is the one home for it,
-     * and this resource is a reader of it like every other surface that asks.
-     */
-    private static List<Map<String, Object>> members(StoreHandle store, String fqClassName) {
-        var slots = ClassMemberSlots.of(store, fqClassName);
-        var out = new ArrayList<Map<String, Object>>(slots.size());
-        for (var slot : slots) {
-            var sm = new LinkedHashMap<String, Object>();
-            sm.put("name", slot.name());
-            sm.put("displayType", slot.displayType());
-            sm.put("accessorMethodName", slot.accessorMethodName());
-            out.add(sm);
-        }
-        return out;
+    private static Map<String, Object> mapBacking(SchemaQueries.Backing backing) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("class", backing.className());
+        map.put("declaredVia", backing.declaredVia());
+        putList(map, "members", backing.members(), SchemaView::mapMember);
+        return map;
     }
 
-    // ---- field classification (exhaustive over FieldClassification permits) ----
-
-    private static Map<String, Object> mapFieldClassification(FieldClassification c) {
-        var m = new LinkedHashMap<String, Object>();
-        switch (c) {
-            case FieldClassification.Column f -> {
-                m.put("kind", "Column");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "columnName", f.columnName());
-            }
-            case FieldClassification.ColumnReference f -> {
-                m.put("kind", "ColumnReference");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "columnName", f.columnName());
-                m.put("joinPath", joinPath(f.joinPath()));
-            }
-            case FieldClassification.CompositeColumn f -> {
-                m.put("kind", "CompositeColumn");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                m.put("columnNames", f.columnNames());
-            }
-            case FieldClassification.CompositeColumnReference f -> {
-                m.put("kind", "CompositeColumnReference");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                m.put("columnNames", f.columnNames());
-                m.put("joinPath", joinPath(f.joinPath()));
-            }
-            case FieldClassification.ParticipantCrossTable f -> {
-                m.put("kind", "ParticipantCrossTable");
-                McpWire.putIfNotNull(m, "targetTableName", f.targetTableName());
-                McpWire.putIfNotNull(m, "columnName", f.columnName());
-                McpWire.putIfNotNull(m, "fkName", f.fkName());
-                McpWire.putIfNotNull(m, "alias", f.alias());
-            }
-            case FieldClassification.TableTarget f -> {
-                m.put("kind", "TableTarget");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                m.put("joinPath", joinPath(f.joinPath()));
-                m.put("splitBatched", f.splitBatched());
-                m.put("hasLookupKey", f.hasLookupKey());
-            }
-            case FieldClassification.RecordTableTarget f -> {
-                m.put("kind", "RecordTableTarget");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                m.put("joinPath", joinPath(f.joinPath()));
-                m.put("hasLookupKey", f.hasLookupKey());
-            }
-            case FieldClassification.TableInterface f -> {
-                m.put("kind", "TableInterface");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "discriminatorColumn", f.discriminatorColumn());
-                m.put("participantTypeNames", f.participantTypeNames());
-            }
-            case FieldClassification.Polymorphic f -> {
-                m.put("kind", "Polymorphic");
-                m.put("participantTypeNames", f.participantTypeNames());
-            }
-            case FieldClassification.Nesting ignored -> m.put("kind", "Nesting");
-            case FieldClassification.Pivot f -> {
-                m.put("kind", "Pivot");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "onColumn", f.onColumn());
-                McpWire.putIfNotNull(m, "valueColumn", f.valueColumn());
-                m.put("batched", f.batched());
-            }
-            case FieldClassification.ServiceBacked f -> {
-                m.put("kind", "ServiceBacked");
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-                m.put("tableBound", f.tableBound());
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "errorChannelMappingName", f.errorChannelMappingName());
-            }
-            case FieldClassification.RecordOrProperty f -> {
-                m.put("kind", "RecordOrProperty");
-                McpWire.putIfNotNull(m, "columnName", f.columnName());
-                McpWire.putIfNotNull(m, "accessorName", f.accessorName());
-            }
-            case FieldClassification.Computed f -> {
-                m.put("kind", "Computed");
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-            }
-            case FieldClassification.InputUnbound f -> {
-                m.put("kind", "InputUnbound");
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-                m.put("override", f.override());
-            }
-            case FieldClassification.Errors f -> {
-                m.put("kind", "Errors");
-                m.put("errorTypeNames", f.errorTypeNames());
-            }
-            case FieldClassification.SingleRecordId f -> {
-                m.put("kind", "SingleRecordId");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-            }
-            case FieldClassification.SingleRecordIdFromReturning ignored ->
-                m.put("kind", "SingleRecordIdFromReturning");
-            case FieldClassification.QueryTable f -> {
-                m.put("kind", "QueryTable");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                m.put("isLookup", f.isLookup());
-            }
-            case FieldClassification.RoutineBacked f -> {
-                m.put("kind", "RoutineBacked");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-            }
-            case FieldClassification.QueryNode f -> {
-                m.put("kind", "QueryNode");
-                m.put("isList", f.isList());
-            }
-            case FieldClassification.QueryTableInterface f -> {
-                m.put("kind", "QueryTableInterface");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "discriminatorColumn", f.discriminatorColumn());
-                m.put("participantTypeNames", f.participantTypeNames());
-            }
-            case FieldClassification.QueryPolymorphic f -> {
-                m.put("kind", "QueryPolymorphic");
-                m.put("participantTypeNames", f.participantTypeNames());
-            }
-            case FieldClassification.QueryService f -> {
-                m.put("kind", "QueryService");
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-                m.put("tableBound", f.tableBound());
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "errorChannelMappingName", f.errorChannelMappingName());
-            }
-            case FieldClassification.DmlMutation f -> {
-                m.put("kind", "DmlMutation");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "inputTypeName", f.inputTypeName());
-                m.put("dmlKind", f.kind().name());
-                McpWire.putIfNotNull(m, "errorChannelMappingName", f.errorChannelMappingName());
-            }
-            case FieldClassification.MutationService f -> {
-                m.put("kind", "MutationService");
-                McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", f.methodName());
-                m.put("tableBound", f.tableBound());
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "errorChannelMappingName", f.errorChannelMappingName());
-            }
-            case FieldClassification.DmlRecord f -> {
-                m.put("kind", "DmlRecord");
-                McpWire.putIfNotNull(m, "tableName", f.tableName());
-                McpWire.putIfNotNull(m, "inputTypeName", f.inputTypeName());
-                m.put("dmlKind", f.kind().name());
-                m.put("bulk", f.bulk());
-                McpWire.putIfNotNull(m, "errorChannelMappingName", f.errorChannelMappingName());
-            }
-            case FieldClassification.Unresolvable f -> {
-                m.put("kind", "Unresolvable");
-                McpWire.putIfNotNull(m, "reason", f.reason());
-            }
-            case FieldClassification.Conflicted f -> {
-                m.put("kind", "Conflicted");
-                var claims = new ArrayList<Map<String, Object>>(f.claims().size());
-                for (var claim : f.claims()) {
-                    claims.add(mapClaim(claim));
-                }
-                m.put("claims", claims);
-                McpWire.putIfNotNull(m, "violation", f.violation());
-            }
-        }
-        return m;
+    private static Map<String, Object> mapMember(SchemaQueries.MemberSlot member) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("name", member.name());
+        map.put("type", member.type());
+        map.put("origin", member.origin());
+        map.put("accessorMethodName", member.accessorMethodName());
+        return map;
     }
 
-    /**
-     * One authored claim on a conflicted field, on the wire. The {@code classifier} is the claim
-     * arm's simple name (the store's classifier vocabulary, deliberately not a projection permit
-     * name); slot facts are per-arm and absent rather than null. Exhaustive over the sealed
-     * {@link FieldClassification.Claim} permits with no default, mirroring
-     * {@link #mapFieldClassification}'s drift guard.
-     */
-    private static Map<String, Object> mapClaim(FieldClassification.Claim claim) {
-        var m = new LinkedHashMap<String, Object>();
-        switch (claim) {
-            case FieldClassification.Claim.Service c -> {
-                m.put("classifier", "Service");
-                McpWire.putIfNotNull(m, "methodClassName", c.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", c.methodName());
-            }
-            case FieldClassification.Claim.ExternalField c -> {
-                m.put("classifier", "ExternalField");
-                McpWire.putIfNotNull(m, "methodClassName", c.methodClassName());
-                McpWire.putIfNotNull(m, "methodName", c.methodName());
-            }
-            case FieldClassification.Claim.NodeId c -> {
-                m.put("classifier", "NodeId");
-                McpWire.putIfNotNull(m, "nodeTypeRef", c.nodeTypeRef());
-            }
-            case FieldClassification.Claim.LookupKey ignored ->
-                m.put("classifier", "LookupKey");
-            case FieldClassification.Claim.Routine c -> {
-                m.put("classifier", "Routine");
-                McpWire.putIfNotNull(m, "routineRefs", c.routineRefs());
-            }
-            case FieldClassification.Claim.Mutation c -> {
-                m.put("classifier", "Mutation");
-                McpWire.putIfNotNull(m, "dmlKind", c.dmlKind());
-                McpWire.putIfNotNull(m, "tableName", c.tableName());
-            }
-        }
-        m.put("trigger", "@" + claim.trigger());
-        m.put("decoded", claim.decoded());
-        if (claim.location() != null) {
-            m.put("location", McpWire.location(claim.location()));
-        }
-        return m;
+    private static Map<String, Object> mapDeclaration(SchemaQueries.Declaration declaration) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("uri", declaration.position().uri());
+        map.put("line", declaration.position().line());
+        map.put("column", declaration.position().column());
+        map.put("isExtension", declaration.isExtension());
+        map.put("kind", declaration.kind());
+        return map;
     }
 
-    private static List<Map<String, Object>> joinPath(List<FieldClassification.FkStep> steps) {
-        var out = new ArrayList<Map<String, Object>>(steps.size());
-        for (var step : steps) {
-            var sm = new LinkedHashMap<String, Object>();
-            sm.put("targetTableName", step.targetTableName());
-            sm.put("fkName", step.fkName());
-            out.add(sm);
+    // ---- the field grain ----
+
+    private static Map<String, Object> mapField(SchemaQueries.FieldEntry field) {
+        var entry = new LinkedHashMap<String, Object>();
+        entry.put("fieldRef", field.typeName() + "." + field.fieldName());
+        entry.put("typeSdl", field.typeSdl());
+
+        putList(entry, "claims", field.claims().claims(), SchemaView::mapFieldClaim);
+        putDemand(entry, field.demand());
+        putConflict(entry, field.conflict());
+        field.claims().column().ifPresent(column -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("table", column.table());
+            map.put("column", column.column());
+            map.put("matchedName", column.matchedName());
+            map.put("matchedBy", column.matchedBy());
+            entry.put("column", map);
+        });
+        putList(entry, "joinPath", field.joinPath(), SchemaView::mapHop);
+        putList(entry, "methods", field.methods(), SchemaView::mapMethod);
+        return entry;
+    }
+
+    private static Map<String, Object> mapFieldClaim(SchemaQueries.FieldClaim claim) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("classifier", claim.classifier());
+        map.put("tier", claim.tier());
+        McpWire.putIfNotNull(map, "trigger", claim.trigger() == null ? null : "@" + claim.trigger());
+        McpWire.putIfNotNull(map, "decoded", claim.decoded());
+        McpWire.putPosition(map, "location", claim.position());
+        return map;
+    }
+
+    private static Map<String, Object> mapHop(SchemaQueries.Hop hop) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("ordinal", hop.ordinal());
+        map.put("position", hop.position());
+        map.put("via", hop.via());
+        McpWire.putIfNotNull(map, "keyMatchedBy", hop.keyMatchedBy());
+        map.put("fromTable", hop.fromTable());
+        map.put("toTable", hop.toTable());
+        map.put("constraint", hop.constraintName());
+        map.put("fkOnFrom", hop.fkOnFrom());
+        map.put("targets", hop.targets());
+        map.put("candidates", hop.candidates());
+        return map;
+    }
+
+    private static Map<String, Object> mapMethod(SchemaQueries.MethodBinding method) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("methodRef",
+            McpWire.methodRef(method.className(), method.methodName(), method.arity()));
+        map.put("declaredVia", method.declaredVia());
+        map.put("candidates", method.candidates());
+        return map;
+    }
+
+    // ---- slot conventions, shared by the two grains ----
+
+    private static void putDemand(Map<String, Object> entry, Optional<SchemaQueries.Demand> demand) {
+        demand.ifPresent(d -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("verdict", d.verdict());
+            map.put("rule", d.rule());
+            entry.put("demand", map);
+        });
+    }
+
+    private static void putConflict(
+        Map<String, Object> entry, Optional<SchemaQueries.Conflict> conflict
+    ) {
+        conflict.ifPresent(c -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("verdict", c.verdict());
+            map.put("directives", c.directives());
+            map.put("message", c.message());
+            McpWire.putPosition(map, "location", c.position());
+            entry.put("conflict", map);
+        });
+    }
+
+    /** Writes {@code items} mapped under {@code key}, omitting the key where the list is empty. */
+    private static <T> void putList(
+        Map<String, Object> entry, String key, List<T> items,
+        Function<T, Map<String, Object>> mapper
+    ) {
+        if (items.isEmpty()) return;
+        var mapped = new ArrayList<Map<String, Object>>(items.size());
+        for (var item : items) {
+            mapped.add(mapper.apply(item));
         }
-        return out;
+        entry.put(key, mapped);
     }
 
     private static McpSchema.CallToolResult result(String summary, Map<String, Object> fields) {

@@ -212,7 +212,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             statusTool(workspace),
             catalogTablesTool(storeHandle), catalogDescribeTool(storeHandle, storeReader),
             codeTool(storeHandle, storeReader),
-            schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
+            schemaTool(workspace, storeHandle, storeReader), diagnosticsTool(workspace, storeHandle),
             diagnosticsAggregateTool(workspace, storeHandle),
             docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader)));
         if (executeConfig != null) {
@@ -740,10 +740,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
     private static void writeDeclaration(Map<String, Object> entry, CodeQueries.Declaration declaration) {
         switch (declaration) {
             case CodeQueries.Declaration.Declared d -> {
-                d.position().ifPresentOrElse(
-                    p -> entry.put("location", Map.of("uri", p.uri(), "line", p.line(),
-                        "column", p.column())),
-                    () -> entry.put("locationStatus", "notPositioned"));
+                McpWire.putPosition(entry, "location", d.position());
+                if (d.position().isEmpty()) entry.put("locationStatus", "notPositioned");
                 if (!d.javadoc().isBlank()) entry.put("description", d.javadoc());
             }
             case CodeQueries.Declaration.Ambiguous ignored -> entry.put("locationStatus", "ambiguous");
@@ -755,15 +753,17 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // ---- schema tool ----
 
     /**
-     * {@code schema}: the current SDL types, their classifications, backing shapes, field
-     * classifications, and definition locations off {@link Workspace#snapshot()}, joined with
-     * {@code @node} metadata off {@link Workspace#catalog()} (same build cadence). Both reads are
-     * live on every call. The session's {@link StoreHandle} answers one field the projection no
-     * longer carries: what a class-backed type's members are, which is a fact about a class on the
-     * classpath rather than about this snapshot.
+     * {@code schema}: the graph's SDL coordinates and what the store made of them, read live on every
+     * call. Per coordinate: what claims it, what it binds (table, column, class and its members, join
+     * path, method, participants), whether a verdict was demanded of it, what conflicts on it, and every
+     * site it is declared at.
+     *
+     * <p>The reader as well as the handle, an answer here being one statement per grain. The
+     * {@link Workspace} is left for the snapshot's two axes alone, which say how current the facts behind
+     * the answer are without deciding whether there is one.
      */
     private static McpServerFeatures.SyncToolSpecification schemaTool(
-        Workspace workspace, StoreHandle storeHandle
+        Workspace workspace, StoreHandle storeHandle, StoreReader storeReader
     ) {
         var tool = McpSchema.Tool.builder("schema", Map.of(
                 "type", "object",
@@ -775,17 +775,21 @@ public final class GraphitronMcpServer implements AutoCloseable {
                     "cursor", Map.of("type", "string",
                         "description", "Opaque page cursor from a prior call's nextCursor."))))
             .title("Describe the schema")
-            .description("Lists the current GraphQL types with their classification, backing shape, "
-                + "field classifications (keyed by the Type.field coordinate), @node metadata, and "
-                + "definition location, paged via an opaque cursor; pass type to narrow to one. "
-                + "Reflects the latest successful build snapshot, reporting its availability and "
-                + "freshness; types are empty until the first build succeeds.")
+            .description("Lists the GraphQL types this graph declares, paged via an opaque cursor; "
+                + "pass type to narrow to one. Each entry answers five questions about the type and "
+                + "about every Type.field coordinate on it: which classifier claims it and whether a "
+                + "directive or a structural reading decided that, what it binds (the catalog table, "
+                + "the column, the backing class and its member names, the join path a @reference "
+                + "walks, the consumer method a @service / @externalField / @condition names, an "
+                + "abstract type's participants), whether a classification was DEMANDED of it or it is "
+                + "EXEMPT and under which rule, which directives conflict on it, and every site it is "
+                + "declared or extended at. A slot is present when the store holds a row for it and "
+                + "absent when it does not. Reports how current the facts behind the answer are.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
             .callHandler((exchange, request) -> SchemaView.schemaResult(
-                workspace.snapshot(), workspace.catalog().nodeMetadata(), storeHandle,
-                request.arguments()))
+                workspace.snapshot(), storeHandle, storeReader, request.arguments()))
             .build();
     }
 

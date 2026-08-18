@@ -6,7 +6,6 @@ import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Records;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -314,7 +313,7 @@ final class CodeQueries {
          * @param position absent where the parse read a declaration it could not position, which the
          *     family keeps room for precisely so the doc comment survives without one
          */
-        record Declared(Optional<Position> position, String javadoc) implements Declaration {}
+        record Declared(Optional<McpWire.Position> position, String javadoc) implements Declaration {}
 
         /** More than one declaration answers to the name, so the count is the answer. */
         record Ambiguous() implements Declaration {}
@@ -325,9 +324,6 @@ final class CodeQueries {
         /** The family holds no declaration of the class at all. */
         record NotIndexed() implements Declaration {}
     }
-
-    /** A source position in the parse's own coordinates: a {@code file:} URI and a 1-based pair. */
-    record Position(String uri, int line, int column) {}
 
     /**
      * The declaration family's answer for the classes of one page, keyed by class name because that is
@@ -353,7 +349,7 @@ final class CodeQueries {
             if (files == null || files.isEmpty()) return new Declaration.NotIndexed();
             if (files.size() > 1) return new Declaration.Ambiguous();
             var file = files.getFirst();
-            return new Declaration.Declared(position(file.file(), file.line(), file.column()),
+            return new Declaration.Declared(McpWire.position(file.file(), file.line(), file.column()),
                 text(file.javadoc()));
         }
 
@@ -380,20 +376,8 @@ final class CodeQueries {
             if (matches.isEmpty()) return new Declaration.NotDeclared();
             if (matches.size() > 1) return new Declaration.Ambiguous();
             var method = matches.getFirst();
-            return new Declaration.Declared(position(file.file(), method.line(), method.column()),
+            return new Declaration.Declared(McpWire.position(file.file(), method.line(), method.column()),
                 text(method.javadoc()));
-        }
-
-        /**
-         * The parse's position in the coordinates the wire carries: the file as a {@code file:} URI and
-         * the 1-based line and column the parse itself reads. The API's own no-position sentinel is
-         * absence rather than a coordinate, which is the honest answer to where an editor would jump.
-         */
-        private static Optional<Position> position(String file, Integer line, Integer column) {
-            if (file == null || line == null || column == null || line < 0 || column < 0) {
-                return Optional.empty();
-            }
-            return Optional.of(new Position(Path.of(file).toUri().toString(), line, column));
         }
 
         private static String text(String javadoc) {

@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-17
+last-updated: 2026-08-18
 ---
 
 # graphitron-mcp reads only the store
@@ -751,7 +751,7 @@ not:
   coordinate grain as slots of the entry rather than as separate edges. This slice writes those reads;
   no earlier slice does, the tool that would have written five of them having been dropped instead of
   migrated. The relations are `intent_column_match_claim` for the column, `intent_bound_table` for the
-  table with its `candidates` arity, `intent_field_reference_step_hop` for the join path,
+  table with its `candidates` arity, `intent_field_reference_step_target` for the join path,
   `graphql_union_member` and `graphql_implements` inverted for participants, and for the method two
   populations rather than one. `intent_field_producer_method` answers `@service` and `@externalField`
   through its two `declared_via` arms; a field whose method comes from an explicit `@condition` is not
@@ -759,6 +759,17 @@ not:
   second read over `graphitron_field_condition` joined to `jvm_method` and `jvm_method_parameter` for
   the arity. Reading only the view would drop every `@condition`-carrying input field's method slot
   silently. The sixth slot is the backing class, which is the next subsection.
+
+  **The join path reads the resolved relation, not the local one, and this plan named the wrong one.**
+  `intent_field_reference_step_hop` states every table-to-table hop an element *could* express, both
+  orientations of every foreign key included, before anything decides where the chain stands; that is
+  its stated purpose and why it is separate from the recursion above it. Rendering it as a join path
+  would show one element departing from two tables at once, and would carry rows for elements the
+  chain never reaches. `intent_field_reference_step_target` is the same hops walked from the enclosing
+  type's own table binding, positions contiguous from zero, plus two arities the local view cannot
+  state: how many distinct tables the element reaches and how many routes reach them. That is the
+  relation whose rows correspond to what the retired `FkStep` list held, and it is what the slice
+  reads.
 
   The condition read is an MCP query and deliberately not a third arm on
   `intent_field_producer_method`, which is the escalation rule applied rather than dodged. A rule
@@ -824,9 +835,103 @@ has no record class reports `org.jooq.Record`, which is not a backing, so the vi
 type is unbacked here. The `schema` entry's table slot still answers for such a type; only its class
 slot is empty.
 
+### How many statements, and why not one
+
+Three, plus the count: the type page, the field page, and the claim resolution. Each is one projection
+at one grain with nothing folded afterwards, and the split between them is forced rather than chosen.
+
+The first split is the grain. A type and a `Type.field` coordinate are two keys and every relation
+here is keyed by one or the other, so the fields of a page are their own projection, driven from
+`graphql_field` narrowed to the page's types and paired back on `type_name`. That is the type's own
+key, not a grouping invented in Java, which is the distinction the one-projection rule is actually
+about.
+
+The second split was measured, and the measurement is worth recording because it is a property of the
+substrate that any later reader of the `intent_` stratum will hit. Read whole, every derived view this
+slice touches costs between two and seventy-five milliseconds. Read as a correlated `MULTISET` per
+field row, two of them cost twenty-four seconds on a schema of sixty types and eight hundred
+coordinates, where every other field-grain slot together cost a third of one second. The two are
+`intent_column_match_claim` and `intent_resolved_field_claim`, which unions it in. The reason is
+structural: the column-match classifier collapses its matches with a `ROW_NUMBER() OVER (PARTITION
+BY ...)` over a derived relation, and a window cannot be pruned by a predicate applied outside it, so
+a correlated read pays the whole view's evaluation on every call rather than a filtered one. That view's
+own DDL comment already states the rule and the remedy, having been bitten by the same shape from
+underneath `graphql_field`: any relation joining a derivation this deep wants the derivation first in
+the `FROM` clause. So the claim resolution is a statement driven from itself, filtered to the page's
+types, with the authoring application and the column witness joined in as arity-preserving left joins.
+Twenty-four seconds became under two.
+
+The generalisation an implementer should carry forward is narrower than "avoid correlated subqueries"
+and sharper than "measure it": a derived view containing a window function or a recursive term cannot
+be pruned by an outer correlation, so it must be read once per answer and paired on its key, while a
+base relation correlated per row is an index seek and nests freely. Every nested `MULTISET` that
+survives in this slice is over a base relation, and the type-grain statement correlates eight of them
+for a whole page in about a fifth of a second.
+
+**The column binding is read through the resolution, not off the classifier.** The column-match view is
+mask-light by design: it produces a row wherever a field's name matches a column of the table its site
+navigates to, *including* at coordinates an authored directive has claimed, precisely so a diagnostic
+can say "would classify as a table column; `@service` overrides it". Reading it unmasked would report
+a column binding on a field whose value comes from a method. `intent_resolved_field_claim` is where the
+store states which reading won, so the witness joins through it on the column match's own classifier.
+That is a read of the masking rather than a second copy of it, and the fixture makes it real: a field
+named after a real column of its bound table, carrying `@service`.
+
+### Two smaller shape decisions
+
+**Participants are two slots, not one list.** A union's members and an interface's implementors are two
+SDL mechanisms and no type is both, so `unionMembers` and `implementors` say by which mechanism the
+answer arrived without a provenance column on every row, and the read needs no union of two relations.
+The retired wire's single `participantTypeNames` could not distinguish them.
+
+**The method slot is two projections concatenated, and the reason is a limit of the substrate rather
+than a design.** H2 will not correlate an outer column into a `UNION ALL` nested inside a `MULTISET`:
+jOOQ wraps the union in a derived table and the reference to the driving field row stops resolving. So
+the producer population and the condition population are two correlated projections at one grain,
+joined by concatenation. Both lists already belong to the same field row, so there is no key to match
+and nothing that can be mispaired; what is lost is one statement's worth of tidiness, not a guarantee.
+
+### What the entry does not carry, and why
+
+**Neither `@node` fallback is applied.** `graphitron_node.type_id` is nullable and the generator falls
+back to the type's own name; `keyColumns` is optional and the generator falls back to the catalog's
+primary key. Both fallbacks are derivations no view resolves, so the entry reports what the author
+wrote and nothing where they wrote nothing. Applying either here would mean re-implementing a model
+rule in this module, which is the same line the four unread bindings above sit on, and it is stated as
+a delta rather than left to be discovered.
+
+**Descriptions are not carried, on either grain.** `graphql_type.description` and
+`graphql_field.description` hold the SDL doc comments, and this tool is not the place to echo them: the
+schema text is what the agent already has, and `schema` answers what graphitron made of it. What is
+carried instead is each coordinate's own SDL shape, `kind` on the type and `typeSdl` on the field, both
+free in the driving row and both load-bearing for reading a binding, since a field whose `typeSdl` is
+`[Film!]!` and whose only claim is a column match is worth a second look.
+
+**The page is every declared type, graphitron's own directive vocabulary included.** The population is
+`graphql_type` narrowed to the rows carrying at least one declaration site, which drops engine-provided
+built-in scalars (the relation documents them as having an existence row and no site) and keeps a
+user-declared scalar. It does not drop the input types and enums the bundled directive grammar declares
+(`ExternalCodeReference`, `ReferenceElement`, `MutationType` and the rest), and on a small schema those
+can outnumber the author's own types. No store-side distinction separates them: the recipe relation
+that records the graph's own schema inputs states in its own comment that it never joins the consumer
+read surface, and `intent_type_domain` membership would silently drop an author's orphan type, which is
+a type they would very much want to see. The incumbent projection listed them too, so this is the
+inherited behaviour rather than a new one, and the fix is a captured fact about a source being bundled
+rather than anything a reader can do.
+
 **Wire.** Breaking, and the item's one deliberate breaking change. The `kind` values change from
 permit names to classifier names, `backingShape.kind` goes, and the demand and conflict slots are
-new. It is worth taking rather than preserving: a permit name is a fact about the generator's
+new. Two further changes belong to this slice and are not in the sentence above. The snapshot's two
+axes move from `availability` / `freshness` to `snapshotAvailability` / `snapshotFreshness`, the keys
+the diagnostics tools already use, and they stop gating the answer: an `Unavailable` snapshot no longer
+short-circuits to an empty type list, because the store holds every fact the parseable sources yielded
+whatever the newest parse did, and answering as well as the facts allow is this item's posture
+everywhere else. And `definitionLocation` becomes `declarations`, plural and per site.
+
+That leaves the axes still read off `workspace.snapshot()` after this slice, which the "Leaves behind"
+note below undercounts: `snapshot` keeps *five* readers, not four. Deriving them here would pull slice
+9's derivation forward for one tool and leave the other four reading a projection, so all five move
+together there, behind one helper. It is worth taking rather than preserving: a permit name is a fact about the generator's
 internals that the wire had no business promising, the manual documents `schema` by what it answers
 rather than by its permit vocabulary, and the alternative is to hold ninety exhaustive arms inside
 `graphitron-mcp` forever to keep a label stable.
@@ -837,10 +942,10 @@ reshaped onto the new queries. `Edge.joinPath`'s component type stops being
 `FieldClassification.FkStep` and becomes an MCP-owned hop record carrying the destination's full key,
 since a bare-name record cannot hold what `intent_field_reference_step_hop` returns.
 
-**Leaves behind.** `catalog` has no reader left. `snapshot` keeps four: `status`, both diagnostics
-tools' axes, and the directives resource, which reads it beside the bundled grammar. `vocabulary`
-keeps its one. Only the directives resource stands between here and the lifecycle arms being all
-that is left, which is why it is the next slice.
+**Leaves behind.** `catalog` has no reader left. `snapshot` keeps five: `status`, both diagnostics
+tools' axes, `schema`'s own two axes as the wire note above corrects, and the directives resource,
+which reads it beside the bundled grammar. `vocabulary` keeps its one. Only the directives resource
+stands between here and the lifecycle arms being all that is left, which is why it is the next slice.
 
 ## Slice 8: the `directives` resource
 
@@ -1270,8 +1375,27 @@ them remove a surface rather than change one, and they lead because they are the
   above. The server instructions and the manual's tool table both name the old vocabulary and change
   with it.
 * **A type's declaration sites are plural.** `graphql_type_declaration` holds every site a type is
-  declared or extended at; the projection reduced them to the canonical one. A type declared once
-  answers identically, so the delta is visible only on an extended type, where it is a fix.
+  declared or extended at; the projection reduced them to the canonical one, and the wire slot renames
+  from `definitionLocation` to `declarations` because it is a list now. A type declared once answers
+  identically, so the delta is visible only on an extended type, where it is a fix.
+* **An abstract type's participants say which SDL mechanism declares them.** One
+  `participantTypeNames` list becomes `unionMembers` on a union and `implementors` on an interface, the
+  two being different mechanisms that no type carries both of.
+* **An `@node` reports what the author wrote, not what the generator falls back to.** A `typeId`
+  argument the author omitted is absent rather than the type's own name, and omitted `keyColumns` are
+  absent rather than the bound table's primary key. Both fallbacks are derivations no view resolves, and
+  reading them here would mean re-implementing a model rule in this module, which is the line the four
+  unread bindings above sit on.
+* **`schema` reports the snapshot's axes without gating on them.** The two fields rename to
+  `snapshotAvailability` / `snapshotFreshness`, matching the diagnostics tools, and an `Unavailable`
+  snapshot stops emptying the type list: the store holds what the parseable sources yielded, and the
+  axes say how current that is rather than whether there is an answer.
+* **The page carries the merged schema's whole declared type surface.** Built-in scalars drop, having no
+  declaration site; the bundled directive grammar's own input types and enums do not, and on a small
+  schema they can outnumber the author's types. The incumbent projection listed them too, so this is
+  inherited rather than new, and the slice section above records why no reader-side mask is available.
+* **A `schema` call with no store refuses instead of answering an empty schema**, on the same grounds as
+  the catalog and diagnostics tools: an empty type list reads as a schema declaring nothing.
 * **The `directives` resource is empty before the first capture** rather than degrading to the
   bundled grammar. Same posture as the catalog tools, for the reason the consumer section gives.
 * **A missing handle refuses instead of answering empty.** The server can be built without a store
@@ -1533,6 +1657,28 @@ fixture methods taking no parameters at all.
   declares is produced by one of the queries, and every relation the queries read feeds at least one
   slot. Asserting a mapping between the permits and the classifier vocabulary is explicitly not
   wanted, for the reason the last bullet in this section gives.
+* **One capture serves eleven of the twelve cases, and the twelfth needs a build.** The conflict view's
+  domain gate joins `walk_claim_domain_field`, and those rows are written by the detection pass over the
+  walk's own reach rather than by capture, so exactly the conflict case goes through
+  `StoreBackedBuild` and the rest through the direct capture. That is the rule this section already
+  states, arrived at from the other end: a `walk_` family is the walk's own stream.
+* **The fixture is chosen so every question is reachable from one schema**, and two of its parts exist
+  only to make a masking rule observable. `Film.description` is named after a real column of `film` and
+  carries `@service`, so the structural classifier and the authored directive both fire and only the
+  resolution says which wins; without it the column slot's gate is unreachable, which a mutation check
+  found by surviving. `Contested` binds a table *and* is returned by a producer, so the two backing
+  populations disagree and the entry has to report both rather than one.
+* **Three mutation checks pin the joins that can silently lie.** Dropping the classifier gate on the
+  column witness makes a method-backed field report a column binding; dropping the classifier equality
+  from the authored-provenance join multiplies a contested coordinate's claim list; dropping the
+  null-field-name gate on the type-grain conflict makes a field's violation surface as its parent
+  type's. Each fails exactly the case written for it.
+* **One arm is declared unreachable rather than faked.** A table whose generated model has no record
+  class reports `org.jooq.Record`, which the backing view drops, so such a type is unbacked with its
+  table slot still answering. No table in the fixture catalog is recordless (the census reports zero),
+  and manufacturing one means a codegen configuration change for a single table, so the arm is left to
+  the store's own tests of `sql_table.record_class_fqn` and named here as a coverage limit, on the same
+  terms as slice 6's two.
 
 **Slice 8, the directives resource.** One case: the resource renders a bundled directive and a
 user-declared one from one captured schema, with arguments and locations, and reports the
@@ -1777,6 +1923,23 @@ is the kind that survives in prose long after the code goes, so it leads.
 * `ParamSource` on a method's parameter as something a discovery read can report. It is decided per
   directive application, so the relation deliberately carries no column for it, and the field it fed
   never reached the wire at all
+* `SchemaView.mapTypeClassification`, `mapFieldClassification`, `mapClaim` and `mapBackingShape`, and
+  with them "the classification kind" as something the `schema` wire reports. An entry names the
+  classifier that claims a coordinate, which is the store's vocabulary about the author's schema; a
+  permit name was the generator's vocabulary about itself. "The backing shape" retires as a wire concept
+  too: its table half and its class half are two questions answered directly, and there was never a
+  shape between them
+* `Unresolvable` and `Unclassified` as the way a coordinate reports that graphitron read no intent from
+  it. Both said a verdict was missing without saying whether one was expected, which is the distinction
+  the demand vocabulary carries and neither of them could
+* `participantTypeNames` as one list covering both abstract-type mechanisms, and `definitionLocation` as
+  a type's single site
+* `availability` and `freshness` as `schema`'s own top-level keys. They are the snapshot's two axes, the
+  same two every other tool reports under `snapshot`-prefixed names, and they never described the
+  answer's own availability
+* `CodeQueries.Position` as a type the `code` reader owns. A store-read source position is one wire
+  shape reached from one kind of triple, so it sits in `McpWire` beside the projection-fed spelling and
+  both readers compose it there
 * "several queries in one read transaction" as the shape of an answer, with the multi-query tearing
   argument that justified it, the `FkId` grouping key, the `Keys` pair record, and "folding the rows"
   as a step a reader has. What replaces all of it is one nested projection. The reader's justification

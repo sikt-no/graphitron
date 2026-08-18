@@ -16,10 +16,7 @@ import no.sikt.graphitron.mcp.rag.docs.DocsRag;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -867,136 +865,410 @@ class GraphitronMcpServerTest {
 
     // ---- schema ----
 
+    /** The package the {@code schema} fixture classes live under; the census reaches all of them. */
+    private static final String SCHEMA_FIXTURES = "no.sikt.graphitron.mcp.fixtures.schema.";
+
+    /**
+     * The {@code schema} fixture, chosen so one capture reaches every question the entry answers.
+     *
+     * <p>{@code Film} binds a table and carries a column-matched field, a {@code @reference} hop and a
+     * {@code @service}; the extension site is what makes its declaration list plural. {@code FilmSummary}
+     * is backed by nothing the author wrote, only by what the producer returns, which is the closure arm.
+     * {@code Contested} binds a table <em>and</em> is returned by a producer, so the two backing
+     * populations disagree about it. {@code FilmFilter} carries the {@code @condition} whose method the
+     * store's producer view does not reach. {@code Named} and {@code Searchable} are the two SDL
+     * mechanisms for an abstract type's participants.
+     */
+    private static final String SCHEMA_SDL = """
+        type Film @table(name: "film") {
+          title: String
+          language: Language @reference(path: [{key: "film_language_id_fkey"}])
+          summary: FilmSummary @service(service: {className: "%1$sCardService", method: "summary"})
+          description: String @service(service: {className: "%1$sCardService", method: "describe"})
+        }
+        extend type Film {
+          rating: String
+        }
+        interface Named { name: String }
+        type Language implements Named @table(name: "language") { name: String }
+        type FilmSummary { title: String released: Boolean }
+        type Contested @table(name: "actor") { title: String }
+        input FilmFilter @table(name: "film") {
+          title: String @condition(condition: {className: "%1$sFilmConditions", method: "titled"})
+        }
+        union Searchable = Film | Language
+        type Query {
+          films(filter: FilmFilter): [Film!]!
+          contested: Contested @service(service: {className: "%1$sCardService", method: "contested"})
+          search: [Searchable!]!
+          named: [Named!]!
+        }
+        """.formatted(SCHEMA_FIXTURES);
+
     @Test
     @SuppressWarnings("unchecked")
-    void schemaNarrowsToOneTypeWithClassificationBackingNodeAndFields() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), schemaWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
+    void schemaReportsATableBoundTypesClaimBindingRecordClassAndColumnMatchedField(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var film = onlyType(fixture, "Film");
+            assertThat(film).containsEntry("kind", "OBJECT");
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
-                .arguments(Map.of("type", "Film")).build()));
-            assertThat(structured).containsEntry("availability", "Built").containsEntry("freshness", "Current");
-            var types = (List<Map<String, Object>>) structured.get("types");
-            assertThat(types).singleElement().satisfies(t -> {
-                assertThat(t).containsEntry("typeRef", "Film");
-                var classification = (Map<String, Object>) t.get("typeClassification");
-                assertThat(classification).containsEntry("kind", "Node").containsEntry("tableName", "film");
-                var backing = (Map<String, Object>) t.get("backingShape");
-                assertThat(backing).containsEntry("kind", "TableBacking").containsEntry("tableName", "film");
-                // @node arm joined off the catalog (the snapshot carries no @node projection).
-                var node = (Map<String, Object>) t.get("node");
-                assertThat(node).containsEntry("typeId", "FilmType").containsEntry("keyColumns", List.of("film_id"));
-                var fields = (List<Map<String, Object>>) t.get("fields");
-                assertThat(fields).singleElement().satisfies(f -> {
-                    assertThat(f).containsEntry("fieldRef", "Film.title");
-                    assertThat((Map<String, Object>) f.get("classification")).containsEntry("kind", "Column");
+            var claims = (List<Map<String, Object>>) film.get("claims");
+            assertThat(claims).singleElement().satisfies(claim -> assertThat(claim)
+                .containsEntry("classifier", "TABLE")
+                .containsEntry("trigger", "@table")
+                .containsEntry("decoded", true));
+            assertThat((Map<String, Object>) film.get("demand"))
+                .containsEntry("verdict", "DEMANDED").containsEntry("rule", "TABLE_TYPE");
+
+            // The binding carries the table's full key and the arity of the reference that reached it.
+            assertThat((List<Map<String, Object>>) film.get("tables"))
+                .containsExactly(Map.of("table", "public.film", "candidates", 1));
+
+            // The @table arm of the coalescing backing view: the table's own generated record. Its
+            // members are empty because the classpath census deliberately never scans generated jOOQ
+            // records, which is the silence that view's comment names rather than a missing read.
+            assertThat((List<Map<String, Object>>) film.get("backing")).singleElement()
+                .satisfies(backing -> {
+                    assertThat(backing).containsEntry("declaredVia", "BOUND_TABLE");
+                    assertThat((String) backing.get("class")).endsWith(".FilmRecord");
+                    assertThat(backing).doesNotContainKey("members");
                 });
-                var loc = (Map<String, Object>) t.get("definitionLocation");
-                assertThat(loc).containsEntry("uri", "file:///schema.graphqls");
-            });
+
+            var title = fieldNamed(film, "Film.title");
+            assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
+                .satisfies(claim -> assertThat(claim)
+                    .containsEntry("classifier", "TABLE_COLUMN")
+                    .containsEntry("tier", "INFERRED")
+                    // An inferred claim has no directive, so neither slot is emitted as null.
+                    .doesNotContainKey("trigger").doesNotContainKey("decoded"));
+            assertThat((Map<String, Object>) title.get("column"))
+                .containsEntry("table", "public.film")
+                .containsEntry("column", "title")
+                .containsEntry("matchedName", "title")
+                .containsEntry("matchedBy", "JOOQ_NAME");
         }
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaListsTypesPagedAndOmitsNodeForNonNodeType() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), schemaWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
-
-            // limit=1 over the two types (Actor, Film sorted) yields a first page plus a cursor.
-            var page1 = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
-                .arguments(Map.of("limit", 1)).build()));
-            var first = (List<Map<String, Object>>) page1.get("types");
-            assertThat(first).singleElement().satisfies(t -> {
-                assertThat(t).containsEntry("typeRef", "Actor");
-                // A plain @table type carries no @node block.
-                assertThat(t).doesNotContainKey("node");
-            });
-            assertThat(page1).containsKey("nextCursor");
-
-            var page2 = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
-                .arguments(Map.of("limit", 1, "cursor", page1.get("nextCursor"))).build()));
-            var second = (List<Map<String, Object>>) page2.get("types");
-            assertThat(second).extracting(t -> t.get("typeRef")).containsExactly("Film");
-            assertThat(page2).doesNotContainKey("nextCursor");
+    void schemaReportsEveryDeclarationSiteOfAnExtendedType(@TempDir Path tmp) {
+        // The delta the declaration relation buys: the retired projection reduced a type's sites to the
+        // one canonical location, where an author of an extended type needs every file the shape comes
+        // from. A type declared once answers identically, so the extension is where it is visible.
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var declarations = (List<Map<String, Object>>) onlyType(fixture, "Film").get("declarations");
+            assertThat(declarations).hasSize(2);
+            assertThat(declarations).extracting(d -> d.get("isExtension"))
+                .containsExactly(false, true);
+            assertThat(declarations).allSatisfy(declaration -> assertThat(declaration)
+                .containsEntry("kind", "OBJECT")
+                .containsKeys("uri", "line", "column"));
         }
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaRendersConflictedClaimsAndUnresolvableReasonOnTheWire() throws Exception {
-        // The first-client contract for the failure arms: a conflicted field renders every rival
-        // claim with its decoded slot facts under the store's classifier vocabulary (the same
-        // dmlKind/tableName keys a healthy DmlMutation renders), and an unresolvable field
-        // renders its rejection reason. Pins the JSON keys, not just the catalog records.
-        try (var server = new GraphitronMcpServer(loopback(0), conflictedWorkspace());
-             var client = connect(server.port())) {
-            client.initialize();
+    void schemaReportsAServiceBackedFieldsMethodRefCarryingItsArity(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var summary = fieldNamed(onlyType(fixture, "Film"), "Film.summary");
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
-                .arguments(Map.of("type", "Mutation")).build()));
-            var types = (List<Map<String, Object>>) structured.get("types");
-            assertThat(types).singleElement().satisfies(t -> {
-                var fields = (List<Map<String, Object>>) t.get("fields");
-                assertThat(fields).extracting(f -> f.get("fieldRef"))
-                    .containsExactly("Mutation.broken", "Mutation.deleteFilm");
-
-                var broken = (Map<String, Object>) fields.get(0).get("classification");
-                assertThat(broken).containsEntry("kind", "Unresolvable")
-                    .containsEntry("reason", "no matching classification rule");
-
-                var conflicted = (Map<String, Object>) fields.get(1).get("classification");
-                assertThat(conflicted).containsEntry("kind", "Conflicted")
-                    .containsEntry("violation", "@service, @mutation are mutually exclusive");
-                var claims = (List<Map<String, Object>>) conflicted.get("claims");
-                assertThat(claims).hasSize(2);
-                assertThat(claims.get(0))
-                    .containsEntry("classifier", "Service")
-                    .containsEntry("methodClassName", "com.example.FilmService")
-                    .containsEntry("methodName", "delete")
+            assertThat((List<Map<String, Object>>) summary.get("claims")).singleElement()
+                .satisfies(claim -> assertThat(claim)
+                    .containsEntry("classifier", "SERVICE")
+                    .containsEntry("tier", "AUTHORED")
                     .containsEntry("trigger", "@service")
-                    .containsEntry("decoded", true);
-                // An unpositioned claim omits the location field rather than emitting null.
-                assertThat(claims.get(0)).doesNotContainKey("location");
-                assertThat(claims.get(1))
-                    .containsEntry("classifier", "Mutation")
-                    .containsEntry("dmlKind", "DELETE")
-                    .containsEntry("tableName", "film")
-                    .containsEntry("trigger", "@mutation")
-                    .containsEntry("decoded", true);
-                var location = (Map<String, Object>) claims.get(1).get("location");
-                assertThat(location).containsEntry("uri", "file:///schema.graphqls")
-                    .containsEntry("line", 11);
-            });
-
-            // A chained @routine crosses the wire as ONE claim whose routineRefs carry the
-            // steps in application-ordinal order; the chain never renders as rival claims.
-            var query = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
-                .arguments(Map.of("type", "Query")).build()));
-            var queryTypes = (List<Map<String, Object>>) query.get("types");
-            assertThat(queryTypes).singleElement().satisfies(t -> {
-                var fields = (List<Map<String, Object>>) t.get("fields");
-                var films = (Map<String, Object>) fields.getFirst().get("classification");
-                var claims = (List<Map<String, Object>>) films.get("claims");
-                assertThat(claims).hasSize(2);
-                assertThat(claims.get(1))
-                    .containsEntry("classifier", "Routine")
-                    .containsEntry("routineRefs", List.of("first_fn", "second_fn"));
-            });
+                    .containsEntry("decoded", true)
+                    .containsKey("location"));
+            assertThat((List<Map<String, Object>>) summary.get("methods")).containsExactly(Map.of(
+                "methodRef", SCHEMA_FIXTURES + "CardService#summary/1",
+                "declaredVia", "SERVICE",
+                "candidates", 1));
+            assertThat(summary).doesNotContainKey("column");
         }
     }
 
     @Test
-    void schemaReportsUnavailableBeforeFirstBuild() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+    @SuppressWarnings("unchecked")
+    void schemaMasksTheColumnBindingOfAFieldAnAuthoredDirectiveClaims(@TempDir Path tmp) {
+        // Film.description is named after a column of film, so the structural classifier reads it as a
+        // table column and its own relation keeps that row on purpose, which is what lets a diagnostic
+        // say "would classify as a table column; @service overrides it". The resolution is where the
+        // store says which reading won, and reporting a column binding here would tell an agent the
+        // field's value comes from a column when it comes from a method.
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var description = fieldNamed(onlyType(fixture, "Film"), "Film.description");
+
+            assertThat((List<Map<String, Object>>) description.get("claims")).singleElement()
+                .satisfies(claim -> assertThat(claim)
+                    .containsEntry("classifier", "SERVICE")
+                    .containsEntry("tier", "AUTHORED"));
+            assertThat(description).doesNotContainKey("column");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAConditionsMethodTheStoresProducerViewDoesNotCarry(@TempDir Path tmp) {
+        // The second method population. The producer view is scoped to @service and @externalField, so
+        // reading only it would leave this coordinate's method slot empty with nothing on the wire to
+        // say a slot had been dropped rather than found absent.
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var title = fieldNamed(onlyType(fixture, "FilmFilter"), "FilmFilter.title");
+
+            assertThat((List<Map<String, Object>>) title.get("methods")).containsExactly(Map.of(
+                "methodRef", SCHEMA_FIXTURES + "FilmConditions#titled/1",
+                "declaredVia", "CONDITION",
+                "candidates", 1));
+            // @condition claims no classification, so the structural reading still wins the coordinate
+            // and the column binding stands beside the method rather than being masked by it.
+            assertThat((List<Map<String, Object>>) title.get("claims")).singleElement()
+                .satisfies(claim -> assertThat(claim).containsEntry("classifier", "TABLE_COLUMN"));
+            assertThat((Map<String, Object>) title.get("column"))
+                .containsEntry("table", "public.film").containsEntry("column", "title");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAReferencingFieldsHopWithBothEndpointsQualified(@TempDir Path tmp) {
+        // The delta over the retired projection, which held a bare target table name and a key name:
+        // both endpoints come back schema-qualified, and the two arities say how certain the hop is.
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var language = fieldNamed(onlyType(fixture, "Film"), "Film.language");
+
+            assertThat((List<Map<String, Object>>) language.get("joinPath")).containsExactly(Map.of(
+                "ordinal", 0, "position", 0,
+                "via", "KEY", "keyMatchedBy", "SQL_NAME",
+                "fromTable", "public.film", "toTable", "public.language",
+                "constraint", "film_language_id_fkey", "fkOnFrom", true,
+                "targets", 1, "candidates", 1));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAClosureBackedTypesClassAndTheMemberNamesItOffers(@TempDir Path tmp) {
+        // The closure's own reachability is derived and tested on the store side; what this asserts is
+        // the rendering, which is the class, its provenance and the slots the class offers an author.
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var summary = onlyType(fixture, "FilmSummary");
+
+            assertThat((List<Map<String, Object>>) summary.get("backing")).singleElement()
+                .satisfies(backing -> {
+                    assertThat(backing)
+                        .containsEntry("class", SCHEMA_FIXTURES + "FilmSummary")
+                        .containsEntry("declaredVia", "BACKING_CLOSURE");
+                    // Both accessor prefixes the bean rule accepts, each with the slot name the rule
+                    // derives and the declaration it resolves back to.
+                    assertThat((List<Map<String, Object>>) backing.get("members")).containsExactly(
+                        Map.of("name", "released", "type", "boolean",
+                            "origin", "BEAN_ACCESSOR", "accessorMethodName", "isReleased"),
+                        Map.of("name", "title", "type", "String",
+                            "origin", "BEAN_ACCESSOR", "accessorMethodName", "getTitle"));
+                });
+            // Nothing the author wrote claims or binds this type; the producer is what reaches it.
+            assertThat(summary).doesNotContainKeys("claims", "tables");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsBothBackingsOfAContestedTypeRatherThanApplyingThePrecedence(@TempDir Path tmp) {
+        // The walk resolves this pair by reading the table and never consulting the class. That is a
+        // defensible reading and a consumer may still apply it by filtering on declaredVia; what the
+        // tool may not do is report the precedence as agreement, so both rows cross the wire.
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var contested = onlyType(fixture, "Contested");
+
+            var backing = (List<Map<String, Object>>) contested.get("backing");
+            assertThat(backing).hasSize(2);
+            assertThat(backing).extracting(b -> b.get("declaredVia"))
+                .containsExactlyInAnyOrder("BOUND_TABLE", "BACKING_CLOSURE");
+            assertThat(backing).extracting(b -> b.get("class"))
+                .contains(SCHEMA_FIXTURES + "FilmSummary");
+
+            assertThat((Map<String, Object>) contested.get("backingConflict"))
+                .containsEntry("candidates", 2);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAnAbstractTypesParticipantsUnderTheSdlMechanismThatDeclaresThem(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var named = onlyType(fixture, "Named");
+            assertThat(named).containsEntry("kind", "INTERFACE")
+                .containsEntry("implementors", List.of("Language"))
+                .doesNotContainKey("unionMembers");
+
+            var searchable = onlyType(fixture, "Searchable");
+            assertThat(searchable).containsEntry("kind", "UNION")
+                .containsEntry("unionMembers", List.of("Film", "Language"))
+                .doesNotContainKey("implementors");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAnExemptCoordinateWithTheRuleThatPutsItOutOfScope(@TempDir Path tmp) {
+        // The answer with no predecessor at all. The retired wire reported one verdict whether a
+        // coordinate failed to classify or was never asked to, so an agent could not tell "graphitron
+        // could not read this" from "graphitron does not classify this kind of coordinate".
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            assertThat((Map<String, Object>) fieldNamed(onlyType(fixture, "Named"), "Named.name")
+                .get("demand"))
+                .containsEntry("verdict", "EXEMPT").containsEntry("rule", "INTERFACE_TYPE");
+
+            assertThat((Map<String, Object>) fieldNamed(onlyType(fixture, "FilmFilter"),
+                "FilmFilter.title").get("demand"))
+                .containsEntry("verdict", "EXEMPT").containsEntry("rule", "INPUT_TYPE");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaNarrowsToOneTypeAndReportsAnUndeclaredNameAsNotFound(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var found = schemaResult(fixture, Map.of("type", "Film"));
+            assertThat((List<Map<String, Object>>) structured(found).get("types")).hasSize(1);
+            assertThat(firstLine(found)).contains("type 'Film'");
+
+            var missing = schemaResult(fixture, Map.of("type", "Nonexistent"));
+            assertThat(structured(missing))
+                .containsEntry("types", List.of())
+                .containsEntry("notFound", "Nonexistent");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaPagesByKeysetAndVisitsEveryTypeOnce(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, SCHEMA_SDL)) {
+            var whole = schemaTypeRefs(fixture, Map.of("limit", 1_000));
+            assertThat(whole).doesNotHaveDuplicates().isSorted().hasSizeGreaterThan(3);
+
+            var walked = new ArrayList<String>();
+            Optional<String> cursor = Optional.empty();
+            for (int page = 0; page <= whole.size(); page++) {
+                var args = new LinkedHashMap<String, Object>();
+                args.put("limit", 2);
+                cursor.ifPresent(c -> args.put("cursor", c));
+                var result = structured(schemaResult(fixture, args));
+                walked.addAll(typeRefs(result));
+                // The unpaged total rides every page, so an agent never counts the pages to learn it.
+                assertThat(firstLine(schemaResult(fixture, args)))
+                    .startsWith("schema: " + whole.size() + " type(s)");
+                cursor = Optional.ofNullable((String) result.get("nextCursor"));
+                if (cursor.isEmpty()) break;
+            }
+            assertThat(walked).as("keyset paging visits every type exactly once, in order")
+                .isEqualTo(whole);
+        }
+    }
+
+    @Test
+    void schemaRefusesWithoutAStoreToRead() {
+        // An empty answer would read as a schema declaring no types at all, which is the reading the
+        // catalog and diagnostics tools refuse for the same reason.
+        var result = SchemaView.schemaResult(LspSchemaSnapshot.unavailable(), null, null, Map.of());
+        assertThat(result.isError()).isTrue();
+        assertThat(firstLine(result)).contains("schema").contains("holds no fact store handle");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsAConflictedCoordinatesDirectivesAndMessage(@TempDir Path tmp) throws Exception {
+        // The one case that needs a build rather than a capture: the conflict view's domain gate joins
+        // walk_claim_domain_field, which is written by the detection pass over the walk's own reach.
+        try (var build = StoreBackedBuild.run(tmp, "conflicted", CONFLICTED_SDL);
+             var server = server(build);
              var client = connect(server.port())) {
             client.initialize();
 
-            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("schema").build()));
-            assertThat(structured).containsEntry("availability", "Unavailable").containsEntry("types", List.of());
+            var mutation = onlyType(structured(client.callTool(
+                McpSchema.CallToolRequest.builder("schema")
+                    .arguments(Map.of("type", "Mutation")).build())), "Mutation");
+            var conflict = (Map<String, Object>) fieldNamed(mutation, "Mutation.deleteFilm")
+                .get("conflict");
+
+            assertThat(conflict)
+                .containsEntry("verdict", "CONFLICT")
+                // The canonical comma-joined render the store groups by, sorted, so two readers
+                // grouping on a directive set cannot split a group on claim order.
+                .containsEntry("directives", "mutation,service")
+                .containsEntry("message",
+                    "Field 'Mutation.deleteFilm': @service, @mutation are mutually exclusive")
+                .containsKey("location");
+
+            // Both rival claims survive with their own provenance, which is what the conflicted arm
+            // of the retired wire carried and what generalises here to every coordinate.
+            assertThat((List<Map<String, Object>>) fieldNamed(mutation, "Mutation.deleteFilm")
+                .get("claims"))
+                .extracting(claim -> claim.get("classifier"))
+                .containsExactly("MUTATION", "SERVICE");
+
+            // The relation carries both grains and marks the type grain by a null field name, so a
+            // field's violation must not surface as its parent type's.
+            assertThat(mutation).doesNotContainKey("conflict");
         }
+    }
+
+    /** A coordinate two claiming directives contest, which is what the conflict relation reports on. */
+    private static final String CONFLICTED_SDL = """
+        type Film @table(name: "film") {
+          title: String
+        }
+        type Query { film: Film }
+        type Mutation {
+          deleteFilm(id: ID!): Boolean
+            @mutation(typeName: DELETE)
+            @service(service: {className: "com.example.FilmService", method: "delete"})
+        }
+        """;
+
+    // ---- schema helpers ----
+
+    private static McpSchema.CallToolResult schemaResult(
+        StoreFixture fixture, Map<String, Object> args
+    ) {
+        return SchemaView.schemaResult(LspSchemaSnapshot.unavailable(), fixture.handle(),
+            fixture.reader(), args);
+    }
+
+    /**
+     * The one entry the tool returns for {@code typeName}, reached through the narrow rather than by
+     * position, so a fixture type added later cannot shift a case onto a different entry.
+     */
+    private static Map<String, Object> onlyType(StoreFixture fixture, String typeName) {
+        return onlyType(structured(schemaResult(fixture, Map.of("type", typeName))), typeName);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> onlyType(Map<String, Object> structured, String typeName) {
+        var types = (List<Map<String, Object>>) structured.get("types");
+        assertThat(types).as("the narrow to %s returns exactly that type", typeName).hasSize(1);
+        assertThat(types.getFirst()).containsEntry("typeRef", typeName);
+        return types.getFirst();
+    }
+
+    /** One field entry of a type by its coordinate id, which is the id every tool spells it as. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> fieldNamed(Map<String, Object> type, String fieldRef) {
+        return ((List<Map<String, Object>>) type.get("fields")).stream()
+            .filter(field -> fieldRef.equals(field.get("fieldRef")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no field entry for " + fieldRef));
+    }
+
+    private static List<String> schemaTypeRefs(StoreFixture fixture, Map<String, Object> args) {
+        return typeRefs(structured(schemaResult(fixture, args)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> typeRefs(Map<String, Object> structured) {
+        return ((List<Map<String, Object>>) structured.get("types")).stream()
+            .map(type -> (String) type.get("typeRef"))
+            .toList();
     }
 
     // ---- diagnostics / diagnostics.aggregate (store-backed) ----
@@ -1438,43 +1710,6 @@ class GraphitronMcpServerTest {
         public int dimension() {
             return dimension;
         }
-    }
-
-    private static Workspace schemaWorkspace() {
-        var typeClassifications = new LinkedHashMap<String, TypeClassification>();
-        typeClassifications.put("Film", new TypeClassification.Node("film", "FilmType", List.of("film_id")));
-        typeClassifications.put("Actor", new TypeClassification.Table("actor"));
-        Map<String, TypeBackingShape> backing = Map.of("Film", new TypeBackingShape.TableBacking("film"));
-        Map<String, FieldClassification> fields = Map.of("Film.title", new FieldClassification.Column("film", "title"));
-        Map<String, CompletionData.SourceLocation> locations =
-            Map.of("Film", new CompletionData.SourceLocation("file:///schema.graphqls", 3, 0));
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(), backing, Map.of(), fields, typeClassifications, locations);
-        // @node metadata rides the catalog (the snapshot has no @node projection).
-        var catalog = new CompletionData(List.of(), List.of(), List.of(),
-            Map.of("Film", new CompletionData.NodeMetadata("FilmType", List.of("film_id"))));
-        return builtWorkspace(catalog, snapshot, ValidationReport.empty());
-    }
-
-    private static Workspace conflictedWorkspace() {
-        var conflicted = new FieldClassification.Conflicted(List.of(
-            new FieldClassification.Claim.Service("com.example.FilmService", "delete", "service", true, null),
-            new FieldClassification.Claim.Mutation("DELETE", "film", "mutation", true,
-                new CompletionData.SourceLocation("file:///schema.graphqls", 11, 2))),
-            "@service, @mutation are mutually exclusive");
-        var chained = new FieldClassification.Conflicted(List.of(
-            new FieldClassification.Claim.Service("com.example.FilmService", "run", "service", true, null),
-            new FieldClassification.Claim.Routine(List.of("first_fn", "second_fn"), "routine", true, null)),
-            "@service, @routine are mutually exclusive");
-        Map<String, FieldClassification> fields = Map.of(
-            "Mutation.deleteFilm", conflicted,
-            "Mutation.broken", new FieldClassification.Unresolvable("no matching classification rule"),
-            "Query.films", chained);
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(), Map.of(), Map.of(), fields,
-            Map.of("Mutation", new TypeClassification.Root("mutation"),
-                "Query", new TypeClassification.Root("query")), Map.of());
-        return builtWorkspace(CompletionData.empty(), snapshot, ValidationReport.empty());
     }
 
     private static Workspace directivesWorkspace() {

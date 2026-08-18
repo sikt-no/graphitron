@@ -131,6 +131,22 @@ public final class StoreFixture implements AutoCloseable {
     }
 
     /**
+     * The shape the {@code schema} tool's cases read: an SDL of the caller's over the single-schema
+     * generated model, with the fixture classes on the classpath census.
+     *
+     * <p>All three inputs, because the tool's entry joins all three. The SDL is what declares the
+     * coordinates, the catalog is what a {@code @table} binding and a column match resolve against, and
+     * the census is what a producer's return and a {@code @condition}'s method resolve against; a
+     * fixture missing any one of them makes a whole family of slots silently empty.
+     */
+    public static StoreFixture ofSchema(Path directory, String sdl) {
+        var store = GraphitronModelStore.open();
+        var fixture = new StoreFixture(store, GRAPH, directory);
+        fixture.capture(sdl, JOOQ_PACKAGE, false, codeFixtureCensus());
+        return fixture;
+    }
+
+    /**
      * The census of the fixture classes as a real classfile scan produced it. A scan rather than
      * hand-built rows because everything the {@code code} tool projects is a classfile fact the store
      * holds verbatim: the descriptors that key an overload, the un-erased {@code org.jooq.Condition}
