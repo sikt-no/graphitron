@@ -31,9 +31,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
-| `R323` | Multi-parent NestingField sharing: admit the projected leaves, retire the open BatchKey question | Ready | 2026-08-18 <sub>created 2026-06-17</sub> | [plan](nestingfield-multiparent-projected-leaves.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
+| `R323` | Multi-parent NestingField sharing: admit the projected leaves, retire the open BatchKey question | In Progress | 2026-08-18 <sub>created 2026-06-17</sub> | [plan](nestingfield-multiparent-projected-leaves.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -298,7 +298,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R562` [**Classify a synthesised connection type's totalCount/facets fields as coordinates**](synthesised-connection-fields-as-coordinates.md) — Backlog, architecture
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
 - `R531` [**Meta-test: no registry reads in the classify-time set**](classify-time-registry-read-guard.md) — Backlog, architecture
-- `R323` [**Multi-parent NestingField sharing: admit the projected leaves, retire the open BatchKey question**](nestingfield-multiparent-projected-leaves.md) — Ready, architecture
+- `R323` [**Multi-parent NestingField sharing: admit the projected leaves, retire the open BatchKey question**](nestingfield-multiparent-projected-leaves.md) — In Progress, architecture
 - `R537` [**Pin the DefaultRead-under-Outcome validate-time rejection with a named test**](pin-defaultread-outcome-rejection.md) — Backlog, cleanup
 - `R689` [**Pre-index reads of ErrorIndex.EMPTY return a plausible wrong answer**](phase-varying-index-reads-lack-a-not-built-arm.md) — Backlog, architecture
 - `R532` [**Route surfaceMultiProducerRejections through bindingRejectionVerdict**](single-producer-rejection-seed.md) — Backlog, cleanup
