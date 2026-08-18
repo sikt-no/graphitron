@@ -46,9 +46,14 @@ The transcription therefore stores argument values as printed text, which is why
 
 **Move one, required: the decode's input becomes the rows.** `GraphitronFactCapture` stops taking the
 registry and takes the transcribed rows, parsing `value_sdl` where it needs structure. This is
-mechanical, contained to one class's input, and it is what makes the family tier two: the pass no
-longer reads a corpus, so it no longer has to run at capture cadence, and the independence gate the
-sibling nodehood item introduces applies to it unchanged.
+mechanical and contained to one class's input, and it brings the pass under the independence gate the
+sibling nodehood item introduces.
+
+What it does *not* buy, contrary to an earlier draft of this item: decoupling the `graphitron_`
+population from the `graphql_` one. Both decode the same document at the same cadence, so the
+population never separates and there is no cadence to be won. The tier label is a description of what
+the family is, not a schedule. The payoff this item was reaching for lives in the join-readiness
+item instead, and move one is a supporting change rather than the prize.
 
 **Move two, optional and later: structure the transcribed value.** One row per value node carrying a
 kind (string, int, enum, boolean, null, list, object, variable), a parent link and an ordinal, so a
