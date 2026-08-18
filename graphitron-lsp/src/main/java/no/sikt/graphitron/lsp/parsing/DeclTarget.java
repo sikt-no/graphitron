@@ -5,6 +5,7 @@ import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTables;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.FieldProducerMethods;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
@@ -31,10 +32,12 @@ import java.util.Optional;
  * resolution happened to have in hand.
  *
  * <p>What a coordinate resolves against is {@link TypeMemberScope}'s, shared with
- * completion, hover's coordinate arm and the field-member diagnostic. The
- * projection answers one question that is left here, and it is not a backing:
- * which Java method a method-backed field binds to, which is the field's own
- * classification.
+ * completion, hover's coordinate arm and the field-member diagnostic. Which Java method a
+ * method-backed field binds to is {@link FieldProducerMethods}', for {@code @service} and
+ * {@code @externalField}. One question is left with the classification projection and it is
+ * {@code @routine}'s: the generated call surface a routine read or write binds to, which is a
+ * derivation over jOOQ's routine codegen that no relation carries. The projection is therefore
+ * optional here, and every arm but that one resolves with no build behind it.
  */
 public sealed interface DeclTarget {
 
@@ -71,12 +74,18 @@ public sealed interface DeclTarget {
      * scope switch itself is the {@link #ofType} / {@link #ofField} core, so the source-index read is
      * left to the per-consumer projection. The store answers both what a coordinate resolves against
      * and what that scope then offers: a table's generated class and columns, a class's member slots,
-     * a method's arity. Where the declaration <em>is</em> is still the consumer's own read.
+     * a producer method and its arity. Where the declaration <em>is</em> is still the consumer's own
+     * read.
+     *
+     * <p>An unbuilt {@code snapshot} is not a decline: only the {@code @routine} arm reads it, so what
+     * it costs is a routine-backed field's jump to the generated call surface and nothing else. The
+     * narrowing happens here so no consumer has to decide what an absent snapshot means.
      */
     static DeclTarget resolve(
-        SdlDeclaration declaration, LspSchemaSnapshot.Built built,
+        SdlDeclaration declaration, LspSchemaSnapshot snapshot,
         StoreHandle store, byte[] source
     ) {
+        var built = snapshot instanceof LspSchemaSnapshot.Built b ? b : null;
         return switch (declaration) {
             case SdlDeclaration.TypeName t -> ofType(t.typeName(), store);
             case SdlDeclaration.FieldName f -> {
@@ -126,9 +135,14 @@ public sealed interface DeclTarget {
     ) {
         // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
-        // classification takes precedence over the parent's scope below.
-        var methodBacked = methodBackedTarget(parentTypeName, memberName, built, store);
-        if (methodBacked.isPresent()) return methodBacked.get();
+        // producer takes precedence over the parent's scope below.
+        var produced = FieldProducerMethods.of(store, parentTypeName, memberName);
+        if (produced.isPresent()) {
+            var producer = produced.get();
+            return new SourceMethod(producer.fqClassName(), producer.methodName(), producer.arity());
+        }
+        var routine = routineTarget(parentTypeName, memberName, built, store);
+        if (routine.isPresent()) return routine.get();
         var scope = TypeMemberScope.of(store, parentTypeName);
         if (scope.isEmpty()) return new None();
         return switch (scope.get()) {
@@ -139,35 +153,31 @@ public sealed interface DeclTarget {
     }
 
     /**
-     * The method a method-backed field binds to, when the field's classification
-     * names one. {@code memberName} is the SDL field name here: the method-backed
-     * variants carry no {@code @field(name:)} override (that override redirects a
-     * column / accessor binding, a different classification), so the resolved
-     * member name is the coordinate the classification map is keyed by. The bound
-     * arity is read off the census's method of that name; when the name is
-     * arity-overloaded the classification does not record which overload bound, so
-     * the first candidate's arity is taken and the consumers' name-level
-     * fallback still guarantees a jump if that exact arity key was dropped.
+     * The generated call surface a {@code @routine} field binds to, which is the one binding still
+     * read off the classification projection. {@code memberName} is the SDL field name here: a
+     * routine-backed field carries no {@code @field(name:)} override (that override redirects a column
+     * or accessor binding, a different classification), so it is the coordinate the projection is
+     * keyed by.
+     *
+     * <p>The class is the jOOQ {@code Routines} class and the method is the routine's generated call,
+     * neither of which any relation carries: the catalog census holds tables, columns and keys, and
+     * has no routine family. So this arm resolves only where a build has run, and where none has it
+     * declines and the parent type's scope answers. Its arity comes off the census like any other
+     * method's, and is 0 where the generated sources are not on the scanned classpath, which the
+     * consumers' name-level fallback covers.
      */
-    private static Optional<DeclTarget> methodBackedTarget(
+    private static Optional<DeclTarget> routineTarget(
         String parentTypeName, String memberName, LspSchemaSnapshot.Built built, StoreHandle store
     ) {
+        if (built == null) return Optional.empty();
         var classOpt = built.fieldClassification(parentTypeName, memberName);
         if (classOpt.isEmpty()) return Optional.empty();
-        // Every classification outside these method-backed arms binds no developer
-        // method and falls through to the parent-type backing.
-        return switch (classOpt.get()) {
-            case FieldClassification.ServiceBacked s -> Optional.of(sourceMethod(store, s.methodClassName(), s.methodName()));
-            case FieldClassification.Computed c -> Optional.of(sourceMethod(store, c.methodClassName(), c.methodName()));
-            case FieldClassification.QueryService q -> Optional.of(sourceMethod(store, q.methodClassName(), q.methodName()));
-            case FieldClassification.RoutineBacked q -> Optional.of(sourceMethod(store, q.methodClassName(), q.methodName()));
-            case FieldClassification.MutationService m -> Optional.of(sourceMethod(store, m.methodClassName(), m.methodName()));
-            default -> Optional.empty();
-        };
-    }
-
-    private static DeclTarget sourceMethod(StoreHandle store, String className, String methodName) {
-        return new SourceMethod(className, methodName, arityOf(store, className, methodName));
+        // Every other classification either names a producer the store already answered for above or
+        // binds no developer method at all, falling through to the parent-type backing.
+        return classOpt.get() instanceof FieldClassification.RoutineBacked routine
+            ? Optional.of(new SourceMethod(routine.methodClassName(), routine.methodName(),
+                arityOf(store, routine.methodClassName(), routine.methodName())))
+            : Optional.empty();
     }
 
     /**

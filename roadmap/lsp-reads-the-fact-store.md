@@ -538,9 +538,9 @@ list of what has not.
   render the path the author omitted. The inlay row above says why no relation answers yet: the
   overlay fires on an *omitted* path, so the fact it wants is the foreign-key discovery between two
   types' bindings, which nothing derives.
-* `DeclTarget` asks for the field classification at a coordinate, to decide which Java declaration a
-  member name binds to. Likely answerable from the claim views already, since the decision it makes
-  is the one those views carry; unverified.
+* `DeclTarget` asks for the field classification at a coordinate, and asks it now only about
+  `@routine`: the generated call surface a routine read or write binds to, which no relation carries.
+  R708 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below.
 * `FieldCompletions` asks whether a site is a payload data field, through `siteContext`, to decide
   whether to offer the source sigil. A narrow predicate over a distinction no relation states.
 
@@ -3488,3 +3488,62 @@ honest way to get it is a prior view that names the one backing class of a type 
 cannot-be-a-view argument in a DDL comment, and that is a modelling decision of its own rather than a
 step in this recomposition.
 
+
+## Settled while building: the reference outlives its resolution, and one snapshot gate is now about cost
+
+The declaration-name resolution asked the classification projection which Java method a method-backed
+field binds to, and pulled a class and a method name off five variants to answer it. Four of those five
+are one directive each: `@service` on a child field, on a query field and on a mutation field, and
+`@externalField`, which the walk calls `Computed`. `intent_field_producer_method` already resolved
+exactly that pair against the classpath census, so the port looked like a substitution.
+
+It was not, and the reason is worth stating because it is a general shape. That view is an inner join
+to `jvm_method`: it exists to say which census method a reference matches, so a reference matching none
+has no row. A surface naming the declaration a field binds to needs the reference in exactly that case.
+A class the scan skipped is ordinary rather than exotic here, the census excluding the generated jOOQ
+package by design and reaching only the entries something read, and the incumbent already handled it,
+falling back to a jump by method name at no arity. Substituting the resolution for the projection would
+have silently dropped those coordinates.
+
+So the authored reference became its own relation, `intent_field_producer_reference`, and the resolution
+is now that relation joined to the census rather than a subquery that happens to contain it. What each
+answers is different in kind: the reference is what the author wrote, and it is a fact whether or not
+anything on the classpath agrees; the resolution is which method it found, and its absence is
+information. Splitting them also gave the `@externalField` omitted-method fallback one home. That
+default was written in SQL inside the old view and in the reflective walk that produced the
+projection, and now the reader inherits it from the relation instead of knowing it.
+
+The consumer reads one statement: the reference left-joined to its resolution, with the matched
+overload's parameter count beside it. Left-joined and not inner is the whole point, so an unresolved
+reference arrives as a target with no arity rather than as no target.
+
+**A coordinate two producer directives claim resolves to no method.** Both rows exist in the reference,
+neither wins, and the surface refuses rather than picking. Same rule and same reason as the contested
+backing in `TypeBackingClass`: the generator rejects such a coordinate, so it binds neither method, and
+a jump to one of them would report a binding that does not exist. The store already reports the
+disagreement through `intent_authored_claim_conflict`; here the two references simply leave nothing to
+name, and the resolution falls through to what the parent type's scope offers, which is what an
+unclaimed field gets. This is a rule, so it is pinned rather than left to be inferred from the
+implementation.
+
+**One arm stays with the projection, and it is `@routine`.** What a routine field binds to is a method
+on the jOOQ `Routines` class that codegen produced, and neither the class nor the method name is
+derivable from the store: `graphitron_routine.routine_ref` holds the routine's name in the database, and
+the step to its generated Java name is jOOQ's own. The catalog census has no routine family at all. R708
+is filed for that capture, and it is the last thing standing between this surface and the projection.
+
+**The snapshot gate on the declaration surfaces survives this slice, and it changed meaning.** It used
+to stand for what the resolution could answer; it now stands for what the resolution costs. Removing it
+was the obvious next line of the same edit and the statement-count enforcer caught it: the classification
+block is one statement, and the resolution beside it is two to five more, so ungating the overlay turned
+a one-statement hover into a three-to-six-statement one on the path where no build has run. Measured on
+the enforcer's own fixture: a claimed type 4, a column-matched field 6, a type two producers back
+differently 3. The gate is what keeps that off the no-build path today.
+
+Retuning the enforcer to accept the larger number was available and is the wrong trade. The right one is
+the recomposition the rest of this item has been doing: `TypeMemberScope.resolve` already takes its
+populations as rows in hand, exactly as the diagnostics and inlay projections feed it, so the
+declaration capability can become one statement per declaration the same way. Then the gate comes off
+because the cost argument for it is gone, and the enforcer keeps asserting one rather than being taught
+a bigger number. That is the next slice, and it is the last of the three residue sites bar the
+`@reference` overlay's missing view.

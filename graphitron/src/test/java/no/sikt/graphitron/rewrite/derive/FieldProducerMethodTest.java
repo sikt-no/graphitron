@@ -22,12 +22,14 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
+import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for {@code intent_field_producer_method}: which census method an
- * {@code @service} or {@code @externalField} reference names.
+ * The registered agreement anchor for the producer pair: {@code intent_field_producer_reference},
+ * the method an {@code @service} or {@code @externalField} names, and
+ * {@code intent_field_producer_method}, which of the census's methods that resolves to.
  *
  * <p>The SDL is captured for real and the census is hand-built, which is the split the two sides
  * earn separately. A directive application is a fact capture produces, so writing the rows by hand
@@ -136,6 +138,38 @@ class FieldProducerMethodTest {
         });
     }
 
+    // ===== What survives an unresolved reference =====
+
+    /**
+     * The reason the reference is a relation of its own: both causes of absence above leave the
+     * authored reference standing, and a surface naming the declaration a field binds to wants it.
+     * A class the scan skipped is ordinary rather than exotic, so resolving only what the census
+     * matched would decline at coordinates whose method the author named plainly.
+     */
+    @Test
+    void anUnresolvedReferenceIsStillAReference() {
+        withCapturedStore(dsl -> {
+            assertThat(referencesAt(dsl, "Query", "unscanned"))
+                .extracting(r -> r.getClassName() + "#" + r.getMethodName())
+                .containsExactly("app.NotScanned#findAll");
+            assertThat(referencesAt(dsl, "Query", "missing"))
+                .extracting(r -> r.getMethodName())
+                .containsExactly("absent");
+        });
+    }
+
+    /**
+     * The fallback is applied once, where the reference is stated, so the resolution above inherits it
+     * rather than repeating it and no reader has to know the default at all.
+     */
+    @Test
+    void theOmittedMethodFallbackIsAppliedInTheReference() {
+        withCapturedStore(dsl ->
+            assertThat(referencesAt(dsl, "Film", "isEnglish"))
+                .extracting(r -> r.getDeclaredVia() + ":" + r.getMethodName())
+                .containsExactly("EXTERNAL_FIELD:isEnglish"));
+    }
+
     /**
      * A service naming no method resolves to nothing rather than falling back to the field name.
      * The two directives differ here and the difference is authored, not incidental: the fallback
@@ -239,6 +273,15 @@ class FieldProducerMethodTest {
             .where(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME.eq(GRAPH)
                 .and(INTENT_FIELD_PRODUCER_METHOD.TYPE_NAME.eq(typeName))
                 .and(INTENT_FIELD_PRODUCER_METHOD.FIELD_NAME.eq(fieldName)))
+            .fetch();
+    }
+
+    private static List<no.sikt.graphitron.model.tables.records.IntentFieldProducerReferenceRecord>
+        referencesAt(DSLContext dsl, String typeName, String fieldName) {
+        return dsl.selectFrom(INTENT_FIELD_PRODUCER_REFERENCE)
+            .where(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(GRAPH)
+                .and(INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(typeName))
+                .and(INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(fieldName)))
             .fetch();
     }
 

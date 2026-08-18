@@ -146,10 +146,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       ending at a name no entry declares, one reaching a type two ways) being ones a scan of
  *       compiled fixtures cannot arrange; it reads the relation seeded in the module whose DDL
  *       declares it, the walk having no side to bring to a question about a closure over rows;
- *       {@code no.sikt.graphitron.rewrite.derive.FieldProducerMethodTest} binds
- *       {@code intent_field_producer_method}, the census method an authored Java reference
- *       resolves to, over captured SDL against a hand-built census, half its cases pinning what
- *       the resolution refuses to decide: an overloaded name is rows and an arity, never a pick;
+ *       {@code no.sikt.graphitron.rewrite.derive.FieldProducerMethodTest} binds the producer pair,
+ *       {@code intent_field_producer_reference} naming the method an authored Java reference spells
+ *       and {@code intent_field_producer_method} the census method it resolves to, over captured SDL
+ *       against a hand-built census, half its cases pinning what the resolution refuses to decide (an
+ *       overloaded name is rows and an arity, never a pick) and two pinning what survives it, a
+ *       reference the census matched nothing for still being a reference;
  *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the five relations an
  *       accessor hop is built from ({@code intent_delivery_container}, {@code intent_declared_type_ref},
  *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
@@ -273,6 +275,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);
         registrations.put("intent_class_assignable", Arm.DERIVED);
+        registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("intent_delivery_container", Arm.DERIVED);
         registrations.put("intent_declared_type_ref", Arm.DERIVED);

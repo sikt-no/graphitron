@@ -57,6 +57,13 @@ class DeclarationDefinitionsTest {
      * {@code @table} binding, and three types a producer of the census's own grounds on a class. The
      * subject of every case is still the {@code .java} files, but the scope a coordinate resolves in is
      * the store's answer now, so a schema saying so has to exist.
+     *
+     * <p>The producer-backed coordinates are captured here rather than posted into the projection,
+     * which is what the resolution reads for them: {@code price} and {@code discount} name their
+     * method through {@code @service}, and {@code computed} through {@code @externalField} with a
+     * method name that deliberately differs from the field's, so a case answering it cannot be an echo
+     * of the coordinate. {@code viaMethod} is the exception and stays in the projection, no relation
+     * carrying a routine's generated call surface.
      */
     private static final String CAPTURED_SDL = """
         type Query {
@@ -64,8 +71,16 @@ class DeclarationDefinitionsTest {
             dto: FilmRecord @service(service: {className: "%1$s", method: "makeDto"})
             pojo: FilmPojo @service(service: {className: "%1$s", method: "makePojo"})
             std: FilmStd @service(service: {className: "%1$s", method: "makeStd"})
+            price: Int @service(service: {className: "%1$s", method: "price"})
+            greeted: Int @service(service: {className: "%1$s", method: "greet"})
         }
-        type FilmTable @table(name: "film") { title: String }
+        type FilmTable @table(name: "film") {
+            title: String
+            discount: Int @service(service: {className: "%1$s", method: "discount"})
+            computed: Int @externalField(reference: {className: "%1$s", method: "computeCol"})
+            contested: Int @service(service: {className: "%1$s", method: "price"})
+                           @externalField(reference: {className: "%1$s", method: "discount"})
+        }
         type FilmRecord { firstName: String }
         type FilmPojo { firstName: String }
         type FilmStd { value: String }
@@ -260,6 +275,32 @@ class DeclarationDefinitionsTest {
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(COMPUTED_LINE);
     }
 
+    /**
+     * A reference the classpath census never matched still names a declaration. {@code greet} is in
+     * the service's source and deliberately absent from the census, which is the ordinary shape of a
+     * class the scan skipped rather than an exotic one, so the reference resolves at no arity and the
+     * name-level fallback lands the jump. Resolving only what the census matched would decline here.
+     */
+    @Test
+    void aProducerMethodTheCensusDoesNotHoldStillJumpsByName() {
+        var file = file("type Query { greeted: Int }");
+        var loc = compute(file, pointAt(file, 0, "greeted")).orElseThrow();
+        assertThat(loc.getUri()).endsWith("FilmService.java");
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(GREET0_LINE);
+    }
+
+    /**
+     * Two producer directives naming different methods name none. The generator binds neither, the
+     * coordinate being a rejection, so a jump to either would report a binding that does not exist;
+     * the resolution falls through to what the parent type's scope offers, which for a field name no
+     * column answers is nothing.
+     */
+    @Test
+    void twoProducerDirectivesNamingDifferentMethodsJumpNowhere() {
+        var file = file("type FilmTable @table(name: \"film\") { contested: Int }");
+        assertThat(compute(file, pointAt(file, 0, "contested"))).isEmpty();
+    }
+
     @Test
     void routineBackedFieldNameJumpsToMethod() {
         var file = file("type Query { viaMethod: Int }");
@@ -380,16 +421,13 @@ class DeclarationDefinitionsTest {
     }
 
     /**
-     * The projection, carrying the one question the declaration-name resolution still puts to it:
-     * which Java method a method-backed field binds to. No backing, that being the store's.
+     * The projection, carrying the one question the declaration-name resolution still puts to it: the
+     * generated call surface a {@code @routine} field binds to. No backing and no producer method,
+     * both being the store's; a routine's class is jOOQ's {@code Routines} and its method that class's
+     * generated call, and the catalog census holds no routine family to derive either from.
      */
     private static LspSchemaSnapshot snapshot() {
-        // Method-backed field classifications, one per named variant. Each takes precedence over the
-        // enclosing type's own scope in the field-name arm.
         Map<String, FieldClassification> classifications = Map.of(
-            "Query.price", new FieldClassification.QueryService(SVC_FQN, "price", false, null, null),
-            "FilmTable.discount", new FieldClassification.ServiceBacked(SVC_FQN, "discount", false, null, null),
-            "FilmTable.computed", new FieldClassification.Computed(SVC_FQN, "computeCol"),
             "Query.viaMethod", new FieldClassification.RoutineBacked("film", SVC_FQN, "viaMethod"));
         return new LspSchemaSnapshot.Built.Current(
             List.of(), Map.of(), Map.of(), classifications, Map.of());

@@ -57,10 +57,14 @@ public final class DeclarationDefinitions {
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (file == null || file.tree() == null) return Optional.empty();
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
+        // The snapshot gate is a cost gate now rather than a capability one: the resolution reads the
+        // store for everything but a @routine field's generated call surface, so what it withholds
+        // from a captured-but-not-generated session is a jump the store could mostly answer. Lifting
+        // it is what the resolution being one statement buys, the resolution costing several today.
+        if (!(snapshot instanceof LspSchemaSnapshot.Built)) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        return locate(DeclTarget.resolve(declOpt.get(), built, store, file.source()), store);
+        return locate(DeclTarget.resolve(declOpt.get(), snapshot, store, file.source()), store);
     }
 
     /**

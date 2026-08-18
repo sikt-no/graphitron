@@ -68,10 +68,12 @@ public final class DeclarationHovers {
      * the store holds about it overlaid beneath. Returns {@link Optional#empty()} when the cursor
      * is not on a recognised SDL declaration name token, or when neither block has anything to say.
      *
-     * <p>The two blocks are gated separately, on what each reads. The classification block needs
-     * the store and nothing else, so it renders in a session that has captured but not generated;
-     * the overlay additionally needs the snapshot, its binding resolution still going through the
-     * classifier's projection.
+     * <p>The two blocks are gated separately, on what each costs. The classification block needs the
+     * store and nothing else, so it renders in a session that has captured but not generated. The
+     * overlay's binding resolution reads the store for everything but a {@code @routine} field's
+     * generated call surface, so the snapshot no longer stands for what it can answer; it stands for
+     * what it costs, the resolution being several statements where the block is one. The gate lifts
+     * when that resolution is one statement.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, Optional<StoreHandle> store,
@@ -89,8 +91,8 @@ public final class DeclarationHovers {
         // about what it resolved to. The resolution itself needs the store now, a member name's
         // declaration being one of those facts, so it happens inside the read; no store is still no
         // overlay, leaving the classification block exactly as the classification arm renders it.
-        String overlay = store.isPresent() && snapshot instanceof LspSchemaSnapshot.Built built
-            ? overlay(DeclTarget.resolve(declaration, built, store.get(), file.source()), store.get())
+        String overlay = store.isPresent() && snapshot instanceof LspSchemaSnapshot.Built
+            ? overlay(DeclTarget.resolve(declaration, snapshot, store.get(), file.source()), store.get())
             : "";
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
