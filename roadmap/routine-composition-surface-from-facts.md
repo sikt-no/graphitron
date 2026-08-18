@@ -203,48 +203,32 @@ intermediate version wrong.
 Track A leaves the verdicts correct and still hardcoded. Track B removes the generator of holes, and
 carries the one axis that cannot be done by deletion.
 
-7. **Capture the routine catalog facts.** The store cannot answer any of this today. The `sql_`
-   family has schema, table, column, constraint, primary key, referential constraint and index, and
-   no routine anywhere. A TVF result table is captured as an ordinary `sql_table` row with
-   `TableOptions.type().isFunction()` dropped on the floor, so the store cannot distinguish the one
-   catalog property every carve-out turns on; `JooqCatalog.isTableValuedFunction` answers it from the
-   live catalog inside the walk, which is the reach-past-the-facts the tier rule forbids. The
-   routine's call surface (parameters, order, types, the generated `Routines` method) is not captured
-   at all. Both are pure transcriptions of a catalog walk that already runs, and this slice is worth
-   landing on its own merits: the store is currently lossy about a catalog object the generator
-   depends on.
+7. **Capture the routine catalog facts.** *Landed.* Two additions, because the census was lossy
+   about two different objects. `sql_table.table_type` records jOOQ's `TableOptions.TableType` for
+   every row, so the store can finally distinguish a base table from a view and, the value this
+   track needs, a table-valued function's result from either; a reader asking whether a name is
+   table-valued now asks a column instead of reaching back into the live catalog mid-walk.
+   `sql_routine` and `sql_routine_parameter` capture the callable behind a function-typed table: the
+   generated `Routines` class and the value-parameter method the parameters belong to, then those
+   parameters in declaration order with their Java binding types. R668's four handovers were all
+   honoured: the facts come off the resolved `Table<?>` through a new `JooqCatalog.routineCallFactsOf`
+   sitting beside the name-keyed resolution the way `candidateKeys(Table<?>)` sits beside its own,
+   the record carries type names rather than javapoet, `table_type` landed, and the parameter
+   relation names its method and owns the `-parameters` dependency in the `jooq_name` column comment
+   (the agreement test asserts the captured names are the database's own and not `arg0`, so losing
+   the flag fails rather than degrades).
 
-   `roadmap/nodeid-key-projection-on-routine-params.md` (R668) folded its own version of this
-   capture into this slice and handed over four things with it, all of which belong here rather
-   than being rediscovered:
-
-   * **Read the facts off the resolved `Table<?>`, not through `JooqCatalog
-     .resolveTableValuedFunction`.** That entry point is name-keyed, re-runs `findTable`, and
-     collapses a function name two schemas both declare into `NotInCatalog`. Capture is already
-     holding the table and its schema. The in-tree precedent is `candidateKeys(Table<?>)` existing
-     beside `columnFactsOf(Table<?>)` as the table-scoped overload without an ambiguous SQL-name
-     lookup.
-   * **Return values, not emit vocabulary.** `RoutineResolution.Resolved` carries javapoet
-     (`RoutineParam(String, TypeName)`, `ClassName routinesClass`), and capturing through it would
-     land a `TypeName.toString()` in a relation. `ColumnFacts`' javadoc already rules on this.
-   * **`sql_table.table_type` is the cheapest true fact in the neighbourhood** and worth capturing
-     whichever way the shape question below settles: jOOQ distinguishes `TABLE`, `VIEW`,
-     `MATERIALIZED_VIEW` and `FUNCTION`, and the store records none of it.
-   * **Two obligations travel with the parameter relation.** The generated `Routines` class FQN and
-     method name have to be captured beside the parameters, because the parameters are a fact about
-     one method (jOOQ also generates a `Configuration`-first form and a `Field<?>` form). And
-     `jooq_name` is a reflected parameter name, which reads `arg0` unless the consumer compiled
-     their jOOQ output with `-parameters`; the generator already depends on this in
-     `RoutineDirectiveResolver`'s parameter matching, so capturing the name makes an existing
-     dependency visible rather than creating one. Its column comment is where that belongs, and
-     this repo compiles one test package deliberately without the flag, so both sides are coverable.
-     The parameters' SQL-side vocabulary (the database's own names and types) sits on the protected
-     `TableImpl.parameters`; decide at pickup and omit the columns rather than ship always-null
-     ones.
-
-   R668 also argues for hanging the parameters off the function-typed `sql_table` row (one walk
-   reads both, one refresh cadence, no new anchor, and the population is table-valued functions
-   only by construction). That is input to the shape question in "Open questions", not a ruling.
+   Two findings the plan did not have. **jOOQ generates no `Routine` object for a table-valued
+   function at all**, only the result-table class and the `Routines` convenience method; the
+   per-routine classes in the `routines` sub-package are exactly the non-table-valued ones, which is
+   what makes those a separate population rather than a subset. So R668's "decide at pickup" on the
+   SQL-side parameter vocabulary resolved to omitting both columns: the database's parameter names
+   survive only as jOOQ's camelCase transform of them, and the SQL types only as anonymous bind
+   placeholders behind a protected `TableImpl` field that a module-path jOOQ would refuse to open.
+   The relation comment carries the finding so the next reader does not re-derive it. **A routine
+   with no generated call surface is a real arm**, `RoutineResolution.NoConvenienceMethod` already
+   having one, so the class and method names are nullable and their nullness is what separates a
+   routine that takes no parameters from one whose call surface is not exposed.
 8. **The terminus and its kind as a derived view.** Where a coordinate's chain lands, and whether
    that landing is a function result. Every axis reads it, and it is what makes the verdicts
    comparable instead of six independent opinions.
@@ -730,10 +714,16 @@ wrong and should change first.
   and walks onward, which is close to what a record-backed parent needs in R447's
   `RecordTableField` bullet. Check whether one arm serves both before minting a carrier-specific
   one.
-* **Is `sql_routine` a subject, or is function-ness a column on `sql_table`?** A TVF has a table
-  identity and a callable identity and they are not the same object; the parameters belong to the
-  callable. Non-table-valued routines (R454's territory) have a callable and no table at all, which
-  argues for the separate relation.
+* **Is `sql_routine` a subject, or is function-ness a column on `sql_table`?** *Answered by slice 7:
+  both, because they are two questions.* Function-ness is `sql_table.table_type`, jOOQ's
+  `TableOptions.TableType` vocabulary, which the store recorded none of and which every derived view
+  in this track reads. The callable is `sql_routine` plus `sql_routine_parameter`. The deciding
+  argument was the one the family is named for: the standard separates `ROUTINES` from `TABLES`, and
+  a routine with no `RETURNS TABLE` form has a callable and no table at all, so parameters hung off
+  `sql_table` would have nowhere to go the moment a walk reads one. `sql_constraint` is the in-tree
+  precedent it takes its shape from, a supertype discriminated by type with the forms an iteration
+  does not read arriving as further type values. Table-valuedness is not a third column: it is the
+  join, a `FUNCTION`-typed `sql_table` row at the routine's coordinate.
 * **Grain of the verdict relation.** One relation per axis, or one keyed by (coordinate, axis) with a
   closed axis vocabulary? The latter is tempting and probably wrong: the axes carry different
   payloads, so a shared relation goes wide and sparse or pushes payload to a side table per axis.

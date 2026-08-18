@@ -67,6 +67,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
@@ -245,7 +247,8 @@ class FactCaptureAgreementTest {
         for (String relation : List.of(
             "sql_schema", "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
-            "sql_index_column", "jvm_class", "jvm_class_supertype", "jvm_method",
+            "sql_index_column", "sql_routine", "sql_routine_parameter",
+            "jvm_class", "jvm_class_supertype", "jvm_method",
             "jvm_method_return_type_ref", "jvm_method_parameter",
             "jvm_method_parameter_type_ref", "jvm_record_component",
             "jvm_record_component_type_ref",
@@ -822,6 +825,130 @@ class FactCaptureAgreementTest {
                 .intoMap(r -> r.value1(), r -> r.value2());
             assertThat(capturedTables).isEqualTo(expectedTables);
             assertThat(store.dsl().fetchCount(SQL_COLUMN)).isEqualTo(expectedColumns);
+        }
+    }
+
+    /**
+     * The kind of table-like object each row describes. Pinned against {@code getTableType()} as
+     * the oracle rather than against a hand-listed expectation, and asserted non-vacuous in both
+     * directions that matter: a catalog whose every row came back {@code TABLE} would pass an
+     * equality check while telling the store nothing, and {@code FUNCTION} is the value the
+     * routine-backed read surface stands on.
+     */
+    @Test
+    @DisplayName("every table carries the kind the catalog gives it")
+    void tableTypesEqualTheCatalogs(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
+                new NodeDeclaration(null));
+
+            var expected = new LinkedHashMap<String, String>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                expected.put(table.getSchema().getName() + "." + table.getName(),
+                    table.getTableType().name());
+            }
+            assertThat(expected.values())
+                .as("the test catalog declares both plain tables and table-valued functions")
+                .contains("TABLE", "FUNCTION");
+
+            var captured = store.dsl()
+                .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME),
+                    SQL_TABLE.TABLE_TYPE)
+                .from(SQL_TABLE)
+                .fetch()
+                .intoMap(r -> r.value1(), r -> r.value2());
+            assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The routine census and the call surface its parameters belong to. The oracle is the generated
+     * {@code Routines} class read straight off the codegen loader, method filter and all, rather
+     * than the reader capture used: the parameter list is a fact about one overload out of three
+     * that jOOQ generates per routine, so an assertion that took capture's word for which method it
+     * described would pin nothing about the choice.
+     *
+     * <p>Two properties beyond the equality. The population is a strict subset of the tables, which
+     * is what makes this a relation about callables rather than a second copy of the table census.
+     * And the parameter names are the database's own, camelCased, not {@code arg0}: the store
+     * records a reflected name, so the fixture module compiling its jOOQ output with
+     * {@code -parameters} is load-bearing and silently losing that flag should fail here.
+     */
+    @Test
+    @DisplayName("the routine census is the catalog's function-typed tables, call surface included")
+    void routineCensusEqualsTheCatalogsFunctions(@TempDir Path tmp) throws Exception {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
+                new NodeDeclaration(null));
+
+            var expectedRoutines = new LinkedHashMap<String, String>();
+            var expectedParameters = new LinkedHashSet<String>();
+            int tables = 0;
+            for (var entry : jooq.allTableEntries()) {
+                tables++;
+                var table = entry.table();
+                if (!table.getTableType().isFunction()) {
+                    continue;
+                }
+                String qualified = table.getSchema().getName() + "." + table.getName();
+                var routines = Class.forName(
+                    table.getSchema().getClass().getPackageName() + ".Routines", true,
+                    ctx.codegenLoader());
+                var method = java.util.Arrays.stream(routines.getMethods())
+                    .filter(m -> m.getReturnType() == table.getClass())
+                    .filter(m -> java.util.Arrays.stream(m.getParameterTypes())
+                        .noneMatch(org.jooq.Field.class::isAssignableFrom))
+                    .findFirst()
+                    .orElseThrow();
+                expectedRoutines.put(qualified, routines.getName() + "#" + method.getName());
+                var parameters = method.getParameters();
+                for (int i = 0; i < parameters.length; i++) {
+                    expectedParameters.add(qualified + "|" + i + "|" + parameters[i].getName()
+                        + "|" + parameters[i].getType().getName());
+                }
+            }
+            assertThat(expectedRoutines).as("the test catalog declares table-valued functions")
+                .isNotEmpty();
+            assertThat(expectedRoutines.size())
+                .as("callables are a strict subset of the tables, not a second copy of them")
+                .isLessThan(tables);
+            assertThat(expectedParameters)
+                .as("a routine with parameters, so the parameter relation pins something")
+                .isNotEmpty();
+            assertThat(expectedParameters)
+                .as("reflected parameter names, which the fixture's -parameters flag is what makes real")
+                .noneMatch(p -> p.contains("|arg"));
+
+            var capturedRoutines = store.dsl()
+                .select(SQL_ROUTINE.TABLE_SCHEMA.concat(".").concat(SQL_ROUTINE.ROUTINE_NAME),
+                    SQL_ROUTINE.ROUTINES_CLASS_FQN.concat("#").concat(SQL_ROUTINE.ROUTINES_METHOD_NAME))
+                .from(SQL_ROUTINE)
+                .fetch()
+                .intoMap(r -> r.value1(), r -> r.value2());
+            assertThat(capturedRoutines).isEqualTo(expectedRoutines);
+
+            var capturedParameters = new LinkedHashSet<String>();
+            store.dsl()
+                .select(SQL_ROUTINE_PARAMETER.TABLE_SCHEMA, SQL_ROUTINE_PARAMETER.ROUTINE_NAME,
+                    SQL_ROUTINE_PARAMETER.POSITION, SQL_ROUTINE_PARAMETER.JOOQ_NAME,
+                    SQL_ROUTINE_PARAMETER.BINDING_TYPE)
+                .from(SQL_ROUTINE_PARAMETER)
+                .fetch()
+                .forEach(row -> capturedParameters.add(row.value1() + "." + row.value2() + "|"
+                    + row.value3() + "|" + row.value4() + "|" + row.value5()));
+            assertThat(capturedParameters).isEqualTo(expectedParameters);
+
+            assertThat(store.dsl().fetchValues(store.dsl()
+                    .selectDistinct(SQL_ROUTINE.ROUTINE_TYPE).from(SQL_ROUTINE)))
+                .as("the table census reaches functions and nothing else")
+                .containsExactly("FUNCTION");
         }
     }
 

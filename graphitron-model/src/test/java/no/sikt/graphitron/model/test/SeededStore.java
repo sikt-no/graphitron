@@ -293,11 +293,23 @@ public final class SeededStore {
      * A case that needs those to disagree with the SQL name states its own row instead.
      */
     public static void seedTable(DSLContext dsl, String sourceName, String tableSchema, String tableName) {
+        seedTable(dsl, sourceName, tableSchema, tableName, "TABLE");
+    }
+
+    /**
+     * The same row with the catalog's kind stated: {@code FUNCTION} for a table-valued function's
+     * result, whose absence of a primary key and of foreign keys is what a reader turns on. Its own
+     * overload rather than a fifth parameter on every call site, plain tables being what a case
+     * seeds unless it is about the difference.
+     */
+    public static void seedTable(DSLContext dsl, String sourceName, String tableSchema,
+                                 String tableName, String tableType) {
         seedSchema(dsl, sourceName, tableSchema);
         dsl.insertInto(SQL_TABLE)
             .set(SQL_TABLE.SOURCE_NAME, sourceName)
             .set(SQL_TABLE.TABLE_SCHEMA, tableSchema)
             .set(SQL_TABLE.TABLE_NAME, tableName)
+            .set(SQL_TABLE.TABLE_TYPE, tableType)
             .set(SQL_TABLE.JOOQ_NAME, tableName.toUpperCase(Locale.ROOT))
             .set(SQL_TABLE.CLASS_FQN, sourceName + ".tables." + tableName)
             .set(SQL_TABLE.RECORD_CLASS_FQN, sourceName + ".tables.records." + tableName + "Record")

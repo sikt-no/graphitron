@@ -162,35 +162,94 @@ public class JooqCatalog {
         }
 
         String schemaPackage = table.getSchema().getClass().getPackageName();
-        Class<?> routinesClass;
-        try {
-            routinesClass = Class.forName(schemaPackage + ".Routines", true, codegenLoader);
-        } catch (ClassNotFoundException e) {
+        Class<?> routinesClass = routinesClassOf(table);
+        if (routinesClass == null) {
             return new RoutineResolution.NoConvenienceMethod(
                 "no generated Routines class at " + schemaPackage + ".Routines");
         }
 
-        // Pick the table-form convenience overload: returns the function table class, with value
-        // parameters (not org.jooq.Field expressions). The Field overload and the Result<...> execute
-        // form are skipped by these two filters.
-        var candidate = Arrays.stream(routinesClass.getMethods())
-            .filter(m -> m.getReturnType() == table.getClass())
-            .filter(m -> Arrays.stream(m.getParameterTypes())
-                .noneMatch(org.jooq.Field.class::isAssignableFrom))
-            .findFirst();
-        if (candidate.isEmpty()) {
+        var method = tableFormMethodOf(routinesClass, table);
+        if (method == null) {
             return new RoutineResolution.NoConvenienceMethod(
                 "no table-form convenience method returning " + table.getClass().getName()
                 + " on " + routinesClass.getName());
         }
 
-        var method = candidate.get();
         var params = Arrays.stream(method.getParameters())
             .map(p -> new RoutineParam(p.getName(), TypeName.get(p.getType())))
             .toList();
         return new RoutineResolution.Resolved(
             ClassName.get(routinesClass), method.getName(), params, entry.toTableRef(routineName));
     }
+
+    /** The generated {@code Routines} class beside the table's schema, or null when there is none. */
+    private Class<?> routinesClassOf(Table<?> table) {
+        try {
+            return Class.forName(
+                table.getSchema().getClass().getPackageName() + ".Routines", true, codegenLoader);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The table-form convenience overload for a table-valued function: the one returning the
+     * function's table class with value parameters rather than {@code org.jooq.Field} expressions.
+     * Those two filters are what skip the {@code Field}-expression overload and the
+     * {@code Configuration}-first {@code Result<...>} execute form, which describe the same routine
+     * with different parameter lists.
+     *
+     * @return the method, or null when the generated class carries no such overload
+     */
+    private static java.lang.reflect.Method tableFormMethodOf(Class<?> routinesClass, Table<?> table) {
+        return Arrays.stream(routinesClass.getMethods())
+            .filter(m -> m.getReturnType() == table.getClass())
+            .filter(m -> Arrays.stream(m.getParameterTypes())
+                .noneMatch(org.jooq.Field.class::isAssignableFrom))
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * The call surface of a table-valued function, read off a resolved table rather than a written
+     * name. The table-scoped counterpart to {@link #resolveTableValuedFunction(String)}, standing to
+     * it as {@link #candidateKeys(Table)} stands to {@link #candidateKeys(String)}: a caller already
+     * holding the table (the catalog census does) has nothing to gain from a name lookup that would
+     * re-run {@link #findTable} and collapse a function name two schemas both declare.
+     *
+     * <p>Returns values rather than emit vocabulary, {@link RoutineParam} carrying javapoet where
+     * this carries the type's own name, so the facts can cross into a relation. A table the
+     * generated model exposes no call surface for yields a record with null class and method names
+     * and no parameters, which is a different answer from a routine that genuinely takes none.
+     */
+    public RoutineCallFacts routineCallFactsOf(Table<?> table) {
+        Class<?> routinesClass = table.getSchema() == null ? null : routinesClassOf(table);
+        var method = routinesClass == null ? null : tableFormMethodOf(routinesClass, table);
+        if (method == null) {
+            return new RoutineCallFacts(null, null, List.of());
+        }
+        return new RoutineCallFacts(routinesClass.getName(), method.getName(),
+            Arrays.stream(method.getParameters())
+                .map(p -> new RoutineParamFacts(p.getName(), p.getType().getName()))
+                .toList());
+    }
+
+    /**
+     * A table-valued function's generated call surface reduced to values: the {@code Routines}
+     * class and method the parameters belong to, and those parameters in declaration order. Both
+     * names are null when the generated model exposes no such method.
+     */
+    public record RoutineCallFacts(String routinesClassFqn, String methodName,
+                                   List<RoutineParamFacts> parameters) {
+        public RoutineCallFacts { parameters = List.copyOf(parameters); }
+    }
+
+    /**
+     * One IN parameter of a generated call surface. {@code javaName} is reflected, so it reads
+     * {@code arg0} unless the consumer compiled their jOOQ output with {@code -parameters}; the
+     * generator's {@code @routine(argMapping:)} matching already depends on that flag.
+     */
+    public record RoutineParamFacts(String javaName, String bindingType) {}
 
     /**
      * Probe behind {@link #resolveTableValuedFunction(String)}'s not-a-table path: looks for a

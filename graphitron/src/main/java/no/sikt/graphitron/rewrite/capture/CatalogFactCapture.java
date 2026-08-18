@@ -20,6 +20,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
@@ -62,6 +64,13 @@ final class CatalogFactCapture {
 
     /** {@code store_source.source_kind}'s catalog arm; the classpath arms are the scan's. */
     private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
+
+    /**
+     * The standard's {@code ROUTINES.ROUTINE_TYPE} vocabulary, as far as the table census reaches
+     * it: a table-valued function is the one routine form jOOQ places among the tables, so the
+     * sibling {@code PROCEDURE} value has no writer until a walk reads the routines package.
+     */
+    private static final String FUNCTION = "FUNCTION";
 
     private CatalogFactCapture() {}
 
@@ -113,6 +122,7 @@ final class CatalogFactCapture {
             record.setSourceName(source);
             record.setTableSchema(schema);
             record.setTableName(name);
+            record.setTableType(table.getTableType().name());
             record.setJooqName(entry.javaFieldName());
             record.setClassFqn(table.getClass().getName());
             record.setRecordClassFqn(table.getRecordType().getName());
@@ -123,6 +133,7 @@ final class CatalogFactCapture {
             captureConstraints(sink, jooq, table, source, schema, name);
             captureForeignKeys(sink, jooq, table, source, schema, name, sourceByTable);
             captureIndexes(sink, jooq, table, source, schema, name);
+            captureRoutine(sink, jooq, table, source, schema, name);
         }
     }
 
@@ -167,6 +178,9 @@ final class CatalogFactCapture {
             }
         }
         for (String source : owned) {
+            dsl.deleteFrom(SQL_ROUTINE_PARAMETER)
+                .where(SQL_ROUTINE_PARAMETER.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_ROUTINE).where(SQL_ROUTINE.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_PRIMARY_KEY).where(SQL_PRIMARY_KEY.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_CONSTRAINT_COLUMN)
                 .where(SQL_CONSTRAINT_COLUMN.SOURCE_NAME.eq(source)).execute();
@@ -386,6 +400,45 @@ final class CatalogFactCapture {
                 columnRow.setColumnName(column);
                 sink.add(columnRow);
             }
+        }
+    }
+
+    /**
+     * The callable behind a function-typed table, and its call surface's parameters in order.
+     * Runs off the table walk because that walk is where the routine is visible at all: jOOQ places
+     * a table-valued function among the tables and generates no {@code Routine} object for it, so
+     * the table row and the routine row are one database object read twice. A routine with no
+     * {@code RETURNS TABLE} form is nowhere in this walk and gets no row here, which is the
+     * population this relation is shaped to widen into rather than one it claims to cover.
+     *
+     * <p>Reads the call surface off the resolved {@link Table}, not through the name-keyed
+     * resolution the directive uses: capture already holds the table, and the name lookup would
+     * collapse a function two schemas both declare.
+     */
+    private static void captureRoutine(FactSink sink, JooqCatalog jooq, Table<?> table,
+                                       String source, String schema, String name) {
+        if (!table.getTableType().isFunction() || !sink.claim(SQL_ROUTINE, source, schema, name)) {
+            return;
+        }
+        JooqCatalog.RoutineCallFacts call = jooq.routineCallFactsOf(table);
+        var row = sink.dsl().newRecord(SQL_ROUTINE);
+        row.setSourceName(source);
+        row.setTableSchema(schema);
+        row.setRoutineName(name);
+        row.setRoutineType(FUNCTION);
+        row.setRoutinesClassFqn(call.routinesClassFqn());
+        row.setRoutinesMethodName(call.methodName());
+        sink.add(row);
+        int position = 0;
+        for (JooqCatalog.RoutineParamFacts parameter : call.parameters()) {
+            var parameterRow = sink.dsl().newRecord(SQL_ROUTINE_PARAMETER);
+            parameterRow.setSourceName(source);
+            parameterRow.setTableSchema(schema);
+            parameterRow.setRoutineName(name);
+            parameterRow.setPosition(position++);
+            parameterRow.setJooqName(parameter.javaName());
+            parameterRow.setBindingType(parameter.bindingType());
+            sink.add(parameterRow);
         }
     }
 

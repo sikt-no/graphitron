@@ -2200,6 +2200,7 @@ CREATE TABLE sql_table (
   source_name  VARCHAR NOT NULL,
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
+  table_type   VARCHAR NOT NULL,
   jooq_name    VARCHAR NOT NULL,
   class_fqn    VARCHAR NOT NULL,
   record_class_fqn VARCHAR NOT NULL,
@@ -2212,6 +2213,7 @@ COMMENT ON TABLE sql_table IS 'A table exists in the consumer''s catalog. Every 
 COMMENT ON COLUMN sql_table.source_name IS 'the generated package the table''s schema lives in; the partition this row belongs to and the key''s leading dimension, so two modules'' catalogs carrying one (schema, table) coordinate coexist instead of the second build clobbering the first. The package rather than the classpath entry it was loaded from, because one jar carries every schema a codegen run produced and invalidating the jar would discard them all, while the package is the granularity codegen actually rewrites. Schemas flattened into one package (jOOQ''s outputSchemaToDefault) share a source, which is correct: they are regenerated together';
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_table.table_type IS 'what kind of table-like object this is, in jOOQ''s TableOptions.TableType vocabulary: TABLE, TEMPORARY, VIEW, MATERIALIZED_VIEW, FUNCTION, EXPRESSION or UNKNOWN. A property of the object every catalog states and this family recorded none of, so the store could not tell a base table from a view. FUNCTION is the value that carries weight today: it marks a table-valued function''s result, which has no primary key and no foreign keys by construction, and that one property is what every carve-out on a function-backed field turns on. A reader asking whether a name is table-valued asks this column rather than reaching back into the live catalog. The callable behind a FUNCTION row is its own subject in sql_routine, joined on the shared (source, schema, name).';
 COMMENT ON COLUMN sql_table.class_fqn IS 'the fully qualified name of the generated jOOQ table class, read off the live Table during the catalog walk. Per table, unlike the Keys class name, which is per schema and lives on sql_schema. Goto-definition on @table(name:) and @field(name:) lands in this class, and jvm_class cannot supply it because that family deliberately excludes the generated jOOQ package, so this is the join key that reaches generated sources at all.';
 COMMENT ON COLUMN sql_table.record_class_fqn IS 'the fully qualified name of the record class jOOQ binds this table''s rows to, read off the live Table during the catalog walk. A different fact from class_fqn beside it, and neither spells the other: that is the generated table class an author navigates to, this is the row type a producer method hands back, and the naming relation between them is jOOQ codegen configuration rather than anything the store may assume. Always present, a table always having a row type; a table jOOQ generated no record class for reports org.jooq.Record, which is the catalog''s own answer and stands as written, a reader that wants only generated records comparing against that name rather than reading a NULL. The classpath census cannot supply this, excluding the generated jOOQ package by design, so it is how a type bound to a table reaches a class name at all.';
 COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for the table; under a family named for SQL this is the one foreign column, so the prefix marks it rather than leaving a reader to infer it';
@@ -2355,6 +2357,44 @@ COMMENT ON COLUMN sql_index_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_index_column.index_name IS 'SQL index name';
 COMMENT ON COLUMN sql_index_column.position IS '0-based position in the index''s column list';
 COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
+
+CREATE TABLE sql_routine (
+  source_name          VARCHAR NOT NULL,
+  table_schema         VARCHAR NOT NULL,
+  routine_name         VARCHAR NOT NULL,
+  routine_type         VARCHAR NOT NULL,
+  routines_class_fqn   VARCHAR,
+  routines_method_name VARCHAR,
+  PRIMARY KEY (source_name, table_schema, routine_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
+  FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
+);
+COMMENT ON TABLE sql_routine IS 'A callable exists in the consumer''s catalog. Its own subject rather than columns on sql_table, on the rule that names this family: the standard the family is named for separates ROUTINES from TABLES, and a routine''s parameters are a fact about the callable, never about a result. The population is what makes that more than pedantry. A routine with no RETURNS TABLE form has a callable and no table at all, so parameters hung off sql_table would have nowhere to go the moment the walk reads one. This takes sql_constraint''s shape for the same reason: a supertype discriminated by type, with the forms an iteration does not yet read arriving as further routine_type values rather than as a reshaping. Today the walk reads jOOQ''s table census, and a table-valued function is the one routine form that appears in it, so every row here is currently a function that also has a sql_table row; whether a routine is table-valued is that join (a FUNCTION-typed sql_table row at the same coordinate), not a column here. The key is inherited from sql_table''s and carries its one hole with it: an overload set sharing a SQL name collides in both relations, jOOQ distinguishing overloads only by generated class name.';
+COMMENT ON COLUMN sql_routine.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_routine.table_schema IS 'SQL schema the routine lives in';
+COMMENT ON COLUMN sql_routine.routine_name IS 'SQL routine name; for a table-valued function this is also its sql_table row''s table_name, the two being one database object read two ways';
+COMMENT ON COLUMN sql_routine.routine_type IS 'the standard''s ROUTINE_TYPE vocabulary: FUNCTION or PROCEDURE. Single-valued today, every captured routine reaching the store through the table census and therefore being a function; it is the discriminator that lets the other form arrive without reshaping, which is the whole argument for a supertype relation';
+COMMENT ON COLUMN sql_routine.routines_class_fqn IS 'the fully qualified name of the generated Routines class carrying this routine''s call surface, or NULL when the generated model exposes none. Captured beside the method name because the parameters below are a fact about one method: jOOQ generates several forms per routine (a Configuration-first execute form, a value-parameter form, a Field-expression form), and a parameter list that did not name its method would not say which one it described. NULL here and on the method name is also what distinguishes a routine with no parameters from one whose call surface the generated model does not expose, the two being the same zero rows in sql_routine_parameter otherwise.';
+COMMENT ON COLUMN sql_routine.routines_method_name IS 'the Routines-class method the parameters below describe: the value-parameter form, the one an emitted FROM clause calls. NULL exactly when routines_class_fqn is';
+
+CREATE TABLE sql_routine_parameter (
+  source_name  VARCHAR NOT NULL,
+  table_schema VARCHAR NOT NULL,
+  routine_name VARCHAR NOT NULL,
+  position     INT     NOT NULL,
+  jooq_name    VARCHAR NOT NULL,
+  binding_type VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, table_schema, routine_name, position),
+  FOREIGN KEY (source_name, table_schema, routine_name)
+    REFERENCES sql_routine (source_name, table_schema, routine_name)
+);
+COMMENT ON TABLE sql_routine_parameter IS 'An ordered IN parameter of a routine''s call surface. Under a family written in SQL''s vocabulary this relation carries none of it, and that is a finding rather than an omission: for a table-valued function jOOQ generates no Routine object at all, only the result table class and the Routines convenience method, so the database''s own parameter names survive only as jOOQ''s camelCase transform of them and the SQL types only as anonymous bind placeholders behind a protected field on TableImpl. Both columns were left out rather than shipped always-null or reached for through a field another module never opened.';
+COMMENT ON COLUMN sql_routine_parameter.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_routine_parameter.table_schema IS 'SQL schema the routine lives in';
+COMMENT ON COLUMN sql_routine_parameter.routine_name IS 'SQL routine name';
+COMMENT ON COLUMN sql_routine_parameter.position IS '0-based position in the call surface''s parameter list, which is the routine''s declaration order';
+COMMENT ON COLUMN sql_routine_parameter.jooq_name IS 'the generated method parameter''s Java name, read reflectively; jOOQ''s camelCase transform of the database''s own parameter name, and the closest this relation gets to it. Reflection reports it only when the consumer compiled their jOOQ output with -parameters, and reports arg0, arg1 otherwise. The generator already depends on that flag, matching @routine(argMapping:) against these names, so recording the name makes an existing dependency visible rather than creating one.';
+COMMENT ON COLUMN sql_routine_parameter.binding_type IS 'the fully qualified Java type the generated method takes at this position, as on sql_column.binding_type. Unlike a column, a parameter carries no sql_type beside it; the relation''s own comment says why';
 
 
 -- ==== JVM classpath facts =========================================================
