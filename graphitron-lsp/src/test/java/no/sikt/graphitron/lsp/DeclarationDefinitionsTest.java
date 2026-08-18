@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
+import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
@@ -73,6 +74,7 @@ class DeclarationDefinitionsTest {
             std: FilmStd @service(service: {className: "%1$s", method: "makeStd"})
             price: Int @service(service: {className: "%1$s", method: "price"})
             greeted: Int @service(service: {className: "%1$s", method: "greet"})
+            twinned: Int @service(service: {className: "%1$s", method: "twin"})
         }
         type FilmTable @table(name: "film") {
             title: String
@@ -312,9 +314,9 @@ class DeclarationDefinitionsTest {
     void arityDistinguishableOverloadResolvesToCorrectOverload() {
         // The bound arity selects the right overload; the precision is not lost to the name-level
         // fallback, which would land on the first declaration for both.
-        assertThat(locate(new DeclTarget.SourceMethod(SVC_FQN, "greet", 0)).orElseThrow()
+        assertThat(locate("greeted", new DeclTarget.SourceMethod(SVC_FQN, "greet", 0)).orElseThrow()
             .getRange().getStart().getLine()).isEqualTo(GREET0_LINE);
-        assertThat(locate(new DeclTarget.SourceMethod(SVC_FQN, "greet", 2)).orElseThrow()
+        assertThat(locate("greeted", new DeclTarget.SourceMethod(SVC_FQN, "greet", 2)).orElseThrow()
             .getRange().getStart().getLine()).isEqualTo(GREET2_LINE);
     }
 
@@ -322,7 +324,7 @@ class DeclarationDefinitionsTest {
     void sameArityOverloadPairJumpsToTheFirstDeclaration() {
         // Two declarations of one arity are two rows under their own ordinals, so the arity tier
         // resolves rather than having to be abandoned; the first of them wins the slot.
-        assertThat(locate(new DeclTarget.SourceMethod(SVC_FQN, "twin", 1)).orElseThrow()
+        assertThat(locate("twinned", new DeclTarget.SourceMethod(SVC_FQN, "twin", 1)).orElseThrow()
             .getRange().getStart().getLine()).isEqualTo(TWIN_FIRST_LINE);
     }
 
@@ -330,7 +332,7 @@ class DeclarationDefinitionsTest {
     void anUndeclaredArityFallsBackToTheDeclarationOfTheName() {
         // The census can name an arity the source does not declare (an overload it saw in bytecode
         // this source has since dropped); jumping to the name is better than declining.
-        assertThat(locate(new DeclTarget.SourceMethod(SVC_FQN, "greet", 7)).orElseThrow()
+        assertThat(locate("greeted", new DeclTarget.SourceMethod(SVC_FQN, "greet", 7)).orElseThrow()
             .getRange().getStart().getLine()).isEqualTo(GREET0_LINE);
     }
 
@@ -367,11 +369,24 @@ class DeclarationDefinitionsTest {
     }
 
     @Test
-    void unavailableSnapshotReturnsEmpty() {
+    void anUnavailableSnapshotStillJumps() {
+        // What a coordinate resolves against and where the declaration is are both the store's, so a
+        // session that captured but never generated navigates like one that did.
         var file = file("type FilmRecord { firstName: String }");
+        var loc = DeclarationDefinitions.compute(
+            file, store.handle(), LspSchemaSnapshot.unavailable(),
+            pointAt(file, 0, "FilmRecord")).orElseThrow();
+        assertThat(loc.getUri()).endsWith("FilmDto.java");
+    }
+
+    @Test
+    void aRoutineBackedFieldIsWhatAnUnavailableSnapshotCosts() {
+        // The one arm no relation carries. With no build behind it the field falls through to what the
+        // parent type's scope offers, which on a root operation type is nothing.
+        var file = file("type Query { viaMethod: Int }");
         assertThat(DeclarationDefinitions.compute(
             file, store.handle(), LspSchemaSnapshot.unavailable(),
-            pointAt(file, 0, "FilmRecord")))
+            pointAt(file, 0, "viaMethod")))
             .isEmpty();
     }
 
@@ -389,8 +404,15 @@ class DeclarationDefinitionsTest {
         return DeclarationDefinitions.compute(file, store.handle(), snapshot(), pos);
     }
 
-    private static Optional<Location> locate(DeclTarget target) {
-        return DeclarationDefinitions.locate(target, store.handle());
+    /**
+     * The jump for a hand-built target, over the rows the coordinate {@code fieldName} names brings
+     * back. A coordinate rather than a bare store because the family's declarations are admitted by
+     * what a coordinate could bind to, so a case about the arity rule has to say which coordinate is
+     * asking; each one below names its method through the {@code @service} the captured schema carries.
+     */
+    private static Optional<Location> locate(String fieldName, DeclTarget target) {
+        var coord = new DeclarationFacts.Coord.Member("Query", fieldName);
+        return DeclarationDefinitions.locate(target, DeclarationFacts.of(store.handle(), coord));
     }
 
     /**

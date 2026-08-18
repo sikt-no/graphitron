@@ -37,7 +37,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
  * answer here: a surface asking what a class offers has nothing to say in either case. A surface
  * that does want them apart, because it is explaining a type rather than resolving one, reads
  * {@code intent_type_backing_conflict} beside these two populations and applies {@link #resolve} to
- * tell which absence it is holding; {@link ClaimFacts#ofType} is that surface's reader.
+ * tell which absence it is holding; {@link ClaimFacts#typeArms} is that surface's reader.
  *
  * <p>This is the question the language server used to put to the classification walk's projection,
  * which resolved it by reflection per build and carried the answer as a permit's class name.

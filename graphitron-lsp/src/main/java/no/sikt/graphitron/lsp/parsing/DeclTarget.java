@@ -1,13 +1,9 @@
 package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
-import no.sikt.graphitron.lsp.facts.CatalogColumns;
-import no.sikt.graphitron.lsp.facts.CatalogTables;
-import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
-import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.facts.FieldProducerMethods;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 
@@ -21,15 +17,14 @@ import java.util.Optional;
  * each to a Javadoc overlay.
  *
  * <p>Sharing the resolution is what keeps the two consumers pointing at one
- * declaration: a single scope-switch ({@link #resolve}) produces the target,
+ * declaration: a single scope-switch ({@link #of}) produces the target,
  * and each consumer switches over the <em>same</em> {@code DeclTarget}
  * exhaustively, so a new {@link TypeMemberScope.Scope} arm breaks both switches
- * at compile time. What differs is where each then reads: hover asks the fact
- * store's java-source family for the declaration's doc comment, goto still asks
- * the LSP-owned source index for its position, and the two agree while both are
- * refreshed off the same parse. The variants name the resolved declaration and
- * nothing else, so neither read can be short-circuited by a value the
- * resolution happened to have in hand.
+ * at compile time. What differs is only which fact each then reads about the
+ * declaration, and both read it out of the same {@link DeclarationFacts} rows,
+ * one for a doc comment and one for a position. The variants name the resolved
+ * declaration and nothing else, so neither read can be short-circuited by a
+ * value the resolution happened to have in hand.
  *
  * <p>What a coordinate resolves against is {@link TypeMemberScope}'s, shared with
  * completion, hover's coordinate arm and the field-member diagnostic. Which Java method a
@@ -68,26 +63,15 @@ public sealed interface DeclTarget {
     record None() implements DeclTarget {}
 
     /**
-     * Resolves the declaration {@code declaration} binds to against the store's own relations, and
-     * against {@code built} for the one question the projection still answers. The only
-     * tree-sitter-bound step is reading a field's {@code @field(name:)} override off its node; the
-     * scope switch itself is the {@link #ofType} / {@link #ofField} core, so the source-index read is
-     * left to the per-consumer projection. The store answers both what a coordinate resolves against
-     * and what that scope then offers: a table's generated class and columns, a class's member slots,
-     * a producer method and its arity. Where the declaration <em>is</em> is still the consumer's own
-     * read.
-     *
-     * <p>An unbuilt {@code snapshot} is not a decline: only the {@code @routine} arm reads it, so what
-     * it costs is a routine-backed field's jump to the generated call surface and nothing else. The
-     * narrowing happens here so no consumer has to decide what an absent snapshot means.
+     * The store key a declaration name is asking about: a type name, or a field's parent type and the
+     * member the field binds to. The only tree-sitter-bound step in the whole resolution, and it is
+     * here rather than inside it so a consumer knows the whole coordinate before it reads anything:
+     * every arm of {@link DeclarationFacts} is keyed on this, and one statement can only be issued by
+     * a caller that already holds the key.
      */
-    static DeclTarget resolve(
-        SdlDeclaration declaration, LspSchemaSnapshot snapshot,
-        StoreHandle store, byte[] source
-    ) {
-        var built = snapshot instanceof LspSchemaSnapshot.Built b ? b : null;
+    static DeclarationFacts.Coord coordinateOf(SdlDeclaration declaration, byte[] source) {
         return switch (declaration) {
-            case SdlDeclaration.TypeName t -> ofType(t.typeName(), store);
+            case SdlDeclaration.TypeName t -> new DeclarationFacts.Coord.Type(t.typeName());
             case SdlDeclaration.FieldName f -> {
                 // The bound member is named by the field's @field(name:) override
                 // when it carries one, else by the SDL field name itself. The
@@ -96,32 +80,70 @@ public sealed interface DeclTarget {
                 String memberName = fieldDef == null
                     ? f.fieldName()
                     : effectiveMemberName(fieldDef, f.fieldName(), source);
-                yield ofField(f.parentTypeName(), memberName, built, store);
+                yield new DeclarationFacts.Coord.Member(f.parentTypeName(), memberName);
             }
         };
     }
 
     /**
-     * Resolver core for a type-name coordinate: no tree-sitter, no source index, and no projection
-     * either. A type scoped to tables names the generated class of the table it resolves against; a
-     * type scoped to a class names that class; a type the store scopes to neither names nothing,
-     * which is what every unbacked type and every root operation type gets.
+     * The method the classification projection says the coordinate binds to, which is the one binding
+     * no relation carries: a {@code @routine} field's generated call surface. Read before the statement
+     * rather than after it, the projection being a value the session already holds, so the store can
+     * still answer the arity behind it and position its declaration alongside every other candidate.
+     *
+     * <p>Empty at a type coordinate, empty with no build behind the session, and empty for every other
+     * classification, each of which either names a producer the store answers for or binds no developer
+     * method at all. {@code memberName} is the SDL field name here: a routine-backed field carries no
+     * {@code @field(name:)} override (that override redirects a column or accessor binding, a different
+     * classification), so it is the coordinate the projection is keyed by.
      */
-    static DeclTarget ofType(String typeName, StoreHandle store) {
-        var scope = TypeMemberScope.of(store, typeName);
+    static DeclarationFacts.ProjectedMethod projectedMethod(
+        DeclarationFacts.Coord coord, LspSchemaSnapshot snapshot
+    ) {
+        if (!(coord instanceof DeclarationFacts.Coord.Member member)) return null;
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return null;
+        return built.fieldClassification(member.typeName(), member.memberName())
+            .filter(FieldClassification.RoutineBacked.class::isInstance)
+            .map(FieldClassification.RoutineBacked.class::cast)
+            .map(routine -> new DeclarationFacts.ProjectedMethod(
+                routine.methodClassName(), routine.methodName()))
+            .orElse(null);
+    }
+
+    /**
+     * Resolves the declaration a coordinate binds to over rows a caller already holds, plus the one
+     * method the projection named. Nothing here reads anything: a consumer that fetched
+     * {@link DeclarationFacts} for this coordinate has paid for the whole resolution already.
+     */
+    static DeclTarget of(
+        DeclarationFacts.Coord coord, DeclarationFacts.Rows rows,
+        DeclarationFacts.ProjectedMethod projected
+    ) {
+        return switch (coord) {
+            case DeclarationFacts.Coord.Type ignored -> ofType(rows);
+            case DeclarationFacts.Coord.Member ignored -> ofField(rows, projected);
+        };
+    }
+
+    /**
+     * Resolver core for a type-name coordinate: no tree-sitter, no query, and no projection either. A
+     * type scoped to tables names the generated class of the table it resolves against; a type scoped
+     * to a class names that class; a type the store scopes to neither names nothing, which is what
+     * every unbacked type and every root operation type gets.
+     */
+    static DeclTarget ofType(DeclarationFacts.Rows rows) {
+        var scope = rows.scope();
         if (scope.isEmpty()) return new None();
         return switch (scope.get()) {
-            case TypeMemberScope.Scope.Tables tables -> tableTarget(store, tables);
+            case TypeMemberScope.Scope.Tables tables -> tableTarget(rows, tables);
             case TypeMemberScope.Scope.Members(var className) -> new SourceClass(className);
         };
     }
 
     /**
-     * Resolver core for a field-name coordinate, given the already-resolved
-     * member name ({@code @field(name:)} override or SDL field name). No
-     * tree-sitter, no source index; the store reads are the parent's scope and then, inside it, the
-     * column census or the member-slot relation, each of which names the declaration a member binds
-     * to without saying where it is written.
+     * Resolver core for a field-name coordinate, over the same rows. The populations are the parent's
+     * scope and then, inside it, the columns the member name reached or the member slot it names, each
+     * of which names the declaration a member binds to without saying where it is written.
      *
      * <p>A member name the scope offers no declaration for resolves to nothing, and that is now the
      * answer for a jOOQ record class no table claims too. The projection routed such a type's field
@@ -131,66 +153,28 @@ public sealed interface DeclTarget {
      * facts rather than naming a declaration a field binds to.
      */
     static DeclTarget ofField(
-        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, StoreHandle store
+        DeclarationFacts.Rows rows, DeclarationFacts.ProjectedMethod projected
     ) {
         // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
         // producer takes precedence over the parent's scope below.
-        var produced = FieldProducerMethods.of(store, parentTypeName, memberName);
+        var produced = rows.producer();
         if (produced.isPresent()) {
             var producer = produced.get();
             return new SourceMethod(producer.fqClassName(), producer.methodName(), producer.arity());
         }
-        var routine = routineTarget(parentTypeName, memberName, built, store);
-        if (routine.isPresent()) return routine.get();
-        var scope = TypeMemberScope.of(store, parentTypeName);
+        // The projected method is the @routine arm, and it is the last thing keeping the projection on
+        // this surface. With no build behind the session it names nothing and the parent's scope answers.
+        if (projected != null) {
+            return new SourceMethod(
+                projected.className(), projected.methodName(), rows.projectedArity());
+        }
+        var scope = rows.scope();
         if (scope.isEmpty()) return new None();
         return switch (scope.get()) {
-            case TypeMemberScope.Scope.Tables tables -> columnTarget(store, tables, memberName);
-            case TypeMemberScope.Scope.Members(var className) ->
-                memberTarget(store, className, memberName);
+            case TypeMemberScope.Scope.Tables tables -> columnTarget(rows, tables);
+            case TypeMemberScope.Scope.Members(var className) -> memberTarget(rows, className);
         };
-    }
-
-    /**
-     * The generated call surface a {@code @routine} field binds to, which is the one binding still
-     * read off the classification projection. {@code memberName} is the SDL field name here: a
-     * routine-backed field carries no {@code @field(name:)} override (that override redirects a column
-     * or accessor binding, a different classification), so it is the coordinate the projection is
-     * keyed by.
-     *
-     * <p>The class is the jOOQ {@code Routines} class and the method is the routine's generated call,
-     * neither of which any relation carries: the catalog census holds tables, columns and keys, and
-     * has no routine family. So this arm resolves only where a build has run, and where none has it
-     * declines and the parent type's scope answers. Its arity comes off the census like any other
-     * method's, and is 0 where the generated sources are not on the scanned classpath, which the
-     * consumers' name-level fallback covers.
-     */
-    private static Optional<DeclTarget> routineTarget(
-        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, StoreHandle store
-    ) {
-        if (built == null) return Optional.empty();
-        var classOpt = built.fieldClassification(parentTypeName, memberName);
-        if (classOpt.isEmpty()) return Optional.empty();
-        // Every other classification either names a producer the store already answered for above or
-        // binds no developer method at all, falling through to the parent-type backing.
-        return classOpt.get() instanceof FieldClassification.RoutineBacked routine
-            ? Optional.of(new SourceMethod(routine.methodClassName(), routine.methodName(),
-                arityOf(store, routine.methodClassName(), routine.methodName())))
-            : Optional.empty();
-    }
-
-    /**
-     * Parameter count of the first overload of {@code methodName} the census holds on
-     * {@code className}, or 0 when it holds none (the name-level fallback on the source index then
-     * guarantees the jump). First in the census's own order, which is by descriptor, so an
-     * arity-overloaded name resolves the same way on every read.
-     */
-    private static int arityOf(StoreHandle store, String className, String methodName) {
-        return ClasspathMethods.named(store, className, methodName).stream()
-            .findFirst()
-            .map(ClasspathMethods.Method::arity)
-            .orElse(0);
     }
 
     /**
@@ -198,8 +182,10 @@ public sealed interface DeclTarget {
      * first candidate in schema order, as the other surfaces resolving to one declaration do: which
      * one was meant is a resolution question, and a single declaration target cannot hold both.
      */
-    private static DeclTarget tableTarget(StoreHandle store, TypeMemberScope.Scope.Tables scope) {
-        return CatalogTables.of(store, scope.candidates().getFirst())
+    private static DeclTarget tableTarget(
+        DeclarationFacts.Rows rows, TypeMemberScope.Scope.Tables scope
+    ) {
+        return rows.table(scope.candidates().getFirst())
             .<DeclTarget>map(table -> new CatalogTable(table.tableName(), table.classFqn()))
             .orElseGet(None::new);
     }
@@ -215,14 +201,12 @@ public sealed interface DeclTarget {
      * evidence about which table the author meant.
      */
     private static DeclTarget columnTarget(
-        StoreHandle store, TypeMemberScope.Scope.Tables scope, String memberName
+        DeclarationFacts.Rows rows, TypeMemberScope.Scope.Tables scope
     ) {
         for (var candidate : scope.candidates()) {
-            var column = CatalogColumns.of(store, candidate).stream()
-                .filter(c -> c.isNamed(memberName))
-                .findFirst();
+            var column = rows.column(candidate);
             if (column.isEmpty()) continue;
-            var table = CatalogTables.of(store, candidate);
+            var table = rows.table(candidate);
             if (table.isEmpty()) continue;
             return new CatalogColumn(
                 table.get().tableName(), table.get().classFqn(), column.get().jooqName());
@@ -236,10 +220,10 @@ public sealed interface DeclTarget {
      * as a field, a bean accessor as a method, and the relation says which kind the name came from.
      * A name the class offers no slot for resolves to no target.
      */
-    private static DeclTarget memberTarget(StoreHandle store, String fqClassName, String memberName) {
-        return ClassMemberSlots.named(store, fqClassName, memberName)
+    private static DeclTarget memberTarget(DeclarationFacts.Rows rows, String fqClassName) {
+        return rows.slot(fqClassName)
             .<DeclTarget>map(slot -> switch (slot.origin()) {
-                case RECORD_COMPONENT -> new SourceField(fqClassName, slot.name());
+                case RECORD_COMPONENT -> new SourceField(fqClassName, slot.slotName());
                 case BEAN_ACCESSOR -> new SourceMethod(fqClassName, slot.accessorMethodName(), 0);
             })
             .orElseGet(None::new);

@@ -33,8 +33,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * fact to the block will reach for another query, which is the natural move and the one this test
  * refuses.
  *
- * <p>Every hover runs under an unavailable snapshot, so the description overlay never fires and the
- * count is the classification block's alone.
+ * <p>Every hover runs under an unavailable snapshot, and the count is still one with both blocks in it.
+ * That is the point rather than a detail of the fixture: the classification block and the description
+ * overlay are arms of one statement, so a session that has captured but never generated pays for a
+ * hover exactly what one that has generated pays, and neither block is gated on a build.
  */
 class DeclarationHoverStatementCountTest {
 
@@ -147,6 +149,11 @@ class DeclarationHoverStatementCountTest {
                 title: String
             }
             """);
+        // Asserted to carry the overlay as well as the claim, so the count below cannot quietly stop
+        // covering the second block: a hover that rendered only the classification would also cost one.
+        var hover = hover(file, 0, "type Fi".length());
+        assertThat(hover).isPresent();
+        assertThat(hover.get()).contains("TABLE").contains("rental catalogue");
         assertThat(statementsForHoverAt(file, 0, "type Fi".length())).isEqualTo(1);
     }
 

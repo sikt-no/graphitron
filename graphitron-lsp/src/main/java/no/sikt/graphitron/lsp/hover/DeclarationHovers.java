@@ -2,9 +2,9 @@ package no.sikt.graphitron.lsp.hover;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
-import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
 import no.sikt.graphitron.lsp.facts.DeclarationFact;
+import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
@@ -17,11 +17,13 @@ import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Range;
+import org.jooq.Field;
+import org.jooq.Record;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-
-import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import java.util.function.Function;
 
 /**
  * Classification-hover dispatch on SDL declaration coordinates. Parallel to
@@ -36,14 +38,15 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * <p>The classification block is the classifier a claim carries and the facts behind it, each read
  * from the relation that owns it. There is no variant name here and no per-variant payload: the block
  * is a heading and a list of labelled values, so a claim growing a fact is an arm of
- * {@link ClaimFacts#ofField}'s statement rather than a new arm in a projection's switch. A
+ * {@link ClaimFacts#fieldArms}'s statement rather than a new arm in a projection's switch. A
  * declaration nothing claims gets no block, which is the same silence the inlay hint keeps at an
  * unclaimed declaration.
  *
- * <p>Either block costs one statement, and the per-claim reads they replaced were the defect: a
- * conflicted coordinate paid per directive that claimed it, for facts whose relations were all keyed
- * on the one coordinate being hovered. {@code DeclarationHoverStatementCountTest} holds both numbers,
- * because no assertion on the rendered text can see them.
+ * <p>The whole hover costs one statement, both blocks together, and the per-claim reads it replaced
+ * were the defect: a conflicted coordinate paid per directive that claimed it, for facts whose
+ * relations were all keyed on the one coordinate being hovered.
+ * {@code DeclarationHoverStatementCountTest} holds the number, because no assertion on the rendered
+ * text can see it.
  *
  * <p>Beneath the classification block, the hover overlays what the graph's own facts say about the
  * declaration the coordinate binds to: a table's database comment, a column's or member's doc
@@ -52,11 +55,11 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * arms agree on which declaration the coordinate names; the overlay switch over {@code DeclTarget} is
  * exhaustive, mirroring goto's, so a new backing permit breaks both at compile time.
  *
- * <p>The two reads have parted company, though: the overlay is a query and goto's jump is still a
- * lookup in the LSP-owned source index. They answer about one declaration as long as both are
- * refreshed off the same parse, which is what a dev session does, but a session holding only one of
- * the two answers on only one surface. Nothing here can hide that by reading the other's substrate:
- * the resolution hands over names.
+ * <p>Both blocks are arms of one statement rather than two reads issued in order, which is what lets
+ * the overlay render with no build behind it: what it needs is {@link DeclarationFacts}, and the only
+ * thing a completed build still buys either surface is a {@code @routine} field's generated call
+ * surface. Goto reads the same rows for the same declaration's position, so neither surface can be
+ * answering about a state of the source the other has not seen.
  */
 public final class DeclarationHovers {
 
@@ -68,12 +71,10 @@ public final class DeclarationHovers {
      * the store holds about it overlaid beneath. Returns {@link Optional#empty()} when the cursor
      * is not on a recognised SDL declaration name token, or when neither block has anything to say.
      *
-     * <p>The two blocks are gated separately, on what each costs. The classification block needs the
-     * store and nothing else, so it renders in a session that has captured but not generated. The
-     * overlay's binding resolution reads the store for everything but a {@code @routine} field's
-     * generated call surface, so the snapshot no longer stands for what it can answer; it stands for
-     * what it costs, the resolution being several statements where the block is one. The gate lifts
-     * when that resolution is one statement.
+     * <p>Neither block is gated on a completed build any more, both being arms of one statement over
+     * the store's own relations. No store at all is still no hover: the classification block and the
+     * overlay are both what the store says, so a session with neither has nothing to render rather
+     * than half a popup.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, Optional<StoreHandle> store,
@@ -82,20 +83,47 @@ public final class DeclarationHovers {
         if (file == null || file.tree() == null) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
+        if (store.isEmpty()) return Optional.empty();
+        var handle = store.get();
         var declaration = declOpt.get();
         var hoverDecl = toDeclarationHover(declaration);
-        String classification = store
-            .map(handle -> classificationMarkdown(handle, hoverDecl))
-            .orElse(null);
-        // The overlay shares goto-definition's binding resolution, then reads the graph's own facts
-        // about what it resolved to. The resolution itself needs the store now, a member name's
-        // declaration being one of those facts, so it happens inside the read; no store is still no
-        // overlay, leaving the classification block exactly as the classification arm renders it.
-        String overlay = store.isPresent() && snapshot instanceof LspSchemaSnapshot.Built
-            ? overlay(DeclTarget.resolve(declaration, snapshot, store.get(), file.source()), store.get())
-            : "";
+        var block = classificationBlock(handle, hoverDecl);
+        var coord = DeclTarget.coordinateOf(declaration, file.source());
+        var projected = DeclTarget.projectedMethod(coord, snapshot);
+        var binding = DeclarationFacts.arms(handle, coord, projected);
+        var fields = new ArrayList<Field<?>>(block.arms());
+        fields.addAll(binding.fields());
+        var row = handle.dsl().select(fields).fetchOne();
+        String classification = block.render().apply(row);
+        var rows = binding.read(row);
+        String overlay = overlay(DeclTarget.of(coord, rows, projected), rows);
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
+    }
+
+    /**
+     * The classification block's arms and how they render, chosen by grain. A holder rather than two
+     * code paths because the two grains ask different relations and render differently while costing
+     * the same one statement, and the switch over {@link DeclarationHover} stays exhaustive here so a
+     * new declaration coordinate cannot reach the wire without content.
+     */
+    private record ClassificationBlock(List<Field<?>> arms, Function<Record, String> render) {}
+
+    private static ClassificationBlock classificationBlock(
+        StoreHandle store, DeclarationHover declaration
+    ) {
+        return switch (declaration) {
+            case DeclarationHover.FieldDeclarationHover f -> {
+                var arms = ClaimFacts.fieldArms(store, f.parentTypeName(), f.fieldName());
+                yield new ClassificationBlock(arms.fields(),
+                    row -> renderFieldMarkdown(f, arms.read(row)));
+            }
+            case DeclarationHover.TypeDeclarationHover t -> {
+                var arms = ClaimFacts.typeArms(store, t.typeName());
+                yield new ClassificationBlock(arms.fields(),
+                    row -> renderTypeMarkdown(t, arms.read(row)));
+            }
+        };
     }
 
     /**
@@ -118,14 +146,6 @@ public final class DeclarationHovers {
         };
     }
 
-    /** The classification block, or {@code null} when nothing claims the declaration. */
-    private static String classificationMarkdown(StoreHandle store, DeclarationHover declaration) {
-        return switch (declaration) {
-            case DeclarationHover.FieldDeclarationHover f -> renderFieldMarkdown(store, f);
-            case DeclarationHover.TypeDeclarationHover t -> renderTypeMarkdown(store, t);
-        };
-    }
-
     /**
      * The description overlay for the resolved {@link DeclTarget}, or empty when the coordinate binds
      * to nothing the store describes. Switches over the same target goto-definition projects to a
@@ -142,39 +162,33 @@ public final class DeclarationHovers {
      * tree-sitter round-trip, that the overlay answers for exactly the targets goto-definition jumps
      * on when both substrates hold the same parse.
      */
-    public static String overlay(DeclTarget target, StoreHandle store) {
+    public static String overlay(DeclTarget target, DeclarationFacts.Rows rows) {
         return switch (target) {
-            case DeclTarget.CatalogTable t -> tableDescription(store, t.tableName(), t.classFqn());
-            case DeclTarget.CatalogColumn c -> columnDescription(store, c.tableName(), c.columnName());
-            case DeclTarget.SourceClass s -> SourceDeclarations.classJavadoc(store, s.fqClassName());
-            case DeclTarget.SourceMethod m ->
-                SourceDeclarations.methodJavadoc(store, m.fqClassName(), m.methodName(), m.paramCount());
-            case DeclTarget.SourceField f -> SourceDeclarations.fieldJavadoc(store, f.fqClassName(), f.memberName());
+            case DeclTarget.CatalogTable t -> tableDescription(rows, t.tableName(), t.classFqn());
+            case DeclTarget.CatalogColumn c ->
+                columnDescription(rows, c.tableName(), c.classFqn(), c.columnName());
+            case DeclTarget.SourceClass s -> classJavadoc(rows, s.fqClassName());
+            case DeclTarget.SourceMethod m -> SourceDeclarations.byArityThenName(
+                rows.methodJavadocByArity(m.fqClassName(), m.methodName()), m.paramCount()).orElse("");
+            case DeclTarget.SourceField f -> fieldJavadoc(rows, f.fqClassName(), f.memberName());
             case DeclTarget.None ignored -> "";
         };
     }
 
     /**
-     * A table's own description, in one query: its database comment, else the doc comment on the
-     * class the census recorded for it. A name two schemas both declare is answered for the first in
-     * schema order, since the block above it has already named one table and an overlay is a
-     * paragraph rather than a list; the coordinate hover, whose whole subject is the table, reports
-     * every match instead.
+     * A table's own description: its database comment, else the doc comment on the class the census
+     * recorded for it. A name two schemas both declare is answered for the first in schema order,
+     * since the block above it has already named one table and an overlay is a paragraph rather than
+     * a list; the coordinate hover, whose whole subject is the table, reports every match instead.
      */
-    private static String tableDescription(StoreHandle store, String tableName, String classFqn) {
-        if (tableName == null) return SourceDeclarations.classJavadoc(store, classFqn);
-        var row = store.dsl()
-            .select(SQL_TABLE.DESCRIPTION, SourceDeclarations.classJavadocOf(SQL_TABLE.CLASS_FQN))
-            .from(SQL_TABLE)
-            .where(store.reads(SQL_TABLE.SOURCE_NAME))
-            .and(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
-            .orderBy(SQL_TABLE.TABLE_SCHEMA)
-            .limit(1)
-            .fetchOne();
+    private static String tableDescription(
+        DeclarationFacts.Rows rows, String tableName, String classFqn
+    ) {
+        var table = rows.tableNamed(tableName);
         // A census that does not hold the table still leaves the class reachable by name, which is
         // the state a dev session is in before it has run a catalog walk.
-        if (row == null) return SourceDeclarations.classJavadoc(store, classFqn);
-        return firstNonBlank(row.value1(), row.value2());
+        if (table.isEmpty()) return classJavadoc(rows, classFqn);
+        return firstNonBlank(table.get().description(), classJavadoc(rows, table.get().classFqn()));
     }
 
     /**
@@ -183,12 +197,28 @@ public final class DeclarationHovers {
      * does, so a target resolved under the jOOQ spelling and one resolved under the SQL spelling
      * describe the same column.
      */
-    private static String columnDescription(StoreHandle store, String tableName, String columnName) {
-        if (tableName == null || columnName == null) return "";
-        return CatalogColumns.of(store, tableName).stream()
-            .filter(column -> column.isNamed(columnName))
-            .findFirst()
-            .map(column -> firstNonBlank(column.javadoc(), column.comment()))
+    private static String columnDescription(
+        DeclarationFacts.Rows rows, String tableName, String classFqn, String columnName
+    ) {
+        return rows.columnNamed(tableName, columnName)
+            .map(column -> firstNonBlank(
+                fieldJavadoc(rows, classFqn, column.jooqName()), column.comment()))
+            .orElse("");
+    }
+
+    /** The doc comment the java-source family holds for a class, out of the rows in hand. */
+    private static String classJavadoc(DeclarationFacts.Rows rows, String classFqn) {
+        return rows.classDeclaration(classFqn)
+            .map(DeclarationFacts.ClassRow::javadoc)
+            .orElse("");
+    }
+
+    /** The same for a field, which is a record component or a generated column constant. */
+    private static String fieldJavadoc(
+        DeclarationFacts.Rows rows, String classFqn, String fieldName
+    ) {
+        return rows.fieldDeclaration(classFqn, fieldName)
+            .map(DeclarationFacts.FieldRow::javadoc)
             .orElse("");
     }
 
@@ -222,8 +252,9 @@ public final class DeclarationHovers {
      * structural classifier only reaches leaf fields), and it is the field an author most wants the
      * round-trip answer about; gating the block on a claim would silence it exactly there.
      */
-    private static String renderFieldMarkdown(StoreHandle store, DeclarationHover.FieldDeclarationHover decl) {
-        var block = ClaimFacts.ofField(store, decl.parentTypeName(), decl.fieldName());
+    private static String renderFieldMarkdown(
+        DeclarationHover.FieldDeclarationHover decl, ClaimFacts.FieldBlock block
+    ) {
         if (block.isEmpty()) return null;
         var sb = new StringBuilder();
         var classifiers = block.classifiers();
@@ -261,8 +292,9 @@ public final class DeclarationHovers {
      * design, so without it an author sees a payload type that renders like a plain object and no
      * reason why.
      */
-    private static String renderTypeMarkdown(StoreHandle store, DeclarationHover.TypeDeclarationHover decl) {
-        var block = ClaimFacts.ofType(store, decl.typeName());
+    private static String renderTypeMarkdown(
+        DeclarationHover.TypeDeclarationHover decl, ClaimFacts.TypeBlock block
+    ) {
         if (block.isEmpty()) return null;
         var sb = new StringBuilder();
         var classifiers = block.classifiers();

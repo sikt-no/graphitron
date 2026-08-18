@@ -158,7 +158,7 @@ public final class SourceDeclarations {
             .orderBy(JAVA_CLASS_DECLARATION.FILE)
             .limit(1)
             .fetchOne();
-        return row == null ? Optional.empty() : location(row.value1(), row.value2(), row.value3());
+        return row == null ? Optional.empty() : locationOf(row.value1(), row.value2(), row.value3());
     }
 
     /**
@@ -177,7 +177,7 @@ public final class SourceDeclarations {
             .orderBy(JAVA_FIELD_DECLARATION.FILE)
             .limit(1)
             .fetchOne();
-        return row == null ? Optional.empty() : location(row.value1(), row.value2(), row.value3());
+        return row == null ? Optional.empty() : locationOf(row.value1(), row.value2(), row.value3());
     }
 
     /**
@@ -219,7 +219,7 @@ public final class SourceDeclarations {
             .orderBy(JAVA_METHOD_DECLARATION.FILE, JAVA_METHOD_DECLARATION.ORDINAL)
             .fetch();
         for (var row : rows) {
-            location(row.value2(), row.value3(), row.value4())
+            locationOf(row.value2(), row.value3(), row.value4())
                 .ifPresent(location -> byArity.putIfAbsent(row.value1(), location));
         }
         return byArity;
@@ -227,9 +227,11 @@ public final class SourceDeclarations {
 
     /**
      * The arity-then-name pick both method lookups make: the exact arity when the source declares
-     * one, else the first declaration of the name in the map's order.
+     * one, else the first declaration of the name in the map's order. Public because a caller holding
+     * the family's rows as an arm of a wider statement applies this rule rather than a second spelling
+     * of it; the two tiers are a policy about what SDL can name, and the policy has one home.
      */
-    private static <T> Optional<T> byArityThenName(SequencedMap<Integer, T> byArity, int arity) {
+    public static <T> Optional<T> byArityThenName(SequencedMap<Integer, T> byArity, int arity) {
         if (byArity.isEmpty()) return Optional.empty();
         T exact = byArity.get(arity);
         return Optional.of(exact != null ? exact : byArity.firstEntry().getValue());
@@ -240,8 +242,12 @@ public final class SourceDeclarations {
      * line / column, collapsed to a zero-width range at the declaration's first character. The
      * parse's no-position sentinel reads as absence, which is the honest answer to "where does an
      * editor jump" for a declaration nothing positioned.
+     *
+     * <p>Public for the same reason {@link #byArityThenName} is: a caller selecting the family's three
+     * position columns into an arm of its own statement converts them here, so the sentinel and the
+     * off-by-one are read one way wherever the columns are read.
      */
-    private static Optional<Location> location(String file, Integer line, Integer column) {
+    public static Optional<Location> locationOf(String file, Integer line, Integer column) {
         if (file == null || line == null || column == null || line < 0 || column < 0) {
             return Optional.empty();
         }

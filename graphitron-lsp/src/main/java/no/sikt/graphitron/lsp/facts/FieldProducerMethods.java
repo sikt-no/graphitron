@@ -1,19 +1,12 @@
 package no.sikt.graphitron.lsp.facts;
 
-import no.sikt.graphitron.model.read.StoreHandle;
-
+import java.util.List;
 import java.util.Optional;
-
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.selectCount;
 
 /**
  * The Java method a field's producer directive binds it to: the {@code @service} or
  * {@code @externalField} reference the author wrote, with the arity the classpath census resolved it
- * at. One statement over {@code intent_field_producer_reference} left-joined to
+ * at. The pair of relations behind it is {@code intent_field_producer_reference} left-joined to
  * {@code intent_field_producer_method}, which is the pair's own grain rather than two questions: a
  * reference and its matches.
  *
@@ -28,14 +21,25 @@ import static org.jooq.impl.DSL.selectCount;
  * which held the resolved pair on five method-backed classification variants. Four of them are
  * {@code @service} and {@code @externalField} and are answered here; the fifth is {@code @routine},
  * whose generated call surface no relation carries.
+ *
+ * <p>What lives here is the rule, not the read. {@link DeclarationFacts} asks the two relations as an
+ * arm of the one statement a declaration surface issues, and hands the rows back to {@link #resolve}.
  */
 public final class FieldProducerMethods {
 
     private FieldProducerMethods() {}
 
     /**
-     * The method the coordinate's producer reference names, or empty where it names none and where
-     * two directives name different ones.
+     * One producer reference the coordinate carries, with the arity of the census method it matched.
+     *
+     * @param arity {@code null} where the census holds no matching method, which is the unresolved
+     *              reference the outer join keeps
+     */
+    public record Reference(String className, String methodName, Integer arity) {}
+
+    /**
+     * The method the coordinate's references name, or empty where they name none and where two of them
+     * name different ones.
      *
      * <p>Empty on disagreement rather than a pick, on {@link TypeBackingClass}'s terms and for its
      * reason: a coordinate carrying both directives is a rejection, so the generator binds neither
@@ -49,42 +53,17 @@ public final class FieldProducerMethods {
      * not a fact any relation carries, and {@code candidates} on the resolution is how a surface that
      * must not guess finds out that it would be guessing.
      */
-    public static Optional<Producer> of(StoreHandle store, String typeName, String fieldName) {
-        var arity = field(selectCount()
-            .from(JVM_METHOD_PARAMETER)
-            .where(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.SOURCE_NAME))
-            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.CLASS_NAME))
-            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(INTENT_FIELD_PRODUCER_METHOD.METHOD_NAME))
-            .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR)));
-        var rows = store.dsl()
-            .select(INTENT_FIELD_PRODUCER_REFERENCE.CLASS_NAME,
-                INTENT_FIELD_PRODUCER_REFERENCE.METHOD_NAME, arity)
-            .from(INTENT_FIELD_PRODUCER_REFERENCE)
-            .leftJoin(INTENT_FIELD_PRODUCER_METHOD)
-            .on(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME))
-            .and(INTENT_FIELD_PRODUCER_METHOD.TYPE_NAME
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME))
-            .and(INTENT_FIELD_PRODUCER_METHOD.FIELD_NAME
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME))
-            .and(INTENT_FIELD_PRODUCER_METHOD.DECLARED_VIA
-                .eq(INTENT_FIELD_PRODUCER_REFERENCE.DECLARED_VIA))
-            .where(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(typeName))
-            .and(INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(fieldName))
-            .orderBy(INTENT_FIELD_PRODUCER_REFERENCE.DECLARED_VIA,
-                INTENT_FIELD_PRODUCER_METHOD.DESCRIPTOR)
-            .fetch();
-        if (rows.isEmpty()) return Optional.empty();
-        var first = rows.getFirst();
+    public static Optional<Producer> resolve(List<Reference> references) {
+        if (references.isEmpty()) return Optional.empty();
+        var first = references.getFirst();
         // One reference resolving to several overloads is one answer, the first row; two references
         // naming different methods are the disagreement above, and every row is checked against the
         // first rather than counted, so which rows differ does not matter.
-        boolean disagrees = rows.stream().anyMatch(row ->
-            !row.value1().equals(first.value1()) || !row.value2().equals(first.value2()));
+        boolean disagrees = references.stream().anyMatch(row ->
+            !row.className().equals(first.className()) || !row.methodName().equals(first.methodName()));
         if (disagrees) return Optional.empty();
-        return Optional.of(new Producer(first.value1(), first.value2(),
-            first.value3() == null ? 0 : first.value3()));
+        return Optional.of(new Producer(first.className(), first.methodName(),
+            first.arity() == null ? 0 : first.arity()));
     }
 
     /**

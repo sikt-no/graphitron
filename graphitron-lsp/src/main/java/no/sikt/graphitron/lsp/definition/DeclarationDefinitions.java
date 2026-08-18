@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.definition;
 
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
@@ -25,7 +26,7 @@ import java.util.Optional;
  * {@code DeclarationHovers} keys on, so this provider and the hover arm cannot
  * drift on "is this leaf a declaration name?".
  *
- * <p>{@link DeclTarget#resolve} performs the one backing-switch from SDL
+ * <p>{@link DeclTarget#of} performs the one backing-switch from SDL
  * coordinate to a named jOOQ / Java declaration; this provider only projects
  * the result. The declaration-name hover arm switches over the same
  * {@link DeclTarget}, so a new backing permit breaks both switches at compile
@@ -34,12 +35,12 @@ import java.util.Optional;
  * empty-resolution contract ({@code Located} jumps, {@code SourceAbsent} stays
  * put).
  *
- * <p>Hover's overlay and this jump now read one substrate again: both ask the fact
- * store's java-source family about the declaration the shared {@link DeclTarget}
- * names, one for its doc comment and one for its position. The parity between them
- * is therefore back to being a property of the family rather than of two readers
- * agreeing, with one asymmetry left standing: a declaration the parse positioned but
- * wrote no doc comment for jumps without overlaying anything.
+ * <p>One request is one statement: {@link DeclarationFacts} answers what the coordinate resolves
+ * against and what the java-source family holds about every declaration it could resolve to, and the
+ * jump is a lookup over those rows. Hover's overlay reads the same rows for the same declaration's doc
+ * comment, so the parity between the two surfaces is a property of the family rather than of two
+ * readers agreeing, with one asymmetry left standing: a declaration the parse positioned but wrote no
+ * doc comment for jumps without overlaying anything.
  */
 public final class DeclarationDefinitions {
 
@@ -57,36 +58,49 @@ public final class DeclarationDefinitions {
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (file == null || file.tree() == null) return Optional.empty();
-        // The snapshot gate is a cost gate now rather than a capability one: the resolution reads the
-        // store for everything but a @routine field's generated call surface, so what it withholds
-        // from a captured-but-not-generated session is a jump the store could mostly answer. Lifting
-        // it is what the resolution being one statement buys, the resolution costing several today.
-        if (!(snapshot instanceof LspSchemaSnapshot.Built)) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        return locate(DeclTarget.resolve(declOpt.get(), snapshot, store, file.source()), store);
+        // No snapshot gate: the resolution and the position behind it are one statement over the
+        // store's own relations, so a session that has captured but never generated jumps like any
+        // other. What a completed build still buys is the one arm no relation carries, a @routine
+        // field's generated call surface.
+        var coord = DeclTarget.coordinateOf(declOpt.get(), file.source());
+        var projected = DeclTarget.projectedMethod(coord, snapshot);
+        var rows = DeclarationFacts.of(store, coord, projected);
+        return locate(DeclTarget.of(coord, rows, projected), rows);
     }
 
     /**
-     * Projects the shared {@link DeclTarget} to the editor jump for its declaration.
-     * Public so {@code DeclarationHoverOverlayParityTest} can assert, per variant,
-     * that this jump is present exactly when the declaration-name hover overlay is
-     * (the parity property), without a tree-sitter round-trip.
+     * Projects the shared {@link DeclTarget} to the editor jump for its declaration, out of the rows
+     * the same statement brought back. Public so {@code DeclarationHoverOverlayParityTest} can assert,
+     * per variant, that this jump is present exactly when the declaration-name hover overlay is (the
+     * parity property), without a tree-sitter round-trip.
+     *
+     * <p>Every arm reads the java-source family and nothing else, which is why the rows can answer for
+     * all of them: what separates a table's jump from a column's is which of that family's three
+     * relations positions the declaration, and the resolution has already said which declaration it is.
      */
-    public static Optional<Location> locate(DeclTarget target, StoreHandle store) {
+    public static Optional<Location> locate(DeclTarget target, DeclarationFacts.Rows rows) {
         return switch (target) {
-            case DeclTarget.CatalogTable t ->
-                Definitions.resolve(Definitions.classTarget(t.classFqn(), store), t.classFqn());
-            case DeclTarget.CatalogColumn c ->
-                Definitions.resolve(
-                    Definitions.fieldTarget(c.classFqn(), c.columnName(), store), c.classFqn());
-            case DeclTarget.SourceClass s ->
-                Definitions.resolve(Definitions.classTarget(s.fqClassName(), store), s.fqClassName());
-            case DeclTarget.SourceMethod m ->
-                SourceDeclarations.methodLocation(store, m.fqClassName(), m.methodName(), m.paramCount());
-            case DeclTarget.SourceField f ->
-                Definitions.resolve(Definitions.fieldTarget(f.fqClassName(), f.memberName(), store), f.fqClassName());
+            case DeclTarget.CatalogTable t -> classJump(rows, t.classFqn());
+            case DeclTarget.CatalogColumn c -> fieldJump(rows, c.classFqn(), c.columnName());
+            case DeclTarget.SourceClass s -> classJump(rows, s.fqClassName());
+            case DeclTarget.SourceMethod m -> SourceDeclarations.byArityThenName(
+                rows.methodLocationByArity(m.fqClassName(), m.methodName()), m.paramCount());
+            case DeclTarget.SourceField f -> fieldJump(rows, f.fqClassName(), f.memberName());
             case DeclTarget.None ignored -> Optional.empty();
         };
+    }
+
+    private static Optional<Location> classJump(DeclarationFacts.Rows rows, String classFqn) {
+        return Definitions.resolve(Definitions.located(
+            rows.classDeclaration(classFqn).flatMap(DeclarationFacts.ClassRow::location)), classFqn);
+    }
+
+    private static Optional<Location> fieldJump(
+        DeclarationFacts.Rows rows, String classFqn, String fieldName
+    ) {
+        return Definitions.resolve(Definitions.located(rows.fieldDeclaration(classFqn, fieldName)
+            .flatMap(DeclarationFacts.FieldRow::location)), classFqn);
     }
 }

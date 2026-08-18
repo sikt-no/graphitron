@@ -208,8 +208,12 @@ public final class Definitions {
         return new DefinitionTarget.Located(declared.firstEntry().getValue());
     }
 
-    /** The one mapping from "the family positions this declaration" to the typed outcome. */
-    private static DefinitionTarget located(Optional<Location> location) {
+    /**
+     * The one mapping from "the family positions this declaration" to the typed outcome. Visible to
+     * the declaration-name provider beside this one, which holds the family's rows as an arm of its own
+     * statement and so reaches the same outcome without a lookup of its own.
+     */
+    static DefinitionTarget located(Optional<Location> location) {
         return location.<DefinitionTarget>map(DefinitionTarget.Located::new)
             .orElseGet(DefinitionTarget.SourceAbsent::new);
     }

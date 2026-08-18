@@ -540,7 +540,9 @@ list of what has not.
   types' bindings, which nothing derives.
 * `DeclTarget` asks for the field classification at a coordinate, and asks it now only about
   `@routine`: the generated call surface a routine read or write binds to, which no relation carries.
-  R709 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below.
+  R709 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below,
+  and the read that is left happens before the statement rather than inside it, so it costs the
+  surfaces nothing but the fact itself.
 * `FieldCompletions` asks whether a site is a payload data field, through `siteContext`, to decide
   whether to offer the source sigil. A narrow predicate over a distinction no relation states.
 
@@ -3547,3 +3549,49 @@ declaration capability can become one statement per declaration the same way. Th
 because the cost argument for it is gone, and the enforcer keeps asserting one rather than being taught
 a bigger number. That is the next slice, and it is the last of the three residue sites bar the
 `@reference` overlay's missing view.
+
+## Settled while building: the declaration capability is one statement, and the projection became an input to it
+
+Both declaration surfaces now cost one statement, and the snapshot gate is off both. Goto-definition
+jumps in a session that captured its schema and never ran a build, and the declaration hover renders
+its description overlay there too, which is the whole point of the surface reading the store.
+
+The recomposition is the one the rest of this item has been doing, with one wrinkle worth stating. A
+declaration surface asks two questions in sequence: which declaration does this coordinate bind to,
+and what does the java-source family hold about that declaration. The second cannot be keyed until the
+first is answered, so it looks like it must be a second round trip. It does not, because the arms can
+answer for every declaration the coordinate *could* bind to, and the resolution then picks by name from
+rows in hand. That is the trade the inlay projection already states as rows in a payload rather than a
+round trip, and at a single coordinate the candidate set is small: the classes a type could be backed
+by, the tables it could be bound to, the columns and members its own name reaches.
+
+**The `@routine` arm looked like it forced a second statement, and the fix was to read it earlier.**
+That arm's identity comes from the classification projection, so the statement's own arms cannot admit
+either the class or the method, and the arity behind it was a read of the classpath census keyed on
+what the projection said. Reading the projection *before* building the statement dissolves both: it is
+a value the session already holds, so naming the pair up front costs nothing, and once it is named the
+arity and the parsed declaration are arms like any other. So even the one coordinate the store cannot
+name on its own is one statement. R709 still stands, and what is left of its case is the modelling one
+rather than a cost.
+
+**The claim block is handed to the caller as arms rather than fetched.** The hover asks the claim
+relations and the binding relations in the same breath; both sets are keyed on the same coordinate and
+neither depends on the other, so issuing them separately would be a round trip bought with nothing.
+Each surface composes its own statement from shared arm builders rather than the two sharing one
+statement, and that is deliberate: goto has no use for the claim arms, and folding them in would make
+its cost a function of what the hover renders. Sharing the arms is what keeps the two from drifting on
+the resolution; sharing the statement would couple them on everything else.
+
+Counted rather than reasoned about, at the coordinates the enforcers hold: the hover is one where
+ungating it had made it three to six, and goto is one where it had been up to six (the binding, then
+the census row for the table it picked, then that table's columns, then the parsed declaration of the
+constant, each round trip's subject decided by the answer before it). Goto had no enforcer at all
+before this slice and now has one.
+
+**The parity test got stronger on the way.** Every case now drives from a coordinate an author could
+put a cursor on rather than from a hand-built target, which took a few fixture classes and one more
+type per Java declaration under assertion, and the snapshot is unavailable throughout. So the test
+demonstrates the session this item is for instead of standing one step outside it. One target stays
+hand-built and the test says why: a field declaration carrying a doc comment is reachable from no
+coordinate, a column constant resolving to the catalog arm and a record component's header comment not
+being retained by the parse.
