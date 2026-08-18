@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-17
+last-updated: 2026-08-18
 ---
 
 # Delivery verdict derives from the store, not from a hand-maintained negative-space switch
@@ -152,7 +152,7 @@ is registered `Arm.DERIVED`, and its five arms are `SPLIT_QUERY` off `graphitron
 `TENANT_FAN_OUT` off `graphitron_tenant_fan_out`, `SERVICE` off `graphitron_service` at a non-root
 parent, `ROOT_OPERATION` off `graphql_root_operation`, and `RECORD_HANDED_PARENT` off
 `intent_type_backing_class`. It has live readers: the LSP renders it
-through `SeparateFetchRule`, `collectSeparateFetchHints` and `DeclarationHovers`, and
+through `SeparateFetchRule`, `InlayFacts.marksSeparateFetch` and `DeclarationHovers`, and
 `SeparateFetchVocabularyTest` seals its vocabulary against the words an editor shows.
 
 **Both relations stay, and neither derives from the other.** The questions differ, and they differ
@@ -263,7 +263,10 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   an exemption at all, and needs no arm of its own: the fan-in rule arm already stands at those
   coordinates, for the reasons the fan-in trace below gives, and reports the same
   `POLYMORPHIC_FAN_IN` literal the walk's trigger carries there. `Language.mediaList` in the same
-  example is that coordinate. Everything the rest of this bullet establishes about *which* captured
+  example is that coordinate, and `Language.mediaConnection` beside it is the `@asConnection` half,
+  whose authored bare list puts it on the same arm. The connection cardinality forks once more
+  underneath that, at a *structurally declared* wrapper the fan-in trace below sends to a residue
+  rather than to either side of this bullet. Everything the rest of this bullet establishes about *which* captured
   population the arm reads holds unchanged at either cardinality; only the cardinality gate is
   new. **The captured population is not
   `graphitron_discriminate` alone**, which is the name-matching trap the two predicate entries below
@@ -351,8 +354,36 @@ which compares the verdict and the winning literal rather than the route to them
 trace above changes; it establishes what the walk's arm sees, and the store's gate below is stated on
 its own terms rather than transcribed from it.
 
-Two consequences. The arm's store-side gate is that the target is an interface or union, list-valued
-or connection-shaped, with at least one table-bound participant: `graphql_implements` /
+A second asymmetry sits one helper over, and unlike the first it does reach an arm.
+`mint`'s three verdict helpers disagree about connection wrappers.
+`discriminatedInterfaceTarget` and `singleTableBackedVerdict` each carry a `ConnectionType` arm
+that resolves `elementTypeName` before answering; `anyTableBoundParticipant` carries none, reading
+`types.get(baseTypeName(fieldDef))` and falling to its `default -> List.of()` when the authored type
+is a declared connection object. The two shapes therefore part company at a child returning a
+*structurally declared* connection. Over a plain interface or union the walk returns `Inline`, the
+participant scan never seeing past the wrapper; over a `@table @discriminate` interface it returns
+`Batched(PolymorphicFanIn)` through the discriminated arm's element resolution. `@asConnection`
+reaches neither case: its authored expression is the bare list, which is what both `mint` and
+capture read, so `graphql_field.is_list` already carries those coordinates and the corpus's
+`Language.mediaConnection` is one of them.
+
+Three consequences, and all three narrow the arms rather than widening them. **The fan-in arm's gate
+is list-valued and not connection-shaped**: adding the wrapper would fire the arm exactly where the
+walk's participant scan does not, manufacturing a disagreement that does not exist today. **The
+`DISCRIMINATED_TARGET` exemption's `no connection shape` conjunct is inert rather than load-bearing**,
+because a coordinate returning a declared connection object is not among "the coordinates returning
+the type" the exemption projects onto in the first place; it is kept as a stated guard rather than
+deleted, so a later revision that widens the projection cannot silently pick the shape up. **And the
+structurally-connection-wrapped discriminated child is a `DeliveryResidue` entry, not an arm
+clause.** Teaching the fan-in arm to resolve the element only when the element is discriminated
+would transcribe a disagreement among the walk's own three helpers into SQL, which is the move this
+item already declines for the renamed root; the residue's removal criterion is the walk giving
+`anyTableBoundParticipant` the same `ConnectionType` arm its two siblings carry. No corpus
+coordinate is one, per the connection bullet in the Implementation section, so nothing observes the
+gap today either way.
+
+The arm itself, then. Its store-side gate is that the target is an interface or union,
+list-valued, with at least one table-bound participant: `graphql_implements` /
 `graphql_union_member` joined to `graphitron_table`, over `graphql_field.is_list`. Every input is in
 the inventory above and every hop in this arm is single. It
 carries no `@discriminate` anti-join, and since that shape gained a batched delivery the arm is what
@@ -496,11 +527,11 @@ would have answered it silently.
 | `graphitron_service`
 
 | `DISCRIMINATED_TARGET` (exemption)
-| the target is an interface carrying both `@discriminate` and `@table`, which is what `TableInterfaceType` means, *and* the coordinate is single-valued. The list and connection halves are the fan-in arm's row, not an exemption
-| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates returning the type, gated on `graphql_field.is_list` false and no connection shape
+| the target is an interface carrying both `@discriminate` and `@table`, which is what `TableInterfaceType` means, *and* the coordinate is single-valued. The list half is the fan-in arm's row, not an exemption; the structurally-connection-wrapped half is a residue, per the fan-in section
+| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates returning the type, gated on `graphql_field.is_list` false. The `no connection shape` conjunct is the stated-but-inert guard the fan-in section places
 
 | `POLYMORPHIC_FAN_IN`
-| the target is an interface or union, list-valued or connection-shaped, with at least one table-bound participant. A discriminated interface target meets this too, which is how its list half gets its row without an arm of its own
+| the target is an interface or union, list-valued, with at least one table-bound participant. A discriminated interface target meets this too, which is how its list half gets its row without an arm of its own. Not connection-shaped: `anyTableBoundParticipant` does not resolve a wrapper's element, so the wrapper is the residue the fan-in section states
 | `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`
 
 | `RECORD_HANDED_PARENT`
@@ -627,13 +658,22 @@ set acquiring an enforcer that is not another switch.**
   express, each with a stated removal criterion. Predicted from reading, to confirm at
   implementation: the nesting-field domain boundary above, and any arm whose predicate depends on
   classifier-internal route resolution (`resolveChildPolymorphicJoinPaths`) rather than on a
-  captured fact. The one predicate-driven residue candidate is the pivot-slot record parent, the
+  captured fact. The structurally-connection-wrapped discriminated child is the one the fan-in
+  section settles, and it is a residue rather than a candidate: the walk mints
+  `Batched(PolymorphicFanIn)` there through `discriminatedInterfaceTarget`'s `ConnectionType` arm
+  while `anyTableBoundParticipant` has no such arm, so the store reports `INLINE` and the removal
+  criterion is the walk's third helper gaining the wrapper reading its two siblings already have.
+  The one predicate-driven residue *candidate* is the pivot-slot record parent, the
   single member of the record-handed population neither backing arm witnesses, its source being a
-  graphitron-built record that no class stands for. Note what is *not* on this list any more: the
+  graphitron-built record that no class stands for. Confirm that one before writing it: the arm it
+  would disagree with needs a table-anchored target, and `ChildField.target()` gives `PivotSlotField`
+  a `TargetShape.Field`, so `mint`'s record-handed arm may never fire at a pivot slot and the entry
+  may be empty by construction. An empty residue is not a harmless extra here, the shadow
+  discipline below asserting each one non-empty on the shapes that create it. Note what is *not* on this list any more: the
   accessor-reached class-backed parent, which was a residue for as long as this item planned to copy
   the producer-payload arm and stopped being one when the arm moved to `intent_type_backing_class`. The
   renamed root is
-  the third, per the root-exemption bullet above: the exemption arm reads the binding and the walk
+  the last, per the root-exemption bullet above: the exemption arm reads the binding and the walk
   reads the literal names, so a graph spelling `schema { query: MyQuery }` exempts store-side at
   coordinates the walk never routes through `classifyRootField` at all. Carry it as a residue whose
   removal criterion is the walk keying on the binding, rather than narrowing the arm to the three
@@ -694,18 +734,30 @@ set acquiring an enforcer that is not another switch.**
     `@splitQuery` and `@tenantFanOut` that pins the authored overlap, both rows surviving in the
     rule view and the reduction picking `SPLIT_QUERY`, the same discipline the `Query.aggregated`
     exemption-overlap pin applies one side over.
-  * **No connection reaches any arm as a child.** Every connection-returning coordinate in the
-    corpus sits on `Query`: the three `@asConnection` carriers (`catalog`'s `films`,
-    `paginated-joined-table-interface`'s `parties`, `faceted-connection`'s `films`) and both
-    structurally-declared ones (`connection` and `arrival-connection-ancestor`, each
-    `Query.films: FilmsConnection`). A root returns `Inline` before `tableAnchoredChild` is computed,
-    so `singleTableBackedVerdict`'s `ConnectionType` arm is unreached over the whole corpus, and its
-    javadoc states the shape it exists for: "a connection verdict anchors through its element, so
-    authored connection returns stay batched-capable". That is a child returning a connection under
-    `@splitQuery`, and nothing in the corpus is one. The predicate this leaves unwitnessed is the
-    structural one corrected above, so the missing coordinate and the mis-picked relation are the
-    same gap seen twice, which is why an arm keyed on `graphitron_connection` would have shipped
-    green.
+  * **No structurally declared connection reaches any arm, and no connection at all reaches one as
+    a child through its wrapper.** The corpus carries four `@asConnection` carriers and two
+    structural connections. Three carriers sit on `Query` (`catalog`'s `films`,
+    `paginated-joined-table-interface`'s `parties`, `faceted-connection`'s `films`) and so do both
+    structural ones (`connection` and `arrival-connection-ancestor`, each
+    `Query.films: FilmsConnection`); a root returns `Inline` on `mint`'s first line, before
+    `tableAnchoredChild` is computed. The fourth carrier is a child, `Language.mediaConnection` in
+    the `table-interface` example, and it misses the arm for the other reason the corrected
+    predicate above gives: an `@asConnection` carrier's authored expression is the bare list, so
+    `mint` reads `MediaItem` and the discriminated arm answers before `tableAnchoredChild` is
+    reached. Between the two reasons `singleTableBackedVerdict`'s `ConnectionType` arm is unreached
+    over the whole corpus, and its javadoc states the shape it exists for: "a connection verdict
+    anchors through its element, so authored connection returns stay batched-capable". That is a
+    child whose *declared* type is connection-shaped, under `@splitQuery`, and nothing in the corpus
+    is one. The predicate this leaves unwitnessed is the structural one corrected above, so the
+    missing coordinate and the mis-picked relation are the same gap seen twice, which is why an arm
+    keyed on `graphitron_connection` would have shipped green. **So this fixture is a deliverable
+    too**, on the `@tenantFanOut` bullet's terms and in the same home, beside the test rather than in
+    the corpus: a child declared against an SDL connection type over a plain `@table` element and
+    marked `@splitQuery`, which is the coordinate that puts the structural predicate and the
+    `SPLIT_QUERY` arm's connection reading under the shadow at once. Its sibling shape, the same
+    child over a `@table @discriminate` element, is the residue the fan-in section states rather than
+    a fixture to author: the walk's three helpers disagree there, so a fixture would pin the
+    disagreement rather than the rule, and the residue's non-empty assertion is what carries it.
 
 ## The exit criterion, and the successor
 
@@ -731,7 +783,11 @@ pins two duplicate readers, and afterwards it either becomes a store-versus-cons
 goes away with the crosswalk it compares.
 
 **One test of whether this item succeeded:** the discriminated interface child must not appear in
-`DeliveryResidue` at either cardinality. The reason is not that the hardcoded `false` is wrong; per
+`DeliveryResidue` at either authored cardinality, single or list, the `@asConnection` carrier
+riding the list half on its authored bare list. The one carve-out is the structurally declared
+connection wrapper, which the fan-in section sends to a residue for a reason that is about the
+walk's own three helpers rather than about this shape, and which no corpus coordinate reaches.
+The reason is not that the hardcoded `false` is wrong; per
 the Problem statement it survived its own sibling item intact, and has since become unreachable
 rather than incorrect. The reason is that this shape is the one whose delivery nobody could settle
 without reading arm order, so a view that cannot state it has left the question exactly where it was
