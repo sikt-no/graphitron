@@ -11999,9 +11999,7 @@ class GraphitronSchemaBuilderTest {
         var ctx = TestConfiguration.testContext();
         TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(schemaText);
         var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
-        var jooq = new no.sikt.graphitron.rewrite.JooqCatalog(ctx.jooqPackage());
-        var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        return CatalogBuilder.buildSnapshot(registry, bundle.model(), catalog);
+        return CatalogBuilder.buildSnapshot(registry, bundle.model());
     }
 
     /**

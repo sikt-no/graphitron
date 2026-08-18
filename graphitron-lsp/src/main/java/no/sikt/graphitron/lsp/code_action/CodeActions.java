@@ -73,7 +73,7 @@ public final class CodeActions {
     public static List<Either<Command, CodeAction>> compute(
         CodeActionParams params, Workspace workspace
     ) {
-        return compute(params, workspace, SdlActions.all(workspace.catalog()));
+        return compute(params, workspace, SdlActions.all());
     }
 
     /**

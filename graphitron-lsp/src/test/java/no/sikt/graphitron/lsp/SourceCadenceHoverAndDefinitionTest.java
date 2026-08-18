@@ -7,7 +7,6 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
@@ -64,7 +63,7 @@ class SourceCadenceHoverAndDefinitionTest {
                 }
             }
             """);
-        var workspace = workspaceWithServiceCatalog();
+        var workspace = new Workspace();
 
         var file = file("""
             type Query {
@@ -110,7 +109,7 @@ class SourceCadenceHoverAndDefinitionTest {
                     public final Object ACTOR_ID = null;
                 }
                 """);
-            var workspace = workspaceWithTableCatalog(actorFqn);
+            var workspace = new Workspace();
 
             // Hover's description is the generated class's Javadoc, reached from the store's
             // catalog census through the FQN into its java-source family; the database declares no
@@ -126,7 +125,7 @@ class SourceCadenceHoverAndDefinitionTest {
     }
 
     @Test
-    void aSourceEditMovesHoverAndGotoTogetherWithoutACatalogRebuild(@TempDir Path srcRoot) throws IOException {
+    void aSourceEditMovesHoverAndGotoTogetherWithoutAGeneratorPass(@TempDir Path srcRoot) throws IOException {
         Path source = writeJava(srcRoot, "com/example/PriceService.java", """
             package com.example;
             public class PriceService {
@@ -134,8 +133,8 @@ class SourceCadenceHoverAndDefinitionTest {
                 public Object price(Object table) { return null; }
             }
             """);
-        var workspace = workspaceWithServiceCatalog();
-        var catalogBefore = workspace.catalog();
+        var workspace = new Workspace();
+        var snapshotBefore = workspace.snapshot();
 
         var file = file("""
             type Query {
@@ -162,12 +161,12 @@ class SourceCadenceHoverAndDefinitionTest {
             Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(
                 Files.getLastModifiedTime(source).toMillis() + 5000));
 
-            // The edited file is re-read, and nothing else is; the catalog is the same instance it
-            // was before.
+            // The edited file is re-read, and nothing else is; no generator pass ran, which the
+            // workspace states by still holding the build output it held before.
             store.refreshJavaSources(srcRoot);
-            assertThat(workspace.catalog())
-                .as("source-cadence refresh must not rebuild the catalog")
-                .isSameAs(catalogBefore);
+            assertThat(workspace.snapshot())
+                .as("source-cadence refresh must not run a generator pass")
+                .isSameAs(snapshotBefore);
 
             int lineAfter = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
                 .orElseThrow().getRange().getStart().getLine();
@@ -202,11 +201,11 @@ class SourceCadenceHoverAndDefinitionTest {
                     public final Object FIRST_NAME = null;
                 }
                 """);
-            var workspace = workspaceWithTableCatalog(actorFqn);
+            var workspace = new Workspace();
             // Which declaration the type name binds to is the store's answer off the captured
             // binding, so the projection this arm still takes carries nothing.
             var snapshot = new LspSchemaSnapshot.Built.Current(
-                List.of(), Map.of(), Map.of(), Map.of());
+                List.of(), Map.of(), Map.of());
 
             assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
                 .contains("The actor table.");
@@ -241,26 +240,9 @@ class SourceCadenceHoverAndDefinitionTest {
         Workspace workspace, StoreFixture store, FileSnapshot file, Point pos,
         LspSchemaSnapshot snapshot, boolean declarationNames
     ) {
-        return Hovers.compute(LspVocabulary.load(), file, workspace.catalog(),
+        return Hovers.compute(LspVocabulary.load(), file,
             Optional.of(store.handle()), snapshot, pos, declarationNames)
             .orElseThrow().getContents().getRight().getValue();
-    }
-
-    private static Workspace workspaceWithServiceCatalog() {
-        var price = new CompletionData.Method(
-            "price", "Object", "",
-            List.of(new CompletionData.Parameter("table", "Object", "Table", "")));
-        var ref = new CompletionData.ExternalReference(SVC_FQN, SVC_FQN, "", List.of(price), List.of());
-        return new Workspace(new CompletionData(List.of(), List.of(), List.of(ref)));
-    }
-
-    /** The projection hover still reads for a table: its name and the FQN it was captured under. */
-    private static Workspace workspaceWithTableCatalog(String filmFqn) {
-        var film = new CompletionData.Table(
-            "film", "", filmFqn,
-            List.of(new CompletionData.Column("FILM_ID", "Integer", false, "")),
-            List.of());
-        return new Workspace(new CompletionData(List.of(film), List.of(), List.of()));
     }
 
     private static FileSnapshot file(String source) {

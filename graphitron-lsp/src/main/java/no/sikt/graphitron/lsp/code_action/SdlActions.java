@@ -1,7 +1,5 @@
 package no.sikt.graphitron.lsp.code_action;
 
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-
 import java.util.List;
 
 /**
@@ -13,23 +11,22 @@ import java.util.List;
  * an action that <em>does</em> target a deprecation must target a real one, so a
  * renamed or removed marker cannot leave a stale action behind.
  *
- * <p>{@code SdlAction} instances are bound to a {@link CompletionData} catalog so
- * a rewrite slot can read build-derived facts. The catalog is rebuilt by the dev
- * mojo when the consumer's classpath changes; the LSP fetches a fresh action list
- * per request.
+ * <p>The list is fetched fresh per request. An action needing build-derived facts
+ * reads them where every other language-server surface does, from the fact store the
+ * request already holds open, rather than from a projection handed in here.
  */
 public final class SdlActions {
 
     private SdlActions() {}
 
     /**
-     * Returns every {@link SdlAction} bound to {@code catalog}. Empty today: the
+     * Returns every {@link SdlAction} the LSP knows. Empty today: the
      * {@code ExternalCodeReference.name} migration retired with the argument
      * itself, and no other deprecation currently carries a registered fix. The
      * next directive rename or deprecation migration extends the list, and
      * {@link CodeActions} needs no change to pick it up.
      */
-    public static List<SdlAction> all(CompletionData catalog) {
+    public static List<SdlAction> all() {
         return List.of();
     }
 }

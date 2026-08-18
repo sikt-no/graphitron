@@ -541,7 +541,9 @@ not.
 
 The second site was `FieldCompletions`'s source-sigil predicate, and it is settled below: the
 completion and the diagnostic beside it read `intent_carrier_data_field`, and the carrier projection
-retired with them.
+retired with them. The projections nothing read at all went next, also settled below: the
+`CompletionData` catalog the workspace still held, and the snapshot's type-backing and
+declaration-location maps.
 
 ## Resolved questions
 
@@ -2922,8 +2924,10 @@ and its `TableName` permit, and the relation `intent_class_member_type_ref`, who
 owner-keyed `intent_declared_type_ref` states one key lower; `DirectiveResolution`
 follows when diagnostics moves, and the source index when the MCP code tools stop reading it, no
 language-server surface having asked it anything since goto-definition's positions moved.
-`typeDefinitionLocations` is in the same position, its last reader being the MCP schema view: goto's
-intra-schema arm was the language server's only one, and it reads the declaration sites now. The
+`typeDefinitionLocations` is gone outright, along with `CatalogBuilder`'s `projectTypeDefinitionLocations`
+and `putTypeLocation`: goto's intra-schema arm was its only reader, it reads the declaration sites now,
+and the comment naming the MCP schema view as a second reader was describing a reader that had already
+left. The
 `Built.Current` / `Built.Previous` seal has one language-server reader left, the diagnostics replay,
 the code-action branch having stopped asking the snapshot about freshness and started asking the store
 about this document's text. `TypeBackingClass.contested` is gone as well, along with
@@ -2949,7 +2953,12 @@ went with the sigil's two readers: `payloadDataFieldByType` off both `Built` arm
 `LspSchemaSnapshot.siteContext`, `CatalogBuilder.projectPayloadDataFields`, and the sealed
 `FieldSourceSigil.SiteContext` with its `PayloadDataField` / `Other` permits and
 `sourceSigilDefinedAt`. `CompletionRequest.snapshot` is gone too, with `Completions` no longer passing
-one: the sigil arm was its last reader.
+one: the sigil arm was its last reader. What the language server no longer receives went next:
+`Workspace`'s `catalog` field with its `catalog()` accessor and both `CompletionData`-taking
+constructors, the `CompletionData` parameters on `Hovers.compute` and `SdlActions.all`, and the
+snapshot's `typesByName` with its `typeBacking` lookup, which took `buildSnapshot`'s own
+`CompletionData` parameter with it. `CatalogBuilder.projectTypesByName` stays: its reader is the walk
+shadow, which is capture-time rather than a projection anyone ships.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -3730,3 +3739,48 @@ parent type had no entry in the backing projection, standing for "the classifier
 type". It now stays quiet when the store holds no `graphql_type` row for the parent, which is the same
 silence over a fact: a buffer naming a type no capture has read is what that state actually is, and a
 verdict there would be a verdict about a shape nothing has resolved.
+
+## Settled while building: what the language server still receives, it no longer reads
+
+The sigil slice left two projections in the language server's hands with nothing asking them
+anything. This retires both, so the only projection state a request can still reach is the directive
+surface, the freshness axis the validator replay gates on, and the one field classification
+`DeclTarget` reads.
+
+**A projection with no reader is not inert, it is a claim.** The `CompletionData` catalog was still
+swapped into the workspace on every build round, still handed to `Hovers.compute` and to
+`SdlActions.all`, and neither had read it since their arms moved to the store. A parameter that is
+passed and ignored reads as a dependency to anyone extending the code, and the next action or hover
+arm would have reached for it because it was there. The same for the snapshot's `typesByName`: its
+last reader was the sigil's membership guard, which asked the projection whether it had seen a type
+at all, and that guard became a `graphql_type` read one slice ago.
+
+**One of the two removals is a capability, so it is worth naming as one.** `typeDefinitionLocations`
+projected each type's declaration position for goto-definition to a file no buffer had open. The
+store's declaration sites answer that now, and hold every site a type has rather than the one entry a
+map keyed by type name can carry. Its own comment claimed a second reader, the MCP schema view, and
+that reader had already left; the projection was surviving on a citation rather than on a call. So
+this deletes the map, the projection pass behind it, and its position-reduction helper, rather than
+parking them.
+
+**The backing projection survives its shipping channel, and that is the distinction the slice
+turns on.** `CatalogBuilder.projectTypesByName` is still called, by the walk's backing-class
+transcription, which writes the shadow the store-native derivation differs against. So the switch
+that says what the walk bound each type to keeps its one home; what retires is the snapshot field
+that carried the map to a consumer, and with it `buildSnapshot`'s `CompletionData` parameter, which
+existed only to null-guard that map. A projection function and a projection channel are separate
+things, and only the second one was dead.
+
+**Two tests were asserting on the channel and now assert on the fact.** The pipeline test asked the
+snapshot which class backs each SDL type; it asks the projection directly. Two dev-loop cases used
+"the catalog is the same instance it was" as their proof that a source-cadence refresh ran no
+generator pass; with no catalog on the workspace they say it of the build output itself, which is
+what they meant. The rest of the churn is arity: the snapshot record lost two components, so every
+fixture constructing one lost two arguments.
+
+**What is left on this item.** `DeclTarget`'s `@routine` identity, which R709 closes, and the
+diagnostics residues on their own clocks (the directive surface, the validator replay's freshness
+gate). One thing worth recording for whoever picks up the catalog itself: `CompletionData`'s table,
+reference and scalar censuses now have no reader but two `DevMojo` log lines, while its
+`externalReferences` census is a live input to capture. Retiring the catalog is therefore a question
+about what the dev goal reports, not about what the language server reads.

@@ -44,14 +44,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@link R157FilmRecord}, {@link R157FilmPojo}) discoverable on the test
  * classpath through {@link no.sikt.graphitron.rewrite.catalog.ClasspathScanner}.
  *
- * <p>Drives {@link CatalogBuilder#buildSnapshot(TypeDefinitionRegistry,
- * no.sikt.graphitron.rewrite.GraphitronSchema, CompletionData)} for real,
- * then exercises {@link FieldCompletions}, {@link Diagnostics}, and
- * {@link Hovers} through the resulting snapshot. This is the test most
- * likely to catch silent classifier widening: if a future change to the
- * classifier produced a {@code PojoResultType.Backed} where a
- * {@link GraphitronType.JavaRecordType} was warranted, the
- * {@code recordBacked...} assertion below would fail.
+ * <p>Drives {@link CatalogBuilder#projectTypesByName} for real over that classifier's output,
+ * then exercises {@link FieldCompletions}, {@link Diagnostics}, and {@link Hovers} against a
+ * store captured from the same scan. This is the test most likely to catch silent classifier
+ * widening: if a future change to the classifier produced a {@code PojoResultType.Backed} where
+ * a {@link GraphitronType.JavaRecordType} was warranted, the {@code recordBacked...} assertion
+ * below would fail.
  */
 class R157PipelineTest {
 
@@ -61,7 +59,7 @@ class R157PipelineTest {
     static Path tmp;
 
     @Test
-    void recordBackedTypeSurfacesComponentsThroughSnapshot() {
+    void recordBackedTypeSurfacesComponentsThroughThePipeline() {
         var artefacts = build("""
             type FilmCard {
                 filmId: Int @field(name: "filmId")
@@ -74,7 +72,7 @@ class R157PipelineTest {
 
         // The projection names the class; that its components are filmId and title is the store's
         // answer, which the completion and diagnostic legs below read.
-        assertThat(artefacts.snapshot().typesByName().get("FilmCard"))
+        assertThat(artefacts.backing().get("FilmCard"))
             .isEqualTo(new TypeBackingShape.RecordBacking(
                 "no.sikt.graphitron.lsp.fixtures.R157FilmRecord"));
 
@@ -95,7 +93,7 @@ class R157PipelineTest {
     }
 
     @Test
-    void pojoBackedTypeSurfacesBeanAccessorsThroughSnapshot() {
+    void pojoBackedTypeSurfacesBeanAccessorsThroughThePipeline() {
         var artefacts = build("""
             type FilmPojoView {
                 filmId: Int @field(name: "filmId")
@@ -106,7 +104,7 @@ class R157PipelineTest {
             }
             """);
 
-        assertThat(artefacts.snapshot().typesByName().get("FilmPojoView"))
+        assertThat(artefacts.backing().get("FilmPojoView"))
             .isEqualTo(new TypeBackingShape.PojoBacking(
                 "no.sikt.graphitron.lsp.fixtures.R157FilmPojo"));
         // The bean rule itself is the store's; that this class's accessors reach the author as member
@@ -126,7 +124,7 @@ class R157PipelineTest {
                 x: Int
             }
             """);
-        assertThat(artefacts.snapshot().typesByName().get("Query"))
+        assertThat(artefacts.backing().get("Query"))
             .isInstanceOf(TypeBackingShape.NoBacking.Root.class);
     }
 
@@ -141,7 +139,7 @@ class R157PipelineTest {
             }
             type Query { x: Shape }
             """);
-        assertThat(artefacts.snapshot().typesByName().get("Shape"))
+        assertThat(artefacts.backing().get("Shape"))
             .isInstanceOf(TypeBackingShape.NoBacking.UnclassifiedInterface.class);
     }
 
@@ -152,14 +150,15 @@ class R157PipelineTest {
         TypeDefinitionRegistry registry,
         no.sikt.graphitron.rewrite.GraphitronSchema schema,
         CompletionData catalog,
+        java.util.Map<String, TypeBackingShape> backing,
         LspSchemaSnapshot.Built.Current snapshot
     ) {}
 
     /**
      * Loads {@code directives.graphqls} + the {@code Node} interface, parses
      * the combined registry, runs the real classifier, runs the real catalog
-     * builder over the LSP module's {@code target/test-classes}, and builds
-     * the snapshot.
+     * builder over the LSP module's {@code target/test-classes}, and projects
+     * the walk's backing resolution beside the snapshot the diagnostic leg reads.
      */
     private static Artefacts build(String schemaText) {
         var registry = parse(prelude(schemaText) + schemaText);
@@ -167,14 +166,14 @@ class R157PipelineTest {
         var schema = GraphitronSchemaBuilder.build(registry, ctx);
         var jooq = new JooqCatalog(JOOQ_PACKAGE);
         // GraphitronSchemaBuilder.buildBundle would have given us the assembled
-        // GraphQLSchema; rebuilding it here keeps the test focused on the
-        // snapshot's typesByName arm rather than the assembled-schema
-        // construction (which the directive-only buildSnapshot overload
-        // doesn't need either).
+        // GraphQLSchema; rebuilding it here keeps the test focused on what the
+        // walk bound each type to rather than on the assembled-schema
+        // construction (which buildSnapshot does not need either).
         var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, catalog);
-        return new Artefacts(schemaText, registry, schema, catalog, snapshot);
+        var snapshot = CatalogBuilder.buildSnapshot(registry, schema);
+        return new Artefacts(schemaText, registry, schema, catalog,
+            CatalogBuilder.projectTypesByName(schema), snapshot);
     }
 
     private static String prelude(String schemaText) {

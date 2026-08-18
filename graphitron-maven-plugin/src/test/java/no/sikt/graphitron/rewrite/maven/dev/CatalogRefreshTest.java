@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
@@ -21,6 +22,7 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -33,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * workspace-swap chain end-to-end (minus the rewrite-generator step,
  * which {@code CatalogBuilderTest} covers in isolation). Validates that
  * a single {@code .class} write triggers the suffix-filtered watcher
- * and that the resulting catalog is observable through {@link Workspace}.
+ * and that the resulting build output is observable through {@link Workspace}.
  */
 class CatalogRefreshTest {
 
@@ -50,28 +52,19 @@ class CatalogRefreshTest {
     }
 
     @Test
-    void classFileWriteRefreshesWorkspaceCatalog(@TempDir Path classesDir) throws Exception {
-        var workspace = new Workspace(CompletionData.empty());
-        assertThat(workspace.catalog().tables()).isEmpty();
+    void classFileWriteRefreshesTheWorkspaceBuildOutput(@TempDir Path classesDir) throws Exception {
+        var workspace = new Workspace();
+        assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
 
         var fired = new CountDownLatch(1);
-        var newCatalog = new CompletionData(
-            List.of(new CompletionData.Table(
-                "FILM",
-                "Movies the rental store carries",
-                null,
-                List.of(),
-                List.of()
-            )),
-            List.of(),
-            List.of()
-        );
+        // A directive only this round's snapshot declares, so the assertion below distinguishes
+        // the swapped output from the pre-build state rather than merely from nothing.
+        var rebuilt = new LspSchemaSnapshot.Built.Current(
+            List.of(new DirectiveShape("auth", List.of(), Optional.empty())));
 
         Runnable rebuilder = () -> {
             workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(
-                    newCatalog,
-                    new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
+                new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), rebuilt),
                 ValidationReport.empty());
             fired.countDown();
         };
@@ -85,11 +78,9 @@ class CatalogRefreshTest {
             .as("rebuilder must fire on .class write")
             .isTrue();
 
-        // The swap is observable through the workspace's volatile catalog
+        // The swap is observable through the workspace's volatile snapshot
         // ref without taking the file lock.
-        assertThat(workspace.catalog().tables())
-            .extracting(CompletionData.Table::name)
-            .containsExactly("FILM");
+        assertThat(workspace.snapshot()).isSameAs(rebuilt);
     }
 
     @Test
@@ -113,12 +104,12 @@ class CatalogRefreshTest {
     }
 
     @Test
-    void javaSourceWriteMovesTheStoreRowWithoutCatalogRebuild(@TempDir Path srcDir) throws Exception {
+    void javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass(@TempDir Path srcDir) throws Exception {
         // Source cadence, at the store layer: a .java edit writes the java_ family and the index
-        // projection beside it, with no generator round in between. The workspace's catalog must
-        // stay untouched (no buildOutput swap), which is what makes the pin about the cadence
+        // projection beside it, with no generator round in between. The workspace's build output
+        // must stay untouched (no buildOutput swap), which is what makes the pin about the cadence
         // rather than about a build having happened to run.
-        var workspace = new Workspace(CompletionData.empty());
+        var workspace = new Workspace();
         assertThat(workspace.sourceIndex().isEmpty()).isTrue();
 
         Path javaFile = srcDir.resolve("com/example/PriceService.java");
@@ -158,7 +149,7 @@ class CatalogRefreshTest {
                 .containsExactly("com.example.PriceService");
             assertThat(workspace.sourceIndex().classes())
                 .containsKey("com.example.PriceService");
-            assertThat(workspace.catalog().tables()).isEmpty();
+            assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
         }
     }
 

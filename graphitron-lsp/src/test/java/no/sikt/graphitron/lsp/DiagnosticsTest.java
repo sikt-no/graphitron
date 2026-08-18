@@ -255,7 +255,7 @@ class DiagnosticsTest {
      * freshness-gated warn arms behave as they do in a settled session.
      */
     private static LspSchemaSnapshot noBackings() {
-        return new LspSchemaSnapshot.Built.Current(java.util.List.of(), Map.of());
+        return new LspSchemaSnapshot.Built.Current(java.util.List.of());
     }
 
     /**
@@ -892,7 +892,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
@@ -931,7 +931,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -956,7 +956,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(keyShape)));
 
         assertThat(diags).isEmpty();
     }
@@ -981,7 +981,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1165,7 +1165,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).hasSize(2);
         assertThat(diags).extracting(d -> d.getMessage())
@@ -1183,7 +1183,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1200,7 +1200,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).isEmpty();
     }
@@ -1230,7 +1230,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of(authShape())));
 
         assertThat(diags).isEmpty();
     }
@@ -1254,7 +1254,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())

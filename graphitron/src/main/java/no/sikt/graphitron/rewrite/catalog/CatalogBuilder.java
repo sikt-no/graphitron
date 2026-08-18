@@ -85,27 +85,27 @@ public final class CatalogBuilder {
      * precedence so redundant entries are observationally invisible.
      */
     public static LspSchemaSnapshot.Built.Current buildSnapshot(TypeDefinitionRegistry registry) {
-        return buildSnapshot(registry, null, null);
+        return buildSnapshot(registry, null);
     }
 
     /**
-     * Full projection: directive surface plus per-type backing shapes. The
-     * three-arg form is what the production pipeline calls; the
+     * Full projection: directive surface plus the classification projections. The
+     * two-arg form is what the production pipeline calls; the
      * {@link #buildSnapshot(TypeDefinitionRegistry)} overload exists so unit
      * tests of the directive arm can run without spinning up the full
      * classifier + jOOQ catalog.
      *
-     * <p>When {@code schema} or {@code catalog} is {@code null} the
-     * type-backing map is empty (back-compat for the one-arg overload only).
+     * <p>When {@code schema} is {@code null} the classification maps are empty
+     * (back-compat for the one-arg overload only).
      */
     public static LspSchemaSnapshot.Built.Current buildSnapshot(
-        TypeDefinitionRegistry registry, GraphitronSchema schema, CompletionData catalog
+        TypeDefinitionRegistry registry, GraphitronSchema schema
     ) {
-        return buildSnapshot(registry, schema, catalog, List.of());
+        return buildSnapshot(registry, schema, List.of());
     }
 
     /**
-     * {@link #buildSnapshot(TypeDefinitionRegistry, GraphitronSchema, CompletionData)} plus the
+     * {@link #buildSnapshot(TypeDefinitionRegistry, GraphitronSchema)} plus the
      * detection's field conflicts: each conflict overlays its coordinate's projection with the
      * {@link FieldClassification.Conflicted} arm, so the LSP and MCP surfaces render the rival
      * claims from the claim relations instead of the walk's arm-order winner. The overlay writes
@@ -114,7 +114,7 @@ public final class CatalogBuilder {
      * domain never widens.
      */
     public static LspSchemaSnapshot.Built.Current buildSnapshot(
-        TypeDefinitionRegistry registry, GraphitronSchema schema, CompletionData catalog,
+        TypeDefinitionRegistry registry, GraphitronSchema schema,
         List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts
     ) {
         var directives = new ArrayList<DirectiveShape>();
@@ -125,9 +125,6 @@ public final class CatalogBuilder {
                 descriptionOf(def.getDescription())
             ));
         }
-        var typesByName = (schema == null || catalog == null)
-            ? Map.<String, TypeBackingShape>of()
-            : projectTypesByName(schema);
         var fieldClassifications = (schema == null)
             ? Map.<String, FieldClassification>of()
             : projectFieldClassifications(schema, fieldConflicts);
@@ -135,50 +132,7 @@ public final class CatalogBuilder {
             ? Map.<String, TypeClassification>of()
             : projectTypeClassifications(schema, registry, fieldClassifications);
         return new LspSchemaSnapshot.Built.Current(
-            directives, typesByName,
-            fieldClassifications, typeClassifications,
-            projectTypeDefinitionLocations(registry)
-        );
-    }
-
-    /**
-     * Projects each user-authored named type's declaration position so the LSP can
-     * resolve intra-schema goto-definition to a type whose declaring file is not in an open
-     * buffer. Keyed by the SDL type name. Covers the canonical definitions in
-     * {@link TypeDefinitionRegistry#types()} (objects, interfaces, unions, enums, inputs;
-     * type extensions are not canonical declarations and are not in this map) plus
-     * user-declared scalars in {@link TypeDefinitionRegistry#scalars()}.
-     *
-     * <p>Two sources are filtered out: definitions whose {@code SourceLocation} has a null
-     * {@code sourceName} (the spec built-in scalars graphql-java injects, with no file) and
-     * definitions contributed by the bundled {@code directives.graphqls} (its source-name is
-     * a classpath resource, not a file a consumer can open; this is where the directive
-     * inputs/enums such as {@code ErrorHandler} live). Both are non-jumpable, so they are
-     * dropped rather than emitted as dead {@code file://} URIs.
-     */
-    private static Map<String, CompletionData.SourceLocation> projectTypeDefinitionLocations(
-        TypeDefinitionRegistry registry
-    ) {
-        var out = new LinkedHashMap<String, CompletionData.SourceLocation>();
-        registry.types().forEach((name, def) -> putTypeLocation(out, name, def.getSourceLocation()));
-        registry.scalars().forEach((name, def) -> putTypeLocation(out, name, def.getSourceLocation()));
-        return Map.copyOf(out);
-    }
-
-    /**
-     * Reduces a graphql-java {@link SourceLocation} (1-based line/column) to the
-     * 0-based {@link CompletionData.SourceLocation} every goto-definition consumer reads
-     * (mirroring the {@code -1} adjustment in {@code SourceWalker}). Drops null-source and
-     * bundled-directive-source definitions; see {@link #projectTypeDefinitionLocations}.
-     */
-    private static void putTypeLocation(
-        Map<String, CompletionData.SourceLocation> out, String name, SourceLocation loc
-    ) {
-        if (loc == null || loc.getSourceName() == null) return;
-        if (RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME.equals(loc.getSourceName())) return;
-        int line = Math.max(loc.getLine() - 1, 0);
-        int column = Math.max(loc.getColumn() - 1, 0);
-        out.put(name, new CompletionData.SourceLocation("file://" + loc.getSourceName(), line, column));
+            directives, fieldClassifications, typeClassifications);
     }
 
     /**
@@ -835,10 +789,12 @@ public final class CatalogBuilder {
      * offers a member name is a fact about the class, which its consumers read from the store's
      * member-slot relation, so no member list is projected here and the bean rule has one home.
      *
-     * <p>Public because it has a second reader: the walk's backing-class transcription
-     * ({@link no.sikt.graphitron.rewrite.derive.TypeBackingClasses}) reduces the same projection
-     * to the class each shape names. One switch rather than two, so the two readers cannot
-     * disagree about what the walk decided, and a new permit forces a decision in both.
+     * <p>Public because its only reader is elsewhere: the walk's backing-class transcription
+     * ({@link no.sikt.graphitron.rewrite.derive.TypeBackingClasses}) reduces this projection to
+     * the class each shape names, and writes it as the shadow the store-native backing derivation
+     * differs against. The snapshot carried this map to the language server until every surface
+     * that read it asked the store instead; what the walk decided is still worth stating once, so
+     * the switch survives its shipping channel.
      */
     public static Map<String, TypeBackingShape> projectTypesByName(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, TypeBackingShape>();

@@ -224,7 +224,7 @@ public class GraphQLRewriteGenerator {
         // the snapshot's Conflicted projection overlay, sourced from the claim relations.
         var detection = captureFactsAndDetect(attributed, read.verdicts(), bundle.model(), jooq,
             catalog.externalReferences());
-        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog,
+        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(),
             detection.fieldConflicts());
         var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(bundle.model()));
         var errors = new ArrayList<>(walkErrors);

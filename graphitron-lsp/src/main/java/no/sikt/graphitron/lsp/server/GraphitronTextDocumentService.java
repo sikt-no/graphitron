@@ -243,7 +243,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                     // assembled from two snapshots could name a class from before a capture and
                     // describe it from after.
                     return workspace.answering(uri, store ->
-                        Hovers.compute(workspace.vocabulary(), file, workspace.catalog(), store,
+                        Hovers.compute(workspace.vocabulary(), file, store,
                             workspace.snapshot(), pos,
                             workspace.inlayHintConfig().hoverClassification())).orElse(null);
                 });

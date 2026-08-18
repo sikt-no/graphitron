@@ -252,7 +252,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // belongs to whoever compiles it rather than to a graph.
         this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl());
 
-        var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
+        var workspace = new Workspace(LspVocabulary.load());
         // The editor's read access to the store, a connection of its own rather than a share of the
         // writer's: LSP requests arrive concurrently while a capture round holds this handle. The
         // reader lives with the workspace and is closed with it in cleanup().
@@ -287,7 +287,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // source root is not walked: the two counts should track each other.
         getLog().info("graphitron:dev: scanning " + initialCtx.classpathRoots().size()
             + " reactor classpath root(s), " + initialCtx.compileSourceRoots().size()
-            + " source root(s); " + workspace.catalog().externalReferences().size()
+            + " source root(s); " + initial.catalog().externalReferences().size()
             + " external reference(s) indexed");
         // Self-explain the single-module-reactor case the sibling walk-up could not
         // widen: when graphitron:dev runs from inside a sub-module and no ancestor pom lists

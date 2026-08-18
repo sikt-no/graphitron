@@ -20,7 +20,6 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
@@ -83,7 +82,7 @@ public final class Hovers {
     public static Optional<Hover> compute(
         FileSnapshot file, Optional<StoreHandle> store, LspSchemaSnapshot snapshot, Point pos
     ) {
-        return compute(LspVocabulary.load(), file, CompletionData.empty(), store, snapshot, pos, false);
+        return compute(LspVocabulary.load(), file, store, snapshot, pos, false);
     }
 
     /**
@@ -91,8 +90,7 @@ public final class Hovers {
      * caller's read transaction, and every arm reads through it: the class census and its methods, the
      * catalog census behind the table, column and key arms, the graph's {@code @node} declarations,
      * the doc comments beneath several of them, which are a join to the {@code java_} family on the
-     * source's own cadence, and the captured SDL behind every docstring. {@code catalog} is what the
-     * declaration-name arm's binding resolution still reads, and retires with goto-definition's.
+     * source's own cadence, and the captured SDL behind every docstring.
      *
      * <p>{@code classificationHoverEnabled} gates the parallel {@link DeclarationHovers} dispatch on
      * SDL declaration coordinates. Default false preserves the no-behaviour-change-by-default
@@ -100,7 +98,7 @@ public final class Hovers {
      * {@link no.sikt.graphitron.lsp.state.Workspace#inlayHintConfig()}.
      */
     public static Optional<Hover> compute(
-        LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
+        LspVocabulary vocabulary, FileSnapshot file,
         Optional<StoreHandle> store, LspSchemaSnapshot snapshot,
         Point pos, boolean classificationHoverEnabled
     ) {
@@ -108,8 +106,8 @@ public final class Hovers {
         if (directiveOpt.isEmpty()) {
             // No directive at the cursor; try the classification-hover arm on SDL
             // declaration coordinates (field-definition / type-definition name tokens).
-            // The catalog resolves which declaration the coordinate binds to, the store
-            // describes it, and the description lands beneath the classification block.
+            // The store resolves which declaration the coordinate binds to and describes
+            // it, and the description lands beneath the classification block.
             if (classificationHoverEnabled) {
                 return DeclarationHovers.compute(file, store, snapshot, pos);
             }

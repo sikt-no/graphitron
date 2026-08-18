@@ -3,7 +3,6 @@ package no.sikt.graphitron.lsp.state;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -24,14 +23,14 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * Per-aggregator state: the set of open schema files plus the catalog the
- * LSP queries against. Mirrors the Rust LSP's {@code state/workspace.rs}
- * {@code Workspace} struct.
+ * Per-aggregator state: the set of open schema files plus the session's read
+ * access to the facts the LSP queries against. Mirrors the Rust LSP's
+ * {@code state/workspace.rs} {@code Workspace} struct.
  *
  * <p>Thread-safe: lsp4j dispatches notifications and requests on a worker
  * pool; mutating operations and the recalculation queue are serialised
- * through {@code lock}. The catalog reference is {@code volatile} so a
- * catalog-refresh swap (driven by the {@code .class}-watcher in
+ * through {@code lock}. Each per-round reference is {@code volatile} so a
+ * build-output swap (driven by the {@code .class}-watcher in
  * {@code DevMojo}) is observable on the next request without taking the
  * file lock.
  *
@@ -47,7 +46,6 @@ public final class Workspace {
     private final Map<String, WorkspaceFile> files = new LinkedHashMap<>();
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
-    private volatile CompletionData catalog;
     // The source-position index, handed in rather than walked here: the language server's inputs
     // are the live buffer and the store, and the walk belongs to the dev session that owns both the
     // watcher triggering it and the store it writes. What survives here is the projection the MCP
@@ -71,15 +69,10 @@ public final class Workspace {
     private volatile StoreAccess store;
 
     public Workspace() {
-        this(CompletionData.empty(), LspVocabulary.load());
+        this(LspVocabulary.load());
     }
 
-    public Workspace(CompletionData catalog) {
-        this(catalog, LspVocabulary.load());
-    }
-
-    public Workspace(CompletionData catalog, LspVocabulary vocabulary) {
-        this.catalog = catalog;
+    public Workspace(LspVocabulary vocabulary) {
         this.vocabulary = vocabulary;
     }
 
@@ -192,10 +185,6 @@ public final class Workspace {
         }
     }
 
-    public CompletionData catalog() {
-        return catalog;
-    }
-
     /**
      * Hands this session its read access to the fact store, and takes over closing it. Called once
      * by whoever started the session and holds the store the session writes through.
@@ -264,11 +253,11 @@ public final class Workspace {
     /**
      * The source-position index, refreshed on the {@code .java} (source) cadence
      * through {@link #setSourceIndex}, driven by the dev goal's source-root watcher,
-     * not on the generator / {@code .class} build cadence the catalog rides. That
+     * not on the generator / {@code .class} build cadence the build output rides. That
      * decoupling is the point: a declaration position becomes available the instant
-     * its source is parsed, without waiting for a catalog rebuild. {@code volatile}
+     * its source is parsed, without waiting for a generator pass. {@code volatile}
      * so the swap is observable on the next request without taking the file lock,
-     * mirroring {@link #catalog}.
+     * mirroring {@link #snapshot}.
      *
      * <p>The MCP code tools are its readers. The language-server surfaces read the
      * same declarations out of the fact store's {@code java_} family, written from the
@@ -367,9 +356,9 @@ public final class Workspace {
     }
 
     /**
-     * Success-path swap: catalog, snapshot, and validator report move
-     * together atomically (from the perspective of consumers that hold the
-     * workspace through three volatile reads), one recalculation. Used by
+     * Success-path swap: snapshot and validator report move together
+     * atomically (from the perspective of consumers that hold the
+     * workspace through two volatile reads), one recalculation. Used by
      * both the schema-save trigger (where the validator runs against the
      * freshly parsed user schema) and the classpath trigger (where the
      * validator's classpath-dependent rejections — unresolved {@code @service}
@@ -377,9 +366,12 @@ public final class Workspace {
      * for a schema save). The producer ships only
      * {@link LspSchemaSnapshot.Built.Current}; freshness demotion happens
      * through {@link #demoteSnapshot()} when a later parse fails.
+     *
+     * <p>The artifacts also carry the build's {@code CompletionData} catalog, which no
+     * language-server surface reads any more; the dev goal logs its census counts from
+     * its own copy.
      */
     public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts, ValidationReport report) {
-        this.catalog = artifacts.catalog();
         this.snapshot = artifacts.snapshot();
         this.validationReport = report;
         markAllForRecalculation();
@@ -397,9 +389,7 @@ public final class Workspace {
         var current = this.snapshot;
         if (current instanceof LspSchemaSnapshot.Built.Current c) {
             this.snapshot = new LspSchemaSnapshot.Built.Previous(
-                c.directives(), c.typesByName(),
-                c.fieldClassificationsByCoord(), c.typeClassificationsByName(),
-                c.typeDefinitionLocations());
+                c.directives(), c.fieldClassificationsByCoord(), c.typeClassificationsByName());
             markAllForRecalculation();
         }
     }

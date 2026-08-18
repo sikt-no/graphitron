@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.code_action.SdlAction;
 import no.sikt.graphitron.lsp.code_action.SdlActions;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashSet;
@@ -49,7 +48,7 @@ class SdlActionDriftTest {
     @Test
     void everyActionTargetPointsAtAnExistingMarker() {
         var allActionTargets = new LinkedHashSet<SchemaCoordinate>();
-        for (SdlAction action : SdlActions.all(CompletionData.empty())) {
+        for (SdlAction action : SdlActions.all()) {
             allActionTargets.addAll(action.targets());
         }
 

@@ -4,7 +4,6 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -114,9 +113,7 @@ class FieldClassificationProjectionTest {
             + (schemaText.contains("interface Node") ? "" : "interface Node { id: ID! }\n");
         TypeDefinitionRegistry registry = new SchemaParser().parse(prelude + schemaText);
         var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
-        var jooq = new JooqCatalog(ctx.jooqPackage());
-        var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        return CatalogBuilder.buildSnapshot(registry, bundle.model(), catalog);
+        return CatalogBuilder.buildSnapshot(registry, bundle.model());
     }
 
     private static String directivesPrelude() {

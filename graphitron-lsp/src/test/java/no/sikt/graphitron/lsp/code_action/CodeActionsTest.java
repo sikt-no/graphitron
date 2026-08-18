@@ -9,7 +9,6 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.CodeActionParams;
@@ -142,7 +141,7 @@ class CodeActionsTest {
 
     @Test
     void workspaceBulk_composesAcrossOpenFiles() {
-        var workspace = new Workspace(CompletionData.empty());
+        var workspace = new Workspace();
         workspace.didOpen("file:///a.graphqls", 1, """
             type Query {
                 a: Int @asConnection(connectionName: "FilmConn")
@@ -269,7 +268,7 @@ class CodeActionsTest {
     }
 
     private static Workspace workspaceWith(String uri, String source) {
-        var workspace = new Workspace(CompletionData.empty());
+        var workspace = new Workspace();
         workspace.didOpen(uri, 1, source);
         return workspace;
     }

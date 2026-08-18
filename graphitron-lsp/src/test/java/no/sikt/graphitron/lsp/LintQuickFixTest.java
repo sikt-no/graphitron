@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.code_action.CodeActions;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import org.eclipse.lsp4j.CodeAction;
@@ -209,7 +208,7 @@ class LintQuickFixTest {
     void sessionWithoutStore_offersNoQuickFix() {
         try (var fixture = StoreFixture.of(tmp, RENAME_SDL)) {
             fixture.withBuildWarnings(List.of(renameFinding(fixture)));
-            var workspace = new Workspace(CompletionData.empty());
+            var workspace = new Workspace();
             workspace.didOpen(uriOf(fixture), 1, RENAME_SDL);
 
             assertThat(invoke(workspace, lineRange(4), uriOf(fixture))).isEmpty();
@@ -230,7 +229,7 @@ class LintQuickFixTest {
 
     /** A session with the captured file open and read access to the store that captured it. */
     private static Workspace session(StoreFixture fixture, String buffer) {
-        var workspace = new Workspace(CompletionData.empty());
+        var workspace = new Workspace();
         workspace.didOpen(uriOf(fixture), 1, buffer);
         workspace.setStore(new StoreAccess(fixture.reader(), StoreFixture.GRAPH));
         return workspace;

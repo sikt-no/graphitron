@@ -191,7 +191,7 @@ class WorkspaceTest {
         ws.setBuildOutput(
             new GraphQLRewriteGenerator.BuildArtifacts(
                 CompletionData.empty(),
-                new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
+                new LspSchemaSnapshot.Built.Current(List.of())),
             ValidationReport.empty());
 
         assertThat(ws.drainRecalculate())
@@ -209,7 +209,7 @@ class WorkspaceTest {
         ws.setBuildOutput(
             new GraphQLRewriteGenerator.BuildArtifacts(
                 CompletionData.empty(),
-                new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
+                new LspSchemaSnapshot.Built.Current(List.of())),
             ValidationReport.empty());
         ws.drainRecalculate();
         var fires = new AtomicInteger();
@@ -235,7 +235,7 @@ class WorkspaceTest {
                 (Consumer<Workspace>) ws -> ws.setBuildOutput(
                     new GraphQLRewriteGenerator.BuildArtifacts(
                         CompletionData.empty(),
-                        new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
+                        new LspSchemaSnapshot.Built.Current(List.of())),
                     ValidationReport.empty())),
             Arguments.of("demoteSnapshot",
                 (Consumer<Workspace>) Workspace::demoteSnapshot),
@@ -278,7 +278,7 @@ class WorkspaceTest {
             ws.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(
                     CompletionData.empty(),
-                    new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
+                    new LspSchemaSnapshot.Built.Current(List.of())),
                 ValidationReport.empty());
             ws.demoteSnapshot();
             assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Built.Previous.class);
@@ -300,18 +300,17 @@ class WorkspaceTest {
         return Stream.of(
             Arguments.of("Unavailable", new LspSchemaSnapshot.Unavailable()),
             Arguments.of("Built.Previous",
-                new LspSchemaSnapshot.Built.Previous(List.of(), Map.of())));
+                new LspSchemaSnapshot.Built.Previous(List.of())));
     }
 
     @Test
-    void setBuildOutputSwapsCatalogSnapshotAndReportAtomically() {
+    void setBuildOutputSwapsSnapshotAndReportAtomically() {
         var ws = new Workspace();
-        assertThat(ws.catalog().tables()).isEmpty();
         assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
         assertThat(ws.validationReport().isEmpty()).isTrue();
 
         var catalog = CompletionData.empty();
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of());
         var report = ValidationReport.from(java.util.List.of(),
             java.util.List.<no.sikt.graphitron.rewrite.BuildWarning>of(new no.sikt.graphitron.rewrite.BuildWarning.NoRule(
                 "shadowed directive",
@@ -319,7 +318,6 @@ class WorkspaceTest {
 
         ws.setBuildOutput(new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
 
-        assertThat(ws.catalog()).isSameAs(catalog);
         assertThat(ws.snapshot()).isSameAs(snapshot);
         assertThat(ws.validationReport()).isSameAs(report);
     }
