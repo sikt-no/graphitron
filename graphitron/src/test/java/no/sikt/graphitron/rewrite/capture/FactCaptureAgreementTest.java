@@ -140,11 +140,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_class_member_slot}, the member names a backing class offers, over a real
  *       classfile scan of its own fixtures rather than seeded census rows, because a rule that
  *       reads a class's declared form cannot be pinned against a fixture that declares its own;
- *       {@code no.sikt.graphitron.rewrite.derive.ClassAssignableTest} binds
- *       {@code intent_class_assignable}, the closure over those declarations, to a census built
- *       reference by reference, the chains a closure has to get right (one crossing classpath
- *       entries, one ending at a name no entry declares, one reaching a type two ways) being
- *       ones a scan of compiled fixtures cannot arrange;
+ *       {@code no.sikt.graphitron.model.intent.ClassAssignableTest} binds
+ *       {@code intent_class_assignable}, the closure over those declarations, to a census stated
+ *       row by row, the chains a closure has to get right (one crossing classpath entries, one
+ *       ending at a name no entry declares, one reaching a type two ways) being ones a scan of
+ *       compiled fixtures cannot arrange; it reads the relation seeded in the module whose DDL
+ *       declares it, the walk having no side to bring to a question about a closure over rows;
  *       {@code no.sikt.graphitron.rewrite.derive.FieldProducerMethodTest} binds
  *       {@code intent_field_producer_method}, the census method an authored Java reference
  *       resolves to, over captured SDL against a hand-built census, half its cases pinning what

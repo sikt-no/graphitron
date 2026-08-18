@@ -1,56 +1,42 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.intent;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_ASSIGNABLE;
+import static no.sikt.graphitron.model.test.SeededStore.seedClass;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedSupertype;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for {@code intent_class_assignable}: which types a class on the
- * classpath can stand in for, once the declarations it makes are followed as far as they go.
+ * What {@code intent_class_assignable} returns: which types a class in the census can stand in
+ * for, once the declarations it makes are followed as far as they go.
  *
- * <p>The census here is built reference by reference rather than scanned off compiled fixtures,
- * which is the opposite choice from {@link ClassMemberSlotTest} and made on the same test. That
- * rule reads a class's declared form, so a fixture stating its own would assert a census no
+ * <p>The census here is stated row by row rather than scanned off compiled fixtures, which is the
+ * opposite choice from the rule over {@code intent_class_member_slot} and made on the same test.
+ * That rule reads a class's declared form, so a fixture stating its own would assert a census no
  * compiler produces. This rule reads nothing but the supertype edges, and a supertype edge is a
- * name and a clause, which is all a hand-built reference states. What compiled fixtures could not
- * arrange is exactly what a closure has to get right: a chain that continues into another
- * classpath entry's declarations, a chain that ends at a name no entry declares, and a type two
- * chains reach. The scanner's own production of these edges is pinned where it belongs, in
- * {@code ClasspathScannerTest}.
+ * name and a clause, which is all a stated row is. What compiled fixtures could not arrange is
+ * exactly what a closure has to get right: a chain that continues into another classpath entry's
+ * declarations, a chain that ends at a name no entry declares, and a type two chains reach. That
+ * the generator's scanner really produces these edges is pinned where it belongs, beside the
+ * scanner.
  */
-@PipelineTier
 class ClassAssignableTest {
-
-    @TempDir
-    Path tmp;
 
     // ===== The closure follows what the declarations say =====
 
     /** The one-hop case: a declared supertype is a row, both clauses alike. */
     @Test
     void aDeclaredSupertypeIsARow() {
-        withCapturedStore(dsl -> {
+        withCensus(dsl -> {
             assertThat(reaches(dsl, "app.FilmService")).contains("lib.Audited");
             assertThat(reaches(dsl, "lib.Audited")).contains("lib.Timestamped");
         });
@@ -63,7 +49,7 @@ class ClassAssignableTest {
      */
     @Test
     void aChainClosesAcrossClasspathEntries() {
-        withCapturedStore(dsl -> {
+        withCensus(dsl -> {
             assertThat(reaches(dsl, "app.FilmService"))
                 .containsExactly("java.io.Serializable", "lib.Audited", "lib.Timestamped");
             assertThat(dsl.select(INTENT_CLASS_ASSIGNABLE.SOURCE_NAME)
@@ -82,7 +68,7 @@ class ClassAssignableTest {
      */
     @Test
     void aTypeReachedTwoWaysIsOneRow() {
-        withCapturedStore(dsl ->
+        withCensus(dsl ->
             assertThat(dsl.fetchCount(INTENT_CLASS_ASSIGNABLE,
                 INTENT_CLASS_ASSIGNABLE.CLASS_NAME.eq("app.Auditable")
                     .and(INTENT_CLASS_ASSIGNABLE.SUPERTYPE_NAME.eq("lib.Timestamped"))))
@@ -97,7 +83,7 @@ class ClassAssignableTest {
      */
     @Test
     void aChainEndsAtANameNoEntryDeclares() {
-        withCapturedStore(dsl ->
+        withCensus(dsl ->
             assertThat(reaches(dsl, "app.FilmList")).containsExactly("java.util.ArrayList"));
     }
 
@@ -112,7 +98,7 @@ class ClassAssignableTest {
      */
     @Test
     void aClassIsNotAssignableToItself() {
-        withCapturedStore(dsl ->
+        withCensus(dsl ->
             assertThat(dsl.fetchCount(INTENT_CLASS_ASSIGNABLE,
                 INTENT_CLASS_ASSIGNABLE.CLASS_NAME.eq(INTENT_CLASS_ASSIGNABLE.SUPERTYPE_NAME)))
                 .isZero());
@@ -121,7 +107,7 @@ class ClassAssignableTest {
     /** A class that declares nothing contributes nothing, rather than a row naming Object. */
     @Test
     void aClassThatDeclaresNothingReachesNothing() {
-        withCapturedStore(dsl -> assertThat(reaches(dsl, "app.Plain")).isEmpty());
+        withCensus(dsl -> assertThat(reaches(dsl, "app.Plain")).isEmpty());
     }
 
     // ===== Partition =====
@@ -132,7 +118,7 @@ class ClassAssignableTest {
      */
     @Test
     void aGraphThatReadNoneOfTheseEntriesSeesNothing() {
-        withCapturedStore(dsl -> {
+        withCensus(dsl -> {
             assertThat(dsl.fetchCount(INTENT_CLASS_ASSIGNABLE,
                 new StoreHandle(dsl, GRAPH).reads(INTENT_CLASS_ASSIGNABLE.SOURCE_NAME)))
                 .isPositive();
@@ -144,10 +130,7 @@ class ClassAssignableTest {
 
     // ===== Helpers =====
 
-    private static final String GRAPH = "ClassAssignableTest";
-
-    /** The SDL is beside the point here; the subject is the classpath. */
-    private static final String SDL = "type Query { placeholder: Int }\n";
+    private static final String GRAPH = "g";
 
     private static final String APP = "app/target/classes";
     private static final String LIB = "lib.jar";
@@ -156,42 +139,36 @@ class ClassAssignableTest {
      * Four consumer classes over one library, arranged so each case has a chain of its own: one
      * reaching through the library into a name nothing declares, one reaching a library type by two
      * routes, one stopping at the first unscanned name, and one declaring nothing at all.
+     *
+     * <p>Every name is the fully qualified one a scan would write, on both sides of a supertype
+     * edge and in the class row itself. The closure joins a declared name against a declaring
+     * class's name, so a census spelling either differently would assert a hop no classfile offers.
      */
-    private static List<CompletionData.ExternalReference> census() {
-        return List.of(
-            reference(APP, "app.FilmService", implementsOf("lib.Audited")),
-            reference(APP, "app.Auditable", implementsOf("lib.Audited", "lib.Logged")),
-            reference(APP, "app.FilmList", extendsOf("java.util.ArrayList")),
-            reference(APP, "app.Plain"),
-            reference(LIB, "lib.Audited", extendsOf("lib.Timestamped")),
-            reference(LIB, "lib.Logged", extendsOf("lib.Timestamped")),
-            reference(LIB, "lib.Timestamped", implementsOf("java.io.Serializable")));
-    }
+    private static void withCensus(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, APP, "DIRECTORY");
+            seedSource(dsl, LIB, "JAR");
+            seedGraphSource(dsl, GRAPH, APP);
+            seedGraphSource(dsl, GRAPH, LIB);
 
-    /**
-     * Every name here is the fully qualified one the scan would write, on both sides of a
-     * supertype edge and in the reference's own name, which a scan sets to the class name rather
-     * than the simple one. The closure joins a declared name against a declaring class's name, so
-     * a census spelling either differently would assert a hop no classfile offers.
-     */
-    private static CompletionData.ExternalReference reference(
-        String sourceName, String className, CompletionData.Supertype... supertypes) {
-        return new CompletionData.ExternalReference(className, className, "",
-            List.of(), List.of(), List.of(), "CLASS", sourceName, List.of(supertypes));
-    }
+            seedClass(dsl, APP, "app.FilmService", "CLASS");
+            seedClass(dsl, APP, "app.Auditable", "CLASS");
+            seedClass(dsl, APP, "app.FilmList", "CLASS");
+            seedClass(dsl, APP, "app.Plain", "CLASS");
+            seedClass(dsl, LIB, "lib.Audited", "INTERFACE");
+            seedClass(dsl, LIB, "lib.Logged", "INTERFACE");
+            seedClass(dsl, LIB, "lib.Timestamped", "INTERFACE");
 
-    private static CompletionData.Supertype[] extendsOf(String... classNames) {
-        return declared("EXTENDS", classNames);
-    }
+            seedSupertype(dsl, APP, "app.FilmService", "lib.Audited", "IMPLEMENTS");
+            seedSupertype(dsl, APP, "app.Auditable", "lib.Audited", "IMPLEMENTS");
+            seedSupertype(dsl, APP, "app.Auditable", "lib.Logged", "IMPLEMENTS");
+            seedSupertype(dsl, APP, "app.FilmList", "java.util.ArrayList", "EXTENDS");
+            seedSupertype(dsl, LIB, "lib.Audited", "lib.Timestamped", "EXTENDS");
+            seedSupertype(dsl, LIB, "lib.Logged", "lib.Timestamped", "EXTENDS");
+            seedSupertype(dsl, LIB, "lib.Timestamped", "java.io.Serializable", "IMPLEMENTS");
 
-    private static CompletionData.Supertype[] implementsOf(String... classNames) {
-        return declared("IMPLEMENTS", classNames);
-    }
-
-    private static CompletionData.Supertype[] declared(String clause, String... classNames) {
-        return java.util.Arrays.stream(classNames)
-            .map(className -> new CompletionData.Supertype(className, clause))
-            .toArray(CompletionData.Supertype[]::new);
+            body.accept(dsl);
+        });
     }
 
     /** Every type the named class can stand in for, ordered so a case can state the whole set. */
@@ -201,29 +178,5 @@ class ClassAssignableTest {
             .where(INTENT_CLASS_ASSIGNABLE.CLASS_NAME.eq(className))
             .orderBy(INTENT_CLASS_ASSIGNABLE.SUPERTYPE_NAME)
             .fetch(0, String.class);
-    }
-
-    private void withCapturedStore(Consumer<DSLContext> body) {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            var schemaFile = write(tmp, SDL);
-            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
-                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-                jooq, census(), new NodeDeclaration(null));
-            body.accept(store.dsl());
-        }
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
     }
 }

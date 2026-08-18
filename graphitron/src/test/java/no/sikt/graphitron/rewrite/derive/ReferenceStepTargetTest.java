@@ -16,26 +16,25 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
-import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
+import static no.sikt.graphitron.model.test.SeededStore.seedField;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceCall;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedReferentialConstraint;
+import static no.sikt.graphitron.model.test.SeededStore.seedSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedTable;
+import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -305,11 +304,9 @@ class ReferenceStepTargetTest {
     @Test
     void anElementNamingNeitherKeyNorTableIsNotAHop() {
         withCollidingKeySeed(dsl -> {
-            dsl.insertInto(GRAPHITRON_FIELD_REFERENCE)
-                .values("g", "Root", "hop", 0, "seed.graphqls", 2, 3).execute();
-            dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP)
-                .values("g", "Root", "hop", 0, 0, null, null, "com.example.Conditions", "byOwner", null)
-                .execute();
+            seedFieldReference(dsl, "g", "Root", "hop", 0);
+            seedFieldReferenceCall(dsl, "g", "Root", "hop", 0, 0,
+                "com.example.Conditions", "byOwner");
             assertThat(chain(dsl, "g")).isEmpty();
         });
     }
@@ -451,78 +448,37 @@ class ReferenceStepTargetTest {
      * test catalog has no instance of, seeded at the smallest shape that produces it.
      */
     private static void withCollidingKeySeed(java.util.function.Consumer<DSLContext> body) {
-        try (var store = GraphitronModelStore.open()) {
-            var dsl = store.dsl();
-            dsl.insertInto(STORE_GRAPH)
-                .set(STORE_GRAPH.GRAPH_NAME, "g")
-                .set(STORE_GRAPH.BASE_DIR, "/seeded")
-                .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
-                .execute();
-            dsl.insertInto(STORE_SOURCE)
-                .set(STORE_SOURCE.SOURCE_NAME, "pkg")
-                .set(STORE_SOURCE.SOURCE_KIND, "JOOQ_SCHEMA")
-                .set(STORE_SOURCE.LAST_SEEN, LocalDateTime.now())
-                .execute();
-            dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg").execute();
+        withSeededStore("g", dsl -> {
+            seedSource(dsl, "pkg", "JOOQ_SCHEMA");
+            seedGraphSource(dsl, "g", "pkg");
             for (String schema : List.of("public", "legacy")) {
-                dsl.insertInto(SQL_SCHEMA).values("pkg", schema, "pkg.Keys").execute();
-                seedTable(dsl, schema, "owner");
-                seedTable(dsl, schema, "note");
+                seedTable(dsl, "pkg", schema, "owner");
+                seedTable(dsl, "pkg", schema, "note");
                 // note.dup_fk -> owner.owner_pk, the same constraint name in both schemas.
-                dsl.insertInto(SQL_CONSTRAINT)
-                    .values("pkg", schema, "owner", "owner_pk", "PRIMARY KEY", null).execute();
-                dsl.insertInto(SQL_CONSTRAINT)
-                    .values("pkg", schema, "note", "dup_fk", "FOREIGN KEY",
-                        "NOTE__DUP_FK_" + schema.toUpperCase(Locale.ROOT)).execute();
-                dsl.insertInto(SQL_REFERENTIAL_CONSTRAINT)
-                    .values("pkg", schema, "note", "dup_fk", "pkg", schema, "owner", "owner_pk")
-                    .execute();
+                seedConstraint(dsl, "pkg", schema, "owner", "owner_pk", "PRIMARY KEY", null);
+                seedConstraint(dsl, "pkg", schema, "note", "dup_fk", "FOREIGN KEY",
+                    "NOTE__DUP_FK_" + schema.toUpperCase(Locale.ROOT));
+                seedReferentialConstraint(dsl, "pkg", schema, "note", "dup_fk",
+                    "pkg", schema, "owner", "owner_pk");
             }
             seedRootType(dsl);
             body.accept(dsl);
-        }
-    }
-
-    private static void seedTable(DSLContext dsl, String schema, String tableName) {
-        dsl.insertInto(SQL_TABLE)
-            .values("pkg", schema, tableName, tableName.toUpperCase(Locale.ROOT),
-                "pkg.tables." + tableName, "pkg.tables.records." + tableName + "Record", null)
-            .execute();
+        });
     }
 
     /** {@code type Root @table(name: "note")} with one field the seeded path hangs off. */
     private static void seedRootType(DSLContext dsl) {
-        dsl.insertInto(GRAPHQL_TYPE).values("g", "Root", "OBJECT", null).execute();
-        dsl.insertInto(GRAPHQL_TYPE_DECLARATION)
-            .values("g", "Root", "seed.graphqls", 1, 1, 0, false, "OBJECT").execute();
-        dsl.insertInto(GRAPHQL_FIELD)
-            .set(GRAPHQL_FIELD.GRAPH_NAME, "g")
-            .set(GRAPHQL_FIELD.TYPE_NAME, "Root")
-            .set(GRAPHQL_FIELD.FIELD_NAME, "hop")
-            .set(GRAPHQL_FIELD.ORDINAL, 0)
-            .set(GRAPHQL_FIELD.DECLARATION_LINE, 1)
-            .set(GRAPHQL_FIELD.DECLARATION_COLUMN, 1)
-            .set(GRAPHQL_FIELD.TYPE_SDL, "String")
-            .set(GRAPHQL_FIELD.NAMED_TYPE, "String")
-            .set(GRAPHQL_FIELD.NON_NULL, false)
-            .set(GRAPHQL_FIELD.IS_LIST, false)
-            .set(GRAPHQL_FIELD.SOURCE_NAME, "seed.graphqls")
-            .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
-            .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
-            .execute();
+        seedField(dsl, "g", "Root", "hop");
         // "note" is unqualified and declared in both schemas, so the departure is deliberately
         // ambiguous: it is what lets a colliding key name be reached in either schema, and the
         // qualified cases scope the key rather than the departure.
-        dsl.insertInto(GRAPHITRON_TABLE)
-            .values("g", "Root", "seed.graphqls", 1, 1, 1, 20, "note").execute();
+        seedTableBinding(dsl, "g", "Root", "note");
     }
 
     /** One path element on the seeded {@code Root.hop}, spelling a key or a table. */
     private static void seedStep(DSLContext dsl, String keyRef, String tableRef) {
-        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE)
-            .values("g", "Root", "hop", 0, "seed.graphqls", 2, 3).execute();
-        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP)
-            .values("g", "Root", "hop", 0, 0, tableRef, keyRef, null, null, null).execute();
+        seedFieldReference(dsl, "g", "Root", "hop", 0);
+        seedFieldReferenceStep(dsl, "g", "Root", "hop", 0, 0, tableRef, keyRef);
     }
 
     private static Path write(Path directory, String sdl) {

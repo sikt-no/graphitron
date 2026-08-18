@@ -1,12 +1,12 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.test.FactStores;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
@@ -38,7 +38,6 @@ import static org.jooq.impl.DSL.table;
  * docs build itself: the generated reference lands in the site render, whose log gate fails on
  * any Asciidoctor WARN.
  */
-@UnitTier
 class CommentRenderabilityGateTest {
 
     private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[[^\\]]*\\]\\(");
@@ -54,7 +53,7 @@ class CommentRenderabilityGateTest {
     @Test
     @DisplayName("every relation and column comment renders in the accepted subset")
     void everyCommentRendersInTheAcceptedSubset() {
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             var relationComments = store.dsl()
                 .select(field(name("TABLE_NAME"), String.class),
                     field(name("REMARKS"), String.class))
@@ -89,7 +88,7 @@ class CommentRenderabilityGateTest {
     @Test
     @DisplayName("every meta prose value renders in the accepted subset")
     void everyMetaProseValueRendersInTheAcceptedSubset() {
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             var metaRelations = store.dsl()
                 .select(META_RELATION_FAMILY.RELATION_NAME)
                 .from(META_RELATION_FAMILY)
@@ -102,7 +101,7 @@ class CommentRenderabilityGateTest {
             var findings = new ArrayList<String>();
             int swept = 0;
             for (String relation : metaRelations) {
-                for (var row : store.dsl().fetch(table(name(relation.toUpperCase(java.util.Locale.ROOT))))) {
+                for (var row : store.dsl().fetch(table(name(relation.toUpperCase(Locale.ROOT))))) {
                     for (var f : row.fields()) {
                         if (row.get(f) instanceof String value) {
                             findings.addAll(scan(relation + "." + f.getName(), value));

@@ -36,8 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * peeled; {@code intent_class_member_element}, that peel read at a member slot's own owner; and
  * {@code intent_field_accessor_hop}, where a field coordinate standing on a class lands.
  *
- * <p>The census is built reference by reference, which is the choice {@link ClassAssignableTest}
- * makes and for the same reason. Every position these rules read is a name, a path and a variance,
+ * <p>The census is built reference by reference, which is the choice
+ * {@code no.sikt.graphitron.model.intent.ClassAssignableTest} makes and for the same reason. Every
+ * position these rules read is a name, a path and a variance,
  * which is all a hand-built reference states, and the arrangements the rules have to get right are
  * ones no compiled fixture offers side by side: a two-level container, a map, a raw container, a
  * generic class that is not a container at all, an accessor overloaded with a parameterised twin,

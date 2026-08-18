@@ -31,6 +31,18 @@
             <artifactId>graphitron-model</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!--
+            The model's test-jar: the store harness a test here builds on rather than opening a
+            store of its own. Test scope on an artifact this module already depends on at compile
+            scope, so it adds a second scope on an existing edge and no new module dependency.
+        -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>graphitron-model</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>

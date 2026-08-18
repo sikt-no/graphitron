@@ -23,28 +23,26 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.test.SeededStore.seedBoundTable;
+import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
+import static no.sikt.graphitron.model.test.SeededStore.seedField;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedTable;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.selectOne;
 
@@ -300,9 +298,9 @@ class ColumnMatchClaimTest {
      */
     @Test
     void jooqNameTierBeatsTheSqlNameTier() {
-        withSeededStore(dsl -> {
+        withSeededStore("g", dsl -> {
             seedField(dsl, "g", "Actor", "tiered");
-            seedTable(dsl, "g", "Actor", "actor", "pkg.a", "public", "actor");
+            seedBoundTable(dsl, "g", "Actor", "actor", "pkg.a", "public", "actor");
             seedColumn(dsl, "pkg.a", "public", "actor", "x_tiered", 1, "TIERED");
             seedColumn(dsl, "pkg.a", "public", "actor", "tiered", 2, "X_TIERED");
             var rows = dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
@@ -316,16 +314,12 @@ class ColumnMatchClaimTest {
     /** A qualified {@code @table} reference splits on its first dot, schema half included. */
     @Test
     void qualifiedTableRefSplitsOnItsFirstDot() {
-        withSeededStore(dsl -> {
+        withSeededStore("g", dsl -> {
             seedField(dsl, "g", "Actor", "name");
-            seedTable(dsl, "g", "Actor", "other.actor", "pkg.a", "other", "actor");
+            seedBoundTable(dsl, "g", "Actor", "other.actor", "pkg.a", "other", "actor");
             seedColumn(dsl, "pkg.a", "other", "actor", "name", 1, "NAME");
             // The same table name in another schema must not shadow the qualified pick.
-            seedSchema(dsl, "pkg.a", "public");
-            dsl.insertInto(SQL_TABLE)
-                .values("pkg.a", "public", "actor", "ACTOR", "pkg.a.tables.actor",
-                    "pkg.a.tables.records.ActorRecord", null)
-                .execute();
+            seedTable(dsl, "pkg.a", "public", "actor");
             var rows = dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
                 .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g")).fetch();
             assertThat(rows).hasSize(1);
@@ -339,17 +333,13 @@ class ColumnMatchClaimTest {
      */
     @Test
     void ambiguousUnqualifiedTableYieldsNoClaim() {
-        withSeededStore(dsl -> {
+        withSeededStore("g", dsl -> {
             seedField(dsl, "g", "Dup", "title");
-            seedTable(dsl, "g", "Dup", "dup", "pkg.a", "public", "dup");
+            seedBoundTable(dsl, "g", "Dup", "dup", "pkg.a", "public", "dup");
             seedColumn(dsl, "pkg.a", "public", "dup", "title", 1, "TITLE");
-            seedSource(dsl, "pkg.b");
-            dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg.b").execute();
-            seedSchema(dsl, "pkg.b", "legacy");
-            dsl.insertInto(SQL_TABLE)
-                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup",
-                    "pkg.b.tables.records.DupRecord", null)
-                .execute();
+            seedSource(dsl, "pkg.b", "JOOQ_SCHEMA");
+            seedGraphSource(dsl, "g", "pkg.b");
+            seedTable(dsl, "pkg.b", "legacy", "dup");
             assertThat(dsl.fetchCount(INTENT_COLUMN_MATCH_CLAIM,
                 INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g"))).isZero();
         });
@@ -362,14 +352,14 @@ class ColumnMatchClaimTest {
      */
     @Test
     void siblingGraphsResolveThroughTheirOwnMembership() {
-        withSeededStore(dsl -> {
+        withSeededStore("g", dsl -> {
             seedField(dsl, "g", "Film", "title");
-            seedTable(dsl, "g", "Film", "film", "pkg.a", "public", "film");
+            seedBoundTable(dsl, "g", "Film", "film", "pkg.a", "public", "film");
             seedColumn(dsl, "pkg.a", "public", "film", "title", 1, "TITLE");
 
             seedGraph(dsl, "g2");
             seedField(dsl, "g2", "Film", "title");
-            seedTable(dsl, "g2", "Film", "film", "pkg.b", "public", "film");
+            seedBoundTable(dsl, "g2", "Film", "film", "pkg.b", "public", "film");
             seedColumn(dsl, "pkg.b", "public", "film", "title", 1, "TITLE");
 
             var bySource = dsl.select(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME,
@@ -394,9 +384,9 @@ class ColumnMatchClaimTest {
      */
     @Test
     void nodeIdShadowedColumnIsTheUnmodelledSecondStructuralClaim() {
-        withSeededStore(dsl -> {
+        withSeededStore("g", dsl -> {
             seedField(dsl, "g", "Customer", "id");
-            seedTable(dsl, "g", "Customer", "customer", "pkg.a", "public", "customer");
+            seedBoundTable(dsl, "g", "Customer", "customer", "pkg.a", "public", "customer");
             seedColumn(dsl, "pkg.a", "public", "customer", "id", 1, "ID");
             var rows = dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
                 .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq("g")).fetch();
@@ -493,15 +483,11 @@ class ColumnMatchClaimTest {
      */
     @Test
     void anAmbiguousReferenceYieldsEveryCandidateWithItsArity() {
-        withSeededStore(dsl -> {
-            seedTable(dsl, "g", "Dup", "dup", "pkg.a", "public", "dup");
-            seedSource(dsl, "pkg.b");
-            dsl.insertInto(STORE_GRAPH_SOURCE).values("g", "pkg.b").execute();
-            seedSchema(dsl, "pkg.b", "legacy");
-            dsl.insertInto(SQL_TABLE)
-                .values("pkg.b", "legacy", "dup", "DUP", "pkg.b.tables.dup",
-                    "pkg.b.tables.records.DupRecord", null)
-                .execute();
+        withSeededStore("g", dsl -> {
+            seedBoundTable(dsl, "g", "Dup", "dup", "pkg.a", "public", "dup");
+            seedSource(dsl, "pkg.b", "JOOQ_SCHEMA");
+            seedGraphSource(dsl, "g", "pkg.b");
+            seedTable(dsl, "pkg.b", "legacy", "dup");
             var rows = dsl.selectFrom(INTENT_BOUND_TABLE)
                 .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq("g"))
                 .orderBy(INTENT_BOUND_TABLE.TABLE_SCHEMA).fetch();
@@ -513,8 +499,8 @@ class ColumnMatchClaimTest {
     /** A root's binding is masked, the walk classifying a root before it reads one. */
     @Test
     void aRootTypesBindingIsMasked() {
-        withSeededStore(dsl -> {
-            seedTable(dsl, "g", "Query", "film", "pkg.a", "public", "film");
+        withSeededStore("g", dsl -> {
+            seedBoundTable(dsl, "g", "Query", "film", "pkg.a", "public", "film");
             assertThat(dsl.fetchCount(INTENT_BOUND_TABLE, INTENT_BOUND_TABLE.GRAPH_NAME.eq("g")))
                 .isZero();
         });
@@ -572,103 +558,6 @@ class ColumnMatchClaimTest {
                 jooq, List.of(), new NodeDeclaration(null));
             body.accept(store.dsl());
         }
-    }
-
-    /** A store with graph {@code g} anchored and one catalog source {@code pkg.a} in membership. */
-    private static void withSeededStore(java.util.function.Consumer<DSLContext> body) {
-        try (var store = GraphitronModelStore.open()) {
-            var dsl = store.dsl();
-            seedGraph(dsl, "g");
-            body.accept(dsl);
-        }
-    }
-
-    private static void seedGraph(DSLContext dsl, String graphName) {
-        dsl.insertInto(STORE_GRAPH)
-            .set(STORE_GRAPH.GRAPH_NAME, graphName)
-            .set(STORE_GRAPH.BASE_DIR, "/seeded")
-            .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
-            .execute();
-        dsl.insertInto(GRAPHQL_TYPE).values(graphName, "String", "SCALAR", null).execute();
-    }
-
-    private static void seedSource(DSLContext dsl, String sourceName) {
-        dsl.insertInto(STORE_SOURCE)
-            .set(STORE_SOURCE.SOURCE_NAME, sourceName)
-            .set(STORE_SOURCE.SOURCE_KIND, "JOOQ_SCHEMA")
-            .set(STORE_SOURCE.LAST_SEEN, LocalDateTime.now())
-            .onDuplicateKeyIgnore()
-            .execute();
-    }
-
-    /** One scalar output field {@code typeName.fieldName: String} with its declaration site. */
-    private static void seedField(DSLContext dsl, String graphName, String typeName, String fieldName) {
-        if (dsl.fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.GRAPH_NAME.eq(graphName)
-                .and(GRAPHQL_TYPE.TYPE_NAME.eq(typeName))) == 0) {
-            dsl.insertInto(GRAPHQL_TYPE).values(graphName, typeName, "OBJECT", null).execute();
-            dsl.insertInto(GRAPHQL_TYPE_DECLARATION)
-                .values(graphName, typeName, "seed.graphqls", 1, 1, 0, false, "OBJECT")
-                .execute();
-        }
-        dsl.insertInto(GRAPHQL_FIELD)
-            .set(GRAPHQL_FIELD.GRAPH_NAME, graphName)
-            .set(GRAPHQL_FIELD.TYPE_NAME, typeName)
-            .set(GRAPHQL_FIELD.FIELD_NAME, fieldName)
-            .set(GRAPHQL_FIELD.ORDINAL, 0)
-            .set(GRAPHQL_FIELD.DECLARATION_LINE, 1)
-            .set(GRAPHQL_FIELD.DECLARATION_COLUMN, 1)
-            .set(GRAPHQL_FIELD.TYPE_SDL, "String")
-            .set(GRAPHQL_FIELD.NAMED_TYPE, "String")
-            .set(GRAPHQL_FIELD.NON_NULL, false)
-            .set(GRAPHQL_FIELD.IS_LIST, false)
-            .set(GRAPHQL_FIELD.SOURCE_NAME, "seed.graphqls")
-            .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
-            .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
-            .execute();
-    }
-
-    /** Binds {@code typeName} to {@code tableRef} and puts the catalog table in membership. */
-    private static void seedTable(DSLContext dsl, String graphName, String typeName, String tableRef,
-                                  String sourceName, String tableSchema, String tableName) {
-        if (dsl.fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.GRAPH_NAME.eq(graphName)
-                .and(GRAPHQL_TYPE.TYPE_NAME.eq(typeName))) == 0) {
-            dsl.insertInto(GRAPHQL_TYPE).values(graphName, typeName, "OBJECT", null).execute();
-            dsl.insertInto(GRAPHQL_TYPE_DECLARATION)
-                .values(graphName, typeName, "seed.graphqls", 1, 1, 0, false, "OBJECT")
-                .execute();
-        }
-        dsl.insertInto(GRAPHITRON_TABLE)
-            .values(graphName, typeName, "seed.graphqls", 1, 1, 1, 20, tableRef)
-            .execute();
-        seedSource(dsl, sourceName);
-        dsl.insertInto(STORE_GRAPH_SOURCE).values(graphName, sourceName).execute();
-        seedSchema(dsl, sourceName, tableSchema);
-        dsl.insertInto(SQL_TABLE)
-            .values(sourceName, tableSchema, tableName, tableName.toUpperCase(Locale.ROOT),
-                sourceName + ".tables." + tableName,
-                sourceName + ".tables.records." + tableName + "Record", null)
-            .execute();
-    }
-
-    /**
-     * The schema row {@code sql_table} references. Idempotent, because several seeded tables share a
-     * schema and a seed helper is called once per table.
-     */
-    private static void seedSchema(DSLContext dsl, String sourceName, String tableSchema) {
-        if (dsl.fetchCount(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME.eq(sourceName)
-                .and(SQL_SCHEMA.TABLE_SCHEMA.eq(tableSchema))) == 0) {
-            dsl.insertInto(SQL_SCHEMA)
-                .values(sourceName, tableSchema, sourceName + ".Keys")
-                .execute();
-        }
-    }
-
-    private static void seedColumn(DSLContext dsl, String sourceName, String tableSchema,
-                                   String tableName, String columnName, int ordinal, String jooqName) {
-        dsl.insertInto(SQL_COLUMN)
-            .values(sourceName, tableSchema, tableName, columnName, ordinal, jooqName,
-                "character varying", "java.lang.String", true, null)
-            .execute();
     }
 
     private static Path write(Path directory, String sdl) {
