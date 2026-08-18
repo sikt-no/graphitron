@@ -5,8 +5,8 @@ package no.sikt.graphitron.rewrite.lint;
  * enum. Completeness is asserted over this declared partition: every constant is either
  * subscribed by a rule ({@link LintRules#subscribedKinds()}) or in the deliberately-not-linted set
  * ({@link LintRules#NOT_LINTED}), and the two are disjoint. {@code LintRuleRegistryCoverageTest}
- * pins that, mirroring the {@code VariantCoverageTest} / {@code EdgeCoverageTest} no-silent-default
- * pattern, so a future node position cannot be silently skipped by a {@code default} arm.
+ * pins that, mirroring the {@code VariantCoverageTest} no-silent-default pattern, so a future node
+ * position cannot be silently skipped by a {@code default} arm.
  *
  * <p>The engine names the {@link LintNodeKind} explicitly at each dispatch site as it walks the
  * parsed types (see {@link LintEngine}), rather than deriving it from the node's runtime type; the

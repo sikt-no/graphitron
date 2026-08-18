@@ -22,7 +22,7 @@ import java.util.Set;
  *
  * <p>{@link #NOT_LINTED} and {@link #subscribedKinds()} together must partition
  * {@link LintNodeKind} with no overlap and no gap. {@code LintRuleRegistryCoverageTest} asserts that,
- * mirroring the {@code VariantCoverageTest} / {@code EdgeCoverageTest} no-silent-default pattern.
+ * mirroring the {@code VariantCoverageTest} no-silent-default pattern.
  */
 public final class LintRules {
 

@@ -67,8 +67,8 @@ final class DiagnosticFacets {
     /**
      * One pivot dimension: a wire name, the {@code diagnostic} view column it groups and filters
      * on, and the parenthetical gloss the tool description renders. An enum of labels, not a
-     * sealed hierarchy, on the {@code EdgeKind} reasoning: every value has the identical shape
-     * and carries no kind-dependent data.
+     * sealed hierarchy, because every value has the identical shape and carries no kind-dependent
+     * data.
      */
     enum Dimension {
         SEVERITY("severity", DIAGNOSTIC.SEVERITY, ""),

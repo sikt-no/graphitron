@@ -1157,7 +1157,7 @@ directives resource's SDL rendering and `RejectionKind` because it is an enum ra
 projection and so did not look like a read. Re-run the import scan at pickup: this list is a reading
 of the module as it stands, and a slice landing in between can add a row to it.
 
-Both guards land with it, and the tests section states them. The precondition is arithmetic from the
+All four guards land with it, and the tests section states them. The precondition is arithmetic from the
 slices above rather than a grep nobody ran: every `Workspace` accessor has a stated reader count and
 all five are zero, `vocabulary` included.
 

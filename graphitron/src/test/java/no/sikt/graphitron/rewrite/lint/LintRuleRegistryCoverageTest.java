@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Drift guard for the lint registry and its node-kind partition, mirroring the
- * {@code VariantCoverageTest} / {@code EdgeCoverageTest} no-silent-default pattern: every engine rule
+ * {@code VariantCoverageTest} no-silent-default pattern: every engine rule
  * is registered to exactly one visitor, no classifier advisory leaks into the registry, and the
  * subscribed and not-linted kind sets partition {@link LintNodeKind} with no overlap and no gap.
  */

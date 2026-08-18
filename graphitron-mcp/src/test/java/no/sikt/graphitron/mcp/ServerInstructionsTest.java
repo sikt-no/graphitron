@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>A bidirectional coverage pin over the advertised surface, run against the ambient string
  *       and against the manual's tool table, both derived from a booted server rather than from a
- *       hand-written list. Partition shape follows {@code EdgeCoverageTest}; the
+ *       hand-written list. Partition shape follows {@code VariantCoverageTest}; the
  *       producer-and-hand-written-view shape follows
  *       {@code MojoDocCoverageTest.everyMojoParameterHasADocRowAndViceVersa}.
  *   <li>A pin under the first cross-tool convention the prose states, that a paged tool's first

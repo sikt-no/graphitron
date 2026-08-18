@@ -9,7 +9,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Coverage pin over the aggregate's dimension vocabulary, in the {@code EdgeCoverageTest}
+ * Coverage pin over the aggregate's dimension vocabulary, in the {@code VariantCoverageTest}
  * mould: every {@link DiagnosticFacets.Dimension} is declared, deliberately and visibly, in
  * exactly one of the two companion buckets (typed-key / location-derived), which is what makes
  * the wire contract's "these clusters are typed" claim a live partition instead of prose. The

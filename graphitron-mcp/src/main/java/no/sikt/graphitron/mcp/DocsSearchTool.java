@@ -21,7 +21,8 @@ import java.util.Map;
  * inside the server. An author who does not yet know which directive or pattern solves their problem
  * asks in prose and gets the relevant manual passages, rather than needing the vocabulary to grep for.
  *
- * <p>Held as one instance per server (like the reverse-edge cache), constructed with the shared
+ * <p>Held as one instance per server, like the
+ * {@link no.sikt.graphitron.mcp.rag.CatalogSearchIndex catalog search index}, constructed with the shared
  * embedder warm and the docs-index warm. Either warm may be {@code null} when the server is stood up
  * without RAG (the structured-tool tests, an IDE run off un-embedded classes); a null warm reads as
  * still-warming, so the tool is always advertised and degrades cleanly to the structured tools.
