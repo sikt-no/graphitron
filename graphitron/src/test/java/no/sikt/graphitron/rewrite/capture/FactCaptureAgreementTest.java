@@ -137,6 +137,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
  *       function result reaches;
+ *       {@code no.sikt.graphitron.rewrite.derive.ReferenceDiscoveryTest} binds
+ *       {@code intent_field_reference_discovery}, what an omitted path finds between a field's two
+ *       endpoints, over captured SDL against that same catalog for the same reason and because each
+ *       shape it has to answer for is a shape the catalog already declares, half its cases pinning
+ *       the coordinates that discover nothing because the boundary of a discovery is what the
+ *       relation claims;
  *       {@code no.sikt.graphitron.rewrite.derive.FieldColumnTableTest} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
@@ -278,6 +284,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
+        registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_scope", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);

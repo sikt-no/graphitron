@@ -9,9 +9,7 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.InlayHintKind;
@@ -68,18 +66,14 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  * {@code @table} reads {@link no.sikt.graphitron.lsp.facts.BoundTables the binding relation} and
  * {@code @field} the member its own name reaches, which is the settled column match at the coordinate
  * where the parent is a table's and a slot of the parent's backing class where it is not
- * ({@link InlayFacts.Answers#memberName}). Both ride the capture cadence and answer with no generator
- * pass behind them at all.
- * {@code @reference} still reads the {@link FieldClassification} projection on the snapshot, because
- * the relation it would need is not built: it fires only where the path is omitted, so what it
- * renders is the foreign-key discovery between the two types' bindings rather than any authored
- * chain.
+ * ({@link InlayFacts.Answers#memberName}). {@code @reference} fires only where the path is omitted, so
+ * what it renders is the foreign key the generator discovers between the field's two endpoints
+ * ({@link InlayFacts.Answers#discoveredForeignKey}), and it names one only where the discovery is
+ * certain, a coordinate several keys connect being one the generator refuses to join at all.
  *
- * <p>Three cadences result, and each surface is silent when what it reads is absent, so a session
- * holding one of the sources still gets its answers. Store-backed hints render whatever the last
- * capture wrote. Snapshot-backed hints render under {@link LspSchemaSnapshot.Built.Current} and
- * {@link LspSchemaSnapshot.Built.Previous} indistinguishably and not at all under
- * {@link LspSchemaSnapshot.Unavailable}.
+ * <p>One cadence results, the capture's, and every overlay is silent where what it reads is absent. No
+ * arm here reads a projection a generator pass built, so this surface answers in a workspace that has
+ * captured its schema and never run a build, and answers the same in one that has.
  */
 public final class InlayHints {
 
@@ -90,17 +84,10 @@ public final class InlayHints {
      * Every arm carries an already-computed {@link Position} rather than the tree-sitter node it came
      * from: a node is a native resource whose lifetime is the file lock, and a value that outlives the
      * walk must not be one.
-     *
-     * <p>{@link Ready} is the arm for a label the walk already settled, which today is the
-     * {@code @reference} path, read off the schema snapshot rather than out of the store. It keeps such
-     * a label in the same ordered list as the rest, so what the arms emit stays one sequence.
      */
     private sealed interface Pending {
 
         Position position();
-
-        /** A label the walk settled with no store read behind it. */
-        record Ready(Position position, String label) implements Pending {}
 
         /** The classifiers claiming a visible type declaration, or the class standing for it. */
         record TypeLabel(Position position, String typeName) implements Pending {}
@@ -120,22 +107,23 @@ public final class InlayHints {
         /** A present {@code @field} whose omitted name the store may fill in. */
         record MemberName(Position position, String typeName, String fieldName, String argName)
             implements Pending {}
+
+        /** A present {@code @reference} whose omitted path the discovery may fill in. */
+        record ReferencePath(Position position, String typeName, String fieldName, String argName)
+            implements Pending {}
     }
 
     /**
      * Collector for the present-directive inlay arm: records the intent to overlay the canonical
      * argument on a directive that omitted it, plus the question that resolves it. One per
      * {@link InferredDirectiveArgs.Entry}, registered by directive name in
-     * {@link #INFERRED_RENDERERS}.
-     *
-     * @param built the schema snapshot when one is built, else null; the one collector that reads a
-     *              value at walk time is the only one that uses it
+     * {@link #INFERRED_RENDERERS}. Every collector reads the buffer and records a question; none of
+     * them resolves a value, which is what keeps the region's reads to one statement.
      */
     @FunctionalInterface
     private interface InferredDirectiveCollector {
         void collect(List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
-                     LspSchemaSnapshot.Built built, Directives.Directive directive,
-                     String canonicalArgName);
+                     Directives.Directive directive, String canonicalArgName);
     }
 
     /**
@@ -145,8 +133,7 @@ public final class InlayHints {
      * without a renderer; {@code InlayHintRendererCoverageTest} now fails the build
      * when an entry has no matching key here, the LSP-side mirror of the catalog's
      * sealed {@code AbsentArm}. The collectors stay LSP-side because they need
-     * {@link FileSnapshot} / {@link LspSchemaSnapshot.Built} context the catalog
-     * {@code Entry} cannot carry.
+     * {@link FileSnapshot} context the catalog {@code Entry} cannot carry.
      */
     private static final Map<String, InferredDirectiveCollector> INFERRED_RENDERERS = Map.of(
         "table", InlayHints::collectInferredTableName,
@@ -160,8 +147,7 @@ public final class InlayHints {
     }
 
     public static List<InlayHint> compute(
-        InlayHintConfig config, FileSnapshot file, Optional<StoreHandle> store,
-        LspSchemaSnapshot snapshot, Range visibleRange
+        InlayHintConfig config, FileSnapshot file, Optional<StoreHandle> store, Range visibleRange
     ) {
         if (config == null || !config.anyEnabled()) return List.of();
         if (file == null || file.tree() == null) return List.of();
@@ -182,9 +168,8 @@ public final class InlayHints {
             }
         }
         if (config.inferredDirectives()) {
-            collectInferredDirectiveHints(pending, questions, file,
-                snapshot instanceof LspSchemaSnapshot.Built built ? built : null,
-                store.isPresent(), root, visibleRange);
+            collectInferredDirectiveHints(
+                pending, questions, file, store.isPresent(), root, visibleRange);
         }
         if (pending.isEmpty()) return List.of();
         // One statement for the whole region, or none at all in a session with no store, where every
@@ -198,7 +183,6 @@ public final class InlayHints {
     /** One intent's overlay, or none where what it needed is not in the answer. */
     private static void render(Pending intent, InlayFacts.Answers answers, List<InlayHint> out) {
         switch (intent) {
-            case Pending.Ready(var position, var label) -> out.add(makeHint(position, label));
             case Pending.TypeLabel(var position, var typeName) -> {
                 var classifiers = answers.typeClassifiers(typeName);
                 String label = classifiers.isEmpty()
@@ -226,6 +210,9 @@ public final class InlayHints {
             case Pending.MemberName(var position, var typeName, var fieldName, var argName) ->
                 answers.memberName(typeName, fieldName).ifPresent(memberName -> out.add(
                     makeHint(position, argName + ": \"" + memberName + "\"")));
+            case Pending.ReferencePath(var position, var typeName, var fieldName, var argName) ->
+                answers.discoveredForeignKey(typeName, fieldName).ifPresent(key -> out.add(
+                    makeHint(position, argName + ": [{key: \"" + key + "\"}]")));
         }
     }
 
@@ -347,7 +334,7 @@ public final class InlayHints {
 
     private static void collectInferredDirectiveHints(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
-        LspSchemaSnapshot.Built built, boolean hasStore, Node root, Range visibleRange
+        boolean hasStore, Node root, Range visibleRange
     ) {
         var directives = Directives.findAll(root);
         for (var directive : directives) {
@@ -362,7 +349,7 @@ public final class InlayHints {
             // Completeness is asserted by InlayHintRendererCoverageTest, not by a
             // silent default arm; the guard is the belt to that test's suspenders.
             if (collector != null) {
-                collector.collect(out, questions, file, built, directive, entry.argName());
+                collector.collect(out, questions, file, directive, entry.argName());
             }
         }
         if (hasStore) {
@@ -389,9 +376,11 @@ public final class InlayHints {
      * there rather than a category.
      *
      * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
-     * null. {@code @field} would overlay every column-bound field in the file, and
-     * {@code @reference} has no fact to render. Both are decisions about what is worth showing, so
-     * a future third arm is a pass someone writes and argues for, not a flag flipped on an entry.
+     * null. The other two would each overlay most of the file: {@code @field} every column-bound
+     * field, and {@code @reference} every field whose type is bound to a table its parent's table has
+     * one foreign key to, which is the ordinary shape of a schema rather than a fact worth pointing
+     * at. Both are decisions about what is worth showing, so a future third arm is a pass someone
+     * writes and argues for, not a flag flipped on an entry.
      */
     private static void collectAbsentTableHints(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
@@ -428,7 +417,7 @@ public final class InlayHints {
      */
     private static void collectInferredTableName(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
-        LspSchemaSnapshot.Built built, Directives.Directive directive, String canonicalArgName
+        Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
         var enclosingType = DeclarationKind.enclosing(directive.outer()).orElse(null);
@@ -448,7 +437,7 @@ public final class InlayHints {
      */
     private static void collectInferredFieldName(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
-        LspSchemaSnapshot.Built built, Directives.Directive directive, String canonicalArgName
+        Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
@@ -469,12 +458,18 @@ public final class InlayHints {
             positionOf(file, directive.nameNode()), typeName, fieldName, canonicalArgName));
     }
 
+    /**
+     * Keyed on the coordinate for the same reason the {@code @field} pass is, and answered by the
+     * discovery relation: the foreign key connecting the field's own endpoints, which is what the
+     * generator joins on where the author wrote no element. A single hop, because discovery never
+     * searches past one; a path of several elements is one the author states, and a present
+     * {@code path:} argument leaves this pass nothing to fill in.
+     */
     private static void collectInferredReferencePath(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
-        LspSchemaSnapshot.Built built, Directives.Directive directive, String canonicalArgName
+        Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
-        if (built == null) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
@@ -485,35 +480,9 @@ public final class InlayHints {
         Node nameNode = Nodes.childOfKind(enclosingField, NAME);
         if (nameNode == null) return;
         String fieldName = Nodes.text(nameNode, file.source());
-        var classification = built.fieldClassificationsByCoord()
-            .get(typeName + "." + fieldName);
-        if (classification == null) return;
-        List<FieldClassification.FkStep> path = fkPathOf(classification);
-        if (path == null || path.isEmpty()) return;
-        StringBuilder sb = new StringBuilder(canonicalArgName + ": [");
-        for (int i = 0; i < path.size(); i++) {
-            if (i > 0) sb.append(", ");
-            var step = path.get(i);
-            sb.append("{");
-            if (step.fkName() != null) {
-                sb.append("key: \"").append(step.fkName()).append("\"");
-            } else if (step.targetTableName() != null) {
-                sb.append("table: \"").append(step.targetTableName()).append("\"");
-            }
-            sb.append("}");
-        }
-        sb.append("]");
-        out.add(new Pending.Ready(positionOf(file, directive.nameNode()), sb.toString()));
-    }
-
-    // ===== Projection accessors =====
-
-    private static List<FieldClassification.FkStep> fkPathOf(FieldClassification classification) {
-        return switch (classification) {
-            case FieldClassification.ColumnReference c -> c.joinPath();
-            case FieldClassification.CompositeColumnReference c -> c.joinPath();
-            default -> null;
-        };
+        questions.referencePathSite(typeName, fieldName);
+        out.add(new Pending.ReferencePath(
+            positionOf(file, directive.nameNode()), typeName, fieldName, canonicalArgName));
     }
 
     // ===== Tree-sitter helpers =====

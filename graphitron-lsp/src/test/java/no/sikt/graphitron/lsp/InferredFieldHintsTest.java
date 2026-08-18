@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -23,8 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The inferred-directive arm's {@code @field} pass, over a real capture. What it fills in is the
  * member the field's own name reaches, which the store answers in two relations: the column-match
  * classifier where the site resolves against a table, and the class member-slot rule where it
- * resolves against a class. Neither has a generator pass behind it, so every case here runs under an
- * unavailable snapshot, as the {@code @table} pass's cases do in {@code InferredTableHintsTest}.
+ * resolves against a class. Neither has a generator pass behind it, so every case here runs against
+ * the store alone, as the {@code @table} pass's cases do in {@code InferredTableHintsTest}.
  *
  * <p>An overlay's text is usually the field's own name, because both arms resolve <em>by</em> that name,
  * so what most cases here turn on is whether an overlay appears at all. That is the signal an author
@@ -211,15 +210,13 @@ class InferredFieldHintsTest {
                 title: String @field
             }
             """);
-        assertThat(InlayHints.compute(config(), file, Optional.empty(),
-            LspSchemaSnapshot.unavailable(), fullRange())).isEmpty();
+        assertThat(InlayHints.compute(config(), file, Optional.empty(), fullRange())).isEmpty();
     }
 
     // ===== Helpers =====
 
     private static List<String> labels(FileSnapshot file) {
-        return InlayHints.compute(config(), file, Optional.of(store.handle()),
-                LspSchemaSnapshot.unavailable(), fullRange())
+        return InlayHints.compute(config(), file, Optional.of(store.handle()), fullRange())
             .stream().map(InferredFieldHintsTest::labelOf).toList();
     }
 

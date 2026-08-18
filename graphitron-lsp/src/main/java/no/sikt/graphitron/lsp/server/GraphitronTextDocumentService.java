@@ -221,8 +221,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 // annotated from either side of a capture would disagree about the same schema.
                 var hints = workspace.withView(uri, List.<InlayHint>of(), file ->
                     workspace.answering(uri, store ->
-                        InlayHints.compute(workspace.inlayHintConfig(), file, store,
-                            workspace.snapshot(), params.getRange())));
+                        InlayHints.compute(
+                            workspace.inlayHintConfig(), file, store, params.getRange())));
                 span.detail("hints", hints.size());
                 return hints;
             }

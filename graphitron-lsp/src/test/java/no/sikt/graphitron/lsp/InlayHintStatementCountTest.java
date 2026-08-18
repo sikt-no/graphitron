@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -65,7 +64,12 @@ class InlayHintStatementCountTest {
         type Film @table {
             title: String @field
             rating: String @field
+            content: Content @reference
             language: Language @splitQuery @reference
+        }
+
+        type Content @table(name: "content") {
+            content_id: ID
         }
 
         type Language @table(name: "language") {
@@ -113,6 +117,21 @@ class InlayHintStatementCountTest {
     }
 
     @Test
+    void anOmittedReferencePathCostsOneStatement() {
+        var source = """
+            type Film @table(name: "film") {
+                content: Content @reference
+            }
+            """;
+        // Asserted to render before the count is taken, so the case cannot pass on an arm that
+        // answered nothing: a renderer reading no relation at all would also cost one statement.
+        assertThat(hints(store.handle(), source))
+            .extracting(hint -> hint.getLabel().getLeft())
+            .contains("path: [{key: \"content_film_id_fkey\"}]");
+        assertThat(statementsFor(source)).isEqualTo(1);
+    }
+
+    @Test
     void theCountDoesNotTrackTheRegionsSize() {
         int ten = statementsFor(fields(10));
         int forty = statementsFor(fields(40));
@@ -138,7 +157,7 @@ class InlayHintStatementCountTest {
         var counted = new AtomicInteger();
         var file = file(SDL);
         assertThat(InlayHints.compute(InlayHintConfig.defaults(), file,
-            Optional.of(counting(counted)), LspSchemaSnapshot.unavailable(), fullRange(file)))
+            Optional.of(counting(counted)), fullRange(file)))
             .isEmpty();
         assertThat(counted.get()).isZero();
     }
@@ -162,8 +181,7 @@ class InlayHintStatementCountTest {
 
     private static List<InlayHint> hints(StoreHandle handle, String source) {
         var file = file(source);
-        return InlayHints.compute(all(), file, Optional.of(handle),
-            LspSchemaSnapshot.unavailable(), fullRange(file));
+        return InlayHints.compute(all(), file, Optional.of(handle), fullRange(file));
     }
 
     private static InlayHintConfig all() {

@@ -14,7 +14,7 @@ All four live under the `graphitron.inlayHints` (and `graphitron.hover`) namespa
 
 | `graphitron.inlayHints.inferredDirectives`
 | `false`
-| Renders a resolution overlay at `@table` / `@field` / `@reference` sites where the author wrote the directive bare, showing the value Graphitron resolved (`name: "customer"`, `path: [{key: "film_language_id_fkey"}]`, etc.), plus a whole-directive `@table(name: "...")` overlay at an `extend type` site whose base declaration carries the binding.
+| Renders a resolution overlay at `@table` / `@field` / `@reference` sites where the author wrote the directive bare, showing the value Graphitron resolved (`name: "customer"`, `path: [{key: "customer_address_id_fkey"}]`, etc.), plus a whole-directive `@table(name: "...")` overlay at an `extend type` site whose base declaration carries the binding.
 
 | `graphitron.inlayHints.classification`
 | `false`
@@ -39,7 +39,7 @@ Renders only when the canonical argument is _absent_ from the SDL source. The LS
 
 * `@table` without `name:` shows `name: "<table>"`, the table the type is bound to.
 * `@field` without `name:` shows `name: "<column>"`, the column name the classifier resolved.
-* `@reference` without `path:` shows `path: [{key: "..."}]` or `path: [{table: "..."}]`, one entry per step in the resolved FK chain.
+* `@reference` without `path:` shows `path: [{key: "..."}]`, the foreign key Graphitron discovers between the field's own two ends: the table its parent type is bound to, and the table the type it names is bound to. One entry, because discovery is one hop; a path of several elements is one you write. Where the two tables are connected by several foreign keys, or by none, nothing renders, which is also what Graphitron does with such a field: it joins on no discovered key and asks you to name one. A field whose type is its parent's own type renders nothing for the same reason, a key between one table and itself not saying which way the field navigates.
 
 Adding the canonical argument to the directive removes the hint immediately on next paint, without waiting for a regenerate cycle.
 
@@ -126,13 +126,11 @@ A field no rule reaches gets neither, and that silence is not yet the opposite c
 
 The surfaces read different things and go stale differently.
 
-Classification hints, separate-fetch markers, the `@table` inferred-directive hints and the classification hover come from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded.
+Every surface on this page comes from the fact store, which the build rewrites on each capture. They render whenever a capture has happened, whether or not the generator pass after it succeeded, and they show what the last capture recorded. That covers all three inferred-directive halves, the classification hints, the separate-fetch markers, and the classification hover with its description overlay.
 
-The `@field` and `@reference` inferred-directive hints come from the classification snapshot the generator pass ships, as does the description overlay beneath the hover's classification block. Mirroring the existing `userArgHover` and `columnHover` arms, they render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away. Under `LspSchemaSnapshot.Unavailable` (pre-build), they do not render at all.
+So a workspace that has captured a schema and never completed a generator pass gets these surfaces in full, and one that has completed many gets the same answers from the same relations. The staleness to reason about is a capture's: the hints describe the schema as the last capture read it, and a save that reruns capture brings them level.
 
-So the `inferredDirectives` toggle spans both cadences today: its `@table` half answers from a capture alone, and its other two halves wait for a generator pass. Each of the three is silent when its own source is missing rather than holding the others back.
-
-Each surface is silent when what it reads is missing, so a session that has one of the two answers still gets it.
+Each surface is silent when what it reads is missing, rather than holding the others back. Silence is not the opposite claim: where an inferred-directive hint has nothing to fill in, the store either has no answer at the coordinate or has more than one, and the sections above say which cases those are.
 
 == Editor configuration
 

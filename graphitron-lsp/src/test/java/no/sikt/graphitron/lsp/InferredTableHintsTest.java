@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -25,9 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * directive at a site carrying none, read the binding relation the column-match classifier stands
  * on rather than a name-keyed classification the generator pass shipped.
  *
- * <p>Every case runs under an unavailable snapshot, which is the point of the move as much as it is
- * the marker of where the answer comes from: these overlays now appear in a session that has captured
- * a schema and has no successful generator pass behind it, where before they waited for one.
+ * <p>Every case runs against the store alone, which is the point of the move as much as it is the
+ * marker of where the answer comes from: these overlays appear in a session that has captured a
+ * schema and has no successful generator pass behind it, where before they waited for one.
  *
  * <p>Two silences are deliberately not asserted, because neither is the arm's claim to make. A
  * directiveless object reached from a field of a scoped type resolves its fields against the parent's
@@ -38,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * bound", and pinning either would take a derivation that does not exist. The prohibition lives in
  * the arm's own javadoc, where it outlives this test.
  *
- * <p>The {@code @field} pass has its own sibling, {@code InferredFieldHintsTest}, reading the store as
- * these cases do. {@code InlayHintsTest} holds the {@code @reference} renderer, the one still reading
- * the snapshot, and passes an empty handle for the same reason.
+ * <p>The other two passes have siblings of their own, reading the store as these cases do:
+ * {@code InferredFieldHintsTest} for {@code @field} and {@code InferredReferenceHintsTest} for
+ * {@code @reference}.
  */
 class InferredTableHintsTest {
 
@@ -197,8 +196,7 @@ class InferredTableHintsTest {
                 firstName: String
             }
             """);
-        assertThat(InlayHints.compute(config(), file, Optional.empty(),
-            LspSchemaSnapshot.unavailable(), fullRange())).isEmpty();
+        assertThat(InlayHints.compute(config(), file, Optional.empty(), fullRange())).isEmpty();
     }
 
     // ===== Helpers =====
@@ -208,8 +206,7 @@ class InferredTableHintsTest {
     }
 
     private static List<String> labels(StoreFixture fixture, FileSnapshot file) {
-        return InlayHints.compute(config(), file, Optional.of(fixture.handle()),
-                LspSchemaSnapshot.unavailable(), fullRange())
+        return InlayHints.compute(config(), file, Optional.of(fixture.handle()), fullRange())
             .stream().map(InferredTableHintsTest::labelOf).toList();
     }
 

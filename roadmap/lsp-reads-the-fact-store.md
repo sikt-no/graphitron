@@ -480,7 +480,7 @@ around it.
 | Toggle | Collector | Fact source |
 |---|---|---|
 | `classification` | `collectClassificationLabels` | the claim views, both grains, at the vocabulary they carry (built: `InlayFacts`) |
-| `inferredDirectives` | `collectInferredDirectiveHints`, collectors for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` collector; `intent_resolved_field_claim` over `intent_column_match_claim` for the `@field` collector's column arm and `intent_class_member_slot` for its class-member arm, the second reached through `TypeMemberScope` (both built: `InlayFacts`); the `@reference` collector fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain, and it is the surface's one remaining read of the classification projection |
+| `inferredDirectives` | `collectInferredDirectiveHints`, collectors for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` collector; `intent_resolved_field_claim` over `intent_column_match_claim` for the `@field` collector's column arm and `intent_class_member_slot` for its class-member arm, the second reached through `TypeMemberScope` (both built: `InlayFacts`); the `@reference` collector fires only on an *omitted* path, so its source is `intent_field_reference_discovery`, the foreign-key discovery between the two types' bindings, and not the authored chain (built) |
 | `inferredDirectives` | `collectAbsentTableHints`, a second pass inside the inferred-directive collector | `intent_bound_table` (built: `InlayFacts`) |
 | `separateFetch` | `collectFetchMarkers` | `intent_field_separate_fetch`, the marked rules only (built: `InlayFacts`, `SeparateFetchRule`) |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
@@ -530,14 +530,10 @@ recalculation bookkeeping it aims retire with the keystroke cadence (see the dia
 paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retires with the
 java-source family: the LSP walks nothing.
 
-**What still reads the projection.** Three sites, and they are the residue of the inventory rather
+**What still reads the projection.** Two sites, and they are the residue of the inventory rather
 than a separate concern. Naming them here because "every feature moves" is checkable only against a
 list of what has not.
 
-* `InlayHints.collectInferredReferencePath` asks for the field classification at a coordinate, to
-  render the path the author omitted. The inlay row above says why no relation answers yet: the
-  overlay fires on an *omitted* path, so the fact it wants is the foreign-key discovery between two
-  types' bindings, which nothing derives.
 * `DeclTarget` asks for the field classification at a coordinate, and asks it now only about
   `@routine`: the generated call surface a routine read or write binds to, which no relation carries.
   R709 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below,
@@ -1301,7 +1297,7 @@ that already ask them.
 | Which catalog table a type's `@table` binds to | `intent_bound_table`, a keying of the spelling view on a type | built |
 | What an authored `@reference` element lands on | `intent_field_reference_step_hop` for the element's local resolution, `intent_field_reference_step_target` for the chain over it | built |
 | Which table a *field site's* columns come from | `intent_field_column_table`: the chain's terminal arrival for a `@reference` field, the navigated element table for the order-by sites. The parent's own binding is deliberately absent, being what a reader already holds | built |
-| What an *omitted* `@reference` path infers | foreign-key discovery between the parent's binding and the field's named type's binding; both bindings are built, the discovery is not | unbuilt |
+| What an *omitted* `@reference` path infers | `intent_field_reference_discovery`: the foreign keys connecting the parent's binding to the field's named type's binding, with the arity that says whether the walk would accept one | built |
 | What member names a backing class offers | `intent_class_member_slot`: a record's components, or the bean accessors of anything else, the rule chosen by the class's declared form. Keyed by the census, not by a graph | built |
 | Which Java class a type is backed by | `intent_type_backing_class`, the reflective binding walk's own answer. The census blocker is gone: it now carries the declared return type beside the erasure, so an accessor hop names its element type. What is unbuilt is the walk over those hops, its grounding and its gates | unbuilt |
 | The main classifier at a declaration | `intent_resolved_field_claim` at the field grain, `intent_authored_type_claim` at the type grain, both at the vocabulary they already carry | built |
@@ -1764,8 +1760,8 @@ out to have been covering a case no capture can produce.
   `@reference` fires only on an omitted path, so its source is the foreign-key discovery between two
   bindings, which is unbuilt. *(Superseded for `@field`, twice: the relation named here as the next
   slice turned out not to be needed, and the renderer has since moved. The two later sections on the
-  missing relation and on the `@field` ghost carry what actually happened; `@reference` is still
-  described correctly.)*
+  missing relation and on the `@field` ghost carry what actually happened. `@reference` has since
+  moved too, the discovery being built; the section on it carries that.)*
 * **A partial move is worth shipping because the cadence change is the user-visible half.** The
   `@table` ghosts now render off a capture alone, so an author who has never had a successful
   generator pass sees them, where before the arm was silent under `Unavailable`. The `inferredDirectives`
@@ -3595,3 +3591,80 @@ demonstrates the session this item is for instead of standing one step outside i
 hand-built and the test says why: a field declaration carrying a doc comment is reachable from no
 coordinate, a column constant resolving to the catalog arm and a record component's header comment not
 being retained by the parse.
+
+## Settled while building: the discovery is one view the base relation already promised, and the inlay surface stops taking a snapshot
+
+The `@reference` overlay renders the join the generator makes where the author wrote a `@reference` and
+no path. Its fact was the last one this item recorded as unbuilt, and it is now
+`intent_field_reference_discovery`: for a field whose parent type and named type are each bound to a
+table, every foreign key connecting those two tables, in either direction, with the arity beside it.
+
+**Two comments in the DDL had already said where this belonged, which is most of the design.**
+`sql_referential_constraint` says implicit-path inference is a derivation over it and not a captured
+fact. `intent_field_reference_step_hop` says an omitted path is foreign-key discovery between a parent
+and a child type, a resolution it deliberately does not perform, and that its silence must not be read
+as the absence of one. So the shape was not a choice between the chain and something new: the chain
+resolves what an author wrote, the discovery answers where nothing was written, and the two are
+separate relations because they answer different questions about the same field.
+
+**Neither endpoint is derived here, and that is the reuse worth naming.** The arriving table is
+`intent_field_column_scope`'s named-type rule, read by its `basis` tag. That rule already reads the
+authored type expression through `graphitron_field_synthesis` so a connection field navigates as its
+element type, demands an OBJECT named type and an unambiguous binding, and excludes the coordinates an
+authored claim, a `@pivot` or an authored path diverts. Restating any of that would be a second
+spelling of a navigation whose own comment says it exists because two consumers were deriving it apart
+from each other. The departing table is the parent's own binding, demanded unambiguous for the reason
+the arriving one is: a discovery between endpoints that are not certain is not the pair the walk would
+have had in hand.
+
+**No pair-keyed relation underneath it, deliberately.** "The foreign keys connecting these two tables"
+is a rule about a table pair rather than about a coordinate, and the layering instinct this item has
+followed twice (a spelling resolution under the bindings that key it) says to put it in a relation of
+its own. It would have exactly one reader, and the chain view's own comment already refuses that shape:
+the chain has no separate terminal relation because one would be a reduction over it with a single
+reader. The hop view's `{table:}` arm is not a third caller either, pinning one endpoint and
+discovering the other rather than pinning both.
+
+**The arity is a column and the refusal is the reader's, which is the rule the whole family follows.**
+`film` declares two foreign keys to `language`, so a field of `Film` naming `Language` reaches one table
+by two routes; the walk rejects that coordinate with "which foreign key did you mean" and joins on
+neither key. The view reports both rows and counts them, and the overlay names a key only at
+`candidates = 1`. Same shape as the contested backing: an overlay that picked would tell an author a
+join was made that was not.
+
+**Two exclusions, both the walk's rather than the view's own taste.** A self-referential pair is
+excluded outright, because both endpoints being one table means a connecting key says nothing about
+which way the field navigates, which is why the walk asks for it explicitly there; the exclusion is also
+what keeps the direction column meaningful. The comparison is on the two table names and nothing else,
+so two like-named tables in different schemas are one table to this rule as they are to the walk. The
+walk's other element-less arm needs no exclusion at all: where the departing table is a table-valued
+function the walk name-matches instead of discovering, and a routine result declares no foreign keys, so
+such a coordinate contributes no rows on its own.
+
+**The inlay surface no longer takes a schema snapshot.** This was its last renderer reading a generator
+pass's projection, so the parameter came off `InlayHints.compute` and with it the `Built` argument
+threaded through the collector interface. What the assertions used to say the signature now says, which
+is why `InlayHintsTest` shrank to two cases: the class existed to hold the snapshot-reading renderer and
+the cases proving the store-backed arms did not read it, and neither has a subject any more. The
+`@reference` pass got a store-driven sibling of its own, `InferredReferenceHintsTest`, in the shape the
+`@table` and `@field` passes already had.
+
+**A sealed variant retired with it.** `Pending.Ready` existed for a label the walk had already settled,
+which was only ever this overlay's, read at walk time off the projection. Every intent now names a
+question and no arm resolves anything while it walks, so the variant had no producer and is gone.
+
+**Counted rather than reasoned about: still one statement per region, now ten arms rather than nine.**
+The count case for this arm asserts the overlay renders before it takes the count, so it cannot pass on
+an arm that answered nothing; a renderer reading no relation at all would also cost one statement.
+
+**What the overlay renders changed, and it is narrower than the incumbent's.** The projection carried a
+list of steps, so the old renderer rendered a list. A discovery is a single hop, discovery never
+searching past one, so the overlay is `path: [{key: "..."}]` with one element. The incumbent's list came
+from the classification of a *column* reference, whose path is authored rather than discovered; it could
+therefore render a path an author had written, at a coordinate where a second `@reference` application
+carried no `path:` argument of its own. That is not a case worth keeping: the overlay's contract is that
+it shows what the buffer does not say, and the authored path is in the buffer one directive to the left.
+
+**What remains on this item.** `FieldCompletions`'s source-sigil predicate over `siteContext`, and
+`DeclTarget`'s `@routine` identity, which R709 closes. Both are named above and neither is an inlay
+concern.

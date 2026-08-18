@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -25,9 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the hover's business, read from the relations that own them, so a compact annotation cannot fall
  * behind a taxonomy it would otherwise have to restate.
  *
- * <p>Every assertion runs under an unavailable snapshot, which is how the class states that this
- * arm's source is the store. The sibling {@code InlayHintsTest} holds the snapshot-reading arm and
- * passes an empty handle for the same reason.
+ * <p>Every assertion runs against the store alone, this arm having no other source; the provider
+ * takes no schema snapshot at all now that its last snapshot-reading renderer moved onto a relation.
  */
 class ClassificationHintsTest {
 
@@ -216,8 +214,7 @@ class ClassificationHintsTest {
                 title: String
             }
             """);
-        var hints = InlayHints.compute(config(), file, Optional.empty(),
-            LspSchemaSnapshot.unavailable(), fullRange());
+        var hints = InlayHints.compute(config(), file, Optional.empty(), fullRange());
         assertThat(hints).isEmpty();
     }
 
@@ -229,8 +226,7 @@ class ClassificationHintsTest {
     }
 
     private static List<String> labels(FileSnapshot file, Range visible) {
-        return InlayHints.compute(config(), file, Optional.of(store.handle()),
-                LspSchemaSnapshot.unavailable(), visible)
+        return InlayHints.compute(config(), file, Optional.of(store.handle()), visible)
             .stream()
             .map(hint -> {
                 var either = hint.getLabel();

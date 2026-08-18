@@ -3578,6 +3578,62 @@ COMMENT ON COLUMN intent_field_column_table.table_source_name IS 'the resolved t
 COMMENT ON COLUMN intent_field_column_table.table_schema IS 'the resolved table''s SQL schema; NULL on every SILENT row';
 COMMENT ON COLUMN intent_field_column_table.table_name IS 'the resolved table''s SQL name; NULL on every SILENT row. With the two columns above this is sql_table''s full key, so the columns themselves are one join away';
 
+CREATE VIEW intent_field_reference_discovery
+  (graph_name, type_name, field_name,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table,
+   constraint_name, fk_on_from, candidates) AS
+SELECT graph_name, type_name, field_name,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table,
+       constraint_name, fk_on_from,
+       CAST(COUNT(*) OVER (
+         PARTITION BY graph_name, type_name, field_name) AS INT)
+  FROM (SELECT sc.graph_name, sc.type_name, sc.field_name,
+               bt.table_source_name AS from_source_name,
+               bt.table_schema      AS from_schema,
+               bt.table_name        AS from_table,
+               sc.table_source_name AS to_source_name,
+               sc.table_schema      AS to_schema,
+               sc.table_name        AS to_table,
+               rc.constraint_name,
+               CASE WHEN rc.source_name = bt.table_source_name
+                     AND rc.table_schema = bt.table_schema
+                     AND rc.table_name = bt.table_name
+                    THEN TRUE ELSE FALSE END AS fk_on_from
+          FROM intent_field_column_scope sc
+          JOIN intent_bound_table bt
+            ON bt.graph_name = sc.graph_name AND bt.type_name = sc.type_name
+           AND bt.candidates = 1
+          JOIN sql_referential_constraint rc
+            ON (rc.source_name = bt.table_source_name
+                AND rc.table_schema = bt.table_schema
+                AND rc.table_name = bt.table_name
+                AND rc.referenced_source_name = sc.table_source_name
+                AND rc.referenced_schema = sc.table_schema
+                AND rc.referenced_table = sc.table_name)
+            OR (rc.source_name = sc.table_source_name
+                AND rc.table_schema = sc.table_schema
+                AND rc.table_name = sc.table_name
+                AND rc.referenced_source_name = bt.table_source_name
+                AND rc.referenced_schema = bt.table_schema
+                AND rc.referenced_table = bt.table_name)
+         WHERE sc.basis = 'NAMED_TYPE_TABLE'
+           AND UPPER(sc.table_name) <> UPPER(bt.table_name)) endpoints;
+COMMENT ON VIEW intent_field_reference_discovery IS 'The foreign key an omitted @reference path discovers: for a field whose parent type and named type are each bound to a table, every foreign key connecting those two tables in either direction. This is the resolution the walk runs where a field carries no path element, and sql_referential_constraint''s own comment defers it here, "exactly one foreign key between these two tables" being a derivation over that relation rather than a captured fact. Separate from intent_field_reference_step_hop because that view resolves what an author wrote and this one answers where nothing was written; the hop view names this as a resolution it deliberately does not perform, so its silence is not the absence of a discovery. Neither endpoint is re-derived here. The arriving table is intent_field_column_scope''s named-type rule, which reads the authored type expression through graphitron_field_synthesis so a connection field navigates as its element type, demands an OBJECT named type and an unambiguous binding, and excludes the coordinates an authored claim, a @pivot or an authored path diverts; restating any of that would be a second spelling of the navigation that view exists to state once. The departing table is the parent''s own binding, demanded unambiguous for the reason the arriving one is: a discovery between endpoints that are not certain is not the pair the walk would have had in hand. One row per connecting key and not two, a foreign key connecting a pair once whichever end declares it, and fk_on_from says which end that is; a self-referential key therefore needs no special case, the same-table pair being excluded outright. Excluded because the walk excludes it, comparing the two table names and nothing else, so two like-named tables in different schemas are one table to this rule as they are to the walk, and a self-referencing field states its key explicitly or is rejected with that advice. Absence covers several things and none of them is "the discovery found nothing in particular": no foreign key connects the endpoints, or an endpoint is unbound or ambiguously bound, or the coordinate is one the named-type rule excludes. The walk''s other element-less arm needs no exclusion here: where the departing table is a table-valued function the walk name-matches instead of discovering, and a routine result declares no foreign keys, so such a coordinate contributes no rows on its own.';
+COMMENT ON COLUMN intent_field_reference_discovery.graph_name IS 'the owning graph''s partition, carried from the navigation view';
+COMMENT ON COLUMN intent_field_reference_discovery.type_name IS 'the type owning the field the path was omitted on; also the type whose binding is the departing end';
+COMMENT ON COLUMN intent_field_reference_discovery.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN intent_field_reference_discovery.from_source_name IS 'the departing table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_field_reference_discovery.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_discovery.from_table IS 'the departing table''s SQL name; the parent type''s own binding';
+COMMENT ON COLUMN intent_field_reference_discovery.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_field_reference_discovery.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_discovery.to_table IS 'the arriving table''s SQL name; the binding of the type the field names';
+COMMENT ON COLUMN intent_field_reference_discovery.constraint_name IS 'the foreign key connecting the two tables, which is what an author would write into a {key:} element. Its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says';
+COMMENT ON COLUMN intent_field_reference_discovery.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what completes the constraint''s key from the two endpoint triples';
+COMMENT ON COLUMN intent_field_reference_discovery.candidates IS 'how many foreign keys connect the two tables, this row being one of them; 1 is what the walk requires of a discovery, and a larger number is what its own "which foreign key did you mean" rejection counts. Stated as a column rather than left to each reader''s count, because whether the discovery is certain decides the reading and a reader that counted for itself would be re-deriving the resolution''s arity';
+
 CREATE VIEW intent_class_member_slot
   (source_name, class_name, origin, slot_name, display_type, accessor_method_name) AS
 SELECT rc.source_name, rc.class_name, 'RECORD_COMPONENT',

@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -169,7 +168,7 @@ class SeparateFetchHintsTest {
             }
             """);
         var hints = InlayHints.compute(new InlayHintConfig(false, true, false, false), file,
-            Optional.of(store.handle()), LspSchemaSnapshot.unavailable(), fullRange());
+            Optional.of(store.handle()), fullRange());
         assertThat(labels(hints)).doesNotContain(InlayHints.SEPARATE_FETCH_LABEL);
     }
 
@@ -181,7 +180,7 @@ class SeparateFetchHintsTest {
             }
             """);
         var hints = InlayHints.compute(new InlayHintConfig(false, true, true, false), file,
-            Optional.of(store.handle()), LspSchemaSnapshot.unavailable(), fullRange());
+            Optional.of(store.handle()), fullRange());
         assertThat(labels(hints))
             .as("the type's classifier, then the field's, then the field's delivery marker")
             .containsExactly("TABLE", "SERVICE", InlayHints.SEPARATE_FETCH_LABEL);
@@ -196,7 +195,7 @@ class SeparateFetchHintsTest {
             }
             """);
         var hints = InlayHints.compute(config(), file, Optional.of(store.handle()),
-            LspSchemaSnapshot.unavailable(), new Range(new Position(1, 0), new Position(1, 80)));
+            new Range(new Position(1, 0), new Position(1, 80)));
         assertThat(hints).hasSize(1);
     }
 
@@ -207,16 +206,14 @@ class SeparateFetchHintsTest {
                 languageSplit: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             """);
-        assertThat(InlayHints.compute(config(), file, Optional.empty(),
-            LspSchemaSnapshot.unavailable(), fullRange())).isEmpty();
+        assertThat(InlayHints.compute(config(), file, Optional.empty(), fullRange())).isEmpty();
     }
 
     // ===== Helpers =====
 
     /** The 0-based lines carrying a marker, which is how a case names the field it means. */
     private static List<Integer> markedLines(FileSnapshot file) {
-        var hints = InlayHints.compute(config(), file, Optional.of(store.handle()),
-            LspSchemaSnapshot.unavailable(), fullRange());
+        var hints = InlayHints.compute(config(), file, Optional.of(store.handle()), fullRange());
         return hints.stream()
             .peek(hint -> assertThat(labelOf(hint)).isEqualTo(InlayHints.SEPARATE_FETCH_LABEL))
             .map(hint -> hint.getPosition().getLine())
@@ -224,8 +221,7 @@ class SeparateFetchHintsTest {
     }
 
     private static List<String> labels(FileSnapshot file, Range range) {
-        return labels(InlayHints.compute(config(), file, Optional.of(store.handle()),
-            LspSchemaSnapshot.unavailable(), range));
+        return labels(InlayHints.compute(config(), file, Optional.of(store.handle()), range));
     }
 
     private static List<String> labels(List<InlayHint> hints) {

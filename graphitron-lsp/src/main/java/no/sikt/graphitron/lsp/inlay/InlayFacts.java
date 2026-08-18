@@ -20,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_DISCOVERY;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
@@ -56,6 +57,11 @@ import static org.jooq.impl.DSL.selectDistinct;
  * labels a type, and whether a binding or a class scopes a name, are decisions
  * {@link TypeBackingClass#resolve} and {@link TypeMemberScope#resolve} make after every arm has
  * returned. The cost is rows in a payload rather than a round trip.
+ *
+ * <p>The discovery arm brings back rows no renderer will read for a different reason, and it is the
+ * same discipline: a coordinate whose endpoints several foreign keys connect has a row per key, and
+ * which of them an overlay may name is the arity's reading rather than the arm's. Filtering to the
+ * certain ones here would put the refusal in the query, where nothing else that refuses lives.
  */
 final class InlayFacts {
 
@@ -76,6 +82,7 @@ final class InlayFacts {
         private final Set<String> boundTableTypeNames = new LinkedHashSet<>();
         private final Set<String> memberTypeNames = new LinkedHashSet<>();
         private final Set<FieldCoord> memberSites = new LinkedHashSet<>();
+        private final Set<FieldCoord> referenceSites = new LinkedHashSet<>();
 
         /** A visible declaration of any kind, which the claim and round-trip arms are keyed on. */
         void declaration(String typeName) {
@@ -112,9 +119,19 @@ final class InlayFacts {
             boundTableTypeNames.add(typeName);
         }
 
+        /**
+         * A site where a {@code @reference} overlay may render. What such a site wants is the join
+         * the generator makes where the author wrote no path, which is one relation's own question
+         * and asks nothing of the type grain.
+         */
+        void referencePathSite(String typeName, String fieldName) {
+            referenceSites.add(new FieldCoord(typeName, fieldName));
+        }
+
         boolean isEmpty() {
             return declaredTypeNames.isEmpty() && backingTypeNames.isEmpty()
-                && boundTableTypeNames.isEmpty() && memberSites.isEmpty();
+                && boundTableTypeNames.isEmpty() && memberSites.isEmpty()
+                && referenceSites.isEmpty();
         }
     }
 
@@ -155,6 +172,16 @@ final class InlayFacts {
     /** One member slot a backing class offers, keyed by class because a slot is a fact about one. */
     record SlotRow(String className, String slotName) {}
 
+    /**
+     * One foreign key an omitted {@code @reference} path could have discovered at a coordinate.
+     *
+     * @param candidates how many keys connect the two endpoints, read from the view rather than
+     *                   counted here, which is what lets an overlay refuse to name one of several
+     */
+    record DiscoveryRow(
+        String typeName, String fieldName, String constraintName, Integer candidates
+    ) {}
+
     /** Every question the region asked, answered. */
     record Answers(
         List<TypeClaimRow> typeClaims,
@@ -165,7 +192,8 @@ final class InlayFacts {
         List<BoundTableRow> boundTables,
         List<RedirectRow> redirects,
         List<ColumnMatchRow> columnMatches,
-        List<SlotRow> slots
+        List<SlotRow> slots,
+        List<DiscoveryRow> discoveries
     ) {
 
         /** The classifiers claiming a type, in the classifier order the arm returned them in. */
@@ -238,6 +266,21 @@ final class InlayFacts {
                 .map(SlotRow::slotName);
         }
 
+        /**
+         * The foreign key an omitted path at this coordinate discovers, absent where the endpoints are
+         * connected by several keys or by none. The arity is the view's own column, and refusing on it
+         * is the same rule the contested backing follows: the generator rejects a coordinate whose
+         * discovery is ambiguous, so it joins on neither key, and naming one would render a join that
+         * is not made.
+         */
+        Optional<String> discoveredForeignKey(String typeName, String fieldName) {
+            return discoveries.stream()
+                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName)
+                    && Integer.valueOf(1).equals(row.candidates()))
+                .findFirst()
+                .map(DiscoveryRow::constraintName);
+        }
+
         private List<CatalogTable> boundTablesOf(String typeName) {
             return boundTables.stream()
                 .filter(row -> row.typeName().equals(typeName))
@@ -272,7 +315,7 @@ final class InlayFacts {
      */
     static Answers none() {
         return new Answers(List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(), List.of(), List.of());
+            List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /** Every question the region asked, answered in one statement. */
@@ -312,7 +355,8 @@ final class InlayFacts {
                 boundTableArm(store, questions.boundTableTypeNames),
                 redirectArm(store, questions.memberTypeNames),
                 columnMatchArm(store, questions.memberSites),
-                slotArm(store, questions.memberTypeNames))
+                slotArm(store, questions.memberTypeNames),
+                discoveryArm(store, questions.referenceSites))
             .fetchOne(Records.mapping(Answers::new));
     }
 
@@ -413,6 +457,25 @@ final class InlayFacts {
             .and(INTENT_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .orderBy(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME, INTENT_CLASS_MEMBER_SLOT.SLOT_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
+    }
+
+    /**
+     * The foreign keys an omitted {@code @reference} path discovers at each site, every candidate and
+     * not just the certain ones: which of them an overlay may speak for is the arity's reading, and the
+     * arity is a column of the same rows. Ordered by key name so the arm is stable, an overlay only
+     * ever naming a key where there is one.
+     */
+    private static Field<List<DiscoveryRow>> discoveryArm(
+        StoreHandle store, Collection<FieldCoord> sites
+    ) {
+        var discovery = INTENT_FIELD_REFERENCE_DISCOVERY;
+        return multiset(selectDistinct(discovery.TYPE_NAME, discovery.FIELD_NAME,
+                discovery.CONSTRAINT_NAME, discovery.CANDIDATES)
+            .from(discovery)
+            .where(discovery.GRAPH_NAME.eq(store.graphName()))
+            .and(coordinateIn(discovery.TYPE_NAME, discovery.FIELD_NAME, sites))
+            .orderBy(discovery.TYPE_NAME, discovery.FIELD_NAME, discovery.CONSTRAINT_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(DiscoveryRow::new)));
     }
 
     /** A disjunction over whole coordinates, which is what keys the arm a site's own match comes from. */
