@@ -51,69 +51,112 @@ instalment.
 
 ## The dot grammar
 
-### One grammar, not three
+### One split rule, two different things being named
 
 `parseQualifiedTableName` and `parseQualifiedForeignKeyName` are line-for-line identical, and the
-javadoc says the second record exists only to keep the two "independently evolvable". Routine names
-go through `parseQualifiedTableName` as well. So there is one split rule, and capture applies it
-uniformly rather than reproducing a per-resolver variant.
+javadoc says the second record exists only to keep the two "independently evolvable". Routine names go
+through `parseQualifiedTableName` as well. So the *mechanics* are one rule and capture applies it
+uniformly, rather than reproducing a per-resolver variant.
 
-### The rule has three arms, and the third is the one to get right
+What the two halves *mean* is not one rule, and the columns and comments have to say which is which. A
+table or routine qualifier names the schema the object lives in. A `key_ref` qualifier does not name
+the constraint's schema, because a constraint has none of its own; see below. Same split, two
+semantics, and conflating them in a comment is how a later reader writes the wrong join.
 
-[cols="2,1,2"]
+### The rule: always partition, never fall back
+
+The verbatim input stays in its own column beside the two parts, and the split is unconditional.
+
+[cols="2,1,1,2"]
 |===
-| Input | `schema_part` | name part
+| Input | `schema_part` | name part | Reads as
 
 | `film`
 | NULL
 | `film`
+| no qualifier written
 
 | `public.film`
 | `public`
 | `film`
+| qualified
 
-| `film.` or `.film`
-| NULL
-| the whole value
+| `film.`
+| `film`
+| `''`
+| a qualifier position was written, the name half is empty
+
+| `.film`
+| `''`
+| `film`
+| the qualifier position was written empty
 
 | `a.b.c`
 | `a`
 | `b.c`
+| qualified, name half not a legal identifier
 |===
 
-The third arm is not a guess: both parsers return empty when either half is blank, and the author
-sites then "treat a malformed value as unqualified (they pass the raw string on as the bare name), so
-a stray-dot value degrades to the ordinary `NotInCatalog` rejection". A typo is exactly what produces
-that input, so a capture that split it differently would put the store and the generator into
-disagreement on the input an author is most likely to get wrong. The multi-dot arm is likewise the
-pipeline's: `"a.b.c"` parses as schema `a`, name `b.c`, and the two-part lookup then finds nothing.
+NULL and the empty string carry different meanings and both are load-bearing: NULL means no period
+appeared, the empty string means a period appeared and that side of it was empty. A row with an empty
+half joins nothing, and that is the point. The failure is structural, visible in the stored fact, and
+needs no fallback rule to produce it.
 
-### Columns
+This diverges deliberately from the pipeline, which treats a blank half as unqualified and passes the
+raw string on as the bare name, degrading to a `NotInCatalog` rejection. Both arrangements fail on the
+same input; the difference is that the store's failure is a non-match a reader can see the shape of,
+where the pipeline's is a fallback that has to be known about. Capture states what was written and
+lets the join say nothing matched, which is the same reason the store keeps a dotted
+`columnMapping` right side whole for its detection instead of repairing it.
 
-Each of the nine keeps its as-written column and gains two: `<col>_schema_part`, NULL when the value
-carries no usable qualifier, and the name half. The name half is `<col>_table_part` where it names a
-table (`graphitron_table.table_ref`, `graphitron_mutation.table_ref`, the three
-`*_reference_step.table_ref`) and `<col>_name_part` where it names something else (the three
-`*_reference_step.key_ref` constraints, `graphitron_routine.routine_ref`), mirroring the pipeline's own
-record components `QualifiedTableName.table` and `QualifiedForeignKeyName.name`.
+### `key_ref`'s dot is a scope hint, not a qualified name
 
-### The fold is per target namespace, not general
+Worth separating, because treating it as a schema-qualified name would be wrong about SQL. A
+constraint is not an independently schema-namespaced object the way a table is: it is scoped to its
+table, and therefore to that table's schema. The store already says so, since `sql_constraint` is
+keyed `(source_name, table_schema, table_name, constraint_name)` and the schema arrives through the
+table rather than beside the name.
 
-The catalog matches case-insensitively, so the parts that join `sql_` gain a `<part>_upper` sibling:
-an ordinary column, named for what it holds, with a comment saying it is the upper-cased form of the
-column beside it, and a `CHECK (<part>_upper = UPPER(<part>))` so it cannot drift. Verified against
-h2 2.4.240: the constraint is accepted, a consistent row inserts, a drifted row is rejected, a
-quote-bearing value round-trips.
+So the dot in `@reference(key:)` does not qualify the constraint. It names *which schema's table holds
+it*, a disambiguator for a constraint name that occurs in more than one schema, and the pipeline uses
+it exactly that way in `findForeignKey(name, currentSourceSqlName, schema)`. The DDL already records
+this ("the qualifier binds the FK-holder (child / referencing) schema, which is where jOOQ's generated
+`Keys` class declares the constraint") and the new columns must not contradict it.
+
+Consequences: the split still happens, because the grammar admits a dot and both halves are used. The
+schema column is commented as the FK-holder table's schema, never as the constraint's schema. And its
+join target is two columns of a four-column key, `sql_constraint(table_schema, constraint_name)`,
+narrowed by the source table the walk is standing on, which is a different join from the table case
+and should not be written as though it were the same one.
+
+Routine names are the opposite case and take the table treatment unchanged: a routine *is* a
+schema-qualified object, and the pipeline already parses `routine_ref` with
+`parseQualifiedTableName`.
+
+### The fold, on both sides
+
+The fold exists for one purpose: matching case-insensitively against the `sql_` family. So both sides
+get it, which is what makes the comparison an equality of two stored columns that an index can serve.
+
+Each folded column is an ordinary column named `<column>_upper`, with a comment saying it is the
+upper-cased form of the column beside it, and a `CHECK (<column>_upper = UPPER(<column>))` so it
+cannot drift. Verified against h2 2.4.240: the constraint is accepted, a consistent row inserts, a
+drifted row is rejected, a quote-bearing value round-trips.
+
+On the `sql_` side, the columns to fold are the ones the composition views already compare
+case-insensitively, counted from the current view text: `sql_table.table_schema`,
+`sql_table.table_name`, `sql_column.table_name`, `sql_column.column_name`, `sql_column.jooq_name`,
+`sql_constraint.table_schema` and `sql_constraint.constraint_name`. The rule for anything added later
+is the same: a `sql_` column a composition view folds, folds in the schema instead.
 
 No fold where the target namespace is case-sensitive. Java identifiers (`class_name`, `method`) and
-GraphQL field names (the field-set segments below) are compared exactly, and a folded companion there
-would be dead weight that a future reader would mistake for a matching rule.
+GraphQL field names, including the field-set segments below, are compared exactly, and a folded
+companion there would be dead weight a later reader would mistake for a matching rule.
 
-Open trim, worth deciding before writing the DDL: as specified this is five columns per reference (as
-written, two parts, two folds) across nine references. Storing only the folded parts would make it
-three, since the parts are re-derivable from the as-written column by the same one-line split. The
-recommendation is to take the five-column form only if the unfolded parts have a reader; nothing
-identified so far needs them.
+Both parts keep their unfolded form as well as their folded one. The unfolded halves are what a
+consumer echoing an author's spelling back wants, and re-deriving them from the verbatim column would
+put the split in two places. So a qualifiable reference carries five columns: the verbatim value, two
+parts as written, and two folded parts.
 
 ## The field-set grammar
 
@@ -142,16 +185,24 @@ Also unchanged: `scalar_type.scalar_ref` (a Java constant reference), and the Gr
 (`reference_for.participant_type_ref`, both `node_type_ref` columns, `pivot.vocabulary_ref`), which
 name things in the same corpus and carry no grammar.
 
-## An open question the widened rule raises
+## `graphitron_argument_path_segment` gains its coordinates
 
-`graphitron_argument_path_segment` is keyed `(graph_name, argument_path, position)`, so its rows are
-interned by path *text* and a pair reaches its segments by joining on `argument_path` rather than by
-owning them. That is normalization by value, and it is the only relation in the family keyed by a
-value instead of a coordinate. It works, and interning avoids a row set per pair. But under the rule
-this item states, the next reader will ask whether it is a design or an oversight, so it should be
-either re-keyed on its owner or documented as deliberate in its DDL comment. Recommendation: keep the
-interning, document it, and note that the graph-scoped clear is what currently keeps orphaned segments
-from accumulating.
+Today it is keyed `(graph_name, argument_path, position)`, so its rows are interned by path *text* for
+the whole graph and a segment set has no owner. That is an oversight rather than a design: it limits
+what the facts can answer. "Which argument paths does this field's service mapping segment into" cannot
+be asked of the relation itself, only of a pair relation joined to it on a string.
+
+The key gains the coordinate: `(graph_name, type_name, field_name, argument_path, position)`.
+
+What that buys and what it does not, stated so the next reader does not expect more. It makes the
+segments addressable by the coordinate every consumer already holds. It leaves segment sets shared
+across the several pairs of one field that happen to use the same path text, which is harmless because
+the segmentation of a path is a pure function of that text. It does not identify *which* pair a segment
+set came from, and the owners are not one shape: `graphitron_service_arg_mapping_pair` is keyed
+`(graph, type, field, position)`, the argument-level pairs add `argument_name`, and the step-level
+pairs add `ordinal` and `step_position`. Carrying the widest of those would make a mostly-null key. A
+consumer needing the exact owner joins the pair relation on `(type_name, field_name, argument_path)`,
+which is a coordinate join rather than the bare string join it is today.
 
 ## Comment corrections shipping with this
 
@@ -165,13 +216,22 @@ from accumulating.
 
 ## Tests
 
-- Pipeline tier, per grammar arm: qualified, unqualified, stray-dot and multi-dot values on a
-  `@table`, a `@reference` path element's table and key, a `@routine` and a `@mutation(table:)`,
-  pinning both parts including the NULL qualifier and the whole-value fallback.
+- Pipeline tier, one case per arm of the partition table, on a `@table`, a `@reference` path element's
+  table and key, a `@routine` and a `@mutation(table:)`: unqualified pinning a NULL schema part, and
+  qualified, trailing-dot, leading-dot and multi-dot values pinning both parts. The trailing- and
+  leading-dot cases are the ones worth writing first, since they pin the empty string against NULL,
+  which is the distinction the whole arrangement rests on.
+- One case proving an empty half joins nothing: a trailing-dot `@table` value yields no
+  `intent_spelled_table` row rather than resolving as though unqualified.
 - Pipeline tier for the field set: a nested `@key(fields: "a { b c }")` pinning two paths with their
   segments and positions, and a malformed field set pinning the parsed prefix.
-- The check constraints are the invariant for the folded columns, so no test restates them; the
-  pipeline pins assert the folded value, which is what proves the decoder writes the pair.
+- Pipeline tier for the segment coordinate: two fields on one type whose mappings share a path text,
+  pinning that each field's segments are addressable from its own coordinate.
+- The check constraints are the invariant for the folded columns on both sides, so no test restates
+  them; the pipeline pins assert the folded value, which is what proves the writer fills the pair.
+- A gate over the schema rather than a case: every `sql_` column a composition view folds has an
+  `_upper` sibling, so the next folded comparison added to a view cannot quietly reintroduce a
+  per-row `UPPER`.
 - Agreement: `intent_spelled_table` returns identical rows over the multi-schema fixture catalog
   before and after, since this change is shape-only.
 - A negative pin: a dotted `columnMapping` right side still lands whole in
@@ -206,4 +266,5 @@ label describes what the family is; this item is the work the description was po
 - Resolving a reference to a catalog object, which is composition and stays derived. This item only
   changes the shape composition reads.
 - The decodes' input, AST versus captured rows, which is the sibling item.
-- Retiring or re-keying `graphitron_argument_path_segment`, beyond documenting the interning.
+- Identifying which *pair* a segment set came from. The coordinate reaches the field; the exact owner
+  stays a join against the pair relation, for the reason recorded above.
