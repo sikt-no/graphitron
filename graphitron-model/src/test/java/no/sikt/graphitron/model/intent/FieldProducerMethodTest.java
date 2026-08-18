@@ -1,61 +1,54 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.intent;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.tables.records.IntentFieldProducerMethodRecord;
+import no.sikt.graphitron.model.tables.records.IntentFieldProducerReferenceRecord;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.test.SeededStore.seedClass;
+import static no.sikt.graphitron.model.test.SeededStore.seedExternalField;
+import static no.sikt.graphitron.model.test.SeededStore.seedField;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
+import static no.sikt.graphitron.model.test.SeededStore.seedService;
+import static no.sikt.graphitron.model.test.SeededStore.seedSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedType;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for the producer pair: {@code intent_field_producer_reference},
- * the method an {@code @service} or {@code @externalField} names, and
- * {@code intent_field_producer_method}, which of the census's methods that resolves to.
+ * What the producer pair returns: {@code intent_field_producer_reference}, the method an
+ * {@code @service} or {@code @externalField} names, and {@code intent_field_producer_method}, which
+ * of the census's methods that resolves to.
  *
- * <p>The SDL is captured for real and the census is hand-built, which is the split the two sides
- * earn separately. A directive application is a fact capture produces, so writing the rows by hand
- * could assert a coordinate no schema authors. The census side states nothing but a class name, a
- * method name and a descriptor, which is all a reference is matched against, and building it by
- * hand is what lets one fixture hold an overload, a class the scan never reached and a second
- * classpath entry declaring the same class. The scan's own production of those rows is pinned in
- * {@code ClasspathScannerTest}.
+ * <p>Both sides are stated as rows, because both sides are names. A reference is a class name and a
+ * method name exactly as an author spelled them, and the census matches a reference on a class name,
+ * a method name and a descriptor and on nothing else. Stating them is what lets one fixture hold an
+ * overload, a class no scan reached, a class declared by a second classpath entry and a directive
+ * naming no method at all, which are the four shapes the resolution's answers are made of. That a
+ * real capture writes the directive rows and a real scan writes the census rows is pinned beside
+ * each of those, in the module that does the writing.
  *
  * <p>Half of these cases assert that a coordinate produces no row. That is the relation's claim
  * rather than a gap in it: a reference the census cannot match is unresolved, and the boundary
  * between the two causes of absence (a class outside the census, a class declaring no such method)
  * is a fact a reader has to be able to reach.
  */
-@PipelineTier
 class FieldProducerMethodTest {
-
-    @TempDir
-    Path tmp;
 
     // ===== The reference resolves =====
 
     /** The ordinary case: a service reference names one method and the row carries its descriptor. */
     @Test
     void aServiceReferenceResolvesToItsMethod() {
-        withCapturedStore(dsl -> {
+        withProducers(dsl -> {
             var rows = rowsAt(dsl, "Query", "films");
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
@@ -74,7 +67,7 @@ class FieldProducerMethodTest {
      */
     @Test
     void anExternalFieldReferenceResolvesToItsMethod() {
-        withCapturedStore(dsl -> {
+        withProducers(dsl -> {
             var rows = rowsAt(dsl, "Film", "rating");
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst().getDeclaredVia()).isEqualTo("EXTERNAL_FIELD");
@@ -90,9 +83,9 @@ class FieldProducerMethodTest {
      */
     @Test
     void anOmittedExternalFieldMethodFallsBackToTheFieldName() {
-        withCapturedStore(dsl ->
+        withProducers(dsl ->
             assertThat(rowsAt(dsl, "Film", "isEnglish"))
-                .extracting(r -> r.getMethodName())
+                .extracting(IntentFieldProducerMethodRecord::getMethodName)
                 .containsExactly("isEnglish"));
     }
 
@@ -105,11 +98,11 @@ class FieldProducerMethodTest {
      */
     @Test
     void anOverloadedNameIsEveryMatchAndAnArity() {
-        withCapturedStore(dsl -> {
+        withProducers(dsl -> {
             var rows = rowsAt(dsl, "Query", "ranked");
-            assertThat(rows).extracting(r -> r.getDescriptor())
+            assertThat(rows).extracting(IntentFieldProducerMethodRecord::getDescriptor)
                 .containsExactlyInAnyOrder("(I)Ljava/util/List;", "(Ljava/lang/String;)Ljava/util/List;");
-            assertThat(rows).extracting(r -> r.getCandidates()).containsOnly(2);
+            assertThat(rows).extracting(IntentFieldProducerMethodRecord::getCandidates).containsOnly(2);
         });
     }
 
@@ -120,7 +113,7 @@ class FieldProducerMethodTest {
      */
     @Test
     void aNameTheClassDoesNotDeclareResolvesToNothing() {
-        withCapturedStore(dsl -> {
+        withProducers(dsl -> {
             assertThat(rowsAt(dsl, "Query", "missing")).isEmpty();
             assertThat(dsl.fetchCount(JVM_CLASS, JVM_CLASS.CLASS_NAME.eq("app.FilmService")))
                 .as("the class is present, so the absent row is about the method name")
@@ -131,7 +124,7 @@ class FieldProducerMethodTest {
     /** The second cause: nothing the graph read declares the class at all. */
     @Test
     void aClassOutsideTheCensusResolvesToNothing() {
-        withCapturedStore(dsl -> {
+        withProducers(dsl -> {
             assertThat(rowsAt(dsl, "Query", "unscanned")).isEmpty();
             assertThat(dsl.fetchCount(JVM_CLASS, JVM_CLASS.CLASS_NAME.eq("app.NotScanned")))
                 .isZero();
@@ -148,12 +141,12 @@ class FieldProducerMethodTest {
      */
     @Test
     void anUnresolvedReferenceIsStillAReference() {
-        withCapturedStore(dsl -> {
+        withProducers(dsl -> {
             assertThat(referencesAt(dsl, "Query", "unscanned"))
                 .extracting(r -> r.getClassName() + "#" + r.getMethodName())
                 .containsExactly("app.NotScanned#findAll");
             assertThat(referencesAt(dsl, "Query", "missing"))
-                .extracting(r -> r.getMethodName())
+                .extracting(IntentFieldProducerReferenceRecord::getMethodName)
                 .containsExactly("absent");
         });
     }
@@ -164,7 +157,7 @@ class FieldProducerMethodTest {
      */
     @Test
     void theOmittedMethodFallbackIsAppliedInTheReference() {
-        withCapturedStore(dsl ->
+        withProducers(dsl ->
             assertThat(referencesAt(dsl, "Film", "isEnglish"))
                 .extracting(r -> r.getDeclaredVia() + ":" + r.getMethodName())
                 .containsExactly("EXTERNAL_FIELD:isEnglish"));
@@ -174,10 +167,20 @@ class FieldProducerMethodTest {
      * A service naming no method resolves to nothing rather than falling back to the field name.
      * The two directives differ here and the difference is authored, not incidental: the fallback
      * is the external field's contract alone.
+     *
+     * <p>The reference is where that difference lives, and where the absence has to be read: give
+     * the service arm the fallback and the coordinate names a method, whether or not the census
+     * then matches it. So the resolution's silence alone would be satisfied by a fixture whose
+     * field name happens to match nothing, which is every fixture that did not set out to.
      */
     @Test
     void aServiceThatNamesNoMethodResolvesToNothing() {
-        withCapturedStore(dsl -> assertThat(rowsAt(dsl, "Query", "unnamed")).isEmpty());
+        withProducers(dsl -> {
+            assertThat(rowsAt(dsl, "Query", "unnamed")).isEmpty();
+            assertThat(referencesAt(dsl, "Query", "unnamed"))
+                .as("and it names nothing to resolve, rather than naming the field")
+                .isEmpty();
+        });
     }
 
     // ===== Partition =====
@@ -190,10 +193,15 @@ class FieldProducerMethodTest {
      */
     @Test
     void siblingGraphsResolveThroughTheirOwnMembership() {
-        withCapturedStore(dsl -> {
-            capture(dsl, SIBLING, tmp.resolve("sibling"),
-                List.of(reference(OTHER, "app.FilmService",
-                    method("findAll", "()Ljava/util/List;"))));
+        withProducers(dsl -> {
+            seedGraph(dsl, SIBLING);
+            seedSource(dsl, OTHER, "DIRECTORY");
+            seedGraphSource(dsl, SIBLING, OTHER);
+            seedClass(dsl, OTHER, "app.FilmService", "CLASS");
+            seedMethod(dsl, OTHER, "app.FilmService", "findAll", "()Ljava/util/List;");
+            seedType(dsl, SIBLING, "Film", "OBJECT");
+            seedField(dsl, SIBLING, "Query", "films", "Film", true);
+            seedService(dsl, SIBLING, "Query", "films", "app.FilmService", "findAll");
 
             assertThat(dsl.select(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME,
                     INTENT_FIELD_PRODUCER_METHOD.SOURCE_NAME,
@@ -209,8 +217,8 @@ class FieldProducerMethodTest {
 
     // ===== Helpers =====
 
-    private static final String GRAPH = "FieldProducerMethodTest";
-    private static final String SIBLING = "FieldProducerMethodTestSibling";
+    private static final String GRAPH = "g";
+    private static final String SIBLING = "sibling";
 
     private static final String APP = "app/target/classes";
     private static final String LIB = "lib.jar";
@@ -220,55 +228,50 @@ class FieldProducerMethodTest {
      * One reference per case: one that resolves, one overloaded, one naming a method the class
      * does not declare, one naming a class nothing scanned, one naming no method at all, and the
      * external field's two spellings of its own reference.
+     *
+     * <p>Two classes on two entries answer them. {@code byRank} is declared twice, which is the one
+     * shape the census has to hold for the arity to mean anything, and the descriptors are what
+     * tell the two rows apart.
      */
-    private static final String SDL = """
-        type Query {
-            films: [Film] @service(service: {className: "app.FilmService", method: "findAll"})
-            ranked: [Film] @service(service: {className: "app.FilmService", method: "byRank"})
-            missing: [Film] @service(service: {className: "app.FilmService", method: "absent"})
-            unscanned: [Film] @service(service: {className: "app.NotScanned", method: "findAll"})
-            unnamed: [Film] @service(service: {className: "app.FilmService"})
-        }
-        type Film {
-            title: String
-            rating: String @externalField(reference: {className: "app.FilmFields", method: "rating"})
-            isEnglish: Boolean @externalField(reference: {className: "app.FilmFields"})
-        }
-        """;
+    private static void withProducers(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, APP, "DIRECTORY");
+            seedSource(dsl, LIB, "JAR");
+            seedGraphSource(dsl, GRAPH, APP);
+            seedGraphSource(dsl, GRAPH, LIB);
 
-    /**
-     * Two classes on two entries. {@code byRank} is declared twice, which is the one shape the
-     * census has to hold for the arity to mean anything, and the descriptors are what tell the two
-     * rows apart.
-     */
-    private static List<CompletionData.ExternalReference> census() {
-        return List.of(
-            reference(APP, "app.FilmService",
-                method("findAll", "()Ljava/util/List;"),
-                method("byRank", "(I)Ljava/util/List;"),
-                method("byRank", "(Ljava/lang/String;)Ljava/util/List;")),
-            reference(LIB, "app.FilmFields",
-                method("rating", "()Lorg/jooq/Field;"),
-                method("isEnglish", "()Lorg/jooq/Field;")));
+            seedClass(dsl, APP, "app.FilmService", "CLASS");
+            seedMethod(dsl, APP, "app.FilmService", "findAll", "()Ljava/util/List;");
+            seedMethod(dsl, APP, "app.FilmService", "byRank", "(I)Ljava/util/List;");
+            seedMethod(dsl, APP, "app.FilmService", "byRank", "(Ljava/lang/String;)Ljava/util/List;");
+            seedClass(dsl, LIB, "app.FilmFields", "CLASS");
+            seedMethod(dsl, LIB, "app.FilmFields", "rating", "()Lorg/jooq/Field;");
+            seedMethod(dsl, LIB, "app.FilmFields", "isEnglish", "()Lorg/jooq/Field;");
+
+            seedType(dsl, GRAPH, "Film", "OBJECT");
+            service(dsl, "films", "app.FilmService", "findAll");
+            service(dsl, "ranked", "app.FilmService", "byRank");
+            service(dsl, "missing", "app.FilmService", "absent");
+            service(dsl, "unscanned", "app.NotScanned", "findAll");
+            service(dsl, "unnamed", "app.FilmService", null);
+
+            seedField(dsl, GRAPH, "Film", "rating");
+            seedExternalField(dsl, GRAPH, "Film", "rating", "app.FilmFields", "rating");
+            seedField(dsl, GRAPH, "Film", "isEnglish");
+            seedExternalField(dsl, GRAPH, "Film", "isEnglish", "app.FilmFields", null);
+
+            body.accept(dsl);
+        });
     }
 
-    /**
-     * The reference's own name is the class name, which is what a scan writes into both, so a
-     * census spelling it otherwise would state a class no classfile produces.
-     */
-    private static CompletionData.ExternalReference reference(
-        String sourceName, String className, CompletionData.Method... methods) {
-        return new CompletionData.ExternalReference(className, className, "",
-            List.of(methods), List.of(), List.of(), "CLASS", sourceName, List.of());
+    /** A {@code Query} field returning films, and the service reference that names its producer. */
+    private static void service(DSLContext dsl, String fieldName, String className, String method) {
+        seedField(dsl, GRAPH, "Query", fieldName, "Film", true);
+        seedService(dsl, GRAPH, "Query", fieldName, className, method);
     }
 
-    /** Only the name and the descriptor are matched against, so nothing else is stated. */
-    private static CompletionData.Method method(String name, String descriptor) {
-        return new CompletionData.Method(name, "List", "", List.of(), false, descriptor, "List");
-    }
-
-    private static List<no.sikt.graphitron.model.tables.records.IntentFieldProducerMethodRecord>
-        rowsAt(DSLContext dsl, String typeName, String fieldName) {
+    private static List<IntentFieldProducerMethodRecord> rowsAt(DSLContext dsl, String typeName,
+                                                                String fieldName) {
         return dsl.selectFrom(INTENT_FIELD_PRODUCER_METHOD)
             .where(INTENT_FIELD_PRODUCER_METHOD.GRAPH_NAME.eq(GRAPH)
                 .and(INTENT_FIELD_PRODUCER_METHOD.TYPE_NAME.eq(typeName))
@@ -276,41 +279,12 @@ class FieldProducerMethodTest {
             .fetch();
     }
 
-    private static List<no.sikt.graphitron.model.tables.records.IntentFieldProducerReferenceRecord>
-        referencesAt(DSLContext dsl, String typeName, String fieldName) {
+    private static List<IntentFieldProducerReferenceRecord> referencesAt(DSLContext dsl, String typeName,
+                                                                         String fieldName) {
         return dsl.selectFrom(INTENT_FIELD_PRODUCER_REFERENCE)
             .where(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(GRAPH)
                 .and(INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(typeName))
                 .and(INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(fieldName)))
             .fetch();
-    }
-
-    private void withCapturedStore(Consumer<DSLContext> body) {
-        try (var store = GraphitronModelStore.open()) {
-            capture(store.dsl(), GRAPH, tmp, census());
-            body.accept(store.dsl());
-        }
-    }
-
-    private static void capture(DSLContext dsl, String graphName, Path root,
-                                List<CompletionData.ExternalReference> census) {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var schemaFile = write(root, SDL);
-        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-        FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, root),
-            FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-            jooq, census, new NodeDeclaration(null));
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
     }
 }

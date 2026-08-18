@@ -32,8 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * which Java class backs a graph's type, and for {@code intent_type_backing_conflict}, the types it
  * answers more than one way.
  *
- * <p>The SDL is captured for real and the census is hand-built, the split
- * {@link FieldProducerMethodTest} argues for and the same one: a directive application is a fact
+ * <p>The SDL is captured for real and the census is hand-built. A directive application is a fact
  * capture produces, while a census row is a name, a descriptor and a decomposed declared type,
  * which is all these rules read. Hand-building it is also what lets one fixture hold the shapes a
  * closure has to get right side by side, a chain three types deep, a cycle, a coordinate two

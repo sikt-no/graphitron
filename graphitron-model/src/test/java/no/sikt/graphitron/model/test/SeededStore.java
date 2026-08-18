@@ -4,16 +4,21 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_RETURN_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -181,8 +186,20 @@ public final class SeededStore {
      * otherwise.
      */
     public static void seedField(DSLContext dsl, String graphName, String typeName, String fieldName) {
-        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
         seedType(dsl, graphName, "String", "SCALAR");
+        seedField(dsl, graphName, typeName, fieldName, "String", false);
+    }
+
+    /**
+     * The same field with its type stated: which type it names, and whether it is a list of them.
+     * The arm a case reaches for when the field's cardinality is what a relation compares against.
+     *
+     * <p>The named type is the case's to seed, only it knowing the kind; the four-argument form
+     * above is the convenience that brings its own {@code String} because it also picks the type.
+     */
+    public static void seedField(DSLContext dsl, String graphName, String typeName, String fieldName,
+                                 String namedType, boolean isList) {
+        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
         dsl.insertInto(GRAPHQL_FIELD)
             .set(GRAPHQL_FIELD.GRAPH_NAME, graphName)
             .set(GRAPHQL_FIELD.TYPE_NAME, typeName)
@@ -190,10 +207,10 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD.ORDINAL, 0)
             .set(GRAPHQL_FIELD.DECLARATION_LINE, SEED_LINE)
             .set(GRAPHQL_FIELD.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHQL_FIELD.TYPE_SDL, "String")
-            .set(GRAPHQL_FIELD.NAMED_TYPE, "String")
+            .set(GRAPHQL_FIELD.TYPE_SDL, isList ? "[" + namedType + "]" : namedType)
+            .set(GRAPHQL_FIELD.NAMED_TYPE, namedType)
             .set(GRAPHQL_FIELD.NON_NULL, false)
-            .set(GRAPHQL_FIELD.IS_LIST, false)
+            .set(GRAPHQL_FIELD.IS_LIST, isList)
             .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
             .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
@@ -272,6 +289,44 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION, position)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.CLASS_NAME, className)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.METHOD, method)
+            .execute();
+    }
+
+    /**
+     * A {@code @service} application on a field: the Java names as the author wrote them, neither
+     * resolved against anything. Either may be null, a directive naming no method being a state the
+     * resolution relations answer for rather than one a fixture is kept out of.
+     */
+    public static void seedService(DSLContext dsl, String graphName, String typeName, String fieldName,
+                                   String className, String method) {
+        dsl.insertInto(GRAPHITRON_SERVICE)
+            .set(GRAPHITRON_SERVICE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SERVICE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SERVICE.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_SERVICE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_SERVICE.SOURCE_LINE, 2)
+            .set(GRAPHITRON_SERVICE.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_SERVICE.CLASS_NAME, className)
+            .set(GRAPHITRON_SERVICE.METHOD, method)
+            .execute();
+    }
+
+    /**
+     * An {@code @externalField} application on a field, on {@link #seedService}'s terms. A null
+     * method is the shape whose fallback to the field's own name a derivation supplies, so it is
+     * stateable here rather than something a case has to reach through a real capture.
+     */
+    public static void seedExternalField(DSLContext dsl, String graphName, String typeName,
+                                         String fieldName, String className, String method) {
+        dsl.insertInto(GRAPHITRON_EXTERNAL_FIELD)
+            .set(GRAPHITRON_EXTERNAL_FIELD.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_EXTERNAL_FIELD.TYPE_NAME, typeName)
+            .set(GRAPHITRON_EXTERNAL_FIELD.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_LINE, 2)
+            .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_EXTERNAL_FIELD.CLASS_NAME, className)
+            .set(GRAPHITRON_EXTERNAL_FIELD.METHOD, method)
             .execute();
     }
 
@@ -417,5 +472,49 @@ public final class SeededStore {
             .set(JVM_CLASS_SUPERTYPE.SUPERTYPE_NAME, supertypeName)
             .set(JVM_CLASS_SUPERTYPE.DECLARED_VIA, declaredVia)
             .execute();
+    }
+
+    /**
+     * A public method on a census class, which must already be one. The descriptor is the whole of
+     * what tells two overloads of a name apart, so a case stating two rows of one name states two
+     * descriptors and nothing else.
+     */
+    public static void seedMethod(DSLContext dsl, String sourceName, String className,
+                                  String methodName, String descriptor) {
+        seedMethod(dsl, sourceName, className, methodName, descriptor, Map.of());
+    }
+
+    /**
+     * The same method with the classes its declared return type names, keyed by the position each
+     * sits at: the empty path is the type itself and a digit is a 0-based type argument, so
+     * {@code Map<String, List<Film>>} is four entries at {@code ""}, {@code "0"}, {@code "1"} and
+     * {@code "1.0"}. A position naming no class simply has no entry, which is how a primitive or an
+     * array return is stated: with an empty map.
+     *
+     * <p>Every position is invariant. A case about variance states its own rows, that being a shape
+     * no reader has wanted from here yet rather than one this helper refuses.
+     */
+    public static void seedMethod(DSLContext dsl, String sourceName, String className,
+                                  String methodName, String descriptor,
+                                  Map<String, String> declaredReturn) {
+        dsl.insertInto(JVM_METHOD)
+            .set(JVM_METHOD.SOURCE_NAME, sourceName)
+            .set(JVM_METHOD.CLASS_NAME, className)
+            .set(JVM_METHOD.METHOD_NAME, methodName)
+            .set(JVM_METHOD.DESCRIPTOR, descriptor)
+            .set(JVM_METHOD.RETURN_TYPE, "Object")
+            .set(JVM_METHOD.DECLARED_RETURN_TYPE, "Object")
+            .set(JVM_METHOD.RETURNS_CONDITION, false)
+            .execute();
+        declaredReturn.forEach((typePath, referencedClass) ->
+            dsl.insertInto(JVM_METHOD_RETURN_TYPE_REF)
+                .set(JVM_METHOD_RETURN_TYPE_REF.SOURCE_NAME, sourceName)
+                .set(JVM_METHOD_RETURN_TYPE_REF.CLASS_NAME, className)
+                .set(JVM_METHOD_RETURN_TYPE_REF.METHOD_NAME, methodName)
+                .set(JVM_METHOD_RETURN_TYPE_REF.DESCRIPTOR, descriptor)
+                .set(JVM_METHOD_RETURN_TYPE_REF.TYPE_PATH, typePath)
+                .set(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS, referencedClass)
+                .set(JVM_METHOD_RETURN_TYPE_REF.VARIANCE, "NONE")
+                .execute());
     }
 }

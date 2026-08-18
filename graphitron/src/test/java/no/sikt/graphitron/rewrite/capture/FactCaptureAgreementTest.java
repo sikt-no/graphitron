@@ -159,12 +159,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       ending at a name no entry declares, one reaching a type two ways) being ones a scan of
  *       compiled fixtures cannot arrange; it reads the relation seeded in the module whose DDL
  *       declares it, the walk having no side to bring to a question about a closure over rows;
- *       {@code no.sikt.graphitron.rewrite.derive.FieldProducerMethodTest} binds the producer pair,
+ *       {@code no.sikt.graphitron.model.intent.FieldProducerMethodTest} binds the producer pair,
  *       {@code intent_field_producer_reference} naming the method an authored Java reference spells
- *       and {@code intent_field_producer_method} the census method it resolves to, over captured SDL
- *       against a hand-built census, half its cases pinning what the resolution refuses to decide (an
- *       overloaded name is rows and an arity, never a pick) and two pinning what survives it, a
- *       reference the census matched nothing for still being a reference;
+ *       and {@code intent_field_producer_method} the census method it resolves to, to rows stated on
+ *       both sides in the module whose DDL declares them, a reference and the census it is matched
+ *       against being names and nothing else; half its cases pin what the resolution refuses to
+ *       decide (an overloaded name is rows and an arity, never a pick) and two pin what survives it,
+ *       a reference the census matched nothing for still being a reference;
  *       {@code no.sikt.graphitron.rewrite.derive.AccessorHopTest} binds the five relations an
  *       accessor hop is built from ({@code intent_delivery_container}, {@code intent_declared_type_ref},
  *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
@@ -178,10 +179,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code intent_type_backing_conflict} over the coalesce, to captured SDL over a hand-built
  *       census, its cases pinning the reachability itself, each population the closure
  *       deliberately does not reach, and every way two backings can disagree;
- *       {@code no.sikt.graphitron.rewrite.derive.ProducerCardinalityTest} binds
+ *       {@code no.sikt.graphitron.model.intent.ProducerCardinalityTest} binds
  *       {@code intent_producer_cardinality_conflict}, where a field and its producer disagree
- *       about how many, every case pairing a disagreement with an agreement over the same
- *       producer so the detection's silence is asserted and not assumed; with
+ *       about how many, to seeded rows in the module whose DDL declares it, both sides of the
+ *       comparison being a cardinality a row can state; every case pairs a disagreement with an
+ *       agreement over the same producer so the detection's silence is asserted and not assumed;
+ *       with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against {@code walk_type_backing_class} on both axes, over public fixture
  *       classes both sides can see;
