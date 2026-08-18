@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R704` | The @routine read surface: unwire the carve-outs, then derive them from facts | Ready | 2026-08-18 | [plan](routine-composition-surface-from-facts.md) |
+| `R704` | The @routine read surface: unwire the carve-outs, then derive them from facts | In Progress | 2026-08-18 | [plan](routine-composition-surface-from-facts.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-17 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R642` | graphitron-mcp reads only the store | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection <sub>blocked by: [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)</sub> | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
@@ -347,7 +347,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### routine
 
-- `R704` [**The @routine read surface: unwire the carve-outs, then derive them from facts**](routine-composition-surface-from-facts.md) — Ready, architecture
+- `R704` [**The @routine read surface: unwire the carve-outs, then derive them from facts**](routine-composition-surface-from-facts.md) — In Progress, architecture
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
 - `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — Spec, feature, blocked by [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
