@@ -34,7 +34,12 @@ select, join the parent-input VALUES table, `where`, `fetch()`, and scatter by `
 inline and nothing at all under `@splitQuery`, which is not a documented difference:
 `docs/manual/reference/directives/splitQuery.adoc` lists what `@splitQuery` composes with and
 says nothing about ordering being dropped, and its own worked example pairs `@splitQuery` with
-`@defaultOrder`.
+`@defaultOrder`. The `@defaultOrder` page says nothing about it either, including after R704's
+pass added a constraints bullet to it.
+
+Re-verified against a freshly generated tree after R704's Track A landed: the two rows methods
+still carry no sort, and the inline sibling still carries one. Nothing in that item's widening of
+`validateListRequiresOrdering` touches this coordinate.
 
 ## Field report
 
@@ -76,7 +81,10 @@ Nothing catches the drop:
 
 * `GraphitronSchemaValidator.validateListRequiresOrdering` fires on `OrderBySpec.None`. These
   fields carry `Fixed`, so the check passes, correctly, and the loss happens two layers later.
-  R704's enforcement widening cannot reach this population for the same reason.
+  R704's widening of that check has since landed (the `RoutineResolution.Chain` exemption is gone
+  and the message forks through `listOrderingDiagnostic` for a function-result terminus), and it
+  does not reach this population, for exactly that reason: the signal it keys on is never raised
+  here.
 * The primary-key fallback in `OrderByResolver.resolveDefaultOrderSpec` means a batched child
   list over a table *with* a primary key silently acquires a `Fixed` spec even with no directive
   authored, so the population that loses ordering at emit is every list-shaped batched child, not
@@ -90,16 +98,34 @@ Nothing catches the drop:
 
 ## Sketch
 
-Pass the ordering into the non-connection list arm (`orderingOf(btf.orderBy(), ...)` in
-`batchedResultOf`, the projection the connection arm already performs) and render it in
-`BatchedRowsFragments.body` before the `fetch()`. No ordering on `parentInput`'s idx is needed to
-keep the groups intact, since the scatter is a per-row dispatch into per-parent lists rather than
-a run-length walk; the sort therefore only has to state the within-group order the author asked
-for. The single-record-per-key arm stays unordered, where "no ordering" is the honest shape.
+The shape to copy is in the tree already, on the arm next door. The batched
+discriminated-interface child does exactly what this item asks for the plain batched child:
+`LauncherCommands.interfaceChildResultOf` projects `orderingOf(btf.orderBy(), ...)` into its
+`ResultShape.RecordList`, and `BatchedRowsFragments.discriminatedBody` declares the sort view
+through `OrderingBlock.declareSortView(list.ordering(), baseLocal)` and appends `.orderBy(orderBy)`
+to the batch statement when the slot is populated. Its javadoc states the correctness argument
+too: one global ORDER BY plus the `__idx__` scatter reproduces the unbatched twin's per-parent
+ordering, because the scatter appends rows to their key's bucket in fetch order. That argument is
+no longer this item's to establish.
 
-Whether the emitted sort should also carry the `Ordering.Helper` arm (an argument-driven
-`@orderBy` on a batched child) is a separate question and probably a separate item; the fixed
-spec is the reported gap.
+The work is the same pair of edits one arm over. `batchedResultOf` passes
+`orderingOf(btf.orderBy(), ...)` into the non-connection list arm instead of `null`, and
+`BatchedRowsFragments.body` renders the same two fragments against `prelude.terminalAlias()`
+before the `fetch()`. The single-record-per-key arm stays unordered, where "no ordering" is the
+honest shape. Two arms of one fragment family disagreeing on this is itself the evidence that the
+drop is an oversight rather than a design.
+
+`OrderingBlock.declareSortView` is total over both `Ordering` arms, so an argument-driven
+`@orderBy` renders for free at this layer. Whether the classifier admits one on a batched child is
+a separate question and not this item's.
+
+One place the copy is not mechanical: the fanned tenancy arm. `body`'s `TenantStrategy.Fanned`
+branch runs the batch statement once per tenant inside `fanOutBatchRows` and merges the per-key
+groups across tenants, so a per-execution ORDER BY leaves each key's list sorted within a tenant
+block and unsorted across blocks. `discriminatedBody` never meets this (single-tenant by the
+command backstop, so it adds the dsl declaration unconditionally). Decide it explicitly rather
+than inheriting it: either sort each key's merged list after the scatter, or state the
+tenant-blocked order as the contract.
 
 ## Tests
 
@@ -130,10 +156,8 @@ Asserting on the generated `.orderBy(...)` string is banned by
   reported this coordinate reported that one first and reads the two as one bug, so fixing either
   alone leaves their schema unordered at the other end.
 
-Taken together with the first three, the "a list result is never unsorted" invariant currently has
-one enforcer (`validateListRequiresOrdering`) keyed on a signal (`OrderBySpec.None`) that three
-of the four known leak sites do not produce. Whether the enforcement should re-source off the
-launcher relation's ordering slot, where every one of them is visible as `RecordList` with an
-absent `Ordering`, is worth deciding once rather than per item; `roadmap/root-family-validator-mirror-gaps.md`
-(R558) already proposes that re-sourcing for its own bullet.
+The census that used to close this file has moved to R677, which owns it and keeps it current;
+this item is one entry there and should not restate it. What stays here is the local
+consequence: closing this coordinate removes one leak site and leaves the invariant unenforced,
+so the sketch above is worth landing on its own terms and is not a step toward the invariant.
 
