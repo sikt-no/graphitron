@@ -479,10 +479,10 @@ around it.
 
 | Toggle | Collector | Fact source |
 |---|---|---|
-| `classification` | `collectClassificationHints` | the claim views, both grains, at the vocabulary they carry (built: `ClaimClassifiers`) |
-| `inferredDirectives` | `collectInferredDirectiveHints`, renderers for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` renderer (built: `BoundTables.unambiguous`); `intent_resolved_field_claim` over `intent_column_match_claim` for the `@field` renderer's column arm and `intent_class_member_slot` for its class-member arm (built: `FieldMemberName`), the second reached through `TypeMemberScope`; the `@reference` renderer fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain |
-| `inferredDirectives` | `collectAbsentTableHints`, a second pass inside the inferred-directive collector | `intent_bound_table` (built: `BoundTables.unambiguousByType`) |
-| `separateFetch` | `collectSeparateFetchHints` | `intent_field_separate_fetch`, the marked rules only (built: `ClaimFacts`, `SeparateFetchRule`) |
+| `classification` | `collectClassificationLabels` | the claim views, both grains, at the vocabulary they carry (built: `InlayFacts`) |
+| `inferredDirectives` | `collectInferredDirectiveHints`, collectors for `@table`, `@field`, `@reference` | `intent_bound_table` for the `@table` collector; `intent_resolved_field_claim` over `intent_column_match_claim` for the `@field` collector's column arm and `intent_class_member_slot` for its class-member arm, the second reached through `TypeMemberScope` (both built: `InlayFacts`); the `@reference` collector fires only on an *omitted* path, so its source is the foreign-key discovery between the two types' bindings (unbuilt), not the authored chain, and it is the surface's one remaining read of the classification projection |
+| `inferredDirectives` | `collectAbsentTableHints`, a second pass inside the inferred-directive collector | `intent_bound_table` (built: `InlayFacts`) |
+| `separateFetch` | `collectFetchMarkers` | `intent_field_separate_fetch`, the marked rules only (built: `InlayFacts`, `SeparateFetchRule`) |
 | `hoverClassification` | gates `DeclarationHovers` (see hover) | the claim views, as the `classification` toggle above, plus the per-fact relations (built) |
 
 **Code actions.** Two branches, deliberately not sharing a path.
@@ -529,6 +529,20 @@ tree-derived type index (`refreshTypeIndex`'s declared/referenced sets) and the 
 recalculation bookkeeping it aims retire with the keystroke cadence (see the diagnostics
 paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retires with the
 java-source family: the LSP walks nothing.
+
+**What still reads the projection.** Three sites, and they are the residue of the inventory rather
+than a separate concern. Naming them here because "every feature moves" is checkable only against a
+list of what has not.
+
+* `InlayHints.collectInferredReferencePath` asks for the field classification at a coordinate, to
+  render the path the author omitted. The inlay row above says why no relation answers yet: the
+  overlay fires on an *omitted* path, so the fact it wants is the foreign-key discovery between two
+  types' bindings, which nothing derives.
+* `DeclTarget` asks for the field classification at a coordinate, to decide which Java declaration a
+  member name binds to. Likely answerable from the claim views already, since the decision it makes
+  is the one those views carry; unverified.
+* `FieldCompletions` asks whether a site is a payload data field, through `siteContext`, to decide
+  whether to offer the source sigil. A narrow predicate over a distinction no relation states.
 
 ## Resolved questions
 
