@@ -143,6 +143,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       shape it has to answer for is a shape the catalog already declares, half its cases pinning
  *       the coordinates that discover nothing because the boundary of a discovery is what the
  *       relation claims;
+ *       {@code no.sikt.graphitron.rewrite.derive.RoutineReturnBindingTest} binds
+ *       {@code intent_routine_return_binding}, the table a type is bound to by being what a chain
+ *       returns, and {@code intent_resolved_type_binding}, where that population meets the
+ *       {@code @table} one, including the seat the derivation excludes and the arity the
+ *       coalescing recount produces;
  *       {@code no.sikt.graphitron.rewrite.derive.FieldColumnTableTest} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
@@ -288,6 +293,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
+        registrations.put("intent_routine_return_binding", Arm.DERIVED);
+        registrations.put("intent_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_scope", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);

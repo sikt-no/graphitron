@@ -263,8 +263,56 @@ carries the one axis that cannot be done by deletion.
    view with live consumers and its own anchor, so it is named here rather than folded in: it
    belongs with slice 12's retirement pass or beside slice 9, whichever reaches the column-scope
    readers first.
+
+   *Narrowed by slice 9's store half, to two cases and one defect.* With both binding rules reading
+   the resolution, a child-position single-node routine field now resolves through `NAMED_TYPE_TABLE`
+   for free, its named type being bound by the return derivation. What a `CHAIN_TERMINAL` rule is
+   still needed for is the root position, which that rule's root-parent guard masks, and the
+   routine-then-hops chain, whose landing is not its named type's binding. The defect is
+   `PATH_TERMINAL`: it walks from the *enclosing* type's binding, so on a child field carrying
+   `@routine` plus `@reference` it can resolve the same elements out of the parent's table and name a
+   destination the chain never visits. That is not new with this slice and it is not the chain arm's
+   absence either; it is the first rule missing a guard for a field whose path does not depart the
+   parent.
 9. **The return binding.** With slice 7 in hand, the `@table` demand becomes "the terminus is
-   resolvable", not "the author wrote a directive". See below.
+   resolvable", not "the author wrote a directive". See below. *Store half landed; the classifier
+   half is what remains.*
+
+   **The keying decision is type scope, and the read side is what settles it.** Every relation that
+   holds a binding today is keyed by type, and every reader of one holds a type: the position-0 seed
+   of the reference recursion, both rules of `intent_field_column_scope` that read a binding, the
+   backing view's table arm. An edge-scoped binding feeds none of them. It would make each reader
+   learn "or, where my type arrived through a routine edge, ask the edge", which is the carve-out
+   shape spread over four relations instead of one directive, and a child field does not hold the
+   edge it arrived through in the first place. What edge scope was for is two routines sharing one
+   return type, and type scope does not actually forbid that: two routines landing differently are
+   two rows with `candidates = 2`, which is `intent_bound_table`'s own discipline, and a reader may
+   later accept an arity above one where every candidate exposes the column it needs. So the
+   conflict is deferred to a reader's relaxation rather than bought, and the anchor problem is not
+   bought at all.
+
+   **Two relations, not an arm.** `intent_bound_table` is the `@table` population and its comment
+   says so, so the routine population is its own relation and `intent_resolved_type_binding` is
+   where they meet, on the stratum's stated provenance rule and on `intent_type_backing`'s
+   precedent. The reduction declines the provenance column that precedent carries, and that is the
+   one place the two differ: a type whose `@table` and whose routine return name the same table is
+   one binding, and tagging the rule would hand `intent_field_column_scope` two rows at a site whose
+   one-row-per-site property is what lets that view be a union with no collapse over it. Provenance
+   is a join to the arm, both arms being residents.
+
+   **The carrier is excluded by naming its seat.** A mutation root's `@routine` field with no
+   `@reference` is where the payload carrier lives, and binding a carrier to the routine result
+   would name a table for a type no table stands for. The store holds no carrier fact, so the
+   exclusion names that seat, which is exactly the classifier's own fork; it costs the routine write
+   chain nothing, that shape carrying `@reference` by construction, and it narrows to the carrier
+   itself the day a carrier relation lands.
+
+   **The classifier half has a shape constraint the plan did not have.** The derived binding cannot
+   be minted inside `BuildContext.resolveReturnType`, because `classifyMutationRoutineCarrier`
+   separates the direct shape from the carrier by asking whether the return is already
+   `TableBoundReturnType`. A globally derived binding would answer yes for every carrier and collapse
+   that fork. So the derivation is minted at the chain read seat and `resolveReturnType` keeps
+   meaning "what the author declared", which is the same seat-locality the store's own exclusion has.
 10. **The name-matched arm on the hop view.** *The arm landed with slice 8; the anchor half is what
     remains.* `via = 'NAME_MATCH'` is the third arm, gated on slice 7's `table_type` discriminator,
     enumerating as candidate departures every FUNCTION-typed table in the graph's sources that
@@ -288,6 +336,15 @@ carries the one axis that cannot be done by deletion.
     Recommend the first: the second reinstates a written-directive demand one slice after removing
     it, and narrows slice 9 to a capability it does not claim. Either way the choice is slice 9's
     keying decision seen from the read side, so settle the two together.
+
+    *Closed by slice 9's store half, the first way.* The recursion's seed reads
+    `intent_resolved_type_binding`, so a path departing a routine-return type resolves whether or
+    not the author also wrote the directive, and nothing about the seed is routine-specific. Two
+    readers beyond the seed took the same repoint for the same reason, both
+    `intent_field_column_scope` rules that read a binding and `intent_type_backing`'s table arm.
+    `intent_field_separate_fetch` deliberately did not: its two joins over a binding are the
+    record-handed precedence question its own comment states, and whether a routine-return parent is
+    a table row or a handed row is that question rather than a substitution to make in passing.
 11. **The carrier's explicit data-field path**, single- and multi-hop, reading slice 10 rather than
     parsing at a grounding seat. Needs the residual-path correlation arm described under "What stays
     genuinely open" below, which is the one part of this slice the view does not hand over.
