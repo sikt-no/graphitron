@@ -54,10 +54,15 @@ one, and lands on the same deferral for the same reason. The census is a class c
 no fourth row, but the deferral's restatement has to be worded at class granularity rather than
 naming `@splitQuery` alone.
 
-Every other `BatchKeyField` carrier (the Record-sourced `BatchedTableField` arm, `ServiceTableField`,
-`ServiceRecordField`, `BatchedPivotField`, and the batched polymorphic leaves) is rejected
-per-variant at nested depth by `validateVariantIsSupportedAtNestedDepth` before the multi-parent
-question can matter; for those the catch-all fires redundantly on top of the per-variant rejection.
+Every other `BatchKeyField` carrier is rejected per-variant at nested depth by
+`validateVariantIsSupportedAtNestedDepth` before the multi-parent question can matter; for those the
+catch-all fires redundantly on top of the per-variant rejection. Enumerated against the capability's
+own membership list, that is the Record-sourced `BatchedTableField` arm, `ServiceTableField`,
+`ServiceRecordField`, `BatchedPivotField`, the batched polymorphic pair `BatchedInterfaceField` /
+`BatchedUnionField`, and `BatchedTableInterfaceField`, the discriminated interface child's batched
+half. The last of those is the newest member (it raised `LeafRatchetTest`'s `CHILD_FIELD_LEAVES` pin
+from 22 to 23), and it is named separately from the polymorphic pair because the capability's own
+javadoc separates them; `isNestedWireableLeaf`'s `default` arm covers it either way.
 The keyed-lookup family contributes no separate entry to that list: the lookup leaves no longer have
 classes of their own (see "Closed questions" below), so their record-sourced survivor *is* the
 Record-sourced `BatchedTableField` arm already named. If a future item admits one of these at nested
@@ -148,9 +153,16 @@ read, and one `<NestedType>Fetchers` class carries one typed read per coordinate
 return type for `ComputedField`, the terminal column's type for a Direct reference. It is the exact
 read-side analogue of the `ColumnBackedField` arm's `columnClass` comparison.
 
-The reference half compares **one fact more: the resolved terminal table**
-(`ServiceCatalog.terminalTableForReference` over `joinPath()`, or equivalently the last hop's
-`targetTable()`), and this is not belt-and-braces. The original draft justified comparing only
+The reference half compares **one fact more: the terminal table of `joinPath()`**, read as the last
+step's `targetTable()`, and this is not belt-and-braces. Read it off the model, not through
+`ServiceCatalog.terminalTableForReference`: `GraphitronSchemaValidator` holds no catalog (it is
+stateless, `validate(GraphitronSchema)` and nothing else), and the model read needs none.
+`JoinStep` permits only `Hop`, and the `HasTargetTable` capability every permit mixes in guarantees
+a pre-resolved `targetTable()`, so the read is total on a non-empty path with no `Optional` to
+unwrap. It is also strictly the fact wanted: the catalog method returns empty for a non-FK-derived
+terminal step, where the arm still wants the two sides compared. The path cannot be empty on a valid
+schema, because `validateColumnBackedReferenceField` rejects an empty `joinPath()` outright
+("@reference path is required") on each parent instance. The original draft justified comparing only
 `domainReturnType()` on the grounds that the terminal column derives from the single SDL declaration
 on the shared type, so it is identical across parents by construction. That is true for the
 `{table: ...}`-entry form this item targets, and false for a `{key: ...}` first step, because there
@@ -276,9 +288,12 @@ today's resident: the Table-sourced `BatchedTableField` arm, whose rows-method a
 nested-type-keyed while its key derivation is per-anchor. The comment must not carry the
 three-class census above; an unguarded inventory in a code comment rots silently, so the census
 lives in this item body and, at Done, in the changelog entry, while the migrated witness test is
-what pins the resident. While there: both the catch-all and the class-mismatch site name the leaf
-class in prose while calling the single-argument `deferred(...)`, dropping the typed variant
-payload; use the class-carrying overload. No successor roadmap item is filed: a deferred rejection
+what pins the resident. While there: the catch-all names the leaf class in prose while calling the
+single-argument `deferred(...)`, dropping the typed variant payload; move it onto the class-carrying
+overload. That is the only site to move. The class-mismatch site is not a second deferral site
+today, it calls `Rejection.structural(...)`, which has no class-carrying overload, so the only
+change there is the membership-differs rearm in the bullet above; mismatches that keep the
+structural arm keep the single-argument call. No successor roadmap item is filed: a deferred rejection
 whose mechanism is documented at the rejection site does not need a standing item, and a future
 admission should be filed fresh, with demand in hand, against whatever the minting and registration
 machinery looks like then. This mirrors how this item's own `LookupTableField` question was closed
@@ -362,9 +377,12 @@ All in `GraphitronSchemaValidator`, plus fixtures:
   needs no decision, because the leaf no longer exists. Neither does its batched sibling: the
   dissolution folded *both* lookup leaves onto their fetch siblings plus a `lookup()`
   (`LookupResolution`) facet, so the survivors are `TableField` inline and `BatchedTableField`
-  batched, source-gated as usual. `LeafRatchetTest`'s `CHILD_FIELD_LEAVES` history line records the
-  24-to-22 drop, and `RetiredVocabularyGuardTest` maps the two retired spellings onto "the
-  {table,record}-sourced lookup-keyed `BatchedTableField` arm". The inline survivor is exactly the
+  batched, source-gated as usual. `LeafRatchetTest`'s `CHILD_FIELD_LEAVES` history line records that
+  fold as the 24-to-22 drop, naming `LookupTableField` and `BatchedLookupTableField`.
+  `RetiredVocabularyGuardTest` does not carry those two spellings; the retired lookup names it maps
+  onto "the {table,record}-sourced lookup-keyed `BatchedTableField` arm" are the earlier
+  `SplitLookupTableField` / `RecordLookupTableField` pair from the five-variant dissolution below.
+  Both retirements land on the same survivor, so the conclusion is unchanged either way. The inline survivor is exactly the
   `TableField` arm R23 already admitted across parents; the record-sourced batched survivor is not
   nest-wireable; the table-sourced batched survivor is the deferral this item documents, which is why
   that row is worded at class granularity.
