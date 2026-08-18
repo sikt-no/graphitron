@@ -14,9 +14,10 @@ last-updated: 2026-08-18
 
 `@routine` puts a table-valued function call in the FROM clause. `WHERE` and `ORDER BY` are
 different clauses of the same statement, and nothing about a function in the FROM stops either from
-being written. Yet a `@routine` field today cannot filter, cannot sort at the root position, cannot
-paginate, and cannot declare its return type without restating the routine as a `@table`. Four
-refusals, four different files, no shared seat.
+being written. Yet a `@routine` field today cannot filter, cannot sort at the root position, and
+cannot paginate. It cannot declare its return type without restating the routine as a `@table`, and
+a child of that return type cannot reach its own `@table`-bound target without restating that too.
+Five refusals, five different files, no shared seat.
 
 This item owns the routine read surface end to end. It absorbs
 `roadmap/routine-chain-order-directive-silent-noop.md` (R659), which reported one of the four and
@@ -67,6 +68,10 @@ render layer, none of the four is a capability gap. They are unwired slots.
 | Must carry `@table`, and it must name the terminus
 | A resolved terminus instead of a written directive. The only axis needing new model work.
 
+| Hop to a `@table` child
+| Requires an explicit `@reference` naming a table the child's return type already names
+| Nothing. `synthesizeNameMatchedJoin` already resolves it; the element-less inference arm just lacks the gate that reaches it.
+
 | Lookup (`@lookupKey`)
 | Deferred
 | Genuinely unbuilt; stays with `roadmap/routine-chain-fetch-form-breadth.md` (R447).
@@ -90,9 +95,13 @@ So the refusals do not live in the emitters. They live in four places upstream t
   `RoutineResolution.Chain` read surface empty, plus a literal `List.of()` and a literal
   `new OrderBySpec.None()` at each chain classifier.
 
-R659 named that triple exactly, from inside the ordering axis, and deferred the restructure as
-unowned. Widening the census by three axes changes the arithmetic: the axes are not four problems
-sharing a smell, they are one hardcode with four spellings.
+Plus one that is not a hardcode but a missing gate: `BuildContext.parsePath`'s element-less FK
+inference never asks whether its source is a routine result, though the `{table:}` element branch in
+the same file does.
+
+R659 named the first triple exactly, from inside the ordering axis, and deferred the restructure as
+unowned. Widening the census changes the arithmetic: these are not five problems sharing a smell,
+they are one catalog fact the generator restates as five unrelated refusals.
 
 ## Why they all read as one refusal
 
@@ -120,14 +129,14 @@ removed, which is what R659 already specified.
 
 ## Two tracks
 
-The four unwirings and the return binding pull in different directions, and conflating them is what
+The unwirings and the return binding pull in different directions, and conflating them is what
 would make this item unshippable. Track A deletes carve-outs; Track B adds a fact. Track A is
 therefore *not* leaf-zoo expansion, which is why it can ship first without violating the drain rule:
 it removes pins and literals from the transitional surface rather than adding a leaf to it.
 
 ### Track A: unwire the read surface
 
-One pass, because the four axes touch the same six sites and splitting them means writing the pin
+One pass, because the axes touch the same handful of sites and splitting them means writing the pin
 restatement, the deferral message and the manual's deferral sentence twice each, with the
 intermediate version wrong.
 
@@ -146,10 +155,13 @@ intermediate version wrong.
    `validateListRequiresOrdering`. A list-shaped routine terminus with no `@defaultOrder` becomes a
    build error.
 4. **Pagination follows.** With an `Ordering` resolving, the `DirectiveConflict` on a routine
-   terminus loses its premise and becomes the ordinary pagination-requires-ordering rule. The
-   remaining routine-specific work is the seek predicate over a lateral start; see the caveat under
-   Track B's open questions.
-5. **Unpin.** `QueryTableField`'s four-way conjunction goes. Whatever survives is stated per axis
+   terminus loses its premise and becomes the ordinary pagination-requires-ordering rule. Measured,
+   not assumed: see "Keyset seek over a routine in the FROM" below. There is no routine-specific
+   seek work.
+5. **The implicit hop out of a routine result.** Drop the `@reference` an author must write today
+   to reach a `@table`-bound child from a routine-result parent; see "The redundant `@reference`"
+   below.
+6. **Unpin.** `QueryTableField`'s four-way conjunction goes. Whatever survives is stated per axis
    against the axis that owns it, so the next read-surface directive cannot fall through a
    conjunction and a predicate a class away.
 
@@ -158,7 +170,7 @@ intermediate version wrong.
 Track A leaves the verdicts correct and still hardcoded. Track B removes the generator of holes, and
 carries the one axis that cannot be done by deletion.
 
-6. **Capture the routine catalog facts.** The store cannot answer any of this today. The `sql_`
+7. **Capture the routine catalog facts.** The store cannot answer any of this today. The `sql_`
    family has schema, table, column, constraint, primary key, referential constraint and index, and
    no routine anywhere. A TVF result table is captured as an ordinary `sql_table` row with
    `TableOptions.type().isFunction()` dropped on the floor, so the store cannot distinguish the one
@@ -168,12 +180,131 @@ carries the one axis that cannot be done by deletion.
    at all. Both are pure transcriptions of a catalog walk that already runs, and this slice is worth
    landing on its own merits: the store is currently lossy about a catalog object the generator
    depends on.
-7. **The terminus and its kind as a derived view.** Where a coordinate's chain lands, and whether
+8. **The terminus and its kind as a derived view.** Where a coordinate's chain lands, and whether
    that landing is a function result. Every axis reads it, and it is what makes the verdicts
    comparable instead of six independent opinions.
-8. **The return binding.** With slice 7 in hand, the `@table` demand becomes "the terminus is
+9. **The return binding.** With slice 7 in hand, the `@table` demand becomes "the terminus is
    resolvable", not "the author wrote a directive". See below.
-9. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf.
+10. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf.
+
+## The redundant `@reference`
+
+Reaching a `@table`-bound child from a routine-result parent requires an explicit `@reference`
+naming a table the child's own return type already names:
+
+```graphql
+type Brukertilgang @table(name: "mine_tilganger") {
+  tilgangsrolle: Tilgangsrolle @reference(path: [{table: "rolle"}])
+  organisasjon:  Organisasjon  @reference(path: [{table: "organisasjon"}])
+  miljo:         Miljo         @reference(path: [{table: "miljo"}])
+}
+```
+
+`Tilgangsrolle` is `@table(name: "rolle")`. The path element restates it. On an ordinary table
+parent no directive is needed at all, because FK auto-discovery finds the join; on a routine-result
+parent there are no foreign keys, so auto-discovery fails and the author is told to write a path.
+
+But the path element is not supplying a join either. It resolves through
+`BuildContext.synthesizeNameMatchedJoin`, which ignores foreign keys entirely and keys the hop by
+matching the target's primary-key column names against the routine result's exposed columns. The
+only input it takes from the directive is the target table name, which the return type already
+carries. So the author writes a directive whose entire content is derivable.
+
+### Two seats, opposite gaps, one derivation written twice
+
+The capability exists and is wired inconsistently.
+
+[cols="3,2,2"]
+|===
+| Seat | Implicit (no `@reference`) | Explicit `{table:}`
+
+| Read child on a routine-result parent
+| rejected: "no foreign key found between tables ..."
+| works, name-matched
+
+| Mutation payload carrier's data field
+| works, name-matched
+| deferred (`roadmap/routine-carrier-explicit-data-field-path.md`, R622)
+|===
+
+Exactly inverted, for the same relation between the same two catalog objects. And the derivation
+behind both cells that work is the same loop written twice:
+`BuildContext.deriveRoutineCarrierPairs` and `BuildContext.synthesizeNameMatchedJoin` both walk the
+target's primary-key columns, find the same-named column on the routine result, and pair them. They
+differ in their rejection text and in whether they return pairs or append a `JoinStep.Hop`.
+
+### Why the implicit read case falls through
+
+`BuildContext.parsePathElement`'s `{table:}` branch gates on the catalog fact before reaching the
+FK machinery:
+
+```java
+if (catalog.isTableValuedFunction(currentSourceSqlName)) {
+    synthesizeNameMatchedJoin(tableName.get(), currentSourceSqlName, ...);
+    return;
+}
+var fks = catalog.findForeignKeysBetweenTables(currentSourceSqlName, tableName.get());
+```
+
+`parsePath`'s element-less inference arm, about 590 lines earlier in the same file, has no such
+gate. It goes straight to `findForeignKeysBetweenTables`, finds zero, and emits
+`fkCountMessage(..., directiveAbsent = true)`.
+
+That message is not merely unhelpful here, it is wrong. It tells the author "the catalog has no FK
+directly connecting these two tables, so a single-hop `@reference(path: [{key: ...}])` will not
+resolve" and steers them toward an intermediate table or a `condition:` predicate, when the
+single-hop `{table:}` form resolves fine through the name-match the author is not being told about.
+
+The fix is to hoist the same gate into the inference arm. Both parent shapes route through
+`parsePath`, so it covers the table-bound parent today and the result-record parent slice 9
+introduces, with no second implementation.
+
+### What is genuinely author-supplied, and stays
+
+Dropping the directive is safe only where the name-match succeeds, which is the same precondition
+the explicit form already has: the target's primary-key columns must be exposed, by SQL name, on the
+routine result. A schema whose explicit `@reference` works today therefore keeps working with the
+directive deleted, by construction. Where it does not hold, the author still needs a `condition:`
+element, and the rejection should say so in those words rather than in the FK vocabulary. Explicit
+`@reference` stays legal everywhere: this makes it optional, not wrong, and a multi-hop path or a
+non-name-matched join has no implicit spelling.
+
+## Keyset seek over a routine in the FROM
+
+The previous draft flagged the seek predicate over a lateral routine call as the one Track A item
+that might not be pure wiring. Measured on PostgreSQL 16 against a 200k-row fixture with an
+inlinable `LANGUAGE sql` TVF and an opaque `LANGUAGE plpgsql` one; it is pure wiring.
+
+The emitted shape is jOOQ's `.seek(page.seekFields())` over `.from(<routine local>)`, which is a
+WHERE-clause row-value comparison. A function in the FROM is a table expression like any other, so
+all four shapes return correct pages:
+
+* root single-node chain, seeking on the routine's own result columns;
+* the same over the opaque function;
+* routine-then-hop chain, seeking on the terminus primary key;
+* a mixed seek naming one column from the routine result and one from the hop terminus.
+
+The correlated child form (`CROSS JOIN LATERAL <routine>(...)` with the seek in the outer WHERE)
+returns correct pages too.
+
+The plans are better than the caveat assumed. For the inlinable function PostgreSQL pushes the
+row-value predicate *into* the function body, so the routine result is never materialised
+(`Seq Scan on film`, `Filter: ... AND (ROW((film_id % 997), film_id) > ROW(5, 100000))`). For the
+opaque function it is a `Function Scan` with the filter applied above, which is what any WHERE on
+an opaque function gets and is not a pagination-specific cost.
+
+Dialect note, since it came up: H2 is only the generator's internal fact store
+(`GraphitronModelStore`) and never executes a generated query. Generated SQL runs against the
+consumer's database, and graphitron already carries `SqlDialectFamily` for that. Both seek
+spellings were checked anyway, the row-value form and the expanded
+`a > ? OR (a = ? AND b > ?)` chain jOOQ emits where row values are unsupported, and both return the
+same rows.
+
+What this does **not** settle is cursor columns spanning two chain nodes, which
+`OrderByFragments.fixedColumnParts` cannot render for the single-alias reason
+`roadmap/routine-chain-ordering-spans-nodes.md` (R662) documents for sort columns. The database is
+fine with it (shape 4 above); the renderer is the constraint, and it is R662's constraint, not a
+new one.
 
 ## The return binding, in full
 
@@ -215,7 +346,7 @@ This is the one axis that must not be done leaf-side. Adding a landing plus an e
 `docs/architecture/explanation/fact-model.adoc` forbids in as many words ("a capability is added by
 adding a fact relation, never a new leaf type") and which
 `docs/architecture/explanation/pipeline-overview.adoc` restates as the migration's standing rule
-("new facts land only in the store"). Hence slices 6 to 8.
+("new facts land only in the store"). Hence slices 7 to 9.
 
 One more syntactic reader to catch, because a fix that only moves the resolver leaves it behind:
 `GraphitronSchemaBuilder.unsupportedFacetCarrierReason` reads `hasAppliedDirective(DIR_TABLE)` off
@@ -398,8 +529,8 @@ wrong and should change first.
   `roadmap/routine-write-key-capture-unordered.md` (R660): two other leak sites in R677's census,
   untouched here.
 * `roadmap/routine-write-result-shapes.md` (R454): the Mutation write side, procedures and
-  scalar/void routines. Its call surface is the same one slice 6 would capture, so the two should be
-  read together before slice 6 fixes a shape.
+  scalar/void routines. Its call surface is the same one slice 7 would capture, so the two should be
+  read together before that slice fixes a shape.
 * `roadmap/planners-read-facts-emitters-read-commands.md` (R682) and
   `roadmap/delivery-verdict-derives-from-the-store.md` (R666): the architecture Track B pilots, and
   the nearest precedent for replacing a hand-maintained negative-space switch with a store
@@ -414,10 +545,14 @@ wrong and should change first.
   and `@condition` should match, but both aliases are live in the emitted query and the author may
   reasonably want to filter the routine result before the hop. Same shape as R662's question, one
   clause over; decide the two together or state explicitly that filtering is terminus-only for now.
-* **Pagination's seek predicate over a lateral start.** The connection shape is source-agnostic but
-  the keyset predicate and cursor round-trip are not obviously so when the FROM is a lateral call.
-  Establish that before promising the axis; it is the one Track A item that might not be pure
-  wiring.
+* **Does the implicit hop compose past one element?** Slice 5 covers the single name-matched hop,
+  which is what the return type can supply on its own. A two-hop path out of a routine result has no
+  implicit spelling and should keep needing `@reference`; confirm that reads as a rule rather than as
+  an arbitrary depth limit.
+* **Should R622 fold in?** It is the mirror image of slice 5 (explicit path deferred on the carrier
+  where the read side has explicit-only), and both cells come off the same duplicated derivation.
+  Unifying `deriveRoutineCarrierPairs` and `synthesizeNameMatchedJoin` closes both at once; left as
+  its own item for now because the carrier's multi-hop half is real work slice 5 does not need.
 * **Is `sql_routine` a subject, or is function-ness a column on `sql_table`?** A TVF has a table
   identity and a callable identity and they are not the same object; the parameters belong to the
   callable. Non-table-valued routines (R454's territory) have a callable and no table at all, which
@@ -426,7 +561,7 @@ wrong and should change first.
   closed axis vocabulary? The latter is tempting and probably wrong: the axes carry different
   payloads, so a shared relation goes wide and sparse or pushes payload to a side table per axis.
 * **Two routines, one return type.** Fine under an edge-scoped binding, a conflict under a
-  type-scoped one. Follows from where the binding fact is keyed, which is slice 8's real decision.
+  type-scoped one. Follows from where the binding fact is keyed, which is slice 9's real decision.
 * **Does `@table` on a routine return stay legal?** Assume yes so existing schemas keep compiling.
   Confirm nothing starts flagging the now-redundant annotation, and decide whether the sakila
   fixtures migrate or keep one of each form.
