@@ -69,7 +69,7 @@ The verbatim input stays in its own column beside the two parts, and the split i
 
 [cols="2,1,1,2"]
 |===
-| Input | `schema_part` | name part | Reads as
+| Input | `namespace_part` | `name_part` | Reads as
 
 | `film`
 | NULL
@@ -109,6 +109,37 @@ where the pipeline's is a fallback that has to be known about. Capture states wh
 lets the join say nothing matched, which is the same reason the store keeps a dotted
 `columnMapping` right side whole for its detection instead of repairing it.
 
+### Columns: name the parse, not the meaning
+
+Each of the nine qualifiable references keeps its verbatim column and gains four:
+
+```
+<col>                      the value as written
+<col>_namespace_part       left of the first period, NULL when no period appeared
+<col>_name_part            right of the first period, or the whole value when none appeared
+<col>_namespace_part_upper folded, for the case-insensitive catalog match
+<col>_name_part_upper      folded, same
+```
+
+`namespace_part` rather than `schema_part`, and `name_part` rather than `table_part`, because the
+qualifier's meaning is dialect-dependent where its syntax is not. A constraint name sits in the schema
+namespace in Oracle and in the table namespace in PostgreSQL, so neither `schema` nor `table` is true
+of `key_ref` in general. The same reasoning covers the columns where one dialect's answer happens to be
+unambiguous today: what capture records is the result of splitting on a period, and a column named for
+what that part is later interpreted *as* would be asserting something the parse does not know.
+
+This adopts vocabulary the tree already uses for the distinction rather than minting a term.
+`JooqCatalog` calls `parseQualifiedForeignKeyName` "the FK-namespace sibling of
+{@link #parseQualifiedTableName}", contrasts it with "the jOOQ Java-constant namespace", and describes
+FK matching as "dual-namespace"; the DDL uses the word in eight comments.
+
+The asymmetry with the `sql_` family is deliberate and worth stating, because it will read as an
+inconsistency otherwise. `sql_table.table_schema` keeps its name: it is a catalog fact read from a
+database that calls it a schema, not a piece of a parsed string. So a join reads
+`namespace_part_upper = table_schema_upper`, and the mismatch across the equals sign is exactly the
+boundary where a syntactic part becomes a semantic one. Naming both sides the same would hide that
+boundary rather than clarify it.
+
 ### `key_ref`'s dot is a scope hint, not a qualified name
 
 Worth separating, because treating it as a schema-qualified name would be wrong about SQL. A
@@ -123,15 +154,20 @@ it exactly that way in `findForeignKey(name, currentSourceSqlName, schema)`. The
 this ("the qualifier binds the FK-holder (child / referencing) schema, which is where jOOQ's generated
 `Keys` class declares the constraint") and the new columns must not contradict it.
 
-Consequences: the split still happens, because the grammar admits a dot and both halves are used. The
-schema column is commented as the FK-holder table's schema, never as the constraint's schema. And its
-join target is two columns of a four-column key, `sql_constraint(table_schema, constraint_name)`,
-narrowed by the source table the walk is standing on, which is a different join from the table case
-and should not be written as though it were the same one.
+Which dialect decides *what* the namespace is, and that is the second reason the column cannot be
+called `schema_part`: a constraint name lives in the schema namespace in Oracle and in the table
+namespace in PostgreSQL. So `key_ref_namespace_part` holds a namespace whose kind the parse does not
+determine, and its comment says which namespace the resolver currently reads it as rather than
+asserting what the string is.
 
-Routine names are the opposite case and take the table treatment unchanged: a routine *is* a
-schema-qualified object, and the pipeline already parses `routine_ref` with
-`parseQualifiedTableName`.
+The split still happens, because the grammar admits a dot and both halves are used. Its join target is
+two columns of a four-column key, `sql_constraint(table_schema, constraint_name)`, narrowed by the
+source table the walk is standing on, which is a different join from the table case and must not be
+written as though it were the same one.
+
+Routine names are the clearer case and need no special handling: the pipeline already parses
+`routine_ref` with `parseQualifiedTableName`, and the namespace a routine's qualifier names is the
+schema in every dialect jOOQ models as one. Same columns, same split; only the comment differs.
 
 ### The fold, on both sides
 
