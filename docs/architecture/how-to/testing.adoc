@@ -132,6 +132,43 @@ Only `GeneratorDeterminismTest` is `@Tag("cross-cutting")`; the rest carry one o
 * `GraphQLQueryTest`, `FederationEntitiesDispatchTest`: `@ExecutionTier`.
 * `GeneratorDeterminismTest`: `@Tag("cross-cutting")`, system-level ratchet for the three-clause writer contract (determinism + minimal-change writes + clean orphan removal). Does not fit pipeline (no classifier-to-TypeSpec assertion), compilation (no compile happens), or execution (no SQL).
 
+== Where a store-backed test gets its store
+
+Tier answers how far a test runs. A second question is orthogonal to it: a test that reads the fact store has to get rows in front of itself, and *how it populates the store follows what the test is about*, not which module it happens to sit in.
+There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`) fails the build on a test that opens a `GraphitronModelStore` itself instead of taking one from a harness.
+
+[cols="1,1,2"]
+|===
+| Subject | Harness | What it hands you
+
+| A relation's algebra: what a view or a check constraint returns given rows
+| `SeededStore` (`graphitron-model` test-jar)
+| Named row-inserting helpers over the generated model tables. It cannot run a crawler, which is the point: a test written against it cannot accidentally assert crawler behaviour, and it can reach states no crawler produces.
+
+| The store's lifetime alone
+| `FactStores` (`graphitron-model` test-jar)
+| `inMemory()` and `fileBacked(home)`, named rather than selected by a flag.
+
+| A crawler, or agreement between a store-native relation and the classification walk
+| `CapturedStore` (`graphitron` test-jar)
+| A real capture over a fixture document, with the fixture file, the caller-supplied graph identity, and named arms saying what each capture's inputs are.
+
+| The dev loop's own wiring, over rows only a pipeline run can produce
+| `BuiltStore` (`graphitron` test-jar)
+| A real `buildOutput()` run into a store on disk that outlives the run.
+
+| Your own module's reads over a populated store
+| A fixture in your own module, over one of the above
+| Whatever reader-side surface is local to you. `graphitron-lsp`'s `StoreFixture` is the worked example.
+|===
+
+Seeding is the method in exactly one module, the one whose subject is the DDL.
+Above that line capture is the default: the generator, the language server and the MCP server exist to turn real inputs into real rows, so a fixture that skips that step stops testing the thing.
+A seeded fixture above the model line is occasionally right and owes a reason at the call site.
+
+If no harness expresses the shape you need, add it to the one that owns your subject rather than hand-rolling a helper in your test class.
+A harness carrying more helpers than any one reader needs is the cheap state; a spread of private copies that have quietly diverged is the expensive one, and it is expensive because nothing points the next author at the existing answer.
+
 == Build commands
 
 [source,bash]

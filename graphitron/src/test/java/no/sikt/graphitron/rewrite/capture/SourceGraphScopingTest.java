@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.SourceGraph;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -41,8 +41,8 @@ class SourceGraphScopingTest {
     @Test
     void aSourceOneGraphReadResolvesToThatGraphsHandle(@TempDir Path tmp) {
         var registry = CapturedStore.registryOf(tmp, SDL);
-        try (var store = GraphitronModelStore.open()) {
-            captureAs(store, "only-reader", tmp, registry);
+        try (var store = FactStores.inMemory()) {
+            captureAs(store.dsl(), "only-reader", tmp, registry);
 
             assertThat(SourceGraph.of(store.dsl(), fixtureSourceName(tmp)))
                 .isInstanceOfSatisfying(SourceGraph.Scoped.class, scoped -> {
@@ -57,9 +57,9 @@ class SourceGraphScopingTest {
     @Test
     void aSourceTwoGraphsReadHandsBackBothRatherThanPickingOne(@TempDir Path tmp) {
         var registry = CapturedStore.registryOf(tmp, SDL);
-        try (var store = GraphitronModelStore.open()) {
-            captureAs(store, "downstream", tmp, registry);
-            captureAs(store, "api", tmp, registry);
+        try (var store = FactStores.inMemory()) {
+            captureAs(store.dsl(), "downstream", tmp, registry);
+            captureAs(store.dsl(), "api", tmp, registry);
 
             assertThat(SourceGraph.of(store.dsl(), fixtureSourceName(tmp)))
                 .isInstanceOfSatisfying(SourceGraph.Shared.class, shared -> {
@@ -74,8 +74,8 @@ class SourceGraphScopingTest {
     @Test
     void aSourceNoGraphHasReadIsUncaptured(@TempDir Path tmp) {
         var registry = CapturedStore.registryOf(tmp, SDL);
-        try (var store = GraphitronModelStore.open()) {
-            captureAs(store, "only-reader", tmp, registry);
+        try (var store = FactStores.inMemory()) {
+            captureAs(store.dsl(), "only-reader", tmp, registry);
             String unread = tmp.resolve("written-since-the-last-capture.graphqls").toString();
 
             assertThat(SourceGraph.of(store.dsl(), unread))
@@ -90,13 +90,13 @@ class SourceGraphScopingTest {
         // statements; a source no graph has read is answered rather than left out, so a caller reads
         // every source it asked about out of the result.
         var registry = CapturedStore.registryOf(tmp, SDL);
-        try (var store = GraphitronModelStore.open()) {
-            captureAs(store, "only-reader", tmp, registry);
+        try (var store = FactStores.inMemory()) {
+            captureAs(store.dsl(), "only-reader", tmp, registry);
             String read = fixtureSourceName(tmp);
             String unread = tmp.resolve("written-since-the-last-capture.graphqls").toString();
 
             var counted = new AtomicInteger();
-            var dsl = counting(store, counted);
+            var dsl = counting(store.dsl(), counted);
             var resolved = SourceGraph.ofAll(dsl, List.of(read, unread));
 
             assertThat(counted.get())
@@ -111,18 +111,18 @@ class SourceGraphScopingTest {
     @Test
     void resolvingNoSourceCostsNoQuery(@TempDir Path tmp) {
         var registry = CapturedStore.registryOf(tmp, SDL);
-        try (var store = GraphitronModelStore.open()) {
-            captureAs(store, "only-reader", tmp, registry);
+        try (var store = FactStores.inMemory()) {
+            captureAs(store.dsl(), "only-reader", tmp, registry);
 
             var counted = new AtomicInteger();
-            assertThat(SourceGraph.ofAll(counting(store, counted), List.of())).isEmpty();
+            assertThat(SourceGraph.ofAll(counting(store.dsl(), counted), List.of())).isEmpty();
             assertThat(counted.get()).isZero();
         }
     }
 
     /** The store's own surface, seen through a context that counts the statements it executes. */
-    private static DSLContext counting(GraphitronModelStore store, AtomicInteger counted) {
-        return DSL.using(store.dsl().configuration()
+    private static DSLContext counting(DSLContext dsl, AtomicInteger counted) {
+        return DSL.using(dsl.configuration()
             .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
                 @Override
                 public void executeStart(ExecuteContext ctx) {
@@ -140,9 +140,9 @@ class SourceGraphScopingTest {
      * Captures the one fixture file under {@code graphName}. Two calls with two names is the
      * shared-file case: the same file, read by two modules, into the one store a workspace shares.
      */
-    private static void captureAs(GraphitronModelStore store, String graphName, Path directory,
+    private static void captureAs(DSLContext dsl, String graphName, Path directory,
                                   TypeDefinitionRegistry registry) {
-        FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, directory),
+        FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, directory),
             FactCapture.SubjectConfig.none(), registry, CapturedStore.attributionOf(directory));
     }
 }
