@@ -63,6 +63,10 @@ written by
 `ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` in `graphitron`'s main sources. Those
 halves are genuinely `graphitron`'s, and testing them through a real capture is right.
 
+That is the count by relation kind, and one of the nine splits anyway on a second axis. The slices
+name it: `ClassMemberSlotTest` reads only views, but part of what it pins is that the rows those views
+read came off a real classfile scan, which is capture's and stays.
+
 **The tree already contains the correction, and reads it as a hazard.** `ColumnMatchClaimTest` carries
 `withSeededStore` plus `seedGraph` / `seedSource` / `seedField` / `seedTable` / `seedSchema` /
 `seedColumn`, inserting straight into `STORE_GRAPH`, `STORE_SOURCE`, `GRAPHQL_TYPE`,
@@ -78,7 +82,9 @@ right. Whether the column-match view is node-inference-sensitive is a question a
 only arises because the test reaches the view through a crawler that takes a `NodeDeclaration`. The
 classpath census has to be threaded through eight `derive/` classes only so capture will put
 `graphql_class_*` rows in place. Seeded, you insert the rows the view reads and assert on what it
-returns.
+returns. One case is the exception that proves it: `ClassMemberSlotTest` pins a rule that reads a
+class's *declared form*, so for that one the real scan is the subject and not the plumbing, which is
+why the slices keep it and drop the other seven.
 
 The utility the *capture-shaped* tests want already exists. `capture/CapturedStore` is an
 `AutoCloseable` handle offering `of(Path, String)`, `ofPipeline(Path, String)`, a third arm
@@ -292,23 +298,54 @@ test-jars it needs at test scope. The jOOQ fixture packages the capture-level fi
 come from `graphitron-sakila-db`, which `graphitron-lsp` and `graphitron-mcp` already depend on at test
 scope, so the catalog shapes need no new dependency at all.
 
-One beneficiary falls out of putting M0 and M1 in `graphitron-model` rather than in `graphitron`.
+Two beneficiaries fall out of putting M0 and M1 in `graphitron-model` rather than in `graphitron`.
 `roadmap-tool` depends on `graphitron-model` and not on `graphitron`, and its
 `SchemaReferencePagesTest` opens a store; under a single `graphitron`-hosted home that site is
 unreachable by construction. What it gains is reach and not enforcement: `GuardScope` excludes
 `roadmap-tool` by design, for a reason belonging to the roadmap-reference guard, and the store-fixture
 guard inherits that exclusion because the module list is shared.
 
-No `graphitron` test goes home with the harness, and `capture/StoreReaderTest` is the one that looks
-like it should. Its subject is the reader's boundary and its imports are nearly bare, but all five of
-its cases fill the store through `CapturedStore.registryOf` and `FactCapture.capture`, and that is
-load-bearing rather than incidental: a reader's snapshot boundary is only interesting against a real
-capture round, because a single insert is not a round in flight. Moving it down would need
-graphql-java and `graphitron` itself under `graphitron-model`, which is the cycle this section has
-just ruled out. It stays where it is, on the exception list, reading G1's primitives.
+And `capture/StoreReaderTest` goes home, though not as it stands. Its subject is `StoreReader`, which
+is `graphitron-model`'s own class. The reader mints a second connection, sets H2's snapshot level
+explicitly at that moment, and makes `read` a transaction that ends in a rollback.
+
+Which of its cases pin that, and which pin H2, was measured rather than argued: gate the
+`SET SESSION CHARACTERISTICS` line off and exactly one of the five fails, `oneReadIsOneSnapshot`, on
+"the second query answers from the snapshot the first one did". So that case carries the isolation
+contract on its own, and it is `StoreReader`'s contract rather than the database's, since H2's default
+would have shown the second query a commit the first did not. Of the other four,
+`aPersistedStoreMintsAReaderOntoItsOwnFile` and
+`closingOneReaderLeavesTheStoreAndItsSiblingsReadable` pin the reader's minting and its close scope,
+which are also this class's. The remaining two, `aReaderSeesWhatTheWriterCommitted` and
+`aRoundStillInFlightIsInvisible`, pass with the isolation line gone, which is the honest way of saying
+they pin read-committed behaviour H2 would give anyway. They migrate unchanged, because changing what
+a migrated class asserts is out of scope here; whether they earn their place is a separate question
+and a separate item.
+
+What keeps the class in `graphitron` is scenery rather than subject. All five cases fill the store
+through `CapturedStore.registryOf` and `FactCapture.capture`, but the assertions need only "a
+multi-statement round commits here", and the class already writes one of those by hand: its
+`writeGraphRow` is the in-flight writer in `aRoundStillInFlightIsInvisible`. Under M1 every capture
+call in it restates as a seeded round inside `dsl.transaction(...)`, and the isolation claim survives
+whole, because what a reader must not see mid-round is a set of inserts rather than an SDL file. This
+is S4's migration applied to a class whose subject was never `graphitron`'s.
+
+Two things must not be read into that. The class stays on the guard's exception list wherever it
+lives, since the store's lifetime is still what it holds open. And it carries none of capture's own
+atomicity with it: "one transaction end to end" is `FactCapture`'s property, this class never
+asserted it, and wanting an anchor for it is a new test in `graphitron` rather than a reason to keep
+this one there.
 
 The guard needs a matching change: `GuardScope.IN_SCOPE_MODULES` does not list `graphitron-model`
-today, so a module that is about to become a test home sits outside the walk. Add it.
+today, so a module that is about to become a test home sits outside the walk. Add it, knowing that
+the list is shared and that adding it here adds it everywhere. `GuardScope`'s javadoc says so as the
+reason it exists, "One definition, so a new module cannot silently join one guard's scope and not the
+other's", so the same line enrols `graphitron-model` in `RoadmapReferenceGuardTest` and
+`RetiredVocabularyGuardTest`. That is wanted rather than tolerated. The model's new test sources
+should meet the same citation and vocabulary rules as every other module's from their first commit,
+and the alternative, a per-guard module list, reintroduces exactly the drift the shared one was
+written to stop. The cost lands in S1: two guards start walking a source root that has never been
+scanned, so S1 owns whatever they find there rather than discovering it in a later slice.
 
 One objection deserves answering rather than ignoring, because the pom states it outright: the comment
 above `graphitron-lsp`'s `graphitron-model` dependency, referring forward to the `graphitron`
@@ -756,8 +793,9 @@ merged from `ColumnMatchClaimTest`'s six seed helpers and `ReferenceStepTargetTe
 `graphql_type` / `graphql_field` / `graphql_type_declaration` twins reconciled into one spelling.
 `GuardScope.IN_SCOPE_MODULES` gains `graphitron-model`.
 
-Proof, not assertion: this slice migrates **one** pure view test end to end, from capture-driven to
-seeded, keeping its assertions. `ClassAssignableTest` is the natural pick, and not merely for being
+Proof, not assertion: this slice also moves `capture/StoreReaderTest` down, restating its five
+capture calls as seeded rounds, and migrates **one** pure view test end to end, from capture-driven
+to seeded, keeping its assertions. `ClassAssignableTest` is the natural pick, and not merely for being
 small: `FactCaptureAgreementTest`'s registry already records that it binds `intent_class_assignable`
 "to a census built reference by reference", the chains it needs being "ones a scan of compiled
 fixtures cannot arrange". It is the one mover whose inputs are already stated as rows in all but
@@ -785,38 +823,43 @@ stopped without leaving a mess.
 
 ### Stage 2: cleanup
 
-**S4: the nine pure-view classes.** `ColumnMatchClaimTest`, `ReferenceStepTargetTest`,
-`FieldColumnTableTest`, `ClassMemberSlotTest`, `ClassAssignableTest` (already moved in S1),
+**S4: the eight pure-view classes that move whole.** `ColumnMatchClaimTest`, `ReferenceStepTargetTest`,
+`FieldColumnTableTest`, `ClassAssignableTest` (already moved in S1),
 `FieldProducerMethodTest`, `AccessorHopTest`, `ProducerCardinalityTest` and `AuthoredClaimConflictsTest`
 move to `graphitron-model` and become seeded. Take them in batches. Acceptance: each keeps its assertion
 content, and each loses its `write(`, its `GRAPH` constant, its census plumbing and its `NodeDeclaration`
 argument, because a seeded view test needs none of them. A class that cannot lose those is telling you
 it was not a pure view test after all, which is a finding worth recording rather than working around.
 
-`ClassMemberSlotTest` is the one in the nine whose recorded reason for capturing has not been
-answered above, and it must be settled before the batch containing it is taken. Two of the nine
-argue for capture in their own javadoc, and this item answers both: `ReferenceStepTargetTest`'s
-"a fixture is free to seed a chain the catalog cannot connect" and `FieldColumnTableTest`'s "a
-seeded fixture could assert a combination no schema produces" are both the escape-note apparatus
-the Problem section dissolves. `FactCaptureAgreementTest`'s registry states a third and different
-one: this class binds `intent_class_member_slot` "over a real classfile scan of its own fixtures
-rather than seeded census rows, because a rule that reads a class's declared form cannot be pinned
-against a fixture that declares its own." That is a claim about the subject, not a hazard note.
+`ClassMemberSlotTest` is not in this batch. It splits, and S5 takes it, for the reason recorded
+there.
 
-The likely resolution is that the registry's reason is already covered elsewhere and the class
-splits like the five in S5: `FactCaptureAgreementTest`'s `EQUALITY` arm pins the scanner census
-against the walk, so `graphql_class_member` fidelity does not rest on this class, and what is left
-is the view's algebra over rows, which seeds. If that holds, say so here and update the registry's
-note for this anchor as part of the slice. If it does not, `ClassMemberSlotTest` is a mixed class
-and belongs in S5, not S4.
+**S5: the classes that split.** `DemandShadowTest`, `InputOccurrenceShadowTest`, `SeparateFetchTest`,
+`TypeBackingClassTest` and `TypeBackingShadowTest` split on relation kind: the view assertions go down
+and become seeded, the assertions on `intent_type_domain`, `intent_input_occurrence_path` /
+`_path_step` and `intent_type_backing_class` stay in `graphitron` on G1, because those rows are
+written by `ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` and the crawler is the
+subject. Acceptance: each half asserts what it always asserted, and the `graphitron` half still runs a
+real capture.
 
-**S5: the five mixed classes.** `DemandShadowTest`, `InputOccurrenceShadowTest`, `SeparateFetchTest`,
-`TypeBackingClassTest` and `TypeBackingShadowTest` split: the view assertions go down and become seeded,
-the assertions on `intent_type_domain`, `intent_input_occurrence_path` / `_path_step` and
-`intent_type_backing_class` stay in `graphitron` on G1, because those rows are written by
-`ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` and the crawler is the subject.
-Acceptance: each half asserts what it always asserted, and the `graphitron` half still runs a real
-capture.
+`ClassMemberSlotTest` joins them and splits on a different axis, which is where its input comes from
+rather than which relation it reads. Both its relations are views, so on relation kind alone it would
+have moved whole in S4. It does not, because `FactCaptureAgreementTest`'s registry states a reason for
+this anchor that neither of the two the Problem section dissolves covers: it binds
+`intent_class_member_slot` "over a real classfile scan of its own fixtures rather than seeded census
+rows, because a rule that reads a class's declared form cannot be pinned against a fixture that
+declares its own." That is a claim about the subject rather than an escape note, and it is true of one
+half of the class.
+
+The seam is the census. Cases that state member rows and assert what the view makes of them go down to
+M1, which is most of the class and is where the view's algebra belongs. One case stays in `graphitron`
+on G1, running a real `ClasspathScanner.scan` over the three fixture classes and asserting that the
+slots the view reads arrive from a class whose declared form the test did not write. That case is the
+reach from classfile to slot row, which is capture's, and it is the only thing the census plumbing was
+ever buying. Keeping it small is the point: `FactCaptureAgreementTest`'s `EQUALITY` arm already pins
+the scanner census against the walk, so this case is the end-to-end witness rather than a second census
+oracle. Acceptance: the registry's note for this anchor is rewritten to say which half now carries the
+reason, since as written it describes a class that no longer exists in one piece.
 
 **S6: the direct writers.** `graphitron`'s three, the maven plugin's two, and downstream
 `RejectionSeverityCoverageTest`, `DiagnosticsToolCompileSourceTest` and `DiagnosticsAggregateTest`'s
