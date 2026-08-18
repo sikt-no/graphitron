@@ -215,6 +215,19 @@ class InputBeanGroupingPipelineTest {
     }
 
     @Test
+    void singularNestedBean_isNarrowedByPattern_notByAnUncheckedCast() {
+        // Generated sources land in the consumer's build, where an unchecked-cast warning is a hard
+        // failure under -Werror and no @SuppressWarnings can be attached to a cast inside an
+        // expression. The nested bean is narrowed with an instanceof pattern instead, which also
+        // subsumes the null guard: a null or non-Map value simply does not match.
+        var body = helperBody(MATCHING_MEMBER_SDL, "createTestInputBeanGroupedWithNested");
+        assertThat(body)
+            .contains("raw.get(\"period\") instanceof java.util.Map<?, ?> periodRaw")
+            .contains("createTestInputNested(periodRaw)")
+            .doesNotContain("(java.util.Map<java.lang.String, java.lang.Object>) raw.get(\"period\")");
+    }
+
+    @Test
     void unflattenedBean_emitsNoDescent_andReadsEverythingFromRaw() {
         // The no-op pin: a bean with no flattened field must emit exactly what it emitted before
         // grouping existed, so the access path costs nothing at depth 1.

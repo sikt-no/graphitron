@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import javax.lang.model.element.Modifier;
@@ -36,13 +37,24 @@ final class InputBeanInstantiationEmitter {
 
     private static final ClassName MAP_STRING_OBJECT_RAW = ClassName.get(Map.class);
     private static final ClassName LIST = ClassName.get(List.class);
+    /** {@code Map<?, ?>}: the wire-map type every helper reads through, castable to without a warning. */
+    private static final TypeName WILDCARD_MAP = ParameterizedTypeName.get(MAP_STRING_OBJECT_RAW,
+        WildcardTypeName.subtypeOf(Object.class), WildcardTypeName.subtypeOf(Object.class));
 
     private InputBeanInstantiationEmitter() {}
 
     /**
-     * Emits {@code private static Bean createBean(Map<String, Object> raw)}: null in → null out,
-     * otherwise instantiate the bean by populating each field from {@code raw.get(sdlFieldName)}
+     * Emits {@code private static Bean createBean(Map<?, ?> raw)}: null in → null out,
+     * otherwise instantiate the bean by populating each field from {@code raw.get(mapKey)}
      * through its per-field transform.
+     *
+     * <p>The parameter is wildcarded rather than {@code Map<String, Object>} so that a caller
+     * holding an untyped wire value can reach it through an {@code instanceof Map<?, ?>} pattern
+     * instead of an unchecked cast. That matters because generated sources land in the consumer's
+     * build: an unchecked-cast warning there is a hard failure under {@code -Werror}, and no
+     * {@code @SuppressWarnings} can be attached to a cast sitting inside an expression. Widening
+     * costs nothing at the reading end, since {@code Map.get} takes {@code Object} and every value
+     * read out of it is cast to the member's own type regardless.
      */
     static MethodSpec buildSingularHelper(CallSiteExtraction.InputBean ib) {
         return buildSingularHelper(ib, FetchersHelperNames.bare());
@@ -50,12 +62,10 @@ final class InputBeanInstantiationEmitter {
 
     static MethodSpec buildSingularHelper(CallSiteExtraction.InputBean ib, FetchersHelperNames names) {
         ClassName bean = ib.beanClass();
-        TypeName mapStringObject = ParameterizedTypeName.get(MAP_STRING_OBJECT_RAW,
-            ClassName.get(String.class), ClassName.get(Object.class));
         var b = MethodSpec.methodBuilder(names.createSingular(bean))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(bean)
-            .addParameter(mapStringObject, "raw")
+            .addParameter(WILDCARD_MAP, "raw")
             .addStatement("if (raw == null) return null");
 
         // One Map local per distinct grouping prefix, parent before child, so each field local below
@@ -114,16 +124,13 @@ final class InputBeanInstantiationEmitter {
             .addParameter(Object.class, "raw")
             .addStatement("if (raw == null) return null")
             .addStatement("$T<?> list = ($T<?>) raw", LIST, LIST)
+            // The element cast is to Map<?, ?>, which has no type arguments to check and so needs no
+            // @SuppressWarnings: the singular helper accepts the wildcarded map for exactly this reason.
             .addStatement("return list.stream().map(e -> {\n"
                 + "  if (e == null) throw new IllegalArgumentException(\"$L: null element not allowed in list argument\");\n"
-                + "  @SuppressWarnings(\"unchecked\")\n"
-                + "  $T<$T, $T> m = ($T<$T, $T>) e;\n"
-                + "  return $L(m);\n"
+                + "  return $L(($T) e);\n"
                 + "}).toList()",
-                pluralName,
-                MAP_STRING_OBJECT_RAW, ClassName.get(String.class), ClassName.get(Object.class),
-                MAP_STRING_OBJECT_RAW, ClassName.get(String.class), ClassName.get(Object.class),
-                singularName);
+                pluralName, singularName, WILDCARD_MAP);
         return b.build();
     }
 
@@ -293,12 +300,21 @@ final class InputBeanInstantiationEmitter {
         if (fb.list()) {
             return CodeBlock.of("$L($L.get($S))", plural, root, sdl);
         }
-        // Singular nested bean: downcast Map.get value to Map<String, Object> and delegate.
-        return CodeBlock.of(
-            "$L.get($S) == null ? null : $L(($T<$T, $T>) $L.get($S))",
-            root, sdl, singular,
-            MAP_STRING_OBJECT_RAW, ClassName.get(String.class), ClassName.get(Object.class),
-            root, sdl);
+        // Singular nested bean: narrow the wire value with an instanceof pattern rather than casting
+        // it to Map<String, Object>. The cast form is unchecked, and a warning inside an expression
+        // cannot carry @SuppressWarnings, so it fails the consumer's build under -Werror. The pattern
+        // also subsumes the null guard: a null (or non-Map) value simply does not match.
+        return CodeBlock.of("$L.get($S) instanceof $T $L ? $L($L) : null",
+            root, sdl, WILDCARD_MAP, nestedLocalName(fb), singular, nestedLocalName(fb));
+    }
+
+    /**
+     * The pattern variable a singular nested bean is narrowed into, derived from the field's whole
+     * access path so two groups holding a same-named nested bean bind distinct locals. Suffixed to
+     * stay clear of the field local the enclosing statement is declaring.
+     */
+    private static String nestedLocalName(CallSiteExtraction.FieldBinding fb) {
+        return camelJoin(fb.accessPath()) + "Raw";
     }
 
     private static String capitalize(String s) {

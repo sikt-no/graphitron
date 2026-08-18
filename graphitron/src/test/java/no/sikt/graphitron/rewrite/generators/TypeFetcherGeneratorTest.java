@@ -2460,7 +2460,9 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.name()).isEqualTo("createFoo");
         assertThat(spec.returnType().toString()).isEqualTo("com.example.Foo");
         assertThat(spec.parameters()).hasSize(1);
-        assertThat(spec.parameters().get(0).type().toString()).isEqualTo("java.util.Map<java.lang.String, java.lang.Object>");
+        assertThat(spec.parameters().get(0).type().toString())
+            .as("the wire map is wildcarded so callers can narrow into it without an unchecked cast")
+            .isEqualTo("java.util.Map<?, ?>");
         var body = spec.code().toString();
         assertThat(body).contains("if (raw == null) return null");
         assertThat(body).contains("new com.example.Foo(title)");
@@ -2480,7 +2482,10 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.parameters().get(0).type().toString()).isEqualTo("java.lang.Object");
         var body = spec.code().toString();
         assertThat(body).contains("if (raw == null) return null");
-        assertThat(body).contains("createFoo(m)");
+        assertThat(body)
+            .as("the per-element cast has no type arguments to check, so it needs no @SuppressWarnings")
+            .contains("createFoo((java.util.Map<?, ?>) e)")
+            .doesNotContain("@SuppressWarnings");
     }
 
     @Test
