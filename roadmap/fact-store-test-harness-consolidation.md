@@ -151,25 +151,31 @@ real pipeline run." It shares the bottom of the stack with the others and nothin
 catalog-facts item added `no.sikt.graphitron.mcp.StoreFixture` while migrating the catalog tools: an
 in-memory store plus a direct `FactCapture.capture` call with a `JooqCatalog`, named after the LSP's
 fixture and arriving at its `ofCatalog` / `ofMultiSchemaCatalog` / `andGraph` shapes independently for
-the second time. It carries three shapes the LSP's does not, and all three are requirements on the
-shared levels rather than curiosities:
+the second time. **Its factory list is not reproduced here, on purpose.** Two earlier drafts of this
+section enumerated it, and both went stale within a day: the catalog-facts item added `ofCodeFixtures`
+after the first count and `ofSchema` after the second, while this item sat in Spec. Enumerating a
+surface another in-flight item is actively growing is a promise to be wrong, so what this item owes
+that fixture is a rule and not a census.
 
-* `withoutCatalog`, the pre-codegen state where a graph is captured and its census is empty.
-* `recaptureCatalog(String jooqPackage)`, which re-captures a graph into an already-populated store by
-  passing `warm = true` to `FactCapture.capture`. `CatalogSearchIndexTest` calls it four times, once
-  with a null package, so a warm re-capture into an already-open store is a live G1 shape with named
-  callers rather than an oddity to be discovered mid-migration.
-* `ofCodeFixtures`, which pairs a `ClasspathScanner` census over its own fixture package with a
-  `JavaSourceFacts` refresh over one source root, deliberately reaching two families on independent
-  cadences so the fixtures can disagree. Its census half is G1 and its refresh half is G0.
+The rule, and the requirement it puts on the shared levels: **every shape that fixture has reached for
+so far is a combination of axes already named below, or a writer call, and the implementer should
+expect the same of whatever it has grown by the time S7 lands.** The three that decide something are
+worth naming as requirements rather than as inventory:
 
-That third one arrived after this section was first written, and it is worth saying so plainly rather
-than quietly correcting the count: the catalog-facts item grew its fixture again while this item sat
-in Spec, and the shape it grew is a second copy of `refreshJavaSources`, the exact member the LSP's
-fixture already had. This item predicted that in the sequencing section below and then assumed it had
-stopped. It had not, and the lesson is the one G0 answers: a population with no named home keeps
-being rebuilt, and the fix is to name the home, not to time the migration around when the copying
-happens to pause.
+* A warm re-capture into an already-open store. `recaptureCatalog(String jooqPackage)` passes
+  `warm = true` to `FactCapture.capture`, and `CatalogSearchIndexTest` calls it four times, once with a
+  null package. G1 carries this as an arm from the first day of that slice.
+* A capture with no catalog at all, which `withoutCatalog` uses for the pre-codegen state where a graph
+  is captured and its census is empty. That is the null-catalog end of the catalog axis, not a sixth
+  shape.
+* A `JavaSourceFacts` refresh beside a census capture, which `ofCodeFixtures` needs so two families on
+  independent cadences can disagree. Census half G1, refresh half G0.
+
+`ofSchema`, the shape that arrived last, is the existing catalog-with-census shape spelled a fifth
+time and needs nothing new from either level, which is the rule working. The lesson is the one G0 and
+the census-as-argument decision both answer: a population with no named home keeps being rebuilt, and
+the fix is to name the home and size the levels so an arrival is a call site, not to time the
+migration around when the copying happens to pause.
 
 The MCP fixture exists for a good reason, which is that a census read does not need a build and
 `StoreBackedBuild` was pricing the generator into every catalog case, so the fixture is not the mistake;
@@ -1011,9 +1017,10 @@ which is the way this slice fails. `capture/FactCaptureAgreementTest` keeps its 
 a capture oracle on the exception list, but it may adopt G0 for the construction if that reads better;
 that is the implementer's call and not an acceptance condition.
 
-**S7: `graphitron-mcp`.** Its `StoreFixture` becomes a local layer over G1 and G0, keeping
-`withoutCatalog`, `recaptureCatalog` and `ofCodeFixtures` intact, its census half delegating to G1 and
-its `refreshJavaSources` to G0; `StoreBackedBuild` adopts M0 and sits at G2, keeping its file-store arm
+**S7: `graphitron-mcp`.** Its `StoreFixture` becomes a local layer over G1 and G0, keeping **whatever
+factory set it has when the slice starts** intact, each one delegating its capture to G1 and its writer
+calls to G0. Read the set off the file rather than off this item, per the Problem section;
+`StoreBackedBuild` adopts M0 and sits at G2, keeping its file-store arm
 named rather than flagged. Acceptance: no class that *calls* `StoreFixture` or `StoreBackedBuild` is
 edited. This slice does not wait on S8: G0 is what both fixtures delegate their writers to, so neither
 needs the other's file touched.
