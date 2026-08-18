@@ -17,11 +17,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R704` | The @routine read surface: unwire the carve-outs, then derive them from facts | Ready | 2026-08-18 | [plan](routine-composition-surface-from-facts.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-17 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R642` | graphitron-mcp reads only the store | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
+| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection <sub>blocked by: [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)</sub> | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-17 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
-| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Ready | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | Ready | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | In Review | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
@@ -348,7 +348,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R704` [**The @routine read surface: unwire the carve-outs, then derive them from facts**](routine-composition-surface-from-facts.md) — Ready, architecture
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
-- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — Ready, feature
+- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — Spec, feature, blocked by [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
 - `R662` [**Ordering over a routine chain may name columns from any node**](routine-chain-ordering-spans-nodes.md) — Backlog, feature, blocked by [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)
 - `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
