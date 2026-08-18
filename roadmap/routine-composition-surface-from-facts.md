@@ -229,15 +229,52 @@ carries the one axis that cannot be done by deletion.
    with no generated call surface is a real arm**, `RoutineResolution.NoConvenienceMethod` already
    having one, so the class and method names are nullable and their nullness is what separates a
    routine that takes no parameters from one whose call surface is not exposed.
-8. **The terminus and its kind as a derived view.** Where a coordinate's chain lands, and whether
-   that landing is a function result. Every axis reads it, and it is what makes the verdicts
-   comparable instead of six independent opinions.
+8. **The terminus and its kind as a derived view.** *Landed, together with slice 10's arm.*
+   `intent_field_chain_terminus` answers, per coordinate, which table the chain lands on and what
+   kind of table that is, carrying `sql_table.table_type` straight through so the whole read
+   surface asks one column rather than six opinions. The seed is the last `@routine`
+   application's result table; the tail is the `@reference` applications written after it, walked
+   one element at a time through `intent_field_reference_step_hop`. Absence means "not reached",
+   on the target view's terms.
+
+   Three findings, one of which reordered the slice list. **Slice 10's hop arm had to land
+   first**, because without it nothing departs a function result at all: every arm of the hop view
+   joined `sql_referential_constraint`, so a routine-then-hop chain resolved to zero rows whichever
+   way the terminus view was written, and a slice-8-alone landing would have meant a test pinning
+   that hole and deleting it one slice later. The two are one commit for that reason. **Slice 10's
+   coupling to slice 9 is narrower than the plan recorded**: the anchor problem is about a *type's*
+   binding seeding `intent_field_reference_step_target` for child fields of a routine-result type,
+   not about the chain, which seeds from `@routine(name:)` and needs no `@table` anywhere. So the
+   arm and the chain walk are both independent of slice 9's keying decision, and what stays coupled
+   is only the child-field population slice 10's second sentence is about. And **the spelling view
+   was missing a site**: `intent_spelled_table`'s population enumerated every authored table name
+   except `@routine(name:)`, though jOOQ models a function result as a catalog table and the view's
+   own comment says the rule does not vary by site. Adding it is what lets the chain seed resolve
+   like any other spelling instead of growing a routine-specific resolution.
+
+   One overlap recorded rather than acted on. `intent_field_column_scope` is the existing relation
+   answering "which table do the column names written at this field resolve against", which is the
+   same question the ordering and filtering axes ask, and its three rules are disjoint by
+   construction. A chain field falls through them today: its `PATH_TERMINAL` rule walks from the
+   enclosing type's binding, which a chain does not depart from, and its `NAMED_TYPE_TABLE` rule
+   answers a routine-terminal child from the `@table` ceremony slice 9 removes. A fourth
+   `CHAIN_TERMINAL` rule reading `intent_field_chain_terminus` belongs there, and it has to arrive
+   with guards on the other two, since a chain field can satisfy either. That is a change to a
+   view with live consumers and its own anchor, so it is named here rather than folded in: it
+   belongs with slice 12's retirement pass or beside slice 9, whichever reaches the column-scope
+   readers first.
 9. **The return binding.** With slice 7 in hand, the `@table` demand becomes "the terminus is
    resolvable", not "the author wrote a directive". See below.
-10. **The name-matched arm on the hop view.** The third path-element arm feeding
-    `intent_field_reference_step_hop`, gated on slice 7's function-ness discriminator. The existing
-    recursive `intent_field_reference_step_target` then walks multi-hop paths out of a routine
-    result with no further work.
+10. **The name-matched arm on the hop view.** *The arm landed with slice 8; the anchor half is what
+    remains.* `via = 'NAME_MATCH'` is the third arm, gated on slice 7's `table_type` discriminator,
+    enumerating as candidate departures every FUNCTION-typed table in the graph's sources that
+    exposes all of the arrival's primary-key columns by name. It carries `constraint_name`,
+    `fk_on_from` and `key_matched_by` NULL, which is the shape the open question below recommended,
+    on a better reason than "no value for it": the constraint such a hop *does* key by is the
+    arrival's primary key, and `sql_primary_key` is keyed by the table, so the arriving triple the
+    row already carries reaches it directly and repeating it would be a denormalisation. The two
+    table arms cannot produce one row, a function result declaring no foreign key for the other arm
+    to discover. `intent_field_reference_step_target` picks the arm up with no edit, as predicted.
 
     One interaction with slice 9 belongs here rather than being discovered mid-slice. The target
     view's position-0 term seeds from `intent_bound_table`, which derives from `graphitron_table`,
@@ -698,7 +735,14 @@ wrong and should change first.
   target table name. A two-hop path out of a routine result keeps needing `@reference`, and so does
   a join the name-match cannot key; the manual states both as consequences of what the return type
   can supply rather than as a depth limit.
-* **Does the name-matched arm belong on the hop view or beside it?** The hop view's two arms are
+* **Does the name-matched arm belong on the hop view or beside it?** *Answered by slice 10's arm:
+  on the view, as a third `via` value, and the precedent did extend.* What settled the three null
+  columns was not that a name-matched hop has no use for them but that one of them is a
+  denormalisation: the keying constraint is the arrival's own primary key, which `sql_primary_key`
+  hands back from the arriving triple the row already carries. The recursion needed no edit. The
+  original reasoning stands below.
+
+  The hop view's two arms are
   both FK-shaped and carry `constraint_name` / `fk_on_from`, which a name-matched hop has no value
   for. A third arm means those columns go null on it, which the view's own comment discipline would
   have to state; a sibling relation unioned one level up keeps each relation's columns meaningful.
