@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R704` | The @routine read surface: unwire the carve-outs, then derive them from facts | In Progress | 2026-08-18 | [plan](routine-composition-surface-from-facts.md) |
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
+| `R704` | The @routine read surface: unwire the carve-outs, then derive them from facts | In Review | 2026-08-18 | [plan](routine-composition-surface-from-facts.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | Spec | 2026-08-18 | [plan](store-contention-fails-fast.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | Spec | 2026-08-18 | [plan](decodes-normalize-internal-grammars.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection <sub>blocked by: [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)</sub> | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
@@ -362,7 +362,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### routine
 
-- `R704` [**The @routine read surface: unwire the carve-outs, then derive them from facts**](routine-composition-surface-from-facts.md) — In Progress, architecture
+- `R704` [**The @routine read surface: unwire the carve-outs, then derive them from facts**](routine-composition-surface-from-facts.md) — In Review, architecture
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture, blocked by [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)
 - `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — Spec, feature, blocked by [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)
