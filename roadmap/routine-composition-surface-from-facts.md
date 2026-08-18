@@ -221,6 +221,19 @@ carries the one axis that cannot be done by deletion.
     `intent_field_reference_step_hop`, gated on slice 7's function-ness discriminator. The existing
     recursive `intent_field_reference_step_target` then walks multi-hop paths out of a routine
     result with no further work.
+
+    One interaction with slice 9 belongs here rather than being discovered mid-slice. The target
+    view's position-0 term seeds from `intent_bound_table`, which derives from `graphitron_table`,
+    so its only rows are `@table` applications. A routine return type that drops the now-redundant
+    `@table` under slice 9 has no anchor row, and the hop this slice adds then yields nothing for
+    exactly the schemas slice 9 enables: the implicit hop would work for authors who kept the
+    ceremony and silently not for authors who took slice 9 up on removing it, which is the same
+    silent-shortfall shape Track A exists to delete. Two ways out. The derived binding feeds the
+    anchor, as a second arm on `intent_bound_table` or as a sibling relation the recursion seeds
+    from instead; or slice 9 keeps `@table` load-bearing for any type a `@reference` departs from.
+    Recommend the first: the second reinstates a written-directive demand one slice after removing
+    it, and narrows slice 9 to a capability it does not claim. Either way the choice is slice 9's
+    keying decision seen from the read side, so settle the two together.
 11. **The carrier's explicit data-field path**, single- and multi-hop, reading slice 10 rather than
     parsing at a grounding seat. Needs the residual-path correlation arm described under "What stays
     genuinely open" below, which is the one part of this slice the view does not hand over.
@@ -659,7 +672,14 @@ wrong and should change first.
   both FK-shaped and carry `constraint_name` / `fk_on_from`, which a name-matched hop has no value
   for. A third arm means those columns go null on it, which the view's own comment discipline would
   have to state; a sibling relation unioned one level up keeps each relation's columns meaningful.
-  Decide before writing the DDL, since the target view's recursion reads whichever shape wins.
+  Narrower than it looks, because the view has already answered a smaller version of the same
+  question: it carries a `via` discriminator (`KEY` where the element named a constraint, `TABLE`
+  where it named a table) and `key_matched_by` is already NULL on the `TABLE` arm, with the column
+  comment saying so in those words. A `NAME_MATCH` value of `via`, with `constraint_name` and
+  `fk_on_from` NULL and commented as such, is that same discipline one step further, and
+  `intent_field_reference_step_target` selects `via` straight through, so the recursion needs no
+  edit either way. So the work is confirming the precedent extends rather than choosing a shape.
+  Still decide before writing the DDL, since the target view's recursion reads whichever wins.
 * **Does the carrier's residual-path correlation arm generalise?** It anchors on a captured record
   and walks onward, which is close to what a record-backed parent needs in R447's
   `RecordTableField` bullet. Check whether one arm serves both before minting a carrier-specific
@@ -673,6 +693,10 @@ wrong and should change first.
   payloads, so a shared relation goes wide and sparse or pushes payload to a side table per axis.
 * **Two routines, one return type.** Fine under an edge-scoped binding, a conflict under a
   type-scoped one. Follows from where the binding fact is keyed, which is slice 9's real decision.
+  The read side constrains that decision and is the reason to answer both at once: an edge-scoped
+  binding cannot feed the type-keyed `intent_bound_table` the hop recursion anchors on, so choosing
+  edge scope entails the anchor work slice 10 describes. Type scope avoids that and buys the
+  conflict instead.
 * **Does `@table` on a routine return stay legal?** Assume yes so existing schemas keep compiling.
   Confirm nothing starts flagging the now-redundant annotation, and decide whether the sakila
   fixtures migrate or keep one of each form.
