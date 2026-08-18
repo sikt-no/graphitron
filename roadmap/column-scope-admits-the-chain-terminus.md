@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 3
 theme: routine
-depends-on: [routine-composition-surface-from-facts]
+depends-on: []
 created: 2026-08-18
 last-updated: 2026-08-18
 ---

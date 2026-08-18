@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 3
 theme: routine
-depends-on: [routine-composition-surface-from-facts]
+depends-on: []
 created: 2026-08-18
 last-updated: 2026-08-18
 ---
@@ -67,10 +67,10 @@ visibility that changes at commit.
 
 ## What is already in hand
 
-The endpoint resolution is not this item's work. R704's slice 12 lands the carrier hop relation,
-which states where a carrier's data field departs from and arrives at, and the name-matched key
-pairing underneath it. This item reads those for hop 0 and walks onward; the multi-hop walk itself is
-`intent_field_reference_step_target`, already shipped, since an element's departure is the previous
-element's arrival and position 0 is the only special one.
+The endpoint resolution is not this item's work, and it has shipped. `intent_carrier_routine_hop`
+states where a carrier's data field departs from and arrives at, and `intent_name_matched_key_pair`
+is the pairing underneath it. This item reads those for hop 0 and walks onward; the multi-hop walk
+itself is `intent_field_reference_step_target`, already shipped, since an element's departure is the
+previous element's arrival and position 0 is the only special one.
 
-That is also why this is `depends-on` R704 rather than parallel to it.
+The two relations landing is what cleared this item's `depends-on`.

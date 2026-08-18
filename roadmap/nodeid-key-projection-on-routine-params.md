@@ -854,7 +854,8 @@ Draft of the `routine.adoc` subsection:
   the R682 bullet below. Track A already filled the two literal `null`s in
   `LauncherCommands.routineRow`, which is the half of that collision that has resolved on its own.
 
-  The write seat stayed where it was. R704 kept `orderOrConditionDeferral` alive, seat-gated to the
+  The write seat stayed where it was. R704 kept the deferral alive as
+  `RoutineDirectiveResolver.writeSeatReadSurfaceDeferral`, seat-gated to the
   write classifiers, and left the write-side read surface with R454, so stage 4's carrier move
   relocates those emitters without touching the deferral.
 * `roadmap/jooq-node-metadata-as-stated-facts.md` (R710) is now the only item this one is blocked

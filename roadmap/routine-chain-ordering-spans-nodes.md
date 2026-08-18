@@ -4,7 +4,7 @@ title: "Ordering over a routine chain may name columns from any node"
 status: Backlog
 bucket: feature
 theme: routine
-depends-on: [routine-composition-surface-from-facts]
+depends-on: []
 created: 2026-08-13
 last-updated: 2026-08-13
 ---

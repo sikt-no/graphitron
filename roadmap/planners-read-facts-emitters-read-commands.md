@@ -427,6 +427,16 @@ populations are enumerated under "The facts to plan against are available" above
   the worked example the emitter half generalises from. If it lands first, this item inherits a
   proven recipe and one fewer family; if this item is picked up first, that stage should be lifted
   onto it.
+* **The read-side twin of that stage is this item's, handed over at its author's request.** R704
+  (`routine-composition-surface-from-facts`, Done, see `roadmap/changelog.md`) planned re-sourcing
+  `LauncherCommands.routineRow` off facts as its own plan-tier pilot and then declined to keep it,
+  on the ground that it is this item's launcher step seen from one family. It is a good first
+  family for that step: the render half already goes through the command layer, the command row is
+  about fifteen lines, and `LauncherRelationClosureTest` plus `CommandSeamRatchetTest`'s
+  `PLAN_LEAF_REFERENCES` counter are a live oracle for it. R704 left the facts it would join
+  already captured and derived (the routine catalog facts, the chain terminus, the routine return
+  binding, and the two name-match keying relations). R668's stage 5 asks to land after this step
+  rather than beside it, and that constraint travels with it.
 * The former decompose-`TypeFetcherGenerator` item (R7, see `roadmap/changelog.md`) asked how to
   break up that file and offered decomposing along the field taxonomy as its leading option. It was
   discarded in this item's favour: the file does not get decomposed along the leaves, it empties
