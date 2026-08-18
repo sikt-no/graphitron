@@ -1,7 +1,7 @@
 ---
 id: R704
 title: "The @routine read surface: unwire the carve-outs, then derive them from facts"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: routine
