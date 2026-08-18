@@ -1,7 +1,7 @@
 ---
 id: R642
 title: "graphitron-mcp reads only the store"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: tooling
@@ -1161,6 +1161,55 @@ Both guards land with it, and the tests section states them. The precondition is
 slices above rather than a grep nobody ran: every `Workspace` accessor has a stated reader count and
 all five are zero, `vocabulary` included.
 
+**As implemented, all four guards are one class in the module's own test sources**,
+`StoreClientBoundaryTest`, one test method per property. One class rather than four because they
+share a scanner and a scope, and because the four assertions read as one statement about what this
+module is: a client of the store, handed its handle and its reader. That class is its own single scan
+exclusion, and it is excluded for a reason worth stating rather than working around: it holds the
+needles, so the forbidden package prefixes and type names appear in it as the strings the scans
+search for. The alternative was assembling each needle from concatenated fragments to keep it from
+matching itself, which buys a hole-free scan with a file nobody can read. The pom half and the
+main-source scans still cover everything that file could otherwise hide.
+
+**The scans look for occurrences, not imports.** The plan said "import scan" throughout and the
+implementation is broader on purpose: a fully-qualified reference and an import are the same
+coupling, and a scan that reads only `import` lines passes the first reader who writes the package
+name inline. Nothing this scan forbids has another reason to appear in a main source, so the
+broader reading costs no false positives and closes the obvious way around.
+
+The connection-ownership guard's needles are the store's boot class, the store-home system property,
+and the JDBC vocabulary a hand-rolled connection needs (`java.sql.Connection`, `java.sql.Driver`,
+`DriverManager`), with `DevQueryExecutor` the one named exclusion. Two things are deliberately not
+needles. `StoreHandle`'s constructor is one: `SchemaQueries` wraps the reader's own `DSLContext` in a
+handle inside the reader transaction, which is how a multi-query answer stays on one commit, and
+forbidding that would forbid the correct shape. `StoreReader` as a type is the other: the module is
+handed one, so naming it is the rule rather than a breach of it. What the guard actually forbids is
+the only way to get either without being handed it, which is opening the store.
+
+The pom half asserts set equality rather than absence, so a missing declaration fails as loudly as an
+added one. That matters more than it sounds: the compile-scope declarations exist precisely because
+they were reachable transitively, and a pom that silently dropped `graphitron-model` back to a
+transitive edge would leave the module compiling while the guard's whole claim went unstated.
+
+Three surfaces beyond the plan's list changed with the parameter, all of them defining themselves
+against the state holder rather than merely mentioning it. `RagConfig`'s javadoc said it exists for
+"the dev-environment glue the RAG indices need but the `Workspace` does not carry", a definition by
+contrast with a type the module no longer has; it now says what it is directly. `DocsRag` explained
+its warms' ownership by analogy, "mirroring how the live `Workspace` is threaded in", and the
+analogue is now the handle and the reader. And `ServerInstructionsTest.pagedWorkspace()` deletes
+whole: about thirty-five lines of hand-built projection (four `CompletionData.ExternalReference`s, a
+`Built.Current` snapshot, a `ValidationReport` with an error and a warning) and eleven generator
+imports, standing up projections for tools that have read the store since slices 6 and 7. Its one
+caller is the paged-total pin, which now reads the same capture every other case does. It was the
+module's last hand-built projection, and deleting it is what makes the language-server scan
+satisfiable in the *test* tree too, which the plan's test-scope allowance had left open.
+
+The classpath shed is what the plan said, confirmed against the resolved tree rather than argued:
+`graphitron-model` and `org.jooq:jooq` at compile, `graphitron` (dragging `graphitron-javapoet`) and
+`graphitron-sakila-db` at test, and nothing else from the reactor in any scope. `graphitron-lsp`,
+`org.eclipse.lsp4j`, `jtreesitter` and `graphitron-tree-sitter-natives` no longer resolve for this
+module at all.
+
 ## The census is already captured
 
 Nothing new is captured here. `CatalogFactCapture.captureCatalog` walks the same `JooqCatalog` the
@@ -2002,6 +2051,17 @@ projection and store is worth writing alongside them: it dies with the projectio
 commit, and what it would have asserted is exactly what the per-tool cases assert against a real
 capture.
 
+A guard that passes is worth nothing until it has been seen to fail, and a scanner has two ways to
+pass vacuously: it can find nothing because there is nothing, or because it walked the wrong place.
+Both are checked. Every scan asserts a floor on the files it reached, and the walk is rooted by the
+repository anchor rather than by the working directory, so a run from anywhere lands in the same
+tree. Ten mutations then confirm each half fires: the store's boot class, a language-server import, a
+generator import and a `walk_` relation each planted in a main source; the language-server import, a
+classification taxonomy and a `walk_` relation each planted in a test source; the same boot class
+planted in `DevQueryExecutor`, which must and does still pass; and, on the pom, `graphitron` moved to
+compile scope, `graphitron-lsp` re-added, and `graphitron-model` dropped back to a transitive edge.
+Nine fail, the exclusion passes.
+
 ## Retired vocabulary
 
 The three tool removals retire more names than any other change here, and a dropped tool's vocabulary
@@ -2129,6 +2189,17 @@ is the kind that survives in prose long after the code goes, so it leads.
   that moved an import
 * "Dev-loop status (ports, warm state)" as the manual's description of the `status` tool. It named
   two things the result never carried, and the two it does carry are now the whole of the entry
+* `Workspace` as a `GraphitronMcpServer` constructor parameter, in all five of its overloads, and
+  with it "the live workspace the tools read off" as prose about what the host passes. The server
+  takes an address, the RAG wiring, an `execute` configuration, a `StoreHandle` and a `StoreReader`,
+  and nothing on that list is a fact about a graph
+* `RagConfig`'s definition of itself as "the glue the RAG indices need but the `Workspace` does not
+  carry", and `DocsRag`'s account of warm ownership as "mirroring how the live `Workspace` is
+  threaded in". Both defined a live thing by contrast or analogy with a type the module no longer
+  has, which is how they outlived every slice that moved a read
+* `pagedWorkspace`, `StoreBackedBuild.workspace`, and a hand-built projection as a fixture shape
+  anywhere in this module's tests. What a case needs is a capture, so the fixture runs the pipeline
+  and reads rows back; a projection assembled in a test could assert a state no build produces
 
 ## Scope boundary
 

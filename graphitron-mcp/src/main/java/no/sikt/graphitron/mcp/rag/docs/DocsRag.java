@@ -22,7 +22,8 @@ import java.io.InputStream;
  * </ul>
  *
  * <p>Both warms are created here but {@code start()}-ed and owned by the caller (the server's host,
- * {@code DevMojo}), mirroring how the live {@code Workspace} is threaded in. A RAG warm failure leaves
+ * {@code DevMojo}), mirroring how the session's store handle and reader are threaded in. A RAG warm
+ * failure leaves
  * the server structured-only and never blocks the bind, a cross-cutting principle of the MCP server.
  */
 public final class DocsRag {

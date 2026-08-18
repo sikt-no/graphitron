@@ -36,18 +36,36 @@
       consumer's repositories at execution time), so this module must NOT carry
       <maven.deploy.skip>.
 
-      R361 adds the compile edge on graphitron-lsp (transitively graphitron): the server now holds
-      the live Workspace and reads LspSchemaSnapshot off it. The edge is acyclic (plugin ->
-      {graphitron, lsp, mcp}; mcp -> lsp -> graphitron; lsp / graphitron never depend on mcp) and
-      orthogonal to this module's dependency-quarantine purpose, which is to keep the heavy native
-      RAG stack (slices 8-10) off graphitron-maven-plugin's compile surface.
+      The reactor edges are an allowlist, and the guard test in this module's own test sources
+      asserts exactly this set: graphitron-model at compile scope, graphitron and
+      graphitron-sakila-db at test scope, nothing else from the reactor in any scope. Every tool
+      answers from the fact store and from the handle plus reader its host passes in, so the store's
+      schema and jOOQ are the whole of what it compiles against. A new reactor edge has to be argued
+      for at the guard rather than noticed later, and a compile edge on graphitron is the case the
+      rule exists for: while it is there, every generator projection is one import away and each one
+      has to be argued down on its own merits.
+
+      Test scope carries graphitron because the fixture drives the real pipeline to produce a
+      capture, and graphitron-sakila-db because that pipeline resolves a jOOQ catalog. Naming both
+      rather than exempting test scope wholesale keeps the fixture a named affordance instead of a
+      hole.
     -->
 
     <dependencies>
+        <!--
+          The fact store's generated query surface and its read vocabulary, plus the jOOQ runtime
+          those generated classes are written against. Both are reached transitively today and are
+          declared here because they are the module's whole compile surface onto a graph's facts: a
+          transitive edge would leave the pom silent about the one thing the guard asserts.
+        -->
         <dependency>
             <groupId>no.sikt</groupId>
-            <artifactId>graphitron-lsp</artifactId>
+            <artifactId>graphitron-model</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq</artifactId>
         </dependency>
 
         <dependency>
@@ -103,11 +121,19 @@
           which ships in the core `mcp` artifact pulled above; no extra coordinate needed.
         -->
         <!--
-          Test-only: the R408 single-evaluator parity test drives the real build pipeline
-          (GraphQLRewriteGenerator.buildOutput) against the sakila jOOQ catalog to prove a
-          build-suppressed lint finding does not surface through the diagnostics tool. Mirrors the
-          catalog dependency graphitron-lsp already carries for its pipeline tests.
+          Test-only, and the pair is one affordance: the store-backed fixture drives the real build
+          pipeline (GraphQLRewriteGenerator.buildOutput) to produce the capture every store-backed
+          case reads, and that pipeline resolves a jOOQ catalog from the sakila generated package.
+          Rows a test asserts on have to come from a real pipeline run, so the generator is a test
+          dependency rather than a projection handed to a tool. Mirrors the catalog dependency
+          graphitron-lsp carries for its pipeline tests.
         -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-sakila-db</artifactId>

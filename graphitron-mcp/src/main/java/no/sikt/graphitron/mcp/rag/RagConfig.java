@@ -6,10 +6,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * The dev-environment glue the RAG indices need but the {@code Workspace} does not carry:
- * where to persist the content-hash-keyed Lucene index between {@code dev} restarts. The same kind
- * of thing as the loopback bind address, not generator model state, so it enters the server through
- * a small record rather than riding {@code Workspace}.
+ * The dev-environment glue the RAG indices need and no fact about a graph carries: where to persist
+ * the content-hash-keyed Lucene index between {@code dev} restarts. The same kind of thing as the
+ * loopback bind address, so it enters the server as its own parameter rather than riding anything
+ * the tools read from.
  *
  * <p>A record (rather than a third positional {@code Path}) so future knobs can be added without
  * regrowing the {@code GraphitronMcpServer} constructor signature.

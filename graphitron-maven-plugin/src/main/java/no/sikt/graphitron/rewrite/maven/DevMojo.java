@@ -380,7 +380,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // message names the MCP port and gives recovery guidance, mirroring the LSP arm's contract.
         try {
             this.mcpServer = new GraphitronMcpServer(
-                new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm, ragConfig,
+                new InetSocketAddress(LOOPBACK_HOST, mcpPort), embedderWarm, docsWarm, ragConfig,
                 executeConfig, storeHandle, storeReader);
         } catch (IOException e) {
             // The partial-startup unwind must reach the warms too, not just the LSP socket: warm

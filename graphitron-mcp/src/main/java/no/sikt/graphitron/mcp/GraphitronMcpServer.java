@@ -5,7 +5,6 @@ import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
 import no.sikt.graphitron.mcp.rag.CatalogSearchIndex;
 import no.sikt.graphitron.mcp.rag.Embedder;
@@ -51,9 +50,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>Every tool answers from the fact store, reading the session's handle or its reader on each
  * call, so each call observes what the latest capture committed without any new trigger or refresh
- * path. The {@link Workspace} the LSP {@code DevServer} holds is still a constructor parameter and
- * no tool reads it any more: the last two readers of a generator projection were the lifecycle axes
- * and the directive vocabulary, and both are queries now.
+ * path. What the host hands this server is that handle and that reader, and nothing else about a
+ * graph: no projection, no build output, and no state holder the LSP shares. That is what lets the
+ * module compile against the store's schema and jOOQ alone, which is the whole of what a store
+ * client needs.
  *
  * <p>The MCP spec serves the Streamable HTTP transport over a single endpoint. The provider
  * matches an incoming request by {@code getRequestURI().equals("/mcp")}, so the servlet is
@@ -98,8 +98,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * structured tools. The entry point the structured-tool tests use; production uses the full
      * constructor.
      */
-    public GraphitronMcpServer(InetSocketAddress address, Workspace workspace) throws IOException {
-        this(address, workspace, null, null, null);
+    public GraphitronMcpServer(InetSocketAddress address) throws IOException {
+        this(address, null, null, null);
     }
 
     /**
@@ -107,15 +107,15 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * For callers that wire only the docs search; production uses the full form.
      */
     public GraphitronMcpServer(
-        InetSocketAddress address, Workspace workspace,
+        InetSocketAddress address,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm
     ) throws IOException {
-        this(address, workspace, embedderWarm, docsWarm, null);
+        this(address, embedderWarm, docsWarm, null);
     }
 
     /**
-     * Builds and starts the server on the supplied loopback address, holding the live
-     * {@code workspace} the tools read off, the two RAG warms {@code docs.search} rides, and the
+     * Builds and starts the server on the supplied loopback address, holding the two RAG warms
+     * {@code docs.search} rides and the
      * {@code ragConfig} the catalog index persists under. A taken port surfaces as an
      * {@link IOException}; the caller translates it into a Mojo error. On any startup failure the
      * partially-built server is torn down before the exception propagates. The embedder / docs
@@ -124,27 +124,27 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * A RAG warm failure leaves the server structured-only and never blocks the bind.
      */
     public GraphitronMcpServer(
-        InetSocketAddress address, Workspace workspace,
+        InetSocketAddress address,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig
     ) throws IOException {
-        this(address, workspace, embedderWarm, docsWarm, ragConfig, null);
+        this(address, embedderWarm, docsWarm, ragConfig, null);
     }
 
     /**
-     * The six-arg form without a fact store: the store-backed tools are advertised but refuse when
+     * The store-less form: the store-backed tools are advertised but refuse when
      * called, naming what is missing. The entry point of the store-less test boots; production uses
      * the full constructor below.
      */
     public GraphitronMcpServer(
-        InetSocketAddress address, Workspace workspace,
+        InetSocketAddress address,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
         ExecuteTool.Config executeConfig
     ) throws IOException {
-        this(address, workspace, embedderWarm, docsWarm, ragConfig, executeConfig, null, null);
+        this(address, embedderWarm, docsWarm, ragConfig, executeConfig, null, null);
     }
 
     /**
-     * The full production form: the five-arg server plus the {@code execute} tool
+     * The full production form: the RAG-configured server plus the {@code execute} tool
      * configuration and the fact store handle. When {@code executeConfig} is {@code null} (no
      * dev database configured), the {@code execute} tool is not registered at all, the stronger
      * form of the degrade-gracefully posture: the RAG tools stay advertised and degrade, the
@@ -164,7 +164,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * for the same reason the handle is.
      */
     public GraphitronMcpServer(
-        InetSocketAddress address, Workspace workspace,
+        InetSocketAddress address,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
         ExecuteTool.Config executeConfig, StoreHandle storeHandle, StoreReader storeReader
     ) throws IOException {

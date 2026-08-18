@@ -4,7 +4,6 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
 import no.sikt.graphitron.mcp.rag.Embedder;
 import no.sikt.graphitron.mcp.rag.FakeEmbedder;
@@ -44,8 +43,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * handshake carries the bundled instructions, the {@code about} prompt is advertised
  * argument-less and returns the bundled explainer, a taken port fails with an {@link IOException},
  * and the {@code tools} capability advertises the one liveness {@code status} tool whose
- * {@code tools/call} reflects the live {@link Workspace} snapshot state on both the default
- * {@code Unavailable} arm and a driven {@code Built.Current} arm. Infrastructure-tier; mirrors
+ * {@code tools/call} reports the store's lifecycle axes on both the {@code Unavailable} arm of a
+ * graph nothing captured and the {@code Built} / {@code Current} arm of one a pass read clean.
+ * Infrastructure-tier; mirrors
  * {@code DevServerTest}. The ephemeral port (never the hard-coded {@code 8488}) keeps parallel CI
  * runs from colliding.
  */
@@ -53,7 +53,7 @@ class GraphitronMcpServerTest {
 
     @Test
     void initializeReturnsBundledInstructions() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+        try (var server = new GraphitronMcpServer(loopback(0));
              var client = connect(server.port())) {
 
             McpSchema.InitializeResult init = client.initialize();
@@ -69,7 +69,7 @@ class GraphitronMcpServerTest {
 
     @Test
     void aboutPromptIsAdvertisedArgumentlessAndReturnsExplainer() throws Exception {
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+        try (var server = new GraphitronMcpServer(loopback(0));
              var client = connect(server.port())) {
             client.initialize();
 
@@ -92,9 +92,9 @@ class GraphitronMcpServerTest {
 
     @Test
     void bindingTakenPortFailsWithIoException() throws Exception {
-        try (var first = new GraphitronMcpServer(loopback(0), new Workspace())) {
+        try (var first = new GraphitronMcpServer(loopback(0))) {
             int port = first.port();
-            assertThatThrownBy(() -> new GraphitronMcpServer(loopback(port), new Workspace()))
+            assertThatThrownBy(() -> new GraphitronMcpServer(loopback(port)))
                 .isInstanceOf(IOException.class);
         }
     }
@@ -109,7 +109,7 @@ class GraphitronMcpServerTest {
         // ServerInstructionsTest, rather than by a second hardcoded list here that would have to be
         // edited twice.
         try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: Int }");
-             var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null,
+             var server = new GraphitronMcpServer(loopback(0), null, null, null,
                  null, fixture.handleFor("never-captured"), fixture.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -136,7 +136,7 @@ class GraphitronMcpServerTest {
         // The degrade-gracefully posture, stronger than the RAG tools' advertised-but-degrading:
         // with no dev database the execute tool is simply absent (pinned by the named surface in
         // ServerInstructionsTest, which boots both arms); with one configured it appears.
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null, executeConfig());
+        try (var server = new GraphitronMcpServer(loopback(0), null, null, null, executeConfig());
              var client = connect(server.port())) {
             client.initialize();
 
@@ -153,13 +153,13 @@ class GraphitronMcpServerTest {
         // verbatim; this is the composed arm. ServerInstructionsTest pins what the prose has to cover.
         String tail = resource("/mcp/instructions-execute.txt").strip();
 
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+        try (var server = new GraphitronMcpServer(loopback(0));
              var client = connect(server.port())) {
             assertThat(client.initialize().instructions())
                 .as("with no dev database the execute tail must not appear")
                 .doesNotContain(tail);
         }
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null, executeConfig());
+        try (var server = new GraphitronMcpServer(loopback(0), null, null, null, executeConfig());
              var client = connect(server.port())) {
             assertThat(client.initialize().instructions().strip())
                 .as("with a dev database configured the base block carries the execute tail")
@@ -182,7 +182,7 @@ class GraphitronMcpServerTest {
         // partition, and that emptiness is the freshness axis. The relations are written on every
         // pass, so it is "read clean" rather than "nothing looked yet".
         try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: Int }");
-             var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null,
+             var server = new GraphitronMcpServer(loopback(0), null, null, null,
                  null, fixture.handle(), fixture.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -1450,7 +1450,7 @@ class GraphitronMcpServerTest {
     void diagnosticsToolsRefuseWithoutAStoreHandle() throws Exception {
         // The store-less boot advertises both tools but a call refuses, naming the missing
         // handle: zero rows from a missing store would read identically to a clean schema.
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+        try (var server = new GraphitronMcpServer(loopback(0));
              var client = connect(server.port())) {
             client.initialize();
 
@@ -1464,12 +1464,12 @@ class GraphitronMcpServerTest {
     }
 
     /**
-     * A server holding the fixture's live workspace, its session store handle and its reader, as the
+     * A server holding the fixture's session store handle and its reader, as the
      * dev loop wires it: the host mints both, so a case that passed only one would be testing a
      * server no session builds.
      */
     private static GraphitronMcpServer server(StoreBackedBuild build) throws IOException {
-        return new GraphitronMcpServer(loopback(0), build.workspace, null, null, null, null,
+        return new GraphitronMcpServer(loopback(0), null, null, null, null,
             build.handle(), build.reader());
     }
 
@@ -1487,7 +1487,7 @@ class GraphitronMcpServerTest {
                 type Query { film: Film }
                 type Film @table(name: "film") { title: String }
                 """);
-             var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null,
+             var server = new GraphitronMcpServer(loopback(0), null, null, null,
                  null, fixture.handle(), fixture.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -1588,7 +1588,7 @@ class GraphitronMcpServerTest {
         // Un-started warms read as Warming: the tool is advertised but degrades to the structured tools.
         var embedderWarm = new AsyncWarm<Embedder>("e", () -> new PlantedEmbedder(3, new float[] {1, 0, 0}));
         var docsWarm = new AsyncWarm<DocsIndex>("d", GraphitronMcpServerTest::pagingDocsIndex);
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+        try (var server = new GraphitronMcpServer(loopback(0), embedderWarm, docsWarm);
              var client = connect(server.port())) {
             client.initialize();
 
@@ -1609,7 +1609,7 @@ class GraphitronMcpServerTest {
             throw new RuntimeException("ONNX unavailable");
         }));
         var docsWarm = startedAwaited(new AsyncWarm<DocsIndex>("d", GraphitronMcpServerTest::pagingDocsIndex));
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+        try (var server = new GraphitronMcpServer(loopback(0), embedderWarm, docsWarm);
              var client = connect(server.port())) {
             client.initialize();
 
@@ -1630,7 +1630,7 @@ class GraphitronMcpServerTest {
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e",
             () -> new PlantedEmbedder(3, new float[] {1, 0, 0})));
         var docsWarm = startedAwaited(new AsyncWarm<DocsIndex>("d", GraphitronMcpServerTest::pagingDocsIndex));
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+        try (var server = new GraphitronMcpServer(loopback(0), embedderWarm, docsWarm);
              var client = connect(server.port())) {
             client.initialize();
 
@@ -1662,7 +1662,7 @@ class GraphitronMcpServerTest {
             () -> new PlantedEmbedder(3, new float[] {1, 0, 0})));
         var docsWarm = startedAwaited(new AsyncWarm<DocsIndex>("d", () -> docsIndexOf(4, List.of(
             entry(new DocChunk(List.of("A"), "docs/manual/x.adoc", "a", "body"), new float[] {1, 0, 0, 0})))));
-        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+        try (var server = new GraphitronMcpServer(loopback(0), embedderWarm, docsWarm);
              var client = connect(server.port())) {
             client.initialize();
 
@@ -1737,7 +1737,7 @@ class GraphitronMcpServerTest {
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
         try (var census = StoreFixture.ofCatalog(tmp);
              var server = new GraphitronMcpServer(
-                loopback(0), new Workspace(), embedderWarm, null, RagConfig.temporary(),
+                loopback(0), embedderWarm, null, RagConfig.temporary(),
                 null, census.handle(), census.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -1771,7 +1771,7 @@ class GraphitronMcpServerTest {
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new BlockingEmbedder(384)));
         try (var census = StoreFixture.ofCatalog(tmp);
              var server = new GraphitronMcpServer(
-                loopback(0), new Workspace(), embedderWarm, null, RagConfig.temporary(),
+                loopback(0), embedderWarm, null, RagConfig.temporary(),
                 null, census.handle(), census.reader());
              var client = connect(server.port())) {
             client.initialize();
@@ -1795,7 +1795,7 @@ class GraphitronMcpServerTest {
     void catalogSearchRefusesWithoutAStoreToRead() throws Exception {
         var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
         try (var server = new GraphitronMcpServer(
-                loopback(0), new Workspace(), embedderWarm, null, RagConfig.temporary());
+                loopback(0), embedderWarm, null, RagConfig.temporary());
              var client = connect(server.port())) {
             client.initialize();
 

@@ -4,19 +4,8 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
-import no.sikt.graphitron.rewrite.catalog.TypeClassification;
-import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -319,7 +308,7 @@ class ServerInstructionsTest {
         // test classes are more than one, which is what the limit=1 call needs.
         try (var build = StoreBackedBuild.run(tmp, "paged", PAGED_SDL,
                  List.of(StoreFixture.testClassesRoot()));
-             var server = server(pagedWorkspace(), null, build.handle(), build.reader());
+             var server = server(null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
             var advertised = advertisedSurface(client);
@@ -486,58 +475,6 @@ class ServerInstructionsTest {
     // ---- fixtures ----
 
     /**
-     * One workspace carrying every live projection the paged tools still read, each with at least two
-     * entries so a {@code limit=1} call actually pages: a built snapshot with type classifications for
-     * {@code schema}, and external references with methods, condition methods, and record components
-     * for {@code services} / {@code conditions} / {@code records}. {@code catalog.tables} and
-     * {@code diagnostics} answer from the capture beside it and read nothing here.
-     */
-    private static Workspace pagedWorkspace() {
-        var filmService = new CompletionData.ExternalReference(
-            "com.example.FilmService", "com.example.FilmService", "",
-            List.of(
-                new CompletionData.Method("list", "Film", "", List.of(), false),
-                new CompletionData.Method("activeFilms", "Condition", "", List.of(), true)),
-            List.of());
-        var actorService = new CompletionData.ExternalReference(
-            "com.example.ActorService", "com.example.ActorService", "",
-            List.of(new CompletionData.Method("byName", "Condition", "", List.of(), true)),
-            List.of());
-        var filmCard = new CompletionData.ExternalReference(
-            "com.example.FilmCard", "com.example.FilmCard", "",
-            List.of(),
-            List.of(new CompletionData.RecordComponent("filmId", "Integer"),
-                new CompletionData.RecordComponent("title", "String")));
-        var actorCard = new CompletionData.ExternalReference(
-            "com.example.ActorCard", "com.example.ActorCard", "",
-            List.of(),
-            List.of(new CompletionData.RecordComponent("actorId", "Integer")));
-        var catalog = new CompletionData(List.of(), List.of(),
-            List.of(filmService, actorService, filmCard, actorCard), Map.of());
-
-        var typeClassifications = new LinkedHashMap<String, TypeClassification>();
-        typeClassifications.put("Film", new TypeClassification.Table("film"));
-        typeClassifications.put("Actor", new TypeClassification.Table("actor"));
-        Map<String, TypeBackingShape> backing = Map.of("Film", new TypeBackingShape.TableBacking("film"));
-        Map<String, FieldClassification> fields =
-            Map.of("Film.title", new FieldClassification.Column("film", "title"));
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(), backing, Map.of(), fields, typeClassifications, Map.of());
-
-        var error = new ValidationError("Query.film",
-            new Rejection.AuthorError.Structural("unknown table reference"),
-            new graphql.language.SourceLocation(5, 3, "/schema.graphqls"));
-        BuildWarning warning = new BuildWarning.NoRule("shadowed directive",
-            new graphql.language.SourceLocation(1, 1, "/schema.graphqls"));
-        var report = ValidationReport.from(List.of(error), List.of(warning));
-
-        var workspace = new Workspace();
-        workspace.setBuildOutput(
-            new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
-        return workspace;
-    }
-
-    /**
      * A dev-database configuration that is never connected to: the execute tool is registered from
      * it at boot, which is all the conditional arm needs.
      */
@@ -549,19 +486,14 @@ class ServerInstructionsTest {
     }
 
     private static GraphitronMcpServer server(ExecuteTool.Config executeConfig) throws IOException {
-        return server(new Workspace(), executeConfig);
+        return server(executeConfig, null, null);
     }
 
-    private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig)
-        throws IOException {
-        return server(workspace, executeConfig, null, null);
-    }
-
-    private static GraphitronMcpServer server(Workspace workspace, ExecuteTool.Config executeConfig,
+    private static GraphitronMcpServer server(ExecuteTool.Config executeConfig,
         StoreHandle storeHandle, StoreReader storeReader) throws IOException {
         return new GraphitronMcpServer(
             new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
-            workspace, null, null, null, executeConfig, storeHandle, storeReader);
+            null, null, null, executeConfig, storeHandle, storeReader);
     }
 
     private static McpSyncClient connect(int port) {

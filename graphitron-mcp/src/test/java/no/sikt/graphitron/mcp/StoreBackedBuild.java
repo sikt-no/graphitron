@@ -1,6 +1,5 @@
 package no.sikt.graphitron.mcp;
 
-import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -27,8 +26,9 @@ import java.util.Optional;
  * dev loop wires it. The pipeline run captures facts (the pilot arm's substrate) into the store
  * directory; this fixture then plays {@code DevMojo}'s part with no mojo in play: it opens its
  * own session handle onto the same store, invokes the residue and warning loaders over the
- * build's two pre-fuse lists, publishes the build onto a {@link Workspace}, and hands the
- * handle to the server under test. Tests over hand-built reports cannot survive the substrate:
+ * build's two pre-fuse lists, and hands the handle to the server under test. That is the whole of
+ * what the mojo hands the server, so the fixture holds no build state beside it. Tests over
+ * hand-built reports cannot survive the substrate:
  * the loaders read the walk's own streams, so the rows a test asserts on have to come from a
  * real pipeline run.
  */
@@ -51,15 +51,13 @@ final class StoreBackedBuild implements AutoCloseable {
      */
     static final String MULTISCHEMA_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
 
-    final Workspace workspace;
     final GraphitronModelStore store;
     final String graphName;
     final GraphQLRewriteGenerator.BuildOutput output;
     private StoreReader reader;
 
-    private StoreBackedBuild(Workspace workspace, GraphitronModelStore store, String graphName,
+    private StoreBackedBuild(GraphitronModelStore store, String graphName,
                              GraphQLRewriteGenerator.BuildOutput output) {
-        this.workspace = workspace;
         this.store = store;
         this.graphName = graphName;
         this.output = output;
@@ -117,14 +115,12 @@ final class StoreBackedBuild implements AutoCloseable {
                 SchemaRecipe.literalOver(inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
                 null);
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-            var workspace = new Workspace();
-            workspace.setBuildOutput(output.artifacts(), output.report());
 
             var store = GraphitronModelStore.openAt(storeHome);
             var identity = new FactCapture.GraphIdentity(graphName, tmp);
             new RejectionFacts(store.dsl(), identity).write(output.walkErrors());
             new BuildWarningFacts(store.dsl(), identity).write(output.warnings());
-            return new StoreBackedBuild(workspace, store, graphName, output);
+            return new StoreBackedBuild(store, graphName, output);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

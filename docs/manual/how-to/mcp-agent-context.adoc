@@ -6,7 +6,7 @@ You are working on a Graphitron subgraph with an MCP-aware coding agent (Claude 
 
 [TIP]
 ====
-This is the companion to xref:dev-loop.adoc[the dev loop]. The same `mvn graphitron:dev` process serves both the LSP (for your editor) and the MCP server (for your agent) off one warm workspace. If you have the dev loop running, the MCP server is already up.
+This is the companion to xref:dev-loop.adoc[the dev loop]. The same `mvn graphitron:dev` process serves both the LSP (for your editor) and the MCP server (for your agent) off one warm store. If you have the dev loop running, the MCP server is already up.
 ====
 
 == TLDR
@@ -29,7 +29,7 @@ The MCP server is loopback-only and read-only: it exposes context about the proj
 
 == What the MCP server gives an agent
 
-An MCP-aware agent connected to the server gets three kinds of context, all served off the same warm workspace the dev loop keeps current.
+An MCP-aware agent connected to the server gets three kinds of context, all served off the same warm store, which every dev-loop pass captures into. `status` tells you how current that capture is rather than leaving you to assume.
 
 An **`about` prompt** (surfaced as the `+/mcp__graphitron__about+` slash command) that orients the agent on the dev loop and how to use the other tools. Run it first in a fresh session.
 

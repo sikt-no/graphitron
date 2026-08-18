@@ -44,7 +44,7 @@ class LintSuppressionDiagnosticsParityTest {
     void buildSuppressedFindingDoesNotSurfaceThroughDiagnostics(@TempDir Path tmp) throws Exception {
         try (var build = StoreBackedBuild.run(tmp, "LintSuppressionDiagnosticsParityTest", SDL,
                 LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
-             var server = new GraphitronMcpServer(loopback(0), build.workspace,
+             var server = new GraphitronMcpServer(loopback(0),
                  null, null, null, null, build.handle(), build.reader());
              var client = connect(server.port())) {
             client.initialize();
