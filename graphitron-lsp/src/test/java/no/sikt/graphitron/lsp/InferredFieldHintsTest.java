@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>One silence here is a gap rather than a verdict, and it is asserted as one:
  * {@code FilmRow} resolves its member names against the columns of the table whose row type backs it,
- * and no relation derives that match. {@code FieldMemberName} carries the same statement where it
+ * and no relation derives that match. The overlay's own projection carries the same statement where it
  * outlives this test.
  */
 class InferredFieldHintsTest {

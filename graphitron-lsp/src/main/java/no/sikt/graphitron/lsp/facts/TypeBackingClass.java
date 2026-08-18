@@ -3,12 +3,8 @@ package no.sikt.graphitron.lsp.facts;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.TableField;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -53,39 +49,18 @@ public final class TypeBackingClass {
     /**
      * The class backing {@code typeName} in this graph, empty where the store reaches none or
      * reaches more than one after the grounding rule.
+     *
+     * <p>Lazy in the second population, which is the grounding rule expressed as work not done: a
+     * type a producer of its own grounds needs no reading of what a hop reached, the seeds having
+     * already answered. A caller resolving a whole region asks both populations as arms of its own
+     * statement and applies {@link #resolve} over what it holds.
      */
     public static Optional<String> of(StoreHandle store, String typeName) {
-        return Optional.ofNullable(ofTypes(store, List.of(typeName)).get(typeName));
-    }
-
-    /**
-     * The class backing each of {@code typeNames}, keyed by type name, absent for a type the store
-     * reaches none or more than one class for. The two rules above are applied per type, so a
-     * contested type is missing from the result beside an unbacked one exactly as it is from
-     * {@link #of}.
-     *
-     * <p>Bulk because the inlay arm annotates a whole visible region, and a query per declaration
-     * on the screen is the cost the claim readers already refuse to pay. Two queries and not one
-     * per type: the seeds for everything asked about, then the coalesced relation for the names
-     * nothing grounded, which is every type whose backing is a hop's or a {@code @table}
-     * binding's.
-     */
-    public static Map<String, String> ofTypes(StoreHandle store, Collection<String> typeNames) {
-        if (typeNames.isEmpty()) return Map.of();
-        var grounded = candidatesByType(store, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
-            INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME, typeNames);
-        var ungrounded = new ArrayList<String>();
-        for (String typeName : typeNames) {
-            if (!grounded.containsKey(typeName)) ungrounded.add(typeName);
-        }
-        var reached = candidatesByType(store, INTENT_TYPE_BACKING.TYPE_NAME,
-            INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME, ungrounded);
-        var resolved = new LinkedHashMap<String, String>();
-        for (String typeName : typeNames) {
-            resolve(grounded.getOrDefault(typeName, Set.of()), reached.getOrDefault(typeName, Set.of()))
-                .ifPresent(className -> resolved.put(typeName, className));
-        }
-        return resolved;
+        var grounded = candidatesOf(store, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
+            INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME, typeName);
+        if (!grounded.isEmpty()) return resolve(grounded, Set.of());
+        return resolve(Set.of(), candidatesOf(store, INTENT_TYPE_BACKING.TYPE_NAME,
+            INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME, typeName));
     }
 
     /**
@@ -105,21 +80,15 @@ public final class TypeBackingClass {
             : Optional.empty();
     }
 
-    private static Map<String, Set<String>> candidatesByType(
+    private static Set<String> candidatesOf(
         StoreHandle store, TableField<?, String> typeColumn, TableField<?, String> classColumn,
-        TableField<?, String> graphColumn, Collection<String> typeNames
+        TableField<?, String> graphColumn, String typeName
     ) {
-        if (typeNames.isEmpty()) return Map.of();
-        var byType = new LinkedHashMap<String, Set<String>>();
-        store.dsl()
-            .selectDistinct(typeColumn, classColumn)
+        return new LinkedHashSet<>(store.dsl()
+            .selectDistinct(classColumn)
             .from(typeColumn.getTable())
             .where(graphColumn.eq(store.graphName()))
-            .and(typeColumn.in(typeNames))
-            .fetch()
-            .forEach(row -> byType
-                .computeIfAbsent(row.get(typeColumn), ignored -> new LinkedHashSet<>())
-                .add(row.get(classColumn)));
-        return byType;
+            .and(typeColumn.eq(typeName))
+            .fetch(classColumn));
     }
 }

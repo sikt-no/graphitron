@@ -2925,7 +2925,14 @@ gone, replaced by a walk that collects and a judgement that reads one answer. `D
 reads `CatalogTables`, `CatalogKeys`, `CatalogColumns`, `ClasspathClasses`, `ClasspathMethods`,
 `FieldColumnTable` or `TypeMemberScope` directly at all; the relations those readers own are arms of
 `DiagnosticFacts`, and the two rules that had to survive the move are `TypeMemberScope.resolve` and the
-`spelledBy` conditions on `CatalogTables` and `CatalogKeys`.
+`spelledBy` conditions on `CatalogTables` and `CatalogKeys`. The inlay recomposition retires the rest of
+the per-grain bulk readers: the whole of `ClaimClassifiers` (`ofTypes`, `ofFields`) and of
+`FieldMemberName` (`of`, `matchedColumn`), plus `BoundTables.unambiguous` and `unambiguousByType`,
+`TypeBackingClass.ofTypes` with its `candidatesByType`, and `ClaimFacts.separateFetchRules`. Their
+relations are arms of `InlayFacts` now. `InlayHints` no longer names a reader class at all, and its
+per-directive registry holds collectors rather than renderers, so `renderInferredTableNameHint`,
+`renderInferredFieldNameHint` and `renderInferredReferencePathHint` are gone along with the
+`InferenceSources` record and the `InlayHintKind` parameter on `makeHint`.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -3400,3 +3407,70 @@ cannot: the classpath is unbounded relative to the schema, and a real catalog ca
 tables, so `jvm_class`, `jvm_method` and arguably `sql_table` want the authored value set. Dropping the
 filters trades payload for plan-caching and there is no measurement either way, so it stays a filter that
 only ever narrows. Make it work, then make it fast.
+
+## Settled while building: the overlays are one statement per region, and the promised view cannot be stated without moving a rule the store keeps visible
+
+The inlay surface was the last capability reading a value where it found one, and its grain made it the
+worst offender. An editor reissues an inlay request per visible window, on every scroll, so a count that
+tracked the region was paid at the cadence of the cursor rather than of a build. Measured first, on a
+counting handle:
+
+| One inlay request over | statements |
+|---|---|
+| a bare `@field` on a table-bound type | 4 |
+| a bare `@field` on a class-backed type | 10 |
+| a window holding no declaration at all | 6 |
+| a type with ten bare `@field` sites | 23 |
+| a schema exercising every arm | 15 |
+
+Every one of those is 1 now, and the empty window is 0. The floor of six was the four bulk claim reads
+plus the round-trip rule plus the binding, asked whether or not anything on screen needed them; the
+growth was the member-name overlay, whose four questions each chose the next one's subject: the site's
+own settled column, then the type's binding, then its backing class, then that class's slots. Four
+relations sharing no key, so they were always askable together, and the chain was in the reading.
+
+**The region is the only unit this surface has, which is what makes the assertion a flat one.** The
+diagnostics work had to sort three grains out, because a recalculation spans the files a capture touched
+and the facts are keyed per graph. An inlay request is one file's window and belongs to nothing wider, so
+there is no drain to union across and no per-graph floor. `InlayHintStatementCountTest` therefore asserts
+one, and the case that keeps the one honest is the one asserting that ten sites and forty sites cost the
+same, since a surface can be one-per-request and still fan out per site.
+
+**The shape is `DiagnosticFacts`' again: collect, resolve, render.** All four arms walk first and read
+nothing, recording a `Pending` intent beside the question that answers it; `InlayFacts` answers the whole
+set in nine arms over no driving table; rendering runs over the intents in walk order, which is the order
+the arms produced them in, so what an editor receives is byte-identical. Every intent carries an
+already-resolved `Position` rather than the tree-sitter node it came from, the native-lifetime invariant
+the diagnostics batch discovered the hard way applying here by construction rather than by accident.
+
+**Two arms return rows nobody reads, and both times the alternative was worse.** The bindings are asked
+for every member site's type as well as every type an overlay might name a table for, and the backings
+for every visible declaration as well as every member site's type. Narrowing either would mean an arm
+asserting a precedence its reader owns: which of a claim and a backing labels a type, and whether a
+binding or a class scopes a name, are decided after every arm has returned, by `TypeBackingClass.resolve`
+and `TypeMemberScope.resolve` respectively. Rows in a payload, not a round trip.
+
+**`intent_field_member_name` is not being added, and this contradicts the plan above, so here is why.**
+The plan named it the one new view the recomposition earns: the column match at the field coordinate
+unioned with the member slot re-grained to that coordinate through the backing relation, carrying the
+member name and which basis answered, so "the arm order stops being the reader's". The column arm states
+cleanly. The class arm cannot, because to re-grain a slot to a field coordinate the view must first know
+which single class stands for the parent type, and that means deciding two things in SQL that the DDL
+twice says on purpose are not the store's to decide. `intent_type_backing_seed`'s comment: "The
+precedence is the reader's and not this relation's, which states only where a backing came from."
+`intent_type_backing_class`'s: "Which of those two rows to believe is `intent_type_backing_seed`'s to
+tell a reader, not this relation's to decide." Both are there so a contested backing stays observable
+instead of being silently resolved, which is the specific defect the closure was built to expose in the
+walk. A view answering a member name would have to pick, and would bury the contest one grain further
+down than the relation that reports it.
+
+What the objection behind the promised view actually wanted has been had anyway. The arm order is no
+longer a sequence of round trips whose order is load-bearing; it is a two-line rule over rows already in
+hand, and it has one home, `TypeMemberScope.resolve`, applied identically by the diagnostics projection
+and this one. So the cost of not adding the view is nine arms instead of six and a rule stated in Java
+rather than in DDL, and the cost of adding it is the store answering a question by discarding a
+disagreement. The trade is worth flagging rather than settling silently: if the view is wanted, the
+honest way to get it is a prior view that names the one backing class of a type and owns its
+cannot-be-a-view argument in a DDL comment, and that is a modelling decision of its own rather than a
+step in this recomposition.
+

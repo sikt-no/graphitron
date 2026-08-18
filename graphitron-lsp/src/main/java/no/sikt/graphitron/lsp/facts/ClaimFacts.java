@@ -6,10 +6,7 @@ import org.jooq.Record1;
 import org.jooq.Records;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
@@ -32,8 +29,8 @@ import static org.jooq.impl.DSL.selectDistinct;
 
 /**
  * What a claimed declaration carries beyond its classifier, read from the relation that owns each
- * fact. {@link ClaimClassifiers} answers what graphitron takes a declaration to be; this answers the
- * detail behind that answer, without any projection carrying every payload any variant might have.
+ * fact. The claim relations answer what graphitron takes a declaration to be; this answers the detail
+ * behind that answer, without any projection carrying every payload any variant might have.
  *
  * <p>The split between relations is the whole point. A classifier is a word, and the facts behind it
  * belong to different relations on different keys: a column match knows a table and a column and
@@ -148,39 +145,6 @@ public final class ClaimFacts {
         }
         var backing = TypeBackingClass.resolve(arms.grounded(), arms.reached()).orElse(null);
         return new TypeBlock(claims, backing, backing == null ? first(arms.contested()) : null);
-    }
-
-    /**
-     * Why each field of {@code typeNames} is fetched by a statement of its own, keyed by
-     * {@code Type.field}, one rule per reason. A coordinate no rule reaches is absent.
-     *
-     * <p>Absence is not the claim that the field inlines. Two populations are still outside the
-     * relation, a child reached through a connection wrapper and the polymorphic fan-in, so a
-     * surface may report a rule it finds and must not report the absence of one. The relation's own
-     * comment carries the same prohibition and names both, since it outlives this reader.
-     *
-     * <p>Bulk, like the classifier readers and for the same reason: the inlay arm annotates a whole
-     * visible region and a query per field would pay per declaration on the screen.
-     */
-    public static Map<String, List<String>> separateFetchRules(
-        StoreHandle store, Collection<String> typeNames
-    ) {
-        if (typeNames.isEmpty()) return Map.of();
-        var rows = store.dsl()
-            .select(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME, INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME,
-                INTENT_FIELD_SEPARATE_FETCH.RULE)
-            .from(INTENT_FIELD_SEPARATE_FETCH)
-            .where(INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME.in(typeNames))
-            .orderBy(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME, INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME,
-                INTENT_FIELD_SEPARATE_FETCH.RULE)
-            .fetch();
-        var byCoordinate = new LinkedHashMap<String, List<String>>();
-        for (var row : rows) {
-            byCoordinate.computeIfAbsent(row.value1() + "." + row.value2(), ignored -> new ArrayList<>())
-                .add(row.value3());
-        }
-        return byCoordinate;
     }
 
     /**

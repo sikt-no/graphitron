@@ -3,11 +3,7 @@ package no.sikt.graphitron.lsp.facts;
 import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 
@@ -54,41 +50,4 @@ public final class BoundTables {
         return tables;
     }
 
-    /**
-     * The one table each of {@code typeNames} is bound to, keyed by type name, for the surfaces that
-     * may only speak when the binding is certain: an overlay showing the author what
-     * graphitron filled in has to be the value graphitron would fill in, and there is no such value
-     * where two tables answer to one name.
-     *
-     * <p>A type whose binding is ambiguous is absent from the map rather than present with a picked
-     * winner, and the certainty is read from the view's {@code candidates} column rather than from
-     * the number of rows this query happens to bring back. Counting here would re-derive the
-     * resolution's own arity, which is the reason that column exists.
-     *
-     * <p>Bulk because its callers annotate a whole visible region; a query per declaration on the
-     * screen is what the grain-at-a-time readers in this package exist to avoid.
-     */
-    public static Map<String, CatalogTable> unambiguousByType(
-        StoreHandle store, Collection<String> typeNames
-    ) {
-        if (typeNames.isEmpty()) return Map.of();
-        var rows = store.dsl()
-            .select(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.TABLE_SOURCE_NAME,
-                INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME)
-            .from(INTENT_BOUND_TABLE)
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.in(typeNames))
-            .and(INTENT_BOUND_TABLE.CANDIDATES.eq(1))
-            .fetch();
-        var byType = new LinkedHashMap<String, CatalogTable>(rows.size());
-        for (var row : rows) {
-            byType.put(row.value1(), new CatalogTable(row.value2(), row.value3(), row.value4()));
-        }
-        return byType;
-    }
-
-    /** {@link #unambiguousByType} for a single type, on the same terms. */
-    public static Optional<CatalogTable> unambiguous(StoreHandle store, String typeName) {
-        return Optional.ofNullable(unambiguousByType(store, List.of(typeName)).get(typeName));
-    }
 }
