@@ -1,7 +1,7 @@
 ---
 id: R712
 title: "Name the three tiers, and retire authored versus effective"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: docs
@@ -99,18 +99,139 @@ The corollary worth writing down: the 48 foreign keys from `graphitron_` into `g
 derivation's edges to its inputs. They are correct and permanent, and they are not an argument for or
 against separating the two families.
 
-## Shape
+## Implementation
 
-- `fact-model.adoc` gains a short section naming the three tiers and the recompute test, placed ahead
-  of the derived-reads section it generalises, and its macro paragraph is rewritten to keep its
-  argument and correct its conclusion.
-- `pipeline-overview.adoc`'s sentence is corrected to describe what capture actually does today, in
-  tier vocabulary, so the two documents stop disagreeing.
-- `MacroCapture`'s javadoc drops the authored/effective defence and states its tier honestly: an
-  expansion running inside capture, which the sibling items move.
-- Where the tiers already have names in the tree, use those rather than minting new ones. The
-  transcription families, the derived stratum and the consumer views are all named in the document
-  already; this item is not a renaming of relations.
+Prose and naming only, one commit is fine. Anchors below are symbols and quoted prose; re-find by
+search, never by line number. Where the tiers already have names in the tree, use those rather than
+minting new ones; this item is not a renaming of relations.
+
+### `fact-model.adoc`: the new tier section
+
+A new `== ` section placed immediately ahead of "Derived reads are views, not stored facts", since
+that is the discipline it generalises. It carries:
+
+- The tier statement (capture transcribes facts from a corpus; derivation computes further facts
+  from captured ones; queries read facts to serve a goal) and the recompute test, stated once as
+  the decision procedure: a row that can be recomputed from captured facts alone is a derived fact
+  and must not be captured. Note that the test decides mechanically what the derived-reads section
+  argues case by case.
+- The family assignment from "Which tier each family is in" above, including the two verdict
+  residents in tier one, `graphitron_` in tier two, and `walk_` as scaffolding in neither tier.
+- The clarification that a relation's tier is decided by what its rows are a function of, not by
+  what program computes them: a materialization whose producer is a Java walk is tier two if its
+  inputs are captured facts. The sentence later in the same document that currently says the
+  stratum "is decided by what produces its rows" (the `intent_class_member_slot` paragraph) is
+  reworded to this same test in the same edit, keeping its walk-versus-rule contrast as the
+  illustration, so the two sections state one rule instead of two.
+- The corollary that the foreign keys from `graphitron_` into `graphql_` are a derivation's edges
+  to its inputs, correct and permanent, and no argument for or against separating the families.
+  State it without the count (48 today); an unguarded census rots silently.
+- The enforcer line the page's preamble demands. The live gate for the decode half is
+  `FactSchemaGateTest.theDecodeDoesNotReplaceTheTranscription`, the verbatim-transcription twins
+  already cited in the executable-form section: a tier-two decode may not displace the tier-one
+  transcription. Name it, and state the gap precisely: the gate covers a decode that adds rows
+  beside the transcription, and does not cover a macro that rewrites `graphql_field.type_sdl` in
+  place, which is exactly the inverted case the macro paragraph names. Do not cite
+  `FactCaptureAgreementTest`'s registration arms as the tier's reflection: they file `graphitron_`
+  under the containment arm beside `graphql_`, because the arms answer how a relation's contents
+  are pinned, not what its rows are computed from.
+
+### `fact-model.adoc`: the macro paragraph
+
+The paragraph beginning "Where a macro rewrote a fact, read the authored form rather than walking
+the expansion" keeps its argument and inverts its conclusion. Keep: a derivation over the written
+type expression works for any macro that rewrites a type expression, including ones that do not
+exist yet, while a derivation over the expansion's shape is coupled to the one macro. Correct:
+under the recompute test the written type expression is the captured fact and the expansion is the
+derivation; today's shape, the expansion sitting in `graphql_field.type_sdl` and the written form
+held as text in `graphitron_field_synthesis.authored_type_sdl`, is the inverted assignment, stated
+as the transitional present rather than defended. State the prediction (correcting the assignment
+makes the side column unnecessary) without citing item ids; roadmap ids do not belong in docs
+prose.
+
+### `pipeline-overview.adoc`: two sentences, not one
+
+- In "Parse and attribute", the sentence "the store records what the author wrote, with synthesis
+  recorded as provenance rows rather than silently merged into the authored picture" is factually
+  wrong and is replaced with what capture does: it transcribes the pre-synthesis snapshot, then
+  runs the expansions itself (`MacroCapture`), writing expansion rows through the same doors with
+  the `graphitron_*_synthesis` provenance rows marking what an expansion contributed. Say the
+  recoverability honestly, split by kind: for the two relations that mark rows an expansion
+  *added* (`graphitron_type_declaration_synthesis`, `graphitron_type_directive_synthesis`) the
+  transcription is the anti-join; the one relation that marks a row an expansion *rewrote*
+  (`graphitron_field_synthesis`) leaves the written expression only in its own text column, and no
+  anti-join recovers it. The blanket "recoverable as the anti-join" claim is itself part of the
+  retired defence; it must not survive the correction anywhere it is restated.
+- In "Capture transcribes: the fact store", "transcribes everything the run read in one
+  transaction: ... the decoded graphitron and federation directives into the `graphitron_`
+  relations" files a tier-two decode under transcription. Correct to the decode being a derivation
+  whose producer runs at capture cadence; the paragraph's own closing sentence ("Two derivations
+  materialize at capture cadence inside the same transaction") already has the vocabulary, so this
+  is one clause.
+
+### `MacroCapture` and `SdlFactCapture`
+
+- `MacroCapture`'s class javadoc drops "keeps the store's picture effective rather than authored"
+  and states the tier honestly: macro expansion is a derivation running inside the capture walk
+  (the sibling items move it), writing through capture's doors with provenance rows. Apply the
+  added-versus-rewritten split from above rather than the blanket anti-join claim. Keep the
+  agreement-suite pinning sentence and the "nothing here rejects" paragraph.
+- `MacroCapture.effectiveFieldType`'s javadoc: same treatment.
+- Rename `effectiveFieldType` to `expandedFieldType` (package-private, one call site, in
+  `SdlFactCapture.captureFields`). The Retired vocabulary section declines to rename
+  `authored_type_sdl` and the `intent_authored_*` views because the tier reading predicts they
+  become unnecessary; the same prediction deletes this method, so lifetime does not discriminate.
+  Cost and reach do: the method rename costs two lines and reaches no consumer, where a column
+  rename costs a DDL edit and every reader of it. Rename the method, leave the relations.
+- The inline comment above that call site ("The effective type, not the authored one ... the
+  store's picture is the schema consumers see and the authored one is the anti-join") carries the
+  retired claim more explicitly than the method name does, and its anti-join half is false at this
+  very site: the rewritten row is in no anti-join. Rewrite it.
+
+### The `graphitron_field_synthesis` table comment
+
+`COMMENT ON TABLE graphitron_field_synthesis` says "the authored expression survives here while
+the field's `graphql_field` row holds the effective one". DDL comments render into the published
+schema reference, so this is the highest-visibility carrier of the retired contrast. Rewrite it in
+tier vocabulary (the written expression beside the expansion's result), leaving the column name
+untouched per Out of scope. A comment edit is not a relation change.
+
+### Test prose carrying the vocabulary
+
+- `MacroCaptureTest`'s class javadoc: "The store's picture is the effective schema".
+- `MacroCaptureTest`'s `@DisplayName` ending "and the authored type survives": say the written
+  type expression.
+- `FactCaptureAgreementTest`: the comment "The authored picture is the anti-join, so the macro has
+  to be what put the unauthored rows there" and the javadoc "the store keeps the authored
+  expression".
+
+## Sweep fences
+
+The Retired vocabulary section below defines the Done-gate greps. Three families of hits are a
+different sense of the same words and stay:
+
+- "the effective schema-file-extension filter" (`SchemaRecipe`, `AbstractRewriteMojo`, the
+  `store_graph_schema_extension` table comment, `FactCaptureAgreementTest`'s round-trip
+  assertion): "effective" as the filter in effect, even though "the effective schema"
+  substring-matches it.
+- "effective type" meaning the base declaration merged with its extensions
+  (`graphql_field.ordinal`'s comment, `ArgNameCompletions`' field-order javadoc).
+- "authored" contrasting author input with structural inference or with generator output: the
+  claim stratum's `intent_authored_*` vocabulary and the provenance section of `fact-model.adoc`,
+  plus "authored condition", "authored filter", "authored coordinates" and kin across the tree.
+  The retirement is scoped to authored-versus-synthesized as names for the store's contents.
+
+No `RetiredVocabularyGuardTest.PHRASE_REGISTRY` entry now: the registry's own bar is a term that
+survives a sweep, and this item is the first sweep. Registration is the escalation if the phrase
+recurs.
+
+## Verification
+
+- `mvn install -Plocal-db`: the docs render, the javadoc reference gate over the edited javadoc,
+  `RoadmapReferenceGuardTest` over the edited prose, and the full suite over the
+  `effectiveFieldType` rename.
+- Pre-run the Retired vocabulary greps before requesting In Review; the fences above say what a
+  hit that stays looks like.
 
 ## Retired vocabulary
 
