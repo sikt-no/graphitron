@@ -36,7 +36,78 @@ second process attaches through the first rather than being refused. Measured ag
 h2 2.4.240 with the store's own URL: an attach onto an idle holder takes about 750 ms and the
 write that follows about 10 ms.
 
-## Where the stall comes from
+## Two stalls, and only one of them is bounded
+
+Two independent stalls sit on the path a build takes to the shared store, at two different layers,
+and they need two different answers. The unbounded one is at `open` and is almost certainly the
+reported one; the bounded one is inside `capture` and is a real defect of its own. They are described
+in that order below.
+
+## The unbounded stall: H2's file-lock liveness probe
+
+Nothing in this one is graphitron's code, and no SQL-level setting reaches it. `AUTO_SERVER=TRUE`
+makes the first process write a `store.lock.db` naming the TCP port its embedded server listens on:
+
+```
+#FileLock
+hostName=localhost
+id=1a0166fa01bf431efbafa2105e80816a5aa15fdf8fd
+method=file
+server=localhost\:36115
+```
+
+A later process opening the same file goes `GraphitronModelStore.connect` → `JdbcDataSource` →
+`SessionRemote.connectEmbeddedOrServer` → `Engine.createSession` → `Database.<init>` →
+`FileLock.lock` → `FileLock.checkServer`, and `checkServer` decides whether the recorded holder is
+still alive by talking to that port: open a socket, write a short handshake, read an int back. A
+holder that answers throws `DATABASE_ALREADY_OPEN_1` carrying the server key, which is the signal
+that turns the opener into a TCP client of the holder. That is the whole of mixed mode, and when the
+holder answers it costs 243 ms end to end.
+
+The socket comes from `NetUtils.createSocket(String, int, boolean)`, which passes a read timeout of
+zero. So the read has **no timeout at all**, and an opener whose socket connects to something that
+never answers blocks in `DataInputStream.readInt` forever. Two ways to be that something, both
+reproduced against h2 2.4.240 with the store's own URL, each confirmed by a stack in
+`FileLock.checkServer`:
+
+1. **The holder is alive but not answering.** `SIGSTOP` on the holder (a developer's Ctrl-Z on
+   `mvn graphitron:dev`, a laptop suspended with the dev loop running, a debugger stopped at a
+   breakpoint) leaves the listening socket open in the kernel, so the connect succeeds and the
+   handshake is never read. The opener sat in `readInt` from the moment the holder was suspended and
+   returned only when the holder was killed 26 s later, with `Connection is broken`. Nothing about
+   the wait was bounded; the 26 s is when the experiment ended.
+2. **The holder is gone and its port has been taken over.** A `kill -9`'d dev session leaves
+   `store.lock.db` behind naming an ephemeral port, and nothing ever removes it. Any unrelated
+   process that later listens on that port makes every subsequent opener hang: measured still blocked
+   at 90 s, with the squatting listener confirming it had accepted the connection and said nothing.
+   This one is permanent until the squatter exits or somebody deletes the cache directory by hand.
+
+Three things make this worse than a long wait:
+
+- **`openAt`'s fallback cannot fire.** Its `catch (RuntimeException)` promises that any failure to
+  open costs warmth and never correctness. A block is not a failure, so the promise is defeated by
+  the one outcome it was written to absorb.
+- **It needs no capture in flight.** This is at `open`, so an *idle* `graphitron:dev` session is
+  enough. That matches the report ("cannot run while a dev session runs") far better than a race
+  against the few seconds around a save.
+- **It is held under a JVM-wide monitor.** The stack shows `Engine.openSession` holding
+  `Engine$DatabaseHolder`, so in the blocked JVM every other thread opening the same store queues
+  behind it too.
+
+The mechanism exists only because of `AUTO_SERVER`. `checkServer` returns immediately when the lock
+file carries no `server=` entry, and without `AUTO_SERVER` h2 2.4.240 writes no `store.lock.db` at
+all: it takes the MVStore's own OS-level file lock instead. Measured on the same holder, same file:
+
+| Opener meets | With `AUTO_SERVER` | Without it |
+|---|---|---|
+| a live holder | attaches in 243 ms, shares the rows | fails in 101 ms, `90020 Database may be already in use` |
+| a suspended holder | blocks in `readInt`, unbounded | fails in 92 ms, same `90020`; an OS lock outlives scheduling |
+| a `kill -9`'d holder whose port was taken over | blocks in `readInt`, unbounded, permanently | opens in 211 ms; the OS drops the lock with the process |
+
+Both `90020` arms land in the existing `catch (RuntimeException)` and demote to memory, which is the
+behaviour this item is asking for, already written and currently unreachable.
+
+## The bounded stall: 60 seconds on the anchor row
 
 `FactCapture.capture` is one transaction end to end, and it opens with the `store_graph` anchor-row
 upsert precisely so that a concurrent writer of the same graph *serializes on that row* instead of
@@ -48,9 +119,10 @@ graph name, so it is the same row.
 falls back cold". Two mechanisms that are each individually right compose into the stall:
 
 1. The build's capture blocks on the anchor row for a silent 60 s, then H2 throws
-   `JdbcSQLTimeoutException` ("Timeout trying to lock table"). Measured at 60 857 ms, against an
-   anchor row held uncommitted on purpose rather than against a live dev session: what the number
-   establishes is the cost of the wait, not how often a real session provokes one.
+   `JdbcSQLTimeoutException` ("Timeout trying to lock table"). Measured at 60 857 ms in one process
+   and 60 023 ms across two, in both cases against an anchor row held uncommitted on purpose rather
+   than against a live dev session: what the numbers establish is the cost of the wait, not how often
+   a real session provokes one.
 2. `FactCapture.captureWithRetry` catches the resulting `DataAccessException` and retries the same
    capture against the same store, which blocks for another silent 60 s. That retry exists to tell a
    transient concurrency casualty apart from a deterministic capture bug, which is a good reason to
@@ -59,9 +131,9 @@ falls back cold". Two mechanisms that are each individually right compose into t
    silence followed by a message that arrives after the user has already concluded the build is
    wedged.
 
-Nothing in the wait is unbounded, so "does not time out" is a description of how it reads rather
-than of the code; two minutes with zero output is indistinguishable from a hang, which is the
-defect either way.
+Nothing in *this* wait is unbounded, so on its own it would make "does not time out" a description of
+how the stall reads rather than of the code. Two minutes with zero output is indistinguishable from a
+hang either way, which is why it stays in scope alongside the genuine hang above.
 
 ## What holds the anchor row, and a hypothesis that did not survive
 
@@ -89,23 +161,35 @@ failure surfaced beyond the rollbacks the probe injected itself. So the shared c
 documented rule being broken and is not the reported stall's cause. It is not this item's business,
 and the account above stands: the hold is one capture long.
 
-Which leaves a gap between the account and the report. If the hold is one capture long, the reporter
-should have waited seconds rather than the two minutes they describe, so either their capture is
-genuinely that slow (a large project, a cold classpath census, a first run) or something not yet
-found holds the row longer. The design below deliberately does not depend on knowing which: it makes
-*any* hold cost two seconds and a sentence, which is the same answer for a slow capture and for a
-cause still unaccounted for. What it would not survive is the hold being permanent, and that is what
-the probe above rules out.
+Which leaves a gap between this account and the report, and the gap is what sent the search to the
+`open` layer. If the anchor-row hold is one capture long, the reporter should have waited seconds
+rather than the two minutes they describe. The file-lock probe explains the report without that
+strain: it needs no capture in flight, it is unbounded, and "does not time out" describes it
+literally.
 
-## Deliberately separate: the hard-killed holder poisons the store
+Telling the two apart in a live incident is cheap, and worth saying out loud because the two fixes
+below are independent: a `jstack` of the stalled Maven process names its layer directly. A stack in
+`FileLock.checkServer` is the probe; a stack in a jOOQ `execute` under `FactCapture.capture` is the
+anchor row. `cat store.lock.db` in the cache directory settles the rest, its `server=` naming the
+port the opener is trying to reach.
 
-Adjacent and worth its own item rather than folding in here. `graphitron:dev` is normally ended
-with Ctrl-C. A holder killed before H2 flushes leaves `store.mv.db` present but with no
-`store_stamp` row in it. `GraphitronModelStore.openAt` finds a file at the stamped path whose stamp
-does not match, correctly refuses to repair or delete a file it did not write, and falls back to
-memory. It will do so on *every* subsequent run, so the workspace loses warm start permanently and
-silently until somebody deletes the cache directory by hand. Reproduced with `kill -9` on a holder:
-the next opener reports `Table "T" not found (this database is empty)`.
+## The hard-killed holder leaves two things behind
+
+`graphitron:dev` is normally ended with Ctrl-C. A holder killed harder leaves both of its files, and
+they poison the store in two different ways. One belongs here and one does not.
+
+The **lock file** is this item's business, because it is half of the unbounded stall above:
+`store.lock.db` survives with a `server=` naming an ephemeral port that nothing owns any more, and
+nothing ever removes it. Until something else takes that port the cost is small, a 4114 ms open where
+`checkServer`'s connect is refused; once something does, every opener in that workspace hangs.
+
+The **database file** is the separate item. `store.mv.db` survives with no `store_stamp` row in it,
+so `openAt` finds a file at the stamped path whose stamp does not match, correctly refuses to repair
+or delete a file it did not write, and falls back to memory. It will do so on *every* subsequent run,
+so the workspace loses warm start permanently and silently until somebody deletes the cache directory
+by hand. Reproduced with `kill -9` on a holder: the next opener reports `Table "STORE_GRAPH" not
+found (this database is empty)`. Dropping `AUTO_SERVER` would remove the lock-file half of this
+outright, since h2 2.4.240 then writes no lock file at all, and would leave the stamp half untouched.
 
 ## What "fail fast" has to mean here
 
@@ -115,7 +199,51 @@ a contended cache earning a build failure would invert it. So "fail fast" reads 
 fast, say why, and carry on cold*. The observable the user asked for is that `mvn test` stops
 looking wedged, and that is delivered by a short wait plus a sentence, not by an exit code.
 
-## The design: a short budget on the one row where waiting buys nothing
+## The design, first half: the open cannot block
+
+The open has to be bounded by us, because H2 offers nothing to bound it with. `h2.socketConnectTimeout`
+caps the connect and not the read, and the `FileLock` probe's read timeout is a hard-coded zero with no
+property behind it. Two ways to get a bound, and they are not exclusive.
+
+**Drop `AUTO_SERVER=TRUE`.** One line, and the mechanism is gone rather than bounded: no lock file, no
+recorded port, no socket, no probe. An opener that meets a held file learns so from the OS in about
+100 ms and takes the `catch (RuntimeException)` path that already does the right thing. The table above
+is the whole argument, and the reported case ends at 100 ms and a sentence.
+
+What it costs is the sharing the flag was bought for. Two processes can no longer hold the store at
+once, so the second goes cold in memory and contributes nothing back. Which cases that touches:
+
+1. **Sequential module builds**, the ordinary `mvn test`: unaffected. Each module opens, captures,
+   closes, and the next finds the previous module's rows. This is where most of the warmth is.
+2. **A parallel reactor build** (`-T 1C`, which CI uses): the non-first modules to open concurrently
+   go cold. This is the real loss, and it is a loss of *sharing within one build*, not of warm start
+   across builds: the next build still opens onto whatever the winner committed.
+3. **A build beside a dev session**: goes cold, in 100 ms, with a warning. Today it either shares in
+   243 ms or hangs, and the fix for the hang is what this whole item is.
+
+What it does *not* cost is anything inside one JVM, which is where the flag is easy to assume
+load-bearing and is not. A second connection onto a store this process already holds does not go
+through the file lock at all: H2 gives one process one `Database` per file and hands further
+connections off it. Measured without `AUTO_SERVER`, all in one JVM with the writer's handle open: a
+`reader()`-shaped second connection opened in 0 ms and read the writer's committed rows under
+`SNAPSHOT` isolation; a `DevMojo`-shaped transient third connection (the per-pass `openAt`) opened,
+wrote, and closed, with the writer seeing its rows and staying usable afterwards. So the language
+server's reader, the MCP reader and the dev session's per-pass captures are all untouched, and
+`reader()`'s javadoc needs its "in mixed mode" clause corrected rather than its claim withdrawn.
+
+**Bound the open with a watchdog.** Keep `AUTO_SERVER` and its sharing, and run `connect` on a thread
+with a deadline: on expiry, abandon it and fall back to memory. It bounds *every* way an open can
+block rather than the one found here, which is the more honest shape for a promise phrased as "any
+failure at all falls back". It costs a daemon thread parked in a socket read that we cannot interrupt,
+since we do not own the socket. Harmless in a build JVM that exits, and a dev session is the holder
+rather than the opener, so it never takes this path.
+
+Recommendation: drop `AUTO_SERVER`, and treat the watchdog as the follow-up if the parallel-reactor
+warmth turns out to matter. The one-line change removes a permanent wedge and a hang; the watchdog
+keeps a sharing case that only CI exercises. Doing the watchdog *first* keeps the hang mechanism alive
+behind a timer, which is a worse place to stand.
+
+## The design, second half: a short budget on the one row where waiting buys nothing
 
 The split is by *row*, not by role. The generous budget is right for every row a capture takes
 except the anchor, and the anchor is the only row the reported collision touches.
@@ -213,6 +341,11 @@ did instead, because a warning with no consequence attached reads as damage. It 
 unaffected, because the store is a cache and a user who does not know that will assume a warning
 about a database means their schema did not generate.
 
+One message covers both halves, and that is deliberate: from where the user stands, a store held by
+another process and a store whose anchor row is held by another process are the same event with the
+same consequence. The distinction matters to whoever fixes it, not to whoever reads it, and the
+`jstack` recipe above is how a maintainer recovers it when it matters.
+
 One doc change follows it: `docs/manual/how-to/dev-loop.adoc` gains a troubleshooting entry for the
 symptom as the user meets it, a build that pauses briefly and then warns while `graphitron:dev` runs,
 alongside the existing port-conflict entry. `docs/manual/reference/mojo-configuration.adoc` needs
@@ -221,6 +354,12 @@ checkout's modules", and that stays true.
 
 ## Implementation
 
+- `GraphitronModelStore.fileUrl`: `AUTO_SERVER=TRUE` comes off. Its javadoc's account of mixed mode
+  is replaced by why the flag is refused, which is the finding above and not a preference: a probe
+  that cannot time out is not a cost a cache may impose. The class javadoc's mixed-mode paragraph and
+  `openAt`'s ("the first process holds the file, later ones attach transparently") go with it, and
+  `reader()`'s claim that "a file-backed one is in mixed mode and hands out connections to the same
+  process freely" needs restating, since same-process connections do not depend on the flag.
 - `GraphitronModelStore`: the lock budget in `fileUrl` becomes a named public constant so
   `FactCapture` can restore to the same number. No signature change, no path change, nothing else.
 - `FactCapture.capture`: the two `SET LOCK_TIMEOUT` statements bracketing `writeGraph`, and the
@@ -238,6 +377,13 @@ stay deterministic.
 - Two handles in one JVM, one holding an uncommitted write on the `store_graph` anchor row, the other
   capturing the same graph: the capture gives up inside the anchor budget, well short of the generous
   one, and the run completes cold with every fact present.
+- The open cannot block, which needs the forked-process machinery the class already has: a holder
+  process owns the store, and an `openAt` in this JVM returns within a bound and reports a cold store,
+  rather than attaching. This is the test that would fail today, and it is the one that keeps
+  `AUTO_SERVER` from coming back for a plausible-sounding reason later.
+- A second connection while this JVM holds the store still opens and reads the holder's rows, which is
+  `reader()`'s and the per-pass capture's contract and the one thing dropping the flag could plausibly
+  have broken. Measured above; asserting it is what stops that measurement rotting.
 - The generous budget survives the anchor. A capture whose anchor is uncontended but whose shared
   `jvm_` rows are held uncommitted by another writer waits past the anchor budget rather than giving
   up at it. Without this, a later edit could lower one number and silently lower both, retiring the
@@ -264,13 +410,24 @@ enum, a changed store-opening signature, a one-time cold start for every consume
 and a documentation promise to rewrite. All of that to convert a rare few-second warmth loss into no
 warmth loss, in a cache.
 
-Nothing here forecloses it. The row-scoped budget and the role split are independent, so if the
-warmth loss turns out to bite, the role split arrives later as its own item and this change stays
-correct underneath it.
+The file-lock finding partly rehabilitates it, and it is worth saying which part. A separate store per
+role does keep a build and a dev session off each other's file, which removes the *reported* collision
+at its source rather than bounding it. What it does not do is remove the mechanism: two builds of a
+parallel reactor still open each other's file, and a stale lock file whose port has been taken over
+still wedges whoever meets it. So the role split is an optimisation over a bounded open, never a
+substitute for one, and on that reading its cost lands the same way as before.
+
+Nothing here forecloses it. The row-scoped budget, the bounded open and the role split are mutually
+independent, so if the warmth loss turns out to bite, the role split arrives later as its own item and
+these changes stay correct underneath it.
 
 ## Out of scope
 
-- The hard-killed-holder demotion above, which needs its own item.
+- The hard-killed-holder stamp demotion above, the `store.mv.db` half, which needs its own item. The
+  lock-file half is in scope, being half of the unbounded stall.
+- Reporting H2's own lock state to the user beyond the one warning: naming the holder's pid, reading
+  `store.lock.db` in the message, offering to clear a stale lock. All tempting once the mechanism is
+  understood, and all of it is a second item on top of a store that no longer hangs.
 - `DevMojo`'s four writers on one connection. A documented rule broken, measured not to strand a
   lock, and not this item's cause; its own item if it earns one.
 - Eviction, freshness checking, and anything else about the store's lifecycle.
