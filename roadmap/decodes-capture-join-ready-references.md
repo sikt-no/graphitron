@@ -47,7 +47,7 @@ string: `table_ref`, `key_ref`, `column_ref`, `name_ref`, `index_ref`, `routine_
 
 ## Implementation
 
-### The split: seven columns the DDL already documents as qualifiable
+### The split: nine columns, seven documented as qualifiable and two established as such
 
 These carry `schema.name` or a bare name, by their own column comments, and are the columns
 `intent_spelled_table` takes apart on every read. Each becomes two columns, both as written, split
@@ -77,17 +77,55 @@ once by the decoder:
 
 | `graphitron_reference_for_step.key_ref`
 | a path element's constraint
+
+| `graphitron_field_reference_step.table_ref`
+| a path element's table (established below)
+
+| `graphitron_mutation.table_ref`
+| the `@mutation(table:)` write target (established below)
 |===
 
-### Settle first: two more columns the view splits but the comments do not admit
+### Settled: the two undocumented columns are qualifiable, and two comments are wrong
 
-`graphitron_field_reference_step.table_ref` is commented "ReferenceElement.table as written" and
-`graphitron_mutation.table_ref` "the DELETE write target as written", neither noting a qualifier,
-yet both feed the `intent_spelled_table` union whose predicate splits on the first dot. So either the
-comments under-document what an author may write, or the view handles a case that cannot occur.
-Decide this before splitting, because it decides whether these two join the seven above or stay single
-columns. Reading the `@reference` and `@mutation` reference pages, and the rejection detections around
-them, should settle it without guessing.
+The spec previously deferred this. Traced, so it is no longer a question.
+
+`graphitron_mutation.table_ref` carries `@mutation(table:)`, read by
+`MutationInputResolver.parseMutationTableArg` as a plain string and resolved at its "Rung 2" through
+`svc.resolveTable(...)`, whose javadoc states it outright: "Accepts both unqualified ({@code "film"})
+and schema-qualified ({@code "public.film"}) directive values, routed through
+{@link JooqCatalog#findTable(String)}".
+
+`graphitron_field_reference_step.table_ref` carries `ReferenceElement.table`, read in
+`BuildContext.parsePathElement` and resolved through `catalog.findForeignKeysBetweenTables`, whose
+javadoc names that exact construct as its caller and states that "Each argument is resolved through
+{@link #findTable(String)}", which its body does.
+
+What settles it beyond the resolvers is that `graphitron_field_reference_step.table_ref` and
+`graphitron_argument_reference_step.table_ref` capture the *same* SDL construct at two locations, and
+only the argument-side comment mentions the qualifier. They cannot both be right, and the pipeline
+sends both to one resolver.
+
+So two comment corrections ship with this item, and the second column comment is wrong twice:
+`graphitron_mutation.table_ref` reads "the DELETE write target as written", while
+`TABLE_ARG_SUPPORTED_VERBS` is `{DELETE, INSERT, UPDATE}`. It is the write target for three verbs and
+it may carry a qualifier.
+
+### Split each column with its own resolver's grammar, not a shared helper
+
+The two qualifiable halves of a `ReferenceElement` are split by different grammars, and the decoder
+has to match each one rather than normalise them:
+
+- `key` is split at the call site by `JooqCatalog.parseQualifiedForeignKeyName`, whose documented
+  fallback is that a stray-dot value degrades to unqualified and produces the ordinary
+  `NotInCatalog` rejection.
+- `table` is split inside `findTable` by `JooqCatalog.parseQualifiedTableName`, after which matching
+  is by jOOQ table-class identity when resolution succeeds and by `equalsIgnoreCase` on the bare
+  endpoint name when it does not.
+
+A single `splitQualified()` helper would make the captured split and the pipeline's split disagree on
+a malformed value, which is the silent divergence between store and pipeline that the agreement suite
+exists to catch. Both grammars are already static methods on `JooqCatalog`, so the decoder reuses them
+rather than restating them, and a pinned case per grammar covers the stray-dot fallback.
 
 ### The fold: an ordinary column with a postfixed name and a comment
 
@@ -137,7 +175,11 @@ the schema-wide count to work down from is 30 `UPPER`, 10 `POSITION` and 9 `SUBS
 
 - Pipeline tier: capture a qualified `@table(name: "public.film")` and an unqualified
   `@table(name: "film")` and pin both columns on each, including that the qualifier is NULL rather
-  than empty on the unqualified one. Same for a `@reference` path element's key and for `@routine`.
+  than empty on the unqualified one. Same for a `@reference` path element's table and key, for
+  `@routine`, and for `@mutation(table:)`.
+- One stray-dot case per grammar, pinning that a malformed value captures as unqualified with the
+  whole string in the name column, so the store agrees with the fallback each resolver already
+  documents rather than inventing a third behaviour.
 - The check constraints are the invariant for the folded columns, so no test restates them; what does
   need a test is that the decoder writes the pair at all, which the pipeline pin above covers by
   asserting the `_upper` value.
