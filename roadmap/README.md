@@ -566,7 +566,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ## Concept explainers
 
-_Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. Authored with the `explainer` skill; this listing derives from `concepts/*.html`, never by hand._
+_Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. The pages are authored by hand; this listing is derived from `concepts/*.html` and must not be edited directly._
 
 - [Consumer-derived input tables](concepts/consumer-derived-input-tables.html) (backs R97)
 - [Flattened selection sets and shared result keys](concepts/flattened-selection-result-keys.html) (backs R499, R500)
