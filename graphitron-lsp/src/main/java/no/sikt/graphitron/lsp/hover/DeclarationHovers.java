@@ -3,12 +3,10 @@ package no.sikt.graphitron.lsp.hover;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
-import no.sikt.graphitron.lsp.facts.ClaimClassifiers;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
 import no.sikt.graphitron.lsp.facts.DeclarationFact;
 import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
-import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
@@ -42,10 +40,10 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * declaration nothing claims gets no block, which is the same silence the inlay hint keeps at an
  * unclaimed declaration.
  *
- * <p>The field block costs one statement. It used to cost one per claim on top of three, and the
- * per-claim reads were the defect: a conflicted coordinate paid per directive that claimed it, for
- * facts whose relations were all keyed on the one coordinate being hovered. The type block is
- * {@link ClaimClassifiers#ofTypes} plus a read per claim still.
+ * <p>Either block costs one statement, and the per-claim reads they replaced were the defect: a
+ * conflicted coordinate paid per directive that claimed it, for facts whose relations were all keyed
+ * on the one coordinate being hovered. {@code DeclarationHoverStatementCountTest} holds both numbers,
+ * because no assertion on the rendered text can see them.
  *
  * <p>Beneath the classification block, the hover overlays what the graph's own facts say about the
  * declaration the coordinate binds to: a table's database comment, a column's or member's doc
@@ -238,8 +236,9 @@ public final class DeclarationHovers {
     }
 
     /**
-     * The type block, on the same shape as the field one. {@code null} when the store says nothing
-     * about the type at all.
+     * The type block, on the same shape as the field one and at the same cost, one statement.
+     * {@code null} when the store says nothing about the type at all, which is a plain nesting object
+     * and the population this block must stay quiet about.
      *
      * <p>A claim is not the only thing that opens it. A payload type reached through a
      * {@code @service} return carries no type directive, so no claim names it, and the store still
@@ -250,42 +249,33 @@ public final class DeclarationHovers {
      * <p>The backing shows only where no claim does, and the reason is not room. A claimed type's
      * classifier is the answer to what it is, and its backing follows from that answer: a
      * {@code @table} type's class is its table's generated record, which the table facts already
-     * name one join away. Where the two populations meet and disagree the hover says so rather
-     * than picking, which is the one thing neither the inlay nor the resolving reader can do.
+     * name one join away. That is a rendering rule, so it is applied here rather than asked of the
+     * reader, which answers both regardless.
+     *
+     * <p>Where the two populations meet and disagree the hover says so rather than picking, which is
+     * the one thing neither the inlay nor the resolving reader can do. That line exists because the
+     * population had no surface at all: two producers naming different classes for one type is a
+     * schema the generator refuses to bind, and every reader that needs one class is silent there by
+     * design, so without it an author sees a payload type that renders like a plain object and no
+     * reason why.
      */
     private static String renderTypeMarkdown(StoreHandle store, DeclarationHover.TypeDeclarationHover decl) {
-        var classifiers = ClaimClassifiers.ofTypes(store, List.of(decl.typeName()))
-            .getOrDefault(decl.typeName(), List.of());
-        if (classifiers.isEmpty()) return renderTypeBackingMarkdown(store, decl.typeName());
+        var block = ClaimFacts.ofType(store, decl.typeName());
+        if (block.isEmpty()) return null;
         var sb = new StringBuilder();
-        sb.append("**").append(String.join(", ", classifiers)).append("**");
-        sb.append("\n\n`").append(decl.typeName()).append("`");
-        for (String classifier : classifiers) {
-            appendFacts(sb, ClaimFacts.ofType(store, decl.typeName(), classifier));
+        var classifiers = block.classifiers();
+        if (!classifiers.isEmpty()) sb.append("**").append(String.join(", ", classifiers)).append("**\n\n");
+        sb.append("`").append(decl.typeName()).append("`");
+        for (var claim : block.claims()) {
+            appendFacts(sb, claim.facts());
         }
-        return sb.toString();
-    }
-
-    /**
-     * What the store knows about an unclaimed type: the class standing for it, or the classes it
-     * cannot choose between. {@code null} for a type nothing backs, which is a plain nesting object
-     * and the population this block must stay quiet about.
-     *
-     * <p>The contested line exists because that population had no surface at all. Two producers
-     * naming different classes for one type is a schema the generator refuses to bind, and every
-     * reader that needs one class is silent there by design, so without a line saying which classes
-     * disagree an author sees a payload type that renders like a plain object and no reason why.
-     */
-    private static String renderTypeBackingMarkdown(StoreHandle store, String typeName) {
-        var backing = TypeBackingClass.of(store, typeName);
-        var contested = backing.isPresent() ? Optional.<String>empty()
-            : TypeBackingClass.contested(store, typeName);
-        if (backing.isEmpty() && contested.isEmpty()) return null;
-        var sb = new StringBuilder("`").append(typeName).append("`");
-        backing.ifPresent(className ->
-            sb.append("\n\nBacked by: `").append(className).append("`"));
-        contested.ifPresent(classNames -> sb
-            .append("\n\nBacking contested, so nothing binds: `").append(classNames).append("`"));
+        if (!classifiers.isEmpty()) return sb.toString();
+        if (block.backing() != null) {
+            sb.append("\n\nBacked by: `").append(block.backing()).append("`");
+        }
+        if (block.contested() != null) {
+            sb.append("\n\nBacking contested, so nothing binds: `").append(block.contested()).append("`");
+        }
         return sb.toString();
     }
 

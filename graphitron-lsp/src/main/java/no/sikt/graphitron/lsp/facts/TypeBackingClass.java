@@ -13,7 +13,6 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 
 /**
@@ -40,9 +39,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
  *
  * <p>Empty is likewise what an unbacked type gives, and the two absences are deliberately one
  * answer here: a surface asking what a class offers has nothing to say in either case. A surface
- * that does want them apart, because it is explaining a type rather than resolving one, asks
- * {@link #contested} for the second, which is where {@code intent_type_backing_conflict}'s arity
- * turns into words.
+ * that does want them apart, because it is explaining a type rather than resolving one, reads
+ * {@code intent_type_backing_conflict} beside these two populations and applies {@link #resolve} to
+ * tell which absence it is holding; {@link ClaimFacts#ofType} is that surface's reader.
  *
  * <p>This is the question the language server used to put to the classification walk's projection,
  * which resolved it by reflection per build and carried the answer as a permit's class name.
@@ -83,29 +82,27 @@ public final class TypeBackingClass {
             INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME, ungrounded);
         var resolved = new LinkedHashMap<String, String>();
         for (String typeName : typeNames) {
-            var candidates = grounded.containsKey(typeName)
-                ? grounded.get(typeName)
-                : reached.getOrDefault(typeName, Set.of());
-            if (candidates.size() == 1) resolved.put(typeName, candidates.iterator().next());
+            resolve(grounded.getOrDefault(typeName, Set.of()), reached.getOrDefault(typeName, Set.of()))
+                .ifPresent(className -> resolved.put(typeName, className));
         }
         return resolved;
     }
 
     /**
-     * The classes the store answers with for a type it answers more than one way, canonically
-     * rendered, or empty for a type it does not. Over the coalesced relation, which is the grain
-     * {@code intent_type_backing_conflict} groups, so a type this reports is one
-     * {@link #of} declines rather than a second reading of the same rows: a type one seed grounds
-     * has an answer even where hops reached others.
+     * Both rules above, over candidates a caller already holds: the seeds where the type has any,
+     * else the classes the closure reached, and an answer only where exactly one class stands.
+     *
+     * <p>Here rather than inlined in the reader above because a caller assembling one statement of
+     * its own fetches the same two populations as arms of it, and the rule that decides between them
+     * belongs to the question rather than to any one reading of it. Both populations must arrive
+     * distinct: more than one element is taken to be disagreement, so a repeated observation would
+     * read as a contest.
      */
-    public static Optional<String> contested(StoreHandle store, String typeName) {
-        if (of(store, typeName).isPresent()) return Optional.empty();
-        return Optional.ofNullable(store.dsl()
-            .select(INTENT_TYPE_BACKING_CONFLICT.CLASS_NAMES)
-            .from(INTENT_TYPE_BACKING_CONFLICT)
-            .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME.eq(typeName))
-            .fetchOne(INTENT_TYPE_BACKING_CONFLICT.CLASS_NAMES));
+    public static Optional<String> resolve(Collection<String> grounded, Collection<String> reached) {
+        var candidates = grounded.isEmpty() ? reached : grounded;
+        return candidates.size() == 1
+            ? Optional.of(candidates.iterator().next())
+            : Optional.empty();
     }
 
     private static Map<String, Set<String>> candidatesByType(

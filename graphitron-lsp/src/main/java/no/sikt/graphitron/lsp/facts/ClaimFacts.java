@@ -17,10 +17,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
@@ -37,12 +42,12 @@ import static org.jooq.impl.DSL.selectDistinct;
  * is the shape the sealed projection had and the reason a claim can grow a fact here without any
  * other claim's reader changing.
  *
- * <p>The split is not a reason to issue a statement per relation, and {@link #ofField} does not. One
- * field-declaration read is one statement: a multiset per arm, each subquery reading its own relation
- * with its own columns and its own ordering, assembled into one row. Nothing is joined, so no arm's
- * fan-out can multiply another's, and each arm keeps the small record its relation earns rather than
- * contributing nullable columns to a shared one. What the classifier then selects is a rendering
- * decision over rows already in hand.
+ * <p>The split is not a reason to issue a statement per relation, and neither {@link #ofField} nor
+ * {@link #ofType} does. One declaration read is one statement: a multiset per arm, each subquery
+ * reading its own relation with its own columns and its own ordering, assembled into one row. Nothing
+ * is joined, so no arm's fan-out can multiply another's, and each arm keeps the small record its
+ * relation earns rather than contributing nullable columns to a shared one. What the classifier then
+ * selects is a rendering decision over rows already in hand.
  *
  * <p>Two facts are read without asking the classifier first, because they hold across claims: the
  * join path an authored {@code @reference} resolves to, and whether the field is fetched by a
@@ -75,8 +80,31 @@ public final class ClaimFacts {
 
         /** The classifiers claiming the coordinate, in the order the claims were read. */
         public List<String> classifiers() {
-            return claims.stream().map(ClaimBlock::classifier).toList();
+            return classifiersOf(claims);
         }
+    }
+
+    /**
+     * Everything the store says about one type declaration: the claims standing at it with their
+     * facts, and, for a type no claim reaches, the class standing for it or the classes it cannot be
+     * resolved between. At most one of the last two is present, {@code contested} being what the
+     * store answers where {@code backing} is the answer it declines to give.
+     */
+    public record TypeBlock(List<ClaimBlock> claims, String backing, String contested) {
+
+        /** The store says nothing about the type at all, which is a declaration with no block. */
+        public boolean isEmpty() {
+            return claims.isEmpty() && backing == null && contested == null;
+        }
+
+        /** The classifiers claiming the type, in the order the claims were read. */
+        public List<String> classifiers() {
+            return classifiersOf(claims);
+        }
+    }
+
+    private static List<String> classifiersOf(List<ClaimBlock> claims) {
+        return claims.stream().map(ClaimBlock::classifier).toList();
     }
 
     /**
@@ -98,16 +126,28 @@ public final class ClaimFacts {
     }
 
     /**
-     * The facts behind one type-grain {@code classifier} at {@code typeName}. {@code TABLE} answers
-     * with every candidate its binding resolves to, ambiguity being rows here as it is in the view;
+     * Everything about the type {@code typeName}, in one statement. {@code TABLE} answers with every
+     * candidate its binding resolves to, ambiguity being rows here as it is in the view;
      * {@code ERROR} answers with its handlers in declaration order.
+     *
+     * <p>The backing is read beside the claims for the same reason the field block reads its
+     * round-trip rule beside them: a type a {@code @service} return hands back carries no type
+     * directive, so no claim names it, and the class its producer returns is the whole of what the
+     * store knows it to be. Which of the two a surface shows is that surface's decision; both are
+     * answered here.
+     *
+     * <p>{@code contested} is the one thing gated, and on {@code backing} rather than on a claim:
+     * {@link TypeBackingClass} declines to name a class for a type its populations disagree about,
+     * and the arity behind that decline is only an answer where the decline happened.
      */
-    public static List<DeclarationFact> ofType(StoreHandle store, String typeName, String classifier) {
-        return switch (classifier) {
-            case "TABLE" -> boundTables(store, typeName);
-            case "ERROR" -> errorHandlers(store, typeName);
-            default -> List.of();
-        };
+    public static TypeBlock ofType(StoreHandle store, String typeName) {
+        var arms = typeArms(store, typeName);
+        var claims = new ArrayList<ClaimBlock>(arms.classifiers().size());
+        for (String classifier : arms.classifiers()) {
+            claims.add(new ClaimBlock(classifier, typeFactsOf(classifier, arms)));
+        }
+        var backing = TypeBackingClass.resolve(arms.grounded(), arms.reached()).orElse(null);
+        return new TypeBlock(claims, backing, backing == null ? first(arms.contested()) : null);
     }
 
     /**
@@ -253,6 +293,89 @@ public final class ClaimFacts {
     private record Step(Integer application, String constraintName, String toTable) {}
 
     /**
+     * The six arms of the type-declaration read, on the same terms as the field one: a subquery per
+     * relation, over no table at all, nothing joined. The two backing populations are arms of it
+     * rather than a call to {@link TypeBackingClass}, because that reader answers about a collection
+     * of types and this statement is about one; what it holds beyond the rows, the rule choosing
+     * between them, is read from it by {@link TypeBackingClass#resolve}.
+     *
+     * <p>The bound-table arm reads the relation {@link BoundTables} reads, at the same ordering, and
+     * takes only the name a hover line renders. Two readers of one relation is what composing a
+     * statement costs; the alternative is a second round trip for a column already keyed on the
+     * coordinate in hand.
+     */
+    private static TypeArms typeArms(StoreHandle store, String typeName) {
+        String graph = store.graphName();
+        return store.dsl()
+            .select(
+                multiset(selectDistinct(INTENT_AUTHORED_TYPE_CLAIM.CLASSIFIER)
+                    .from(INTENT_AUTHORED_TYPE_CLAIM)
+                    .where(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME.eq(graph))
+                    .and(INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME.eq(typeName))
+                    .orderBy(INTENT_AUTHORED_TYPE_CLAIM.CLASSIFIER))
+                    .convertFrom(rows -> rows.map(Record1::value1)),
+                multiset(select(INTENT_BOUND_TABLE.TABLE_NAME)
+                    .from(INTENT_BOUND_TABLE)
+                    .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(graph))
+                    .and(INTENT_BOUND_TABLE.TYPE_NAME.eq(typeName))
+                    .orderBy(INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME))
+                    .convertFrom(rows -> rows.map(Record1::value1)),
+                multiset(select(GRAPHITRON_ERROR_HANDLER.HANDLER, GRAPHITRON_ERROR_HANDLER.CLASS_NAME)
+                    .from(GRAPHITRON_ERROR_HANDLER)
+                    .where(GRAPHITRON_ERROR_HANDLER.GRAPH_NAME.eq(graph))
+                    .and(GRAPHITRON_ERROR_HANDLER.TYPE_NAME.eq(typeName))
+                    .orderBy(GRAPHITRON_ERROR_HANDLER.POSITION))
+                    .convertFrom(rows -> rows.map(Records.mapping(Handler::new))),
+                multiset(selectDistinct(INTENT_TYPE_BACKING_SEED.CLASS_NAME)
+                    .from(INTENT_TYPE_BACKING_SEED)
+                    .where(INTENT_TYPE_BACKING_SEED.GRAPH_NAME.eq(graph))
+                    .and(INTENT_TYPE_BACKING_SEED.TYPE_NAME.eq(typeName)))
+                    .convertFrom(rows -> rows.map(Record1::value1)),
+                multiset(selectDistinct(INTENT_TYPE_BACKING.CLASS_NAME)
+                    .from(INTENT_TYPE_BACKING)
+                    .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(graph))
+                    .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(typeName)))
+                    .convertFrom(rows -> rows.map(Record1::value1)),
+                multiset(select(INTENT_TYPE_BACKING_CONFLICT.CLASS_NAMES)
+                    .from(INTENT_TYPE_BACKING_CONFLICT)
+                    .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(graph))
+                    .and(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME.eq(typeName)))
+                    .convertFrom(rows -> rows.map(Record1::value1)))
+            .fetchOne(Records.mapping(TypeArms::new));
+    }
+
+    /** What the type statement brought back, one component per relation read. */
+    private record TypeArms(
+        List<String> classifiers,
+        List<String> tables,
+        List<Handler> handlers,
+        List<String> grounded,
+        List<String> reached,
+        List<String> contested
+    ) {}
+
+    private record Handler(String handler, String className) {}
+
+    /** The type grain's {@link #factsOf}: the same switch over rows already in hand. */
+    private static List<DeclarationFact> typeFactsOf(String classifier, TypeArms arms) {
+        return switch (classifier) {
+            case "TABLE" -> labelled("Table", arms.tables());
+            case "ERROR" -> handlerFacts(arms.handlers());
+            default -> List.of();
+        };
+    }
+
+    private static List<DeclarationFact> handlerFacts(List<Handler> rows) {
+        var facts = new ArrayList<DeclarationFact>(rows.size());
+        for (var row : rows) {
+            add(facts, "Handler", row.className() == null
+                ? row.handler()
+                : row.handler() + " " + row.className());
+        }
+        return facts;
+    }
+
+    /**
      * Which arm a classifier reads, and how it labels what it finds. A switch with no query in it:
      * the rows are already in hand, and what remains is the one thing this layer owns, which of them
      * a given classifier is the answer to and what an author should see it called.
@@ -328,26 +451,9 @@ public final class ClaimFacts {
         return facts;
     }
 
-    private static List<DeclarationFact> boundTables(StoreHandle store, String typeName) {
-        var tables = BoundTables.of(store, typeName);
-        var facts = new ArrayList<DeclarationFact>(tables.size());
-        for (var table : tables) add(facts, "Table", table.tableName());
-        return facts;
-    }
-
-    private static List<DeclarationFact> errorHandlers(StoreHandle store, String typeName) {
-        var rows = store.dsl()
-            .select(GRAPHITRON_ERROR_HANDLER.HANDLER, GRAPHITRON_ERROR_HANDLER.CLASS_NAME)
-            .from(GRAPHITRON_ERROR_HANDLER)
-            .where(GRAPHITRON_ERROR_HANDLER.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHITRON_ERROR_HANDLER.TYPE_NAME.eq(typeName))
-            .orderBy(GRAPHITRON_ERROR_HANDLER.POSITION)
-            .fetch();
-        var facts = new ArrayList<DeclarationFact>(rows.size());
-        for (var row : rows) {
-            add(facts, "Handler", row.value2() == null ? row.value1() : row.value1() + " " + row.value2());
-        }
-        return facts;
+    /** The single row an at-most-one-row arm holds, or null where it holds none. */
+    private static String first(List<String> values) {
+        return values.isEmpty() ? null : values.getFirst();
     }
 
     /** The three-part coordinate every field-grain read here is keyed on. */

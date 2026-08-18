@@ -23,8 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What one declaration hover costs the store, counted rather than reasoned about. The
- * classification block for a field declaration is one statement, and stays one statement however
- * many claims stand at the coordinate.
+ * classification block is one statement at either grain, and stays one statement however many claims
+ * stand at the coordinate.
  *
  * <p>This is an enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for
  * being slow. It exists because the shape it pins is invisible from any behavioural assertion. Every
@@ -32,10 +32,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * separate round trips returns exactly the same text as one statement does. A future reader adding a
  * fact to the block will reach for another query, which is the natural move and the one this test
  * refuses.
- *
- * <p>The type block has no case here on purpose. It still reads a statement per claim, and pinning
- * that number would read as sanctioning it; the class gains a case when the type block is recomposed
- * the way the field block was.
  *
  * <p>Every hover runs under an unavailable snapshot, so the description overlay never fires and the
  * count is the classification block's alone.
@@ -46,12 +42,24 @@ class DeclarationHoverStatementCountTest {
 
     /**
      * One coordinate per shape the count must hold for: a plain column match, a coordinate two
-     * directives both claim, a chain of repeated applications, and a field claimed by nothing that
-     * still carries a join path and a round-trip rule.
+     * directives both claim, a field claimed by nothing that still carries a join path and a
+     * round-trip rule, a claimed type, a type no claim names that a producer's return backs, and a
+     * type two producers back differently.
      */
     private static final String SDL = """
         type Query {
-            films: [Film] @service(service: {className: "%s", method: "makeFilmRecord"})
+            films: [Film] @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            left: Contested @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            right: Contested @service(service: {className: "%1$s", method: "makeFilmPojo"})
+        }
+
+        type FilmCard {
+            title: String
+        }
+
+        type Contested {
+            title: String
         }
 
         type Film @table(name: "film") {
@@ -129,6 +137,58 @@ class DeclarationHoverStatementCountTest {
             """);
         var counted = new AtomicInteger();
         assertThat(hover(counting(counted), file, 1, "    myster".length())).isEmpty();
+        assertThat(counted.get()).isEqualTo(1);
+    }
+
+    @Test
+    void aClaimedTypeCostsOneStatement() {
+        var file = file("""
+            type Film @table(name: "film") {
+                title: String
+            }
+            """);
+        assertThat(statementsForHoverAt(file, 0, "type Fi".length())).isEqualTo(1);
+    }
+
+    @Test
+    void anUnclaimedTypeAProducerBacksCostsOneStatement() {
+        // The backing is an arm beside the claims rather than a fallback read after them, so the
+        // block that answers with a class alone costs what the block that answers with a claim does.
+        var file = file("""
+            type FilmCard {
+                title: String
+            }
+            """);
+        var hover = hover(file, 0, "type FilmCa".length());
+        assertThat(hover).isPresent();
+        assertThat(hover.get()).contains("Backed by:");
+        assertThat(statementsForHoverAt(file, 0, "type FilmCa".length())).isEqualTo(1);
+    }
+
+    @Test
+    void aTypeTwoProducersBackDifferentlyCostsOneStatement() {
+        // The most expensive type an author could hover: the backing was resolved, found to be
+        // contested, then resolved a second time to confirm it before the conflict was read.
+        var file = file("""
+            type Contested {
+                title: String
+            }
+            """);
+        var hover = hover(file, 0, "type Conte".length());
+        assertThat(hover).isPresent();
+        assertThat(hover.get()).contains("Backing contested");
+        assertThat(statementsForHoverAt(file, 0, "type Conte".length())).isEqualTo(1);
+    }
+
+    @Test
+    void aTypeTheStoreKnowsNothingAboutCostsOneStatement() {
+        var file = file("""
+            type Unknown {
+                mystery: String
+            }
+            """);
+        var counted = new AtomicInteger();
+        assertThat(hover(counting(counted), file, 0, "type Unkn".length())).isEmpty();
         assertThat(counted.get()).isEqualTo(1);
     }
 
