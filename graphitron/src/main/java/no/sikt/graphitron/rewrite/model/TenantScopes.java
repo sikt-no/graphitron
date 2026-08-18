@@ -16,7 +16,8 @@ import java.util.Set;
  *
  * <p>Every field holds only resolved immutable values ({@link String}, {@link TypeName},
  * {@link Set}, {@link List}) so the classification can be read after the codegen loader closes,
- * the same invariant {@link no.sikt.graphitron.rewrite.catalog.CatalogFacts} documents.
+ * the same invariant {@link no.sikt.graphitron.rewrite.capture.CatalogFactCapture} holds to when it
+ * reduces the live catalog into relations.
  */
 public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Configured {
 

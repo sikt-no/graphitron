@@ -177,6 +177,46 @@ class ServerInstructionsTest {
         }
     }
 
+    /**
+     * The advertised surface is exactly this, named rather than merely self-consistent. The two pins
+     * above assert that the ambient string, the manual and the booted server agree with each other,
+     * which a tool added to all three at once satisfies; this one is what makes adding or removing a
+     * tool a decision somebody writes down. A registration that changes fails here with both names in
+     * the message, and whoever trips it either updates this list on purpose or has found the accident
+     * it exists to catch.
+     *
+     * <p>The configured boot, so {@code execute} is present. Its absence on a no-database boot is the
+     * subject of the composition assertion above rather than of this one.
+     */
+    private static final Set<Advertised> EXPECTED_SURFACE = Set.of(
+        new Advertised(TOOL, "status"),
+        new Advertised(TOOL, "catalog.tables"),
+        new Advertised(TOOL, "catalog.describe"),
+        new Advertised(TOOL, "catalog.search"),
+        new Advertised(TOOL, "schema"),
+        new Advertised(TOOL, "diagnostics"),
+        new Advertised(TOOL, "diagnostics.aggregate"),
+        new Advertised(TOOL, "services"),
+        new Advertised(TOOL, "conditions"),
+        new Advertised(TOOL, "records"),
+        new Advertised(TOOL, "docs.search"),
+        new Advertised(TOOL, "execute"),
+        new Advertised(RESOURCE, "directives"),
+        new Advertised(PROMPT, "about"));
+
+    @Test
+    void theAdvertisedSurfaceIsExactlyTheNamedSet() throws Exception {
+        try (var server = server(executeConfig());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            assertThat(advertisedSurface(client))
+                .as("the advertised surface changed; update EXPECTED_SURFACE deliberately or revert "
+                    + "the registration")
+                .containsExactlyInAnyOrderElementsOf(EXPECTED_SURFACE);
+        }
+    }
+
     private static void assertAmbientRoutingOnBootWith(ExecuteTool.Config config, String boot)
         throws Exception {
         try (var server = server(config);
@@ -248,9 +288,9 @@ class ServerInstructionsTest {
 
     /**
      * Exactly the tools that page through {@code McpWire.page}. The scope is the claim's honest
-     * grain: {@code edges}, {@code docs.search}, and {@code catalog.search} do carry counts but take
-     * no cursor, so "the total before paging" names nothing for them, and the warm-degradation arms
-     * of the latter two return a bare notice with no tool prefix and no number.
+     * grain: {@code docs.search} and {@code catalog.search} do carry counts but take no cursor, so
+     * "the total before paging" names nothing for them, and their warm-degradation arms return a
+     * bare notice with no tool prefix and no number.
      */
     private static final List<PagedTool> PAGED_TOOLS = List.of(
         new PagedTool("catalog.tables", "tables"),

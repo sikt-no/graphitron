@@ -303,9 +303,8 @@ public final class FactCapture {
      * wants to query the result (the agreement and gate tests) can own the store's lifetime.
      *
      * @param jooq  the catalog to walk, or {@code null} for a caller with none in hand. The catalog
-     *              itself rather than the {@code CatalogFacts} projection over it: that projection
-     *              is shaped for the MCP catalog tools, and a narrowing it makes for them would
-     *              land here as a fact about the consumer's database.
+     *              itself rather than any consumer-shaped view over it, since a narrowing made for
+     *              one reader would land here as a fact about the consumer's database.
      * @param nodes the nodehood predicate macro expansion needs, since federation's key synthesis
      *              fires on nodes and nodehood can be inferred from the catalog rather than
      *              declared. A predicate built on a null catalog reduces it to {@code @node}

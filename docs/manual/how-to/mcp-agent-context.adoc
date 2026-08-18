@@ -59,9 +59,6 @@ A set of **tools** the agent calls to answer questions:
 | `services`, `conditions`, `records`
 | List the `@service` classes, `@condition` methods, and `@record` classes the generator resolved on the classpath.
 
-| `edges`
-| Traverses the cross-reference edges between schema elements and their backing Java / jOOQ.
-
 | `diagnostics`
 | The current schema validation diagnostics, the same `(file, location, message)` triples the LSP delivers to your editor.
 

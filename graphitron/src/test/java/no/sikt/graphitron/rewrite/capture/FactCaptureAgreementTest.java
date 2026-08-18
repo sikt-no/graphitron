@@ -1019,11 +1019,11 @@ class FactCaptureAgreementTest {
     }
 
     /**
-     * The constraint census against the catalog itself rather than against {@code CatalogFacts}'
-     * view of it. No fold: the old comparison had to reduce the store to the projection's
-     * {@code uniqueKeys} shape, which excludes the primary key and drops a unique constraint the
-     * primary key's column set already covers, and a fold that bridges a mismatch capture
-     * introduced is indistinguishable from one bridging a real grain difference.
+     * The constraint census against the catalog itself rather than against a consumer's view of it.
+     * No fold: the old comparison had to reduce the store to a discovery tool's {@code uniqueKeys}
+     * shape, which excludes the primary key and drops a unique constraint the primary key's column
+     * set already covers, and a fold that bridges a mismatch capture introduced is
+     * indistinguishable from one bridging a real grain difference.
      */
     @Test
     @DisplayName("the constraint census equals the catalog's, compared without a fold")

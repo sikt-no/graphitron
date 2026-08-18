@@ -11,7 +11,6 @@ import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
@@ -227,13 +226,12 @@ public class GraphQLRewriteGenerator {
             catalog.externalReferences());
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog,
             detection.fieldConflicts());
-        var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
         var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(bundle.model()));
         var errors = new ArrayList<>(walkErrors);
         errors.addAll(detection.violations());
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
-        return new BuildOutput(new BuildArtifacts(catalog, snapshot, catalogFacts), report,
+        return new BuildOutput(new BuildArtifacts(catalog, snapshot), report,
             walkErrors, warnings);
     }
 
@@ -253,25 +251,14 @@ public class GraphQLRewriteGenerator {
                               List<ValidationError> walkErrors, List<BuildWarning> warnings) {}
 
     /**
-     * Classification-stage products: the LSP {@link CompletionData} catalog, the
-     * directive-projection snapshot, and the {@link CatalogFacts} catalog-discovery projection the
-     * MCP {@code catalog.*} tools read. All three are build-derived in one pass and swapped onto
-     * the live {@code Workspace} together.
+     * Classification-stage products: the LSP {@link CompletionData} catalog and the
+     * directive-projection snapshot. Both are build-derived in one pass and swapped onto the live
+     * {@code Workspace} together.
      */
     public record BuildArtifacts(
         CompletionData catalog,
-        LspSchemaSnapshot.Built.Current snapshot,
-        CatalogFacts catalogFacts
-    ) {
-        /**
-         * Convenience for callers that do not populate the {@link CatalogFacts} projection
-         * (LSP / maven dev-loop tests, the catalog-refresh path that reuses a prior catalog);
-         * defaults it to {@link CatalogFacts#empty()}.
-         */
-        public BuildArtifacts(CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot) {
-            this(catalog, snapshot, CatalogFacts.empty());
-        }
-    }
+        LspSchemaSnapshot.Built.Current snapshot
+    ) {}
 
     /**
      * Runs schema loading, attribution, classification, and validation without writing any output.

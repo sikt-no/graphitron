@@ -16,7 +16,6 @@ import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
@@ -82,10 +81,6 @@ public final class GraphitronMcpServer implements AutoCloseable {
     private final Server httpServer;
     private final ServerConnector connector;
     private final AtomicBoolean closed = new AtomicBoolean();
-
-    // Lazily-built reverse-edge index: populated on the first reverse/both traversal and
-    // rebuilt when the (snapshot, catalogFacts) reference pair swaps.
-    private final ReverseEdgeIndex.Cache reverseEdgeIndexCache = new ReverseEdgeIndex.Cache();
 
     // The docs.search handler, holding the shared embedder warm and the docs-index warm. The
     // warms may be absent (the structured-tool tests / an IDE run off un-embedded classes); the tool
@@ -217,7 +212,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             catalogTablesTool(storeHandle), catalogDescribeTool(storeHandle, storeReader),
             servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
             schemaTool(workspace, storeHandle), diagnosticsTool(workspace, storeHandle),
-            diagnosticsAggregateTool(workspace, storeHandle), edgesTool(workspace),
+            diagnosticsAggregateTool(workspace, storeHandle),
             docsSearchTool.specification(), catalogSearchTool(storeHandle, storeReader)));
         if (executeConfig != null) {
             tools.add(new ExecuteTool(executeConfig).specification());
@@ -818,53 +813,6 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .tool(tool)
             .callHandler((exchange, request) -> DiagnosticFacets.aggregateResult(
                 storeHandle, workspace.snapshot(), request.arguments()))
-            .build();
-    }
-
-    // ---- edges tool (cross-reference traversal) ----
-
-    /**
-     * {@code edges}: takes one node selector + a direction and returns that node's typed neighbours.
-     * The traversal layer over the structured tools: forward edges computed per call off the live
-     * projections, the reverse (impact-analysis) direction served by the lazily-built
-     * {@link #reverseEdgeIndexCache}. Reads {@link Workspace#snapshot()},
-     * {@link Workspace#catalogFacts()}, and {@link Workspace#catalog()} external references live on
-     * every call.
-     */
-    private McpServerFeatures.SyncToolSpecification edgesTool(Workspace workspace) {
-        var tool = McpSchema.Tool.builder("edges", Map.of(
-                "type", "object",
-                "properties", Map.of(
-                    "field", Map.of("type", "string",
-                        "description", "Schema field coordinate (\"Type.field\")."),
-                    "type", Map.of("type", "string",
-                        "description", "SDL type name (\"Type\")."),
-                    "table", Map.of("type", "string",
-                        "description", "Bare or schema-qualified SQL table name (\"film\" / \"public.film\")."),
-                    "column", Map.of("type", "string",
-                        "description", "SQL column name; requires the table selector alongside it."),
-                    "method", Map.of("type", "string",
-                        "description", "Method ref (\"fqcn#method/arity\")."),
-                    "class", Map.of("type", "string",
-                        "description", "Class FQN (\"fqcn\")."),
-                    "direction", Map.of("type", "string",
-                        "description", "Traversal direction: \"out\", \"in\", or \"both\" (default \"both\")."))))
-            .title("Traverse cross-reference edges")
-            .description("Returns one node's typed neighbours: forward edges (a field's backing "
-                + "column / table and @service / @condition method, a @table / @node type's table, a "
-                + "table's outbound foreign keys) and the reverse impact-analysis direction (which "
-                + "schema fields bind a given column / method / table, plus inbound foreign keys). "
-                + "Pass exactly one node selector; column requires table. Endpoints are the same "
-                + "stable IDs the catalog / schema / code tools accept, so a neighbour's id re-selects "
-                + "on the next call. An ambiguous bare table name returns the candidate schemas to "
-                + "re-call qualified; reports the snapshot's availability and freshness so a reader "
-                + "knows currency.")
-            .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-            .tool(tool)
-            .callHandler((exchange, request) -> EdgesTool.edgesResult(
-                workspace.snapshot(), workspace.catalogFacts(),
-                workspace.catalog().externalReferences(), reverseEdgeIndexCache, request.arguments()))
             .build();
     }
 

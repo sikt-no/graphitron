@@ -47,8 +47,8 @@ import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
  * relation, so nothing lazy survives the codegen classloader closing at the end of a pass.
  *
  * <p>Two deliberate departures from the shapes it reads. Foreign keys are stored once, on the
- * declaring side; the incoming direction {@code CatalogFacts} denormalises is a query here, which
- * is most of the point of having a store. And constraints take the shape a real catalog gives
+ * declaring side, and the incoming direction is a query rather than a second stored copy, which is
+ * most of the point of having a store. And constraints take the shape a real catalog gives
  * them, one supertype relation discriminated by type with per-form detail in siblings, rather
  * than one relation per form: "what constrains this table?" is then one predicate instead of a
  * union, and the forms this iteration does not capture arrive as further type values.
@@ -73,13 +73,13 @@ final class CatalogFactCapture {
     }
 
     /**
-     * Fills the {@code sql_} family from the jOOQ catalog. Reads {@link JooqCatalog} rather than
-     * the {@link no.sikt.graphitron.rewrite.catalog.CatalogFacts} projection beside it, because
-     * that projection is built for the MCP catalog tools and every narrowing it makes for them
-     * would land in the store as a fact about the consumer's database: it splits the primary key
-     * out of the unique keys, drops a unique constraint whose column set the primary key already
-     * covers, and carries no referenced-constraint name. All three are projection choices, and a
-     * foreign key referencing a deduped-away constraint would point at nothing here.
+     * Fills the {@code sql_} family from the jOOQ catalog, and reads {@link JooqCatalog} directly
+     * rather than any consumer-shaped view of it. A view built for one reader carries that reader's
+     * narrowings, and a narrowing that lands here becomes a fact about the consumer's database: a
+     * discovery tool that splits the primary key out of the unique keys, drops a unique constraint
+     * whose column set the primary key already covers, and keeps no referenced-constraint name is
+     * making three reasonable choices for itself, and a foreign key referencing a deduped-away
+     * constraint would point at nothing here.
      *
      * @param jooq the catalog to walk, or {@code null} for a caller with none in hand
      */

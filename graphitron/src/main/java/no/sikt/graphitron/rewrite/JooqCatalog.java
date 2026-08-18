@@ -863,7 +863,7 @@ public class JooqCatalog {
     /**
      * Table-scoped overload of {@link #candidateKeys(String)}: enumerates a resolved table's
      * row-identifying candidate keys directly, without a (potentially ambiguous) SQL-name lookup.
-     * Used by the {@code CatalogFacts} build pass, which already holds the live {@link Table}.
+     * For a caller that already holds the live {@link Table}.
      */
     public java.util.List<KeyEntry> candidateKeys(Table<?> table) {
         var out = new ArrayList<KeyEntry>();

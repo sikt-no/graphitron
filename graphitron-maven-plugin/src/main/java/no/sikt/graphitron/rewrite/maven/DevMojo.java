@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -265,7 +264,7 @@ public class DevMojo extends AbstractRewriteMojo {
         this.mcpStore = sessionStore.reader();
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
             workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current, initial.catalogFacts()),
+                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current),
                 initial.report());
             writeReportFacts(initial.walkErrors(), initial.warnings());
         }
@@ -682,13 +681,12 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
             return new InitialOutput(output.artifacts().catalog(), output.artifacts().snapshot(),
-                output.artifacts().catalogFacts(), output.report(),
-                output.walkErrors(), output.warnings());
+                output.report(), output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
                 + "starting with empty catalog: " + e.getMessage());
             return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable(),
-                CatalogFacts.empty(), ValidationReport.empty(), List.of(), List.of());
+                ValidationReport.empty(), List.of(), List.of());
         }
     }
 
@@ -703,7 +701,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * staleness, rather than an empty partition reading as a clean schema.
      */
     private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot,
-                                 CatalogFacts catalogFacts, ValidationReport report,
+                                 ValidationReport report,
                                  List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
                                  List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {}
 

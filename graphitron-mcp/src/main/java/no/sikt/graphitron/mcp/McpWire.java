@@ -1,6 +1,5 @@
 package no.sikt.graphitron.mcp;
 
-import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -15,9 +14,9 @@ import java.util.Optional;
 /**
  * Shared MCP wire helpers for the structured read-tools (catalog tools, code / schema /
  * diagnostics tools). One home for the conventions the slices agree on so they
- * cannot drift: argument coercion, the opaque page-cursor convention, the stable-ID grammar
- * the edges tool walks, the source-location wire shape, and the typed source-location join the
- * code tools layer over the LSP source index.
+ * cannot drift: argument coercion, the opaque page-cursor convention, the stable-ID grammar the
+ * server instructions promise, the source-location wire shape, and the typed source-location join
+ * the code tools layer over the LSP source index.
  *
  * <p>Package-private: these are wire-mapping mechanics internal to the MCP module, not part of
  * the server's public surface.
@@ -128,19 +127,16 @@ final class McpWire {
         return new Page<>(items, to < all.size() ? Optional.of(encodeCursor(to)) : Optional.empty());
     }
 
-    // ---- stable cross-tool node IDs (binding principle) ----
+    // ---- stable cross-tool IDs (binding principle) ----
     //
-    // The edges tool walks these IDs, so the grammar is settled here, in one
-    // place, so a later slice does not invent a fourth convention. Three separators are in use,
-    // each over identifiers that cannot themselves contain the separator (so every form
-    // round-trips by splitting):
-    //   - {@code .} qualifies a table by its schema ({@code schema.table}; CatalogFacts key).
+    // Two tools handing back the same thing spell it the same way, so the grammar is settled here in
+    // one place rather than at each wire site. Both forms in use are over identifiers that cannot
+    // themselves contain the separator, so each round-trips by splitting:
+    //   - {@code .} qualifies a table by its schema ({@code schema.table}).
     //   - {@code #} + {@code /} compose a method ref ({@code fqcn#method/arity}; the /arity suffix
     //     disambiguates overloads).
-    //   - {@code :} binds a column to its (already-qualified) table ({@code schema.table:column}).
-    // The structured owner of these forms is the {@link NodeRef} hierarchy, which composes
-    // each from its resolved parts; these helpers are the shared composers so the bare-string form
-    // is produced in exactly one place.
+    // The server instructions promise these two plus the {@code Type.field} coordinate, which needs
+    // no composer, being what the schema carries already.
 
     /**
      * Method-ref ID: {@code fqcn#method/arity}. Carries the {@link SourceWalker.MethodKey}
@@ -152,18 +148,8 @@ final class McpWire {
     }
 
     /**
-     * Column-of-table ID: {@code schema.table:column}. The {@code :} is a wire separator only (SQL
-     * identifiers carry no colon, so the form round-trips: the table half is directly
-     * {@code catalog.describe}-able by splitting on the last colon). Composed from the
-     * already-qualified {@code schema.table} table ID and the bare SQL column name.
-     */
-    static String columnId(String qualifiedTable, String sqlColumn) {
-        return qualifiedTable + ":" + sqlColumn;
-    }
-
-    /**
-     * Splits a schema-qualified table ID ({@code schema.table}; the {@code CatalogFacts} key, the
-     * same form {@link CatalogFacts.Table#qualifiedName() qualifiedName} composes) back into its
+     * Splits a schema-qualified table ID ({@code schema.table}, the form
+     * {@link CatalogQueries.TableDetail#qualifiedName() qualifiedName} composes) back into its
      * {@code [schema, name]} halves on the first {@code .}. SQL schema identifiers carry no dot, so
      * the first separator is the schema boundary; an unqualified id (no dot) yields an empty schema
      * and the whole string as the name. The inverse of the {@code schema + "." + name} composition.
