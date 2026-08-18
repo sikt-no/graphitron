@@ -96,15 +96,26 @@ it.
   a reference the author spells by name") already covers this; the crawler stands on the table,
   not on the column.
 
+Two invariants above range over rows rather than sitting inside one, so no `CHECK` can hold them
+and they would otherwise be stated with nothing failing when they break. Both get a case in
+`FactSchemaGateTest`, where the schema's engine-unenforceable invariants already live: no
+`sql_node_key_column` row may hang off a parent whose `key_columns_form` is anything but
+`FIELD_ARRAY`, and `position` must be dense from zero within each parent. The second is the shape `mergeOrdinalsAreDense` and
+`applicationOrdinalsAreDense` already pin for other relations, so it is a third case in an
+established pattern rather than a new kind of gate.
+
 ## The well-formedness derivation
 
 A view in the `intent_` family, `intent_node_metadata_defect`: one row per defect the stated
 metadata exhibits. The rows transcribed above are `sql_` because a walk read them; the verdict is
 not, because no walk read "this metadata is malformed": graphitron's rule produces it, which
-places it in tier two. It is keyed by the catalog's own key, `(source_name, table_schema,
+places it in stratum two. It is keyed by the catalog's own key, `(source_name, table_schema,
 table_name, defect, position)`, with no `graph_name`, on `intent_class_member_slot`'s stated
 terms: the question is about a table, and a graph reaches it the way it reaches any source-keyed
-fact. The item notes it as the family's second non-graph-keyed resident.
+fact. `intent_name_matched_key_pair` is the closer precedent, being a derivation over the jOOQ
+corpus alone keyed on that corpus's own key rather than on the classpath census's; a graph-free
+`intent_` resident is settled shape and not a novelty, so the view states its key's terms and
+claims nothing about being unusual in having them.
 
 - `defect` is a closed vocabulary, one arm per state the probe distinguishes today plus the two
   the `ABSENT` forms add: `TYPE_ID_NOT_DECLARED`, `TYPE_ID_NULL`, `TYPE_ID_WRONG_TYPE`,
@@ -133,7 +144,11 @@ the owned silences explicitly: absence of defect rows alone also covers a table 
 nothing, so "well-formed" is the conjunction, never the anti-join alone. The positive resolved
 view (the validated type id plus the ordered, resolved `sql_column` coordinates) is deliberately
 left to the sibling nodehood item as its first reader, per the fact model's "a derivation gets a
-relation as soon as a reader asks it"; this item ships the facts and the defect rows.
+relation as soon as a second reader asks it"; this item ships the facts and the defect rows. The
+defect view does not wait on that same rule because it already has its reader here: the agreement
+assertion below reads it as the store's half of the verdict, which is what makes these rows
+checkable against the live probe on the day they land rather than on the day a diagnostic arrives
+to consume them.
 
 ## Capture
 
@@ -148,8 +163,10 @@ relation as soon as a reader asks it"; this item ships the facts and the defect 
   reduction share the `getField` probe so "declares the constant" has one definition; validation
   stays where it is.
 - `CatalogFactCapture` gains a `captureNodeMetadata` step in the table walk beside
-  `captureColumns`, transcribing the reduced facts into the two relations. It reads the live
-  `Table` the walk already holds; no new source, no new coupling, and no cross-corpus read.
+  `captureColumns`, transcribing the reduced facts into the two relations and claiming each row's
+  key through `sink.claim` exactly as `captureColumns` does, so a second walk over the same
+  coordinate skips rather than collides. It reads the live `Table` the walk already holds; no new
+  source, no new coupling, and no cross-corpus read.
 - `clearSchemaSources` deletes the two new relations in round two, child before parent, before
   `sql_column` / `sql_table`.
 - `FactCaptureAgreementTest` registers both base relations in the EQUALITY arm and
@@ -174,8 +191,16 @@ is byte-identical. The reader arrives with the sibling item that makes nodehood 
   tree, the module that declares the view (the `FieldColumnTableTest` convention): one case per
   defect arm, the multiple-defects-per-table grain, and the case-insensitive two-tier resolution.
   No reflection and no fixture classes needed, which is the point of having the rows.
-- An agreement assertion over the fixture corpus: for every `sql_table` row, the store's verdict
-  matches the reflection probe's. Probe `Present` iff a metadata row exists with zero defect rows,
+- An agreement assertion over the fixture corpus: for every `sql_table` row of a source the live
+  catalog covers, the store's verdict matches the reflection probe's, the probe called with the
+  qualified `schema.table` spelling rather than the bare table name. `nodeIdMetadata` takes a SQL
+  name, and its unqualified path answers `Absent` for a name two schemas share exactly as it does
+  for one no catalog holds, so a bare `table_name` would let the gate agree by luck; `findTable`'s
+  qualified path "never surface[s] `Ambiguous`" by construction. That the fixture corpus has no
+  such collision today is hand-kept rather than structural (`init.sql` warns that
+  `NodeIdFixtureGenerator.METADATA` "is keyed on the bare table name across every codegen
+  execution"), which is exactly the sort of property a gate should not be resting on. Probe
+  `Present` iff a metadata row exists with zero defect rows,
   and the stored typeId and entry names match the probe's resolution; probe `Malformed` iff a
   metadata row has a defect row and both forms are declared; probe `Absent` iff there is no row or
   a form is `ABSENT` (the store legitimately says more than the probe there, recording the
@@ -198,3 +223,9 @@ no new entries.
   and does not need to be, since `nodeIdMetadataDiagnostic` keeps composing its own text until it
   retires.
 - Any other jOOQ metadata convention the generator publishes.
+- The `intent_` family charter. Its opening ("The SDL strata stack's third layer") describes a
+  jOOQ-only derivation no better than it already describes the graph-free residents sitting there
+  now, so the mismatch predates this item and is not made worse by it. The `sql_` charter is
+  amended here on a narrower ground: this item is what first puts a *relation* of generated-model
+  facts under a family whose charter says database, where `sql_table.class_fqn` put only a column.
+  Rewording `intent_`'s charter is a separate change with its own reviewer.
