@@ -1,6 +1,6 @@
 ---
 id: R680
-title: "Give each layer its own fact-store test harness, and test each thing where it lives"
+title: "Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest"
 status: Spec
 bucket: cleanup
 priority: 3
@@ -10,7 +10,7 @@ created: 2026-08-14
 last-updated: 2026-08-18
 ---
 
-# Give each layer its own fact-store test harness, and test each thing where it lives
+# Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest
 
 ## Problem
 
@@ -25,7 +25,9 @@ view in a module upstream; the machinery is a pipeline in this one.
 
 So this item has two stages. The first establishes an architecture, so that the next person writing a
 fact-store test has an obvious right place to put it and a harness shaped for what they are testing.
-The second is cleanup, moving the tests that are already in the wrong place.
+The second is cleanup, moving the tests that are already in the wrong place and dropping the ones that
+turn out not to be worth a place, since reading every case in order to restate it is the only cheap
+moment to notice which is which.
 
 ### Most of `graphitron`'s harnesses are testing `graphitron-model`
 
@@ -309,18 +311,32 @@ And `capture/StoreReaderTest` goes home, though not as it stands. Its subject is
 is `graphitron-model`'s own class. The reader mints a second connection, sets H2's snapshot level
 explicitly at that moment, and makes `read` a transaction that ends in a rollback.
 
-Which of its cases pin that, and which pin H2, was measured rather than argued: gate the
-`SET SESSION CHARACTERISTICS` line off and exactly one of the five fails, `oneReadIsOneSnapshot`, on
-"the second query answers from the snapshot the first one did". So that case carries the isolation
-contract on its own, and it is `StoreReader`'s contract rather than the database's, since H2's default
-would have shown the second query a commit the first did not. Of the other four,
-`aPersistedStoreMintsAReaderOntoItsOwnFile` and
-`closingOneReaderLeavesTheStoreAndItsSiblingsReadable` pin the reader's minting and its close scope,
-which are also this class's. The remaining two, `aReaderSeesWhatTheWriterCommitted` and
-`aRoundStillInFlightIsInvisible`, pass with the isolation line gone, which is the honest way of saying
-they pin read-committed behaviour H2 would give anyway. They migrate unchanged, because changing what
-a migrated class asserts is out of scope here; whether they earn their place is a separate question
-and a separate item.
+Which of its five cases pin that, and which pin H2, is measured rather than argued. Four mutations,
+each breaking one decision `StoreReader` or `GraphitronModelStore` makes, run against the class as it
+stands today:
+
+| Case | isolation line dropped | isolation set to read uncommitted | reader handed the writer's connection | reader opens a guessed URL |
+|---|---|---|---|---|
+| `aReaderSeesWhatTheWriterCommitted` | passes | passes | passes | passes |
+| `aRoundStillInFlightIsInvisible` | passes | **fails** | **fails** | passes |
+| `oneReadIsOneSnapshot` | **fails** | **fails** | **fails** | passes |
+| `aPersistedStoreMintsAReaderOntoItsOwnFile` | passes | passes | passes | **fails** |
+| `closingOneReaderLeavesTheStoreAndItsSiblingsReadable` | passes | passes | **errors** | passes |
+
+Three cases go home. `oneReadIsOneSnapshot` is the only catcher of the isolation level, which is
+`StoreReader`'s own choice rather than H2's default. `aPersistedStoreMintsAReaderOntoItsOwnFile` is
+the only catcher of a reader that opened a database its store never wrote to, which is the hazard
+`GraphitronModelStore.reader()`'s javadoc is built around. And
+`closingOneReaderLeavesTheStoreAndItsSiblingsReadable` is the only one that notices a reader closing
+something it does not own.
+
+Two are deleted rather than migrated, which is the answer to the question the item exists to ask
+about them. `aRoundStillInFlightIsInvisible` fails on nothing `oneReadIsOneSnapshot` survives and
+passes on a mutation `oneReadIsOneSnapshot` catches, so it is dominated, and the surviving case makes
+the stronger claim anyway: a committed round arriving mid-read is harder to hide than an uncommitted
+row. `aReaderSeesWhatTheWriterCommitted` caught nothing at all, and no mutation of this class's own
+decisions reaches it alone, because every other case reads rows back and so already fails if a reader
+cannot see what the writer committed. It is a baseline restated, not a pin.
 
 What keeps the class in `graphitron` is scenery rather than subject. All five cases fill the store
 through `CapturedStore.registryOf` and `FactCapture.capture`, but the assertions need only "a
@@ -335,6 +351,10 @@ lives, since the store's lifetime is still what it holds open. And it carries no
 atomicity with it: "one transaction end to end" is `FactCapture`'s property, this class never
 asserted it, and wanting an anchor for it is a new test in `graphitron` rather than a reason to keep
 this one there.
+
+This class is also the item's worked example of the deletion bar, which the Tests section states in
+general. It is written out here because it is the first class a slice touches and because the numbers
+are already in hand.
 
 The guard needs a matching change: `GuardScope.IN_SCOPE_MODULES` does not list `graphitron-model`
 today, so a module that is about to become a test home sits outside the walk. Add it, knowing that
@@ -779,7 +799,8 @@ citations still name the old home is the slice not finished.
 
 Two stages. Stage 1 builds the architecture and proves it, so that from its last commit onward a test
 author has a right place to put a new test and a harness shaped for it. Stage 2 moves the tests that
-are already in the wrong place, one population per slice, and none of it blocks anybody.
+are already in the wrong place, weighs each case as it passes through, and drops the ones that pin
+nothing this project decides. One population per slice, and none of it blocks anybody.
 
 The split matters because the stages have different value profiles. Stage 1 stops the bleeding and is
 worth landing even if stage 2 stalls; stage 2 is cleanup that can be taken a slice at a time by
@@ -793,9 +814,10 @@ merged from `ColumnMatchClaimTest`'s six seed helpers and `ReferenceStepTargetTe
 `graphql_type` / `graphql_field` / `graphql_type_declaration` twins reconciled into one spelling.
 `GuardScope.IN_SCOPE_MODULES` gains `graphitron-model`.
 
-Proof, not assertion: this slice also moves `capture/StoreReaderTest` down, restating its five
-capture calls as seeded rounds, and migrates **one** pure view test end to end, from capture-driven
-to seeded, keeping its assertions. `ClassAssignableTest` is the natural pick, and not merely for being
+Proof, not assertion: this slice also moves `capture/StoreReaderTest` down as three cases rather than
+five, restating its capture calls as seeded rounds and deleting the two the mutation table above
+condemns, and migrates **one** pure view test end to end, from capture-driven to seeded, keeping its
+assertions. `ClassAssignableTest` is the natural pick, and not merely for being
 small: `FactCaptureAgreementTest`'s registry already records that it binds `intent_class_assignable`
 "to a census built reference by reference", the chains it needs being "ones a scan of compiled
 fixtures cannot arrange". It is the one mover whose inputs are already stated as rows in all but
@@ -826,8 +848,9 @@ stopped without leaving a mess.
 **S4: the eight pure-view classes that move whole.** `ColumnMatchClaimTest`, `ReferenceStepTargetTest`,
 `FieldColumnTableTest`, `ClassAssignableTest` (already moved in S1),
 `FieldProducerMethodTest`, `AccessorHopTest`, `ProducerCardinalityTest` and `AuthoredClaimConflictsTest`
-move to `graphitron-model` and become seeded. Take them in batches. Acceptance: each keeps its assertion
-content, and each loses its `write(`, its `GRAPH` constant, its census plumbing and its `NodeDeclaration`
+move to `graphitron-model` and become seeded. Take them in batches. Acceptance: every case is either
+kept with its assertion content intact or deleted under the mutation bar with the mutations recorded,
+and each class loses its `write(`, its `GRAPH` constant, its census plumbing and its `NodeDeclaration`
 argument, because a seeded view test needs none of them. A class that cannot lose those is telling you
 it was not a pure view test after all, which is a finding worth recording rather than working around.
 
@@ -839,8 +862,8 @@ there.
 and become seeded, the assertions on `intent_type_domain`, `intent_input_occurrence_path` /
 `_path_step` and `intent_type_backing_class` stay in `graphitron` on G1, because those rows are
 written by `ReachabilityRows`, `InputOccurrencePaths` and `TypeBackingRows` and the crawler is the
-subject. Acceptance: each half asserts what it always asserted, and the `graphitron` half still runs a
-real capture.
+subject. Acceptance: each half asserts what its cases always asserted, minus whatever the mutation bar
+condemns, and the `graphitron` half still runs a real capture.
 
 `ClassMemberSlotTest` joins them and splits on a different axis, which is where its input comes from
 rather than which relation it reads. Both its relations are views, so on relation kind alone it would
@@ -881,15 +904,42 @@ recorded `base_dir` per graph name; the sweeps use distinct graph names, so one 
 fine. It reads risky and it is not. And a rehome must not land on a file another item is still
 rewriting, which is why S8 is last.
 
-The item reaches Done when every test is at the layer that owns its subject and the guard's exception
+The item reaches Done when every surviving test is at the layer that owns its subject and the guard's exception
 list holds only the classes that stay.
 
 ## Tests
 
-This item changes test-support code and where tests live. It changes no main sources, so its acceptance
-is the existing suite across all five modules, passing with its assertion content unchanged. A test
-that moves to another module is still the same test: same cases, same expectations, a different way of
+This item changes test-support code, where tests live, and which of them are worth living. It changes
+no main sources, so its acceptance is the existing suite across all five modules, passing. A test that
+moves to another module is otherwise the same test: same cases, same expectations, a different way of
 getting rows in front of them.
+
+### Weighing a case is part of moving it
+
+The subject of this item is the testing story rather than the file layout, so a case that does not
+carry its weight is deleted rather than carried to a new module. Migration is the only cheap moment to
+decide that, because it is the one time somebody has to read every case and restate it.
+
+Two things sound alike here and are opposites. **Relaxing** an assertion so a harness can express it
+stays forbidden, and means what the paragraph below says it means: the harness is wrong, not the
+assertion. **Deleting** a case is the other claim entirely, that the assertion was never pinning
+anything this project decides.
+
+The bar for deleting is a mutation, not an opinion. Name the decision the case claims to pin, break
+that decision in the main source, run the class, and put the result back. A case that still passes is
+not pinning what it says it pins. A case that fails only on mutations another case in the same class
+also fails on is dominated, and the dominating case is the one to keep. Two outcomes earn a deletion,
+then: the case caught nothing, or the case caught nothing uniquely. Record the mutations tried in the
+commit message, so the next reader can see the deletion was measured rather than felt, and so a
+reviewer can rerun them.
+
+Three guard rails on that. The default is to keep: when no mutation separates a case either way, it
+migrates. A case that is slow, ugly or awkward to restate under a seeded harness is not thereby
+weightless, and the awkwardness is a finding about the harness. And deleting is per case, never per
+class; a class whose every case is dominated is a result to report, not a licence to skip reading the
+rest.
+
+`capture/StoreReaderTest` above is the worked example, with its mutation table and its two deletions.
 
 An assertion that has to change to accommodate a harness is the signal that an axis was load-bearing
 after all and must stay expressible, not that the assertion should be relaxed. There is one place this
@@ -935,9 +985,10 @@ serves every module." The guard catches the author who reads none of it.
 
 ## Out of scope
 
-* Changing what any migrated class asserts, and editing the call sites of `graphitron-lsp`'s or
-  `graphitron-mcp`'s own fixtures at all. The downstream direct writers are not such call sites; they
-  call no fixture, and converting them is in scope per the slices above.
+* Editing the call sites of `graphitron-lsp`'s or `graphitron-mcp`'s own fixtures. The downstream
+  direct writers are not such call sites; they call no fixture, and converting them is in scope per
+  the slices above. Deleting a case that carries no weight is also in scope, under the mutation bar
+  the Tests section sets; what stays out is relaxing an assertion a harness found inconvenient.
 * Changing any main source. Nothing here moves production code between modules, including
   `FactCapture.GraphIdentity`, which stays a nested record in `graphitron` and is passed to M0 by
   callers that need it rather than being pushed down.
