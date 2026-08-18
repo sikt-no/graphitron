@@ -6,7 +6,7 @@ bucket: bug
 theme: routine
 depends-on: []
 created: 2026-08-13
-last-updated: 2026-08-13
+last-updated: 2026-08-18
 ---
 
 # @defaultOrder on a root routine chain is silently dropped
@@ -152,7 +152,9 @@ is one of its two homes, and the `RecordList(null)` literals are the other. Rest
 gates here would still leave the class open while enlarging this item, so the honest sequencing is
 to ship the reported fix, let R663 close the other home, and take the shared enforcement question
 (re-source the deterministic-order rule off the launcher relation's ordering slot, where both
-homes are visible in one place) as its own item rather than as a rider on either.
+homes are visible in one place) as its own item rather than as a rider on either. That item now
+exists: `roadmap/routine-composition-surface-from-facts.md` (R704) owns the axis restructure for the
+routine family, on fact ground rather than by reworking the classify-time gates.
 
 ### Ordering target: measured, not assumed
 
@@ -324,7 +326,9 @@ sentence per terminus kind, the carving in the validator is wrong and should cha
   honours the ordering its schema declares, and a list-shaped one that cannot resolve an order
   fails the build instead of shipping hash order. The invariant-level fix is the shared question
   R663 raises, re-sourcing the deterministic-order rule off the launcher relation's ordering slot
-  where every leak site is visible in one place, and it is nobody's rider.
+  where every leak site is visible in one place. It is no longer nobody's rider:
+  `roadmap/routine-composition-surface-from-facts.md` (R704) answers it for the routine family, and
+  R663 remains the home of the batched-child leak.
 * **LSP column resolution for the routine terminus.** `FieldClassification.lspColumnDispatch`
   places `RoutineBacked` in the `FallThrough` arm, so `@defaultOrder(fields: [{name: ...}])`
   resolves candidates and diagnostics against the enclosing type's `@table` rather than the
