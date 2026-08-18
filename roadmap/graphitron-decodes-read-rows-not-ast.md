@@ -120,6 +120,68 @@ no decode has to parse, move three leaves it as text and parses in a function. M
 to try and does not change the transcription; move two is the better model if the measurement above
 turns out to be optimistic on a real schema's directive population. Move one is required either way.
 
+## The census the two moves were waiting on
+
+Move two and move three were left as alternatives pending a count of how many decodes are shallow.
+Counted, against the family and against the fixture corpus rather than against an invented example.
+
+**63 `graphitron_` tables, no views.** Written by `GraphitronFactCapture` through `newRecord` (55),
+through its generic `marker` helper (5), and by `MacroCapture` (3).
+
+[cols="3,1,4"]
+|===
+| Class | Relations | What the decode needs
+
+| presence-only marker
+| 5
+| nothing; a filtered projection of `graphql_field_directive`
+
+| scalar or object literal, one row per application
+| 36
+| value-literal reading
+
+| list literal, one row per element
+| 11
+| value-literal reading plus a row-expansion idiom
+
+| sub-grammar inside a string
+| 11
+| one of three parsers
+|===
+
+The eleven that need a real parser cluster on three of them:
+`GraphQLSelectionParser.parseEntries` serves the eight `*_arg_mapping_pair` / `*_column_mapping_pair`
+relations plus `graphitron_argument_path_segment`; `ArgMappingSigil.scan` serves
+`graphitron_service_arg_mapping_sigil`; `FieldSetGrammar.paths` serves
+`graphitron_federation_key_field`.
+
+**All three parsers are dependency-free**: 274, 132 and 92 lines plus a 17-line record, `java.*`
+imports only. They can move to `graphitron-model` without adding a dependency, so the classloader and
+module-inversion objection recorded above applies only to a graphql-java-backed function and not to
+this family's actual parsing needs. Nothing here needs graphql-java behind an alias.
+
+The five markers need no function at all. `graphitron_facet` carries the coordinate and the source
+position and no value columns, so it is a `WHERE directive_name = 'asFacet'` projection.
+
+**Frequency, which is a different question from relation count.** Across the corpus's nine
+`.graphqls` files and roughly 4236 directive applications: 64 `argMapping:`, 16 `columnMapping:`, 42
+`@key(fields:)`. About 122 applications, near 3 per cent, trip a sub-grammar; the rest are value
+literals. The distribution's head is `@field`, `@service`, `@table`, `@nodeId`, `@reference`, all of
+which are scalar or object literals.
+
+**What this settles.** The only new code either move needs is a value-literal parser, so that parser is
+the shared investment and stops being a reason to prefer one move over the other. What does separate
+them is the nine object-literal call sites (`codeReference` for `@service`, `@condition`, `@record`,
+`@enum` and `@externalField`; `referenceElement` for the three `*_reference_step` relations): reading a
+named field out of an object literal wants the value structured at capture rather than re-parsed per
+read, so those relations argue for move two while the scalar and list cases are comfortable under
+move three.
+
+**Coverage already has a measurement surface.** `graphitron_undecoded_argument` records site,
+directive, argument and verbatim `value_sdl` for every argument the decoder declined, so the
+value-literal grammar's coverage can be measured against a real corpus instead of asserted. It holds
+no rows for the sakila example.
+
 ## Sequencing and blast radius
 
 Depends on the tier-naming item for the vocabulary it uses. Wants the nodehood item ahead of it
