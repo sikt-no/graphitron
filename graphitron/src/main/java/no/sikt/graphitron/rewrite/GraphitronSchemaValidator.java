@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -1254,16 +1255,35 @@ public class GraphitronSchemaValidator {
     /**
      * Schema-level parent-compatibility check for shared nesting types. When two or more {@code @table}
      * parents declare a field of the same plain-object nesting type, each parent independently classifies
-     * its own {@code nestedFields} against its own table. The representative is the first parent in SDL
-     * order; every subsequent parent's {@code nestedFields} must match the representative's shape field
-     * by field — same name, same kind, and for {@link ChildField.ColumnBackedField} the same SQL column name
-     * and Java column class. jOOQ's name-based fallback in {@code Record.get(Field)} relies on this
-     * invariant: a nested-type wiring emitted with the representative parent's typed {@code Field<T>}
-     * must resolve against any parent's {@code Record} without silent mismatch.
+     * its own {@code nestedFields} against its own table (the <em>anchor</em>). The representative is the
+     * first parent in SDL order; every subsequent parent's {@code nestedFields} must match the
+     * representative's shape field by field, starting with name and leaf class.
      *
-     * <p>Non-{@link ChildField.ColumnBackedField} leaves reject at nested depth when the nesting type is
-     * shared: their resolution depends on per-parent metadata (join paths, FK counts), which is
-     * per-field.
+     * <h2>The rule the arms are instances of</h2>
+     *
+     * <p>A leaf is multi-parent-safe when every generated unit and method address it mints under a
+     * nested type carries the anchor; the arm then compares exactly the inputs of the addresses that
+     * do <em>not</em>. Per-anchor facts are deliberately left uncompared, because each anchor renders
+     * its own artifact from them.
+     *
+     * <ul>
+     *   <li>{@link ChildField.ColumnBackedField}: compares terminal SQL name and Java column class,
+     *       because the one shared nested-type fetchers class reads through jOOQ's name-based typed
+     *       {@code Record.get(Field)} and a wiring emitted with the representative's {@code Field<T>}
+     *       must resolve against any anchor's {@code Record}.</li>
+     *   <li>{@link ChildField.TableField}: compares {@code filters()}, because one generated condition
+     *       method serves every reuse site; skips {@code joinPath} / {@code orderBy} /
+     *       {@code pagination}, whose projection unit is minted per anchor.</li>
+     *   <li>{@link ResultKeyAliasedField} projected leaves ({@link ChildField.ComputedField},
+     *       {@link ChildField.ColumnBackedReferenceField}): compares {@code domainReturnType()} and,
+     *       for the reference half, the {@code joinPath()} terminus, because the shared fetchers class
+     *       carries one typed read per coordinate.</li>
+     *   <li>{@link ChildField.NestingField}: recursion, so a divergent inner leaf cannot hide behind
+     *       the outer class-equality check.</li>
+     * </ul>
+     *
+     * <p>A leaf whose address does not carry the anchor cannot be admitted by comparison alone; the
+     * catch-all defers it, and names today's resident at the rejection site.
      */
     private void validateNestingParentCompat(GraphitronSchema schema, List<ValidationError> errors) {
         var grouped = new java.util.LinkedHashMap<String, List<ChildField.NestingField>>();
@@ -1341,12 +1361,30 @@ public class GraphitronSchemaValidator {
                 continue;
             }
             if (!rf.getClass().equals(of.getClass())) {
+                // A membership split on ResultKeyAliasedField is not an authored mistake, so it is
+                // deferred rather than structural. Exactly one route reaches it: an @nodeId
+                // reference whose FK-mirror collapse resolves to the anchor's own key columns on
+                // one anchor (a plain ColumnBackedField) and needs a join on the other (a
+                // ColumnBackedReferenceField), because the two anchors enter the same node target
+                // from opposite ends of their foreign keys. Directives are otherwise per
+                // declaration, so no other shape can diverge. Reachable schemas always co-reject
+                // on the reference side's own NodeIdEncodeKeys deferral, which is why the wording
+                // stays on the FK-orientation fact rather than on a projected-alias read that side
+                // never performs.
+                boolean membershipDiffers =
+                    rf instanceof ResultKeyAliasedField != of instanceof ResultKeyAliasedField;
+                var summary = "Nested type '" + nestedTypeName + "' shared across '" + repParent
+                    + "' and '" + otherParent + "': field '" + name
+                    + "' classifies as " + rf.getClass().getSimpleName() + " on the first but "
+                    + of.getClass().getSimpleName() + " on the second";
                 errors.add(new ValidationError(
                     coord,
-            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
-                        + "' and '" + otherParent + "': field '" + name
-                        + "' classifies as " + rf.getClass().getSimpleName() + " on the first but "
-                        + of.getClass().getSimpleName() + " on the second"),
+                    membershipDiffers
+                        ? Rejection.deferred(summary + ", because the two parents enter the same "
+                            + "node target from opposite ends of their foreign keys: one resolves "
+                            + "to the parent's own key columns and the other needs a join, and one "
+                            + "generated fetchers class carries one read", rf.getClass())
+                        : Rejection.structural(summary),
                     other.location()
                 ));
                 continue;
@@ -1400,17 +1438,97 @@ public class GraphitronSchemaValidator {
                 // outer class-equality check. Thread the outer @table parent names so inner
                 // errors still name the original tables, not the intermediate nested type.
                 compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors);
+            } else if (rf instanceof ResultKeyAliasedField && !(rf instanceof ChildField.PivotField)) {
+                // MUST STAY BELOW THE TableField ARM. TableField is a ResultKeyAliasedField too, so
+                // an arm placed above it swallows it and its filters() comparison silently stops
+                // running; the negative test on that message is what holds this ordering.
+                //
+                // The projected leaves ColumnBackedReferenceField and ComputedField need no emitter
+                // work to be shared: every address they mint under a nested type carries the anchor
+                // (ProjectionCommands mints the projection unit per anchor, and its $project
+                // receives the anchor's own table local), and the value is read back off the source
+                // record by result-key alias without consulting the parent, so which parent
+                // registers the shared nested type is output-irrelevant.
+                //
+                // The capability alone is NOT the admission predicate, which is why PivotField is
+                // excluded here rather than merely absent: it projects under a result-key alias and
+                // is a legitimate member, but its unit is addressed on (parentTypeName, fieldName),
+                // and a nested leaf's parentTypeName is the nested type, so its address does not
+                // carry the anchor. isNestedWireableLeaf keeps it off this gate today, so the
+                // exclusion is unreachable; it is here so the address premise is a condition rather
+                // than a remembered one. A future widening of isNestedWireableLeaf to another
+                // member revisits this arm as part of its own work.
+                //
+                // domainReturnType() is the base comparison because it is the read-side analogue of
+                // the ColumnBackedField arm's columnClass check, and it is the reference half that
+                // gives it work: that leaf's claim carries the terminal column's own type, which is
+                // anchor-derived on a {key: "..."} path. On the computed half every fact the leaf
+                // stores bar its (still per-variant-deferred) joinPath derives from the single SDL
+                // declaration on the shared nested type, so the two sides agree by construction and
+                // the check is total rather than discriminating.
+                if (!rf.domainReturnType().equals(of.domainReturnType())) {
+                    errors.add(new ValidationError(
+                        coord,
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
+                            + "' and '" + otherParent + "': field '" + name
+                            + "' projects Java type '" + rf.domainReturnType() + "' on the first but '"
+                            + of.domainReturnType() + "' on the second, and one generated fetchers "
+                            + "class carries one typed read per coordinate"),
+                        other.location()
+                    ));
+                } else if (rf instanceof ChildField.ColumnBackedReferenceField rref
+                        && of instanceof ChildField.ColumnBackedReferenceField oref) {
+                    // One fact more than domainReturnType(): where the @reference path ends. A
+                    // {key: "..."} first step resolves from EITHER endpoint of the named FK, so two
+                    // anchors sitting on opposite ends traverse it in opposite directions and read
+                    // two different tables' same-named, same-typed column. domainReturnType() sees
+                    // no difference there. Terminal table, not terminal column name, is the grain
+                    // that separates them. Read off the model (every JoinStep permit mixes in
+                    // HasTargetTable with a pre-resolved targetTable()) rather than through
+                    // ServiceCatalog: this validator holds no catalog, and the catalog method
+                    // answers empty for a non-FK-derived terminus where the comparison still wants
+                    // both sides. The path is non-empty on any schema that gets here, because
+                    // validateColumnBackedReferenceField rejects an empty one per parent instance.
+                    var repTerminal = terminalTableOf(rref.joinPath());
+                    var otherTerminal = terminalTableOf(oref.joinPath());
+                    if (repTerminal != null && otherTerminal != null
+                            && !repTerminal.denotesSameTableAs(otherTerminal)) {
+                        errors.add(new ValidationError(
+                            coord,
+            Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
+                                + "' and '" + otherParent + "': field '" + name
+                                + "' ends its @reference path on table '" + repTerminal.tableName()
+                                + "' on the first but '" + otherTerminal.tableName()
+                                + "' on the second, and one generated fetchers class carries one "
+                                + "read per coordinate"),
+                            other.location()
+                        ));
+                    }
+                }
             } else if (!(rf instanceof ChildField.NestingField)) {
-                // Remaining non-column, non-nesting, non-TableField leaves (the BatchKey carriers and
-                // composite NodeId references) are not yet supported as multi-parent shared nested
-                // fields: their resolution depends on per-parent metadata this shape check doesn't
-                // inspect.
+                // The catch-all. A leaf lands here when an address it mints under a nested type is
+                // keyed on the nested type while the fact behind it is per-anchor, so no comparison
+                // of the two sides can make them agree.
+                //
+                // Today's sole resident is the Table-sourced arm of BatchedTableField, on both its
+                // authoring shapes (a plain @splitQuery and a lookup-keyed instance, since
+                // isNestedWireableLeaf gates on sourceShape() and reads nothing about lookup()):
+                // GeneratedUnits.rowsMethod addresses the rows method on the nested type, so every
+                // sharing parent mints the identical <NestedType>Fetchers#rows<Field> reference and
+                // the coordinate gets one DataFetcher, while deriveSplitQuerySource reads the batch
+                // grain off each anchor's own correlation columns, so each parent legitimately
+                // wants a different rows-method body and key lift. Admitting it needs per-anchor
+                // minting plus a runtime dispatch, inside the single registered fetcher, on which
+                // anchor the arriving source row came from; where that discriminator lives on a
+                // projected source row is an open design problem, and no measured downstream demand
+                // asks for it. Other BatchKey carriers never reach here: they are rejected at
+                // nested depth per variant by validateVariantIsSupportedAtNestedDepth first.
                 errors.add(new ValidationError(
                     coord,
             Rejection.deferred("Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName()
-                        + " which is not yet supported across multiple parents"),
+                        + " which is not yet supported across multiple parents", rf.getClass()),
                     other.location()
                 ));
             }
@@ -1428,6 +1546,21 @@ public class GraphitronSchemaValidator {
             }
         }
     }
+
+    /**
+     * The table a {@code @reference} path ends on, read straight off the model: every
+     * {@link JoinStep} permit mixes in {@link JoinStep.HasTargetTable}, so the last step always
+     * carries a pre-resolved {@link TableRef} with no lookup and no {@code Optional}.
+     * {@code null} only for an empty path, which {@code validateColumnBackedReferenceField}
+     * rejects on its own account.
+     */
+    private static TableRef terminalTableOf(List<JoinStep> joinPath) {
+        if (joinPath.isEmpty()) {
+            return null;
+        }
+        return ((JoinStep.HasTargetTable) joinPath.get(joinPath.size() - 1)).targetTable();
+    }
+
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
 

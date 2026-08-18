@@ -18,6 +18,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -65,6 +66,9 @@ class NestingFieldValidationTest {
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
             TestFixtures.pcFor(path, TestFixtures.filmTable()));
     }
+
+    private static final ParameterizedTypeName BOOLEAN_FIELD =
+        ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(Boolean.class));
 
     private static final MethodRef IS_ENGLISH = TestFixtures.staticServiceMethodRef(
         "com.example.FilmExtensions", "isEnglish",
@@ -311,29 +315,174 @@ class NestingFieldValidationTest {
                 "Nested type 'FilmMeta' shared across 'Film' and 'Advertisement': field 'label' resolves to column 'title' on the first but 'headline' on the second");
     }
 
+    // ===== The alias-projected arm: the two leaves admitted across parents =====
+
+    /**
+     * A Direct-compaction {@code @field} + {@code @reference} leaf entering {@code target} through
+     * the named FK. The FK name and anchor differ per parent (each anchor infers its own entry into
+     * the shared path), which is exactly what the arm tolerates; {@code target} and
+     * {@code columnClass} are what it compares.
+     */
+    private static ColumnBackedReferenceField sharedRefLeaf(String fk, TableRef anchor, String target,
+                                                            String columnClass) {
+        var path = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef(fk), anchor,
+            List.of(TestFixtures.languageIdCol()), TestFixtures.joinTarget(target),
+            List.of(TestFixtures.languageIdCol()), null, ""));
+        return new ColumnBackedReferenceField("FilmDetails", "langName", null,
+            List.of(new ColumnRef("name", "NAME", columnClass)),
+            path,
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
+            TestFixtures.pcFor(path, anchor));
+    }
+
+    /** An {@code @externalField} expression leaf, with the helper's return type as the variable. */
+    private static ComputedField sharedComputedLeaf(ParameterizedTypeName helperReturn, String scalar) {
+        return new ComputedField("FilmDetails", "flag", null,
+            new ReturnTypeRef.ScalarReturnType(scalar, new FieldWrapper.Single(true)),
+            List.of(),
+            TestFixtures.staticServiceMethodRef("com.example.FilmExtensions", "flag", helperReturn,
+                List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table()))));
+    }
+
     @Test
-    void multiParentCompat_nonColumnLeaf_rejectedAcrossParents() {
-        var fkFirst = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
-            TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
-        var columnRefFirst = new ColumnBackedReferenceField("FilmDetails", "langName", null,
-            List.of(new ColumnRef("NAME", "", "")),
-            fkFirst,
-            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-            TestFixtures.pcFor(fkFirst, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
-        var fkSecond = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("advertisement_language_id_fkey"), null, List.of(TestFixtures.languageIdCol()),
-            TestFixtures.joinTarget("language"), List.of(TestFixtures.languageIdCol()), null, ""));
-        var columnRefSecond = new ColumnBackedReferenceField("FilmDetails", "langName", null,
-            List.of(new ColumnRef("NAME", "", "")),
-            fkSecond,
-            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-            TestFixtures.pcFor(fkSecond, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
-        var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));
-        // Shape check reports "not yet supported" for the shared non-column leaf. The per-field
-        // nested-depth walk fires twice — once per parent — surfacing the ColumnBackedReferenceField
-        // nested-depth deferral at each nested location.
+    void multiParentCompat_sharedProjectedLeaves_admitted() {
+        // Both leaves the alias-projected arm admits, on one shared nested type. Each anchor mints
+        // its own projection unit and reads the value back by result-key alias off the source
+        // record, so the per-anchor join entry (a different FK name on each side of the reference
+        // leaf) is not a conflict. No error at all: the arm admits and no per-variant check fires.
+        var schema = twoParentSchema(
+            List.of(sharedRefLeaf("film_language_id_fkey", FILM_TABLE, "language", "java.lang.String"),
+                sharedComputedLeaf(BOOLEAN_FIELD, "Boolean")),
+            List.of(sharedRefLeaf("advertisement_language_id_fkey", ADVERTISEMENT_TABLE, "language", "java.lang.String"),
+                sharedComputedLeaf(BOOLEAN_FIELD, "Boolean")));
+        assertThat(validate(schema)).extracting(ValidationError::message).isEmpty();
+    }
+
+    @Test
+    void multiParentCompat_divergentDomainReturnType_reported() {
+        // The read-side analogue of the ColumnBackedField arm's columnClass case, hand-built on the
+        // reference leaf: its claim carries the terminal column's own type, so two anchors reading
+        // differently-typed terminal columns disagree here. (The computed leaf cannot produce this:
+        // everything it stores bar its per-variant-deferred joinPath comes off the single SDL
+        // declaration on the shared nested type, so its two sides agree by construction.)
+        var schema = twoParentSchema(
+            List.of(sharedRefLeaf("film_language_id_fkey", FILM_TABLE, "language", "java.lang.String")),
+            List.of(sharedRefLeaf("advertisement_language_id_fkey", ADVERTISEMENT_TABLE, "language", "java.lang.Integer")));
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .containsExactly(
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' "
+                    + "projects Java type 'Plain(java.lang.String)' on the first but "
+                    + "'Plain(java.lang.Integer)' on the second, and one generated fetchers class "
+                    + "carries one typed read per coordinate");
+    }
+
+    @Test
+    void multiParentCompat_divergentReferenceTerminalTable_reported() {
+        // The case domainReturnType() alone cannot see, and the reason the arm compares one fact
+        // more. A {key: "..."} first step resolves from either endpoint of the named FK, so two
+        // anchors sitting on opposite ends traverse it in opposite directions and read two
+        // different tables' same-named, same-typed column. Both sides agree on Plain(String) here;
+        // only the terminus differs.
+        var schema = twoParentSchema(
+            List.of(sharedRefLeaf("customer_address_id_fkey", FILM_TABLE, "address", "java.lang.String")),
+            List.of(sharedRefLeaf("customer_address_id_fkey", ADVERTISEMENT_TABLE, "customer", "java.lang.String")));
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .containsExactly(
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' "
+                    + "ends its @reference path on table 'address' on the first but 'customer' on "
+                    + "the second, and one generated fetchers class carries one read per coordinate");
+    }
+
+    @Test
+    void multiParentCompat_mixedResultKeyAliasedMembership_deferredOnFkOrientation() {
+        // A membership split: ColumnBackedField (reads a typed column constant) under one anchor,
+        // ColumnBackedReferenceField (alias-projected) under the other. Deferred rather than
+        // structural, because the divergence is a property of the two anchors' FK topology and not
+        // of anything the author wrote.
+        //
+        // The pair is hand-built. The one route that reaches it on a real schema is an @nodeId
+        // reference whose FK-mirror collapse lands on different sides per anchor, and there the
+        // ColumnBackedReferenceField side carries a NodeIdEncodeKeys compaction that
+        // validateColumnBackedReferenceField rejects on its own account — so no reachable schema
+        // produces this message alone. That is why the wording stays on the FK-orientation fact.
+        var schema = twoParentSchema(
+            List.of(new ColumnBackedField("FilmDetails", "langName", null,
+                List.of(new ColumnRef("name", "NAME", "java.lang.String")),
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())),
+            List.of(sharedRefLeaf("advertisement_language_id_fkey", ADVERTISEMENT_TABLE, "language", "java.lang.String")));
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .contains(
-                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' classifies as ColumnBackedReferenceField which is not yet supported across multiple parents");
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' "
+                    + "classifies as ColumnBackedField on the first but ColumnBackedReferenceField on "
+                    + "the second, because the two parents enter the same node target from opposite "
+                    + "ends of their foreign keys: one resolves to the parent's own key columns and "
+                    + "the other needs a join, and one generated fetchers class carries one read");
+    }
+
+    @Test
+    void multiParentCompat_tableFieldDivergentFilters_reported() {
+        // The arm-ordering guard. TableField is a ResultKeyAliasedField too, so an alias-projected
+        // arm placed above its arm would swallow it and silently stop comparing filters(). One
+        // generated condition method serves every reuse site, so diverging filters at two sites is
+        // a real conflict; this test is what makes the ordering a build failure rather than a
+        // review note.
+        var schema = twoParentSchema(
+            List.of(sharedTableLeaf(List.of())),
+            List.of(sharedTableLeaf(List.of(
+                new no.sikt.graphitron.rewrite.model.ConditionFilter(
+                    "com.example.Conditions", "addressCondition", List.of())))));
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .contains(
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'address' "
+                    + "classifies different condition filters at the two reuse sites, and one "
+                    + "generated condition method serves every site");
+    }
+
+    /** An inline {@code TableField} leaf with the filter list as the variable. */
+    private static ChildField.TableField sharedTableLeaf(List<no.sikt.graphitron.rewrite.model.WhereFilter> filters) {
+        return new ChildField.TableField("FilmDetails", "address", null,
+            new ReturnTypeRef.TableBoundReturnType("Address",
+                TestFixtures.joinTarget("address"), new FieldWrapper.Single(true)),
+            List.of(), filters, new OrderBySpec.None(), null,
+            no.sikt.graphitron.rewrite.model.LookupResolution.None.INSTANCE,
+            /* parentCorrelation */ null);
+    }
+
+    @Test
+    void multiParentCompat_nonColumnLeaf_rejectedAcrossParents() {
+        // The live pin on the catch-all deferral. Its resident is the Table-sourced arm of
+        // BatchedTableField: every sharing parent mints the identical <NestedType>Fetchers#rows
+        // reference (the address is keyed on the nested type), while the batch grain comes off each
+        // anchor's own correlation columns, so the two derivations are correct and different with
+        // one artifact to carry them.
+        var schema = twoParentSchema(
+            List.of(sharedBatchedLeaf("film_actor_film_id_fkey")),
+            List.of(sharedBatchedLeaf("advertisement_actor_advertisement_id_fkey")));
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .contains(
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'actors' "
+                    + "classifies as BatchedTableField which is not yet supported across multiple parents");
+    }
+
+    /** A Table-sourced {@code @splitQuery} leaf, the shape the catch-all still defers. */
+    private static ChildField.BatchedTableField sharedBatchedLeaf(String fk) {
+        var returnType = new ReturnTypeRef.TableBoundReturnType("Actor",
+            TestFixtures.joinTarget("actor"), new FieldWrapper.Single(true));
+        var path = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef(fk), null,
+            List.of(TestFixtures.filmIdCol()), TestFixtures.joinTarget("film_actor"),
+            List.of(TestFixtures.filmIdCol()), null, ""));
+        return new ChildField.BatchedTableField("FilmDetails", "actors", null, returnType,
+            path, List.of(), new OrderBySpec.None(), null,
+            no.sikt.graphitron.rewrite.model.SourceShape.Table,
+            TestFixtures.splitSourceKey(List.of(TestFixtures.filmIdCol())),
+            TestFixtures.fkColumnsLift(),
+            TestFixtures.loaderRegistration(returnType, false, false),
+            no.sikt.graphitron.rewrite.model.LookupResolution.None.INSTANCE,
+            TestFixtures.pcFor(path, TestFixtures.filmTable()));
     }
 }

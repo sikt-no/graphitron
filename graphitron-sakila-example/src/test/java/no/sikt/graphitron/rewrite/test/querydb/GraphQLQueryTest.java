@@ -2652,6 +2652,52 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void multiParentSharedNesting_projectedLeaves_agreeWithTheirFlatSiblings() {
+        // The two alias-projected leaves on the same shared OccupantLocation, under both anchors:
+        // `district` is a scalar @field + @reference entering via {table: "address"} (each anchor
+        // infers its own FK), `addressId` is an @externalField whose Table<?> helper reads the
+        // host's own address_id column. Both are minted into the per-anchor projection unit and
+        // read back by result-key alias, so a correlation that lost the anchor would diverge from
+        // the flat sibling under one parent rather than fail loudly. `address { ... }` is the flat
+        // sibling: the inline TableField on the same shared type, resolved through the same FK.
+        Map<String, Object> data = execute("""
+            {
+              customers { customerId location { occupantAddressId occupantDistrict address { addressId district } } }
+              storeById(store_id: [1, 2]) { storeId location { occupantAddressId occupantDistrict address { addressId district } } }
+            }
+            """);
+
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).hasSize(5);
+        for (Map<String, Object> c : customers) {
+            assertProjectedLeavesAgree((Map<String, Object>) c.get("location"),
+                "Customer " + c.get("customerId"));
+        }
+
+        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
+        assertThat(stores).hasSize(2);
+        for (Map<String, Object> s : stores) {
+            assertProjectedLeavesAgree((Map<String, Object>) s.get("location"),
+                "Store " + s.get("storeId"));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertProjectedLeavesAgree(Map<String, Object> location, String who) {
+        var flat = (Map<String, Object>) location.get("address");
+        assertThat(location.get("occupantAddressId"))
+            .as("%s: the @externalField leaf reads this anchor's own address_id", who)
+            .isNotNull()
+            .isEqualTo(flat.get("addressId"));
+        assertThat(location.get("occupantDistrict"))
+            .as("%s: the @reference leaf terminates on the same address row the inline "
+                + "TableField navigates to", who)
+            .isNotNull()
+            .isEqualTo(flat.get("district"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void splitTableField_conditionJoin_returnsActorsPerFilm() {
         // Film.actorsByCondition (ConditionJoin first hop).
         // The condition method `filmActorsViaCondition` expresses the film_actor junction

@@ -149,9 +149,23 @@ three, omitting `PivotField`. One-line fix, same edit.)
 ### What the arm compares
 
 The base comparison is `domainReturnType()`. The one shared artifact these leaves touch is the
-read, and one `<NestedType>Fetchers` class carries one typed read per coordinate: the peeled helper
-return type for `ComputedField`, the terminal column's type for a Direct reference. It is the exact
+read, and one `<NestedType>Fetchers` class carries one read per coordinate. It is the exact
 read-side analogue of the `ColumnBackedField` arm's `columnClass` comparison.
+
+**Correction found at implementation time: the base comparison is discriminating on the reference
+half only.** `ColumnBackedReferenceField.domainReturnType()` is `Plain(columns.get(0).columnType())`
+on a Direct compaction, so it does carry the terminal column's own type and the comparison has real
+work. `ComputedField.domainReturnType()` is `Plain(OutputField.peelToClassName(method.returnType()))`,
+and `peelToClassName` does not unwrap `org.jooq.Field` (its unwrap list is `Optional`,
+`CompletableFuture`, `List`, `Set`, `Collection`, `Result`), so every `ComputedField` instance
+answers the constant `Plain(org.jooq.Field)`. The draft's claim that it carries "the peeled helper
+return type" is wrong. The comparison stays as the uniform base, but the honest reason it never
+fires on the computed half is different and simpler: every fact that leaf stores bar its
+(still per-variant-deferred) `joinPath` derives from the single SDL declaration on the shared nested
+type, so the two sides agree by construction. Nothing is under-checked; the arm's discriminating
+work is on the reference half. That `ComputedField` claims `org.jooq.Field` as the Java value
+reaching `env.getSource()` at all is a separate question about that leaf's `DomainReturnType`, not
+this item's business, and this item does not touch it.
 
 The reference half compares **one fact more: the terminal table of `joinPath()`**, read as the last
 step's `targetTable()`, and this is not belt-and-braces. Read it off the model, not through
@@ -330,12 +344,24 @@ All in `GraphitronSchemaValidator`, plus fixtures:
   scalar `@field` + `@reference` leaf entering the path via `{table: "address"}` so each anchor
   infers its own FK and both terminate on the same `address` column.
 
+  Implementation note: the two leaves ship as `occupantAddressId` / `occupantDistrict`, named
+  around a pre-existing defect in the generated `$project` selection gate rather than as
+  `addressId` / `district`. The gate switches on the result-key map graphql-java builds from
+  `getFieldsGroupedByResultKey()`, which is recursive over the whole sub-selection, so a leaf whose
+  name matches anything selected below it is projected while unselected: with the leaf named
+  `district`, `{ customers { location { address { district } } } }` emitted a spurious
+  `__rk_district` term and broke `ProjectionSqlBaselineTest`'s pin. The defect is unrelated to
+  multi-parent sharing, predates this item and is filed as its own correctness item
+  (`roadmap/projection-selection-gate-depth-leak.md`); naming around it keeps the shape this fixture
+  demonstrates readable and keeps the baseline pin off a spurious column.
+
 ## Tests
 
 - Unit (`NestingFieldValidationTest`): a shared `ComputedField` leaf and a shared Direct-compaction
   `ColumnBackedReferenceField` leaf across two parents, no error. A hand-built pair with divergent
   `domainReturnType()`, rejected: testable at unit tier exactly as the `ColumnBackedField` arm's
-  `columnClass` case is. A hand-built pair agreeing on `domainReturnType()` but with divergent
+  `columnClass` case is, and built on the *reference* leaf, since the correction above means the
+  computed leaf cannot produce a divergent claim. A hand-built pair agreeing on `domainReturnType()` but with divergent
   terminal tables, rejected: the reverse-`{key:}` shape from the design section, and the one case
   that fails without the second comparison. A mixed-membership pair (`ColumnBackedField` under one
   parent, `ColumnBackedReferenceField` under the other), pinning the rearmed deferred message, with

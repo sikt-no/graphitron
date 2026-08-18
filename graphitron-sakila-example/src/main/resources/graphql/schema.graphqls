@@ -1154,10 +1154,11 @@ type Customer implements Node @table(name: "customer") @node {
             method: "customerToAddress"
         }
     }])
-    # R23 execution fixture: OccupantLocation is a plain-object nested type shared with Store
-    # (see below). Both parents FK to address, so the shared inline `address` TableField has its
-    # one-hop FK joinPath inferred against this parent's table (customer.address_id → address)
-    # independently of Store's. Exercises the multi-parent NestingField TableField arm.
+    # Multi-parent NestingField fixture: OccupantLocation is a plain-object nested type shared with
+    # Store (see below). Both parents FK to address, so each of the type's per-anchor leaves has its
+    # join topology inferred against this parent's table (customer.address_id → address)
+    # independently of Store's. Exercises the TableField and alias-projected arms of the
+    # multi-parent shape check.
     location: OccupantLocation
 }
 
@@ -1307,9 +1308,9 @@ type Store @table(name: "store") {
     # (store.manager_staff_id and staff.store_id), so inference would fail — explicit
     # @reference is required.
     manager:    Staff @splitQuery @reference(path: [{key: "store_manager_staff_id_fkey"}])
-    # R23 execution fixture: the same OccupantLocation nested type Customer uses. Store also FKs
-    # to address (store.address_id → address), so the shared inline `address` TableField infers
-    # its joinPath against store independently of customer — the joinPath is genuinely per-parent.
+    # The same OccupantLocation nested type Customer uses. Store also FKs to address
+    # (store.address_id → address), so each of the shared type's leaves infers its join topology
+    # against store independently of customer — the join entry is genuinely per-parent.
     location: OccupantLocation
     # R481 execution fixture: a cross-table parent-holds-FK single-cardinality multi-table polymorphic
     # child field. Both correlations put the FK on the parent (store) side, on a non-key store column:
@@ -1335,13 +1336,35 @@ type StoreManager implements StoreRef @table(name: "staff") {
     firstName: String @field(name: "first_name")
 }
 
-# R23 execution fixture: a plain-object (NestingField) type shared across two @table parents
-# (Customer and Store) that both FK to address. Its `address` field carries no @reference, so the
-# FK joinPath is inferred against whichever outer @table parent projects it. Before R23 the
-# multi-parent shape check rejected this with "not yet supported across multiple parents"; the
-# TableField arm now admits it.
+# Execution fixture for multi-parent NestingField sharing: a plain-object (NestingField) type
+# shared across two @table parents (Customer and Store) that both FK to address. Its `address`
+# field carries no @reference, so the FK joinPath is inferred against whichever outer @table parent
+# projects it; the TableField arm of the multi-parent shape check admits that.
+#
+# The other two leaves are the alias-projected pair the shape check also admits, one per class:
+#
+#   `occupantDistrict` is a scalar @field + @reference whose path enters via {table: "address"}, so
+#   each anchor infers its own FK entry (customer.address_id / store.address_id) and both terminate
+#   on the same address column. The terminal table is what the arm compares; the FK entry is what it
+#   tolerates. Value must agree with `address { district }` under both parents.
+#
+#   `occupantAddressId` is an @externalField whose helper takes Table<?>, the form a shared nesting
+#   type requires: reflected once per anchor, it must accept both host tables. Value must agree with
+#   `address { addressId }` under both parents.
+#
+# Both names are deliberately distinct from every field name reachable under `address`. The
+# generated $project selection gate switches on the result-key map graphql-java builds from
+# getFieldsGroupedByResultKey(), which is recursive over the whole sub-selection, so a leaf sharing
+# a name with anything selected below it is projected unselected. That is a defect in the gate, not
+# in this fixture, and it is filed on its own; naming around it keeps the shape this type
+# demonstrates readable.
 type OccupantLocation {
     address: Address
+    occupantDistrict: String @field(name: "DISTRICT") @reference(path: [{table: "address"}])
+    occupantAddressId: Int @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.OccupantExtensions",
+        method: "addressId"
+    })
 }
 
 type Staff @table(name: "staff") {

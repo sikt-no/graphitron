@@ -1768,6 +1768,94 @@ class GraphitronSchemaBuilderTest {
             .isEmpty();
     }
 
+    // The two projected leaves, now on a nesting type shared by two @table parents. Each anchor
+    // classifies the shared type's leaves against its own table and the multi-parent shape check
+    // admits the pair: every address these leaves mint under a nested type carries the anchor, so
+    // the per-anchor join entry on the reference half is not a conflict.
+    @Test
+    void multiParentSharedNesting_projectedLeaves_classifyPerParentAndValidateClean() {
+        var schema = build("""
+            type Projected {
+              addressLine: String @field(name: "address") @reference(path: [{table: "address"}])
+              anyValue: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "anyTable"})
+            }
+            type Customer @table(name: "customer") { projected: Projected }
+            type Staff @table(name: "staff") { projected: Projected }
+            type Query { customer: Customer staff: Staff }
+            """);
+
+        // The reference leaf's path is inferred per anchor (customer.address_id -> address,
+        // staff.address_id -> address): two different FKs, one terminal table.
+        var customerRef = nestedLeaf(schema, "Customer", "projected", "addressLine", ColumnBackedReferenceField.class);
+        var staffRef = nestedLeaf(schema, "Staff", "projected", "addressLine", ColumnBackedReferenceField.class);
+        assertThat(TestFixtures.fkHop(customerRef.joinPath().get(0)).targetTable().tableName())
+            .isEqualToIgnoringCase("address");
+        assertThat(TestFixtures.fkHop(staffRef.joinPath().get(0)).targetTable().tableName())
+            .isEqualToIgnoringCase("address");
+        assertThat(TestFixtures.fkRef(TestFixtures.fkPairs(customerRef.joinPath().get(0))).sqlName())
+            .isNotEqualTo(TestFixtures.fkRef(TestFixtures.fkPairs(staffRef.joinPath().get(0))).sqlName());
+
+        // The computed leaf's helper takes Table<?>, so it accepts both anchors.
+        assertThat(nestedLeaf(schema, "Customer", "projected", "anyValue", ComputedField.class).method().methodName())
+            .isEqualTo("anyTable");
+        assertThat(nestedLeaf(schema, "Staff", "projected", "anyValue", ComputedField.class).method().methodName())
+            .isEqualTo("anyTable");
+
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .extracting(ValidationError::message)
+            .isEmpty();
+    }
+
+    // The cross-parent half of the @externalField parent-table assignability check. A helper typed
+    // on one anchor's concrete generated table classifies clean under that anchor and rejects under
+    // the other, so per-anchor attribution is structural rather than a message convention: the
+    // nesting arm of FieldBuilder.classifyChildFieldOnTableType rewraps the nested UnclassifiedField
+    // onto the embedding field with a "nested type 'X' field 'Y': " prefix (the behaviour
+    // R58TypedRejectionPipelineTest.unknownColumn_throughNestedRewrapPreservesTypedShape pins), so
+    // the observable sits at the OUTER coordinate.
+    //
+    // One consequence asserted deliberately: because the rejecting parent's field is no longer a
+    // NestingField, the shared group drops to one member and compareNestedFieldsShape never runs on
+    // this schema. This proves the per-instance check fires; it does not exercise the interaction
+    // between that check and the new arm.
+    @Test
+    void multiParentSharedNesting_externalFieldTypedOnOneAnchorsTable_rejectsOnTheOther() {
+        var schema = build("""
+            type Concrete {
+              ratingExpr: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            }
+            type Film @table(name: "film") { concrete: Concrete }
+            type Actor @table(name: "actor") { concrete: Concrete }
+            type Query { film: Film actor: Actor }
+            """);
+
+        // Film accepts the Film-typed helper; the nesting field classifies normally.
+        assertThat(schema.field("Film", "concrete")).isInstanceOf(NestingField.class);
+
+        // Actor does not, and the rejection surfaces at Actor.concrete with the nested prefix and
+        // the anchor's own table named.
+        var actorField = schema.field("Actor", "concrete");
+        assertThat(actorField).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) actorField).rejection().message())
+            .startsWith("nested type 'Concrete' field 'ratingExpr': ")
+            .contains("does not accept the parent table 'actor'");
+
+        // The shared group is down to one member, so the multi-parent shape check does not run.
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("shared across"));
+    }
+
+    private static <T extends ChildField> T nestedLeaf(GraphitronSchema schema, String parent, String nesting,
+                                                       String leaf, Class<T> leafClass) {
+        var nf = (NestingField) schema.field(parent, nesting);
+        return nf.nestedFields().stream()
+            .filter(f -> f.name().equals(leaf))
+            .findFirst()
+            .map(leafClass::cast)
+            .orElseThrow(() -> new AssertionError("no nested field '" + leaf + "' on " + parent + "." + nesting));
+    }
+
     private static TableField nestedTableField(GraphitronSchema schema, String parent, String nesting, String leaf) {
         var nf = (NestingField) schema.field(parent, nesting);
         var field = nf.nestedFields().stream()
