@@ -60,9 +60,29 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
     }
 
     /**
-     * One field of a {@link RecordInput} or {@link JavaBeanInput}. {@code sdlFieldName} is the
-     * SDL input-object field name; {@code javaFieldName} is the matching Java component/setter
-     * suffix; {@code shape} carries the value tree below.
+     * One field of a {@link RecordInput} or {@link JavaBeanInput}. {@code accessPath} is the ordered
+     * chain of SDL input-object field names from the bean's own wire {@code Map} down to the leaf,
+     * carrying the same meaning as {@link CallSiteExtraction.FieldBinding#accessPath()}: the last
+     * element is the {@code Map} key ({@link #mapKey()}), earlier elements are enclosing grouping
+     * input fields the leaf was flattened out of. {@code javaFieldName} is the matching Java
+     * component/setter suffix; {@code shape} carries the value tree below.
      */
-    record FieldBinding(String sdlFieldName, String javaFieldName, ValueShape shape) {}
+    record FieldBinding(List<String> accessPath, String javaFieldName, ValueShape shape) {
+        public FieldBinding {
+            if (accessPath == null || accessPath.isEmpty()) {
+                throw new IllegalArgumentException("FieldBinding accessPath must be non-empty");
+            }
+            for (var element : accessPath) {
+                if (element == null || element.isEmpty()) {
+                    throw new IllegalArgumentException("FieldBinding accessPath elements must be non-empty");
+                }
+            }
+            accessPath = List.copyOf(accessPath);
+        }
+
+        /** The wire {@code Map} key for this binding's value: the last {@link #accessPath()} element. */
+        public String mapKey() {
+            return accessPath.get(accessPath.size() - 1);
+        }
+    }
 }

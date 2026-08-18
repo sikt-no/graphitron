@@ -438,8 +438,10 @@ final class InputBeanResolver {
      * Recursively builds an {@link CallSiteExtraction.InputBean} for a given Java class paired with
      * an SDL {@link GraphQLInputObjectType}. Walks the SDL fields in declaration order, locating
      * the Java member on the bean and computing each leaf's transform. Records/JavaBeans are
-     * supported; everything else is rejected. Nested input-object fields recurse into a nested
-     * {@code InputBean} leaf. The {@code visited} set carries the in-flight chain of bean classes
+     * supported; everything else is rejected. A nested input-object field whose binding key names a
+     * member recurses into a nested {@code InputBean} leaf; one that names no member is a
+     * <em>grouping</em> input whose own fields flatten onto this bean, see {@link #indexSdlFields}.
+     * The {@code visited} set carries the in-flight chain of bean classes
      * so a self-referential or mutually-recursive shape fails as a structural rejection rather
      * than a {@code StackOverflowError}.
      */
@@ -486,35 +488,17 @@ final class InputBeanResolver {
             javaMembersByName = indexJavaBeanSetters(beanClass);
         }
 
-        // Index the SDL fields by their Java-member binding key. Two SDL fields resolving to one
-        // key is rejected before either arm builds a result: on the record arm the second would
-        // silently win the bijection slot (order-dependent binding); on the JavaBean arm the same
-        // setter would be invoked twice.
-        var sdlByBindingKey = new LinkedHashMap<String, GraphQLInputObjectField>();
-        for (var f : iot.getFieldDefinitions()) {
-            String key = bindingKey(f);
-            // A present-but-blank @field(name:) yields an empty key (GraphQL field names are never
-            // empty, so only the directive can produce one). It can match no record component or
-            // setter; reject the malformed directive at classify time rather than silently
-            // skipping the field on the JavaBean arm.
-            if (key.isEmpty()) {
-                return new Built.Fail(Rejection.structural(
-                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                    + className + "': SDL input field '" + f.getName() + "' on type '" + iot.getName()
-                    + "' carries @field(name:) with a blank value — give it the Java member name to"
-                    + " bind (record component / JavaBean property), or drop the directive to bind by"
-                    + " the field's own name"));
-            }
-            GraphQLInputObjectField prior = sdlByBindingKey.put(key, f);
-            if (prior != null) {
-                return new Built.Fail(Rejection.structural(
-                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                    + className + "': SDL input fields '" + prior.getName() + "' and '" + f.getName()
-                    + "' on type '" + iot.getName() + "' both bind to Java member '" + key
-                    + "' on bean class '" + beanClass.getName() + "' (via @field(name:) or a matching"
-                    + " name) — two input fields cannot populate one member; rename one field or"
-                    + " adjust its @field(name:)"));
-            }
+        // Index the SDL fields by their Java-member binding key, descending through grouping inputs
+        // (a nested input field matching no member) so their leaves are hoisted to peers of this
+        // type's own fields. Two SDL fields resolving to one key is rejected before either arm
+        // builds a result: on the record arm the second would silently win the bijection slot
+        // (order-dependent binding); on the JavaBean arm the same setter would be invoked twice.
+        var sdlByBindingKey = new LinkedHashMap<String, IndexEntry>();
+        Rejection indexRejection = indexSdlFields(iot, javaMembersByName, List.of(),
+            ClassifyContext.root().expanding(iot.getName()), beanClass, paramName, methodName,
+            className, sdlByBindingKey);
+        if (indexRejection != null) {
+            return new Built.Fail(indexRejection);
         }
 
         // Records are positional and total; JavaBean setters are independent and partial. The two
@@ -526,6 +510,133 @@ final class InputBeanResolver {
             case JAVA_BEAN -> bindJavaBean(beanClass, iot, javaMembersByName, sdlByBindingKey,
                 paramName, methodName, className, visited);
         };
+    }
+
+    /**
+     * One entry of the binding-key index: the SDL field that binds, plus the bean-local access path
+     * from the bean's own wire {@code Map} down to it. A field declared directly on the bean's input
+     * type has a one-element path; a field hoisted out of a grouping input carries the group's field
+     * names ahead of its own.
+     */
+    private record IndexEntry(List<String> path, GraphQLInputObjectField field) {}
+
+    /**
+     * Fills {@code out} with one entry per SDL field that binds against {@code javaMembersByName},
+     * descending through <em>grouping</em> inputs. Returns the first {@link Rejection}, or
+     * {@code null} on success.
+     *
+     * <p>Three-way rule per nested input-object field {@code g}, decided against the bean's member
+     * set (known before any field binds):
+     *
+     * <ol>
+     *   <li><b>A member matches {@code g}'s binding key.</b> {@code g} indexes as an ordinary field
+     *       and {@link #bindField} recurses into a nested bean leaf, exactly as before. Wins
+     *       unconditionally, including when the matched member is not a viable bean class (that
+     *       stays {@code bindField}'s rejection rather than becoming a flatten).</li>
+     *   <li><b>No member matches, and {@code g} carries neither {@code @field(name:)} nor
+     *       {@code @nodeId}.</b> {@code g} is a grouping input: its own fields are hoisted into this
+     *       index under the access path {@code ["g", <leaf>]} and bind against the enclosing bean's
+     *       members by the normal rules. Recursive, so a hoisted group descends again.</li>
+     *   <li><b>No member matches, and {@code g} carries {@code @field(name:)} or {@code @nodeId}.</b>
+     *       Reject. Both directives are an authored claim that the field binds to a named Java
+     *       member; flattening past a claim that does not resolve would turn a typo into
+     *       silently-different behaviour.</li>
+     * </ol>
+     *
+     * <p>Hoisting makes a leaf a peer of the enclosing type's own fields, so a hoisted leaf collides
+     * with a top-level field, and with another group's hoisted leaf, by exactly the rule that already
+     * governs two top-level fields: one duplicate-binding-key rejection against the one shared index,
+     * not a variant per pairing. The access path is carried for the message and the emitter's
+     * {@code Map} descent only; it is never part of the identity that decides a collision.
+     *
+     * <p>{@code @table} on a grouping input is not a gate: the directive is deprecated and inert on
+     * an input, so such a type is an ordinary grouping input and flattens exactly as its
+     * directiveless twin does (the column axis reads it the same way).
+     */
+    private Rejection indexSdlFields(GraphQLInputObjectType iot,
+            Map<String, JavaMember> javaMembersByName, List<String> pathPrefix,
+            ClassifyContext classifyCtx, Class<?> beanClass, String paramName, String methodName,
+            String className, Map<String, IndexEntry> out) {
+        String where = "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+            + className + "'";
+        for (var f : iot.getFieldDefinitions()) {
+            List<String> path = append(pathPrefix, f.getName());
+            String key = bindingKey(f);
+            // A present-but-blank @field(name:) yields an empty key (GraphQL field names are never
+            // empty, so only the directive can produce one). It can match no record component or
+            // setter; reject the malformed directive at classify time rather than silently
+            // skipping the field on the JavaBean arm.
+            if (key.isEmpty()) {
+                return Rejection.structural(where + ": SDL input field '" + dottedPath(path)
+                    + "' on type '" + iot.getName() + "' carries @field(name:) with a blank value —"
+                    + " give it the Java member name to bind (record component / JavaBean property),"
+                    + " or drop the directive to bind by the field's own name");
+            }
+            SdlElement sdlElt = peelSdlListNonNull(f.getType());
+            boolean groups = sdlElt.elementType() instanceof GraphQLInputObjectType
+                && !javaMembersByName.containsKey(key);
+            if (groups) {
+                var nestedIot = (GraphQLInputObjectType) sdlElt.elementType();
+                Rejection gate = groupingGate(f, path, nestedIot, sdlElt.list(), classifyCtx,
+                    beanClass, where);
+                if (gate != null) {
+                    return gate;
+                }
+                Rejection nested = indexSdlFields(nestedIot, javaMembersByName, path,
+                    classifyCtx.expanding(nestedIot.getName()), beanClass, paramName, methodName,
+                    className, out);
+                if (nested != null) {
+                    return nested;
+                }
+                continue;
+            }
+            IndexEntry prior = out.put(key, new IndexEntry(path, f));
+            if (prior != null) {
+                return Rejection.structural(where + ": SDL input fields '"
+                    + dottedPath(prior.path()) + "' and '" + dottedPath(path)
+                    + "' both bind to Java member '" + key + "' on bean class '" + beanClass.getName()
+                    + "' (via @field(name:) or a matching name) — two input fields cannot populate one"
+                    + " member; rename one field or adjust its @field(name:)");
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The rejections a grouping input can hit before its fields are hoisted: an authored binding
+     * claim that resolves to no member (binding rule 3), a list-shaped group, and a cyclic one.
+     * Returns {@code null} when the group may be descended into.
+     */
+    private Rejection groupingGate(GraphQLInputObjectField f, List<String> path,
+            GraphQLInputObjectType nestedIot, boolean list, ClassifyContext classifyCtx,
+            Class<?> beanClass, String where) {
+        if (f.hasAppliedDirective(DIR_FIELD) || f.hasAppliedDirective(DIR_NODE_ID)) {
+            String directive = f.hasAppliedDirective(DIR_FIELD) ? "@field(name:)" : "@nodeId";
+            return Rejection.structural(where + ": nested input field '" + dottedPath(path)
+                + "' carries " + directive + ", binding it to Java member '" + bindingKey(f)
+                + "', but bean class '" + beanClass.getName() + "' has no such member — a nested"
+                + " input field with no matching member flattens onto the bean only when it makes no"
+                + " binding claim of its own. Add the member, correct the directive, or drop the"
+                + " directive to let the field flatten as a grouping input");
+        }
+        if (list) {
+            return Rejection.structural(where + ": nested input field '" + dottedPath(path)
+                + "' is list-shaped (a list of '" + nestedIot.getName() + "') and matches no member of"
+                + " bean class '" + beanClass.getName() + "', so it would flatten onto the bean — but"
+                + " a list of groups has no flat member to land on. Make the field singular, or add a"
+                + " member named '" + bindingKey(f) + "' typed as a list of a bean mirroring '"
+                + nestedIot.getName() + "'");
+        }
+        // Cycle detection is on SDL grouping-input type names, not the Java axis buildInputBean's
+        // Set<Class<?>> visited guards: a flattened group contributes no Java class, so without this
+        // an input type reaching itself through directiveless nesting recurses until the stack dies.
+        if (classifyCtx.isExpanding(nestedIot.getName())) {
+            return Rejection.structural(where + ": nested input field '" + dottedPath(path)
+                + "' reaches input type '" + nestedIot.getName() + "' which is already expanding — a"
+                + " cyclic grouping input cannot flatten onto bean class '" + beanClass.getName()
+                + "' (there is no member to bind the recursion to)");
+        }
+        return null;
     }
 
     /**
@@ -556,15 +667,15 @@ final class InputBeanResolver {
      */
     private Built bindRecord(Class<?> beanClass, GraphQLInputObjectType iot,
             Map<String, JavaMember> componentsByName,
-            Map<String, GraphQLInputObjectField> sdlByBindingKey,
+            Map<String, IndexEntry> sdlByBindingKey,
             String paramName, String methodName, String className, Set<Class<?>> visited) {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
         var consumedKeys = new HashSet<String>();
         // Direction A: every component must bind. componentsByName iterates in component order.
         for (var ce : componentsByName.entrySet()) {
             String component = ce.getKey();
-            GraphQLInputObjectField sdlField = sdlByBindingKey.get(component);
-            if (sdlField == null) {
+            IndexEntry entry = sdlByBindingKey.get(component);
+            if (entry == null) {
                 return new Built.Fail(Rejection.structural(
                     "parameter '" + paramName + "' on method '" + methodName + "' in class '"
                     + className + "': record '" + beanClass.getName() + "' component '" + component
@@ -574,18 +685,22 @@ final class InputBeanResolver {
                     + component + "\") to the field that should populate it"));
             }
             consumedKeys.add(component);
-            FieldResult r = bindField(sdlField, ce.getValue(), paramName, methodName, className, visited);
+            FieldResult r = bindField(entry.field(), entry.path(), ce.getValue(),
+                paramName, methodName, className, visited);
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
             }
             bindings.add(((FieldResult.Ok) r).binding());
         }
-        // Direction B: every SDL field must be consumed by some component.
+        // Direction B: every SDL field must be consumed by some component. A grouping input never
+        // appears as a key in its own right, so this reads only leaves — including hoisted ones,
+        // whose value would otherwise be dropped on the way to the canonical constructor.
         for (var e : sdlByBindingKey.entrySet()) {
             if (!consumedKeys.contains(e.getKey())) {
                 return new Built.Fail(Rejection.structural(
                     "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                    + className + "': SDL input field '" + e.getValue().getName() + "' (binding key '"
+                    + className + "': SDL input field '" + dottedPath(e.getValue().path())
+                    + "' (binding key '"
                     + e.getKey() + "') on type '" + iot.getName() + "' names no component of record '"
                     + beanClass.getName() + "' — every field of a record-backed @service input must"
                     + " bind to a component (else its value is silently dropped); remove the field,"
@@ -603,10 +718,16 @@ final class InputBeanResolver {
      * (the bean simply does not populate it). The empty-bindings rejection fires only when no field,
      * by name or by {@code @field(name:)}, matches any setter — the genuine "this bean does not
      * mirror this input" case.
+     *
+     * <p>That tolerance no longer extends to nested input-object fields: an unmatched one is a
+     * grouping input and either flattens or rejects, decided in the index walk above before this arm
+     * runs. Only an unmatched <em>scalar</em> field is still skipped in silence. The asymmetry is
+     * deliberate: flattening requires looking inside a nested field, so this arm cannot stay blind
+     * there, while diagnosing a dropped scalar needs machinery this arm does not have.
      */
     private Built bindJavaBean(Class<?> beanClass, GraphQLInputObjectType iot,
             Map<String, JavaMember> settersByName,
-            Map<String, GraphQLInputObjectField> sdlByBindingKey,
+            Map<String, IndexEntry> sdlByBindingKey,
             String paramName, String methodName, String className, Set<Class<?>> visited) {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
         // sdlByBindingKey iterates in SDL declaration order (LinkedHashMap), so the bindings list
@@ -616,7 +737,8 @@ final class InputBeanResolver {
             if (member == null) {
                 continue;
             }
-            FieldResult r = bindField(e.getValue(), member, paramName, methodName, className, visited);
+            FieldResult r = bindField(e.getValue().field(), e.getValue().path(), member,
+                paramName, methodName, className, visited);
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
             }
@@ -642,13 +764,19 @@ final class InputBeanResolver {
     /**
      * Classifies one SDL-field / Java-member pair into a {@link CallSiteExtraction.FieldBinding}.
      * Member resolution has already happened (the binding key selected which member binds); the
-     * member's Java type drives the leaf branch. The binding carries the SDL field name (the
-     * {@code Map} key the helper reads) separately from the Java member name (the component /
-     * property it populates), so the emitter is agnostic to <em>how</em> the member was chosen.
+     * member's Java type drives the leaf branch. The binding carries the SDL access path (whose last
+     * element is the {@code Map} key the helper reads) separately from the Java member name (the
+     * component / property it populates), so the emitter is agnostic to <em>how</em> the member was
+     * chosen and to whether the field was declared on the bean's own input type or hoisted out of a
+     * grouping input. A hoisted leaf's transform is computed exactly as an unflattened one's:
+     * flattening moves where the value is read from, not what is done to it.
      */
-    private FieldResult bindField(GraphQLInputObjectField sdlField, JavaMember member,
+    private FieldResult bindField(GraphQLInputObjectField sdlField, List<String> accessPath,
+            JavaMember member,
             String paramName, String methodName, String className, Set<Class<?>> visited) {
-        String sdlFieldName = sdlField.getName();
+        // Messages name the dotted access path, so a hoisted leaf points at the SDL the author
+        // wrote rather than at a bare field name that appears nowhere on the enclosing input type.
+        String sdlFieldName = dottedPath(accessPath);
         SdlElement sdlElt = peelSdlListNonNull(sdlField.getType());
         boolean listShape = sdlElt.list();
         boolean nonNull = GraphQLTypeUtil.isNonNull(sdlField.getType());
@@ -719,7 +847,7 @@ final class InputBeanResolver {
             }
         }
         return new FieldResult.Ok(new CallSiteExtraction.FieldBinding(
-            sdlFieldName, member.javaName(), leaf, listShape, javaElementTypeName));
+            accessPath, member.javaName(), leaf, listShape, javaElementTypeName));
     }
 
     // ===== jOOQ-record member (@nodeId decode) =====

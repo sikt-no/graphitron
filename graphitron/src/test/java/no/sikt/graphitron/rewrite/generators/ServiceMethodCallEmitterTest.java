@@ -181,7 +181,7 @@ class ServiceMethodCallEmitterTest {
         var beanClass = ClassName.get("com.example", "MyInput");
         var stringType = ClassName.get(String.class);
         var fields = List.of(new ValueShape.FieldBinding(
-            "title", "title",
+            List.of("title"), "title",
             new ValueShape.Scalar(stringType,
                 new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct())));
@@ -205,7 +205,7 @@ class ServiceMethodCallEmitterTest {
         var beanClass = ClassName.get("com.example", "MyBean");
         var stringType = ClassName.get(String.class);
         var fields = List.of(new ValueShape.FieldBinding(
-            "title", "title",
+            List.of("title"), "title",
             new ValueShape.Scalar(stringType,
                 new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct())));
@@ -321,7 +321,7 @@ class ServiceMethodCallEmitterTest {
         var beanClass = ClassName.get("com.example", "MyInput");
         var stringType = ClassName.get(String.class);
         var fields = List.of(new ValueShape.FieldBinding(
-            "title", "title",
+            List.of("title"), "title",
             new ValueShape.Scalar(stringType,
                 new ArgPath("inputs", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct())));

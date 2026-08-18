@@ -254,8 +254,15 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * One field on an {@link InputBean}. {@code sdlFieldName} is the GraphQL input field name and
-     * is the {@code Map} key the helper reads from. {@code javaFieldName} is the corresponding
+     * One field on an {@link InputBean}. {@code accessPath} is the ordered chain of GraphQL input
+     * field names from the bean's own wire {@code Map} down to the leaf: the last element is the
+     * {@code Map} key the helper reads the value from ({@link FieldBinding#mapKey()}), and any
+     * earlier elements are the enclosing <em>grouping</em> input fields the leaf was flattened out
+     * of. A field declared directly on the bean's input type is a one-element path. The path is
+     * bean-local, relative to the {@code Map} the bean's own helper receives, the same scoping
+     * {@link ColumnBinding#path()} uses on the column axis.
+     *
+     * <p>{@code javaFieldName} is the corresponding
      * member name on the consumer-authored bean: for a record target this is the canonical
      * component name; for a JavaBean target this is the property name (the setter is named
      * {@code set<Capitalised javaFieldName>}).
@@ -276,13 +283,19 @@ public sealed interface CallSiteExtraction
      * boundary so that the {@link no.sikt.graphitron.javapoet.ClassName#bestGuess(String)} consumers
      * in {@code InputBeanInstantiationEmitter} can rely on the string being a class name.
      */
-    record FieldBinding(String sdlFieldName, String javaFieldName,
+    record FieldBinding(List<String> accessPath, String javaFieldName,
                         CallSiteExtraction leaf, boolean list,
                         String javaElementTypeName) {
         public FieldBinding {
-            if (sdlFieldName == null || sdlFieldName.isEmpty()) {
-                throw new IllegalArgumentException("FieldBinding sdlFieldName must be non-empty");
+            if (accessPath == null || accessPath.isEmpty()) {
+                throw new IllegalArgumentException("FieldBinding accessPath must be non-empty");
             }
+            for (var element : accessPath) {
+                if (element == null || element.isEmpty()) {
+                    throw new IllegalArgumentException("FieldBinding accessPath elements must be non-empty");
+                }
+            }
+            accessPath = List.copyOf(accessPath);
             if (javaFieldName == null || javaFieldName.isEmpty()) {
                 throw new IllegalArgumentException("FieldBinding javaFieldName must be non-empty");
             }
@@ -292,6 +305,15 @@ public sealed interface CallSiteExtraction
             if (javaElementTypeName == null || javaElementTypeName.isEmpty()) {
                 throw new IllegalArgumentException("FieldBinding javaElementTypeName must be non-empty");
             }
+        }
+
+        /**
+         * The wire {@code Map} key for this binding's value: the last {@link #accessPath()} element.
+         * Deliberately not named {@code leaf()}, which on this carrier already names the
+         * {@link #leaf()} extraction component.
+         */
+        public String mapKey() {
+            return accessPath.get(accessPath.size() - 1);
         }
     }
 
@@ -402,7 +424,7 @@ public sealed interface CallSiteExtraction
      * differs from {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
      *
      * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits
-     * its {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} sits
+     * its {@code Map} key from {@link FieldBinding#mapKey()}), a {@code RecordKeyDecode} sits
      * directly on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own
      * {@code path}: the ordered, non-empty access path from the record's own {@code Map} down to the
      * {@code @nodeId} field, in the same representation {@link ColumnBinding} uses. The last element

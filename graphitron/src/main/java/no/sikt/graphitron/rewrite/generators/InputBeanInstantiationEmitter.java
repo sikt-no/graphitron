@@ -58,10 +58,13 @@ final class InputBeanInstantiationEmitter {
             .addParameter(mapStringObject, "raw")
             .addStatement("if (raw == null) return null");
 
+        // One Map local per distinct grouping prefix, parent before child, so each field local below
+        // reads from a single already-descended root regardless of how deep it was flattened from.
+        emitGroupDescents(b, ib);
         // Declare a typed local per field via the per-field extraction expression.
         for (var fb : ib.fields()) {
             b.addStatement("$T $L = $L",
-                fieldLocalType(fb), fb.javaFieldName(), perFieldValueExpr(fb, names));
+                fieldLocalType(fb), fb.javaFieldName(), perFieldValueExpr(fb, names, rootLocal(fb)));
         }
         // Populate the bean: positional ctor for records, no-arg + setters for JavaBeans.
         switch (ib.target()) {
@@ -124,6 +127,70 @@ final class InputBeanInstantiationEmitter {
         return b.build();
     }
 
+    /**
+     * Declares one {@code Map<?, ?>} local per distinct grouping prefix across the bean's bindings,
+     * in first-encounter order with every ancestor prefix declared before the prefixes below it:
+     *
+     * <pre>
+     *   Map&lt;?, ?&gt; varighetMap = raw.get("varighet") instanceof Map&lt;?, ?&gt; varighetGroup
+     *       ? varighetGroup : Map.of();
+     * </pre>
+     *
+     * <p>An absent, null, or non-{@code Map} group binds the empty map rather than {@code null}, so
+     * every hoisted field's expression stays exactly the expression an unflattened field emits: no
+     * arm of {@link #perFieldValueExpr} is null-safe against its own root, and a group that is
+     * simply not there must yield {@code null} per member, which ordinary {@code Map.get} semantics
+     * already deliver. A bean with no flattened field emits nothing here and its helper body is
+     * byte-identical to the pre-flattening one.
+     */
+    private static void emitGroupDescents(MethodSpec.Builder b, CallSiteExtraction.InputBean ib) {
+        var declared = new java.util.LinkedHashSet<List<String>>();
+        for (var fb : ib.fields()) {
+            List<String> path = fb.accessPath();
+            for (int level = 1; level < path.size(); level++) {
+                List<String> prefix = path.subList(0, level);
+                if (!declared.add(List.copyOf(prefix))) {
+                    continue;
+                }
+                String parent = level == 1 ? "raw" : mapLocalName(path.subList(0, level - 1));
+                b.addStatement("$T<?, ?> $L = $L.get($S) instanceof $T<?, ?> $L ? $L : $T.of()",
+                    MAP_STRING_OBJECT_RAW, mapLocalName(prefix), parent, path.get(level - 1),
+                    MAP_STRING_OBJECT_RAW, groupPatternName(prefix), groupPatternName(prefix),
+                    MAP_STRING_OBJECT_RAW);
+            }
+        }
+    }
+
+    /** The {@code Map} local a binding's value is read from: its group's descent local, or {@code raw}. */
+    private static String rootLocal(CallSiteExtraction.FieldBinding fb) {
+        List<String> path = fb.accessPath();
+        return path.size() == 1 ? "raw" : mapLocalName(path.subList(0, path.size() - 1));
+    }
+
+    /**
+     * The descent local for a grouping prefix: the camel-joined prefix plus {@code "Map"}
+     * ({@code ["varighet"] -> "varighetMap"}), the naming scheme
+     * {@link JooqRecordInstantiationEmitter} uses on the column axis. Deriving the name from the
+     * whole prefix keeps two groups sharing a leaf name apart.
+     */
+    private static String mapLocalName(List<String> prefix) {
+        return camelJoin(prefix) + "Map";
+    }
+
+    /** The pattern variable bound by a descent's {@code instanceof}, named from the same prefix. */
+    private static String groupPatternName(List<String> prefix) {
+        return camelJoin(prefix) + "Group";
+    }
+
+    /** Camel-joins path elements: the first verbatim, each subsequent capitalised and concatenated. */
+    private static String camelJoin(List<String> parts) {
+        var sb = new StringBuilder(parts.get(0));
+        for (int i = 1; i < parts.size(); i++) {
+            sb.append(capitalize(parts.get(i)));
+        }
+        return sb.toString();
+    }
+
     /** The Java type of the per-field local variable (with {@code List<...>} when list-shaped). */
     private static TypeName fieldLocalType(CallSiteExtraction.FieldBinding fb) {
         ClassName elt = ClassName.bestGuess(fb.javaElementTypeName());
@@ -134,9 +201,14 @@ final class InputBeanInstantiationEmitter {
      * Expression that produces the typed value to populate the bean's field. Routes by leaf
      * extraction: Direct gives a cast; EnumValueOf decodes via {@code valueOf}; nested InputBean
      * delegates to the recursive {@code createNested(...)} helper.
+     *
+     * <p>{@code root} is the {@code Map} local the wire value is read from: {@code raw} for a field
+     * declared on the bean's own input type, or the enclosing group's descent local for a flattened
+     * one. Every arm reads {@code root.get(mapKey)}, so flattening changes the root and nothing else.
      */
-    private static CodeBlock perFieldValueExpr(CallSiteExtraction.FieldBinding fb, FetchersHelperNames names) {
-        String sdl = fb.sdlFieldName();
+    private static CodeBlock perFieldValueExpr(CallSiteExtraction.FieldBinding fb,
+            FetchersHelperNames names, String root) {
+        String sdl = fb.mapKey();
         // Exhaustive over CallSiteExtraction with no default: the classifier (InputBeanResolver)
         // produces only Direct / EnumValueOf / InputBean / NodeIdDecodeRecord on a FieldBinding
         // leaf, and the remaining permits are unreachable-by-construction here. Listing every
@@ -144,10 +216,10 @@ final class InputBeanInstantiationEmitter {
         // honest: a new CallSiteExtraction permit fails *this* compile until it is handled or
         // explicitly ruled out, instead of silently hitting a runtime throw.
         return switch (fb.leaf()) {
-            case CallSiteExtraction.Direct ignored -> directExpr(fb, sdl);
-            case CallSiteExtraction.EnumValueOf ev -> enumExpr(fb, ev, sdl);
-            case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl, names);
-            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(fb, rec, sdl, names);
+            case CallSiteExtraction.Direct ignored -> directExpr(fb, sdl, root);
+            case CallSiteExtraction.EnumValueOf ev -> enumExpr(fb, ev, sdl, root);
+            case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl, names, root);
+            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(fb, rec, sdl, names, root);
             case CallSiteExtraction.ContextArg ignored -> throw notALeaf(fb);
             case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
@@ -161,7 +233,7 @@ final class InputBeanInstantiationEmitter {
     private static IllegalStateException notALeaf(CallSiteExtraction.FieldBinding fb) {
         return new IllegalStateException(
             "CallSiteExtraction." + fb.leaf().getClass().getSimpleName()
-            + " is not a valid InputBean field leaf (field '" + fb.sdlFieldName() + "'); the"
+            + " is not a valid InputBean field leaf (field '" + String.join(".", fb.accessPath()) + "'); the"
             + " InputBeanResolver classifier never produces it here");
     }
 
@@ -174,9 +246,9 @@ final class InputBeanInstantiationEmitter {
      */
     private static CodeBlock recordDecodeExpr(CallSiteExtraction.FieldBinding fb,
                                               CallSiteExtraction.NodeIdDecodeRecord rec, String sdl,
-                                              FetchersHelperNames names) {
+                                              FetchersHelperNames names, String root) {
         String helper = fb.list() ? recordDecodeListHelperName(rec, names) : recordDecodeHelperName(rec, names);
-        return CodeBlock.of("$L(raw.get($S))", helper, sdl);
+        return CodeBlock.of("$L($L.get($S))", helper, root, sdl);
     }
 
     /** {@code decode<RecordType>}, e.g. {@code decodeFilmRecord}. Named from the target table's record class. */
@@ -189,44 +261,44 @@ final class InputBeanInstantiationEmitter {
         return names.decodeList(rec.table().recordClass());
     }
 
-    private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl) {
+    private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl, String root) {
         ClassName elt = ClassName.bestGuess(fb.javaElementTypeName());
         if (fb.list()) {
             // List-shaped Direct: cast the raw Map.get value to List<T>. Null in → null out.
-            return CodeBlock.of("raw.get($S) == null ? null : ($T<$T>) raw.get($S)",
-                sdl, LIST, elt, sdl);
+            return CodeBlock.of("$L.get($S) == null ? null : ($T<$T>) $L.get($S)",
+                root, sdl, LIST, elt, root, sdl);
         }
-        return CodeBlock.of("($T) raw.get($S)", elt, sdl);
+        return CodeBlock.of("($T) $L.get($S)", elt, root, sdl);
     }
 
     private static CodeBlock enumExpr(CallSiteExtraction.FieldBinding fb,
-                                       CallSiteExtraction.EnumValueOf ev, String sdl) {
+                                       CallSiteExtraction.EnumValueOf ev, String sdl, String root) {
         ClassName enumClass = ClassName.bestGuess(ev.enumClassName());
         if (fb.list()) {
             // List of enums: stream the raw List<String>, valueOf each, collect.
             return CodeBlock.of(
-                "raw.get($S) == null ? null : (($T<?>) raw.get($S)).stream()"
+                "$L.get($S) == null ? null : (($T<?>) $L.get($S)).stream()"
                 + ".map(s -> s == null ? null : $T.valueOf((String) s)).toList()",
-                sdl, LIST, sdl, enumClass);
+                root, sdl, LIST, root, sdl, enumClass);
         }
-        return CodeBlock.of("raw.get($S) == null ? null : $T.valueOf((String) raw.get($S))",
-            sdl, enumClass, sdl);
+        return CodeBlock.of("$L.get($S) == null ? null : $T.valueOf((String) $L.get($S))",
+            root, sdl, enumClass, root, sdl);
     }
 
     private static CodeBlock nestedBeanExpr(CallSiteExtraction.FieldBinding fb,
                                              CallSiteExtraction.InputBean nested, String sdl,
-                                             FetchersHelperNames names) {
+                                             FetchersHelperNames names, String root) {
         String singular = names.createSingular(nested.beanClass());
         String plural = names.createPlural(nested.beanClass());
         if (fb.list()) {
-            return CodeBlock.of("$L(raw.get($S))", plural, sdl);
+            return CodeBlock.of("$L($L.get($S))", plural, root, sdl);
         }
         // Singular nested bean: downcast Map.get value to Map<String, Object> and delegate.
         return CodeBlock.of(
-            "raw.get($S) == null ? null : $L(($T<$T, $T>) raw.get($S))",
-            sdl, singular,
+            "$L.get($S) == null ? null : $L(($T<$T, $T>) $L.get($S))",
+            root, sdl, singular,
             MAP_STRING_OBJECT_RAW, ClassName.get(String.class), ClassName.get(Object.class),
-            sdl);
+            root, sdl);
     }
 
     private static String capitalize(String s) {

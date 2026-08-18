@@ -161,7 +161,7 @@ class ServiceMethodCallWalkerTest {
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "name", "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("beans"));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
@@ -180,7 +180,7 @@ class ServiceMethodCallWalkerTest {
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "name", "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("input"));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
@@ -199,7 +199,7 @@ class ServiceMethodCallWalkerTest {
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.JAVA_BEAN,
             List.of(new CallSiteExtraction.FieldBinding(
-                "name", "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName())));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("input"));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),

@@ -2455,7 +2455,7 @@ class TypeFetcherGeneratorTest {
         var ib = new CallSiteExtraction.InputBean(bean,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+                List.of("title"), "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
         var spec = InputBeanInstantiationEmitter.buildSingularHelper(ib);
         assertThat(spec.name()).isEqualTo("createFoo");
         assertThat(spec.returnType().toString()).isEqualTo("com.example.Foo");
@@ -2472,7 +2472,7 @@ class TypeFetcherGeneratorTest {
         var ib = new CallSiteExtraction.InputBean(bean,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+                List.of("title"), "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
         var spec = InputBeanInstantiationEmitter.buildPluralHelper(ib, ClassName.get("com.example", "FooFetchers"));
         assertThat(spec.name()).isEqualTo("createFooList");
         assertThat(spec.returnType().toString()).isEqualTo("java.util.List<com.example.Foo>");
@@ -2489,7 +2489,7 @@ class TypeFetcherGeneratorTest {
         var ib = new CallSiteExtraction.InputBean(bean,
             CallSiteExtraction.InputBean.Target.JAVA_BEAN,
             List.of(new CallSiteExtraction.FieldBinding(
-                "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+                List.of("title"), "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
         var body = InputBeanInstantiationEmitter.buildSingularHelper(ib).code().toString();
         assertThat(body).contains("com.example.Foo bean = new com.example.Foo()");
         assertThat(body).contains("bean.setTitle(title)");
@@ -2506,7 +2506,7 @@ class TypeFetcherGeneratorTest {
         var ib = new CallSiteExtraction.InputBean(bean,
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "n", "n", new CallSiteExtraction.Direct(), false, "java.lang.Integer")));
+                List.of("n"), "n", new CallSiteExtraction.Direct(), false, "java.lang.Integer")));
         var body = InputBeanInstantiationEmitter.buildSingularHelper(ib).code().toString();
         assertThat(body).contains("java.lang.Integer n = (java.lang.Integer) raw.get(\"n\")");
         assertThat(body).contains("new com.example.Foo(n)");
@@ -2522,7 +2522,7 @@ class TypeFetcherGeneratorTest {
         var ib = new CallSiteExtraction.InputBean(bean,
             CallSiteExtraction.InputBean.Target.JAVA_BEAN,
             List.of(new CallSiteExtraction.FieldBinding(
-                "active", "active", new CallSiteExtraction.Direct(), false, "java.lang.Boolean")));
+                List.of("active"), "active", new CallSiteExtraction.Direct(), false, "java.lang.Boolean")));
         var body = InputBeanInstantiationEmitter.buildSingularHelper(ib).code().toString();
         assertThat(body).contains("java.lang.Boolean active = (java.lang.Boolean) raw.get(\"active\")");
         assertThat(body).contains("bean.setActive(active)");
@@ -2534,12 +2534,12 @@ class TypeFetcherGeneratorTest {
             ClassName.get("com.example", "Inner"),
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "k", "k", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+                List.of("k"), "k", new CallSiteExtraction.Direct(), false, "java.lang.String")));
         var outer = new CallSiteExtraction.InputBean(
             ClassName.get("com.example", "Outer"),
             CallSiteExtraction.InputBean.Target.RECORD,
             List.of(new CallSiteExtraction.FieldBinding(
-                "nested", "nested", inner, true, "com.example.Inner")));
+                List.of("nested"), "nested", inner, true, "com.example.Inner")));
         var out = new java.util.LinkedHashMap<ClassName, CallSiteExtraction.InputBean>();
         InputBeanInstantiationEmitter.collectTransitively(outer, out);
         // A repeat call must not duplicate either entry.

@@ -212,8 +212,17 @@ public final class ServiceMethodCallWalker {
     private ValueShape inputBeanToValueShape(CallSiteExtraction.InputBean bean, ArgPath path) {
         List<ValueShape.FieldBinding> fields = new ArrayList<>(bean.fields().size());
         for (CallSiteExtraction.FieldBinding fb : bean.fields()) {
-            ValueShape childShape = fieldBindingShape(fb, path.append(fb.sdlFieldName()));
-            fields.add(new ValueShape.FieldBinding(fb.sdlFieldName(), fb.javaFieldName(), childShape));
+            // Fold the whole access path onto the ArgPath, so a leaf hoisted out of a grouping
+            // input addresses the same wire position it occupies on the client's request. Group
+            // segments are never list-lifting: a list-shaped grouping input is rejected at
+            // classification, and the leaf's own list-ness keeps riding fb.list() into the ListOf
+            // wrap below.
+            ArgPath leafPath = path;
+            for (String segment : fb.accessPath()) {
+                leafPath = leafPath.append(segment);
+            }
+            ValueShape childShape = fieldBindingShape(fb, leafPath);
+            fields.add(new ValueShape.FieldBinding(fb.accessPath(), fb.javaFieldName(), childShape));
         }
         return switch (bean.target()) {
             case RECORD -> new ValueShape.RecordInput(bean.beanClass(), fields);

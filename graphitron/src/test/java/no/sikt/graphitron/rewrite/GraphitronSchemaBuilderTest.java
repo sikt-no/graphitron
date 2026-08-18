@@ -7257,7 +7257,7 @@ class GraphitronSchemaBuilderTest {
                 var rec = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) entry.shape();
                 assertThat(rec.javaClass().simpleName()).isEqualTo("TestInputBean");
                 // Bindings cover all three SDL fields, in record component order.
-                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::sdlFieldName)
+                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::mapKey)
                     .containsExactly("title", "rating", "nested");
                 // Enum leaf — EnumValueOf for the rating field.
                 var ratingScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) rec.fields().get(1).shape();
@@ -7315,7 +7315,7 @@ class GraphitronSchemaBuilderTest {
                     f.serviceMethodCall().methodArgs().get(0);
                 var rec = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) entry.shape();
                 var nField = rec.fields().stream()
-                    .filter(fb -> fb.sdlFieldName().equals("n")).findFirst().orElseThrow();
+                    .filter(fb -> fb.mapKey().equals("n")).findFirst().orElseThrow();
                 var nScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) nField.shape();
                 assertThat(nScalar.leafTransform())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
@@ -7343,7 +7343,7 @@ class GraphitronSchemaBuilderTest {
                     f.serviceMethodCall().methodArgs().get(0);
                 var javaBean = (no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput) entry.shape();
                 var activeField = javaBean.fields().stream()
-                    .filter(fb -> fb.sdlFieldName().equals("active")).findFirst().orElseThrow();
+                    .filter(fb -> fb.mapKey().equals("active")).findFirst().orElseThrow();
                 var activeScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) activeField.shape();
                 assertThat(activeScalar.leafTransform())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
@@ -7374,7 +7374,7 @@ class GraphitronSchemaBuilderTest {
                 var rec = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) entry.shape();
                 assertThat(rec.javaClass().simpleName()).isEqualTo("TestInputBeanRenamed");
                 // SDL field name stays the wire/Map key; @field(name:) supplies the component name.
-                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::sdlFieldName)
+                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::mapKey)
                     .containsExactly("title", "rating");
                 assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::javaFieldName)
                     .containsExactly("heading", "score");
@@ -7398,7 +7398,7 @@ class GraphitronSchemaBuilderTest {
                 var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
                     f.serviceMethodCall().methodArgs().get(0);
                 var javaBean = (no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput) entry.shape();
-                assertThat(javaBean.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::sdlFieldName)
+                assertThat(javaBean.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::mapKey)
                     .containsExactly("title", "rating");
                 assertThat(javaBean.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::javaFieldName)
                     .containsExactly("heading", "score");

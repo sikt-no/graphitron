@@ -1901,7 +1901,7 @@ public class TypeFetcherGenerator {
                 : vfb.shape();
             String javaElementTypeName = innerElementTypeNameOf(inner);
             fieldBindings.add(new CallSiteExtraction.FieldBinding(
-                vfb.sdlFieldName(), vfb.javaFieldName(), leafCarrier, isList, javaElementTypeName));
+                vfb.accessPath(), vfb.javaFieldName(), leafCarrier, isList, javaElementTypeName));
         }
         var ib = new CallSiteExtraction.InputBean(beanClass, target, fieldBindings);
         out.put(beanClass, ib);
@@ -2032,7 +2032,7 @@ public class TypeFetcherGenerator {
                 ? ((no.sikt.graphitron.rewrite.model.ValueShape.ListOf) vfb.shape()).elementShape()
                 : vfb.shape();
             out.add(new CallSiteExtraction.FieldBinding(
-                vfb.sdlFieldName(), vfb.javaFieldName(),
+                vfb.accessPath(), vfb.javaFieldName(),
                 leafForFieldBinding(vfb.shape()), isList, innerElementTypeNameOf(inner)));
         }
         return out;
