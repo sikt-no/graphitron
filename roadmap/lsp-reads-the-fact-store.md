@@ -3273,9 +3273,13 @@ in the shape the review condemned. It was also the honest test of whether "one s
 survives contact with a surface whose unit of work is a whole file rather than a coordinate, and it
 does, but not by analogy: the grain had to be restated before the shape transferred.
 
-**A document's grain is the document, so the claim is that the count does not track the file.** A hover
-asks about one coordinate and answers in one statement. Diagnostics asks about every value an author
-wrote, so the same discipline reads as one statement for the whole document, and what it rules out is
+**The first pass got the grain wrong, and the correction is recorded below rather than hidden.** This
+section originally claimed "a document's grain is the document". It is not: see the next section, which
+moves the read to the unit of work. What stands from this pass is the three-stage shape and the
+measurement, and both survive the move unchanged.
+
+**The claim is that the count does not track the file.** A hover asks about one coordinate and answers
+in one statement. Diagnostics asks about every value an author wrote, so the same discipline rules out
 not a second query but a *per-site* one. The old cost, measured rather than argued: one `@table` name
 cost one statement, one `@field(name:)` cost three, and a ten-field type cost thirty-one. A column name
 was the expensive one because resolving it walked the site's own scope, then the parent's binding, then
@@ -3334,3 +3338,65 @@ by resolving a value where they find it. Two cases pin the other end, that a doc
 resolve costs no statement at all and that a session before its first build costs none and says nothing
 about any value. The ninety existing behavioural cases passed unchanged on the first run, which is the
 evidence that the recomposition is a change of shape and not of verdicts.
+
+## Settled in review: the unit of work is the recalculation, and the grain question had three answers
+
+The section above claimed a document's grain is the document. Challenged in review, and rightly: the
+language server's grains are the schema file and the graph, and "the values this file happens to
+mention" is neither. Naming the three separates them, and it turns out only one of them should own a
+read.
+
+* **A file is what an editor is told about.** `publishDiagnostics` is per-URI. That is the LSP protocol
+  and not a design choice, and it is the only sense in which a file is a unit here.
+* **A graph is what the facts are keyed on.** Every relation diagnostics reads is partitioned by
+  `graph_name`, or by `source_name` for the censuses. Nothing it queries is keyed on a file.
+* **A recalculation is the unit of work.** It is what a capture triggers, what the recalculate queue
+  drains, and therefore where the read belongs.
+
+Keying the arms on one document's coordinate set sat at none of those. It was an artifact of the fix
+being one step up from per-site rather than a grain anybody had chosen, and it cost real things: a drain
+of N files issued N near-identical statements about one graph, the answer could not be shared across
+files even though the facts were the same, and the SQL text varied with the file, the coordinate
+disjunction growing with it, so the graph-keyed half was needlessly hostile to a plan cache.
+
+**Measuring the drain found the count was twice what the earlier section said.** `StoreAccess.answering`
+resolves a document to its graph through `SourceGraph.of`, which is itself a query, so each file cost one
+membership resolution before reading a single fact. The honest per-drain figure was 2N. `SourceGraph.ofAll`
+answers a whole set in one query, keyed by source name and never omitting one, so an unread source
+answers `Uncaptured` rather than going missing; `SourceGraph.of` reads the arity rule through it, so one
+source and forty are resolved by the same three arms.
+
+**Two statements per drain is the floor, and it is a real floor rather than a shortfall.** Which graph
+answers for a document and what that graph says are different questions, and the second is keyed on the
+first's answer, so this is the one place in the surface where an answer genuinely decides what to ask
+next. Folding them would mean joining the facts through `store_graph_source`, which would put the
+session's shared-file tiebreak, a policy decision, inside the query. So: one membership resolution, then
+one statement per graph the drain touched. For an ordinary single-project session that is two, down from
+2N.
+
+**`Diagnostics.Batch` is the unit made explicit, and the stages just compose.** Every queued file is
+walked, the set's questions are unioned per graph, one statement answers each graph, then each document
+is judged and published on its own. `Workspace.answeringAll` widens the read transaction from a file to
+the drain, which is the stronger guarantee: no two files in one publish can be diagnosed from two sides
+of a capture. `Diagnostics.compute` survives unchanged as the batch of one, so the ninety behavioural
+cases and the four other call sites never learn about any of this.
+
+**A latent lifetime bug fell out, and it would have bitten any batching attempt.** The first batch
+implementation held a `FileSnapshot` per document and blew up in `BuildTriggerPublishesDiagnosticsTest`
+with `IllegalStateException: Already closed`. A tree-sitter tree, and every node in it, is a native
+resource whose lifetime is the file lock `Workspace.withView` holds; the old code never noticed because
+everything happened inside that lock. So findings may not carry nodes. Each now carries the `Range` it
+will squiggle, computed in the walk, and a document carries its source bytes for the one judgement that
+needs byte offsets. The invariant is worth stating plainly: **nothing native crosses a stage boundary.**
+The validator's own diagnostics moved into the walk for the same reason, their ranges being re-anchored
+through the document's description nodes, and they are appended last, which is where they were emitted
+before.
+
+**Not done, and recorded rather than guessed at: the SDL arms could drop their value filters entirely.**
+Bound tables, backings, the redirect, slots and `@node` declarations are graph-partitioned and bounded by
+the schema, so those arms could take no `IN` filter at all, making the SQL text constant and the answer a
+property of the graph that a later pass could memoize per capture and reuse across drains. The censuses
+cannot: the classpath is unbounded relative to the schema, and a real catalog can hold thousands of
+tables, so `jvm_class`, `jvm_method` and arguably `sql_table` want the authored value set. Dropping the
+filters trades payload for plan-caching and there is no measurement either way, so it stays a filter that
+only ever narrows. Make it work, then make it fast.

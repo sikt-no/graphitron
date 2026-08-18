@@ -153,6 +153,21 @@ final class DiagnosticFacts {
             }
         }
 
+        /**
+         * Folds another document's questions in. Sets throughout, so the union of what several
+         * documents ask is what one statement answers for all of them, and two files naming the same
+         * type ask about it once.
+         */
+        void addAll(Questions other) {
+            tableNames.addAll(other.tableNames);
+            foreignKeyNames.addAll(other.foreignKeyNames);
+            classNames.addAll(other.classNames);
+            methods.addAll(other.methods);
+            nodeTypeNames.addAll(other.nodeTypeNames);
+            memberSites.addAll(other.memberSites);
+            memberTypeNames.addAll(other.memberTypeNames);
+        }
+
         boolean isEmpty() {
             return tableNames.isEmpty() && foreignKeyNames.isEmpty() && classNames.isEmpty()
                 && methods.isEmpty() && nodeTypeNames.isEmpty() && memberTypeNames.isEmpty();

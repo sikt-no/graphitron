@@ -14,6 +14,7 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -222,6 +223,33 @@ public final class Workspace {
             return answer.apply(Optional.empty());
         }
         return access.answering(sourceName.get(), answer);
+    }
+
+    /**
+     * Answers a request about several documents at once, inside one read transaction, each scoped to the
+     * graph its own document belongs to. The lookup is keyed on URI as {@link #answering} is, and a URI
+     * this session's graphs have nothing to say about resolves to an empty handle rather than being
+     * absent, so a caller reads every URI it asked about out of the same lookup.
+     *
+     * <p>The door a whole recalculation goes through. Per-document calls open a transaction and resolve
+     * a membership each, so a drain of forty files paid eighty statements before reading a fact; this
+     * pays one membership resolution for the set and lets the caller read the facts in one go.
+     */
+    public <R> R answeringAll(
+        Collection<String> uris, Function<Function<String, Optional<StoreHandle>>, R> answer
+    ) {
+        StoreAccess access = store;
+        if (access == null) {
+            return answer.apply(uri -> Optional.empty());
+        }
+        var sourceNames = new LinkedHashMap<String, String>();
+        for (String uri : uris) {
+            StoreAccess.sourceNameOf(uri).ifPresent(sourceName -> sourceNames.put(uri, sourceName));
+        }
+        return access.answeringAll(sourceNames.values(), handles -> answer.apply(uri -> {
+            String sourceName = sourceNames.get(uri);
+            return sourceName == null ? Optional.empty() : handles.of(sourceName);
+        }));
     }
 
     /** Releases the session's store access, if it was given one. Idempotent. */

@@ -34,6 +34,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -128,27 +129,40 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     private void publishDiagnosticsForRecalculate() {
         if (client == null) return;
         var queued = workspace.drainRecalculate();
-        // Traced as one span around the whole drain plus one per file: the drain runs
-        // inline on the caller's thread, so the outer duration is what a caller pays for
-        // its mutation, and the per-file breakdown separates "many files" from "one slow
-        // file" as the cause.
+        // Traced as one span around the whole drain: it runs inline on the caller's thread, so the
+        // outer duration is what a caller pays for its mutation. The breakdown inside it follows the
+        // stages rather than the files, which is what separates "many files" from "one slow file"
+        // now that the read is not per file: one walk span per file, all of them CPU over a tree, and
+        // the store's single answer inside the one transaction below.
         try (var drainSpan = LspTrace.span("publishDiagnostics.drain")) {
             drainSpan.detail("files", queued.size());
+            // Every queued file is walked first, which reads nothing, so the whole drain's questions
+            // are known before any of them is resolved. A file with no open view is never added and
+            // so is never published for, which is what the per-file null check used to say.
+            var batch = new Diagnostics.Batch(
+                workspace.vocabulary(), workspace.snapshot(), workspace.validationReport());
+            var walked = new ArrayList<String>(queued.size());
             for (String uri : queued) {
+                Boolean added = workspace.withView(uri, null, view -> {
+                    batch.add(uri, view);
+                    return Boolean.TRUE;
+                });
+                if (added != null) {
+                    walked.add(uri);
+                }
+            }
+            if (walked.isEmpty()) {
+                return;
+            }
+            // One read transaction around the whole drain, so no two files are diagnosed from two
+            // sides of a capture, and one statement per graph inside it rather than one per file.
+            var byUri = workspace.answeringAll(walked, batch::judgeAll);
+            for (String uri : walked) {
+                var diagnostics = byUri.get(uri);
+                if (diagnostics == null) continue;
                 try (var fileSpan = LspTrace.span("publishDiagnostics.file")) {
-                    fileSpan.detail("uri", uri);
-                    // One read transaction around the whole file's diagnostics, so the arms that
-                    // resolve a site's scope from the store and the arms that read the projection
-                    // cannot answer from two sides of a capture.
-                    var diagnostics = workspace.answering(uri, store ->
-                        workspace.withView(uri, null, view ->
-                            Diagnostics.compute(
-                                workspace.vocabulary(), uri, view,
-                                workspace.snapshot(), workspace.validationReport(), store)));
-                    if (diagnostics != null) {
-                        fileSpan.detail("diagnostics", diagnostics.size());
-                        client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
-                    }
+                    fileSpan.detail("uri", uri).detail("diagnostics", diagnostics.size());
+                    client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
                 }
             }
         }

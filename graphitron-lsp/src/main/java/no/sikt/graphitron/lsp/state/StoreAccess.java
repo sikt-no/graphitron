@@ -8,6 +8,8 @@ import org.jooq.DSLContext;
 import java.net.URI;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
@@ -59,11 +61,46 @@ public final class StoreAccess implements AutoCloseable {
      * from a transaction that has already ended, which is the tear this method exists to prevent.
      */
     public <R> R answering(String sourceName, Function<Optional<StoreHandle>, R> answer) {
-        return reader.read(dsl -> answer.apply(handleFor(dsl, sourceName)));
+        return answeringAll(List.of(sourceName), handles -> answer.apply(handles.of(sourceName)));
     }
 
-    private Optional<StoreHandle> handleFor(DSLContext dsl, String sourceName) {
-        return switch (SourceGraph.of(dsl, sourceName)) {
+    /**
+     * The same, for several documents answered together: one read transaction over all of them, and one
+     * membership resolution for the whole set rather than one per document.
+     *
+     * <p>Bulk because a request about many documents is one request. Resolving each separately cost a
+     * query per document before a single fact had been read, which for a whole-workspace recalculation
+     * was half its statements; {@link SourceGraph#ofAll} answers the set at once and this applies the
+     * session's tiebreak to each answer.
+     *
+     * <p>The handles are valid for the call only, exactly as the single-document form's is, and
+     * {@link DocumentHandles} exists to say so in a signature: it is a lookup into one transaction, not
+     * a map a caller may keep.
+     */
+    public <R> R answeringAll(
+        Collection<String> sourceNames, Function<DocumentHandles, R> answer
+    ) {
+        return reader.read(dsl -> {
+            var resolved = SourceGraph.ofAll(dsl, sourceNames);
+            return answer.apply(sourceName -> Optional.ofNullable(resolved.get(sourceName))
+                .flatMap(graph -> handleFor(dsl, graph)));
+        });
+    }
+
+    /**
+     * Resolves a document to the handle that answers for it. Valid only inside the
+     * {@link #answeringAll} call it arrived in: a handle used after its transaction has ended is a read
+     * that can tear against a capture.
+     */
+    @FunctionalInterface
+    public interface DocumentHandles {
+
+        /** The handle for {@code sourceName}, empty where no graph of this session's answers for it. */
+        Optional<StoreHandle> of(String sourceName);
+    }
+
+    private Optional<StoreHandle> handleFor(DSLContext dsl, SourceGraph graph) {
+        return switch (graph) {
             case SourceGraph.Scoped scoped -> Optional.of(scoped.handle());
             case SourceGraph.Shared shared -> shared.graphNames().contains(graphName)
                 ? Optional.of(new StoreHandle(dsl, graphName))

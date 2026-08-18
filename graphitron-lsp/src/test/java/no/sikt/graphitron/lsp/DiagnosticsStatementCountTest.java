@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What diagnosing one document costs the store, counted rather than reasoned about. One statement, for
- * every document, whatever it contains and however large it is.
+ * What diagnostics cost the store, counted rather than reasoned about: one statement per graph, per
+ * recalculation, whatever the documents contain and however many of them there are.
  *
  * <p>This is an enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for
  * being slow. It exists because the shape it pins is invisible from any behavioural assertion. Every
@@ -36,12 +36,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * thirty-one statements and a forty-field one would have cost a hundred and twenty-one, published on
  * every capture, for facts whose relations share no key and could always have been asked together.
  *
- * <p>The flat-growth cases are the ones that matter most here and the reason this test is not simply
- * "assert 1". A surface can be one statement per grain and still fan out per site; what
- * {@link #theCountDoesNotTrackTheDocumentsSize} pins is that ten sites and forty sites cost the same,
- * which is the property a future reader adding a check will break by resolving a value where they
- * found it. The natural move on adding a fact to a diagnostic is another query, and it is the move this
- * test refuses.
+ * <h2>Three grains, and the statement belongs to one of them</h2>
+ *
+ * <p>The cases here are split because the surface has three units and they are easy to confuse. A
+ * <em>file</em> is what an editor is told about, {@code publishDiagnostics} being per-URI. A
+ * <em>graph</em> is what the facts are keyed on. A <em>recalculation</em> is the unit of work, being
+ * what a capture triggers. The statement belongs to the last: {@link #awholeDrainCostsOneStatementRatherThanOnePerFile}
+ * is the case that says so, and {@link #aDrainSpanningTwoGraphsCostsOneStatementPerGraph} is the floor
+ * the middle grain imposes on it.
+ *
+ * <p>The per-document cases pin flat growth inside one file, and they are the reason this test is not
+ * simply "assert 1": a surface can be one statement per grain and still fan out per site, so
+ * {@link #theCountDoesNotTrackTheDocumentsSize} asserts that ten sites and forty sites cost the same.
+ * That is the property a future reader breaks by resolving a value where they find it, which is the
+ * natural move on adding a check and the one this test refuses.
  */
 class DiagnosticsStatementCountTest {
 
@@ -170,6 +178,52 @@ class DiagnosticsStatementCountTest {
             LspVocabulary.load(), "file:///x.graphqls", file(WRONG_SDL),
             LspSchemaSnapshot.unavailable(), ValidationReport.empty(), Optional.empty());
         assertThat(out).isEmpty();
+        assertThat(counted.get()).isZero();
+    }
+
+    @Test
+    void awholeDrainCostsOneStatementRatherThanOnePerFile() {
+        // The unit of work is the drain, not the file. A recalculation walks every queued document
+        // first, so the whole set's questions are known before any of them is resolved, and twenty
+        // files about one graph are twenty near-identical statements only if nobody unions them.
+        var batch = new Diagnostics.Batch(
+            LspVocabulary.load(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        for (int i = 0; i < 20; i++) {
+            batch.add("file:///f" + i + ".graphqls", file(fields(5)));
+        }
+        var counted = new AtomicInteger();
+        var handle = counting(counted);
+        var byUri = batch.judgeAll(uri -> Optional.of(handle));
+        assertThat(byUri).hasSize(20);
+        assertThat(counted.get()).isEqualTo(1);
+    }
+
+    @Test
+    void aDrainSpanningTwoGraphsCostsOneStatementPerGraph() {
+        // The questions are keyed on a graph, so the floor is one statement per graph the drain
+        // touched rather than a flat one. A session's files need not all belong to one capture.
+        var batch = new Diagnostics.Batch(
+            LspVocabulary.load(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        batch.add("file:///a.graphqls", file(fields(5)));
+        batch.add("file:///b.graphqls", file(fields(5)));
+        var counted = new AtomicInteger();
+        var dsl = counting(counted).dsl();
+        var byUri = batch.judgeAll(uri -> Optional.of(new StoreHandle(dsl,
+            uri.endsWith("a.graphqls") ? StoreFixture.GRAPH : "other")));
+        assertThat(byUri).hasSize(2);
+        assertThat(counted.get()).isEqualTo(2);
+    }
+
+    @Test
+    void aDrainOfFilesTheStoreAnswersForNoneOfCostsNoStatement() {
+        var batch = new Diagnostics.Batch(
+            LspVocabulary.load(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        batch.add("file:///a.graphqls", file(fields(5)));
+        var counted = new AtomicInteger();
+        counting(counted);
+        var byUri = batch.judgeAll(uri -> Optional.empty());
+        assertThat(byUri).hasSize(1);
+        assertThat(byUri.get("file:///a.graphqls")).isEmpty();
         assertThat(counted.get()).isZero();
     }
 

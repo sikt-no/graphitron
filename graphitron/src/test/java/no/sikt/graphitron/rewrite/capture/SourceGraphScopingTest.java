@@ -5,10 +5,17 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.SourceGraph;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.jooq.DSLContext;
+import org.jooq.ExecuteContext;
+import org.jooq.ExecuteListener;
+import org.jooq.impl.DSL;
+import org.jooq.impl.DefaultExecuteListenerProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -73,6 +80,54 @@ class SourceGraphScopingTest {
             assertThat(SourceGraph.of(store.dsl(), unread))
                 .isEqualTo(new SourceGraph.Uncaptured(unread));
         }
+    }
+
+    @Test
+    void manySourcesResolveInOneQueryAndEveryOneIsAnswered(@TempDir Path tmp) {
+        // The read a whole recalculation makes. Resolving each document separately cost a query per
+        // document before a single fact had been read, which for a drain of open files was half its
+        // statements; a source no graph has read is answered rather than left out, so a caller reads
+        // every source it asked about out of the result.
+        var registry = CapturedStore.registryOf(tmp, SDL);
+        try (var store = GraphitronModelStore.open()) {
+            captureAs(store, "only-reader", tmp, registry);
+            String read = fixtureSourceName(tmp);
+            String unread = tmp.resolve("written-since-the-last-capture.graphqls").toString();
+
+            var counted = new AtomicInteger();
+            var dsl = counting(store, counted);
+            var resolved = SourceGraph.ofAll(dsl, List.of(read, unread));
+
+            assertThat(counted.get())
+                .as("one query for the whole set, not one per source")
+                .isEqualTo(1);
+            assertThat(resolved).containsOnlyKeys(read, unread);
+            assertThat(resolved.get(read)).isInstanceOf(SourceGraph.Scoped.class);
+            assertThat(resolved.get(unread)).isEqualTo(new SourceGraph.Uncaptured(unread));
+        }
+    }
+
+    @Test
+    void resolvingNoSourceCostsNoQuery(@TempDir Path tmp) {
+        var registry = CapturedStore.registryOf(tmp, SDL);
+        try (var store = GraphitronModelStore.open()) {
+            captureAs(store, "only-reader", tmp, registry);
+
+            var counted = new AtomicInteger();
+            assertThat(SourceGraph.ofAll(counting(store, counted), List.of())).isEmpty();
+            assertThat(counted.get()).isZero();
+        }
+    }
+
+    /** The store's own surface, seen through a context that counts the statements it executes. */
+    private static DSLContext counting(GraphitronModelStore store, AtomicInteger counted) {
+        return DSL.using(store.dsl().configuration()
+            .derive(new DefaultExecuteListenerProvider(new ExecuteListener() {
+                @Override
+                public void executeStart(ExecuteContext ctx) {
+                    counted.incrementAndGet();
+                }
+            })));
     }
 
     /** The fixture file's canonical name, spelled the way capture's membership row spells it. */

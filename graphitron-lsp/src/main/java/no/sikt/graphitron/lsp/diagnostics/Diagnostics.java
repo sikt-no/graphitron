@@ -35,10 +35,13 @@ import org.eclipse.lsp4j.Range;
 import io.github.treesitter.jtreesitter.Node;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DESCRIPTION;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ENUM_VALUE;
@@ -55,19 +58,23 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  *
  * <h2>Collect, resolve, judge</h2>
  *
- * <p>The pass runs in three stages, and the split is what makes a whole document one statement. The
+ * <p>The pass runs in three stages, and the split is what makes a whole recalculation one statement. The
  * walk reads nothing: it settles the checks the tree alone answers and records a {@link Finding} for
  * every check a census must answer, putting the value it needs resolved into a
- * {@link DiagnosticFacts.Questions}. {@link DiagnosticFacts} then answers the whole document at once.
- * Then each finding is judged in the order the walk found it, so an editor sees what it always saw.
+ * {@link DiagnosticFacts.Questions}. {@link DiagnosticFacts} then answers all of it at once. Then each
+ * finding is judged in the order the walk found it, so an editor sees what it always saw.
  *
- * <p>This is the shape a declaration hover has at a coordinate, at a document's grain. The reason it
- * transfers is that the questions are independent: a table name, a foreign key, a class, a method, a
- * {@code @node} reference and a member name are resolved by relations sharing no key, so no answer
- * decides what to ask next, and the walk can therefore collect all of them before any of them is
- * resolved. The count is held by {@code DiagnosticsStatementCountTest}, which pins that it does not
- * grow with the file: a ten-field type used to cost thirty-one statements, resolving each name where
- * it was found.
+ * <p>This is the shape a declaration hover has at a coordinate. The reason it transfers is that the
+ * questions are independent: a table name, a foreign key, a class, a method, a {@code @node} reference
+ * and a member name are resolved by relations sharing no key, so no answer decides what to ask next, and
+ * the walk can therefore collect all of them before any of them is resolved.
+ *
+ * <p>Three units meet here and only one of them owns the statement. A <em>file</em> is what an editor is
+ * told about, {@code publishDiagnostics} being per-URI. A <em>graph</em> is what the facts are keyed on.
+ * A <em>recalculation</em> is the unit of work, being what a capture triggers, and it is where the read
+ * belongs; {@link Batch} is that unit, and a single document is the batch of one.
+ * {@code DiagnosticsStatementCountTest} holds the numbers: one statement per graph per drain, and inside
+ * one document a count that does not grow with it, where a ten-field type used to cost thirty-one.
  *
  * <h2>What silence means</h2>
  *
@@ -113,32 +120,32 @@ public final class Diagnostics {
         record Ready(Diagnostic diagnostic) implements Finding {}
 
         /** A {@code @table(name:)} value, against the table census. */
-        record TableName(Node node, String spelling) implements Finding {}
+        record TableName(Range range, String spelling) implements Finding {}
 
         /** A {@code @reference(key:)} value, against the key census. */
-        record ForeignKeyName(Node node, String spelling) implements Finding {}
+        record ForeignKeyName(Range range, String spelling) implements Finding {}
 
         /** A class FQN a directive binds, against the classpath census. */
-        record ClassName(Node node, String fqn) implements Finding {}
+        record ClassName(Range range, String fqn) implements Finding {}
 
         /**
          * The class half of a {@code @scalarType} reference. Its own arm because the message names the
          * directive: the value is a field reference rather than a class name, and an author reading
          * "unknown class" about something they wrote as a dotted path needs to know which half is wrong.
          */
-        record ScalarClassName(Node node, String fqn) implements Finding {}
+        record ScalarClassName(Range range, String fqn) implements Finding {}
 
         /** A method name, against the overloads its sibling class declares. */
-        record MethodName(Node node, String classFqn, String methodName) implements Finding {}
+        record MethodName(Range range, String classFqn, String methodName) implements Finding {}
 
         /** A {@code @nodeId(typeName:)} value, against the graph's {@code @node} declarations. */
-        record NodeTypeName(Node node, String typeName) implements Finding {}
+        record NodeTypeName(Range range, String typeName) implements Finding {}
 
         /**
          * A member name written at a site, against whatever that site's scope resolves against. The
          * field name may be absent, the type's own scope answering for a name written outside any field.
          */
-        record MemberName(Node node, String typeName, String fieldName, String memberName)
+        record MemberName(Range range, String typeName, String fieldName, String memberName)
             implements Finding {}
 
         /**
@@ -150,7 +157,7 @@ public final class Diagnostics {
          *                 unknown-parameter check is suppressed then, having nothing to check against
          */
         record ArgMappingValue(
-            Node node, int contentStart, List<ArgMapping.Entry> entries, String classFqn,
+            Range range, int contentStart, List<ArgMapping.Entry> entries, String classFqn,
             String methodName, List<String> fieldArgs
         ) implements Finding {}
     }
@@ -191,45 +198,130 @@ public final class Diagnostics {
     ) {
         try (var span = LspTrace.span("diagnostics.compute")) {
             span.detail("uri", uri);
-            var result = computeTraced(vocabulary, uri, file, snapshot, report, store, span);
+            var batch = new Batch(vocabulary, snapshot, report);
+            batch.add(uri, file, span);
+            var result = batch.judgeAll(ignored -> store).getOrDefault(uri, List.of());
             span.detail("diagnostics", result.size());
             return result;
         }
     }
 
     /**
-     * The three stages, in order. Split from {@link #compute(LspVocabulary, String, FileSnapshot,
-     * LspSchemaSnapshot, ValidationReport)} so the trace span can attach the directive count and the
-     * validator-projection cost measured inside it without threading a span through every stage.
+     * A set of documents diagnosed together, which is what a recalculation actually is. The three stages
+     * hoisted one level: every document is walked, then the whole set's questions are resolved, then each
+     * document is judged and published on its own.
      *
-     * <p>An absent store is answered rather than branched on: {@link DiagnosticFacts#none} is the same
-     * value an empty census gives, so every arm defers on it for the reason it defers on any empty
-     * census, and no arm carries a case for the store's absence.
+     * <p>The unit of work is the drain rather than the file. A file is only the unit an editor is told
+     * about, {@code publishDiagnostics} being per-URI, and the facts are the graph's, so a per-document
+     * read sat at neither of the two grains that exist: a drain of forty files issued forty
+     * near-identical statements about one graph, each keyed on the coordinates that one file happened to
+     * mention. Collecting first and resolving once is the same correction this class already applied
+     * inside one document, applied to the set.
+     *
+     * <p>Grouped by graph, because the questions are keyed on one. A drain can span graphs, a session's
+     * files not all belonging to the same capture, so the statement count is one per graph the drain
+     * touched rather than a flat one; for the ordinary single-project session that is one.
+     *
+     * <p>Not thread-safe, and not meant to be: a batch is built and consumed inside one drain.
      */
-    private static List<Diagnostic> computeTraced(
-        LspVocabulary vocabulary, String uri, FileSnapshot file,
-        LspSchemaSnapshot snapshot, ValidationReport report, Optional<StoreHandle> store,
-        LspTrace.Span span
-    ) {
-        var findings = new ArrayList<Finding>();
-        var questions = new DiagnosticFacts.Questions();
-        walk(vocabulary, file, snapshot, findings, questions, span);
-        var answers = store.map(handle -> DiagnosticFacts.of(handle, questions))
-            .orElseGet(DiagnosticFacts::none);
-        var out = new ArrayList<Diagnostic>(findings.size());
-        for (var finding : findings) {
-            judge(finding, answers, file, out);
+    public static final class Batch {
+
+        private final LspVocabulary vocabulary;
+        private final LspSchemaSnapshot snapshot;
+        private final ValidationReport report;
+        private final List<Document> documents = new ArrayList<>();
+
+        public Batch(LspVocabulary vocabulary, LspSchemaSnapshot snapshot, ValidationReport report) {
+            this.vocabulary = vocabulary;
+            this.snapshot = snapshot;
+            this.report = report;
         }
-        // Timed separately from the directive walk: this projection scans the whole
-        // ValidationReport to pick out the entries for one URI, so its cost tracks the
-        // report's total size rather than anything about the file being diagnosed. On a
-        // whole-workspace recalculation it is paid once per open file.
-        try (var reportSpan = LspTrace.span("diagnostics.validatorReport")) {
-            reportSpan.detail("errors", report.errors().size())
-                .detail("warnings", report.warnings().size());
-            out.addAll(validatorDiagnostics(uri, file, snapshot, report));
+
+        /** Walks one document into the batch, reading nothing. */
+        public void add(String uri, FileSnapshot file) {
+            try (var span = LspTrace.span("diagnostics.walk")) {
+                span.detail("uri", uri);
+                add(uri, file, span);
+            }
         }
-        return out;
+
+        private void add(String uri, FileSnapshot file, LspTrace.Span span) {
+            var findings = new ArrayList<Finding>();
+            var questions = new DiagnosticFacts.Questions();
+            walk(vocabulary, file, snapshot, findings, questions, span);
+            // The validator's own findings are the tree's too, its ranges being re-anchored through
+            // the document's description nodes, so they are settled here and appended last, which is
+            // where they were emitted before.
+            try (var reportSpan = LspTrace.span("diagnostics.validatorReport")) {
+                reportSpan.detail("errors", report.errors().size())
+                    .detail("warnings", report.warnings().size());
+                for (var diagnostic : validatorDiagnostics(uri, file, snapshot, report)) {
+                    findings.add(new Finding.Ready(diagnostic));
+                }
+            }
+            documents.add(new Document(uri, file.source(), findings, questions));
+        }
+
+        /**
+         * Resolves every document's questions, one statement per graph, and judges each document against
+         * the answers for its own graph. Keyed by URI, carrying an entry for every document added.
+         *
+         * <p>{@code handleForUri} is a lookup into one read transaction and is called once per document
+         * before anything is read, so the grouping and the reads it drives all sit inside that
+         * transaction and no two documents can be judged from two sides of a capture.
+         */
+        public Map<String, List<Diagnostic>> judgeAll(
+            Function<String, Optional<StoreHandle>> handleForUri
+        ) {
+            var handleByGraph = new LinkedHashMap<String, StoreHandle>();
+            var questionsByGraph = new LinkedHashMap<String, DiagnosticFacts.Questions>();
+            var graphByUri = new LinkedHashMap<String, String>();
+            for (var document : documents) {
+                var handle = handleForUri.apply(document.uri()).orElse(null);
+                if (handle == null) continue;
+                String graph = handle.graphName();
+                graphByUri.put(document.uri(), graph);
+                handleByGraph.putIfAbsent(graph, handle);
+                questionsByGraph
+                    .computeIfAbsent(graph, ignored -> new DiagnosticFacts.Questions())
+                    .addAll(document.questions());
+            }
+            var answersByGraph = new LinkedHashMap<String, DiagnosticFacts.Answers>();
+            for (var entry : questionsByGraph.entrySet()) {
+                answersByGraph.put(entry.getKey(),
+                    DiagnosticFacts.of(handleByGraph.get(entry.getKey()), entry.getValue()));
+            }
+            var out = new LinkedHashMap<String, List<Diagnostic>>();
+            for (var document : documents) {
+                var answers = answersByGraph.getOrDefault(
+                    graphByUri.get(document.uri()), DiagnosticFacts.none());
+                out.put(document.uri(), judged(document, answers));
+            }
+            return out;
+        }
+
+        private List<Diagnostic> judged(Document document, DiagnosticFacts.Answers answers) {
+            var out = new ArrayList<Diagnostic>(document.findings().size());
+            for (var finding : document.findings()) {
+                judge(finding, answers, document.source(), out);
+            }
+            return out;
+        }
+
+        /**
+         * One walked document: what it found, and what it still has to ask.
+         *
+         * <p>Its source bytes rather than its {@link FileSnapshot}. A snapshot's tree is a native
+         * resource whose lifetime is the file lock the walk ran under, so a finding that carried a
+         * tree-sitter node would be reading freed memory by the time the store answered. Every finding
+         * therefore carries the span it will squiggle rather than the node it came from, and the only
+         * thing crossing the stage boundary is plain data. The bytes are needed because an
+         * {@code argMapping} entry's span is an offset into the string's content and is turned into a
+         * position at judgement.
+         */
+        private record Document(
+            String uri, byte[] source, List<Finding> findings, DiagnosticFacts.Questions questions
+        ) {}
     }
 
     /**
@@ -616,7 +708,7 @@ public final class Diagnostics {
                 String spelling = value(leaf.valueNode(), file);
                 if (spelling.isEmpty()) return;
                 questions.tableName(spelling);
-                findings.add(new Finding.TableName(leaf.valueNode(), spelling));
+                findings.add(new Finding.TableName(rangeOf(file, leaf.valueNode()), spelling));
             }
             case Behavior.CatalogColumnBinding ignored ->
                 collectMemberName(directive, leaf.valueNode(), file, snapshot, findings, questions, out);
@@ -624,7 +716,7 @@ public final class Diagnostics {
                 String spelling = value(leaf.valueNode(), file);
                 if (spelling.isEmpty()) return;
                 questions.foreignKeyName(spelling);
-                findings.add(new Finding.ForeignKeyName(leaf.valueNode(), spelling));
+                findings.add(new Finding.ForeignKeyName(rangeOf(file, leaf.valueNode()), spelling));
             }
             case Behavior.ClassNameBinding ignored -> {
                 // @record carve-out: @record is deprecated/ignored, so its className slot binds no
@@ -637,7 +729,7 @@ public final class Diagnostics {
                 String fqn = value(leaf.valueNode(), file);
                 if (fqn.isEmpty()) return;
                 questions.className(fqn);
-                findings.add(new Finding.ClassName(leaf.valueNode(), fqn));
+                findings.add(new Finding.ClassName(rangeOf(file, leaf.valueNode()), fqn));
             }
             case Behavior.MethodNameBinding mnb ->
                 collectMethodName(vocabulary, directive, leaf, mnb, file, findings, questions);
@@ -649,7 +741,7 @@ public final class Diagnostics {
                 String typeName = value(leaf.valueNode(), file);
                 if (typeName.isEmpty()) return;
                 questions.nodeTypeName(typeName);
-                findings.add(new Finding.NodeTypeName(leaf.valueNode(), typeName));
+                findings.add(new Finding.NodeTypeName(rangeOf(file, leaf.valueNode()), typeName));
             }
         }
     }
@@ -699,7 +791,7 @@ public final class Diagnostics {
             return;
         }
         questions.memberSite(typeName.get(), fieldName);
-        findings.add(new Finding.MemberName(valueNode, typeName.get(), fieldName, memberName));
+        findings.add(new Finding.MemberName(rangeOf(file, valueNode), typeName.get(), fieldName, memberName));
     }
 
     private static void collectMethodName(
@@ -716,7 +808,7 @@ public final class Diagnostics {
             directive, leaf.valueNode(), mnb.classNameCoord(), file.source());
         if (classFqn.isEmpty()) return;
         questions.method(classFqn.get(), methodName);
-        findings.add(new Finding.MethodName(leaf.valueNode(), classFqn.get(), methodName));
+        findings.add(new Finding.MethodName(rangeOf(file, leaf.valueNode()), classFqn.get(), methodName));
     }
 
     /**
@@ -755,7 +847,7 @@ public final class Diagnostics {
                     + "public static final GraphQLScalarType."));
             case ScalarTypeResolver.ParsedDirectiveValue.Parsed p -> {
                 questions.className(p.classFqn());
-                findings.add(new Finding.ScalarClassName(valueNode, p.classFqn()));
+                findings.add(new Finding.ScalarClassName(rangeOf(file, valueNode), p.classFqn()));
             }
         }
     }
@@ -792,7 +884,7 @@ public final class Diagnostics {
             .map(fd -> TypeContext.fieldArgumentNames(fd, source))
             .orElse(List.of());
         findings.add(new Finding.ArgMappingValue(
-            valueNode, contentStart, entries, classFqn, methodName, fieldArgs));
+            rangeOf(file, valueNode), contentStart, entries, classFqn, methodName, fieldArgs));
     }
 
     /**
@@ -802,41 +894,41 @@ public final class Diagnostics {
      * not built or compiled yet, whose schema is not full of wrong names.
      */
     private static void judge(
-        Finding finding, DiagnosticFacts.Answers answers, FileSnapshot file, List<Diagnostic> out
+        Finding finding, DiagnosticFacts.Answers answers, byte[] source, List<Diagnostic> out
     ) {
         switch (finding) {
             case Finding.Ready(var diagnostic) -> out.add(diagnostic);
-            case Finding.TableName(var node, var spelling) -> {
+            case Finding.TableName(var range, var spelling) -> {
                 if (answers.tableName(spelling) == DiagnosticFacts.Resolution.UNKNOWN) {
-                    out.add(diagnostic(file, node, "Unknown table '" + spelling
+                    out.add(diagnostic(range, "Unknown table '" + spelling
                         + "'. The jOOQ catalog does not contain a table with this name."));
                 }
             }
-            case Finding.ForeignKeyName(var node, var spelling) -> {
+            case Finding.ForeignKeyName(var range, var spelling) -> {
                 if (answers.foreignKeyName(spelling) == DiagnosticFacts.Resolution.UNKNOWN) {
-                    out.add(diagnostic(file, node, "Unknown foreign key '" + spelling
+                    out.add(diagnostic(range, "Unknown foreign key '" + spelling
                         + "'. Not present in the jOOQ catalog."));
                 }
             }
-            case Finding.ClassName(var node, var fqn) -> {
+            case Finding.ClassName(var range, var fqn) -> {
                 if (answers.className(fqn) == DiagnosticFacts.Resolution.UNKNOWN) {
-                    out.add(diagnostic(file, node, "Unknown class '" + fqn
+                    out.add(diagnostic(range, "Unknown class '" + fqn
                         + "'. Not found on the compile classpath."));
                 }
             }
-            case Finding.ScalarClassName(var node, var fqn) -> {
+            case Finding.ScalarClassName(var range, var fqn) -> {
                 if (answers.className(fqn) == DiagnosticFacts.Resolution.UNKNOWN) {
-                    out.add(diagnostic(file, node, "Unknown class '" + fqn
+                    out.add(diagnostic(range, "Unknown class '" + fqn
                         + "' on @scalarType. Not found on the compile classpath."));
                 }
             }
-            case Finding.NodeTypeName(var node, var typeName) ->
-                judgeNodeTypeName(answers, file, node, typeName, out);
-            case Finding.MethodName(var node, var classFqn, var methodName) ->
-                judgeMethodName(answers, file, node, classFqn, methodName, out);
-            case Finding.MemberName(var node, var typeName, var fieldName, var memberName) ->
-                judgeMemberName(answers, file, node, typeName, fieldName, memberName, out);
-            case Finding.ArgMappingValue value -> judgeArgMapping(answers, file, value, out);
+            case Finding.NodeTypeName(var range, var typeName) ->
+                judgeNodeTypeName(answers, range, typeName, out);
+            case Finding.MethodName(var range, var classFqn, var methodName) ->
+                judgeMethodName(answers, range, classFqn, methodName, out);
+            case Finding.MemberName(var range, var typeName, var fieldName, var memberName) ->
+                judgeMemberName(answers, range, typeName, fieldName, memberName, out);
+            case Finding.ArgMappingValue value -> judgeArgMapping(answers, source, value, out);
         }
     }
 
@@ -859,25 +951,24 @@ public final class Diagnostics {
      * a session before its first build.
      */
     private static void judgeNodeTypeName(
-        DiagnosticFacts.Answers answers, FileSnapshot file, Node node, String typeName,
-        List<Diagnostic> out
+        DiagnosticFacts.Answers answers, Range range, String typeName, List<Diagnostic> out
     ) {
         if (answers.nodeTypeName(typeName) != DiagnosticFacts.Resolution.UNKNOWN) return;
-        out.add(diagnostic(file, node,
+        out.add(diagnostic(range,
             "Unknown @node type '" + typeName + "' on @nodeId(typeName:). The type must be "
             + "declared in the schema and carry the @node directive."));
     }
 
     private static void judgeMethodName(
-        DiagnosticFacts.Answers answers, FileSnapshot file, Node node, String classFqn,
-        String methodName, List<Diagnostic> out
+        DiagnosticFacts.Answers answers, Range range, String classFqn, String methodName,
+        List<Diagnostic> out
     ) {
         // Sibling className unresolved, or a census with nothing in it: the className arm has the
         // first case and defers on the second, so this arm has nothing to add to either.
         if (answers.className(classFqn) != DiagnosticFacts.Resolution.RESOLVES) return;
         var overloads = answers.overloads(classFqn, methodName);
         if (overloads.isEmpty()) {
-            out.add(diagnostic(file, node,
+            out.add(diagnostic(range,
                 "Unknown method '" + methodName + "' on class '" + classFqn + "'."));
             return;
         }
@@ -890,7 +981,7 @@ public final class Diagnostics {
         // affected directive. Every overload of the name has to be nameless for it: one that carries
         // names is one the author may have meant, and the message is about the name they wrote.
         if (overloads.stream().allMatch(DiagnosticFacts.Overload::isNameless)) {
-            out.add(diagnostic(file, node, DiagnosticSeverity.Warning,
+            out.add(diagnostic(range, DiagnosticSeverity.Warning,
                 "Class '" + classFqn + "' was compiled without `-parameters`; "
                 + "parameter help on '" + methodName + "' is unavailable. "
                 + "Set `<parameters>true</parameters>` on maven-compiler-plugin "
@@ -909,12 +1000,12 @@ public final class Diagnostics {
      * a member name are wrong about different things.
      */
     private static void judgeMemberName(
-        DiagnosticFacts.Answers answers, FileSnapshot file, Node node, String typeName,
-        String fieldName, String memberName, List<Diagnostic> out
+        DiagnosticFacts.Answers answers, Range range, String typeName, String fieldName,
+        String memberName, List<Diagnostic> out
     ) {
         var scope = answers.memberScope(typeName, fieldName).orElse(null);
         if (scope == null || scope.offers(memberName)) return;
-        out.add(diagnostic(file, node, DiagnosticSeverity.Error, switch (scope) {
+        out.add(diagnostic(range, DiagnosticSeverity.Error, switch (scope) {
             case DiagnosticFacts.MemberScope.Columns columns ->
                 "Unknown column '" + memberName + "' on table '" + columns.tableName() + "'.";
             case DiagnosticFacts.MemberScope.Slots slots ->
@@ -952,10 +1043,10 @@ public final class Diagnostics {
      * </ul>
      */
     private static void judgeArgMapping(
-        DiagnosticFacts.Answers answers, FileSnapshot file, Finding.ArgMappingValue value,
+        DiagnosticFacts.Answers answers, byte[] source, Finding.ArgMappingValue value,
         List<Diagnostic> out
     ) {
-        Node valueNode = value.node();
+        Range valueRange = value.range();
         int contentStart = value.contentStart();
         Set<String> paramNames = parameterNames(answers, value.classFqn(), value.methodName());
         List<String> fieldArgs = value.fieldArgs();
@@ -963,42 +1054,42 @@ public final class Diagnostics {
         var seenJava = new LinkedHashSet<String>();
         for (var entry : value.entries()) {
             if (!entry.hasColon() && entry.isBlank()) {
-                out.add(diagnostic(file, valueNode, DiagnosticSeverity.Warning,
+                out.add(diagnostic(valueRange, DiagnosticSeverity.Warning,
                     "Empty argMapping entry (stray comma)."));
                 continue;
             }
             if (!entry.hasColon()) {
-                out.add(byteDiagnostic(file, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
+                out.add(byteDiagnostic(source, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
                     DiagnosticSeverity.Warning, "Expected 'javaParam: graphqlArg' in argMapping entry."));
                 continue;
             }
             if (entry.java().isEmpty()) {
-                out.add(byteDiagnostic(file, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
+                out.add(byteDiagnostic(source, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
                     DiagnosticSeverity.Warning, "Missing Java parameter before ':' in argMapping."));
             } else {
-                judgeArgMappingJavaParam(entry.java(), contentStart, paramNames, seenJava, file, out);
+                judgeArgMappingJavaParam(entry.java(), contentStart, paramNames, seenJava, source, out);
             }
             if (entry.graphql().isEmpty()) {
-                out.add(byteDiagnostic(file, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
+                out.add(byteDiagnostic(source, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
                     DiagnosticSeverity.Warning, "Missing GraphQL argument after ':' in argMapping."));
             } else {
-                judgeArgMappingGraphqlArg(entry.graphql(), contentStart, fieldArgs, file, out);
+                judgeArgMappingGraphqlArg(entry.graphql(), contentStart, fieldArgs, source, out);
             }
         }
     }
 
     private static void judgeArgMappingJavaParam(
         ArgMapping.Segment java, int contentStart, Set<String> paramNames,
-        Set<String> seenJava, FileSnapshot file, List<Diagnostic> out
+        Set<String> seenJava, byte[] source, List<Diagnostic> out
     ) {
         String name = java.text();
         if (!seenJava.add(name)) {
-            out.add(byteDiagnostic(file, contentStart + java.start(), contentStart + java.end(),
+            out.add(byteDiagnostic(source, contentStart + java.start(), contentStart + java.end(),
                 DiagnosticSeverity.Warning, "Duplicate Java parameter '" + name + "' in argMapping."));
             return;
         }
         if (paramNames != null && !paramNames.contains(name)) {
-            out.add(byteDiagnostic(file, contentStart + java.start(), contentStart + java.end(),
+            out.add(byteDiagnostic(source, contentStart + java.start(), contentStart + java.end(),
                 DiagnosticSeverity.Warning,
                 "Unknown Java parameter '" + name + "'; not a parameter of the referenced method."));
         }
@@ -1006,7 +1097,7 @@ public final class Diagnostics {
 
     private static void judgeArgMappingGraphqlArg(
         ArgMapping.Segment graphql, int contentStart, List<String> fieldArgs,
-        FileSnapshot file, List<Diagnostic> out
+        byte[] source, List<Diagnostic> out
     ) {
         if (fieldArgs.isEmpty()) return; // no field args known (pre-build or argument-less field)
         String value = graphql.text();
@@ -1016,7 +1107,7 @@ public final class Diagnostics {
         // Flag only the head segment span so a valid dot-path with a typo'd
         // first step underlines the offending step, not the whole path.
         int headEnd = graphql.start() + head.length();
-        out.add(byteDiagnostic(file, contentStart + graphql.start(), contentStart + headEnd,
+        out.add(byteDiagnostic(source, contentStart + graphql.start(), contentStart + headEnd,
             DiagnosticSeverity.Warning,
             "Unknown GraphQL argument '" + head + "' on the enclosing field."));
     }
@@ -1066,14 +1157,29 @@ public final class Diagnostics {
     }
 
     private static Diagnostic byteDiagnostic(
-        FileSnapshot file, int startByte, int endByte, DiagnosticSeverity severity, String message
+        byte[] source, int startByte, int endByte, DiagnosticSeverity severity, String message
     ) {
-        var start = Positions.toLspPosition(file.source(), startByte);
-        var end = Positions.toLspPosition(file.source(), endByte);
-        var d = new Diagnostic(new Range(start, end), message);
+        return diagnostic(new Range(
+            Positions.toLspPosition(source, startByte),
+            Positions.toLspPosition(source, endByte)), severity, message);
+    }
+
+    /** The span a node occupies, which is all a verdict about that node needs to know about it. */
+    private static Range rangeOf(FileSnapshot file, Node node) {
+        return new Range(
+            Positions.toLspPosition(file.source(), node.getStartByte()),
+            Positions.toLspPosition(file.source(), node.getEndByte()));
+    }
+
+    private static Diagnostic diagnostic(Range range, DiagnosticSeverity severity, String message) {
+        var d = new Diagnostic(range, message);
         d.setSeverity(severity);
         d.setSource(SOURCE);
         return d;
+    }
+
+    private static Diagnostic diagnostic(Range range, String message) {
+        return diagnostic(range, DiagnosticSeverity.Error, message);
     }
 
     private static Diagnostic diagnostic(FileSnapshot file, Node node, DiagnosticSeverity severity, String message) {

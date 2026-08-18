@@ -2,7 +2,11 @@ package no.sikt.graphitron.model.read;
 
 import org.jooq.DSLContext;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -71,16 +75,43 @@ public sealed interface SourceGraph {
     static SourceGraph of(DSLContext dsl, String sourceName) {
         Objects.requireNonNull(dsl, "dsl");
         Objects.requireNonNull(sourceName, "sourceName");
-        List<String> graphNames = dsl
-            .select(STORE_GRAPH_SOURCE.GRAPH_NAME)
+        return ofAll(dsl, List.of(sourceName)).get(sourceName);
+    }
+
+    /**
+     * The same resolution for several sources at once, in one query, keyed by source name and never
+     * missing one: a source no graph has read answers {@link Uncaptured} rather than being absent, so a
+     * caller reads every source it asked about out of the result.
+     *
+     * <p>Bulk because a caller resolving a set of documents is answering one request about all of them,
+     * and a query per document is the shape that made a whole-workspace recalculation cost two
+     * statements per open file before it had read a single fact. The arity rule lives here and
+     * {@link #of} reads it through this, so one source and forty are resolved by the same three arms.
+     *
+     * @param dsl a query surface over a booted store; the handle in a {@link Scoped} answer carries
+     *            this same surface, so the caller reads through the connection it resolved on
+     */
+    static Map<String, SourceGraph> ofAll(DSLContext dsl, Collection<String> sourceNames) {
+        Objects.requireNonNull(dsl, "dsl");
+        Objects.requireNonNull(sourceNames, "sourceNames");
+        if (sourceNames.isEmpty()) return Map.of();
+        var graphsBySource = new LinkedHashMap<String, List<String>>();
+        dsl.select(STORE_GRAPH_SOURCE.SOURCE_NAME, STORE_GRAPH_SOURCE.GRAPH_NAME)
             .from(STORE_GRAPH_SOURCE)
-            .where(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(sourceName))
-            .orderBy(STORE_GRAPH_SOURCE.GRAPH_NAME)
-            .fetch(STORE_GRAPH_SOURCE.GRAPH_NAME);
-        return switch (graphNames.size()) {
-            case 0 -> new Uncaptured(sourceName);
-            case 1 -> new Scoped(new StoreHandle(dsl, graphNames.getFirst()));
-            default -> new Shared(sourceName, graphNames);
-        };
+            .where(STORE_GRAPH_SOURCE.SOURCE_NAME.in(sourceNames))
+            .orderBy(STORE_GRAPH_SOURCE.SOURCE_NAME, STORE_GRAPH_SOURCE.GRAPH_NAME)
+            .forEach(row -> graphsBySource
+                .computeIfAbsent(row.value1(), ignored -> new ArrayList<>())
+                .add(row.value2()));
+        var resolved = new LinkedHashMap<String, SourceGraph>();
+        for (String sourceName : sourceNames) {
+            List<String> graphNames = graphsBySource.getOrDefault(sourceName, List.of());
+            resolved.put(sourceName, switch (graphNames.size()) {
+                case 0 -> new Uncaptured(sourceName);
+                case 1 -> new Scoped(new StoreHandle(dsl, graphNames.getFirst()));
+                default -> new Shared(sourceName, graphNames);
+            });
+        }
+        return resolved;
     }
 }
