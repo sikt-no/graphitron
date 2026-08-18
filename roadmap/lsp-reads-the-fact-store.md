@@ -540,7 +540,7 @@ list of what has not.
   types' bindings, which nothing derives.
 * `DeclTarget` asks for the field classification at a coordinate, and asks it now only about
   `@routine`: the generated call surface a routine read or write binds to, which no relation carries.
-  R708 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below.
+  R709 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below.
 * `FieldCompletions` asks whether a site is a payload data field, through `siteContext`, to decide
   whether to offer the source sigil. A narrow predicate over a distinction no relation states.
 
@@ -3529,7 +3529,7 @@ implementation.
 **One arm stays with the projection, and it is `@routine`.** What a routine field binds to is a method
 on the jOOQ `Routines` class that codegen produced, and neither the class nor the method name is
 derivable from the store: `graphitron_routine.routine_ref` holds the routine's name in the database, and
-the step to its generated Java name is jOOQ's own. The catalog census has no routine family at all. R708
+the step to its generated Java name is jOOQ's own. The catalog census has no routine family at all. R709
 is filed for that capture, and it is the last thing standing between this surface and the projection.
 
 **The snapshot gate on the declaration surfaces survives this slice, and it changed meaning.** It used
