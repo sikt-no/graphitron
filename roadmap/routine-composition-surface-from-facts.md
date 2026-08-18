@@ -19,9 +19,11 @@ cannot paginate. It cannot declare its return type without restating the routine
 a child of that return type cannot reach its own `@table`-bound target without restating that too.
 Five refusals, five different files, no shared seat.
 
-This item owns the routine read surface end to end. It absorbs
-`roadmap/routine-chain-order-directive-silent-noop.md` (R659), which reported one of the four and
-diagnosed the shape behind all of them.
+This item owns the routine read surface end to end, on both sides of the routine result: the query
+that runs the function, and the hops that leave its rows. It absorbs two items, both discarded into it and recorded in
+`roadmap/changelog.md`: R659 (`routine-chain-order-directive-silent-noop`), which reported one of
+the refusals and diagnosed the shape behind them, and R622
+(`routine-carrier-explicit-data-field-path`), which owned the write seat's mirror of the hop gap.
 
 ## Vocabulary
 
@@ -185,7 +187,15 @@ carries the one axis that cannot be done by deletion.
    comparable instead of six independent opinions.
 9. **The return binding.** With slice 7 in hand, the `@table` demand becomes "the terminus is
    resolvable", not "the author wrote a directive". See below.
-10. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf.
+10. **The name-matched arm on the hop view.** The third path-element arm feeding
+    `intent_field_reference_step_hop`, gated on slice 7's function-ness discriminator. The existing
+    recursive `intent_field_reference_step_target` then walks multi-hop paths out of a routine
+    result with no further work.
+11. **The carrier's explicit data-field path**, single- and multi-hop, reading slice 10 rather than
+    parsing at a grounding seat. Needs the residual-path correlation arm described above.
+12. **Retire the duplicated derivations.** `synthesizeNameMatchedJoin` and
+    `deriveRoutineCarrierPairs` both become reads of slice 10.
+13. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf.
 
 ## The redundant `@reference`
 
@@ -224,7 +234,7 @@ The capability exists and is wired inconsistently.
 
 | Mutation payload carrier's data field
 | works, name-matched
-| deferred (`roadmap/routine-carrier-explicit-data-field-path.md`, R622)
+| deferred (was R622, folded in here)
 |===
 
 Exactly inverted, for the same relation between the same two catalog objects. And the derivation
@@ -232,6 +242,9 @@ behind both cells that work is the same loop written twice:
 `BuildContext.deriveRoutineCarrierPairs` and `BuildContext.synthesizeNameMatchedJoin` both walk the
 target's primary-key columns, find the same-named column on the routine result, and pair them. They
 differ in their rejection text and in whether they return pairs or append a `JoinStep.Hop`.
+
+Both empty cells are this item's, which is why R622 folds in rather than sitting beside it. Closing
+one and not the other would leave the inversion in place with the duplication still funding it.
 
 ### Why the implicit read case falls through
 
@@ -268,6 +281,64 @@ directive deleted, by construction. Where it does not hold, the author still nee
 element, and the rejection should say so in those words rather than in the FK vocabulary. Explicit
 `@reference` stays legal everywhere: this makes it optional, not wrong, and a multi-hop path or a
 non-name-matched join has no implicit spelling.
+
+## The carrier's explicit path, and why multi-hop is the architecture proof
+
+R622 owned the write-side cell: a Mutation payload carrier's data field cannot declare
+`@reference` at all, so a payload whose target is not directly name-matchable from the routine's
+result columns has no spelling. R622 deferred it for a machinery reason rather than a semantic one,
+and stated the reason precisely: the captured pairs derive at grounding, which runs before field
+classification, so an explicit path would need either `@reference` parsing inside the grounding fold
+(a parse seat with no rejection coordinate) or independent re-derivation at two classify seats,
+which is the two-derivations defect the carrier item existed to remove.
+
+That reason dissolves against the store, and R622 said so itself: the path is already
+`graphitron_field_reference_step` rows from capture, one per element, phase-independent, so hop-0
+pairs become a view join rather than a parse. What R622 could not know is how much further along the
+derivation already is.
+
+### The path walk is already a store derivation
+
+`intent_field_reference_step_hop` enumerates every table-to-table hop a path element could express,
+both orientations of its foreign key, and `intent_field_reference_step_target` walks them
+recursively from the enclosing type's binding, an element's departure being the previous element's
+arrival. Multi-hop path resolution, the part R622 called its real remaining work, is a shipped view.
+
+What is missing is one arm. Both arms of the hop view join `sql_referential_constraint`, so a hop
+departing from a function result yields zero rows: a TVF result declares no constraints. The hop
+view needs a third arm, name-matched, joining the departing table's `sql_column` names against the
+arriving table's `sql_primary_key` columns, gated on the function-ness discriminator slice 7
+captures. The target view's recursion then carries multi-hop for free, because position 0 is the
+only element whose departure is special.
+
+That is what makes this the architecture proof rather than a feature with a store flavour. One
+`UNION ALL` arm over relations that already exist serves three consumers that today run three
+separate code paths:
+
+* the explicit read-side `{table:}` element (`synthesizeNameMatchedJoin`),
+* the implicit read-side hop (slice 5, which has no code path at all today),
+* the carrier's implicit and explicit data-field paths (`deriveRoutineCarrierPairs`, plus the
+  spelling R622 could not admit).
+
+Three readers of one derivation is exactly the trigger the fact model names for promoting a
+derivation to a relation, and the alternative here is not hypothetical: two of the three are already
+the same loop copied.
+
+### What stays genuinely open
+
+Inherited from R622 as its real design work, and unchanged by the fold.
+`ParentCorrelation.checkCarrierInvariant` pairs a non-empty `joinPath` only with a hop-anchored
+correlation, while the carrier data field's correlation is the hop-less `OnLiftedSlots` over the
+captured slots. A residual path therefore needs a correlation arm that anchors on the captured
+record and walks onward from it, plus the post-commit query emit that rides it. This is model work
+on the write path and does not come free from the view.
+
+Inherited as decided, not reopenable here without arguing down the carrier item's two-statements
+rule: the write transaction contains the routine call and a projection of its own result and
+nothing else, at every hop count; residual hops run post-commit under the caller's identity, so read
+policies apply to them; and a multi-hop data field legitimately resolving null with empty errors is
+the carrier's documented success outcome, not a defect. In-transaction capture would not escape
+row-level security either, so it buys only insulation from visibility that changes at commit.
 
 ## Keyset seek over a routine in the FROM
 
@@ -549,10 +620,15 @@ wrong and should change first.
   which is what the return type can supply on its own. A two-hop path out of a routine result has no
   implicit spelling and should keep needing `@reference`; confirm that reads as a rule rather than as
   an arbitrary depth limit.
-* **Should R622 fold in?** It is the mirror image of slice 5 (explicit path deferred on the carrier
-  where the read side has explicit-only), and both cells come off the same duplicated derivation.
-  Unifying `deriveRoutineCarrierPairs` and `synthesizeNameMatchedJoin` closes both at once; left as
-  its own item for now because the carrier's multi-hop half is real work slice 5 does not need.
+* **Does the name-matched arm belong on the hop view or beside it?** The hop view's two arms are
+  both FK-shaped and carry `constraint_name` / `fk_on_from`, which a name-matched hop has no value
+  for. A third arm means those columns go null on it, which the view's own comment discipline would
+  have to state; a sibling relation unioned one level up keeps each relation's columns meaningful.
+  Decide before writing the DDL, since the target view's recursion reads whichever shape wins.
+* **Does the carrier's residual-path correlation arm generalise?** It anchors on a captured record
+  and walks onward, which is close to what a record-backed parent needs in R447's
+  `RecordTableField` bullet. Check whether one arm serves both before minting a carrier-specific
+  one.
 * **Is `sql_routine` a subject, or is function-ness a column on `sql_table`?** A TVF has a table
   identity and a callable identity and they are not the same object; the parameters belong to the
   callable. Non-table-valued routines (R454's territory) have a callable and no table at all, which
