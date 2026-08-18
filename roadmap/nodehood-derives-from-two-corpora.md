@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: [jooq-node-metadata-as-stated-facts, three-tiers-capture-derive-query]
+depends-on: [jooq-node-metadata-as-stated-facts, three-strata-capture-derive-query]
 created: 2026-08-18
 last-updated: 2026-08-18
 ---

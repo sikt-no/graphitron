@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: classification-model
-depends-on: [three-tiers-capture-derive-query]
+depends-on: [three-strata-capture-derive-query]
 created: 2026-08-18
 last-updated: 2026-08-18
 ---
