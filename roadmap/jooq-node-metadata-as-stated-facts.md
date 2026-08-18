@@ -1,7 +1,7 @@
 ---
 id: R710
 title: "The jOOQ crawler records node metadata as stated, not as validated"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
