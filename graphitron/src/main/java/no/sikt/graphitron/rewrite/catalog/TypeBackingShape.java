@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.catalog;
 
 /**
- * LSP-facing projection of a {@link no.sikt.graphitron.rewrite.model.GraphitronType}'s
- * backing shape: what the {@code @field(name:)} validator and completion arm
- * resolves the SDL author's component name against. Carried alongside
- * {@link DirectiveShape} on {@link LspSchemaSnapshot.Built}.
+ * What the walk bound a {@link no.sikt.graphitron.rewrite.model.GraphitronType} to, in the shape
+ * the backing-class transcription writes into the store's walk shadow. Produced by
+ * {@link CatalogBuilder#projectTypesByName}, which the language server read through the snapshot
+ * until every surface asking it moved to the store.
  *
  * <p>Five permits, one per distinguishable downstream behaviour. Each names what backs the type and
  * nothing more: what a backing then offers a member name is a fact about a class or a table, read

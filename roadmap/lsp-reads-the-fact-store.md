@@ -543,7 +543,11 @@ The second site was `FieldCompletions`'s source-sigil predicate, and it is settl
 completion and the diagnostic beside it read `intent_carrier_data_field`, and the carrier projection
 retired with them. The projections nothing read at all went next, also settled below: the
 `CompletionData` catalog the workspace still held, the snapshot's type-backing and
-declaration-location maps, and the source-position index the workspace held beside them.
+declaration-location maps, and the source-position index the workspace held beside them. The
+directive surface followed, reader first: diagnostics judges a directive against
+`graphql_directive` and `graphql_directive_argument` now, and the projection retired in the same
+session. What the snapshot still carries beyond the site above is the freshness axis, which the
+validator's replay of a build's own errors reads.
 
 ## Resolved questions
 
@@ -2955,7 +2959,14 @@ one: the sigil arm was its last reader. What the language server no longer recei
 constructors, the `CompletionData` parameters on `Hovers.compute` and `SdlActions.all`, and the
 snapshot's `typesByName` with its `typeBacking` lookup, which took `buildSnapshot`'s own
 `CompletionData` parameter with it. `CatalogBuilder.projectTypesByName` stays: its reader is the walk
-shadow, which is capture-time rather than a projection anyone ships. The source-position index went
+shadow, which is capture-time rather than a projection anyone ships. The directive surface went next,
+readers first: `DirectiveResolution` with its `Bundled` / `User` / `Unknown` permits and
+`Diagnostics`' `validateUnknownArgs`, `descendUnknownArgs`, `validateRequiredArgs`,
+`validateUnknownArgsAgainstSnapshot` and `validateRequiredArgsAgainstSnapshot`, then the projection
+itself: `LspSchemaSnapshot.Built.directives` with its `directive(name)` lookup, `DirectiveShape`,
+`InputValueShape`, the sealed `TypeShape` with its `Named` / `List` permits, `CatalogBuilder`'s
+`projectInputValues`, `projectType(Type)` and `descriptionOf`, and the registry-only `buildSnapshot`
+overload. The source-position index went
 the same way and took its resolution policy with it: `SourceWalker.Index` with `ambiguousMethods`,
 `methodsByName`, `resolveMethod`, `methodByName` and the `Decl` / `MethodKey` / `MethodNameKey` /
 `FieldKey` shapes it was keyed by, `SourceWalker.walk` and `indexOf` that built it, and `Workspace`'s
@@ -3882,3 +3893,33 @@ asserting the bundled arm still validates when the snapshot carries a same-named
 redeclaration of a bundled directive loses at registry admission before capture sees it, so there is
 no shadow for a precedence rule to prefer against, and what the surviving case pins is the ordinary
 unknown-argument verdict.
+
+## Settled while building: the directive projection had no reader left, so it goes in the same session
+
+With diagnostics judging against the captured definitions, nothing read the snapshot's directive
+surface. This retires it rather than leaving a projection standing on nobody's behalf, which is the
+lesson the two slices before this one wrote down.
+
+**What goes.** `LspSchemaSnapshot.Built.directives()` and its `directive(name)` lookup, the
+`DirectiveShape` / `InputValueShape` / sealed `TypeShape` records the surface was built from, and
+`CatalogBuilder`'s projection of them, which took its formal-argument and type-expression helpers
+with it. The registry-only `buildSnapshot` overload goes too: it existed so a unit test of the
+directive arm could run without a classifier, and there is no directive arm.
+
+**What the snapshot is now.** Two classification maps and the freshness seal, whose one remaining
+reader is the validator's replay of a build's own errors. Its class javadoc says that rather than
+describing a side-channel for user-authored directives, and the leaf permits keep a no-argument
+convenience constructor for the fixtures whose subject is the freshness axis rather than any
+classification.
+
+**A comparator's witness improves by losing the easy one.** The differential bisect aid diffed
+directives, fields and types, and the case pinning it used an added directive definition as the
+change it had to localise. Directives are gone from both, so the case adds a field coordinate
+instead, which is what the comparator is actually for: the classifications are the shadow a
+classifier slice can drift in.
+
+**Two invariants move rather than retire.** The snapshot's unit test pinned case-sensitive lookup
+and a defensive copy at construction, both on the directive list. The same two properties are true
+of the classification maps and are pinned there now, which is where the next reader will look.
+`CatalogBuilderSnapshotTest` lost its subject one slice earlier and is renamed
+`TypeBackingProjectionTest` after what it actually asserts.

@@ -1,21 +1,17 @@
 package no.sikt.graphitron.rewrite.catalog;
 
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * Projection of the parsed user schema, shipped through the dev pipeline to
- * the LSP as a side-channel. The LSP uses this to resolve directive references
- * that {@code LspVocabulary} (the bundled-SDL view) does not declare:
- * user-authored federation directives, {@code @auth}-style guards, anything
- * else the consumer's schema brings along.
+ * Projection of the parsed user schema's classifications, shipped through the dev pipeline to the
+ * LSP as a side-channel. What the language server still reads here is one coordinate's worth: which
+ * Java method a method-backed field binds to. Every other surface asks the fact store, and the
+ * directive surface this once carried is a query over the captured definitions now.
  *
- * <p>Every other surface asks the fact store, so what the language server still
- * reads here is the directive surface and, at one coordinate, which Java method
- * a method-backed field binds to. The classification maps outlive their reader
- * as the classifier's own assertion surface in the generator's tests.
+ * <p>The classification maps outlive that reader as the classifier's own assertion surface in the
+ * generator's tests.
  *
  * <p>Sealed over two orthogonal axes. The first ({@link Unavailable} vs.
  * {@link Built}) carries <em>availability</em>: whether the build pipeline
@@ -23,9 +19,9 @@ import java.util.Optional;
  * {@link Built.Previous}) carries <em>freshness</em>: whether the snapshot
  * reflects the user's latest edit or the last successful parse before a
  * regression. Consumers that don't care about freshness switch on the
- * {@link Built} super-permit and read {@link Built#directives()} uniformly;
- * consumers that care (the unknown-directive validator) switch through to the
- * leaf permits.
+ * {@link Built} super-permit and read the projections uniformly; the one that
+ * cares, the validator's replay of a build's own errors, switches through to
+ * the leaf permits.
  *
  * <p>{@code Workspace} owns the lifecycle and the volatile reference; the
  * producer ({@code CatalogBuilder.buildSnapshot}) only ever returns
@@ -44,10 +40,9 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
      * Snapshot produced from a successful parse. The {@link Current} permit
      * is the freshest known projection; {@link Previous} is the most recent
      * successful one, retained when a later parse fails so consumers don't
-     * lose the last good directive surface.
+     * lose the last good projection.
      */
     sealed interface Built extends LspSchemaSnapshot permits Built.Current, Built.Previous {
-        List<DirectiveShape> directives();
 
         /**
          * Per-field LSP classification projection. Keyed by
@@ -63,10 +58,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          * render. Absent entries mean the classifier produced no type for that name.
          */
         Map<String, TypeClassification> typeClassificationsByName();
-
-        default Optional<DirectiveShape> directive(String name) {
-            return directives().stream().filter(d -> d.name().equals(name)).findFirst();
-        }
 
         /**
          * Convenience lookup; returns {@link Optional#empty()} when no field
@@ -85,44 +76,40 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         record Current(
-            List<DirectiveShape> directives,
             Map<String, FieldClassification> fieldClassificationsByCoord,
             Map<String, TypeClassification> typeClassificationsByName
         ) implements Built {
             public Current {
-                directives = List.copyOf(directives);
                 fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
                 typeClassificationsByName = Map.copyOf(typeClassificationsByName);
             }
 
             /**
-             * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
-             * populate the directive surface. Fills the classification projections with empty
+             * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) whose subject is
+             * the freshness axis rather than any classification. Fills both projections with empty
              * maps.
              */
-            public Current(List<DirectiveShape> directives) {
-                this(directives, Map.of(), Map.of());
+            public Current() {
+                this(Map.of(), Map.of());
             }
         }
 
         record Previous(
-            List<DirectiveShape> directives,
             Map<String, FieldClassification> fieldClassificationsByCoord,
             Map<String, TypeClassification> typeClassificationsByName
         ) implements Built {
             public Previous {
-                directives = List.copyOf(directives);
                 fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
                 typeClassificationsByName = Map.copyOf(typeClassificationsByName);
             }
 
             /**
-             * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
-             * populate the directive surface. Fills the classification projections with empty
+             * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) whose subject is
+             * the freshness axis rather than any classification. Fills both projections with empty
              * maps.
              */
-            public Previous(List<DirectiveShape> directives) {
-                this(directives, Map.of(), Map.of());
+            public Previous() {
+                this(Map.of(), Map.of());
             }
         }
     }

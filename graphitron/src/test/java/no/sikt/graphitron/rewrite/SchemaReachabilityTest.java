@@ -149,20 +149,25 @@ class SchemaReachabilityTest {
 
     @Test
     void comparatorReportsNoDiffForEqualSnapshotsAndADiffForChangedOnes() {
-        var registry = TestSchemaHelper.parseRegistryWithPrelude(SDL);
-        var snapshot = CatalogBuilder.buildSnapshot(registry);
+        var snapshot = snapshotOf(SDL);
 
         assertThat(ProjectionSnapshotComparator.diff(snapshot, snapshot))
             .as("identical snapshots produce no differences")
             .isEmpty();
 
-        var withExtraDirective = TestSchemaHelper.parseRegistryWithPrelude(
-            SDL + "\ndirective @bisectAidProbe on FIELD_DEFINITION\n");
-        var changed = CatalogBuilder.buildSnapshot(withExtraDirective);
+        var changed = snapshotOf(SDL.replace(
+            "type Actor @table(name: \"actor\") { firstName: String @field(name: \"FIRST_NAME\") }",
+            "type Actor @table(name: \"actor\") { firstName: String @field(name: \"FIRST_NAME\")"
+                + " lastName: String @field(name: \"LAST_NAME\") }"));
 
         assertThat(ProjectionSnapshotComparator.diff(snapshot, changed))
-            .as("a changed snapshot is localised by the bisect aid")
-            .anyMatch(line -> line.contains("bisectAidProbe"));
+            .as("a changed snapshot is localised by the bisect aid, down to the coordinate")
+            .anyMatch(line -> line.contains("Actor.lastName"));
+    }
+
+    private static no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current snapshotOf(String sdl) {
+        return CatalogBuilder.buildSnapshot(
+            TestSchemaHelper.parseRegistryWithPrelude(sdl), TestSchemaHelper.buildSchema(sdl));
     }
 
     private static Set<String> reachableExcludingOperationRoots(GraphitronSchemaBuilder.Bundle bundle) {

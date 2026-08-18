@@ -352,7 +352,7 @@ public final class Workspace {
         var current = this.snapshot;
         if (current instanceof LspSchemaSnapshot.Built.Current c) {
             this.snapshot = new LspSchemaSnapshot.Built.Previous(
-                c.directives(), c.fieldClassificationsByCoord(), c.typeClassificationsByName());
+                c.fieldClassificationsByCoord(), c.typeClassificationsByName());
             markAllForRecalculation();
         }
     }

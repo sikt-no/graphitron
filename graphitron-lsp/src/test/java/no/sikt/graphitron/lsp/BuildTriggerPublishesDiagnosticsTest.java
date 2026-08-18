@@ -87,7 +87,7 @@ class BuildTriggerPublishesDiagnosticsTest {
     private static GraphQLRewriteGenerator.BuildArtifacts buildArtifacts() {
         return new GraphQLRewriteGenerator.BuildArtifacts(
             CompletionData.empty(),
-            new LspSchemaSnapshot.Built.Current(List.of()));
+            new LspSchemaSnapshot.Built.Current());
     }
 
     private static String pathFromUri(String uri) {

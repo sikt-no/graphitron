@@ -7,7 +7,6 @@ import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
@@ -21,8 +20,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -57,10 +54,9 @@ class CatalogRefreshTest {
         assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
 
         var fired = new CountDownLatch(1);
-        // A directive only this round's snapshot declares, so the assertion below distinguishes
-        // the swapped output from the pre-build state rather than merely from nothing.
-        var rebuilt = new LspSchemaSnapshot.Built.Current(
-            List.of(new DirectiveShape("auth", List.of(), Optional.empty())));
+        // The swapped snapshot is identified by being this instance, the assertion below reading
+        // the reference rather than any content: what the case is about is the swap, not the round.
+        var rebuilt = new LspSchemaSnapshot.Built.Current();
 
         Runnable rebuilder = () -> {
             workspace.setBuildOutput(

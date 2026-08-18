@@ -39,7 +39,7 @@ class RejectionSeverityCoverageTest {
         var path = "/tmp/coverage.graphqls";
         var uri = ValidationReport.canonicalUri(path);
         var loc = new SourceLocation(1, 1, path);
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current();
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var unmapped = new ArrayList<String>();
@@ -84,7 +84,7 @@ class RejectionSeverityCoverageTest {
         var path = "/tmp/coverage.graphqls";
         var uri = ValidationReport.canonicalUri(path);
         var loc = new SourceLocation(1, 1, path);
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current();
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var samples = new ArrayList<Rejection>();

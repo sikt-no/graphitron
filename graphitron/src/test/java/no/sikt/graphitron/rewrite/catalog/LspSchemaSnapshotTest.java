@@ -3,20 +3,22 @@ package no.sikt.graphitron.rewrite.catalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.Optional;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Invariant pinning for {@link LspSchemaSnapshot}. Sealed-switch
- * exhaustiveness is enforced by {@code javac}, not by tests; the cases
- * here cover the directive lookup default method and the unmodifiable
- * defensive copy.
+ * Invariant pinning for {@link LspSchemaSnapshot}. Sealed-switch exhaustiveness is enforced by
+ * {@code javac}, not by tests; the cases here cover the classification lookups and the
+ * unmodifiable defensive copy both leaf permits make at construction.
  */
 @UnitTier
 class LspSchemaSnapshotTest {
+
+    private static final FieldClassification CLASSIFICATION =
+        new FieldClassification.ServiceBacked("com.example.Service", "find", false, null, null);
 
     @Test
     void unavailableFactoryReturnsUnavailable() {
@@ -25,45 +27,44 @@ class LspSchemaSnapshotTest {
     }
 
     @Test
-    void builtCurrentDirectiveLookupIsCaseSensitive() {
-        var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(shape));
+    void builtCurrentFieldLookupIsCaseSensitive() {
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            Map.of("Query.film", CLASSIFICATION), Map.of());
 
-        assertThat(snapshot.directive("key")).contains(shape);
-        assertThat(snapshot.directive("Key")).isEmpty();
-        assertThat(snapshot.directive("KEY")).isEmpty();
+        assertThat(snapshot.fieldClassification("Query", "film")).contains(CLASSIFICATION);
+        assertThat(snapshot.fieldClassification("query", "film")).isEmpty();
+        assertThat(snapshot.fieldClassification("Query", "Film")).isEmpty();
     }
 
     @Test
-    void builtPreviousDirectiveLookupBehavesIdentically() {
-        var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(shape));
+    void builtPreviousFieldLookupBehavesIdentically() {
+        var snapshot = new LspSchemaSnapshot.Built.Previous(
+            Map.of("Query.film", CLASSIFICATION), Map.of());
 
-        assertThat(snapshot.directive("key")).contains(shape);
-        assertThat(snapshot.directive("Key")).isEmpty();
+        assertThat(snapshot.fieldClassification("Query", "film")).contains(CLASSIFICATION);
+        assertThat(snapshot.fieldClassification("Query", "Film")).isEmpty();
     }
 
     @Test
-    void builtDirectivesAreUnmodifiable() {
-        var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var mutable = new java.util.ArrayList<>(List.of(shape));
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable);
+    void builtClassificationsAreUnmodifiable() {
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            Map.of("Query.film", CLASSIFICATION), Map.of());
 
-        assertThatThrownBy(() -> snapshot.directives().add(
-            new DirectiveShape("other", List.of(), Optional.empty())))
+        assertThatThrownBy(() ->
+            snapshot.fieldClassificationsByCoord().put("Query.other", CLASSIFICATION))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
-    void builtCurrentDefensivelyCopiesItsDirectivesList() {
-        var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var mutable = new java.util.ArrayList<>(List.of(shape));
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable);
+    void builtCurrentDefensivelyCopiesItsClassificationMaps() {
+        var mutable = new LinkedHashMap<String, FieldClassification>();
+        mutable.put("Query.film", CLASSIFICATION);
+        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of());
 
         mutable.clear();
 
-        // Defensive copy at construction means the post-construction
-        // clear() does not bleed into the snapshot.
-        assertThat(snapshot.directives()).containsExactly(shape);
+        // Defensive copy at construction means the post-construction clear() does not bleed into
+        // the snapshot.
+        assertThat(snapshot.fieldClassificationsByCoord()).containsKey("Query.film");
     }
 }

@@ -157,7 +157,7 @@ class FixtureCatalogTest {
      * nothing to contribute and handing it one would only let a case pass on a fall-back.
      */
     private static LspSchemaSnapshot noProjection() {
-        return new LspSchemaSnapshot.Built.Current(List.of());
+        return new LspSchemaSnapshot.Built.Current();
     }
 
     private static List<Diagnostic> diagnose(no.sikt.graphitron.lsp.state.FileSnapshot file) {

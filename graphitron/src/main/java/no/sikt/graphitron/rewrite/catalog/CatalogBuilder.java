@@ -74,29 +74,9 @@ public final class CatalogBuilder {
     private CatalogBuilder() {}
 
     /**
-     * Projects the post-merge {@link TypeDefinitionRegistry}'s directive
-     * definitions into the {@link LspSchemaSnapshot.Built.Current} shape the
-     * LSP consumes through the snapshot side-channel. Pre-conditions: the
-     * registry parsed cleanly (callers in {@code GraphQLRewriteGenerator}
-     * throw before reaching this method on parse failure) and reflects the
-     * full multi-file {@code extend type} merge plus the bundled-directives
-     * overlay. No bundled-directive filter is applied: a redeclaration of a
-     * bundled directive loses at registry admission, so the two populations
-     * never collide in what reaches here.
-     */
-    public static LspSchemaSnapshot.Built.Current buildSnapshot(TypeDefinitionRegistry registry) {
-        return buildSnapshot(registry, null);
-    }
-
-    /**
-     * Full projection: directive surface plus the classification projections. The
-     * two-arg form is what the production pipeline calls; the
-     * {@link #buildSnapshot(TypeDefinitionRegistry)} overload exists so unit
-     * tests of the directive arm can run without spinning up the full
-     * classifier + jOOQ catalog.
-     *
-     * <p>When {@code schema} is {@code null} the classification maps are empty
-     * (back-compat for the one-arg overload only).
+     * The classification projections over a parsed schema, without the detection's conflicts. Its
+     * callers are the classifier's own tests, the production pipeline passing the conflicts through
+     * the overload below.
      */
     public static LspSchemaSnapshot.Built.Current buildSnapshot(
         TypeDefinitionRegistry registry, GraphitronSchema schema
@@ -117,22 +97,13 @@ public final class CatalogBuilder {
         TypeDefinitionRegistry registry, GraphitronSchema schema,
         List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts
     ) {
-        var directives = new ArrayList<DirectiveShape>();
-        for (var def : registry.getDirectiveDefinitions().values()) {
-            directives.add(new DirectiveShape(
-                def.getName(),
-                projectInputValues(def.getInputValueDefinitions()),
-                descriptionOf(def.getDescription())
-            ));
-        }
         var fieldClassifications = (schema == null)
             ? Map.<String, FieldClassification>of()
             : projectFieldClassifications(schema, fieldConflicts);
         var typeClassifications = (schema == null)
             ? Map.<String, TypeClassification>of()
             : projectTypeClassifications(schema, registry, fieldClassifications);
-        return new LspSchemaSnapshot.Built.Current(
-            directives, fieldClassifications, typeClassifications);
+        return new LspSchemaSnapshot.Built.Current(fieldClassifications, typeClassifications);
     }
 
     /**
@@ -844,41 +815,6 @@ public final class CatalogBuilder {
         return tableName == null
             ? new TypeBackingShape.JooqRecordBacking.Standalone(fqClassName)
             : new TypeBackingShape.JooqRecordBacking.WithTable(fqClassName, tableName);
-    }
-
-    private static List<InputValueShape> projectInputValues(List<InputValueDefinition> defs) {
-        var shapes = new ArrayList<InputValueShape>();
-        for (var def : defs) {
-            shapes.add(new InputValueShape(
-                def.getName(),
-                projectType(def.getType()),
-                descriptionOf(def.getDescription())
-            ));
-        }
-        return shapes;
-    }
-
-    private static TypeShape projectType(Type<?> type) {
-        return projectType(type, false);
-    }
-
-    private static TypeShape projectType(Type<?> type, boolean nonNull) {
-        if (type instanceof NonNullType nn) {
-            return projectType(nn.getType(), true);
-        }
-        if (type instanceof ListType lt) {
-            return new TypeShape.List(projectType(lt.getType(), false), nonNull);
-        }
-        if (type instanceof TypeName tn) {
-            return new TypeShape.Named(tn.getName(), nonNull);
-        }
-        throw new IllegalStateException("Unexpected graphql-java type node: " + type.getClass());
-    }
-
-    private static Optional<String> descriptionOf(Description description) {
-        if (description == null) return Optional.empty();
-        var content = description.getContent();
-        return content == null || content.isEmpty() ? Optional.empty() : Optional.of(content);
     }
 
     public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {

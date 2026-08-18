@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ValidatorDiagnosticsTest {
 
     private static final LspSchemaSnapshot.Built.Current CURRENT_SNAPSHOT =
-        new LspSchemaSnapshot.Built.Current(List.of());
+        new LspSchemaSnapshot.Built.Current();
 
     @Test
     void authorErrorMapsToErrorSeverityWithValidatorSource() {
@@ -181,7 +181,7 @@ class ValidatorDiagnosticsTest {
         var report = ValidationReport.from(List.of(), List.of(finding));
 
         var diags = Diagnostics.compute(uri, file(),
-            new LspSchemaSnapshot.Built.Previous(List.of()), report);
+            new LspSchemaSnapshot.Built.Previous(), report);
 
         assertThat(diags).isEmpty();
     }
@@ -235,7 +235,7 @@ class ValidatorDiagnosticsTest {
         var report = ValidationReport.from(List.of(error), List.of());
 
         var diags = Diagnostics.compute(uri, file(),
-            new LspSchemaSnapshot.Built.Previous(List.of()), report);
+            new LspSchemaSnapshot.Built.Previous(), report);
 
         assertThat(diags).isEmpty();
     }

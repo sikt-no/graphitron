@@ -1,10 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -20,7 +18,7 @@ import java.util.TreeSet;
  * assembled-schema identity, {@code ErrorType} handler aggregation, and raw graphql-java node
  * references), so elevating it above those tiers would pin the shadow rather than the behaviour.
  * Its job is narrow: when a later slice's output drifts, run old-vs-new through this comparator to
- * localise <em>which</em> type, field, or directive moved, then write or fix the pipeline assertion
+ * localise <em>which</em> type or field moved, then write or fix the pipeline assertion
  * that actually owns the invariant.
  */
 public final class ProjectionSnapshotComparator {
@@ -30,18 +28,9 @@ public final class ProjectionSnapshotComparator {
     /** Returns the differences from {@code before} to {@code after}, or an empty list if equal. */
     public static List<String> diff(Current before, Current after) {
         var out = new ArrayList<String>();
-        diffMaps("directive", indexByName(before.directives()), indexByName(after.directives()), out);
         diffMaps("field-classification", before.fieldClassificationsByCoord(), after.fieldClassificationsByCoord(), out);
         diffMaps("type-classification", before.typeClassificationsByName(), after.typeClassificationsByName(), out);
         return out;
-    }
-
-    private static Map<String, DirectiveShape> indexByName(List<DirectiveShape> directives) {
-        var byName = new LinkedHashMap<String, DirectiveShape>();
-        for (var directive : directives) {
-            byName.put(directive.name(), directive);
-        }
-        return byName;
     }
 
     private static <V> void diffMaps(String kind, Map<String, V> before, Map<String, V> after, List<String> out) {

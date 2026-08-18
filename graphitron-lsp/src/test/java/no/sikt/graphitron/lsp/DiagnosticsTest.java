@@ -255,7 +255,7 @@ class DiagnosticsTest {
      * freshness-gated warn arms behave as they do in a settled session.
      */
     private static LspSchemaSnapshot noBackings() {
-        return new LspSchemaSnapshot.Built.Current(java.util.List.of());
+        return new LspSchemaSnapshot.Built.Current();
     }
 
     /**
@@ -892,7 +892,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of()));
+            new LspSchemaSnapshot.Built.Current());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
@@ -925,7 +925,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous(List.of()));
+            new LspSchemaSnapshot.Built.Previous());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");

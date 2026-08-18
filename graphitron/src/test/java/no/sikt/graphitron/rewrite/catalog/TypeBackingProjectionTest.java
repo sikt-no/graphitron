@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.catalog;
 
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
-import graphql.schema.idl.SchemaParser;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -15,94 +14,14 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link CatalogBuilder#buildSnapshot} unit tests against hand-crafted
- * {@link graphql.schema.idl.TypeDefinitionRegistry} fixtures. Parse failures
- * throw upstream of {@code buildSnapshot}, so the tests below assume a successful
- * parse and verify the directive shape round-trips faithfully.
- *
- * <p>The backing cases below ask {@link CatalogBuilder#projectTypesByName} directly. The
- * snapshot carried that map until every language-server surface reading it asked the store
- * instead; what the walk bound each type to is still transcribed into the store as the shadow
- * the backing derivation differs against, so the projection is the subject and the snapshot is
- * no longer its channel.
+ * What {@link CatalogBuilder#projectTypesByName} makes of each classified type, over hand-crafted
+ * {@link GraphitronSchema} fixtures. The snapshot carried this map to the language server until
+ * every surface reading it asked the store instead; what the walk bound each type to is still
+ * transcribed into the store as the shadow the backing derivation differs against, so the
+ * projection is the subject and the snapshot is no longer its channel.
  */
 @UnitTier
-class CatalogBuilderSnapshotTest {
-
-    @Test
-    void userDeclaredDirectiveLandsInTheSnapshot() {
-        var registry = new SchemaParser().parse("""
-            directive @auth(role: String!) on FIELD_DEFINITION
-            type Query { x: Int }
-            """);
-
-        var snapshot = CatalogBuilder.buildSnapshot(registry);
-
-        assertThat(snapshot.directives()).extracting(DirectiveShape::name).contains("auth");
-        var auth = snapshot.directive("auth").orElseThrow();
-        assertThat(auth.args()).hasSize(1);
-        var roleArg = auth.args().get(0);
-        assertThat(roleArg.name()).isEqualTo("role");
-        assertThat(roleArg.type())
-            .isInstanceOfSatisfying(TypeShape.Named.class, named -> {
-                assertThat(named.typeName()).isEqualTo("String");
-                assertThat(named.nonNull()).isTrue();
-            });
-    }
-
-    @Test
-    void listAndNonNullWrappingIsPreservedAsSealedShape() {
-        var registry = new SchemaParser().parse("""
-            directive @composite(ids: [ID!]!) on OBJECT
-            type Query { x: Int }
-            """);
-
-        var snapshot = CatalogBuilder.buildSnapshot(registry);
-
-        var composite = snapshot.directive("composite").orElseThrow();
-        var idsArg = composite.args().get(0);
-        // [ID!]! — outer non-null list of non-null ID.
-        assertThat(idsArg.type())
-            .isInstanceOfSatisfying(TypeShape.List.class, list -> {
-                assertThat(list.nonNull()).isTrue();
-                assertThat(list.inner())
-                    .isInstanceOfSatisfying(TypeShape.Named.class, named -> {
-                        assertThat(named.typeName()).isEqualTo("ID");
-                        assertThat(named.nonNull()).isTrue();
-                    });
-            });
-    }
-
-    @Test
-    void bundledDirectiveNamesPassThroughWithoutFilter() {
-        // No producer-side filter: the resolver's bundled-shadows-snapshot
-        // precedence handles collisions. The snapshot ships every directive
-        // in the registry, including names that happen to coincide with
-        // graphitron's bundled set.
-        var registry = new SchemaParser().parse("""
-            directive @table(name: String) on OBJECT
-            type Query { x: Int }
-            """);
-
-        var snapshot = CatalogBuilder.buildSnapshot(registry);
-
-        assertThat(snapshot.directive("table")).isPresent();
-    }
-
-    @Test
-    void descriptionRoundTripsWhenPresent() {
-        var registry = new SchemaParser().parse("""
-            "Marker for federation entities"
-            directive @key(fields: String!) on OBJECT
-            type Query { x: Int }
-            """);
-
-        var snapshot = CatalogBuilder.buildSnapshot(registry);
-
-        var key = snapshot.directive("key").orElseThrow();
-        assertThat(key.description()).isPresent();
-        assertThat(key.description().get()).contains("federation entities");
-    }
+class TypeBackingProjectionTest {
 
     // ---- per-type backing projection ----
 
