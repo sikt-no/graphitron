@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 3
 theme: routine
-depends-on: [routine-composition-surface-from-facts]
+depends-on: [jooq-node-metadata-as-stated-facts]
 created: 2026-08-14
 last-updated: 2026-08-18
 ---
@@ -126,8 +126,20 @@ than two: the reconciled `NodeType`, the table's own generator metadata, then `@
 catalog primary key. `graphitron_node_key_column (graph_name, type_name, position, column_ref)`
 holds the pinned list in written order; the primary-key fallback is `sql_primary_key` joined
 through `sql_constraint_column` for the ordered columns, reached from the node type through
-`intent_bound_table`; and the middle tier is not captured at all yet. The reconciliation is a view
+`intent_resolved_type_binding`; and the middle tier is
+`roadmap/jooq-node-metadata-as-stated-facts.md` (R710)'s to capture. The reconciliation is a view
 and it is the item's spine (see "The resolution is a view over facts").
+
+Two things about that middle tier follow from R710 recording the metadata **as stated** rather than
+as validated, and neither is a detail. Its rows carry a form vocabulary
+(`STRING` / `NULL` / `OTHER` / `ABSENT` on the type id, `FIELD_ARRAY` and the same three on the key
+columns), a row exists whenever the class declares either constant, and a key-column entry may name
+a column the table does not have. So this tier reads *well-formed* rows, which is a join against
+R710's own well-formedness derivation and not a direct read of the base relation; and a malformed
+constant is a fact the tier passes over rather than an absence, which is a distinction the tier's
+comment owes a sentence. Reading the raw relation instead would let a malformed key-column list
+project a column that does not exist, which is this item's own failure mode arriving through the
+back door.
 
 The spelling is the SQL column name, because that is what `@node(keyColumns:)` itself is a list of,
 and matching is case-insensitive. That is inherited rather than introduced: `intent_spelled_table`
@@ -152,8 +164,19 @@ the application's coordinate), `graphitron_field_node_id (type_name, field_name,
 for the `@nodeId` on an input field and `graphitron_argument_node_id` for the one on an argument,
 `graphitron_node` and `graphitron_node_key_column` for the node identity and its pinned key list,
 and `sql_table` / `sql_constraint` / `sql_constraint_column` / `sql_primary_key` through
-`intent_bound_table` for the catalog fallback. The catalog side has a gap, covered two sections
-down.
+`intent_resolved_type_binding` for the catalog fallback. The catalog side has a gap, covered two
+sections down.
+
+**Read the binding through the resolution, not through `intent_bound_table`.** R704's slice 9 split
+the question: `intent_bound_table` is now the `@table` population specifically, the routine return
+binding is its own relation beside it, and `intent_resolved_type_binding` is where the two meet for
+the reader whose question is "which table stands for this type". Five readers were repointed onto it
+when it landed and two deliberately were not, each named in its comment, so a new reader asking the
+what-table question and reaching for the `@table` population alone would be the sixth reader on the
+wrong side of a rule that has just been drawn. It carries `candidates`, and there is no precedence:
+a type whose `@table` and whose routine return name different tables is two rows and the relation
+declines to pick. This item's tiers therefore need a stance on arity above one, which is a silence
+rather than a guess (see the key-column view below).
 
 **The dotted path is already walked, and this is the finding that removes the item's biggest
 unknown.** `intent_input_occurrence_path` is a capture-cadence derivation whose rows are exactly
@@ -273,8 +296,8 @@ plus the catalog primary key. A two-arm view would answer differently from the g
 type in the middle arm's population, which is the metadata-carrying table with no matching
 `NodeType`. `graphitron_node`'s comment already anticipates this: "the SDL-versus-jOOQ-metadata
 precedence rules are detections". So the reduction is three arms with a `tier` column naming which
-one answered, in `intent_resolved_field_claim`'s shape, and the middle arm needs a fact that does
-not exist yet.
+one answered, in `intent_resolved_field_claim`'s shape, and the middle arm reads the facts R710
+captures rather than the reflective read `resolveTargetKeys` makes today.
 
 The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suffix at the front):
 
@@ -289,7 +312,13 @@ The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suf
   another tier's order. That is exactly the transposition `resolveTargetKeys`' own comment warns
   about, "a `@node(keyColumns:)` that pins a different order than the metadata would project
   columns transposed against the order its own decode helper returns values in". One tier wins for
-  a type and its whole list is taken.
+  a type and its whole list is taken. **An ambiguous binding resolves no key columns**, because the
+  third tier reaches the primary key through `intent_resolved_type_binding` and that relation
+  carries `candidates` without a precedence: two candidate tables are two different key tuples, and
+  picking one would encode ids against a table the author never named. The tier is silent there and
+  the detection stratum names the ambiguity, on the same reasoning that makes every other
+  unresolvable shape in this item a stated row rather than a gap. The first two tiers are unaffected,
+  a `NodeType` and a metadata-carrying table each naming their own table.
 * **`intent_argmapping_binding_leaf`.** The keying over `intent_input_occurrence_path` described
   above, unioned across the **seven** `*_arg_mapping_pair` relations
   (`graphitron_routine`, `graphitron_service`, `graphitron_field_condition`,
@@ -453,92 +482,55 @@ where no emitter is wired is a classified decision implying a generator branch t
 which is the silence this item was filed to close. So the detection stratum carries a `deferred`
 arm keyed on the `site` column, naming the sites that emit, and it shrinks as sites land.
 
-### The `sql_` family gains two populations
+### The catalog facts this reads, and who captured them
 
-**One of the two is no longer this item's to mint.** `roadmap/routine-composition-surface-from-facts.md`
-(R704) reached Ready after this section was written, and its slice 7 captures the routine half
-outright: the function-ness discriminator that today drops
-`TableOptions.type().isFunction()` on the floor, and the routine's call surface (parameters, their
-order and types, the generated `Routines` method). That is the same walk, the same objects and the
-same rationale as the two bullets below, so the routine population lands once, upstream, and this
-item reads it. What stays this item's own is the node-metadata population, which R704 has no use
-for and does not capture. See "Relationship to other items" for what that leaves to confirm at
-pickup, and read the shape argument below as input to R704's open question rather than as a
-decision this item may take on its own.
+**Both populations this item once planned to capture belong to other items, and one has landed.**
+The section this replaces argued for capturing the routine call surface and the jOOQ node metadata
+here, on the ground that both are unreachable outside the codegen classloader and so a run that
+does not capture them cannot answer the question afterwards. That argument held; what changed is
+who acts on it.
 
-Two facts this item needs are unreachable outside the codegen classloader, so both close in
-capture, where the fact-finding code is already standing on the objects that carry them. `sql_`
-is the family for both, and `sql_column` is the model, down to the rationale: "A column carries two
-types, not one: the SQL type the database declares and the Java type jOOQ binds it to. Both are
-facts about the column and neither derives from the other by any rule the store could apply."
+**Landed, in R704 slice 7.** `sql_table.table_type` records jOOQ's `TableOptions.TableType` for
+every row, so table-valuedness is a column rather than a live-catalog probe, and `sql_routine` plus
+`sql_routine_parameter` capture the callable: the generated `Routines` class, the value-parameter
+method the parameters belong to, and those parameters in declaration order with their Java binding
+types. Four things this item asked for came through unchanged, and are worth naming because they
+are what this item would otherwise still owe: the facts are read off the resolved `Table<?>` through
+`JooqCatalog.routineCallFactsOf`, sitting beside the name-keyed resolution the way
+`candidateKeys(Table<?>)` sits beside its own, so capture never re-runs a lookup that would collapse
+a function two schemas both declare; the record carries type names rather than javapoet; `table_type`
+landed; and the `-parameters` dependency the join key inherits is owned in the `jooq_name` column
+comment, with an agreement test asserting the captured names are the database's own and not `arg0`,
+so losing the flag fails the build rather than quietly degrading the join.
 
-**A table-returning routine is exposed by jOOQ as a table**, and that decides where its facts hang.
-It arrives in the catalog as a `Table` whose table type is `FUNCTION`, which is exactly how
-`JooqCatalog.resolveTableValuedFunction` finds it: `findTable(routineName)` first, then the
-`getOptions().type().isFunction()` check. So the walk that writes `sql_table` has already visited
-every routine `@routine` can name. `JooqCatalog.findNonTableValuedRoutine`'s `routines/`
-sub-package probe is *not* part of this picture: it is the fallback for a routine that is **not**
-table-valued, which `@routine` rejects outright.
+**The shape came out the other way from this item's proposal, and the reason matters more than the
+outcome.** This plan proposed hanging the parameters off the function-typed `sql_table` row, as
+`sql_column` hangs off a table. R704 made the callable its own subject, on the rule the family is
+named for: the standard separates ROUTINES from TABLES, a routine's parameters are a fact about the
+callable rather than about a result, and a routine with no `RETURNS TABLE` form has a callable and
+no table row at all, so parameters hung off `sql_table` would have nowhere to go the moment a walk
+reads one. Table-valuedness is the join, a `FUNCTION`-typed `sql_table` row at the routine's
+coordinate, not a third column. Two findings arrived with it that this plan could not have had: jOOQ
+generates no `Routine` object for a table-valued function at all, only the result-table class and
+the convenience method, which is what makes the non-table-valued routines a separate population
+rather than a subset; and a routine with no generated call surface is a real arm, so the class and
+method names are nullable and their nullness separates a routine that takes no parameters from one
+whose call surface is not exposed. The SQL-side parameter vocabulary resolved the way this plan
+recommended, omitted rather than shipped always-null, because the database's own names survive only
+as jOOQ's camelCase transform and the SQL types only as anonymous bind placeholders behind a
+protected `TableImpl` field.
 
-The additions, all inside `CatalogFactCapture.captureCatalog`'s existing loop over
-`jooq.allTableEntries()`:
+**Pending, in R710.** The jOOQ node metadata, the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
+`JooqCatalog.nodeIdMetadata` reflects on today, lands as `sql_node_metadata` plus an ordered
+`sql_node_key_column` child, recorded *as stated* rather than as validated. That is the middle tier
+of the key-column resolution, and the only capture this item still waits on. The as-stated shape is
+a better fact than the reflective read it replaces, and it is why the tier joins a well-formedness
+derivation rather than the base relation (see "What the key-column segment names").
 
-* **`sql_table.table_type`**, one column, read as `table.getOptions().type()` (the accessor every
-  site in the tree uses). jOOQ distinguishes `TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION` and
-  the rest; `sql_table` records none of it, so the store cannot currently tell a table-valued
-  function from a table. Cheapest true fact in the item, and what makes "which of these rows is a
-  routine" a query.
-* **`sql_routine_parameter (source_name, table_schema, table_name, position, jooq_name,
-  binding_type, ...)`**, hanging off the function-typed `sql_table` row by foreign key exactly as
-  `sql_column` hangs off a table. A function's parameters are to it what its columns are to a
-  table, one walk reads both, and they share a refresh cadence, so no new anchor and no new source
-  vocabulary. Two things the relation's comment must own rather than leave implied: its population
-  is table-valued functions only (a non-table-valued routine has no `sql_table` row at all, so its
-  absence here is by construction, not by omission), and the rows describe **one method**, the
-  table-form convenience overload, since `Routines` also generates a `Configuration`-first form and
-  a `Field<?>` form for the same routine.
-* **The call surface.** Because the parameters are a fact about a method, the method has to be
-  named: the generated `Routines` class FQN and the method name. `sql_schema.keys_class_fqn` is the
-  shipped precedent for a per-schema generated artifact recorded as a fact, and the emitter needs
-  both values anyway. Without them the relation cannot answer "which overload", and the stated
-  downstream payoff (routine hover and completion off the store rather than a live classloader)
-  does not arrive.
-* **The node metadata population**, which is the gap under the key-column resolution's middle tier:
-  the `KjerneJooqGenerator` `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics that
-  `JooqCatalog.nodeIdMetadata` reads reflectively off the table class. A `type_id` column plus an
-  ordered `sql_node_key_column` child of `sql_table` is the shape, and the reader already exists,
-  cached per table per build, with a sibling that surfaces malformed-metadata reasons. This is the
-  same move as the parameters and for the same reason: `graphitron_node`'s own comment already
-  says "the SDL-versus-jOOQ-metadata precedence rules are detections", so the DDL is waiting for a
-  population it does not have.
-
-**How capture reads them, and one thing it must not do.** Do not route capture through
-`resolveTableValuedFunction`: it is name-keyed, re-runs `findTable`, and collapses a function name
-two schemas both declare into `NotInCatalog`. Capture is already holding the resolved `Table<?>`
-and its schema and needs no lookup. The in-tree precedent is explicit, `candidateKeys(Table<?>)`
-existing as the "table-scoped overload without a (potentially ambiguous) SQL-name lookup" beside
-`columnFactsOf(Table<?>)`. So the reader is a new `Table<?>`-scoped method on `JooqCatalog`
-returning a value record beside `ColumnFacts`.
-
-It must also return values, not emit vocabulary. `JooqCatalog.RoutineResolution.Resolved` carries
-javapoet (`JooqCatalog.RoutineParam(String name, TypeName type)`, `ClassName routinesClass`), and
-reading capture
-through it would land a `TypeName.toString()` in `binding_type`. `ColumnFacts`' own javadoc already
-rules on this: the javapoet form is "a code-emission representation with no meaning in a relation".
-
-**One dependency the join key inherits, which is silent today.** `jooq_name` is the join key,
-because `graphitron_routine_arg_mapping_pair.param_name` holds what the author wrote
-(`pInventoryId`) and `RoutineDirectiveResolver` matches it with `p.name().equals(claimed)` against
-the reflected method parameter. A reflected parameter name is `arg0` unless the consumer compiled
-their jOOQ output with `-parameters`. The generator already depends on this in that matching, and
-this repo compiles for it in both `graphitron-sakila-db` and its own test tree. Capturing the name
-makes the dependency visible instead of creating it, and the column's comment is where it belongs.
-If the flag is absent the row stays faithful (it records what the class says); what degrades is the
-join, which is the honest place for that to surface.
-
-The parameters' SQL-side vocabulary (the database's own parameter names and types) sits on
-`TableImpl.parameters`, which is `protected`, so reaching it means reading a non-public member.
-Decide at pickup, and omit the columns rather than ship ones that are always null.
+So this item captures nothing. What it owes on the catalog side is reads, and the obligations that
+travel with a read rather than with a write: naming the relations it joins, stating what it does
+when one answers ambiguously, and pinning those answers against fixtures rather than against a
+shape it authored itself.
 
 ### The bare form becomes a rejection
 
@@ -595,7 +587,7 @@ free from a view whose row *is* a column name.
 What changes is where the facts come from: the command row, not a `CallSiteExtraction` arm. Three
 emission facts have to be on it, and each has a store answer to confirm at pickup: the node type's
 `type_id` (`graphitron_node.type_id`, with the type-name fallback that column's comment defers to),
-the target table (`intent_bound_table`), and the column (the projection view). The encoder class is
+the target table (`intent_resolved_type_binding`), and the column (the projection view). The encoder class is
 a generator-configuration fact rather than a captured one; locate it at pickup and say which side
 of the line it sits on.
 
@@ -622,14 +614,10 @@ level up, not an implementation detail.
 
 ### Fact capture
 
-The store grows on both strata, and the two grow for different reasons.
+The store grows on one stratum only, which is the change R704 and R710 make to this item.
 
-**Base relations, from the catalog walk:** the node-metadata population, per "The `sql_` family
-gains two populations". `sql_routine_parameter`, its call-surface columns and the function-ness
-discriminator are R704 slice 7's, so what this item owes on that half is a read against whatever
-shape R704 lands. These carry the usual obligations: dense positions on the ordered children, total
-comment coverage, a `FOREIGN KEY` to `sql_table`, transcription-twin agreement for the decode, and
-registration in `FactCaptureAgreementTest` so a new relation cannot arrive unchecked.
+**No base relations.** The routine call surface landed with R704 and the node metadata is R710's,
+per "The catalog facts this reads". Nothing here writes a row.
 
 **Derived relations:** the three resolution views plus the detection views, all `intent_`, all
 registered under the derived arm.
@@ -640,24 +628,17 @@ changes is that its comment enumerates what a segment can name ("a GraphQL argum
 input path") and now enumerates it incompletely; restate it at the rule's grain on the `@routine`
 pair relation and on its six siblings.
 
-The `sql_` half is worth doing on its own terms, which is why R704 picked up the routine population
-independently: both populations are unreachable outside the codegen classloader, so a run that does
-not capture them cannot answer a routine or node-metadata question afterwards, and every consumer
-that wants one is forced back through a live reflective walk. That is the argument `sql_column.binding_type`'s
-comment already makes for columns ("read off the live `Field` during the catalog walk and
-unrecoverable afterwards").
+That the `sql_` half is worth doing on its own terms is what let both populations leave this item
+without leaving the roadmap: they are unreachable outside the codegen classloader, so a run that
+does not capture them cannot answer a routine or node-metadata question afterwards, and every
+consumer that wants one is forced back through a live reflective walk. That is the argument
+`sql_column.binding_type`'s comment already makes for columns ("read off the live `Field` during the
+catalog walk and unrecoverable afterwards"), and it is the argument R704 and R710 each acted on.
 
 ## Implementation
 
-* **`graphitron-model.sql`, base relations**: the node-metadata `type_id` plus an ordered
-  `sql_node_key_column` child of `sql_table`. The routine-catalog relations are R704 slice 7's.
-* **`JooqCatalog`**: the node-metadata reader already exists (`nodeIdMetadata`, with
-  `nodeIdMetadataDiagnostic` beside it) and is already cached per table, so this item needs no new
-  reader. The `Table<?>`-scoped routine reader beside `columnFactsOf`, returning a value record
-  beside `ColumnFacts` rather than the javapoet-carrying `RoutineResolution`, is R704's; the
-  argument for that shape is in the section above and belongs to R704's slice.
-* **`CatalogFactCapture`**: `captureNodeMetadata` beside `captureColumns` / `captureConstraints` /
-  `captureIndexes`.
+* **No base-relation work and no capture work.** The routine call surface is R704's, landed; the
+  node metadata is R710's, pending. This item reads both.
 * **Views**, house style per `intent_bound_table` (declared column list, full comment coverage,
   closed vocabularies as `CHECK` or as stated column comments), and structurally per
   `intent_field_column_table`, the sibling path-resolution view whose `disposition` / `basis` shape
@@ -666,7 +647,9 @@ unrecoverable afterwards").
   `intent_argmapping_binding_leaf` (the four-arm keying over `intent_input_occurrence_path`, `site`
   literal per union arm, `disposition` plus `basis`, unconsumed-segment count), and
   `intent_resolved_node_key_projection`, plus the detection views for the rejections including
-  the site-keyed `deferred` arm.
+  the site-keyed `deferred` arm. The key-column view reads `intent_resolved_type_binding` for its
+  third tier and R710's well-formedness derivation for its middle one, so neither the `@table`
+  population nor a raw as-stated row is read directly.
 * **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: records built from
   query rows, decoding a closed verdict vocabulary into `Rejection` arms. The only new Java types
   the item introduces.
@@ -697,14 +680,10 @@ unrecoverable afterwards").
 
 ## Tests
 
-* **Capture tests for the node-metadata population**, in the shape the `sql_` family already uses:
-  the transcription twin proving the rows agree with what the catalog walk read, dense positions,
-  `FactSchemaGateTest` for comment coverage, a metadata-carrying table and one without. The
-  routine-parameter and function-ness pins travel with their relations to R704, including the test
-  that pins the `-parameters` dependency (`jooq_name` is the join key and is `arg0` without the
-  flag; this repo already compiles one test package deliberately without `-parameters`, so the
-  precedent for covering both sides exists). What this item owes on that half is whatever its own
-  views join to, pinned against the shape R704 lands rather than against the one sketched above.
+* **No capture tests.** Both populations are pinned by the items that capture them: R704's
+  agreement test already asserts the routine parameters are the database's own names rather than
+  `arg0`, and R710 carries the node-metadata twins. What this item pins on the catalog side is what
+  its own views make of those rows.
 * **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view, and
   for the binding-leaf view specifically in `FieldColumnTableTest`'s, which is the closest match in
   the tree: a path-resolution view with silences, anchored by twelve cases. Two habits to take from
@@ -714,7 +693,10 @@ unrecoverable afterwards").
   relation gets tested rather than assumed. It also asserts at most one row per coordinate in its
   read helper; the analogue here is per pair-row key, since this view keeps `ordinal` rather than
   collapsing it.
-  `intent_resolved_node_key_column` needs all three tiers populated, not two, plus a composite-key
+  `intent_resolved_node_key_column` needs a case where `intent_resolved_type_binding` answers with
+  `candidates = 2`, pinning the tier silent rather than picking, which is reachable now that a type
+  can be bound by a `@table` and by a routine return at once. It also needs all three tiers
+  populated, not two, plus a composite-key
   type (`bar` in the `nodeidfixture` catalog is the one `NodeIdPipelineTest` already uses), and a
   case pinning that a tier's key column *order* survives the pick rather than being spliced across
   tiers.
@@ -769,17 +751,19 @@ unrecoverable afterwards").
   likely to want its own item if the schedule tightens. Lifting it out is fine; threading the
   projection through a `MutationField` leaf to avoid it is not, because that re-creates the
   emitter-reads-the-leaf coupling this item exists to stop relying on.
-* **Sequencing against R704 is now a risk of its own.** The two items share a capture slice and a
-  command row, and R704 is the upstream half of both. Running them concurrently costs a merge on
-  `graphitron-model.sql` and a contested fifteen-line method; running this one first costs R704's
-  DDL question being answered by the downstream item. Neither is fatal and both are avoidable by
-  taking the stages in the order "Relationship to other items" states.
-* **The parameters' SQL-side vocabulary and the `-parameters` dependency** travel with the relation
-  to R704. Both were this plan's risks while it owned the capture, and neither is discharged, so
-  they are worth carrying into R704's slice 7 rather than dropping here: the SQL-side parameter
-  names and types sit on the protected `TableImpl.parameters` while the Java side comes off the
-  generated `Routines` method with no such problem, and `jooq_name` reads `arg0` unless the consumer
-  compiled with `-parameters`.
+* **The capture half is now other items' schedules.** R704's is landed, so that half is a read
+  against relations that exist. R710's is not: it is `Ready`, so its shape is signed off but its
+  rows are not written yet, and stage 2's middle tier waits on them. The residual risk is schedule
+  rather than shape, and cheap to absorb either way, being one tier's source.
+* **`intent_resolved_type_binding` can answer with two candidates**, and this item's response is
+  silence plus a detection rather than a pick. That is the right answer but it is a new population
+  to reach in fixtures: a type bound by both a `@table` and a routine return, which did not exist
+  before R704's slice 9.
+* **The parameters' SQL-side vocabulary and the `-parameters` dependency are discharged**, both by
+  R704 and both the way this plan recommended: the SQL-side columns were omitted rather than shipped
+  always-null, with the finding in the relation comment, and the agreement test fails the build if
+  the captured parameter names degrade to `arg0`. Recorded because they were live risks here for
+  four days and a reader of the history should see where they went.
 
 ## User documentation (first-client check)
 
@@ -839,44 +823,56 @@ Draft of the `routine.adoc` subsection:
 
 ## Relationship to other items
 
-* `roadmap/routine-composition-surface-from-facts.md` (R704) is the item this one now sits on top
-  of, and the only entry here that is a real dependency rather than a coordination note. It reached
-  Ready after this plan's body was written, and it owns the `@routine` read surface end to end. Four
-  things follow.
+* `roadmap/routine-composition-surface-from-facts.md` (R704) **has landed and is in review**, and
+  it is the reason two sections of this plan were rewritten rather than annotated. It owned the
+  `@routine` read surface end to end; what it leaves this item is a set of reads and one pivot.
 
-  **Its slice 7 is this item's stage 1, minus the node metadata.** Both capture the same catalog
-  walk's routine facts, so the relation is minted once, there. This plan's `sql_` section is
-  rewritten above to say so, and what survives here is the node-metadata population R704 has no use
-  for.
+  **Its slice 7 captured the routine catalog facts, and chose the other shape.** This plan proposed
+  hanging the parameters off the function-typed `sql_table` row; the callable landed as its own
+  subject, `sql_routine` plus `sql_routine_parameter`, with table-valuedness expressed as the join
+  to a `FUNCTION`-typed `sql_table` row. The reasoning is recorded under "The catalog facts this
+  reads" and it is better than this plan's: a routine with no `RETURNS TABLE` form has a callable
+  and no table row, so the parameters had nowhere to hang. All four inputs this item handed over
+  were honoured, including the `-parameters` dependency, which is now a build failure rather than a
+  silent degradation.
 
-  **The DDL shape is R704's open question, not this item's decision.** R704 asks whether
-  function-ness is a column on `sql_table` or whether `sql_routine` is its own subject, and leans
-  toward the separate relation on the strength of a fact this plan did not weigh: a non-table-valued
-  routine has a callable identity and no table row at all, which is
-  `roadmap/routine-write-result-shapes.md` (R454)'s territory. This plan's argument for hanging the
-  parameters off the function-typed `sql_table` row (one walk reads both, one refresh cadence, no
-  new anchor, and the population is table-valued functions only by construction) stands as input to
-  that question and no longer as a ruling. Whichever way it settles, the columns this item's own
-  detections read are the same facts under a different key.
+  **Its slice 9 moved the binding question, which is the pivot that touches this item's own views.**
+  `intent_bound_table` is now the `@table` population specifically; the routine return binding is a
+  sibling relation; `intent_resolved_type_binding` is the reduction where they meet, and it is what
+  a reader asking "which table stands for this type" reads. Five readers were repointed onto it and
+  two deliberately left, each named in its comment. This item's third key tier and its emission
+  facts are both that question, so both were repointed here. The arity that comes with it is real
+  work, not a rename: the relation carries `candidates` and declines to pick between a `@table` and
+  a routine return that disagree, so the tier goes silent and the detection stratum names it.
 
-  **Stage 5's planning join lands on a moving target.** R704's Track A fills the two literal
-  `null`s in `LauncherCommands.routineRow` (the WHERE slot and the ordering) and its slice 13
-  re-sources that row off facts as the plan-tier pilot. This item joins the projection into the same
-  row. Sequenced after R704 that is one edit against a fact-sourced row; sequenced against it, it is
-  two sessions editing one fifteen-line method from opposite directions. Take the projection join
-  after R704's Track A at least, and prefer after slice 13.
+  **Its Track A landed, so one interaction is now live rather than pending.** Routine-backed read
+  fields have a real `@condition` and `@orderBy` surface, so `argMapping` paths resolve at
+  coordinates that carried none. That is corpus population for this item's `site` arms, reachable
+  today.
 
-  **One interaction runs the other way, and it is favourable.** R704 gives routine-backed read
-  fields a real `@condition` surface, which means `argMapping` paths start resolving at coordinates
-  that carry none today. That is corpus population for this item's `site` arms rather than new work:
-  the arms are keyed by pair relation, not by field kind, so a routine field's `@condition` pair row
-  reaches the existing arm. Worth a fixture once both have landed.
+  **Its slice 13 left for R682**, so the sequencing note this plan carried has moved with it: see
+  the R682 bullet below. Track A already filled the two literal `null`s in
+  `LauncherCommands.routineRow`, which is the half of that collision that has resolved on its own.
 
-  The write seat is adjacent but not shared. R704 deliberately keeps `orderOrConditionDeferral`
-  alive, seat-gated to the write classifiers, and leaves the write-side read surface with R454;
-  stage 4's carrier move relocates those emitters without touching the deferral. Read R704's Track A
-  step 2 before stage 4 anyway, since both edit the neighbourhood of
-  `classifyMutationRoutineChain`.
+  The write seat stayed where it was. R704 kept `orderOrConditionDeferral` alive, seat-gated to the
+  write classifiers, and left the write-side read surface with R454, so stage 4's carrier move
+  relocates those emitters without touching the deferral.
+* `roadmap/jooq-node-metadata-as-stated-facts.md` (R710) is now the only item this one is blocked
+  by, and it owns what was stage 1's remainder: the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
+  as `sql_node_metadata` plus an ordered `sql_node_key_column` child. Two things to carry into stage
+  2 rather than discover in it. It records the metadata **as stated**, with a form vocabulary and a
+  row whenever either constant is declared, so the key-column view's middle tier reads well-formed
+  rows through R710's own derivation rather than the base relation. And R710 chose the relation name
+  this plan had sketched for its own child, which is a naming collision resolved in R710's favour
+  before either was written; nothing here should reintroduce it.
+* `roadmap/planners-read-facts-emitters-read-commands.md` (R682) inherited R704's slice 13 outright:
+  re-sourcing `LauncherCommands.routineRow` off facts, as the read-side worked example of driving
+  the plan tier onto the store. That is the method stage 5 joins the projection into, so the
+  sequencing note this plan carried against R704 now points here. Landing after R682's routine
+  family is one edit against a fact-sourced row; landing against it is two sessions editing one
+  method from opposite directions. Stage 4 is the write-side counterpart of the same programme
+  (an emitter that reads a command rather than a leaf), so if R682 is picked up first this item's
+  stage 4 should be read beside it rather than duplicated.
 * `roadmap/routine-coercing-arg-extractions.md` (R625) makes the routine emitter honour
   non-`Direct` extraction arms (`EnumValueOf`, `JooqConvert`). An earlier draft of this item made
   the relationship directional by riding the extraction slot; under the store-derived design it is
@@ -901,7 +897,9 @@ Draft of the `routine.adoc` subsection:
   the model this item now follows: a verdict computed by a walk-side switch, restated as an
   `intent_` view over captured base relations, landed in shadow with residues before any consumer
   flips. Read it before picking this one up. If both are in flight, they should agree on the
-  shadow-versus-flip discipline rather than inventing two.
+  shadow-versus-flip discipline rather than inventing two. R666 is still `Spec`, though, so the
+  *shipped* instance of the same move is now R704's Track B, in this item's own domain: read that
+  for how the pattern actually lands and R666 for the discipline it argues.
 * `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` (R333) owns the leaf zoo's dissolution.
   This item must not anticipate it or depend on it: it neither extends the sealed model nor
   retires any of it, which is what lets the two proceed without a joint decision. Stage 4's carrier
@@ -930,20 +928,18 @@ Draft of the `routine.adoc` subsection:
 
 ## Stages
 
-One item, five stages in dependency order. The numbering is a real seam rather than bookkeeping:
-each stage's result is observable on its own (rows in the store, a view a test can query, a
-rejection the build emits, a refactor that holds output identical, generated source), so there is
-something to verify between them. The plan tracks what is next by collapsing a shipped stage into a
-one-line note.
+One item, four stages in dependency order, numbered 2 to 5 because stage 1 left rather than because
+the list was rewritten around it; every cross-reference in this plan keeps its number. The numbering
+is a real seam rather than bookkeeping: each stage's result is observable on its own (a view a test
+can query, a rejection the build emits, a refactor that holds output identical, generated source),
+so there is something to verify between them. The plan tracks what is next by collapsing a shipped
+stage into a one-line note.
 
-1. **Capture.** The node-metadata population. Registered under `FactCaptureAgreementTest`,
-   transcription twins, comment coverage. Exit: the rows exist and agree with what the catalog walk
-   read. No reader yet. The stage's other half, the routine parameters and the function-ness
-   discriminator, is R704 slice 7's, and nothing here blocks on it: the key-column resolution's
-   middle tier reads the node metadata, and none of the three resolution views joins a routine fact
-   at all. The dependency bites only where a detection wants the bound parameter's Java type beside
-   the projected column, which is a join onto R704's relation under whatever key it lands with (see
-   "Relationship to other items").
+1. **Capture.** *Not this item's, on either half.* The routine call surface landed with R704
+   slice 7; the node metadata is R710's. Stage 2 is the first stage, and it starts when R710's
+   relations exist, since the key-column view's middle tier reads them. Nothing else here waits on
+   R710: the binding-leaf view and the projection reduction join no catalog fact at all, so they can
+   be written and pinned against the two tiers that are already captured while the third arrives.
 2. **Resolution views.** `intent_resolved_node_key_column` (three tiers), the binding-leaf keying
    over `intent_input_occurrence_path` (four arms), and the projection reduction. Exit: each view
    pinned against hand-written expectations, every tier and all eight `site` values reached by a
@@ -970,7 +966,7 @@ which is a worse state than either end. The staging exists so the work is verifi
 so the stages ship to consumers separately.
 
 Stage 4 is the one stage that would survive being split out, since it is a refactor with no
-author-facing edge and no dependency on stages 1 to 3. It is kept here because it is the reason
+author-facing edge and no dependency on stages 2 and 3. It is kept here because it is the reason
 stage 5 has a carrier at all: split out, it becomes a refactor with no stated client, and the next
 session to route a routine-call fact would face the same wrong-carrier fork this item already hit
 once. If it has to be lifted later for scheduling, lift it as its own item and make stage 5 depend
