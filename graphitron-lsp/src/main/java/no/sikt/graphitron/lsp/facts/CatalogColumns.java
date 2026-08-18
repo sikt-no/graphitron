@@ -111,6 +111,25 @@ public final class CatalogColumns {
 
         /** Whether {@code spelling} names this column under either of its two names. */
         public boolean isNamed(String spelling) {
+            return new Names(columnName, jooqName).isNamed(spelling);
+        }
+    }
+
+    /**
+     * A column's two names and nothing else, for a consumer that needs only to tell whether a
+     * spelling reaches the column. Separate from {@link Column} so the two-spelling rule has one
+     * statement while a projection selecting a whole column's facts stays the caller's choice rather
+     * than the price of applying it: a surface checking a name against a table reads two columns per
+     * row where a surface rendering one reads nine.
+     */
+    public record Names(String columnName, String jooqName) {
+
+        /**
+         * Whether {@code spelling} names this column. Case-insensitive on both names, and the rule
+         * {@link Column#isNamed} is: a directive may spell either the SQL name or the one generated
+         * code gives the field, and the generator's own resolution ignores case on both.
+         */
+        public boolean isNamed(String spelling) {
             return jooqName.equalsIgnoreCase(spelling) || columnName.equalsIgnoreCase(spelling);
         }
     }

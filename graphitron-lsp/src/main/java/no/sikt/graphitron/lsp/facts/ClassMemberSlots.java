@@ -78,7 +78,12 @@ public final class ClassMemberSlots {
         /** A bean accessor on anything else; its declaration is the method the slot was read from. */
         BEAN_ACCESSOR;
 
-        static Origin of(String stored) {
+        /**
+         * The stored word as an arm, for a reader that selected the column itself. Public because a
+         * consumer composing its own statement over this relation still owes the decode to the
+         * vocabulary's owner rather than to a switch of its own.
+         */
+        public static Origin of(String stored) {
             return switch (stored) {
                 case "RECORD_COMPONENT" -> RECORD_COMPONENT;
                 case "BEAN_ACCESSOR" -> BEAN_ACCESSOR;

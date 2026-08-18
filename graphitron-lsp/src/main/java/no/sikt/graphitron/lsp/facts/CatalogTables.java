@@ -48,13 +48,23 @@ public final class CatalogTables {
      * necessarily what they typed.
      */
     public static Match named(StoreHandle store, String spelling) {
-        var tables = read(store, SQL_TABLE.TABLE_NAME.equalIgnoreCase(spelling));
+        var tables = read(store, spelledBy(spelling));
         if (!tables.isEmpty()) {
             return new Match.Tables(tables);
         }
         return store.dsl().fetchExists(SQL_TABLE, store.reads(SQL_TABLE.SOURCE_NAME))
             ? new Match.Unknown()
             : new Match.NoCensus();
+    }
+
+    /**
+     * The match rule {@link #named} applies, as a condition over {@code sql_table}, for a caller
+     * composing a statement of its own. Public because a projection asking about many spellings at
+     * once must ask the question this class defines rather than a second spelling of it; the rule is
+     * one line today and being one line is not a reason to have two copies of it.
+     */
+    public static Condition spelledBy(String spelling) {
+        return SQL_TABLE.TABLE_NAME.equalIgnoreCase(spelling);
     }
 
     /**

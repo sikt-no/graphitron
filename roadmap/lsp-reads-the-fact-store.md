@@ -2917,7 +2917,15 @@ the code-action branch having stopped asking the snapshot about freshness and st
 about this document's text. `TypeBackingClass.contested` is gone as well, along with
 `ClaimFacts.ofType`'s classifier parameter: the type hover was the only caller of either, and its
 block reads the conflict relation as one arm of a single statement now, with `TypeBackingClass.resolve`
-deciding whether that arm's arity is an answer.
+deciding whether that arm's arity is an answer. Diagnostics' own per-value readers went the same way:
+`Diagnostics.validateCatalogTable`, `validateCatalogFk`, `validateClassName`, `validateScalarTypeClasspath`,
+`validateNodeType`, `validateMethod`, `validateFieldMember`, `validateColumnOnResolvedTable`,
+`validateColumnOnTables`, `validateMemberSlot`, `validateArgMapping` and `resolveParameterNames` are all
+gone, replaced by a walk that collects and a judgement that reads one answer. `Diagnostics` no longer
+reads `CatalogTables`, `CatalogKeys`, `CatalogColumns`, `ClasspathClasses`, `ClasspathMethods`,
+`FieldColumnTable` or `TypeMemberScope` directly at all; the relations those readers own are arms of
+`DiagnosticFacts`, and the two rules that had to survive the move are `TypeMemberScope.resolve` and the
+`spelledBy` conditions on `CatalogTables` and `CatalogKeys`.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -3257,3 +3265,72 @@ over no driving table, the two claim arms beside the three backing arms.
 that a producer's return backs, a type two producers back differently, and a type the store knows
 nothing about. The third is the one worth having, being the five-statement case, and the class now
 states one statement per declaration hover at either grain rather than at one of them.
+
+## Settled while building: diagnostics is one statement per document, and the new view was not this consumer's
+
+Diagnostics was sequenced last because it is the largest surface and would otherwise have been written
+in the shape the review condemned. It was also the honest test of whether "one statement per capability"
+survives contact with a surface whose unit of work is a whole file rather than a coordinate, and it
+does, but not by analogy: the grain had to be restated before the shape transferred.
+
+**A document's grain is the document, so the claim is that the count does not track the file.** A hover
+asks about one coordinate and answers in one statement. Diagnostics asks about every value an author
+wrote, so the same discipline reads as one statement for the whole document, and what it rules out is
+not a second query but a *per-site* one. The old cost, measured rather than argued: one `@table` name
+cost one statement, one `@field(name:)` cost three, and a ten-field type cost thirty-one. A column name
+was the expensive one because resolving it walked the site's own scope, then the parent's binding, then
+that table's columns, each round trip's subject decided by the one before it; on a class-backed type it
+was six. Those numbers are published on every capture, per open file.
+
+**The three stages are what make it one statement, and the walk reading nothing is the load-bearing
+one.** The pass is now collect, resolve, judge. The walk settles what the tree alone answers and records
+a `Finding` for everything else, putting the value it needs resolved into a `Questions`; one
+`DiagnosticFacts.of` answers the document; then each finding is judged in the order the walk found it,
+so document order survives the split and an editor sees the sequence it always saw. The stage boundary
+is the whole correction: a check that emitted straight into the output *had* to resolve its value on the
+spot, and that, rather than any individual reader, is what made the count track the file.
+
+**The questions turned out to be independent, which is why one statement was reachable at all.** A
+table name, a foreign key, a class, a method, a `@node` reference and a member name are resolved by
+relations sharing no key, so no answer decides what to ask next and the arms can be multisets over no
+driving table, exactly as the hover blocks are. The one chain that looked like an exception was the
+member arm, where a name resolves against whatever the site's scope turns out to be. That is a join
+from the coordinate through the scope to the columns, and a join inside one arm is not a second
+statement.
+
+**`intent_field_member_name` is not this surface's view, and the reason is worth recording.** The plan
+named it as the one new view the recomposition earns. It is not what diagnostics needed, twice over.
+`FieldMemberName`, whose arm order the review objected to, answers which member a field's *own* name
+reaches, which is singular and whose only consumer is the inlay overlay; the view belongs with that
+work. And `intent_field_column_scope`, which already derives a site's table totally and carries a
+`basis` column, is not a drop-in here either: its rules demand an unambiguous binding and a scalar leaf,
+where this surface deliberately accepts every candidate of an ambiguous binding and stays quiet rather
+than reporting a resolution question as a typo. The two scope questions are near neighbours and not the
+same question, and both sides of the difference are deliberate, so folding them would have cost one of
+them its correctness. What diagnostics needed was a projection, and it got one with no DDL change.
+
+**Two rules moved out of their readers so the projection could apply them instead of restating them.**
+`TypeMemberScope.resolve` now takes the populations a caller holds, the binding first and the backing
+class only where no binding answers, with the backing arriving as a supplier so the single-type reader
+stays lazy in it, that laziness being the precedence expressed as work not done. `CatalogTables` and
+`CatalogKeys` expose the match rule itself as a condition, which is what lets the arms ask "which of
+these spellings does the census resolve" as one probe per spelling projecting its own literal. The
+alternative was to fetch what matched and re-apply the rule in Java, and for keys, two namespaces and a
+qualifier that scopes rather than widens, a second copy is exactly the rule an editor must not get
+subtly wrong against the generator.
+
+**Three-valued census answers replaced a guard-clause ordering.** Every arm now reads one `Resolution`
+per census, so a name a populated census lacks is wrong and an empty census is a consumer mid-build. The
+`@node` arm is the interesting one: a graph declaring no `@node` type is deliberately *not* a deferral,
+capture writing every one of them, so the census that arm defers on is the store's own presence. That is
+a column of the answer rather than a flag beside it, which is honest, it being literally true when the
+statement runs, and it means an absent store is answered rather than branched on. No arm carries a case
+for the store's absence any more, and the `argMapping` suppression needs none either: no store yields no
+overload for any name, which is already one of its three reasons to stay quiet.
+
+`DiagnosticsStatementCountTest` holds eight cases, and the flat-growth one is the point rather than the
+bare "assert 1": ten sites and forty sites cost the same, which is the property a future reader breaks
+by resolving a value where they find it. Two cases pin the other end, that a document with nothing to
+resolve costs no statement at all and that a session before its first build costs none and says nothing
+about any value. The ninety existing behavioural cases passed unchanged on the first run, which is the
+evidence that the recomposition is a change of shape and not of verdicts.

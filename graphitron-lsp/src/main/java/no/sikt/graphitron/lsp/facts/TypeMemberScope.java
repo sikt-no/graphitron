@@ -4,6 +4,8 @@ import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * What a member name written inside an SDL type resolves against: the columns of the tables the
@@ -77,15 +79,38 @@ public final class TypeMemberScope {
      * having nothing to say about a type that offers nothing it can see.
      */
     public static Optional<Scope> of(StoreHandle store, String typeName) {
-        var bound = BoundTables.of(store, typeName);
+        return resolve(
+            BoundTables.of(store, typeName),
+            () -> TypeBackingClass.of(store, typeName),
+            className -> CatalogTables.ofRecordClass(store, className).stream()
+                .map(CatalogTables.Table::key).toList());
+    }
+
+    /**
+     * Both rules above, over populations a caller already holds: the binding first, then the class,
+     * and a class that is a table's record read back as that table. Here rather than inlined in the
+     * reader above because a caller assembling one statement for a whole document fetches the same
+     * populations as arms of it, and the ordering between them is the question's rather than any one
+     * reading's.
+     *
+     * <p>The backing arrives as a supplier and the redirect as a function because the reader above is
+     * lazy in both and must stay so: a type its binding answers costs no backing read, which is the
+     * whole of the precedence expressed as work not done. A caller holding every population already
+     * passes lookups into what it holds, and pays nothing for the indirection.
+     */
+    public static Optional<Scope> resolve(
+        List<CatalogTable> bound,
+        Supplier<Optional<String>> backingClass,
+        Function<String, List<CatalogTable>> tablesBackedByRecordClass
+    ) {
         if (!bound.isEmpty()) {
             return Optional.of(new Scope.Tables(bound));
         }
-        return TypeBackingClass.of(store, typeName).map(className -> {
-            var tables = CatalogTables.ofRecordClass(store, className);
+        return backingClass.get().map(className -> {
+            var tables = tablesBackedByRecordClass.apply(className);
             return tables.isEmpty()
                 ? new Scope.Members(className)
-                : new Scope.Tables(tables.stream().map(CatalogTables.Table::key).toList());
+                : new Scope.Tables(tables);
         });
     }
 }

@@ -58,15 +58,28 @@ public final class CatalogKeys {
      * means is a resolution question, and the census answers with every key that spells it.
      */
     public static List<Key> named(StoreHandle store, String spelling) {
+        return read(store, spelledBy(spelling));
+    }
+
+    /**
+     * The match rule {@link #named} applies, as a condition over the two relations {@link #read}
+     * joins, for a caller composing a statement of its own. Public for the reason the same rule is
+     * public on {@link CatalogTables}, and here the reason has more force: two namespaces, two
+     * case-foldings and a qualifier that scopes rather than widens is a rule a second copy would get
+     * subtly wrong, and it is exactly the rule an editor must not disagree with the generator about.
+     * A caller composing this into its own {@code FROM} owes the {@code sql_constraint} join, the
+     * unqualified arm reading that relation's spelling.
+     */
+    public static Condition spelledBy(String spelling) {
         int dot = spelling.indexOf('.');
         if (dot > 0 && dot < spelling.length() - 1) {
-            return read(store, SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA
+            return SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA
                 .equalIgnoreCase(spelling.substring(0, dot))
                 .and(SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME
-                    .equalIgnoreCase(spelling.substring(dot + 1))));
+                    .equalIgnoreCase(spelling.substring(dot + 1)));
         }
-        return read(store, SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME.equalIgnoreCase(spelling)
-            .or(SQL_CONSTRAINT.JOOQ_NAME.equalIgnoreCase(spelling)));
+        return SQL_REFERENTIAL_CONSTRAINT.CONSTRAINT_NAME.equalIgnoreCase(spelling)
+            .or(SQL_CONSTRAINT.JOOQ_NAME.equalIgnoreCase(spelling));
     }
 
     /**
