@@ -65,6 +65,23 @@ public final class FilmReviewService {
     }
 
     /**
+     * Fixture: takes a {@link FilmReviewGrouped} whose {@code rating} / {@code comment} components
+     * are declared under a nested grouping input on the SDL side, while {@code headline} names a
+     * component and stays a nested bean. Renders the bean back as a string so the round-trip can
+     * observe each half independently: a present group populating its leaves, an absent group
+     * leaving them null, and the matching-member group still arriving as a nested object.
+     */
+    public static String submitGroupedReview(FilmReviewGrouped in) {
+        if (in == null) {
+            return "none";
+        }
+        return "filmId=" + in.filmId()
+            + ",rating=" + in.rating()
+            + ",comment=" + in.comment()
+            + ",headline=" + (in.headline() == null ? null : in.headline().name());
+    }
+
+    /**
      * Fixture: takes a {@link FilmRecordAssignment} whose member is a jOOQ
      * {@code FilmRecord} decoded from an {@code ID! @nodeId(typeName: "Film")} input-bean field.
      * The generated fetcher decodes the wire id into the record before calling this method; the

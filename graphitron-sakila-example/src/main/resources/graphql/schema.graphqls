@@ -2394,6 +2394,22 @@ input FilmReviewTagInput {
     weight: Int
 }
 
+# Grouping-input fixture: rating and comment are clustered under a nested input object for the
+# client's benefit, while the backing FilmReviewGrouped record carries them flat. `assessment` names
+# no component, so it is a grouping input and its fields bind as if declared here; `headline` does
+# name one, so it keeps binding as a nested bean. The generated createFilmReviewGrouped helper opens
+# one Map local for the group and reads both hoisted leaves from it.
+input FilmReviewGroupedInput {
+    filmId: Int!
+    assessment: FilmReviewAssessmentInput
+    headline: FilmReviewTagInput
+}
+
+input FilmReviewAssessmentInput {
+    rating: Int
+    comment: String
+}
+
 # R200: input-bean fixture whose record components diverge from the SDL field names. Java-side this
 # maps to FilmReviewSummary(Integer film, Integer stars); @field(name:) bridges filmId -> film and
 # rating -> stars. The generated createFilmReviewSummary helper reads env.getArgument by the SDL
@@ -3662,6 +3678,19 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitSummary"
+        })
+
+    # Grouping-input compilation-/execution-tier fixture: the SDL clusters rating and comment under
+    # `assessment`, while FilmReviewGrouped carries them as flat components. The generated
+    # createFilmReviewGrouped helper must declare one Map local for the group and read both leaves
+    # from it, then pass all four values positionally to the canonical constructor — a well-formed
+    # constructor call is the compile-tier proof. The round-trip in
+    # submitGroupedReview_flattensTheGroupOntoTheBean is the execution-tier proof, including the
+    # absent-group and matching-member arms.
+    submitGroupedReview(in: FilmReviewGroupedInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitGroupedReview"
         })
 
     # R195 compilation-tier fixture: @service input bean whose member is a jOOQ FilmRecord backed

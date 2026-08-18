@@ -7248,6 +7248,48 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void submitGroupedReview_flattensTheGroupOntoTheBean() {
+        // Execution-tier proof for grouping inputs, all three arms in one shape. `assessment` names
+        // no component of FilmReviewGrouped, so the client's nested object is descended and its
+        // rating/comment land on the flat components; `headline` does name one, so it still arrives
+        // as a nested bean. If the descent failed, rating and comment would come back null while the
+        // build stayed green, which is exactly the defect this shape exists to catch.
+        Map<String, Object> present = execute("""
+            mutation {
+                submitGroupedReview(in: {
+                    filmId: 42,
+                    assessment: { rating: 5, comment: "ok" },
+                    headline: { name: "great", weight: 3 }
+                })
+            }
+            """);
+        assertThat(present).containsEntry("submitGroupedReview",
+            "filmId=42,rating=5,comment=ok,headline=great");
+
+        // An absent group leaves every field hoisted out of it null — the same outcome omitting
+        // those fields at the top level of a flat input already produces. The descent must bind an
+        // empty map rather than dereference a missing one.
+        Map<String, Object> absent = execute("""
+            mutation {
+                submitGroupedReview(in: { filmId: 42 })
+            }
+            """);
+        assertThat(absent).containsEntry("submitGroupedReview",
+            "filmId=42,rating=null,comment=null,headline=null");
+
+        // An explicitly-null group is the same outcome as an absent one: a bean member has only a
+        // value, so there is no omitted-versus-null tri-state to preserve on this axis.
+        Map<String, Object> explicitNull = execute("""
+            mutation {
+                submitGroupedReview(in: { filmId: 42, assessment: null })
+            }
+            """);
+        assertThat(explicitNull).containsEntry("submitGroupedReview",
+            "filmId=42,rating=null,comment=null,headline=null");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void submitFilmReviewSummary_routesThroughFieldRenamedRecordBean() {
         // Execution-tier proof: the SDL input fields filmId/rating diverge from the record
         // components film/stars, bridged by @field(name:). The fetcher must read env.getArgument by

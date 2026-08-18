@@ -83,6 +83,36 @@ type Mutation {
 
 xref:../reference/directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the path form. What stays outside `@service`'s surface is renaming the *fields* of the input type as seen by its backing class; that is the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields).
 
+Note the axis `argMapping:` works on: it rebinds *method parameters*, scattering one input's fields across several of them. Grouping input fields under a nested type, below, works on the input's *members* instead: one bean parameter, whose fields are reached through the nesting. The two do not overlap.
+
+=== Grouping input fields under a nested input type
+
+An input type's fields can be clustered under nested input objects for the client's benefit while the backing Java class stays flat. A nested input field with no matching member on the backing class is treated as a *grouping*: its own fields bind against the backing class as if they had been declared at the top level of the enclosing input.
+
+[source,graphql]
+----
+input FilmCreateInput {
+    title:    String!
+    duration: FilmDurationInput
+}
+
+input FilmDurationInput {
+    length:     Int
+    rentalDays: Int
+}
+----
+
+[source,java]
+----
+public record FilmCreateInput(String title, Integer length, Integer rentalDays) {}
+----
+
+The client sends `duration: { length: 120 }`; the method receives `length = 120`. The grouping is wire-format ergonomics only and has no effect on the Java side.
+
+A nested input field whose name *does* match a member of the backing class keeps binding to that member as a nested object, so adding a matching member is how you opt a group back out of flattening. A group that is absent or null leaves every field under it null, the same as omitting those fields would.
+
+Rejected shapes, each named at build time: a grouping input that reaches itself; a list-shaped grouping input (there is nothing for a list of groups to flatten onto); two fields that bind to the same member, whether or not a group is involved; and a nested input field carrying `@field(name:)` or `@nodeId` whose named member does not exist, which is reported as the missing member rather than silently flattened.
+
 === `contextArguments`: pulling from request state
 
 `contextArguments:` is for values that aren't GraphQL arguments but live on the per-request `GraphQLContext`: tenant IDs, authenticated principals, feature-flag snapshots. Declaring `contextArguments: ["tenantId"]` in the directive means the framework looks up `env.getGraphQlContext().get("tenantId")` and threads the result as an additional Java parameter named `tenantId`:

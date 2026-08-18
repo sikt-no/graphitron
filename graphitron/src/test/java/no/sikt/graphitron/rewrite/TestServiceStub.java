@@ -1007,4 +1007,34 @@ class TestServiceStub {
     public static java.util.Map<FilmRecord, String> sharedInfoByFilm(java.util.Set<FilmRecord> films) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== Grouping inputs flattening onto a bean's members =====
+
+    /**
+     * Fixture: takes a {@link TestInputBeanGrouped}, whose {@code length} / {@code rentalDays}
+     * components are declared under a grouping input on the SDL side. Backs the record-arm flatten
+     * cases (two-element access paths, mixed with a one-element top-level {@code title}, and the
+     * depth-2 variant that nests one grouping input inside another).
+     */
+    public static String runWithGroupedBean(TestInputBeanGrouped input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: takes a {@link TestInputBeanGroupedWithNested}, whose SDL input carries one nested
+     * field matching no component (a grouping input, flattened) and one matching the
+     * {@code period} component (a nested bean, unflattened). The pin that a matching member wins.
+     */
+    public static String runWithGroupedBeanAndNested(TestInputBeanGroupedWithNested input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: takes a {@link TestInputJavaBeanGrouped}, the JavaBean twin of
+     * {@link #runWithGroupedBean}. Also the bean for the JavaBean-arm rejection cases, each of which
+     * built silently before nested input fields stopped being skipped.
+     */
+    public static String runWithGroupedJavaBean(TestInputJavaBeanGrouped input) {
+        throw new UnsupportedOperationException();
+    }
 }
