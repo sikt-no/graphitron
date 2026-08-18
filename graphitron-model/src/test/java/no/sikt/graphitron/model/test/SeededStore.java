@@ -7,9 +7,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -27,6 +30,8 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_FIELD;
+import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_TYPE;
 
 /**
  * Rows, stated directly: one named helper per row family, over a store {@link FactStores} opened.
@@ -217,6 +222,25 @@ public final class SeededStore {
             .execute();
     }
 
+    /**
+     * What a macro left behind when it rewrote a field's type expression: the field's own row now
+     * carries the effective type and this one carries the type the author wrote. A relation reading
+     * the authored expression joins here, so a case about that reading states both spellings and the
+     * two deliberately disagree.
+     *
+     * @param macro the expansion that rewrote it; {@code CONNECTION} is the only one the DDL accepts
+     */
+    public static void seedFieldSynthesis(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, String macro, String authoredTypeSdl) {
+        dsl.insertInto(GRAPHITRON_FIELD_SYNTHESIS)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.MACRO, macro)
+            .set(GRAPHITRON_FIELD_SYNTHESIS.AUTHORED_TYPE_SDL, authoredTypeSdl)
+            .execute();
+    }
+
     // ===== The directive applications =====
 
     /**
@@ -235,6 +259,38 @@ public final class SeededStore {
             .set(GRAPHITRON_TABLE.SOURCE_LINE, 1)
             .set(GRAPHITRON_TABLE.SOURCE_COLUMN, 20)
             .set(GRAPHITRON_TABLE.TABLE_REF, tableRef)
+            .execute();
+    }
+
+    /** An {@code @error} application on a type: presence, which is the whole of what it states. */
+    public static void seedError(DSLContext dsl, String graphName, String typeName) {
+        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
+        dsl.insertInto(GRAPHITRON_ERROR)
+            .set(GRAPHITRON_ERROR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ERROR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ERROR.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ERROR.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_ERROR.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_ERROR.SOURCE_LINE, 1)
+            .set(GRAPHITRON_ERROR.SOURCE_COLUMN, 20)
+            .execute();
+    }
+
+    /**
+     * A {@code @pivot} application on a field: the two column names the projection turns on, as the
+     * author wrote them and resolved against nothing.
+     */
+    public static void seedPivot(DSLContext dsl, String graphName, String typeName, String fieldName,
+                                 String onColumn, String valueColumn) {
+        dsl.insertInto(GRAPHITRON_PIVOT)
+            .set(GRAPHITRON_PIVOT.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_PIVOT.TYPE_NAME, typeName)
+            .set(GRAPHITRON_PIVOT.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_PIVOT.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_PIVOT.SOURCE_LINE, 2)
+            .set(GRAPHITRON_PIVOT.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_PIVOT.ON_COLUMN, onColumn)
+            .set(GRAPHITRON_PIVOT.VALUE_COLUMN, valueColumn)
             .execute();
     }
 
@@ -516,5 +572,32 @@ public final class SeededStore {
                 .set(JVM_METHOD_RETURN_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_METHOD_RETURN_TYPE_REF.VARIANCE, "NONE")
                 .execute());
+    }
+
+    // ===== The walk's own registries =====
+
+    /**
+     * One coordinate the classification walk registered. A relation that gates on the walk having
+     * reached a field joins this, so a case about such a gate states the membership beside the facts
+     * rather than being unable to reach the gated arm at all.
+     */
+    public static void seedClaimDomainField(DSLContext dsl, String graphName, String typeName,
+                                            String fieldName) {
+        dsl.insertInto(WALK_CLAIM_DOMAIN_FIELD)
+            .set(WALK_CLAIM_DOMAIN_FIELD.GRAPH_NAME, graphName)
+            .set(WALK_CLAIM_DOMAIN_FIELD.TYPE_NAME, typeName)
+            .set(WALK_CLAIM_DOMAIN_FIELD.FIELD_NAME, fieldName)
+            .execute();
+    }
+
+    /**
+     * The same registration at the type grain. Its own membership set rather than one derived from
+     * the field rows, exactly as the two tables are, so a case states whichever grain it is about.
+     */
+    public static void seedClaimDomainType(DSLContext dsl, String graphName, String typeName) {
+        dsl.insertInto(WALK_CLAIM_DOMAIN_TYPE)
+            .set(WALK_CLAIM_DOMAIN_TYPE.GRAPH_NAME, graphName)
+            .set(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME, typeName)
+            .execute();
     }
 }

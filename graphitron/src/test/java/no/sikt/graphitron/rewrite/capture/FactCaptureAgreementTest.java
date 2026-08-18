@@ -156,12 +156,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       SDL against that same catalog and the test classes' own census, half its cases pinning the
  *       payload shapes that name nothing because a carrier's boundary is most of what the relation
  *       claims;
- *       {@code no.sikt.graphitron.rewrite.derive.FieldColumnTableTest} binds
+ *       {@code no.sikt.graphitron.model.intent.FieldColumnTableTest} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
  *       is what the relation claims, together with {@code intent_field_column_scope}, the
  *       navigation the override reads and the column-match classifier reads with it, whose own
- *       cases are the third rule the override drops and the precedence between the three;
+ *       cases are the third rule the override drops and the precedence between the three; it reads
+ *       both seeded in the module whose DDL declares them, several of the states a boundary case
+ *       needs (a macro-rewritten type expression, a contested coordinate, a spelling two schemas
+ *       both answer) being ones a fixture states in a line and a capture arranges in a schema;
  *       {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotTest} binds
  *       {@code intent_class_member_slot}, the member names a backing class offers, over a real
  *       classfile scan of its own fixtures rather than seeded census rows, because a rule that
