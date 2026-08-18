@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -112,6 +115,35 @@ class MacroCaptureTest {
                 .from(GRAPHITRON_FEDERATION_KEY)
                 .where(GRAPHITRON_FEDERATION_KEY.TYPE_NAME.eq("Film"))
                 .fetchSingle().value1()).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("a node inferred from its table gets a key; with no catalog to infer from, it does not")
+    void nodeInferenceDecidesWhetherAnInferredNodeGetsAKey(@TempDir Path tmp) {
+        String inferred = DIRECTIVES + """
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+            type Query { pairing: Pairing }
+
+            interface Node { id: ID! }
+
+            type Pairing implements Node @table(name: "film_actor") {
+              id: ID!
+            }
+            """;
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), inferred,
+                new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+            assertThat(store.dsl().fetchCount(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS,
+                GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.TYPE_NAME.eq("Pairing")
+                    .and(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.MACRO.eq("FEDERATION_KEY"))))
+                .as("film_actor publishes node metadata, so Pairing is a node without saying @node")
+                .isOne();
+        }
+        try (var store = CapturedStore.of(tmp.resolve("bare"), inferred)) {
+            assertThat(store.dsl().fetchCount(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS))
+                .as("nothing to probe, so nodehood is @node presence and there is none")
+                .isZero();
         }
     }
 
