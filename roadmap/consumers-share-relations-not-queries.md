@@ -4,7 +4,7 @@ title: "fact-model doctrine: consumers share relations, not queries"
 status: Ready
 bucket: architecture
 theme: classification-model
-depends-on: [catalog-facts-readers-move-to-the-store]
+depends-on: []
 created: 2026-08-16
 last-updated: 2026-08-17
 ---
@@ -58,18 +58,19 @@ Two boundaries keep the rule from over-reaching, and both are boundaries rather 
 
 ## The live sites, and why they are not this item's work
 
-Every cross-consumer import in the tree runs from `graphitron-mcp` into `graphitron-lsp`. Two in
-main sources: `SchemaView` imports `no.sikt.graphitron.lsp.facts.ClassMemberSlots`, and
-`GraphitronMcpServer` imports `no.sikt.graphitron.lsp.state.Workspace`. Three more in test sources,
+Every cross-consumer import in the tree ran from `graphitron-mcp` into `graphitron-lsp`. Two in
+main sources: `SchemaView` imported `no.sikt.graphitron.lsp.facts.ClassMemberSlots`, and
+`GraphitronMcpServer` imported `no.sikt.graphitron.lsp.state.Workspace`. Three more in test sources,
 all of them `Workspace` (`StoreBackedBuild`, `GraphitronMcpServerTest`, `ServerInstructionsTest`),
 which is why the guard below scans test sources too: a rule about what a consumer may reach for
 does not stop at the main/test line.
 
-All of them are `catalog-facts-readers-move-to-the-store.md`'s work. "No dependency on
-`graphitron-lsp`" is the first of that item's four stated goals, it lands there in full rather than
-deferring to a successor, and it covers the pom edge as well as the imports. So this item plans no
-source change in either module; it depends on the sibling and lands the rule plus its guard once
-the sibling is done.
+All of them closed with the sibling item that made `graphitron-mcp` read only the store, which took
+"no dependency on `graphitron-lsp`" as the first of its four goals and landed it in full, pom edge
+and imports alike. So this item plans no source change in either module and is no longer blocked on
+anything: what is left for it is the rule stated once for every consumer, and the guard that holds
+it, in a home neither module owns. The sibling's own guard is module-scoped, so it pins the state
+this item generalises rather than the rule.
 
 The reasoning for closing them is the sibling's, in its "The MCP writes its own queries" section,
 and is not restated here beyond the shape: a reader is a query plus a row shape, so what crosses

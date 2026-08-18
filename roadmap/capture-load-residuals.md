@@ -32,7 +32,7 @@ loop's duplicate scan. The four below are unchanged and still consumer-gated.
   intended reading.
 - **`captureFacts` re-walks what `buildOutput` already holds.** `captureFacts` builds a second
   `JooqCatalog` and re-walks the catalog and the classpath (`GraphQLRewriteGenerator`) while
-  `buildOutput` reuses the `catalogFacts` it already has. Shadow-period cost only, cheap to thread
+  `buildOutput` reuses the catalog walk it already has. Shadow-period cost only, cheap to thread
   through.
 - **The nested-class filter is disclosed, not resolved.** `jvm_class` skips any simple name
   containing `$`, stated in its comment. A nested class named in `@record` resolves through the

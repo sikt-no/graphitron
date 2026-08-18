@@ -312,13 +312,12 @@ declared/referenced type sets it re-derives per keystroke, whose one consumer is
 diagnostic fan-out. "Which files touch this type" is a read over `graphql_type_declaration`, and
 the only file that relation cannot speak for is the one stale buffer.
 
-`CatalogFacts` has non-LSP readers that must move with it: `GraphitronMcpServer` (the
-`catalog.tables` and `catalog.describe` tools), `EdgeProducer`, `EdgesTool`, `ReverseEdgeIndex`,
-`CatalogDescriptors` and `CatalogSearchIndex` in `graphitron-mcp`, plus
-`GraphQLRewriteGenerator` in `graphitron`, whose output record carries the projection. Not LSP
-work, not optional; the projection cannot delete while they read it. `TenantScopes`, `McpWire` and
-`NodeRef` cite it only in javadoc, so they repoint rather than migrate; the `{@link}` gate keeps
-them from being forgotten.
+`CatalogFacts` had non-LSP readers that had to move with it, and they have: the sibling item
+`catalog-facts-readers-move-to-the-store.md` migrated every `graphitron-mcp` reader off the
+projection and deleted the type with the last of them, `GraphQLRewriteGenerator`'s output record
+included. Nothing outside the LSP reads it now, so this item inherits no non-LSP work here. The
+term survives in the paragraphs below as the projection this item is written against; a reader
+meeting it should take it as the shape being replaced rather than as a type still standing.
 
 `SourceWalker` moves rather than stays. An earlier pass kept it LSP-side as shipped doctrine, and
 that reading does not survive an audit of what keeping it costs: `SourceWalker.Decl` carries a
@@ -563,13 +562,12 @@ fact model; the reviewer confirms rather than decides.
   reader, the java-source family carries its output on the source cadence, and the doctrine
   paragraphs rewrite with the preserved principle named, facts refresh on the cadence of their
   source.
-* **`CatalogFacts`' non-LSP readers** move alongside, in the sibling item
+* **`CatalogFacts`' non-LSP readers** moved alongside, in the sibling item
   `catalog-facts-readers-move-to-the-store.md`, for two reasons: the MCP
   catalog tools have their own acceptance surface (tool output, paging) that has nothing to do with
   cursors and buffers, and folding them in credits their `rewrite/catalog` lines to the LSP
-  measurement. The constraint binding the two items: `CatalogFacts` deletes in the same commit as
-  its last reader's migration, and both consumers read one shared store-side catalog view, never a
-  narrowing made for one of them.
+  measurement. That item has shipped, taking `CatalogFacts` with it. The doctrine binding the two
+  outlives both: they read one shared store-side *base*, never a narrowing made for one of them.
 
 ## Settled while building: the reading stages
 
