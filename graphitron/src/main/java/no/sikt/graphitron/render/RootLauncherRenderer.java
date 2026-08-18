@@ -53,6 +53,9 @@ public final class RootLauncherRenderer {
     private static final ClassName SORT_FIELD = ClassName.get("org.jooq", "SortField");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final TypeName RESULT_OF_RECORD = ParameterizedTypeName.get(RESULT, RECORD);
+    private static final TypeName TABLE_WILDCARD = ParameterizedTypeName.get(
+        ClassName.get("org.jooq", "Table"),
+        no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
     private static final TypeName SORT_FIELD_LIST = ParameterizedTypeName.get(
         LIST, ParameterizedTypeName.get(SORT_FIELD,
             no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
@@ -124,8 +127,9 @@ public final class RootLauncherRenderer {
                                 }
                                 builder.addCode(directReturn(selectChain(anchor, tableLocal, true, ordered)));
                             }
-                            case ResultShape.Connection connection ->
-                                builder.addCode(connectionBody(anchor, connection, tableLocal, carrierDsl));
+                            case ResultShape.Connection connection -> builder.addCode(
+                                connectionBody(anchor.projection(), connection, tableLocal,
+                                    tableLocal, carrierDsl));
                             case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
                                 "the LoaderDelegated result belongs to the service arms; the"
                                 + " command constructor rejects the pair before rendering");
@@ -135,7 +139,8 @@ public final class RootLauncherRenderer {
                         builder.addCode(fannedBody(anchor, row, fanned, tableLocal));
                 }
             }
-            case LaunchSource.RoutineChain chain -> builder.addCode(routineBody(row, chain, argHelpers));
+            case LaunchSource.RoutineChain chain ->
+                builder.addCode(routineBody(row, chain, carrierDsl, argHelpers));
             // Ahead of the Correlated arm below, which its sibling seal dominates: the topology
             // is shared, only the select list forks.
             case LaunchSource.DiscriminatedCorrelatedChain chain ->
@@ -318,11 +323,21 @@ public final class RootLauncherRenderer {
      * {@code (result, page, table, condition)} the query ran under. A faceted plan additionally
      * binds the base fragment, the per-facet condition map, and the decode specs through the
      * carrier's facet-carrying constructor.
+     *
+     * <p>Two locals, not one, because a source whose FROM is composite has a different answer to
+     * "what does the statement read from" than to "what do the columns hang off". {@code
+     * fromLocal} is the FROM, and it is also what the carrier hands its lazy resolvers, so
+     * {@code totalCount} and the facet aggregates count the same rows the page paged;
+     * {@code aliasLocal} is the projected node, which the select list, the ordering and the
+     * condition all resolve against. An anchor-sourced connection passes the same local twice
+     * (its FROM is one table); a routine chain with hops passes the joined table expression and
+     * its terminus alias.
      */
-    private static CodeBlock connectionBody(LaunchSource.AnchorTable anchor, ResultShape.Connection connection,
-            String tableLocal, CarrierDsl carrierDsl) {
+    private static CodeBlock connectionBody(no.sikt.graphitron.command.UnitRef projection,
+            ResultShape.Connection connection, String fromLocal, String aliasLocal,
+            CarrierDsl carrierDsl) {
         var code = CodeBlock.builder();
-        code.add(OrderingBlock.declareBothViews(connection.ordering(), tableLocal));
+        code.add(OrderingBlock.declareBothViews(connection.ordering(), aliasLocal));
         code.addStatement("Integer first = env.getArgument($S)", "first");
         code.addStatement("Integer last = env.getArgument($S)", "last");
         code.addStatement("String after = env.getArgument($S)", "after");
@@ -331,11 +346,11 @@ public final class RootLauncherRenderer {
         code.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
             helperClass.nestedClass("PageRequest"), helperClass, connection.defaultPageSize(),
-            ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal));
+            ProjectionCall.fromEnvSelection(className(projection), aliasLocal));
         code.add("$T result = dsl\n", RESULT_OF_RECORD)
             .indent()
             .add(".select(page.selectFields())\n")
-            .add(".from($L)\n", tableLocal)
+            .add(".from($L)\n", fromLocal)
             .add(".where(condition)\n")
             .add(".orderBy(page.effectiveOrderBy())\n")
             .add(".seek(page.seekFields())\n")
@@ -345,12 +360,12 @@ public final class RootLauncherRenderer {
         String dslTail = carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "";
         if (connection.facets() == null) {
             code.addStatement("return new $T(result, page, $L, condition$L)",
-                className(connection.carrier()), tableLocal, dslTail);
+                className(connection.carrier()), fromLocal, dslTail);
         } else {
-            code.add(facetBindings(connection, tableLocal));
+            code.add(facetBindings(connection, aliasLocal));
             code.addStatement(
                 "return new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs$L)",
-                className(connection.carrier()), tableLocal, dslTail);
+                className(connection.carrier()), fromLocal, dslTail);
         }
         return code.build();
     }
@@ -485,15 +500,16 @@ public final class RootLauncherRenderer {
 
     /**
      * The routine-chain arm: the FROM source is the bound table-valued function (IN parameters
-     * read off the field's arguments through the shared routine-call emitter), hops join forward
-     * out of the routine result through the shared bridging fragment, and both the projection and
-     * the read surface target the terminus alias. Everything after the joins is the same
-     * {@link #conditionedFetchTail} the anchor and discriminated arms chain: the hop filters fold
-     * into the {@code condition} local rather than into a routine-shaped WHERE of their own, so
-     * one composition serves every source.
+     * read off the field's arguments through the shared routine-call emitter), and the hops join
+     * forward out of the routine result into one joined table local. From there the arm is the
+     * anchor arm with a composite FROM: the same {@code condition} local (the coordinate's WHERE
+     * glue with the hop filters ANDed onto it), the same {@link #selectChain} and
+     * {@link #conditionedFetchTail} for the plain shapes, and the same {@link #connectionBody}
+     * for the paginated one. The source decides what the statement reads from; it decides nothing
+     * about the read surface composed over it.
      */
     private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain,
-            ArgPathHelperRegistry argHelpers) {
+            CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers) {
         var code = CodeBlock.builder();
         var startTable = chain.start().resultTable();
         String startLocal = chain.hops().isEmpty() ? TableLocal.name(startTable) : "source";
@@ -508,32 +524,44 @@ public final class RootLauncherRenderer {
                 hop.targetTable().constantsClass(), hop.targetTable().javaFieldName(), hop.alias());
         }
         String terminal = chain.hops().isEmpty() ? startLocal : chain.hops().getLast().alias();
-        boolean isList = row.result() instanceof ResultShape.RecordList;
-        Ordering ordering = row.result() instanceof ResultShape.RecordList list ? list.ordering() : null;
 
-        var bridging = CodeBlock.builder();
+        // The joins compose a table expression rather than riding the select's join chain, so
+        // one local is the FROM, the seek's source and the connection carrier's count source.
+        // A hop-less chain needs no second local: the routine call is already that table.
+        String fromLocal = startLocal;
         var hopFilters = new java.util.ArrayList<CodeBlock>();
-        for (int i = 0; i < chain.hops().size(); i++) {
-            var hop = chain.hops().get(i);
-            String prev = i == 0 ? startLocal : chain.hops().get(i - 1).alias();
-            bridging.add("$L\n", PathFragments.emitForwardBridging(hop, prev, hop.alias()));
-            if (hop.filter() != null) {
-                hopFilters.add(PathFragments.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
+        if (!chain.hops().isEmpty()) {
+            var joined = CodeBlock.builder().add("$L", startLocal).indent();
+            for (int i = 0; i < chain.hops().size(); i++) {
+                var hop = chain.hops().get(i);
+                String prev = i == 0 ? startLocal : chain.hops().get(i - 1).alias();
+                joined.add("\n$L", PathFragments.emitForwardBridging(hop, prev, hop.alias()));
+                if (hop.filter() != null) {
+                    hopFilters.add(PathFragments.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
+                }
             }
+            fromLocal = "chainSource";
+            code.addStatement("$T $L = $L", TABLE_WILDCARD, fromLocal, joined.unindent().build());
         }
         code.add(conditionStatement(row, terminal, hopFilters));
-        if (ordering != null) {
-            code.add(orderByStatement(ordering, terminal));
+
+        var projection = ProjectionCall.fromEnvSelection(className(chain.projection()), terminal);
+        switch (row.result()) {
+            case ResultShape.SingleRecord ignored ->
+                code.add(directReturn(selectChain(projection, fromLocal, false, false)));
+            case ResultShape.RecordList list -> {
+                boolean ordered = list.ordering() != null;
+                if (ordered) {
+                    code.add(orderByStatement(list.ordering(), terminal));
+                }
+                code.add(directReturn(selectChain(projection, fromLocal, true, ordered)));
+            }
+            case ResultShape.Connection connection -> code.add(
+                connectionBody(chain.projection(), connection, fromLocal, terminal, carrierDsl));
+            case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
+                "the LoaderDelegated result belongs to the service arms; the"
+                + " command constructor rejects the pair before rendering");
         }
-        var chainCode = CodeBlock.builder()
-            .add("dsl\n")
-            .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(className(chain.projection()), terminal))
-            .add(".from($L)\n", startLocal)
-            .add(bridging.build())
-            .add(conditionedFetchTail(isList, ordering != null))
-            .unindent();
-        code.add(directReturn(chainCode.build()));
         return code.build();
     }
 

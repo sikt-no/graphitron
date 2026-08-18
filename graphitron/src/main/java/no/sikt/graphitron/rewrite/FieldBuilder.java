@@ -2791,6 +2791,15 @@ class FieldBuilder {
                 if (verdict != null) {
                     yield new UnclassifiedField(parentTypeName, name, location, verdict);
                 }
+                // The write's follow-up query re-reads by the captured keys, which is a
+                // keyed re-read and not a paginable surface; the write seat's shapes are the
+                // routine-write result-shapes item's, not the read surface's.
+                if (walk.tb().returnType().wrapper() instanceof FieldWrapper.Connection) {
+                    yield new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
+                        "a @routine Mutation field cannot return a Connection: the write's "
+                        + "post-commit re-read is keyed by the captured routine columns, not "
+                        + "paginated; use [T] or T instead"));
+                }
                 if (!walk.steps().isEmpty() && walk.steps().get(0) instanceof JoinStep.Hop hop0
                         && (!(hop0.on() instanceof On.ColumnPairs) || hop0.filter() != null)) {
                     yield new UnclassifiedField(parentTypeName, name, location,
@@ -2988,6 +2997,14 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
                         "@lookupKey on a routine-backed child field classifies but does not emit yet"));
                 }
+                // A child connection rides the batched keyed re-query anchor, which a
+                // correlated routine child does not compose with yet. About this seat's
+                // machinery, not about the routine result: the root read paginates.
+                if (walk.tb().returnType().wrapper() instanceof FieldWrapper.Connection) {
+                    yield new UnclassifiedField(parentTypeName, name, location, Rejection.deferred(
+                        "Connection pagination at a child-positioned routine-backed field is not "
+                        + "yet supported; the root position paginates"));
+                }
                 boolean hasSplitQuery = ctx.facts.delivery().splitQuery(fieldDef);
                 // @splitQuery forces the batched keyed re-query anchor, which needs a key. A
                 // routine-headed chain's batch key is the routine's column-bound inputs (design
@@ -3128,27 +3145,21 @@ class FieldBuilder {
     }
 
     /**
-     * The chain-level composition verdicts, evaluated once over the <em>landed</em>
-     * chain: the terminus rule (the chain's last node must be the field's {@code @table} type)
-     * and the Connection fork. A routine-terminus chain can never support keyset pagination
-     * (the FK-less routine result carries no ordering contract), so it rejects as
-     * {@code DirectiveConflict}; a catalog-terminus chain is a capability gap, so it lands
-     * typed {@code Deferred}. Returns {@code null} when the chain passes. Deciding here keeps
-     * the routine-node resolver position-agnostic; the leaf compact constructors re-assert the
-     * terminus mechanically.
+     * The chain-level composition verdict, evaluated once over the <em>landed</em> chain: the
+     * terminus rule, that the chain's last node is the field's {@code @table} type. Returns
+     * {@code null} when the chain passes. Deciding here keeps the routine-node resolver
+     * position-agnostic; the leaf compact constructors re-assert the terminus mechanically.
+     *
+     * <p>Pagination is not decided here. A Connection return used to reject from this shared
+     * seat on a premise about the routine result ("carries no ordering contract"), which
+     * conflated carrying no <em>default</em> ordering with being unorderable; the root read
+     * paginates like any other read now. What remains is per-seat and stated at each seat: the
+     * child read chain and the two Mutation write seats carry their own Connection deferrals,
+     * each about that seat's own machinery rather than about the routine.
      */
     private static Rejection routineChainVerdict(String fieldName,
             ReturnTypeRef.TableBoundReturnType returnType, TableRef terminusTable,
             boolean terminusIsRoutine) {
-        if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-            return terminusIsRoutine
-                ? Rejection.directiveConflict(List.of(DIR_ROUTINE),
-                    "a routine-terminus chain does not support Connection return types — keyset "
-                    + "pagination needs an ordering contract the routine result does not carry; use [T] or T instead")
-                : Rejection.deferred(
-                    "Connection pagination over a catalog-terminus chain containing a routine node "
-                    + "is not yet supported");
-        }
         if (!terminusTable.denotesSameTableAs(returnType.table())) {
             return Rejection.structural(terminusIsRoutine
                 ? "@routine could not be resolved — the field's @table type ('" + returnType.table().tableName()

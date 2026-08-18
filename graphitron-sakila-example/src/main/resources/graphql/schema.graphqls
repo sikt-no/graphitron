@@ -223,6 +223,30 @@ type Query {
             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
         )
         @defaultOrder(fields: [{name: "organisasjonskode"}])
+    # R704 execution fixtures: keyset pagination over a routine chain, one per terminus kind.
+    # A function in the FROM is a table expression like any other, so the seek predicate is an
+    # ordinary WHERE row-value comparison over it; what differs between the two is only where
+    # the cursor columns come from.
+    #
+    # Routine terminus: the cursor columns are the authored @defaultOrder over the function's
+    # own result columns, and the connection's count source is the function call itself.
+    tilgangerConnection(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+        @asConnection
+        @routine(
+            name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
+            argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
+        )
+        @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+    # Catalog terminus: the cursor columns are the terminus primary key through the ordinary
+    # fallback, and the count source is the joined chain rather than the terminus alone. Counting
+    # the alone would count the whole film table, so totalCount is the assertion that matters.
+    recentFilmsForActorConnection(actorId: Int!, minLength: Int!): [Film!]!
+        @asConnection
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: actorId, pMinLength: minLength"
+        )
+        @reference(path: [{table: "film"}])
     # R435 execution fixture: plain root table read of actors, host for the correlated
     # child-positioned @routine Actor.films (films_for_actor).
     allActors: [Actor!]!

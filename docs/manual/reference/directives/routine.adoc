@@ -55,7 +55,7 @@ The rewrite emits `select(Tilgang.$project(...)).from(Routines.tilgangerForFeide
 The `@defaultOrder` is required here rather than decorative: the routine result is the chain's last node and a function result carries no primary key, so nothing can supply a deterministic order unless the schema names it. See <<read-surface,The read surface>>.
 
 [[read-surface]]
-== The read surface: filtering and ordering
+== The read surface: filtering, ordering and pagination
 
 A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the `@table` type the field projects). The field's remaining arguments are unaffected: an argument bound to a routine IN parameter is spent on the call and is never read as a filter.
 
@@ -68,6 +68,10 @@ A table-valued function's result table has no primary key, so the two terminus k
 
 * *Catalog terminus* (a `@reference` hop follows the routine): the terminus is an ordinary table, the primary-key fallback applies, and a list field needs no ordering directive at all.
 * *Routine terminus* (the routine is the last node): there is no key to fall back on, so a list field must name its order over the function's own result columns with `@defaultOrder(fields: [...])`, or take one from an `@orderBy` argument. Omitting it is a build error naming the function; `@defaultOrder(primaryKey: true)` there is a build error too, and lists the result columns as candidates.
+
+`@asConnection` follows from the same rule, with no routine-specific caveat. Keyset pagination needs an ordering, which is what the two bullets above are about; given one, the seek predicate is an ordinary WHERE row-value comparison and a function in the FROM is a table expression like any other. A chain with `@reference` hops paginates too, and its `totalCount` counts the joined chain rather than the terminus alone.
+
+At a child position, pagination is the one axis that does not compose yet: a child connection rides the batched keyed re-query anchor, which a correlated routine call does not join yet, so `@asConnection` on a routine-backed child is reported as deferred. On a `Mutation` field it is a build error, the write's post-commit re-read being keyed rather than paged.
 
 == Child positions: correlated calls
 
@@ -229,7 +233,7 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is leaving a parameter with nothing bound to it. On the right-hand side, a path whose head is not an argument of the field, or whose later segment is not a field of the input type at that depth, is a build error listing the candidates; a `columnMapping` naming a column the previous table does not carry likewise lists that table's columns. A `columnMapping` right-hand side has no path form, since a column has no nested fields.
 * An `argMapping` path must land on a scalar or enum leaf. Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
-* Connection pagination does not compose with routine-terminus chains (`@asConnection` there is a build error: keyset pagination needs an ordering contract the routine result does not carry; use `[T]` or `T`). Over a catalog-terminus chain that merely contains a routine node it is reported as deferred, as is `@lookupKey` composition. `@orderBy` and `@condition` compose normally on a read (see <<read-surface,The read surface>>); on a `Mutation` field they are reported as deferred, the write's result shape having no filter or order surface to compose onto.
+* `@orderBy`, `@condition` and `@asConnection` compose normally on a routine-backed *read* (see <<read-surface,The read surface>>). `@lookupKey` composition is reported as deferred. On a `Mutation` field, `@orderBy` and `@condition` are reported as deferred (the write's result shape has no filter or order surface to compose onto) and a Connection return is rejected; at a child position `@asConnection` is reported as deferred.
 
 == See also
 

@@ -214,7 +214,8 @@ public final class LauncherCommands {
         return switch (field) {
             case QueryField.QueryTableField qtf -> {
                 if (qtf.routine() instanceof RoutineResolution.Chain chain) {
-                    yield routineRow(qtf, chain, whereOf(qtf, conditions), units);
+                    yield routineRow(qtf, chain, whereOf(qtf, conditions),
+                        facetPlanOf(schema, qtf, conditions, units), units);
                 }
                 var mapping = keyedLookupOf(
                     schema.operationMembersOf(qtf.parentTypeName(), qtf.name()));
@@ -423,7 +424,7 @@ public final class LauncherCommands {
             rows.add(switch (field) {
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.routine() instanceof RoutineResolution.Chain chain) {
-                        yield routineRow(qtf, chain, glueFromFilters(qtf, units), units);
+                        yield routineRow(qtf, chain, glueFromFilters(qtf, units), null, units);
                     }
                     var mapping = keyedLookupOf(OperationMembers.membersOf(qtf));
                     yield mapping != null
@@ -539,13 +540,14 @@ public final class LauncherCommands {
      * A {@code @routine} chain row, the {@link RoutineResolution.Chain} fork of the root table
      * read: the source arm carries the borrowed start expression and the narrowed hop list (the
      * chain constructor's own guarantee), the projection targets the terminus type. The WHERE
-     * slot and the ordering come off the coordinate's own components, the same two views the
-     * anchor-sourced row reads, because the read surface is independent of the source: both
-     * resolve against the chain's terminus alias, which is what the renderer's select list
-     * targets too.
+     * slot and the result shape come off the coordinate's own components, through the same two
+     * views the anchor-sourced row reads, because the read surface is independent of the source:
+     * both resolve against the chain's terminus alias, which is what the renderer's select list
+     * targets too. That includes the connection shape and its facet plan: a chain is a composite
+     * FROM, not a different kind of read.
      */
     private static LauncherCommand routineRow(QueryField.QueryTableField qtf,
-            RoutineResolution.Chain chain, GlueCall where, GeneratedUnits units) {
+            RoutineResolution.Chain chain, GlueCall where, FacetPlan facets, GeneratedUnits units) {
         var hops = chain.chain().hops().stream()
             .map(step -> (no.sikt.graphitron.rewrite.model.JoinStep.Hop) step)
             .toList();
@@ -557,9 +559,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            qtf.returnType().wrapper().isList()
-                ? new ResultShape.RecordList(orderingOf(qtf, units))
-                : new ResultShape.SingleRecord());
+            resultShapeOf(qtf, units, facets));
     }
 
     /**

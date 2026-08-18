@@ -212,6 +212,63 @@ class RoutineFieldExecutionTest {
     }
 
     @Test
+    void routineTerminusConnectionPagesAndCountsOverTheFunctionCall() {
+        // Keyset pagination with the function in the FROM. The cursor columns are the authored
+        // @defaultOrder over the function's own result columns; totalCount counts the function
+        // call, so it sees both rows while the page carries one.
+        var first = execute("""
+            { tilgangerConnection(env: "prod", serviceId: "svc", feideId: "feide-123", first: 1) {
+                totalCount
+                pageInfo { hasNextPage endCursor }
+                nodes { organisasjonskode rollekode }
+              } }
+            """);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> conn = (Map<String, Object>) first.get("tilgangerConnection");
+        assertThat(conn).containsEntry("totalCount", 2);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> page1 = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(page1).extracting(r -> r.get("organisasjonskode")).containsExactly(184);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> pageInfo = (Map<String, Object>) conn.get("pageInfo");
+        assertThat(pageInfo).containsEntry("hasNextPage", true);
+
+        // The second page proves the seek predicate composed against the function's own columns
+        // rather than being dropped: a dropped seek returns the first row again.
+        var second = execute("""
+            { tilgangerConnection(env: "prod", serviceId: "svc", feideId: "feide-123",
+                                  first: 1, after: "%s") {
+                nodes { organisasjonskode rollekode }
+              } }
+            """.formatted(pageInfo.get("endCursor")));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> conn2 = (Map<String, Object>) second.get("tilgangerConnection");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> page2 = (List<Map<String, Object>>) conn2.get("nodes");
+        assertThat(page2).extracting(r -> r.get("organisasjonskode")).containsExactly(185);
+    }
+
+    @Test
+    void catalogTerminusConnectionCountsTheJoinedChainNotTheTerminusAlone() {
+        // The count source for a chain with hops is the joined table expression. Counting the
+        // terminus alone would count every film in the catalog, so this number is the assertion:
+        // PENELOPE(1) has two films of length >= 50, and the seed carries five films in all.
+        var data = execute("""
+            { recentFilmsForActorConnection(actorId: 1, minLength: 50, first: 1) {
+                totalCount
+                nodes { filmId description }
+              } }
+            """);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> conn = (Map<String, Object>) data.get("recentFilmsForActorConnection");
+        assertThat(conn).containsEntry("totalCount", 2);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
+        assertThat(nodes).extracting(r -> r.get("filmId")).containsExactly(1);
+        assertThat(nodes).extracting(r -> r.get("description")).containsExactly("A Epic Drama");
+    }
+
+    @Test
     void orderByArgumentSortsTheRoutineResultBothWays() {
         // The argument order resolves against the terminus (the function result) and reverses
         // on direction, which is what proves the emitted helper drives the statement's ORDER BY

@@ -237,6 +237,30 @@ class LauncherCommandsPipelineTest {
     }
 
     @Test
+    void routineRoot_connectionShapeCarriesTheOrderingAndTheRuntimeRefs() {
+        // The chain source and the connection shape are independent axes; the row carries both.
+        // The ordering is the terminus primary key, which is also what the cursor columns are.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                recent(actorId: Int!, minLength: Int!): [Film!]! @asConnection
+                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                    @reference(path: [{table: "film"}])
+            }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Query", "recent").orElseThrow();
+        assertThat(row.source()).isInstanceOf(no.sikt.graphitron.command.LaunchSource.RoutineChain.class);
+        var connection = (ResultShape.Connection) row.result();
+        assertThat(connection.ordering()).isInstanceOf(Ordering.Columns.class);
+        assertThat(connection.defaultPageSize()).isPositive();
+        assertThat(connection.helper().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionHelper");
+        assertThat(connection.carrier().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
+    }
+
+    @Test
     void interfaceRoot_sourceArmCarriesTheDiscriminatedFactsAndTheWhereHandshake() {
         var schema = TestSchemaHelper.buildSchema("""
             interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {

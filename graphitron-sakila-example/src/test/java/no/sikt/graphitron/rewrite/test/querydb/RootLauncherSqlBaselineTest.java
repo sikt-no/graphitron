@@ -189,6 +189,43 @@ class RootLauncherSqlBaselineTest {
     }
 
     @Test
+    void routineRoot_connection_seeksOverTheFunctionAndCountsIt() {
+        execute("{ tilgangerConnection(env: \"e\", serviceId: \"s\", feideId: \"f\", first: 1) "
+            + "{ totalCount nodes { rollekode } } }");
+        assertThat(SQL_LOG)
+            .as("routine-terminus connection: the page query seeks over the function call, and "
+                + "the lazy totalCount counts that same call")
+            .containsExactly(
+                "select \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\", "
+                    + "\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"organisasjonskode\" "
+                    + "from \"public\".\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\"(?, ?, ?) "
+                    + "order by \"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"organisasjonskode\" asc, "
+                    + "\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\".\"rollekode\" asc "
+                    + "fetch next ? rows only",
+                "select count(*) from \"public\".\"tilganger_for_feidebruker_med_fs_fiktivt_fnr\"(?, ?, ?)");
+    }
+
+    @Test
+    void routineRoot_connectionWithHops_countsTheJoinedChain() {
+        execute("{ recentFilmsForActorConnection(actorId: 1, minLength: 1, first: 1) "
+            + "{ totalCount nodes { title } } }");
+        assertThat(SQL_LOG)
+            .as("catalog-terminus connection: the joined chain is the FROM of the page query and "
+                + "the count source of the carrier, so totalCount cannot count the terminus alone")
+            .containsExactly(
+                "select \"recentfilmsforactorconnection_0\".\"title\", "
+                    + "\"recentfilmsforactorconnection_0\".\"film_id\" "
+                    + "from \"public\".\"films_for_actor\"(?, ?) "
+                    + "join \"public\".\"film\" as \"recentfilmsforactorconnection_0\" "
+                    + "on \"films_for_actor\".\"film_id\" = \"recentfilmsforactorconnection_0\".\"film_id\" "
+                    + "order by \"recentfilmsforactorconnection_0\".\"film_id\" asc "
+                    + "fetch next ? rows only",
+                "select count(*) from \"public\".\"films_for_actor\"(?, ?) "
+                    + "join \"public\".\"film\" as \"recentfilmsforactorconnection_0\" "
+                    + "on \"films_for_actor\".\"film_id\" = \"recentfilmsforactorconnection_0\".\"film_id\"");
+    }
+
+    @Test
     void routineRoot_developerCondition_landsInTheSameStatementsWhere() {
         execute("{ tilgangerAdmin(env: \"e\", serviceId: \"s\", feideId: \"f\") { rollekode } }");
         assertThat(SQL_LOG)

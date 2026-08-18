@@ -64,19 +64,17 @@ public record LauncherCommand(
                 "a fanned launcher's composition is a record list by classification; got "
                 + result.getClass().getSimpleName());
         }
-        // A routine chain runs single-tenant and never paginates: the classifier's routine
-        // verdict (FieldBuilder's routine chain rules) rejects @asConnection on the chain, and
-        // no fanned routine emission exists (the legacy path failed generation on the pair).
-        if (source instanceof LaunchSource.RoutineChain) {
-            if (!(tenancy instanceof TenantStrategy.Single)) {
-                throw new IllegalArgumentException(
-                    "a routine-chain launcher runs single-tenant; got "
-                    + tenancy.getClass().getSimpleName());
-            }
-            if (result instanceof ResultShape.Connection) {
-                throw new IllegalArgumentException(
-                    "a routine-chain launcher never paginates; the classifier rejects @asConnection on the chain");
-            }
+        // A routine chain runs single-tenant: no fanned routine emission exists (the legacy path
+        // failed generation on the pair). There is no result-axis half, the same absence the
+        // discriminated arm below states: the chain paginates like any other root read, and the
+        // residual invariants on the pair (pagination-requires-ordering, the facet carrier's own
+        // admission) are enforced where they are owned, so a check here would invent one with no
+        // parse-boundary owner to mirror.
+        if (source instanceof LaunchSource.RoutineChain
+                && !(tenancy instanceof TenantStrategy.Single)) {
+            throw new IllegalArgumentException(
+                "a routine-chain launcher runs single-tenant; got "
+                + tenancy.getClass().getSimpleName());
         }
         // A discriminated interface runs single-tenant: the fan-out ladder rejects @tenantFanOut
         // on interface-typed fields. There is no result-axis half here: the arm paginates, and

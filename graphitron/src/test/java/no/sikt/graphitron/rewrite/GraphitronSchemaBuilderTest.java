@@ -8381,9 +8381,29 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void asConnectionOnRoutineTerminusChainRejectsAsDirectiveConflict() {
-        // A routine-terminus chain can never support keyset pagination: the FK-less routine
-        // result carries no ordering contract. DirectiveConflict, not Deferred.
+    void asConnectionOnRoutineTerminusChainPaginatesOnTheAuthoredOrder() {
+        // The refusal here used to be a DirectiveConflict resting on "the routine result carries
+        // no ordering contract", which conflated carrying no default ordering with being
+        // unorderable. With an authored order the shape is the ordinary paginated read.
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @asConnection
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+            }
+            """);
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(routineChainOf(f).hops()).isEmpty();
+        assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Connection.class);
+        assertThat(f.pagination()).isNotNull();
+        assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Fixed.class);
+    }
+
+    @Test
+    void asConnectionOnRoutineTerminusChainWithNoOrderIsTheOrdinaryPaginationRule() {
+        // What survives the removed conflict is the rule every paginated field lives under.
+        // The validator owns it, so the classifier resolves cleanly and leaves the slot empty.
         var schema = build(TILGANG_TYPE + """
             type Query {
               tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
@@ -8391,15 +8411,15 @@ class GraphitronSchemaBuilderTest {
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
             }
             """);
-        var f = (UnclassifiedField) schema.field("Query", "tilganger");
-        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
-        assertThat(f.reason()).contains("a routine-terminus chain does not support Connection return types");
+        var f = (QueryField.QueryTableField) schema.field("Query", "tilganger");
+        assertThat(f.pagination()).isNotNull();
+        assertThat(f.orderBy()).isInstanceOf(OrderBySpec.None.class);
     }
 
     @Test
-    void asConnectionOnCatalogTerminusRoutineChainDefers() {
-        // A chain that merely CONTAINS a routine node but terminates on a catalog table could
-        // support pagination later, so it lands typed Deferred, not a conflict.
+    void asConnectionOnCatalogTerminusRoutineChainPaginatesOnTheTerminusPrimaryKey() {
+        // The other terminus kind, and the one that needs no schema edit: the hop lands on an
+        // ordinary table, so the primary-key fallback supplies the cursor columns.
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
@@ -8409,9 +8429,51 @@ class GraphitronSchemaBuilderTest {
                 @reference(path: [{table: "film"}])
             }
             """);
-        var f = (UnclassifiedField) schema.field("Query", "recentFilms");
+        var f = (QueryField.QueryTableField) schema.field("Query", "recentFilms");
+        assertThat(routineChainOf(f).hops()).hasSize(1);
+        assertThat(f.pagination()).isNotNull();
+        var ordering = (OrderBySpec.Fixed) f.orderBy();
+        assertThat(ordering.columns()).extracting(c -> c.column().sqlName()).containsExactly("film_id");
+    }
+
+    @Test
+    void asConnectionOnAChildRoutineChainDefersOnTheChildSeat() {
+        // Seat-gated and about the seat: a child connection rides the batched keyed re-query
+        // anchor, which a correlated routine child does not compose with. Nothing about the
+        // routine result, which paginates fine at root.
+        var schema = build("""
+            type ActorFilm @table(name: "films_for_actor") { filmId: Int @field(name: "film_id") }
+            type Actor @table(name: "actor") {
+              films(minLength: Int!): [ActorFilm!]
+                @asConnection
+                @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
+            type Query { actors: [Actor!]! }
+            """);
+        var f = (UnclassifiedField) schema.field("Actor", "films");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("Connection pagination over a catalog-terminus chain containing a routine node");
+        assertThat(f.reason()).contains("Connection pagination at a child-positioned routine-backed field");
+    }
+
+    @Test
+    void asConnectionOnARoutineMutationChainDefersOnTheWriteSeat() {
+        // The write's follow-up query is a keyed re-read of the captured routine columns, which
+        // is not a paginable surface. Also seat-gated, also about the seat.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rentals: [Rental!]! }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @asConnection
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("cannot return a Connection");
     }
 
     @Test

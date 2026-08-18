@@ -79,6 +79,11 @@ render layer, none of the four is a capability gap. They are unwired slots.
 | Genuinely unbuilt; stays with `roadmap/routine-chain-fetch-form-breadth.md` (R447).
 |===
 
+**Status.** Track A has landed. The first six rows now read as capabilities rather than refusals,
+and lookup is the one row that stays with R447. The census below is kept in the tense it was
+diagnosed in, because it is what the two tracks are argued from; the slice list under Track A
+carries what actually shipped.
+
 The render layer is already generic. Every fragment it would need takes `(thing, tableLocal)` and
 switches on the command, never on the source: `OrderingBlock` is total over `Ordering.Columns` and
 `Ordering.Helper`, `conditionStatement` treats an absent WHERE as data, and
@@ -154,48 +159,44 @@ the ordinary shape for a multi-phase item here, and it is worth the cost: the li
 shipping unsorted rows at the end of Track A, without the item claiming completion while the
 generator of the holes is still in place.
 
-### Track A: unwire the read surface
+### Track A: unwire the read surface (landed)
 
 One pass, because the axes touch the same handful of sites and splitting them means writing the pin
 restatement, the deferral message and the manual's deferral sentence twice each, with the
 intermediate version wrong.
 
-1. **`@defaultOrder` at root.** `classifyRootRoutineChain` calls `orderByResolver.resolve` the way
-   `classifyChildRoutineChain` already does, instead of passing a literal `OrderBySpec.None`.
-   `LauncherCommands.routineRow` passes `orderingOf(qtf, units)` instead of `null`.
-   `RootLauncherRenderer.routineBody` emits `orderByStatement(ordering, terminal)` and
-   `.orderBy(orderBy)`. `terminal` is the local the projection already targets, so sort columns and
-   select list resolve against the same alias by construction.
-2. **`@condition` and `@orderBy`.** Retarget `orderOrConditionDeferral`, do not delete it. It has
-   two callers and only one of them is this item's. `resolve` reaches all three chain classifiers
-   through `walkRoutineChain`, so the read seats lose the deferral; but `resolveCarrierNode` is the
-   Mutation carrier seat, and neither `MutationRoutineWriteField` nor
-   `MutationRoutineWriteRecordField` carries a filter or ordering component at all. Deleting the
-   method outright would make `@condition` / `@orderBy` on a Mutation `@routine` field classify
-   clean and do nothing, which is this item's own defect restated on the write seat, and no test
-   would catch it: both deferral fixtures (`conditionOnRoutineFieldDefersAsCapabilityGap`,
-   `orderByArgumentOnRoutineFieldDefersAsCapabilityGap`) are root-`Query`. So the check survives,
-   seat-gated to the write classifiers the way `classifyMutationRoutineChain`'s payload-carrier
-   conflict already is, with a message naming the write seat rather than routine-backed fields at
-   large; the write-side read surface stays with `roadmap/routine-write-result-shapes.md` (R454),
-   which owns that seat's shapes. Then the chain classifiers stop
-   passing `List.of()` for filters and route through `resolveTableFieldComponents` against the
-   terminus, the same call the ordinary table arms make. `routineRow` gains its WHERE slot from the
-   condition relation; `routineBody` declares the condition local and ANDs it with the hop filters
-   it already composes.
-3. **Ordering becomes required where no primary key can supply it.** Drop the `Chain` exemption in
-   `validateListRequiresOrdering`. A list-shaped routine terminus with no `@defaultOrder` becomes a
-   build error.
-4. **Pagination follows.** With an `Ordering` resolving, the `DirectiveConflict` on a routine
-   terminus loses its premise and becomes the ordinary pagination-requires-ordering rule. Measured,
-   not assumed: see "Keyset seek over a routine in the FROM" below. There is no routine-specific
-   seek work.
-5. **The implicit hop out of a routine result.** Drop the `@reference` an author must write today
-   to reach a `@table`-bound child from a routine-result parent; see "The redundant `@reference`"
-   below.
-6. **Unpin.** `QueryTableField`'s four-way conjunction goes. Whatever survives is stated per axis
-   against the axis that owns it, so the next read-surface directive cannot fall through a
-   conjunction and a predicate a class away.
+1. **`@defaultOrder` at root.** Landed. Both chain classifiers resolve the whole read surface
+   through `resolveTableFieldComponents` against the terminus, the same call the ordinary table
+   arms make.
+2. **`@condition` and `@orderBy`.** Landed. Two findings the plan did not have. The routine's own
+   IN-parameter arguments have to be excluded from the read surface's argument classification, or
+   they classify as unbound filters; the exclusion set is read off the resolved bindings rather
+   than off the directive text, so `argMapping` and identity binding are excluded by one rule. And
+   the seat gate is one seat wider than the plan said: `classifyMutationRoutineChain` reaches the
+   resolver through `walkRoutineChain` too, so the deferral survives as
+   `RoutineDirectiveResolver.writeSeatReadSurfaceDeferral` called from *both* Mutation routine
+   classifiers rather than sitting on `resolveCarrierNode` alone. The write-side read surface stays
+   with `roadmap/routine-write-result-shapes.md` (R454).
+3. **Ordering becomes required where no primary key can supply it.** Landed. The `Chain` exemption
+   is gone, and the routine arm carries its own message: the generic one's "add a primary key to
+   the target table" is impossible on a function result, so the routine arm names the function and
+   points at `@defaultOrder(fields:)`. `@defaultOrder(primaryKey: true)` over any table with no
+   primary key now says the key is absent and lists the columns available.
+4. **Pagination follows.** Landed, and it was more than the lost premise. `routineBody` had no
+   Connection arm and `connectionBody` was typed to `LaunchSource.AnchorTable`, so the arm needed
+   building rather than unblocking. What made it small was noticing that the hops belong in a
+   joined table expression rather than in the select's join chain: one `Table<?>` local is then the
+   FROM, the seek's source and the connection carrier's count source at once, which is what stops
+   `totalCount` counting the terminus alone on a chain with hops. `connectionBody` now takes the
+   FROM local and the projected alias separately; an anchor-sourced connection passes the same
+   local twice. The seek predicate needed nothing, exactly as measured below.
+5. **The implicit hop out of a routine result.** Landed. `parsePath`'s element-less arm has the
+   function-ness gate the `{table:}` branch already had.
+6. **Unpin.** Landed. `QueryTableField`'s four-way conjunction is down to the lookup axis and the
+   terminus rule, and the Connection fork left `routineChainVerdict` for the three seats that still
+   refuse it, each stating its own reason: the child read seat (a child connection rides the
+   batched keyed re-query anchor), the Mutation chain write seat (the post-commit re-read is keyed,
+   not paged), and nothing at the root read seat, which paginates.
 
 ### Track B: derive the surface from facts
 
@@ -212,6 +213,38 @@ carries the one axis that cannot be done by deletion.
    at all. Both are pure transcriptions of a catalog walk that already runs, and this slice is worth
    landing on its own merits: the store is currently lossy about a catalog object the generator
    depends on.
+
+   `roadmap/nodeid-key-projection-on-routine-params.md` (R668) folded its own version of this
+   capture into this slice and handed over four things with it, all of which belong here rather
+   than being rediscovered:
+
+   * **Read the facts off the resolved `Table<?>`, not through `JooqCatalog
+     .resolveTableValuedFunction`.** That entry point is name-keyed, re-runs `findTable`, and
+     collapses a function name two schemas both declare into `NotInCatalog`. Capture is already
+     holding the table and its schema. The in-tree precedent is `candidateKeys(Table<?>)` existing
+     beside `columnFactsOf(Table<?>)` as the table-scoped overload without an ambiguous SQL-name
+     lookup.
+   * **Return values, not emit vocabulary.** `RoutineResolution.Resolved` carries javapoet
+     (`RoutineParam(String, TypeName)`, `ClassName routinesClass`), and capturing through it would
+     land a `TypeName.toString()` in a relation. `ColumnFacts`' javadoc already rules on this.
+   * **`sql_table.table_type` is the cheapest true fact in the neighbourhood** and worth capturing
+     whichever way the shape question below settles: jOOQ distinguishes `TABLE`, `VIEW`,
+     `MATERIALIZED_VIEW` and `FUNCTION`, and the store records none of it.
+   * **Two obligations travel with the parameter relation.** The generated `Routines` class FQN and
+     method name have to be captured beside the parameters, because the parameters are a fact about
+     one method (jOOQ also generates a `Configuration`-first form and a `Field<?>` form). And
+     `jooq_name` is a reflected parameter name, which reads `arg0` unless the consumer compiled
+     their jOOQ output with `-parameters`; the generator already depends on this in
+     `RoutineDirectiveResolver`'s parameter matching, so capturing the name makes an existing
+     dependency visible rather than creating one. Its column comment is where that belongs, and
+     this repo compiles one test package deliberately without the flag, so both sides are coverable.
+     The parameters' SQL-side vocabulary (the database's own names and types) sits on the protected
+     `TableImpl.parameters`; decide at pickup and omit the columns rather than ship always-null
+     ones.
+
+   R668 also argues for hanging the parameters off the function-typed `sql_table` row (one walk
+   reads both, one refresh cadence, no new anchor, and the population is table-valued functions
+   only by construction). That is input to the shape question in "Open questions", not a ruling.
 8. **The terminus and its kind as a derived view.** Where a coordinate's chain lands, and whether
    that landing is a function result. Every axis reads it, and it is what makes the verdicts
    comparable instead of six independent opinions.
@@ -239,7 +272,9 @@ carries the one axis that cannot be done by deletion.
     genuinely open" below, which is the one part of this slice the view does not hand over.
 12. **Retire the duplicated derivations.** `synthesizeNameMatchedJoin` and
     `deriveRoutineCarrierPairs` both become reads of slice 10.
-13. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf.
+13. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf. R668's stage 5
+    joins its key-column projection into the same row and asks to land after this slice rather than
+    beside it, so the two do not edit one method from opposite directions.
 
 ## The redundant `@reference`
 
@@ -653,6 +688,14 @@ wrong and should change first.
 * `roadmap/routine-write-result-shapes.md` (R454): the Mutation write side, procedures and
   scalar/void routines. Its call surface is the same one slice 7 would capture, so the two should be
   read together before that slice fixes a shape.
+* `roadmap/nodeid-key-projection-on-routine-params.md` (R668) sits on top of this item and reads
+  slice 7's capture. Three coordination points, all recorded at their slices above: its capture
+  half folded into slice 7 (with the four inputs it handed over), its planning join wants to land
+  after slice 13, and its stage 4 relocates the two routine-write emitters into `render`, which
+  edits the neighbourhood of `classifyMutationRoutineChain` this item's Track A step 2 also
+  touched. One interaction runs the other way and is free: Track A gives routine-backed reads a
+  real `@condition` and `@orderBy` surface, so `argMapping` paths now resolve at coordinates that
+  carried none, which is corpus population for R668's `site` arms rather than new work.
 * `roadmap/planners-read-facts-emitters-read-commands.md` (R682) and
   `roadmap/delivery-verdict-derives-from-the-store.md` (R666): the architecture Track B pilots, and
   the nearest precedent for replacing a hand-maintained negative-space switch with a store
@@ -660,14 +703,17 @@ wrong and should change first.
 
 ## Open questions
 
-* **Which node does a filter target on a multi-node chain?** Ordering resolves against the terminus
-  and `@condition` should match, but both aliases are live in the emitted query and the author may
-  reasonably want to filter the routine result before the hop. Same shape as R662's question, one
-  clause over; decide the two together or state explicitly that filtering is terminus-only for now.
-* **Does the implicit hop compose past one element?** Slice 5 covers the single name-matched hop,
-  which is what the return type can supply on its own. A two-hop path out of a routine result has no
-  implicit spelling and should keep needing `@reference`; confirm that reads as a rule rather than as
-  an arbitrary depth limit.
+* **Which node does a filter target on a multi-node chain?** *Answered by Track A: terminus-only,
+  and said so.* `@condition` resolves against the chain's last node, matching where the ordering
+  resolves, and the classifier javadoc and the manual both state it as a rule rather than leaving
+  it to be inferred. Both aliases are still live in the emitted query, so filtering the routine
+  result before the hop remains expressible later; it is the same shape as R662's question, one
+  clause over, and stays with R662.
+* **Does the implicit hop compose past one element?** *Answered by Track A: one element, as a
+  rule.* The implicit form supplies exactly what the child's return type carries, which is one
+  target table name. A two-hop path out of a routine result keeps needing `@reference`, and so does
+  a join the name-match cannot key; the manual states both as consequences of what the return type
+  can supply rather than as a depth limit.
 * **Does the name-matched arm belong on the hop view or beside it?** The hop view's two arms are
   both FK-shaped and carry `constraint_name` / `fk_on_from`, which a name-matched hop has no value
   for. A third arm means those columns go null on it, which the view's own comment discipline would
