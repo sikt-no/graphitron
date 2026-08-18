@@ -225,7 +225,7 @@ class HoversTest {
             }
             """);
         var pos = pointAt(file, 1, "title");
-        var stale = new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of());
+        var stale = new LspSchemaSnapshot.Built.Previous(List.of(), Map.of());
 
         assertThat(markdownAt(file, stale, pos)).contains("**Column** `title` on `film`");
         assertThat(markdownAt(file, LspSchemaSnapshot.unavailable(), pos))
@@ -277,7 +277,7 @@ class HoversTest {
      * by handing the surface a shape to fall back on.
      */
     private static LspSchemaSnapshot.Built.Current noProjection() {
-        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
+        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of());
     }
 
     @Test

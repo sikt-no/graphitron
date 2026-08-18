@@ -4071,6 +4071,106 @@ COMMENT ON COLUMN intent_type_backing_conflict.type_name IS 'the contested SDL t
 COMMENT ON COLUMN intent_type_backing_conflict.class_names IS 'the contesting classes, comma-joined in name order: one canonical render so two readers grouping by the contested set cannot split a group on row order, on intent_authored_claim_conflict.directives'' terms. Display and grouping only, never a dimension; a reader wanting the classes themselves reads them as rows';
 COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on intent_bound_table.candidates'' terms';
 
+CREATE VIEW intent_carrier_data_field
+  (graph_name, type_name, field_name, family, element_kind, data_fields) AS
+WITH poly_member (graph_name, container_name, member_type_name) AS (
+  SELECT graph_name, union_name, member_type_name FROM graphql_union_member
+   UNION ALL
+  SELECT graph_name, interface_name, type_name FROM graphql_implements
+),
+errors_field (graph_name, type_name, field_name) AS (
+  SELECT f.graph_name, f.type_name, f.field_name
+    FROM graphql_field f
+    JOIN graphql_type nt
+      ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
+     AND nt.kind IN ('UNION', 'INTERFACE')
+   WHERE f.is_list AND NOT f.non_null
+     AND NOT EXISTS (SELECT 1 FROM graphql_field_directive ac
+                      WHERE ac.graph_name = f.graph_name AND ac.type_name = f.type_name
+                        AND ac.field_name = f.field_name
+                        AND ac.directive_name = 'asConnection')
+     AND EXISTS (SELECT 1 FROM poly_member m
+                  WHERE m.graph_name = f.graph_name AND m.container_name = f.named_type)
+     AND NOT EXISTS (SELECT 1 FROM poly_member m
+                      WHERE m.graph_name = f.graph_name AND m.container_name = f.named_type
+                        AND NOT EXISTS (SELECT 1 FROM graphitron_error e
+                                         WHERE e.graph_name = m.graph_name
+                                           AND e.type_name = m.member_type_name))
+),
+data_channel (graph_name, type_name, field_name, element_kind,
+              is_list, item_non_null, data_fields) AS (
+  SELECT f.graph_name, f.type_name, f.field_name,
+         CASE WHEN EXISTS (SELECT 1 FROM intent_bound_table b
+                            WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
+                              AND b.candidates = 1) THEN 'TABLE'
+              WHEN EXISTS (SELECT 1 FROM intent_type_backing tb
+                            WHERE tb.graph_name = f.graph_name AND tb.type_name = f.named_type
+                              AND tb.declared_via = 'BACKING_CLOSURE') THEN 'RECORD'
+              WHEN f.named_type = 'ID' THEN 'ID'
+              ELSE NULL END,
+         f.is_list, f.item_non_null,
+         CAST(COUNT(*) OVER (PARTITION BY f.graph_name, f.type_name) AS INT)
+    FROM graphql_field f
+    JOIN graphql_type t
+      ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind = 'OBJECT'
+   WHERE NOT EXISTS (SELECT 1 FROM errors_field e
+                      WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                        AND e.field_name = f.field_name)
+),
+producer (graph_name, payload_type_name, family) AS (
+  SELECT DISTINCT f.graph_name, f.named_type, 'SERVICE'
+    FROM graphitron_service s
+    JOIN graphql_field f
+      ON f.graph_name = s.graph_name AND f.type_name = s.type_name
+     AND f.field_name = s.field_name
+    JOIN graphql_root_operation r
+      ON r.graph_name = f.graph_name AND r.operation = 'MUTATION' AND r.type_name = f.type_name
+   UNION
+  SELECT DISTINCT f.graph_name, f.named_type, 'DML'
+    FROM graphitron_mutation m
+    JOIN graphql_field f
+      ON f.graph_name = m.graph_name AND f.type_name = m.type_name
+     AND f.field_name = m.field_name
+    JOIN graphql_root_operation r
+      ON r.graph_name = f.graph_name AND r.operation = 'MUTATION' AND r.type_name = f.type_name
+   UNION
+  SELECT DISTINCT f.graph_name, f.named_type, 'ROUTINE'
+    FROM graphitron_routine rt
+    JOIN graphql_field f
+      ON f.graph_name = rt.graph_name AND f.type_name = rt.type_name
+     AND f.field_name = rt.field_name
+    JOIN graphql_root_operation r
+      ON r.graph_name = f.graph_name AND r.operation = 'MUTATION' AND r.type_name = f.type_name
+)
+SELECT p.graph_name, d.type_name, d.field_name, p.family, d.element_kind, d.data_fields
+  FROM producer p
+  JOIN data_channel d
+    ON d.graph_name = p.graph_name AND d.type_name = p.payload_type_name
+ WHERE NOT EXISTS (SELECT 1 FROM data_channel u
+                    WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
+                      AND u.element_kind IS NULL)
+   AND NOT EXISTS (SELECT 1 FROM data_channel u
+                    JOIN graphql_field_directive fd
+                      ON fd.graph_name = u.graph_name AND fd.type_name = u.type_name
+                     AND fd.field_name = u.field_name
+                    WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
+                      AND fd.directive_name IN ('service', 'sourceRow', 'reference', 'asConnection',
+                            'splitQuery', 'externalField', 'condition', 'lookupKey', 'notGenerated',
+                            'defaultOrder', 'orderBy', 'multitableReference')
+                      AND NOT (fd.directive_name = 'splitQuery' AND p.family = 'SERVICE'))
+   AND NOT EXISTS (SELECT 1 FROM data_channel u
+                    WHERE u.graph_name = d.graph_name AND u.type_name = d.type_name
+                      AND u.element_kind = 'ID'
+                      AND (p.family = 'ROUTINE'
+                           OR (p.family = 'DML' AND u.is_list AND NOT u.item_non_null)));
+COMMENT ON VIEW intent_carrier_data_field IS 'Where a mutation payload''s data arrives: for each OBJECT type a mutation-root write field returns, that type''s data channels, with the shape each element declares and how many channels the type has. A carrier is a payload whose whole job is to wrap one produced value beside an error channel, and the coordinate this relation names is where that value lands, which is what a surface offering or judging the $source sigil is asking about. The producing directive decides the family and the family decides two policies, so it is a column and not a filter this view applies for one reader: @service on a mutation-root field is SERVICE, @mutation is DML, @routine is ROUTINE, and a payload two families both return is a row per family rather than a pick. Errors-shaped fields are not data channels and never counted as one: a nullable-list field whose named type is a union or interface whose every member carries @error, which is the same shape the walk detects, minus the @asConnection case where the wrapper is a Connection rather than a list and the field falls through to the data-channel rules the directive then excludes it under anyway. What a data channel''s element declares is one of three kinds, tried in the walk''s own order: a named type bound unambiguously to a table is TABLE, a named type the backing closure reaches is RECORD, and the ID scalar is ID. The closure arm is read on declared_via so a @table type''s own record class cannot answer here, that population being the first arm''s and an ambiguous binding being no binding at all. That arm inherits the closure''s own stated departure, and it costs this relation the two-level carrier: where a payload wraps a result type the producer''s class stands for, the closure backs the wrapper and the walk reaches past it, so the element resolves to no kind and the payload names nothing. The departure is the closure''s to close, not a second reading of it here. An element of any other kind is not a payload shape the generator admits, and it rejects the whole payload rather than just its own coordinate, so a type carrying one contributes nothing; the same holds for a data-channel directive that routes the type out of the carrier mold, and for the two ID-element refusals that are a family''s own (a routine write has no PK-echo shape, so ROUTINE admits no ID element at any wrapper, and a DELETE echo cannot have a nullable slot, so DML refuses [ID]). The arity is a column and the refusal is the reader''s, as on the discovery view: a payload declaring two data channels is two rows counting two, which is the coordinate the generator rejects for having no single data field, and a reader demanding data_fields = 1 transcribes that refusal without re-counting. Absence covers several things and none of them is "this payload has no data": no mutation-root field returns the type, or the type is not an OBJECT, or one of the rejections above dropped it. Element kind and family are columns for the same reason the arity is: which rows admit a given surface is that surface''s rule, and the $source sigil''s reader demands SERVICE and a TABLE or ID element, those being the producer the user manual names and the two elements the carrier classification encodes the upstream value onto.';
+COMMENT ON COLUMN intent_carrier_data_field.graph_name IS 'the owning graph''s partition, carried from the producing field';
+COMMENT ON COLUMN intent_carrier_data_field.type_name IS 'the payload type the producing field returns; the type whose data channels these rows are';
+COMMENT ON COLUMN intent_carrier_data_field.field_name IS 'the data channel''s field name within the payload type; the coordinate an author''s cursor sits on';
+COMMENT ON COLUMN intent_carrier_data_field.family IS 'which producing directive returns the payload, a closed three-value domain: SERVICE (@service), DML (@mutation), ROUTINE (@routine). Provenance and policy both, the two rejections that differ between families being this column''s; a payload two families return is a row per family, and a reader that means one of them filters on it';
+COMMENT ON COLUMN intent_carrier_data_field.element_kind IS 'what the channel''s element is, a closed three-value domain: TABLE (the named type is bound to one catalog table), RECORD (the backing closure reaches a class for it), ID (the ID scalar, the encoded-key echo). Never NULL here, an unrecognized element having dropped its whole payload';
+COMMENT ON COLUMN intent_carrier_data_field.data_fields IS 'how many data channels the payload declares, this row being one of them; 1 is what a carrier requires, and a larger number is what the generator''s own "require exactly one" rejection counts. Stated as a column rather than left to each reader''s count, because whether the payload is a carrier at all decides the reading and a reader that counted for itself would be re-deriving the scan''s arity';
+
 CREATE VIEW intent_field_separate_fetch (graph_name, type_name, field_name, rule) AS
 SELECT s.graph_name, s.type_name, s.field_name, 'SPLIT_QUERY'
   FROM graphitron_split_query s

@@ -125,12 +125,8 @@ class CompletionTextEditTest {
         int innerStart = lines[line].indexOf("\"ti\"") + 1;
         Point cursor = new Point(line, innerStart + 1);
 
-        // The binding the candidate resolves through is the captured graph's, so the projection this
-        // arm is handed carries nothing.
-        var snapshot = new no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current(
-            List.of(), java.util.Map.of(), java.util.Map.of());
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, store.handle(), snapshot, ctx, dir, bytes));
+            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, store.handle(), ctx, dir, bytes));
 
         // The candidate is the generated Java field name, which is what the census carries and what
         // an author types; the typed prefix it replaces is their own lowercase "ti".

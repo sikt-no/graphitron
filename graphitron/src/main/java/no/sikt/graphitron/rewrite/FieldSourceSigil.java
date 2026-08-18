@@ -12,8 +12,10 @@ import java.util.Optional;
  * Shared callables for the {@code @field(name:)} root-value sigils: {@code $source}
  * (binds the upstream Java value at the payload data field site) and {@code $errors}
  * (binds the field to {@code env.getLocalContext()} on payload-returning mutation types).
- * Owns the canonical rejection messages; the classifier and both LSP arms (completions,
- * diagnostics) route through these methods, so a message tweak lands on all three surfaces.
+ * Owns the canonical rejection messages and the literals themselves; the classifier and both LSP
+ * arms (completions, diagnostics) route through them, so a message tweak lands on all three
+ * surfaces. Where the sigil is admitted is not here: that is a fact about a coordinate, which the
+ * classifier reads off the payload SDL it is walking and the LSP reads as a relation.
  *
  * <p>Sibling to {@link BuildContext#argString}, not a replacement: sites that read
  * {@code @field(name:)} as a free-form string stay on {@code argString}; only sites that
@@ -88,25 +90,6 @@ public final class FieldSourceSigil {
             return new ParseResult.UnknownSigil(trimmed);
         }
         return new ParseResult.Ok(new FieldNameRef.BareName(trimmed));
-    }
-
-    /**
-     * The set of sites where the sigil is admitted. Sealed so a broadened admit adds a
-     * new arm rather than reshaping call sites.
-     */
-    public sealed interface SiteContext permits SiteContext.PayloadDataField, SiteContext.Other {
-        /** Carrier-payload data field on a {@code @service}-backed mutation (the @service-carrier admit). */
-        record PayloadDataField() implements SiteContext {}
-        /** Every other site: record-backed, table-backed, POJO, root, etc. */
-        record Other() implements SiteContext {}
-    }
-
-    /**
-     * True only at the admitted site. The classifier admit, LSP completion, and LSP
-     * diagnostic all route through this single predicate.
-     */
-    public static boolean sourceSigilDefinedAt(SiteContext ctx) {
-        return ctx instanceof SiteContext.PayloadDataField;
     }
 
     /** Canonical message for {@code @field(name: "$X")} where {@code $X} is not an admitted sigil literal. */

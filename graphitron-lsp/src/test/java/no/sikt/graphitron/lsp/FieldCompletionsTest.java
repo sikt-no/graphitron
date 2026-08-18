@@ -6,7 +6,6 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -18,7 +17,6 @@ import io.github.treesitter.jtreesitter.Point;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -123,7 +121,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("@field") + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), emptySnapshot(), source, cursor);
+        var items = run(STORE.handle(), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -243,80 +241,84 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
-    /**
-     * The column arm consults no projection at all now, so what the snapshot is doing cannot silence
-     * it. Two cases that pinned the opposite are gone with the dependency: an entry missing from the
-     * projection and a projection not built yet both used to mean silence here, and both now mean
-     * only that the arm reads something else.
-     */
-    @Test
-    void theColumnArmAnswersWithoutASnapshot() {
-        String source = """
-            type Foo @table(name: "film") {
-                bar: Int @field(name: "")
-            }
-            """;
-        int line = 1;
-        int col = source.split("\n")[line].indexOf('"') + 1;
-        Point cursor = new Point(line, col);
-
-        try (var store = StoreFixture.ofCatalog(sharedDirectory, source)) {
-            assertThat(run(store.handle(), LspSchemaSnapshot.unavailable(), source, cursor))
-                .extracting(CompletionItem::getLabel)
-                .contains("FILM_ID", "TITLE");
-        }
-    }
-
     // ===== $source sigil completion =====
 
+    /**
+     * The site the sigil belongs at, driven from a captured carrier rather than from a declared map:
+     * an {@code @service} payload whose data channel is the encoded key of the record the producer
+     * returned. The parent is bound to no table and stands for no class, so the sigil is the whole of
+     * what this coordinate offers.
+     */
     @Test
     void sourceSigil_atCarrierDataField_isSuggested() {
-        // Carrier projection declares FilmListPayload.films as the carrier data field, and the store
-        // scopes the type to neither a table nor a class, so $source ships as the only completion.
         String source = """
-            type FilmListPayload {
-                films: [Film!] @field(name: "")
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            union WriteError = DbErr
+            type Film @table(name: "film") { title: String }
+            type CreateFilmPayload {
+                filmId: ID @field(name: "")
+                errors: [WriteError]
+            }
+            type Query { films: [Film] }
+            type Mutation {
+                createFilm: CreateFilmPayload
+                    @service(service: {className: "com.example.FilmService", method: "create"})
             }
             """;
-        int line = 1;
+        int line = 4;
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            List.of(),
-            Map.of(),
-            Map.of("FilmListPayload", "films")
-        );
-        var items = run(STORE.handle(), snapshot, source, cursor);
-
-        assertThat(items).extracting(c -> c.getLabel())
+        assertThat(runCaptured(source, cursor)).extracting(CompletionItem::getLabel)
             .containsExactly(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
     }
 
     /**
-     * The same site with no carrier entry for it: the sigil is not suggested, and nothing else is
-     * either, the type being one the store scopes to neither a table nor a class. The LSP's narrow
-     * predicate matches the build's narrow predicate.
-     *
-     * <p>A second case stood beside this one for a projection carrying no entry for the type at all,
-     * which was a distinguishable state while the column arm read the projection for the parent's
-     * backing. It is the same state as this one now: the sigil arm reads the carrier map alone, and
-     * the arm beside it reads the store, so a projection has no third thing to say here.
+     * The same payload shape under a DML write, which is not a site the sigil is documented at: the
+     * value a {@code @service} carrier's data field binds to is the producer method's return, and a
+     * write has no such return. The projection this arm replaced offered the sigil here, its map
+     * being keyed on classification arms both producers share.
      */
     @Test
-    void sourceSigil_awayFromTheCarrierDataField_isNotSuggested() {
+    void sourceSigil_onADmlCarrierDataField_isNotSuggested() {
         String source = """
-            type FilmListPayload {
-                films: [Film!] @field(name: "")
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            union WriteError = DbErr
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload {
+                deletedId: ID @field(name: "")
+                errors: [WriteError]
             }
+            type Query { films: [Film] }
+            type Mutation {
+                deleteFilm(filmId: Int): DeleteFilmPayload @mutation(typeName: DELETE, table: "film")
+            }
+            """;
+        int line = 4;
+        int col = source.split("\n")[line].indexOf('"') + 1;
+        Point cursor = new Point(line, col);
+
+        assertThat(runCaptured(source, cursor)).isEmpty();
+    }
+
+    /**
+     * A coordinate of the same shape that no mutation field's payload reaches: carrier-ness comes
+     * from the producing field and never from the payload's own look, so the sigil is not offered
+     * and neither is anything else, the type being one the store scopes to no table and no class.
+     */
+    @Test
+    void sourceSigil_awayFromACarrierDataField_isNotSuggested() {
+        String source = """
+            type FilmIdHolder {
+                deletedId: ID @field(name: "")
+            }
+            type Query { holder: FilmIdHolder }
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), emptySnapshot(), source, cursor);
-
-        assertThat(items).isEmpty();
+        assertThat(runCaptured(source, cursor)).isEmpty();
     }
 
     // ===== @field(name:) on @reference path field completes terminal-table columns =====
@@ -473,7 +475,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf("primaryKey: ") + "primaryKey: ".length();
         Point cursor = new Point(line, col);
 
-        var items = run(STORE.handle(), emptySnapshot(), source, cursor);
+        var items = run(STORE.handle(), source, cursor);
 
         assertThat(items).isEmpty();
     }
@@ -545,7 +547,7 @@ class FieldCompletionsTest {
 
         try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
             assertThat(documentationOf(
-                run(fixture.handle(), emptySnapshot(), source, cursor), "FILM_ID"))
+                run(fixture.handle(), source, cursor), "FILM_ID"))
                 .as("nothing parsed yet, so the database comment is what documents the column")
                 .isEqualTo("Surrogate key, stable across catalogue imports.");
 
@@ -557,7 +559,7 @@ class FieldCompletionsTest {
                 """);
 
             assertThat(documentationOf(
-                run(fixture.handle(), emptySnapshot(), source, cursor), "FILM_ID"))
+                run(fixture.handle(), source, cursor), "FILM_ID"))
                 .as("the generated field's Javadoc displaces the comment, inverting the table grain")
                 .isEqualTo("The column <code>public.film.film_id</code>.");
         }
@@ -581,7 +583,7 @@ class FieldCompletionsTest {
 
         try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
             assertThat(documentationOf(
-                run(fixture.handle(), emptySnapshot(), source, cursor), "RELEASE_YEAR"))
+                run(fixture.handle(), source, cursor), "RELEASE_YEAR"))
                 .isEmpty();
         }
     }
@@ -607,7 +609,7 @@ class FieldCompletionsTest {
      */
     private List<CompletionItem> runCaptured(String source, Point cursor) {
         try (var store = StoreFixture.ofCatalog(sharedDirectory, source)) {
-            return run(store.handle(), emptySnapshot(), source, cursor);
+            return run(store.handle(), source, cursor);
         }
     }
 
@@ -618,18 +620,11 @@ class FieldCompletionsTest {
      */
     private List<CompletionItem> runBacked(String source, Point cursor) {
         try (var store = StoreFixture.of(sharedDirectory, source, StoreFixture.backingClasses())) {
-            return run(store.handle(), emptySnapshot(), source, cursor);
+            return run(store.handle(), source, cursor);
         }
     }
 
-    /** No projection at all: the cases using it resolve their scope from the store. */
-    private static LspSchemaSnapshot emptySnapshot() {
-        return new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-    }
-
-    private static List<CompletionItem> run(
-        StoreHandle store, LspSchemaSnapshot snapshot, String source, Point cursor
-    ) {
+    private static List<CompletionItem> run(StoreHandle store, String source, Point cursor) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
@@ -639,7 +634,7 @@ class FieldCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(VOCAB, store, snapshot, context, directive, bytes);
+        return FieldCompletions.generate(VOCAB, store, context, directive, bytes);
     }
 
 }

@@ -71,7 +71,7 @@ class CatalogRefreshTest {
             workspace.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(
                     newCatalog,
-                    new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of())),
+                    new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
                 ValidationReport.empty());
             fired.countDown();
         };

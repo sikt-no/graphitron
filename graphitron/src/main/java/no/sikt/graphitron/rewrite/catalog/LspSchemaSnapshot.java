@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.catalog;
 
-import no.sikt.graphitron.rewrite.FieldSourceSigil;
 
 import java.util.List;
 import java.util.Map;
@@ -57,17 +56,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          * declare).
          */
         Map<String, TypeBackingShape> typesByName();
-
-        /**
-         * Per-carrier projection of the payload data field's name. Keyed by the
-         * carrier's SDL type name; value is the SDL field name of the carrier's single
-         * data field. Populated only for types the classifier-side structural DML-payload
-         * scan admits.
-         *
-         * <p>Backing data for {@link #siteContext(String, String)}; the LSP arms route through
-         * that method rather than evaluating the (typeName, fieldName) predicate themselves.
-         */
-        Map<String, String> payloadDataFieldByType();
 
         /**
          * Per-field LSP classification projection. Keyed by
@@ -136,27 +124,9 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             return Optional.ofNullable(typeDefinitionLocations().get(name));
         }
 
-        /**
-         * Site-context classifier at LSP-time. Returns the
-         * {@link FieldSourceSigil.SiteContext} arm that
-         * {@link FieldSourceSigil#sourceSigilDefinedAt} dispatches on for the
-         * {@code (typeName, fieldName)} coordinate. The single source of truth for which
-         * coordinate is the payload-data-field admit site; LSP consumers route through this
-         * method rather than reimplementing the predicate against the underlying
-         * {@link #payloadDataFieldByType()} map.
-         */
-        default FieldSourceSigil.SiteContext siteContext(String typeName, String fieldName) {
-            var carrierField = payloadDataFieldByType().get(typeName);
-            if (carrierField != null && carrierField.equals(fieldName)) {
-                return new FieldSourceSigil.SiteContext.PayloadDataField();
-            }
-            return new FieldSourceSigil.SiteContext.Other();
-        }
-
         record Current(
             List<DirectiveShape> directives,
             Map<String, TypeBackingShape> typesByName,
-            Map<String, String> payloadDataFieldByType,
             Map<String, FieldClassification> fieldClassificationsByCoord,
             Map<String, TypeClassification> typeClassificationsByName,
             Map<String, CompletionData.SourceLocation> typeDefinitionLocations
@@ -164,7 +134,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             public Current {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
-                payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
                 fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
                 typeClassificationsByName = Map.copyOf(typeClassificationsByName);
                 typeDefinitionLocations = Map.copyOf(typeDefinitionLocations);
@@ -172,16 +141,14 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
 
             /**
              * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
-             * populate the directive surface, type-backing, and payload-data-field projections.
-             * Fills the classification projections and the type-definition-location
-             * map with empty maps.
+             * populate the directive surface and the type-backing projection. Fills the
+             * classification projections and the type-definition-location map with empty maps.
              */
             public Current(
                 List<DirectiveShape> directives,
-                Map<String, TypeBackingShape> typesByName,
-                Map<String, String> payloadDataFieldByType
+                Map<String, TypeBackingShape> typesByName
             ) {
-                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of(), Map.of());
+                this(directives, typesByName, Map.of(), Map.of(), Map.of());
             }
 
             /**
@@ -191,11 +158,10 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             public Current(
                 List<DirectiveShape> directives,
                 Map<String, TypeBackingShape> typesByName,
-                Map<String, String> payloadDataFieldByType,
                 Map<String, FieldClassification> fieldClassificationsByCoord,
                 Map<String, TypeClassification> typeClassificationsByName
             ) {
-                this(directives, typesByName, payloadDataFieldByType,
+                this(directives, typesByName,
                     fieldClassificationsByCoord, typeClassificationsByName, Map.of());
             }
         }
@@ -203,7 +169,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         record Previous(
             List<DirectiveShape> directives,
             Map<String, TypeBackingShape> typesByName,
-            Map<String, String> payloadDataFieldByType,
             Map<String, FieldClassification> fieldClassificationsByCoord,
             Map<String, TypeClassification> typeClassificationsByName,
             Map<String, CompletionData.SourceLocation> typeDefinitionLocations
@@ -211,7 +176,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             public Previous {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
-                payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
                 fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
                 typeClassificationsByName = Map.copyOf(typeClassificationsByName);
                 typeDefinitionLocations = Map.copyOf(typeDefinitionLocations);
@@ -219,16 +183,14 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
 
             /**
              * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
-             * populate the directive surface, type-backing, and payload-data-field projections.
-             * Fills the classification projections and the type-definition-location
-             * map with empty maps.
+             * populate the directive surface and the type-backing projection. Fills the
+             * classification projections and the type-definition-location map with empty maps.
              */
             public Previous(
                 List<DirectiveShape> directives,
-                Map<String, TypeBackingShape> typesByName,
-                Map<String, String> payloadDataFieldByType
+                Map<String, TypeBackingShape> typesByName
             ) {
-                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of(), Map.of());
+                this(directives, typesByName, Map.of(), Map.of(), Map.of());
             }
 
             /**
@@ -238,11 +200,10 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             public Previous(
                 List<DirectiveShape> directives,
                 Map<String, TypeBackingShape> typesByName,
-                Map<String, String> payloadDataFieldByType,
                 Map<String, FieldClassification> fieldClassificationsByCoord,
                 Map<String, TypeClassification> typeClassificationsByName
             ) {
-                this(directives, typesByName, payloadDataFieldByType,
+                this(directives, typesByName,
                     fieldClassificationsByCoord, typeClassificationsByName, Map.of());
             }
         }

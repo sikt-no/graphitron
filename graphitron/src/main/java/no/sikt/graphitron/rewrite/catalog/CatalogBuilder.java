@@ -128,9 +128,6 @@ public final class CatalogBuilder {
         var typesByName = (schema == null || catalog == null)
             ? Map.<String, TypeBackingShape>of()
             : projectTypesByName(schema);
-        var payloadDataFieldByType = (schema == null)
-            ? Map.<String, String>of()
-            : projectPayloadDataFields(schema);
         var fieldClassifications = (schema == null)
             ? Map.<String, FieldClassification>of()
             : projectFieldClassifications(schema, fieldConflicts);
@@ -138,7 +135,7 @@ public final class CatalogBuilder {
             ? Map.<String, TypeClassification>of()
             : projectTypeClassifications(schema, registry, fieldClassifications);
         return new LspSchemaSnapshot.Built.Current(
-            directives, typesByName, payloadDataFieldByType,
+            directives, typesByName,
             fieldClassifications, typeClassifications,
             projectTypeDefinitionLocations(registry)
         );
@@ -182,28 +179,6 @@ public final class CatalogBuilder {
         int line = Math.max(loc.getLine() - 1, 0);
         int column = Math.max(loc.getColumn() - 1, 0);
         out.put(name, new CompletionData.SourceLocation("file://" + loc.getSourceName(), line, column));
-    }
-
-    /**
-     * Projects the carrier-data-field coordinates onto the LSP snapshot. A field classified as
-     * a {@code ChildField.BatchedTableField} with a {@code KeyLift.ProducedRecords} lift,
-     * {@code SingleRecordIdField}, or {@code SingleRecordIdFieldFromReturning} marks its parent
-     * type as a single-record carrier whose data field name is the field's own name.
-     */
-    private static Map<String, String> projectPayloadDataFields(GraphitronSchema schema) {
-        var out = new LinkedHashMap<String, String>();
-        for (var entry : schema.fields().entrySet()) {
-            var field = entry.getValue();
-            boolean isPayloadData =
-                (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
-                    && btf.lift() instanceof no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords)
-                || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField
-                || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
-            if (isPayloadData) {
-                out.put(field.parentTypeName(), field.name());
-            }
-        }
-        return Map.copyOf(out);
     }
 
     /**

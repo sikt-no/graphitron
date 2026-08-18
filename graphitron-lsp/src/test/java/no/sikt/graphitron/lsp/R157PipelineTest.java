@@ -238,12 +238,10 @@ class R157PipelineTest {
         var locOpt = vocab.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        // The snapshot names the backing class and the store says what it offers, so both halves of
-        // the arm come from the one scan this test ran: the projection got it as a reference list,
-        // and the store got the same list through capture.
+        // Both halves of the arm come from the one scan this test ran: the store got the census
+        // through capture, and names the backing class and what it offers off the same rows.
         try (var store = storeOver(artefacts)) {
-            return FieldCompletions.generate(
-                vocab, store.handle(), artefacts.snapshot(), context, directive, bytes);
+            return FieldCompletions.generate(vocab, store.handle(), context, directive, bytes);
         }
     }
 

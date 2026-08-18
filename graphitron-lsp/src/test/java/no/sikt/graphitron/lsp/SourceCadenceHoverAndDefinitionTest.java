@@ -206,7 +206,7 @@ class SourceCadenceHoverAndDefinitionTest {
             // Which declaration the type name binds to is the store's answer off the captured
             // binding, so the projection this arm still takes carries nothing.
             var snapshot = new LspSchemaSnapshot.Built.Current(
-                List.of(), Map.of(), Map.of(), Map.of(), Map.of());
+                List.of(), Map.of(), Map.of(), Map.of());
 
             assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
                 .contains("The actor table.");

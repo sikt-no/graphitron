@@ -151,6 +151,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       returns, and {@code intent_resolved_type_binding}, where that population meets the
  *       {@code @table} one, including the seat the derivation excludes and the arity the
  *       coalescing recount produces;
+ *       {@code no.sikt.graphitron.rewrite.derive.CarrierDataFieldTest} binds
+ *       {@code intent_carrier_data_field}, where a mutation payload's data arrives, over captured
+ *       SDL against that same catalog and the test classes' own census, half its cases pinning the
+ *       payload shapes that name nothing because a carrier's boundary is most of what the relation
+ *       claims;
  *       {@code no.sikt.graphitron.rewrite.derive.FieldColumnTableTest} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, half
  *       its cases pinning the coordinates that produce no row because the boundary of an override
@@ -298,6 +303,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
         registrations.put("intent_resolved_type_binding", Arm.DERIVED);
+        registrations.put("intent_carrier_data_field", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_scope", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);

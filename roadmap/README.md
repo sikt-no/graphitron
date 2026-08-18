@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R704` | The @routine read surface: unwire the carve-outs, then derive them from facts | In Progress | 2026-08-18 | [plan](routine-composition-surface-from-facts.md) |
-| `R638` | The LSP is a fact-store client | In Progress | 2026-08-17 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
+| `R638` | The LSP is a fact-store client | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | Spec | 2026-08-18 | [plan](store-contention-fails-fast.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | Spec | 2026-08-18 | [plan](decodes-normalize-internal-grammars.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection <sub>blocked by: [routine-composition-surface-from-facts](routine-composition-surface-from-facts.md)</sub> | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |

@@ -255,7 +255,7 @@ class DiagnosticsTest {
      * freshness-gated warn arms behave as they do in a settled session.
      */
     private static LspSchemaSnapshot noBackings() {
-        return new LspSchemaSnapshot.Built.Current(java.util.List.of(), Map.of(), Map.of());
+        return new LspSchemaSnapshot.Built.Current(java.util.List.of(), Map.of());
     }
 
     /**
@@ -312,64 +312,88 @@ class DiagnosticsTest {
 
     // ===== $source sigil diagnostics =====
 
+    /**
+     * The site the sigil belongs at, captured rather than declared: an {@code @service} payload whose
+     * data channel is the encoded key of the record the producer returned. The sigil is valid there,
+     * so nothing is said about it.
+     */
     @Test
     void sourceSigil_atCarrierDataField_producesNoDiagnostic() {
-        // Admitted carrier-data-field site — $source is valid; no diagnostic.
-        var file = file("""
-            type FilmListPayload {
-                films: [Film!] @field(name: "$source")
+        var diags = computeCaptured("""
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            union WriteError = DbErr
+            type Film @table(name: "film") { title: String }
+            type CreateFilmPayload {
+                filmId: ID @field(name: "$source")
+                errors: [WriteError]
+            }
+            type Query { films: [Film] }
+            type Mutation {
+                createFilm: CreateFilmPayload
+                    @service(service: {className: "com.example.FilmService", method: "create"})
             }
             """);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("FilmListPayload", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.NoBacking.UnbackedResult()),
-            java.util.Map.of("FilmListPayload", "films")
-        );
-        var diags = compute(file, catalogOnly, snapshot);
 
         assertThat(diags).isEmpty();
     }
 
+    /**
+     * The same payload under a DML write, which the documented rule does not admit: the sigil binds
+     * a producer method's return and a write has none, so the canonical message fires. The projection
+     * this arm replaced was silent here, its carrier map being keyed on classification arms the two
+     * producers share.
+     */
     @Test
-    void sourceSigil_atNonCarrierSite_producesCanonicalNotDefinedHereDiagnostic() {
-        // The parent has an entry in the projection but none in the carrier projection, so the LSP
-        // emits the canonical "$source is not defined here" message. The entry is load-bearing as
-        // membership and not as a backing: the sigil arm speaks only about a type the projection has
-        // seen, so that a site whose classification is merely stale is left alone. Which variant the
-        // entry carries is beside the point, nothing reading a backing off the projection any more.
-        var file = file("""
-            type Foo {
-                bar: Int @field(name: "$source")
+    void sourceSigil_onADmlCarrierDataField_producesTheNotDefinedHereDiagnostic() {
+        var diags = computeCaptured("""
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+            union WriteError = DbErr
+            type Film @table(name: "film") { title: String }
+            type DeleteFilmPayload {
+                deletedId: ID @field(name: "$source")
+                errors: [WriteError]
+            }
+            type Query { films: [Film] }
+            type Mutation {
+                deleteFilm(filmId: Int): DeleteFilmPayload @mutation(typeName: DELETE, table: "film")
             }
             """);
-
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking("com.example.FooDto")),
-            java.util.Map.of()
-        );
-        var diags = compute(file, catalogOnly, snapshot);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
             .isEqualTo(no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage());
     }
 
+    /**
+     * A captured type no mutation payload reaches: the store answers the question definitely, so the
+     * canonical "not defined here" message is earned rather than guessed.
+     */
     @Test
-    void sourceSigil_snapshotUncertainty_silent() {
-        // No entry for the parent in typesByName AND no entry in carrierDataFieldByType —
-        // shape unknown. LSP is silent: no diagnostic emitted even though the user typed
-        // $source (we cannot resolve whether the site admits it; defer to the build).
+    void sourceSigil_atNonCarrierSite_producesCanonicalNotDefinedHereDiagnostic() {
+        var diags = computeCaptured("""
+            type Foo { bar: Int @field(name: "$source") }
+            type Query { foo: Foo }
+            """);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .isEqualTo(no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage());
+    }
+
+    /**
+     * The parent is a type nothing has captured, which is what a buffer naming a type its save has
+     * not reached looks like. Silence rather than a verdict: a judgement that the sigil is misplaced
+     * here would be a judgement about a shape the store has never read.
+     */
+    @Test
+    void sourceSigil_atATypeTheStoreHasNotSeen_isSilent() {
         var file = file("""
             type RenamedMidEdit {
                 films: [Film!] @field(name: "$source")
             }
             """);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(
-            java.util.List.of(), java.util.Map.of(), java.util.Map.of());
-        var diags = compute(file, catalogOnly, snapshot);
+        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -868,7 +892,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
@@ -907,7 +931,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -932,7 +956,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -957,7 +981,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1141,7 +1165,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
 
         assertThat(diags).hasSize(2);
         assertThat(diags).extracting(d -> d.getMessage())
@@ -1159,7 +1183,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1176,7 +1200,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -1206,7 +1230,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -1230,7 +1254,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())

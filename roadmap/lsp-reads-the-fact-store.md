@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-17
+last-updated: 2026-08-18
 ---
 
 # The LSP is a fact-store client
@@ -529,17 +529,19 @@ recalculation bookkeeping it aims retire with the keystroke cadence (see the dia
 paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retires with the
 java-source family: the LSP walks nothing.
 
-**What still reads the projection.** Two sites, and they are the residue of the inventory rather
-than a separate concern. Naming them here because "every feature moves" is checkable only against a
-list of what has not.
+**What still reads the projection.** One site, the residue of the inventory rather than a separate
+concern. Naming it here because "every feature moves" is checkable only against a list of what has
+not.
 
 * `DeclTarget` asks for the field classification at a coordinate, and asks it now only about
   `@routine`: the generated call surface a routine read or write binds to, which no relation carries.
   R709 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below,
   and the read that is left happens before the statement rather than inside it, so it costs the
   surfaces nothing but the fact itself.
-* `FieldCompletions` asks whether a site is a payload data field, through `siteContext`, to decide
-  whether to offer the source sigil. A narrow predicate over a distinction no relation states.
+
+The second site was `FieldCompletions`'s source-sigil predicate, and it is settled below: the
+completion and the diagnostic beside it read `intent_carrier_data_field`, and the carrier projection
+retired with them.
 
 ## Resolved questions
 
@@ -2942,7 +2944,12 @@ the per-grain bulk readers: the whole of `ClaimClassifiers` (`ofTypes`, `ofField
 relations are arms of `InlayFacts` now. `InlayHints` no longer names a reader class at all, and its
 per-directive registry holds collectors rather than renderers, so `renderInferredTableNameHint`,
 `renderInferredFieldNameHint` and `renderInferredReferencePathHint` are gone along with the
-`InferenceSources` record and the `InlayHintKind` parameter on `makeHint`.
+`InferenceSources` record and the `InlayHintKind` parameter on `makeHint`. The carrier projection
+went with the sigil's two readers: `payloadDataFieldByType` off both `Built` arms,
+`LspSchemaSnapshot.siteContext`, `CatalogBuilder.projectPayloadDataFields`, and the sealed
+`FieldSourceSigil.SiteContext` with its `PayloadDataField` / `Other` permits and
+`sourceSigilDefinedAt`. `CompletionRequest.snapshot` is gone too, with `Completions` no longer passing
+one: the sigil arm was its last reader.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -3666,3 +3673,60 @@ it shows what the buffer does not say, and the authored path is in the buffer on
 **What remains on this item.** `FieldCompletions`'s source-sigil predicate over `siteContext`, and
 `DeclTarget`'s `@routine` identity, which R709 closes. Both are named above and neither is an inlay
 concern.
+
+## Settled while building: a carrier is what a mutation returns, and the sigil's admit was wider than its own message
+
+The `$source` sigil's two surfaces asked the projection one question: is this coordinate the data
+field of a carrier payload. `intent_carrier_data_field` answers it now, and the projection retired
+with them, which leaves `DeclTarget`'s `@routine` identity as the last thing on this item reading a
+generator pass's output.
+
+**Carrier-ness comes from the producing field, and that is the load-bearing part.** A payload type
+looks like nothing in particular: one field whose type is table-bound, beside an errors channel. So
+does any nesting type in any schema, which is why a relation keyed on the payload's own shape would
+call half a schema a carrier. What makes the type a carrier is that a mutation-root write returns it,
+and the directive that returns it decides two policies as well, so the producing directive is a
+column: `@service` is SERVICE, `@mutation` is DML, `@routine` is ROUTINE, and a payload two of them
+return is a row per family rather than a pick.
+
+**The families differ in exactly three places and each is a rejection of the whole payload.** A
+directive on a data field that names a different fetcher contract routes the type out of the mold, and
+the one difference in that list is `@splitQuery`, which a producer-backed carrier tolerates because
+its data field already re-fetches. The other two are the ID element: a routine write has no primary-key
+echo, so ROUTINE admits no ID data field at any wrapper, and a DELETE echo cannot have a nullable slot,
+so DML refuses `[ID]`. The Connection refusal that sits beside those in the walk is unreachable there,
+`@asConnection` being on the forbidden list the scan consults first, so the view does not carry it.
+
+**The arity is a column and the refusal is the reader's, which is the third relation in a row to take
+that shape.** A payload declaring two data channels is two rows counting two, which is the coordinate
+the generator rejects for having no single data field; a reader demands `data_fields = 1` and
+transcribes the refusal without recounting. Element kind is a column on the same argument: which kinds
+admit a given surface is that surface's rule, and the sigil's is TABLE and ID, the two the carrier
+classification encodes the upstream value onto.
+
+**The move found the admit was wider than the message it prints.** The user manual and the build's own
+rejection both say the sigil is valid on the data field of a payload returned by a `@service`-backed
+mutation, and the projection admitted DML carriers too, because its map was built from classification
+arms a payload-returning write lands on as readily as a producer does. So the editor offered `$source`
+on a DELETE echo and said nothing when an author wrote it there, against a documented rule that does not
+admit it. The reader demands SERVICE, which is a change of answer rather than a move of one, and it is
+pinned on both surfaces: the same payload shape under `@service` and under `@mutation`, one offering
+the sigil and one reporting it.
+
+**One shape the store cannot see yet, and the cause is not here.** A two-level carrier wraps a result
+type the producer's class stands for, and `intent_type_backing_class` says in its own comment that it
+does not apply the walk's carrier fork: the closure backs the wrapper where the walk reaches past it.
+So the element resolves to no kind and the payload names nothing. That is the closure's departure to
+close and not a second reading of it here, and it is pinned as a case so it cannot be discovered twice.
+
+**The completion seam lost its snapshot parameter.** The sigil arm was the last completion provider
+reading a generator pass's projection, so `CompletionRequest` no longer carries one and `Completions`
+no longer passes one. The case asserting the column arm answers without a snapshot went with it, the
+signature saying now what the assertion said. Diagnostics keeps its snapshot for the directive shapes
+and the validator replay, which are other residues on other clocks.
+
+**The diagnostic's silence changed meaning without changing shape.** It used to stay quiet when the
+parent type had no entry in the backing projection, standing for "the classifier has not seen this
+type". It now stays quiet when the store holds no `graphql_type` row for the parent, which is the same
+silence over a fact: a buffer naming a type no capture has read is what that state actually is, and a
+verdict there would be a verdict about a shape nothing has resolved.

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
+import no.sikt.graphitron.lsp.facts.CarrierDataField;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogKeys;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
@@ -25,6 +26,8 @@ import java.util.Set;
 import java.util.function.Function;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
+import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
@@ -114,6 +117,8 @@ final class DiagnosticFacts {
         private final Set<String> nodeTypeNames = new LinkedHashSet<>();
         private final Set<FieldCoord> memberSites = new LinkedHashSet<>();
         private final Set<String> memberTypeNames = new LinkedHashSet<>();
+        private final Set<FieldCoord> sigilSites = new LinkedHashSet<>();
+        private final Set<String> sigilTypeNames = new LinkedHashSet<>();
 
         void tableName(String spelling) {
             tableNames.add(spelling);
@@ -154,6 +159,19 @@ final class DiagnosticFacts {
         }
 
         /**
+         * A written {@code $source} asks two things at once, and the second is about the type rather
+         * than the coordinate: whether the store holds the parent at all, which is what separates a
+         * site the sigil does not belong at from one nothing has been captured for yet. A site with no
+         * enclosing field contributes only the type question, having no coordinate to admit.
+         */
+        void sigilSite(String typeName, String fieldName) {
+            sigilTypeNames.add(typeName);
+            if (fieldName != null) {
+                sigilSites.add(new FieldCoord(typeName, fieldName));
+            }
+        }
+
+        /**
          * Folds another document's questions in. Sets throughout, so the union of what several
          * documents ask is what one statement answers for all of them, and two files naming the same
          * type ask about it once.
@@ -166,11 +184,14 @@ final class DiagnosticFacts {
             nodeTypeNames.addAll(other.nodeTypeNames);
             memberSites.addAll(other.memberSites);
             memberTypeNames.addAll(other.memberTypeNames);
+            sigilSites.addAll(other.sigilSites);
+            sigilTypeNames.addAll(other.sigilTypeNames);
         }
 
         boolean isEmpty() {
             return tableNames.isEmpty() && foreignKeyNames.isEmpty() && classNames.isEmpty()
-                && methods.isEmpty() && nodeTypeNames.isEmpty() && memberTypeNames.isEmpty();
+                && methods.isEmpty() && nodeTypeNames.isEmpty() && memberTypeNames.isEmpty()
+                && sigilTypeNames.isEmpty();
         }
     }
 
@@ -251,8 +272,23 @@ final class DiagnosticFacts {
         List<BackingRow> backingSeeds,
         List<BackingRow> backingReached,
         List<RedirectRow> redirects,
-        List<SlotRow> slots
+        List<SlotRow> slots,
+        List<FieldCoord> sigilSites,
+        List<String> declaredSigilTypeNames
     ) {
+
+        /**
+         * Whether the {@code $source} sigil belongs at this coordinate, and if not, whether the store
+         * is in a position to say so. {@link Resolution#RESOLVES} is an admitted site,
+         * {@link Resolution#UNKNOWN} a captured type the sigil does not belong on, and
+         * {@link Resolution#NO_CENSUS} a parent the store has never seen, where a buffer naming a type
+         * no capture has read is the ordinary reason and a judgement asserting the sigil is misplaced
+         * would be asserting it about a shape nothing has resolved.
+         */
+        Resolution sourceSigilSite(String typeName, String fieldName) {
+            return resolution(fieldName != null && sigilSites.contains(new FieldCoord(typeName, fieldName)),
+                declaredSigilTypeNames.contains(typeName));
+        }
 
         /** What the catalog says about a table name an author wrote. */
         Resolution tableName(String spelling) {
@@ -467,7 +503,8 @@ final class DiagnosticFacts {
      */
     static Answers none() {
         return new Answers(false, List.of(), false, List.of(), false, List.of(), false, List.of(),
-            List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(), List.of());
     }
 
     /** Every question the document asked, answered in one statement. */
@@ -505,7 +542,9 @@ final class DiagnosticFacts {
                 backingArm(store, questions.memberTypeNames, INTENT_TYPE_BACKING.TYPE_NAME,
                     INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.GRAPH_NAME),
                 redirectArm(store, questions.memberTypeNames),
-                slotArm(store, questions.memberTypeNames))
+                slotArm(store, questions.memberTypeNames),
+                sigilSiteArm(store, questions.sigilSites),
+                declaredTypeArm(store, questions.sigilTypeNames))
             .fetchOne(Records.mapping(Answers::new));
     }
 
@@ -709,7 +748,41 @@ final class DiagnosticFacts {
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
     }
 
-    /** A disjunction over whole coordinates, which is what keys the arm a site's own scope comes from. */
+    /**
+     * Which of the coordinates carrying a written {@code $source} are sites the sigil belongs at.
+     * The narrowing is {@link CarrierDataField#sigilSite}'s, shared with the completion that offers
+     * the sigil, so the two surfaces cannot come to disagree about where it belongs.
+     */
+    private static Field<List<FieldCoord>> sigilSiteArm(
+        StoreHandle store, Collection<FieldCoord> sites
+    ) {
+        var carrier = INTENT_CARRIER_DATA_FIELD;
+        return multiset(selectDistinct(carrier.TYPE_NAME, carrier.FIELD_NAME)
+            .from(carrier)
+            .where(carrier.GRAPH_NAME.eq(store.graphName()))
+            .and(coordinateIn(carrier.TYPE_NAME, carrier.FIELD_NAME, sites))
+            .and(CarrierDataField.sigilSite())
+            .orderBy(carrier.TYPE_NAME, carrier.FIELD_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(FieldCoord::new)));
+    }
+
+    /**
+     * Which of the types a written {@code $source} sits inside the store holds a declaration for. The
+     * census this arm defers on is the graph's own SDL, so no row means the parent is a type no
+     * capture has read rather than one the store judged.
+     */
+    private static Field<List<String>> declaredTypeArm(
+        StoreHandle store, Collection<String> typeNames
+    ) {
+        return multiset(selectDistinct(GRAPHQL_TYPE.TYPE_NAME)
+            .from(GRAPHQL_TYPE)
+            .where(GRAPHQL_TYPE.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHQL_TYPE.TYPE_NAME.in(typeNames))
+            .orderBy(GRAPHQL_TYPE.TYPE_NAME))
+            .convertFrom(rows -> rows.map(Record1::value1));
+    }
+
+    /** A disjunction over whole coordinates, which is what keys the arms a coordinate's rows come from. */
     private static Condition coordinateIn(
         TableField<?, String> typeColumn, TableField<?, String> fieldColumn,
         Collection<FieldCoord> sites

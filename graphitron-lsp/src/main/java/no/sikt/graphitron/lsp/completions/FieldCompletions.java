@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.facts.CarrierDataField;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
 import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
@@ -11,8 +12,6 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -37,10 +36,10 @@ import java.util.List;
  *   <li>No scope — empty list, which a type nothing binds and no single class stands for gets.</li>
  * </ul>
  *
- * <p>The field's own classification is still a question the snapshot answers, and so is whether the
- * {@code $source} sigil belongs at this site. What the enclosing type resolves against is the
- * store's, and so is what either scope then offers ({@link CatalogColumns} for a table,
- * {@link ClassMemberSlots} for a class).
+ * <p>Every question this provider asks is the store's. What the enclosing type resolves against is
+ * one read, what either scope then offers is the next ({@link CatalogColumns} for a table,
+ * {@link ClassMemberSlots} for a class), and whether the {@code $source} sigil belongs at this site
+ * is {@link CarrierDataField}.
  */
 public final class FieldCompletions {
 
@@ -49,7 +48,6 @@ public final class FieldCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         StoreHandle store,
-        LspSchemaSnapshot snapshot,
         CompletionContext context,
         Directives.Directive directive,
         byte[] source
@@ -69,23 +67,17 @@ public final class FieldCompletions {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, source))
             .orElse(null);
-        return completionsFor(store, snapshot, context, typeName.get(), fieldName);
+        return completionsFor(store, context, typeName.get(), fieldName);
     }
 
     private static List<CompletionItem> completionsFor(
-        StoreHandle store, LspSchemaSnapshot snapshot,
-        CompletionContext context, String typeName, String fieldName
+        StoreHandle store, CompletionContext context, String typeName, String fieldName
     ) {
-        // At the payload data field site, prepend $source as a top-level completion.
-        // The snapshot owns the (typeName, fieldName) -> SiteContext classification through
-        // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
-        // the underlying projection ourselves. Snapshot-uncertainty rule: when the parent type
-        // has no entry in the carrier projection, siteContext returns Other and the sigil is
-        // not suggested.
+        // At the payload data field site, prepend $source as a top-level completion. Where the
+        // sigil belongs is the store's answer, and a coordinate it holds no row for is one the
+        // sigil does not belong at, which is the same reading as a coordinate it declines.
         boolean isPayloadDataField = fieldName != null
-            && snapshot instanceof LspSchemaSnapshot.Built sigilSnapshot
-            && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
-                sigilSnapshot.siteContext(typeName, fieldName));
+            && CarrierDataField.admitsSigil(store, typeName, fieldName);
         var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         // Prefer the site's own resolved scope over the enclosing type's backing: a @reference
         // path's terminal table, or the table the named type is itself bound to, is where the

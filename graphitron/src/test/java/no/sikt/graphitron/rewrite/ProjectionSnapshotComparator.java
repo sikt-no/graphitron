@@ -32,7 +32,6 @@ public final class ProjectionSnapshotComparator {
         var out = new ArrayList<String>();
         diffMaps("directive", indexByName(before.directives()), indexByName(after.directives()), out);
         diffMaps("type-backing", before.typesByName(), after.typesByName(), out);
-        diffMaps("payload-data-field", before.payloadDataFieldByType(), after.payloadDataFieldByType(), out);
         diffMaps("field-classification", before.fieldClassificationsByCoord(), after.fieldClassificationsByCoord(), out);
         diffMaps("type-classification", before.typeClassificationsByName(), after.typeClassificationsByName(), out);
         return out;

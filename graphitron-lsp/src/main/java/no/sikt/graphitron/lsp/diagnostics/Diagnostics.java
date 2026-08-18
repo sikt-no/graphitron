@@ -149,6 +149,14 @@ public final class Diagnostics {
             implements Finding {}
 
         /**
+         * A written {@code $source}, against the coordinates a mutation payload's data arrives at.
+         * Its own arm rather than a member name because the sigil resolves against nothing a scope
+         * offers: what admits it is the site being a carrier's data channel, which is a fact about
+         * the enclosing type's role rather than about any table or class.
+         */
+        record SourceSigil(Range range, String typeName, String fieldName) implements Finding {}
+
+        /**
          * A parsed {@code argMapping} string, judged whole. One finding for the entire value rather
          * than one per entry because the checks interleave: an entry's structure and its Java
          * parameter are reported in that order, and only the second needs the census.
@@ -711,7 +719,7 @@ public final class Diagnostics {
                 findings.add(new Finding.TableName(rangeOf(file, leaf.valueNode()), spelling));
             }
             case Behavior.CatalogColumnBinding ignored ->
-                collectMemberName(directive, leaf.valueNode(), file, snapshot, findings, questions, out);
+                collectMemberName(directive, leaf.valueNode(), file, findings, questions);
             case Behavior.CatalogFkBinding ignored -> {
                 String spelling = value(leaf.valueNode(), file);
                 if (spelling.isEmpty()) return;
@@ -752,23 +760,14 @@ public final class Diagnostics {
     }
 
     /**
-     * Collects a {@code @field(name:)} (or other {@code CatalogColumnBinding}) coordinate, and settles
-     * the one thing here the store has no part in.
-     *
-     * <p>The snapshot still answers one question at this coordinate, and it is not the backing: whether
-     * the site admits the {@code $source} sigil, which is the carrier classification rather than
-     * anything about a table or a class. If the value is the sigil, the diagnostic shape is sigil-aware.
-     * The snapshot owns the (typeName, fieldName) to SiteContext classification through siteContext();
-     * we route the predicate through sourceSigilDefinedAt rather than reading the underlying projection
-     * ourselves. At an admitted carrier-data-field site the sigil is valid, so no diagnostic. Anywhere
-     * else, emit the canonical FieldSourceSigil.sourceSigilNotDefinedHereMessage().
-     * Snapshot-uncertainty: when the parent type has no entry in the type-backing projection at all
-     * (mid-edit, or not yet classified), stay silent so we do not punish the user for a shape we cannot
-     * resolve.
+     * Collects a {@code @field(name:)} (or other {@code CatalogColumnBinding}) coordinate, as one of
+     * two findings: a written {@code $source} asks where a payload's data arrives, and anything else
+     * asks what the site's scope offers. The two are different questions rather than two readings of
+     * one, which is why the sigil takes its own arm and returns before the member arm collects.
      */
     private static void collectMemberName(
-        Directives.Directive directive, Node valueNode, FileSnapshot file, LspSchemaSnapshot snapshot,
-        List<Finding> findings, DiagnosticFacts.Questions questions, Settled out
+        Directives.Directive directive, Node valueNode, FileSnapshot file,
+        List<Finding> findings, DiagnosticFacts.Questions questions
     ) {
         String memberName = value(valueNode, file);
         if (memberName.isEmpty()) return;
@@ -780,14 +779,8 @@ public final class Diagnostics {
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
         if (no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL.equals(memberName)) {
-            if (!(snapshot instanceof LspSchemaSnapshot.Built sigilSnapshot)) return;
-            boolean isPayloadDataField = fieldName != null
-                && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
-                    sigilSnapshot.siteContext(typeName.get(), fieldName));
-            if (!isPayloadDataField && sigilSnapshot.typesByName().containsKey(typeName.get())) {
-                out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
-                    no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
-            }
+            questions.sigilSite(typeName.get(), fieldName);
+            findings.add(new Finding.SourceSigil(rangeOf(file, valueNode), typeName.get(), fieldName));
             return;
         }
         questions.memberSite(typeName.get(), fieldName);
@@ -928,6 +921,12 @@ public final class Diagnostics {
                 judgeMethodName(answers, range, classFqn, methodName, out);
             case Finding.MemberName(var range, var typeName, var fieldName, var memberName) ->
                 judgeMemberName(answers, range, typeName, fieldName, memberName, out);
+            case Finding.SourceSigil(var range, var typeName, var fieldName) -> {
+                if (answers.sourceSigilSite(typeName, fieldName) == DiagnosticFacts.Resolution.UNKNOWN) {
+                    out.add(diagnostic(range, DiagnosticSeverity.Error,
+                        no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
+                }
+            }
             case Finding.ArgMappingValue value -> judgeArgMapping(answers, source, value, out);
         }
     }
