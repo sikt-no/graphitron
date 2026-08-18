@@ -1,13 +1,13 @@
 ---
 id: R680
 title: "Gather the fact-store test harnesses of all four modules onto one shared home"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 3
 theme: testing
 depends-on: [lsp-reads-the-fact-store]
 created: 2026-08-14
-last-updated: 2026-08-17
+last-updated: 2026-08-18
 ---
 
 # Gather the fact-store test harnesses of all four modules onto one shared home
