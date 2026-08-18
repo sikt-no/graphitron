@@ -269,6 +269,60 @@ A tool may still fire more than one query where the answers are genuinely indepe
 `catalog.tables` does for its count beside its page. What the rule forbids is one answer assembled
 from several grains in Java.
 
+## Every tool's grain, and the relation at it
+
+The rule above is only worth stating if each tool actually has a relation keyed the way its wire entry
+is keyed, so this section checks that per tool against the DDL's own primary keys rather than asserting
+it in general. Nine of the ten check out exactly. The tenth has a mismatch the store declines to
+reconcile on purpose, and an implementer who does not know that will try to force it into one query.
+
+| Tool | Wire grain | Relation at that grain | Nested children |
+| --- | --- | --- | --- |
+| `catalog.tables` | one table | `sql_table (source_name, table_schema, table_name)` | none |
+| `catalog.describe` | one table | the same | `sql_column`, `sql_constraint` with `sql_constraint_column`, `sql_primary_key`, `sql_index` with `sql_index_column`, `sql_referential_constraint` |
+| `catalog.search` | one table | the same | `sql_column`, composed into the corpus |
+| `schema` | one type | `graphql_type (graph_name, type_name)` | `graphql_field`, `graphitron_node` with `graphitron_node_key_column`, and the claim / demand / binding views at whichever grain each is keyed |
+| `status` | the graph | `store_graph (graph_name)` | `graphql_syntax_error`, `graphql_schema_error` |
+| `diagnostics` | one diagnostic | the `diagnostic` view | none |
+| `diagnostics.aggregate` | a group over that view | the same, grouped by its own columns | none |
+| `code` | one class | `jvm_class (source_name, class_name)` | `jvm_method` with `jvm_method_parameter`, `jvm_record_component` |
+| `directives` | one directive | `graphql_directive (graph_name, directive_name)` | `graphql_directive_argument`, `graphql_directive_location` |
+| `docs.search`, `execute` | not a store read | none | none |
+
+Every child in the right-hand column carries a foreign key to its parent's key, which is what makes the
+nesting a correlation rather than a guess.
+
+**`schema`'s two grains nest rather than collide**, which is worth stating because a tool answering at
+two grains is where the folded shape usually comes back. `graphql_field`'s key is
+`(graph_name, type_name, field_name)` with a foreign key to `graphql_type`, so the answer is a type row
+carrying a multiset of field rows and the binding views hang off whichever grain each is keyed at. There
+is no second read to fold.
+
+**Source locations in `code` are the one mismatch, and it is deliberate on the store's side.** The two
+families share neither a key nor a partition dimension. `jvm_method` is keyed
+`(source_name, class_name, method_name, descriptor)`, where `source_name` is a classpath entry and
+`descriptor` is the JVM signature. `java_method_declaration` is keyed
+`(file, class_name, method_name, ordinal)`, where `file` is a source path and `ordinal` is declaration
+order within the file, with the arity in a separate `parameter_count` column. Neither key is the
+other's, and the relations say why rather than leaving it to be discovered:
+`java_class_declaration.class_name` is documented as the join key to `jvm_class.class_name` "matched by
+name and by nothing else", and `java_method_declaration` states that it holds "one row per declaration,
+not one per resolvable name", so "a consumer asking for a name gets as many rows as the class declares
+and the count is the resolution outcome".
+
+So the `code` tool fires two reads, and that is within the rule rather than an exception to it: what a
+classfile declares and where a source file writes it are two questions, not one answer assembled from
+two grains. The location read matches on `(class_name, method_name, parameter_count)` and more than one
+row is the `ambiguous` value the wire already reports, which is the store's stated contract being
+honoured rather than a heuristic the module invented. What an implementer must not do is invent a
+correlation the store declines to guarantee, either by joining `descriptor` to `ordinal` or by treating
+a name that matches several declarations as a first-declaration-wins pick.
+
+One population trap sits inside that boundary. `java_method_declaration` counts a constructor as a
+declaration and gives it a row, and `jvm_method` excludes constructors, which the relation's own comment
+names as one of the places the two populations are deliberately allowed to disagree. An unmatched side
+is therefore a fact and never an error, in either direction.
+
 ## The shape of the work: one tool per slice
 
 The work is sliced by tool, not by projection, and each slice takes one tool from its projection to
@@ -519,9 +573,14 @@ by name, columns in `ordinal` order) were already delivered and are not revisite
 **Reads.** One nested projection per class over the `jvm_` census: the class row carries a `MULTISET`
 of its callable methods, each with a nested `MULTISET` of parameters for the arity in the
 `fqcn#method/arity` ref and its `declared_return_type` for the signature an author reads, and a
-`MULTISET` of record components. Source locations join the `java_` declaration family
-(`java_class_declaration`, `java_method_declaration`, `java_field_declaration`) for the `location` /
-`locationStatus` wire fields, at the grain each one belongs to.
+`MULTISET` of record components.
+
+Source locations are a second read and not a nested child, which is the one place in this item where a
+tool legitimately fires two queries for one wire entry. "Every tool's grain, and the relation at it"
+carries the reason: the `java_` declaration family shares neither a key nor a partition dimension with
+the `jvm_` census, deliberately, so the `location` / `locationStatus` fields come from a read matched on
+`(class_name, method_name, parameter_count)` whose row count is itself the resolution outcome. Do not
+try to fold it into the nesting, and do not treat an unmatched side as an error in either direction.
 
 The three-way split the old tools performed becomes a `kind` argument over one answer rather than
 three tools over one census: a class with `jvm_record_component` rows is a record, a method whose
