@@ -67,8 +67,9 @@ Three sites carry it, and they do not agree with each other:
 The cost of the inverted assignment is visible in the schema and is the sharpest evidence for the
 frame. `graphitron_field_synthesis.authored_type_sdl` holds "the type expression as the author wrote
 it, pre-expansion" as unparsed text, because a derived value took the captured value's seat in
-`graphql_field`, and a view now recovers it with nested `REPLACE` calls stripping `[`, `]` and `!`. A
-captured fact is being reconstructed by string surgery.
+`graphql_field`, and two views now recover it with nested `REPLACE` calls stripping `[`, `]` and `!`
+(`intent_routine_return_binding` and `intent_field_column_scope`). A captured fact is being
+reconstructed by string surgery, twice.
 
 ## Which tier each family is in
 
@@ -196,6 +197,26 @@ schema reference, so this is the highest-visibility carrier of the retired contr
 tier vocabulary (the written expression beside the expansion's result), leaving the column name
 untouched per Out of scope. A comment edit is not a relation change.
 
+### The `intent_` view comments that read the synthesis column
+
+The same argument reaches three consumers of that column. View comments render into the published
+schema reference beside the table comments (`SchemaReferencePages` marks a view and prints its
+comment the same way), so these carry the retired contrast just as far:
+
+- `intent_routine_return_binding`'s view comment, "The type read is the authored named type with
+  its wrappers stripped, taken off `graphitron_field_synthesis` where a macro rewrote the field's
+  type expression", and its `type_name` column comment, "the authored named type with its list and
+  non-null wrappers stripped".
+- `intent_field_column_scope`'s view comment, "The two read the named type at different stages,
+  this rule the field's current one and that rule the authored one". The neighbouring "the named
+  type read is the one the author wrote" is already tier vocabulary and stays.
+- `intent_field_reference_discovery`'s view comment, "which reads the authored type expression
+  through `graphitron_field_synthesis`".
+
+Each says the written type expression, or drops the qualifier where the
+`graphitron_field_synthesis` join in the same clause already says which of the two it means. No
+relation changes; comment edits only, as above.
+
 ### Test prose carrying the vocabulary
 
 - `MacroCaptureTest`'s class javadoc: "The store's picture is the effective schema".
@@ -217,7 +238,8 @@ different sense of the same words and stay:
 - "effective type" meaning the base declaration merged with its extensions
   (`graphql_field.ordinal`'s comment, `ArgNameCompletions`' field-order javadoc).
 - "authored" contrasting author input with structural inference or with generator output: the
-  claim stratum's `intent_authored_*` vocabulary and the provenance section of `fact-model.adoc`,
+  claim stratum's `intent_authored_*` vocabulary, and in `fact-model.adoc` both the provenance
+  section and "the authored form behind each resolved value" under "One base, many views",
   plus "authored condition", "authored filter", "authored coordinates" and kin across the tree.
   The retirement is scoped to authored-versus-synthesized as names for the store's contents.
 
@@ -237,8 +259,14 @@ recurs.
 
 - "effective rather than authored", "the authored picture", "the effective picture", "the effective
   schema" as names for a tier or for the store's contents.
-- "authored form" / "authored type" as a contrast with a synthesized one. The captured fact needs no
-  qualifier; the derived one is named by its derivation.
+- "authored form" / "authored type" / "authored named type" / "authored type expression" /
+  "authored expression", and a bare "the authored one" contrasted with an expansion's result, as
+  names for the pre-expansion fact. The captured fact needs no qualifier; the derived one is named
+  by its derivation.
+
+The grep is the word `authored` across the DDL and the two `.adoc` pages, not the fixed spellings
+above: the carriers vary the noun, and three of the four `intent_` sites named in Implementation
+match none of the fixed phrases. The fences below are what makes the wider grep readable.
 
 Deliberately *not* retired here, because they are relation and column names with their own scope: the
 three `intent_authored_*` views, and `graphitron_field_synthesis.authored_type_sdl`. The tier reading
