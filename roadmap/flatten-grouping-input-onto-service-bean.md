@@ -331,7 +331,8 @@ Follow R336's tier split. No generated-body string assertions.
 * **Record arm: reject to accept only.** Every schema this item newly admits fails the build
   today, on direction A or direction B. On this arm the new D3 rejections can only fire on shapes
   that already fail. There is no record-arm schema that builds today and stops building.
-* **JavaBean arm: the whole new rejection surface is accept-to-reject.** Not one case. Today
+* **JavaBean arm: five new loud failures, and they are the second half of the fix.** Not one case,
+  and not a cost. Today
   `bindJavaBean` skips an SDL field whose binding key names no setter with a bare `continue`,
   *before* `bindField` runs, so an unmatched nested input field is never descended into and never
   inspected at all. Every shape this item newly examines on that arm therefore builds today. After
@@ -343,12 +344,27 @@ Follow R336's tier split. No generated-body string assertions.
   * two groups hoisting the same key (D3 collision);
   * a group carrying `@field(name:)` or `@nodeId` whose named member does not exist (binding rule 3).
 
-  Every one of these replaces a silent data drop with a named build failure, which is the direction
-  this item exists to move, and none of them can fire on a schema whose data currently arrives
-  intact. **This is the item's real blast radius and the author should confirm the appetite for it
-  before implementation starts**: it is wider than a single collision case, and a consumer with a
-  deliberately-partial JavaBean that happens to carry an unmatched nested input field gets a build
-  break out of this item. Name the full set in the changelog entry.
+  None of these can fire on a schema whose data currently arrives intact. In every one, the data
+  under the group is *already* being discarded; the only thing that changes is that someone finds
+  out. "It builds today" is not a property worth preserving here, it is the precise mechanism that
+  produced the report this item comes from: the build stayed green, the client received nulls on
+  fields it expected populated, and the defect surfaced only when a human noticed missing data.
+
+  So this item delivers two things on the JavaBean arm, not one, and the second is not a side
+  effect. A grouping shape that *can* work now works, by flattening. A grouping shape that *cannot*
+  work now fails at build time with a message naming the SDL that caused it. Either outcome is
+  acceptable; the third outcome, binding nothing and saying nothing, is the bug. Enumerate the full
+  set in the changelog entry so a consumer hitting one of the five can see which shape they are in,
+  and expect that a consumer whose schema is already dropping data will get a build break out of
+  this item. That is the item working.
+
+  **What this does narrow, deliberately:** the JavaBean arm's partial-by-design contract, which
+  today tolerates *any* SDL field that binds to nothing. After this item that tolerance no longer
+  extends to nested input-object fields, which either flatten or reject. An unmatched *scalar* field
+  is still skipped in silence, so the arm is left inconsistent on purpose: this item narrows the
+  contract exactly as far as it can see. It has to look inside a nested field to flatten it, so it
+  can no longer be blind there, whereas a scalar drop needs the separate diagnostic machinery R695
+  carries. Worth saying out loud in the changelog, because the asymmetry is otherwise a surprise.
 
   The record arm is unaffected by this widening, for the reason the bullet above gives: direction B
   already rejects every unmatched field, so nothing on that arm reaches the new checks without
@@ -376,7 +392,11 @@ Follow R336's tier split. No generated-body string assertions.
   because the specific silent drop this item names is *fixed* here rather than warned about,
   and what remains is the JavaBean arm's pre-existing partial-by-design contract, whose
   diagnostic needs its own `LintRule` arm, source locations, and a call on noise against
-  deliberately-partial beans.
+  deliberately-partial beans. Note the relationship this item creates: R693 takes the first bite out
+  of that contract by refusing to skip an unmatched nested input-object field, so R695 is no longer
+  an independent lint idea but the remainder of the same job on the scalar axis. Whether that
+  remainder should also be a hard reject rather than a lint is R695's call to make, informed by
+  whatever noise this item's rejections turn out to produce against real consumer beans.
 * Reclassifying the grouping input type itself. A flattened group's leaves are bean members
   and hover should eventually say so; that surface is R337's, and this item consults the
   enclosing bean's member set only, never the group type's own verdict.
