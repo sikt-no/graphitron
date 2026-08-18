@@ -1,7 +1,7 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: service
@@ -146,7 +146,13 @@ non-empty path, no empty elements.
 Consumers to update, all of them small: `InputBeanInstantiationEmitter.perFieldValueExpr` /
 `notALeaf`, `ServiceMethodCallWalker.inputBeanToValueShape` /
 `fieldBindingShape`, and `TypeFetcherGenerator.registerBeanHelper` /
-`convertNestedFieldBindings` (six sites across three main-source files). The walker folds the
+`convertNestedFieldBindings` (six sites across three main-source files). Replacing the component
+also changes both canonical constructors, so every construction site moves to a `List.of(...)`
+first argument: `InputBeanResolver.bindField` and the two `TypeFetcherGenerator` sites in main,
+plus thirteen in test sources (ten `new CallSiteExtraction.FieldBinding(...)` across
+`TypeFetcherGeneratorTest` and `ServiceMethodCallWalkerTest`, three
+`new ValueShape.FieldBinding(...)` in `ServiceMethodCallEmitterTest`). All mechanical, and all
+compile errors until they move. The walker folds the
 whole path onto the `ArgPath`
 (`for (String s : fb.accessPath()) path = path.append(s)`); group segments are never
 list-lifting, because a list-shaped group is rejected in D3, and the leaf's own list-ness
@@ -246,9 +252,16 @@ BigDecimal varighetTall = (BigDecimal) varighetMap.get("antall");
 ```
 
 Then no guard is needed anywhere, every arm's body really is unchanged, and an absent group yields
-`null` per member by ordinary `Map.get` semantics. Prefer this form; confirm at implementation that
-the `NodeIdDecodeRecord` decode helper tolerates a null argument (it must already, since a top-level
-omitted `@nodeId` field reaches it the same way), and fall back to the guard if it does not.
+`null` per member by ordinary `Map.get` semantics. Take this form: the `NodeIdDecodeRecord` decode
+helper does tolerate a null argument, checked at the Spec review pass, because
+`buildRecordDecodeHelper` opens its body with `if (!(wire instanceof String nodeId)) return null`
+(and the list variant delegates through the same guard). The guard alternative is therefore dead;
+no fallback is needed.
+
+Name the pattern variable in that expression from the group prefix rather than a bare `m`. A
+single-letter pattern binding is exactly the throwaway naming the generated-code readability rules
+in `docs/architecture/explanation/development-principles.adoc` name as the smell, and the jOOQ
+emitter's `openDescent` already derives its binding name from the path.
 
 Statement form with
 explicit types and named locals, per the generated-code-is-read-and-debugged principle that
@@ -320,11 +333,14 @@ does.
 Follow R336's tier split. No generated-body string assertions.
 
 * **Pipeline.** The existing `@service` bean coverage lives in
-  `GraphitronSchemaBuilderTest`'s `RootFieldCase` rows
-  (`SERVICE_MUTATION_FIELD_INPUT_BEAN_*`) and asserts on `ValueShape.FieldBinding`. Five assertion
-  sites across four of those rows read `ValueShape.FieldBinding::sdlFieldName` (the `_SINGULAR`,
-  `_PRIMITIVE_RECORD`, and both `*_FIELD_RENAMED_*` rows) and switch to `mapKey()` under D1; it is
-  not only the two renamed rows. Add rows for:
+  `GraphitronSchemaBuilderTest`'s `RootFieldCase` rows and asserts on `ValueShape.FieldBinding`.
+  Five assertion sites across five of those rows read `ValueShape.FieldBinding::sdlFieldName` and
+  switch to `mapKey()` under D1: `SERVICE_MUTATION_FIELD_INPUT_BEAN_SINGULAR`,
+  `SERVICE_MUTATION_FIELD_INPUT_BEAN_PRIMITIVE_RECORD`,
+  `SERVICE_MUTATION_FIELD_INPUT_JAVABEAN_PRIMITIVE_BOOLEAN`, and both
+  `SERVICE_MUTATION_FIELD_INPUT_BEAN_FIELD_RENAMED_*`. It is not only the two renamed rows, and the
+  set is not the `SERVICE_MUTATION_FIELD_INPUT_BEAN_*` prefix either: the JavaBean-primitive row
+  reads a `ValueShape.JavaBeanInput`'s bindings under a different name prefix. Add rows for:
   flatten onto a record with two-element paths; mixed top-level and hoisted leaves keeping
   their one- and two-element paths; a matching member still winning over the flatten
   (`periode`); depth 2; the JavaBean arm hoisting; a hoisted `@nodeId` record member. New

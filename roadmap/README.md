@@ -18,10 +18,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R642` | graphitron-mcp reads only the store | In Progress | 2026-08-17 <sub>created 2026-08-12</sub> | [plan](catalog-facts-readers-move-to-the-store.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Spec | 2026-08-14 | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-17 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
-| `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | Spec | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
+| `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | Ready | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
 | `R680` | Gather the fact-store test harnesses of all four modules onto one shared home <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | Ready | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -376,7 +376,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R693` [**Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336**](flatten-grouping-input-onto-service-bean.md) — Spec, feature
+- `R693` [**Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336**](flatten-grouping-input-onto-service-bean.md) — Ready, feature
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
 - `R674` [**Reconcile @service record projection: a monomorphic record return passes through while the polymorphic route auto-fetches by PK**](service-record-return-pk-autofetch.md) — Backlog, bug
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
