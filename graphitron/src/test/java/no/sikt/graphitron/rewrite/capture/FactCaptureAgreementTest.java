@@ -151,6 +151,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       returns, and {@code intent_resolved_type_binding}, where that population meets the
  *       {@code @table} one, including the seat the derivation excludes and the arity the
  *       coalescing recount produces;
+ *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop
+ *       out of a table-valued function's result, {@code intent_name_matched_key_pair} stating how
+ *       such a hop is keyed and {@code intent_carrier_routine_hop} the population that reaches that
+ *       rule from a coordinate no author wrote a path at; the pairing half asserts against the test
+ *       catalog's own functions without scoping by graph, the relation carrying no graph partition,
+ *       and half of both halves pins what the relations refuse to hold, a rule pairing every
+ *       function against every keyed table being mostly boundary;
  *       {@code no.sikt.graphitron.rewrite.derive.CarrierDataFieldTest} binds
  *       {@code intent_carrier_data_field}, where a mutation payload's data arrives, over captured
  *       SDL against that same catalog and the test classes' own census, half its cases pinning the
@@ -301,12 +308,14 @@ class FactCaptureAgreementTest {
         registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("intent_spelled_table", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
+        registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
         registrations.put("intent_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_carrier_data_field", Arm.DERIVED);
+        registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("intent_field_column_scope", Arm.DERIVED);
         registrations.put("intent_field_column_table", Arm.DERIVED);

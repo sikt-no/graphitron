@@ -2840,6 +2840,16 @@ COMMENT ON COLUMN walk_type_backing_class.class_name IS 'the binary name of the 
 -- would have made one copy of the answer per graph that reads the class, which is a claim about
 -- the graph the rule never makes. The derived stratum is chosen by what produces a row, a rule
 -- rather than a transcription, and never by which key the row happens to carry.
+--
+-- intent_name_matched_key_pair is the same shape one family over, and it shows what the keying buys
+-- besides economy. Whether a table-valued function's result can be keyed to a table at all is a
+-- question about a catalog, so the relation carries no graph either; and because it does not, the
+-- two consumers that ask it can find their two ends in completely different places.
+-- intent_field_reference_step_hop finds them in an authored path element, and
+-- intent_carrier_routine_hop finds them in the shape of a mutation payload whose data field
+-- authored nothing. Keyed by a coordinate, the rule would have had to be written once per kind of
+-- coordinate that asks, which is the duplication the generator carries today and the reason this
+-- relation exists.
 
 CREATE VIEW intent_authored_field_claim
   (graph_name, type_name, field_name, classifier, trigger, decoded,
@@ -3063,6 +3073,43 @@ COMMENT ON COLUMN intent_bound_table.table_schema IS 'the resolved table''s SQL 
 COMMENT ON COLUMN intent_bound_table.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key; the table''s other facts (its jOOQ name, its generated class, its comment) are one join away, per the referenced-side discipline sql_referential_constraint states';
 COMMENT ON COLUMN intent_bound_table.candidates IS 'how many tables the reference resolves to, this row being one of them; 1 on an unambiguous binding. Carried through from the spelling view rather than recounted here, and stated as a column rather than left to each reader''s own count, because whether a binding is ambiguous decides the reading (a claim declines, an editor offers every candidate) and a reader that counted for itself would be re-deriving the resolution''s own arity';
 
+CREATE VIEW intent_name_matched_key_pair
+  (from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table,
+   position, to_column, from_column, unmatched_columns) AS
+SELECT from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table,
+       position, to_column, from_column,
+       CAST(COUNT(CASE WHEN from_column IS NULL THEN 1 END) OVER (
+              PARTITION BY from_source_name, from_schema, from_table,
+                           to_source_name, to_schema, to_table) AS INT)
+  FROM (SELECT fn.source_name AS from_source_name, fn.table_schema AS from_schema,
+               fn.table_name AS from_table,
+               pk.source_name AS to_source_name, pk.table_schema AS to_schema,
+               pk.table_name AS to_table,
+               kc.position, kc.column_name AS to_column, fc.column_name AS from_column
+          FROM sql_table fn
+         CROSS JOIN sql_primary_key pk
+          JOIN sql_constraint_column kc
+            ON kc.source_name = pk.source_name AND kc.table_schema = pk.table_schema
+           AND kc.table_name = pk.table_name AND kc.constraint_name = pk.constraint_name
+          LEFT JOIN sql_column fc
+            ON fc.source_name = fn.source_name AND fc.table_schema = fn.table_schema
+           AND fc.table_name = fn.table_name
+           AND UPPER(fc.column_name) = UPPER(kc.column_name)
+         WHERE fn.table_type = 'FUNCTION') matched;
+COMMENT ON VIEW intent_name_matched_key_pair IS 'How a hop out of a table-valued function''s result is keyed: for every function result and every table with a primary key, that key''s columns paired with the function''s own columns of the same name. A function result declares no foreign key, so a join leaving one has no constraint to read and the only rule available is the column name, which is the rule the generator applies at both of the seats that leave one. Catalog only, and deliberately so. Which two tables a hop actually connects is a question about a schema, and this relation answers the question underneath it: whether those two tables can be keyed to each other at all. That is why it carries no graph partition and gates on no directive, leaving the graph scope to its consumers exactly as intent_class_assignable leaves its own to store_graph_source, and it is what lets one relation serve consumers that find their endpoints in different places. Matching is case-insensitive on the column name, as the resolver compares them, and against the arrival''s primary key alone; a unique constraint is not a candidate here, the generator matching primary-key columns and nothing else. A shortfall is rows rather than absence: every key column of the arrival gets a row whether or not the function exposes it, so a consumer keying a join demands unmatched_columns = 0 and a consumer reporting why it cannot names the columns whose from_column is NULL, which is what the diagnostic at either seat has to say. That is the discipline the ambiguity columns state, applied to a match that came up short rather than to one that came up plural. The pairs carry the key''s own position because a consumer building a key tuple has to build it in the key''s order, and a set would send it back to the constraint to recover one. Nothing here says a pair is meaningful: two tables that name-match are not thereby connected, and every consumer reaches this relation already holding the two ends from somewhere that does say so.';
+COMMENT ON COLUMN intent_name_matched_key_pair.from_source_name IS 'the departing function result''s catalog partition. Separate from the arrival''s rather than shared, because the consumers resolve their two ends independently and a graph reading two jOOQ sources can reach a table in either; the pairing is a comparison of column names, and names do not stop matching at a partition boundary';
+COMMENT ON COLUMN intent_name_matched_key_pair.from_schema IS 'the departing function result''s SQL schema';
+COMMENT ON COLUMN intent_name_matched_key_pair.from_table IS 'the departing function result''s SQL name. With the two columns above this is sql_table''s full key, and table_type is FUNCTION on it by construction';
+COMMENT ON COLUMN intent_name_matched_key_pair.to_source_name IS 'the arriving table''s catalog partition';
+COMMENT ON COLUMN intent_name_matched_key_pair.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_name_matched_key_pair.to_table IS 'the arriving table''s SQL name; a table with a primary key, one without having nothing to name-match and contributing no rows at all';
+COMMENT ON COLUMN intent_name_matched_key_pair.position IS 'the key column''s position within the arriving table''s primary key, carried from sql_constraint_column; the order a consumer building the key tuple has to build it in';
+COMMENT ON COLUMN intent_name_matched_key_pair.to_column IS 'the arriving table''s primary-key column at this position: the target side of the pair, and the column a diagnostic names when the function does not expose it';
+COMMENT ON COLUMN intent_name_matched_key_pair.from_column IS 'the function result''s column of the same name, spelled as the function spells it, which is the source side of the pair. NULL where the function exposes no column of that name, which is the shortfall this relation states as a row rather than as a missing one';
+COMMENT ON COLUMN intent_name_matched_key_pair.unmatched_columns IS 'how many of the arriving key''s columns this function does not expose; 0 on a pairing a consumer can take whole. Stated as a column rather than left to each reader''s count, for the reason the arity columns elsewhere are: whether the pairing is total decides the reading, a consumer keying a join demanding 0 and a consumer explaining a refusal reading the rows behind a number above it';
+
 CREATE VIEW intent_field_reference_step_hop
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,
@@ -3136,21 +3183,15 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.position, 'NAME_MAT
     ON sp.graph_name = s.graph_name AND sp.spelling = s.table_ref
   JOIN store_graph_source m ON m.graph_name = s.graph_name
   JOIN sql_table fn ON fn.source_name = m.source_name AND fn.table_type = 'FUNCTION'
-  JOIN sql_primary_key pk
-    ON pk.source_name = sp.table_source_name AND pk.table_schema = sp.table_schema
-   AND pk.table_name = sp.table_name
  WHERE s.table_ref IS NOT NULL AND s.key_ref IS NULL
-   AND NOT EXISTS (
-         SELECT 1 FROM sql_constraint_column kc
-          WHERE kc.source_name = pk.source_name AND kc.table_schema = pk.table_schema
-            AND kc.table_name = pk.table_name AND kc.constraint_name = pk.constraint_name
-            AND NOT EXISTS (
-                  SELECT 1 FROM sql_column fc
-                   WHERE fc.source_name = fn.source_name
-                     AND fc.table_schema = fn.table_schema
-                     AND fc.table_name = fn.table_name
-                     AND UPPER(fc.column_name) = UPPER(kc.column_name)));
-COMMENT ON VIEW intent_field_reference_step_hop IS 'One @reference path element''s local resolution: every table-to-table hop the element could express, before anything decides which table the chain has actually arrived at. Both arms of authored navigation are here. A key element resolves its constraint name the way the generator''s resolver does: a leading schema qualifier splits on the first dot and binds hard, an unqualified name matches the SQL constraint name, and only where no SQL constraint in this graph''s sources answers that name does the generated Keys-class constant become eligible, which is the resolver''s namespace precedence rather than a looser match on either. A table element resolves its spelling through intent_spelled_table and pins the arriving side to it, leaving the foreign key to be discovered. A table element has a second resolution beside that one, for the departure a foreign key cannot describe: a table-valued function''s result declares no constraints, so a hop leaving one is keyed by matching the arriving table''s primary-key column names against the columns the function exposes, which is the rule the generator applies there and the only one available. That arm pins the arriving side to the spelling exactly as the foreign-key arm does, and enumerates as candidate departures every FUNCTION-typed table in the graph''s sources exposing all of the arrival''s key columns by name, case-insensitively as the resolver matches them; an arrival with no primary key has nothing to match and yields none, which is the same shortfall the generator reports in the name-match vocabulary rather than in the foreign-key one. The two table arms cannot produce the same row, a function result declaring no foreign key for the other arm to discover. Both foreign-key arms enumerate the hop in both orientations, because a foreign key is a hop in either direction and which one an element means depends on where the chain stands; a self-referential key is one hop and not two, since both orientations land on the same table and the walk''s cardinality hint chooses join columns rather than a destination. Separate from intent_field_reference_step_target because the local resolution has no recursion in it: keeping the two apart is what lets that view''s recursive term be a single join instead of a copy of these arms.';
+   AND EXISTS (
+         SELECT 1 FROM intent_name_matched_key_pair p
+          WHERE p.from_source_name = fn.source_name AND p.from_schema = fn.table_schema
+            AND p.from_table = fn.table_name
+            AND p.to_source_name = sp.table_source_name AND p.to_schema = sp.table_schema
+            AND p.to_table = sp.table_name
+            AND p.unmatched_columns = 0);
+COMMENT ON VIEW intent_field_reference_step_hop IS 'One @reference path element''s local resolution: every table-to-table hop the element could express, before anything decides which table the chain has actually arrived at. Both arms of authored navigation are here. A key element resolves its constraint name the way the generator''s resolver does: a leading schema qualifier splits on the first dot and binds hard, an unqualified name matches the SQL constraint name, and only where no SQL constraint in this graph''s sources answers that name does the generated Keys-class constant become eligible, which is the resolver''s namespace precedence rather than a looser match on either. A table element resolves its spelling through intent_spelled_table and pins the arriving side to it, leaving the foreign key to be discovered. A table element has a second resolution beside that one, for the departure a foreign key cannot describe: a table-valued function''s result declares no constraints, so a hop leaving one is keyed by matching the arriving table''s primary-key column names against the columns the function exposes, which is the rule the generator applies there and the only one available. That arm pins the arriving side to the spelling exactly as the foreign-key arm does, and enumerates as candidate departures every FUNCTION-typed table in the graph''s sources that intent_name_matched_key_pair pairs wholly to the arrival. The pairing rule lives there rather than here because this arm is not its only asker, a carrier''s inferred hop reaching it from a coordinate that authored no element; what this arm contributes is the two ends, and it demands only that the pairing come up total. An arrival with no primary key has nothing to match and yields none, which is the same shortfall the generator reports in the name-match vocabulary rather than in the foreign-key one, and the columns behind a shortfall are rows on that relation for a reader that has to name them. The two table arms cannot produce the same row, a function result declaring no foreign key for the other arm to discover. Both foreign-key arms enumerate the hop in both orientations, because a foreign key is a hop in either direction and which one an element means depends on where the chain stands; a self-referential key is one hop and not two, since both orientations land on the same table and the walk''s cardinality hint chooses join columns rather than a destination. Separate from intent_field_reference_step_target because the local resolution has no recursion in it: keeping the two apart is what lets that view''s recursive term be a single join instead of a copy of these arms.';
 COMMENT ON COLUMN intent_field_reference_step_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_field_reference_step';
 COMMENT ON COLUMN intent_field_reference_step_hop.type_name IS 'the type owning the field the @reference is applied to';
 COMMENT ON COLUMN intent_field_reference_step_hop.field_name IS 'the field the @reference is applied to';
@@ -4170,6 +4211,56 @@ COMMENT ON COLUMN intent_carrier_data_field.field_name IS 'the data channel''s f
 COMMENT ON COLUMN intent_carrier_data_field.family IS 'which producing directive returns the payload, a closed three-value domain: SERVICE (@service), DML (@mutation), ROUTINE (@routine). Provenance and policy both, the two rejections that differ between families being this column''s; a payload two families return is a row per family, and a reader that means one of them filters on it';
 COMMENT ON COLUMN intent_carrier_data_field.element_kind IS 'what the channel''s element is, a closed three-value domain: TABLE (the named type is bound to one catalog table), RECORD (the backing closure reaches a class for it), ID (the ID scalar, the encoded-key echo). Never NULL here, an unrecognized element having dropped its whole payload';
 COMMENT ON COLUMN intent_carrier_data_field.data_fields IS 'how many data channels the payload declares, this row being one of them; 1 is what a carrier requires, and a larger number is what the generator''s own "require exactly one" rejection counts. Stated as a column rather than left to each reader''s count, because whether the payload is a carrier at all decides the reading and a reader that counted for itself would be re-deriving the scan''s arity';
+
+CREATE VIEW intent_carrier_routine_hop
+  (graph_name, type_name, field_name,
+   from_source_name, from_schema, from_table,
+   to_source_name, to_schema, to_table, candidates) AS
+SELECT graph_name, type_name, field_name,
+       from_source_name, from_schema, from_table,
+       to_source_name, to_schema, to_table,
+       CAST(COUNT(*) OVER (PARTITION BY graph_name, type_name, field_name) AS INT)
+  FROM (SELECT DISTINCT cdf.graph_name, cdf.type_name, cdf.field_name,
+               fn.source_name AS from_source_name, fn.table_schema AS from_schema,
+               fn.table_name AS from_table,
+               b.table_source_name AS to_source_name, b.table_schema AS to_schema,
+               b.table_name AS to_table
+          FROM intent_carrier_data_field cdf
+          JOIN graphql_field pf
+            ON pf.graph_name = cdf.graph_name AND pf.named_type = cdf.type_name
+          JOIN graphql_root_operation r
+            ON r.graph_name = pf.graph_name AND r.type_name = pf.type_name
+           AND r.operation = 'MUTATION'
+          JOIN graphitron_routine rt
+            ON rt.graph_name = pf.graph_name AND rt.type_name = pf.type_name
+           AND rt.field_name = pf.field_name
+          JOIN intent_spelled_table sp
+            ON sp.graph_name = rt.graph_name AND sp.spelling = rt.routine_ref
+          JOIN sql_table fn
+            ON fn.source_name = sp.table_source_name AND fn.table_schema = sp.table_schema
+           AND fn.table_name = sp.table_name AND fn.table_type = 'FUNCTION'
+          JOIN graphql_field df
+            ON df.graph_name = cdf.graph_name AND df.type_name = cdf.type_name
+           AND df.field_name = cdf.field_name
+          JOIN intent_resolved_type_binding b
+            ON b.graph_name = df.graph_name AND b.type_name = df.named_type
+           AND b.candidates = 1
+         WHERE cdf.family = 'ROUTINE' AND cdf.element_kind = 'TABLE'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference fr
+                            WHERE fr.graph_name = pf.graph_name
+                              AND fr.type_name = pf.type_name
+                              AND fr.field_name = pf.field_name)) inferred;
+COMMENT ON VIEW intent_carrier_routine_hop IS 'The hop a routine write''s payload carrier takes to re-read its committed row, for a data field that declares no path. A @routine write on a mutation root may return a payload wrapping one data field beside an error channel; the routine call is the write, and the data field owns the post-commit re-read. That hop is inferred from the payload''s shape rather than written, which is precisely why intent_field_reference_step_hop holds no row for it: that relation''s population is authored path elements, and this coordinate authors none. So the same keying rule is reached from two relations, and it lives in neither of them. This one states the two ends and joins intent_name_matched_key_pair for the pairing, exactly as the authored arm does, and for the reason the referenced-side discipline gives: the pairs are reachable from the triples this row already carries, and repeating them here would be a denormalisation. The departure is the routine the producing mutation field names, resolved as any written table name is and then required to be FUNCTION-typed. The arrival is the data field''s own named type''s binding, demanded unambiguous, an arrival that is not certain not being the one the re-read would run against. The producing field is required to carry no @reference, which is not a narrowing but the carrier''s own boundary: the chained form returns the terminus table type and has an authored element to resolve through, and @routine with @reference over a carrier return is rejected outright, so a row here would name a hop the generator will not emit. Ambiguity is rows, and here it is a real one the generator currently hides: two mutation fields returning one payload are two candidate departures, where the grounding memo keeps whichever field classified first. Absence covers several things and none of them is "this carrier has no hop": the payload is not a carrier, or its element is not table-backed, or its data field''s type binds ambiguously, or the routine name resolves to nothing FUNCTION-typed. One narrowness is inherited rather than chosen. The element_kind gate is intent_carrier_data_field''s, and that relation reads the @table population alone where this one reads the resolved binding, so a data field whose type is bound only by being what a routine returns is excluded upstream of here; the gate follows that relation when it moves, rather than this one reading past it.';
+COMMENT ON COLUMN intent_carrier_routine_hop.graph_name IS 'the owning graph''s partition, carried from the carrier relation';
+COMMENT ON COLUMN intent_carrier_routine_hop.type_name IS 'the payload type the producing mutation field returns; the carrier whose data field this hop serves';
+COMMENT ON COLUMN intent_carrier_routine_hop.field_name IS 'the data field within that payload: the coordinate the re-read runs at, and the one an author would hang a path on if the data field admitted one';
+COMMENT ON COLUMN intent_carrier_routine_hop.from_source_name IS 'the routine result''s catalog partition; the departure, resolved from the producing field''s @routine(name:) through the spelling view';
+COMMENT ON COLUMN intent_carrier_routine_hop.from_schema IS 'the routine result''s SQL schema';
+COMMENT ON COLUMN intent_carrier_routine_hop.from_table IS 'the routine result''s SQL name, FUNCTION-typed by construction. With the two columns above this is the departing side of the pairing relation''s key';
+COMMENT ON COLUMN intent_carrier_routine_hop.to_source_name IS 'the arriving table''s catalog partition; the data field''s named type''s binding, demanded unambiguous';
+COMMENT ON COLUMN intent_carrier_routine_hop.to_schema IS 'the arriving table''s SQL schema';
+COMMENT ON COLUMN intent_carrier_routine_hop.to_table IS 'the arriving table''s SQL name, the row the write committed and the re-read fetches. With the two columns above this is the arriving side of the pairing relation''s key';
+COMMENT ON COLUMN intent_carrier_routine_hop.candidates IS 'how many departures this data field''s hop could leave from, this row being one of them; 1 where one mutation field produces the payload. Above 1 is two producing fields naming different routines, which the generator resolves by first-producer-wins without saying so, and which this column says';
 
 CREATE VIEW intent_field_separate_fetch (graph_name, type_name, field_name, rule) AS
 SELECT s.graph_name, s.type_name, s.field_name, 'SPLIT_QUERY'

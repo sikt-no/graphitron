@@ -377,8 +377,8 @@ carries the one axis that cannot be done by deletion.
     open" below, which is model work on the write path rather than anything a hop view hands over.
     It has been the loosest-fitting slice here since R622 folded in, and holding the read-surface
     item open for it would hold it open on a write-path question.
-12. **The keying rule becomes two relations.** *Re-planned; the reasoning is below.* Two relations,
-    because the rule and the population that needs it are different questions.
+12. **The keying rule becomes two relations.** *Re-planned; the reasoning is below. Landed.* Two
+    relations, because the rule and the population that needs it are different questions.
 
     `intent_name_matched_key_pair` states the rule, and it is catalog-only: for every function
     result and every table with a primary key, that key's columns paired with the function's own
@@ -403,6 +403,21 @@ carries the one axis that cannot be done by deletion.
 
     Both are pure derivation over captured rows, so neither composes two censuses at capture, which
     is the line R714 draws.
+
+    *Three findings from the landing.* **The two relations do not agree about totality, and should
+    not.** The authored arm enumerates candidate departures out of every FUNCTION-typed table in the
+    graph's sources, so it has to demand the pairing be whole or it would enumerate all of them. The
+    carrier's departure is the one its producing field names, so there is nothing to narrow, and
+    stating a hop whose pairing comes up short is what lets the diagnostic name the missing key
+    column instead of facing an absent row. **The graph-free keying is what makes one relation
+    serve both**, and it earns a sentence in the family header beside `intent_class_member_slot`,
+    which the header already uses to make the narrower version of this point: keyed by a coordinate,
+    the rule would have needed writing once per kind of coordinate that asks. **One narrowness is
+    inherited rather than chosen**: the carrier relation gates on `intent_carrier_data_field`'s
+    `element_kind`, and that relation's TABLE arm still reads the `@table` population where this one
+    reads the resolved binding, so a data field whose type is bound only by being what a routine
+    returns is excluded upstream. Following it there is that relation's own repoint, not a reading
+    past it from here.
 13. **Plan-tier pilot.** *Moved to R682's launcher slice.* Re-sourcing `routineRow` off facts is
     that item's third planner step seen from here, and R682 already carries the convention: R668's
     routine-write stage is the write-side worked example it generalises from, and it says a stage
@@ -418,7 +433,7 @@ first attempts at this section reached.
 **The observation that looked like the constraint.** Both loops run inside the classification walk,
 and `FactCapture` runs after it, so the store is empty where they stand. That is true and it is not
 the reason. Capture's inputs are the parsed document, the jOOQ catalog and the classpath scan; the
-classified model reaches it only as `WalkReach`, which R712 files as scaffolding in neither tier and
+classified model reaches it only as `WalkReach`, which R712 files as scaffolding in neither stratum and
 which is being terminated. So the ordering is a property of one call site rather than of the
 architecture, and reading it as a wall was the wrong diagnosis.
 
@@ -887,8 +902,8 @@ wrong and should change first.
   Track B re-plan with the correlation design under "What stays genuinely open" restated there. It
   reads slice 12's carrier hop relation for its endpoints, so it is downstream of this item rather
   than parallel to it.
-* `roadmap/three-tiers-capture-derive-query.md` (R712), `roadmap/assembled-schema-owns-the-sdl-census.md`
-  (R714) and `roadmap/decodes-normalize-internal-grammars.md` (R715): the tier vocabulary the
+* `roadmap/three-strata-capture-derive-query.md` (R712), `roadmap/assembled-schema-owns-the-sdl-census.md`
+  (R714) and `roadmap/decodes-normalize-internal-grammars.md` (R715): the stratum vocabulary the
   re-plan reasons in. R712 supplies the recompute test that puts the keying rule in a view and files
   `walk_` as scaffolding, R714 the per-census independence slice 12's relations respect by being
   derivation rather than capture, and R715 the rule that resolving a reference against the catalog
