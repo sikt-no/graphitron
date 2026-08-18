@@ -653,10 +653,10 @@ public final class Main {
         if (!concepts.isEmpty()) {
             sb.append("== Concept explainers\n\n");
             sb.append("Intuition-first background pages for dense or recurring roadmap concepts, ");
-            sb.append("rendered as interactive HTML. Authored with the ")
-              .append(InertSpans.monospace("explainer")).append(" skill; ");
-            sb.append("this listing derives from ")
-              .append(InertSpans.monospace("roadmap/concepts/*.html")).append(", never by hand.\n\n");
+            sb.append("rendered as interactive HTML. The pages are authored by hand; ");
+            sb.append("this listing is derived from ")
+              .append(InertSpans.monospace("roadmap/concepts/*.html"))
+              .append(" and must not be edited directly.\n\n");
             concepts.pages().forEach((slug, page) -> {
                 sb.append("* link:concepts/").append(slug).append(".html[")
                   .append(titleLabel(page.title())).append("]")
@@ -1710,8 +1710,8 @@ public final class Main {
         }
         sb.append("## Concept explainers\n\n");
         sb.append("_Intuition-first background pages for dense or recurring roadmap concepts, ");
-        sb.append("rendered as interactive HTML. Authored with the `explainer` skill; ");
-        sb.append("this listing derives from `concepts/*.html`, never by hand._\n\n");
+        sb.append("rendered as interactive HTML. The pages are authored by hand; ");
+        sb.append("this listing is derived from `concepts/*.html` and must not be edited directly._\n\n");
         concepts.pages().forEach((slug, page) ->
             sb.append("- [").append(page.title()).append("](concepts/").append(slug).append(".html)")
               .append(mdBacks(concepts.anchorsFor(slug))).append("\n"));

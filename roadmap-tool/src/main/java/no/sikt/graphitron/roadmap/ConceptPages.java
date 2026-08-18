@@ -238,9 +238,9 @@ final class ConceptPages {
      * file still exists maps to its rendered plan page; one whose file is gone
      * (deleted on Done) maps to the changelog, the durable record of shipped
      * work. That gives cross-boundary drift a deterministic landing instead of
-     * a 404, without making item deletion on Done break the docs build. The
-     * explainer skill's refresh mode later rewrites the visible prose; this
-     * fallback is the always-on safety net between refreshes.
+     * a 404, without making item deletion on Done break the docs build.
+     * Nothing rewrites a page's authored prose to match, so this mapping is
+     * the sole mechanism keeping such a link live once the item ships.
      */
     static String mapHref(String href, Path roadmapDir) {
         if (!href.startsWith("../")) {

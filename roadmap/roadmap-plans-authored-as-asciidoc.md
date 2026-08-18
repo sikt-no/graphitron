@@ -62,7 +62,7 @@ to accept deliberately.
 * Front-matter to AsciiDoc attributes, and the parser, README generator, `create` / `status` / `next-id`
   subcommands and validator that read it.
 * The `roadmap/<slug>` path shape in `check-transient-citations`, and the `roadmap/*.md` glob in the `srp`,
-  `roadmap` and `explainer` skill documents plus `CLAUDE.md`.
+  `roadmap` and `explain` skill documents plus `CLAUDE.md`.
 * Whether the migration bootstraps off the translator itself: run it over all 178 files, commit its output
   as the new authored source, then delete it. The tool being removed is the migration tool.
 * What happens to `roadmap/README.md` and `roadmap/changelog.md`, which are cited by path from `CLAUDE.md`
