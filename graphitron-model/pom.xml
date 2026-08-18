@@ -53,6 +53,17 @@
             <version>${version.org.jooq}</version>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -197,6 +208,25 @@
                         <configuration>
                             <sourcepath>${project.basedir}/src/main/java:${model.generated.sources}</sourcepath>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+                Republish the compiled tests as a test-jar. What consumers want from it is the
+                store harness under no/sikt/graphitron/model/test: the named store-lifetime entry
+                points and the seeding helpers over the relations this module's DDL declares.
+                Every module downstream builds its own fixtures over that floor rather than
+                re-deriving one against GraphitronModelStore, which is what four independent
+                copies of the same store bootstrap had already cost.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
