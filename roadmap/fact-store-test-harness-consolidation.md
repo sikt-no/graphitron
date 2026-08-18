@@ -235,6 +235,14 @@ can reach states no crawler can produce, which is what a view test needs. A harn
 is what lets it be excellent at that thing; the reason the current `derive/` harnesses are awkward is
 that they are general.
 
+**Read the rule as a boundary, not as a preference for seeding.** Seeding is the method in exactly one
+module, the one whose subject is the DDL. Above it, in the generator, the language server and the MCP
+server, **capture is the default**, and a test there that hand-seeds rows to avoid running the pipeline
+is making the same mistake in the opposite direction: those modules exist to turn real inputs into real
+rows, so a fixture that skips that step stops testing the thing. This is a decision, not a deferral. A
+seeded fixture above the model line is possible and occasionally right, but it owes a reason at the
+call site, which is precisely the obligation being lifted from seeded cases inside `graphitron-model`.
+
 ### Two homes, one per layer
 
 | Home | Level | What it carries |
@@ -850,10 +858,10 @@ serves every module." The guard catches the author who reads none of it.
   this item consumes it.
 * Pushing `StoreBackedBuild` onto the G1 capture factories. Its population is a real `buildOutput()`
   run and that is the property its tests stand on; it adopts M0 and stays at G2.
-* Re-examining whether `graphitron-lsp` and `graphitron-mcp` should seed rather than capture. Their
-  queries read across many relations at once and the FK chains are deep, so capture is plausibly the
-  honest fixture-builder there even under this architecture. Both keep capturing here; whoever finds
-  seeding cheaper first can file the question.
+* Converting `graphitron-lsp` or `graphitron-mcp` tests to seeded fixtures. Capture is the settled
+  default for both, as it is for `graphitron` itself; their queries read across many relations at once
+  and the FK chains are deep, and more to the point a fixture that skips the pipeline stops testing
+  what those modules do. Only the model line seeds by default.
 * Pruning the helper sets to some minimal basis. Per the governing rule, arriving with more helpers
   than strictly necessary is the acceptable outcome; consolidating them is a later, cheap pass to be
   taken once each set is visible in one file.
