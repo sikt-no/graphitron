@@ -1,7 +1,7 @@
 ---
 id: R680
 title: "Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 3
 theme: testing
