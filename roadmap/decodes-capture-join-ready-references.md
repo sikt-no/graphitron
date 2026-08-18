@@ -1,7 +1,7 @@
 ---
 id: R715
 title: "The decodes capture references the catalog can be joined on"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -45,44 +45,117 @@ string: `table_ref`, `key_ref`, `column_ref`, `name_ref`, `index_ref`, `routine_
 `class_name` plus `method` pairs. Across the whole schema the views spend 30 `UPPER`, 12 `REPLACE`, 10
 `POSITION` and 9 `SUBSTRING` calls reconciling shapes, and the catalog-facing ones are the reason.
 
-## What to change
+## Implementation
 
-**Split the qualifier at decode time.** A qualified `table_ref` becomes a qualifier column and a name
-column, both as written, separated once by the decoder that already holds a parser rather than on
-every read by a view. That removes every `POSITION` and `SUBSTRING` from the predicate. The same
-treatment applies to the other catalog-facing references that can carry a qualifier
-(`routine_ref`, `column_ref`).
+### The split: seven columns the DDL already documents as qualifiable
 
-**Do not capture the case-folded form.** Upper-casing is a function of the written value, so a second
-base column holding it would fail the recompute test that decides tier one from tier two. The
-instrument for this is a generated column the database maintains and an index over it: explicitly
-derived, not captured, and it moves the fold out of the predicate and into the index. Getting this
-distinction right matters more than the performance, because "store the normalised form beside the
-written one" is exactly the shortcut that produced
-`graphitron_field_synthesis.authored_type_sdl`.
+These carry `schema.name` or a bare name, by their own column comments, and are the columns
+`intent_spelled_table` takes apart on every read. Each becomes two columns, both as written, split
+once by the decoder:
 
-**Leave the `class_name` + `method` pairs alone**, except for the defect below. Java identifiers are
-case-sensitive and the values are already fully qualified, so those joins need no folding and no
-splitting.
+[cols="2,3"]
+|===
+| Column | What it names
 
-## A defect found while measuring, worth its own item
+| `graphitron_table.table_ref`
+| the `@table(name:)` target
 
-`graphitron_service.class_name` is documented as "the fully-qualified Java class name as written".
-`jvm_class.class_name` is documented as "fully qualified binary name". For a nested class those are
-different strings, `com.example.Foo.Bar` against `com.example.Foo$Bar`, and nothing in the schema
-reconciles them. Either nested classes never appear as `@service` / `@condition` / `@record` targets,
-in which case that is an invariant nobody wrote down, or the join silently misses them. Worth
-establishing which before this item reshapes anything nearby, because the answer decides whether
-`class_name` is join-ready or merely looks it.
+| `graphitron_routine.routine_ref`
+| the `@routine(name:)` target
 
-## An open decision, cheaper to make before the reshape
+| `graphitron_argument_reference_step.table_ref`
+| a path element's table
 
-The six-way union is itself composition, and it exists because each decode owns its own spelling
-column. The alternative is that every decode also writes into one shared spelling relation keyed by
-site, so composition reads a single relation. The recommendation is against it: the union costs little
-next to the predicate, and keeping the spelling on the relation that decoded it preserves a locality
-that a shared table trades away for a join. Recorded because it is a structural choice that is much
-harder to revisit once the columns have been split.
+| `graphitron_reference_for_step.table_ref`
+| a path element's table
+
+| `graphitron_field_reference_step.key_ref`
+| a path element's constraint
+
+| `graphitron_argument_reference_step.key_ref`
+| a path element's constraint
+
+| `graphitron_reference_for_step.key_ref`
+| a path element's constraint
+|===
+
+### Settle first: two more columns the view splits but the comments do not admit
+
+`graphitron_field_reference_step.table_ref` is commented "ReferenceElement.table as written" and
+`graphitron_mutation.table_ref` "the DELETE write target as written", neither noting a qualifier,
+yet both feed the `intent_spelled_table` union whose predicate splits on the first dot. So either the
+comments under-document what an author may write, or the view handles a case that cannot occur.
+Decide this before splitting, because it decides whether these two join the seven above or stay single
+columns. Reading the `@reference` and `@mutation` reference pages, and the rejection detections around
+them, should settle it without guessing.
+
+### The fold: an ordinary column with a postfixed name and a comment
+
+The catalog matches case-insensitively, so the composition predicate folds both sides. The fold moves
+to capture as a plain sibling column named `<column>_upper`, whose DDL comment states exactly what it
+holds and that it is the upper-cased form of the column beside it. No generated column: it buys
+nothing here that a named column and a comment do not, and it would add an H2 feature to the schema's
+surface for a cost that is not yet anybody's problem.
+
+The columns that get one are the catalog-facing name halves: the seven split names above, plus
+`field_binding.name_ref`, `argument_binding.name_ref`, `enum_value_binding.name_ref`,
+`order_field.name_ref`, `default_order_field.name_ref`, `node_key_column.column_ref`,
+`order.index_ref`, `default_order.index_ref` and `index.index_ref`.
+
+Drift becomes impossible rather than merely discouraged, by a check constraint on each pair:
+
+```
+CHECK (table_ref_name_upper = UPPER(table_ref_name))
+```
+
+Verified against h2 2.4.240: the constraint is accepted, a consistent row inserts, a drifted row is
+rejected, and a value bearing a quote round-trips. That is what makes the extra column safe to carry:
+it cannot disagree with its sibling, so a reader may treat it as the same fact in a second spelling
+rather than as a value to re-verify.
+
+### Deliberately excluded, and why
+
+- `graphitron_routine_column_mapping_pair.column_ref`, whose comment says "a dotted right side is
+  captured and rejected by detection". A dot there is an author error the store is *meant* to hold, so
+  splitting it would destroy the case the detection exists to report. This is the clearest instance of
+  capture stating and detection judging, and it must survive untouched.
+- `scalar_type.scalar_ref`, a Java constant reference, and the GraphQL-type references
+  (`reference_for.participant_type_ref`, the two `node_type_ref` columns, `pivot.vocabulary_ref`).
+  Same-corpus or Java-cased; neither splits nor folds.
+- The `class_name` and `method` pairs. Java identifiers are case-sensitive and already fully
+  qualified.
+
+### The views stop taking strings apart
+
+`intent_spelled_table` loses its `POSITION` and both `SUBSTRING` calls, and its `UPPER` pair becomes a
+comparison of two stored columns, so the predicate can be served by an index instead of scanning
+`sql_table` once per distinct spelling. The six-way union over the decode relations stays, per the
+recorded decision below. Every other view reconciling a catalog reference gets the same treatment;
+the schema-wide count to work down from is 30 `UPPER`, 10 `POSITION` and 9 `SUBSTRING`.
+
+## Tests
+
+- Pipeline tier: capture a qualified `@table(name: "public.film")` and an unqualified
+  `@table(name: "film")` and pin both columns on each, including that the qualifier is NULL rather
+  than empty on the unqualified one. Same for a `@reference` path element's key and for `@routine`.
+- The check constraints are the invariant for the folded columns, so no test restates them; what does
+  need a test is that the decoder writes the pair at all, which the pipeline pin above covers by
+  asserting the `_upper` value.
+- Agreement: `intent_spelled_table` returns the same rows before and after the reshape over the
+  multi-schema fixture catalog, which is the whole point of the change being shape-only.
+- A negative pin on the excluded column: a dotted `columnMapping` right side still lands in
+  `graphitron_routine_column_mapping_pair.column_ref` whole and still reaches its detection.
+
+## Notes settled during spec
+
+**Nested classes are an unwritten invariant, not a live defect.** The concern was that
+`graphitron_service.class_name` is documented "as written" while `jvm_class.class_name` is the binary
+name, which differ for a nested class (`Foo.Bar` against `Foo$Bar`). Measured: every `className:`
+value in the corpus names a top-level class, and none has two consecutive capitalised trailing
+segments. So the join works today and nothing enforces that it keeps working. The fix is not a
+nesting-specific rule but the ordinary unresolved-reference path: a `class_name` matching no
+`jvm_class` should be visible as an absence rather than silently producing no row, which is the
+three-arm discipline the fact model already prescribes. Filed separately rather than carried here.
 
 ## Relationship to the sibling items
 
