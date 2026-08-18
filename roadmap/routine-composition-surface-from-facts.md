@@ -372,14 +372,69 @@ carries the one axis that cannot be done by deletion.
     `intent_field_separate_fetch` deliberately did not: its two joins over a binding are the
     record-handed precedence question its own comment states, and whether a routine-return parent is
     a table row or a handed row is that question rather than a substitution to make in passing.
-11. **The carrier's explicit data-field path**, single- and multi-hop, reading slice 10 rather than
-    parsing at a grounding seat. Needs the residual-path correlation arm described under "What stays
-    genuinely open" below, which is the one part of this slice the view does not hand over.
-12. **Retire the duplicated derivations.** `synthesizeNameMatchedJoin` and
-    `deriveRoutineCarrierPairs` both become reads of slice 10.
-13. **Plan-tier pilot.** Re-source `routineRow` off facts rather than off the leaf. R668's stage 5
-    joins its key-column projection into the same row and asks to land after this slice rather than
-    beside it, so the two do not edit one method from opposite directions.
+11. **The carrier's explicit data-field path.** *Moved out; filed as its own item.* Single- and
+    multi-hop, it needs the residual-path correlation arm described under "What stays genuinely
+    open" below, which is model work on the write path rather than anything a hop view hands over.
+    It has been the loosest-fitting slice here since R622 folded in, and holding the read-surface
+    item open for it would hold it open on a write-path question.
+12. **The keying rule becomes two relations.** *Re-planned; the reasoning is below.* Two relations,
+    because the rule and the population that needs it are different questions.
+
+    `intent_name_matched_key_pair` states the rule, and it is catalog-only: for every function
+    result and every table with a primary key, that key's columns paired with the function's own
+    columns of the same name, in the key's order. No graph partition and no directive gate, on
+    `intent_class_assignable`'s precedent, because whether two tables can be keyed to each other at
+    all is a question about a catalog, and the consumers that scope by graph do their own scoping.
+    A shortfall is rows rather than absence: every key column gets a row whether or not the function
+    exposes it, so a consumer keying a join demands the unmatched count be zero, and a consumer
+    reporting a refusal names the columns whose source side is null, which is what the diagnostic at
+    either seat has to say. `intent_field_reference_step_hop`'s name-matched arm computes half of
+    this inline as a nested `NOT EXISTS` today, and reads it instead.
+
+    The carrier hop relation states the population no authored path element reaches. A payload
+    carrier's data field carries no `@reference`, the hop out of the routine's result being inferred
+    from the payload's shape, which is exactly why the authored-element view holds no row for it.
+    Its endpoints are `intent_carrier_data_field` at family ROUTINE, joined to `graphitron_routine`
+    through the producing mutation field for the departure and to the data field's own binding for
+    the arrival, with the pairing joined from the relation above. It states one thing the generator
+    currently hides: two mutation fields returning one payload are two candidate routines, where
+    `routineEmittedMemo`'s first-producer-wins `putIfAbsent` silently keeps whichever classified
+    first, which R618's own delivery record flagged as a shared wart across all three arms.
+
+    Both are pure derivation over captured rows, so neither composes two censuses at capture, which
+    is the line R714 draws.
+13. **Plan-tier pilot.** *Moved to R682's launcher slice.* Re-sourcing `routineRow` off facts is
+    that item's third planner step seen from here, and R682 already carries the convention: R668's
+    routine-write stage is the write-side worked example it generalises from, and it says a stage
+    picked up elsewhere should be lifted onto it. This is the read-side twin. R668's stage 5 still
+    asks to land after it rather than beside it, and that constraint travels with the slice.
+
+### The re-plan, and what it corrected
+
+Slices 11 through 13 were written as though the classification walk could become a reader of the
+store. It cannot today, and more usefully it should not, which is a better answer than the one the
+first attempts at this section reached.
+
+**The observation that looked like the constraint.** Both loops run inside the classification walk,
+and `FactCapture` runs after it, so the store is empty where they stand. That is true and it is not
+the reason. Capture's inputs are the parsed document, the jOOQ catalog and the classpath scan; the
+classified model reaches it only as `WalkReach`, which R712 files as scaffolding in neither tier and
+which is being terminated. So the ordering is a property of one call site rather than of the
+architecture, and reading it as a wall was the wrong diagnosis.
+
+**The answer.** Both loops exist to feed classification leaves: `synthesizeNameMatchedJoin` builds a
+`JoinStep.Hop`, `deriveRoutineCarrierPairs` grounds a `ProducerBinding.RoutineEmitted`. R682's first
+success criterion is `EmitPlan.produce` taking a `StoreHandle` and no `GraphitronSchema`, and the
+leaf zoo dissolves as that lands. So the loops are not retired by moving their read; they are
+retired when their consumer becomes a planner that reads facts and emits a command. Teaching the
+walk to read a view would have entrenched the walk at the moment the architecture is deleting it.
+R642 shows the finished shape on `graphitron-mcp`, whose goal properties include reading no `walk_`
+family at all, and R638 is doing the same for the language server.
+
+**What survives here.** The facts. A derivation with three askers earns a relation on the fact
+model's own trigger, and the relation is useful the moment it exists: it is what the plan-tier read
+joins, and the hop view can read it instead of restating half of it. The two Java copies stay where
+they are until their leaves dissolve, which this item does not own and should not pretend to.
 
 ## The redundant `@reference`
 
@@ -509,7 +564,22 @@ Three readers of one derivation is exactly the trigger the fact model names for 
 derivation to a relation, and the alternative here is not hypothetical: two of the three are already
 the same loop copied.
 
+*Corrected while planning slice 12, on two counts, and the trigger survives both.* The hop arm is
+not where all three meet. Its population is authored path elements, and the carrier's data field
+authors none, so the carrier reaches the shared rule through a relation of its own rather than
+through that arm; that is why slice 12 is two relations and not one. And what the three readers
+share is narrower than the arm: the arm resolves which two tables a hop connects, while the loop
+each reader copies is the column pairing underneath it. So the pairing is the relation the trigger
+earns, the arm becomes its first reader, and the carrier's relation becomes its second. Reaching the
+pairs from the arm by joining `sql_primary_key` was never a defect to fix, per the rule R715 states:
+resolving a reference against the catalog is composition and stays derived.
+
 ### What stays genuinely open
+
+*This subsection is slice 11's, and travels with it to
+`roadmap/routine-carrier-residual-path-correlation.md`, restated there rather than referenced. It
+stays here because it is also the reason that slice left: none of it is a question the read surface
+can answer.*
 
 Inherited from R622 as its real design work, and unchanged by the fold.
 `ParentCorrelation.checkCarrierInvariant` pairs a non-empty `joinPath` only with a hop-anchored
@@ -809,7 +879,23 @@ wrong and should change first.
 * `roadmap/planners-read-facts-emitters-read-commands.md` (R682) and
   `roadmap/delivery-verdict-derives-from-the-store.md` (R666): the architecture Track B pilots, and
   the nearest precedent for replacing a hand-maintained negative-space switch with a store
-  derivation.
+  derivation. R682 additionally inherits this item's slice 13 outright, as the read-side worked
+  example on its launcher step, beside R668's write-side one; the hand-off is recorded at the slice
+  and needs no edit on R682 until it is picked up, its Related items already saying a stage picked
+  up elsewhere should be lifted onto it. The two relations slice 12 lands are what that step joins.
+* `roadmap/routine-carrier-residual-path-correlation.md`: this item's slice 11, filed out during the
+  Track B re-plan with the correlation design under "What stays genuinely open" restated there. It
+  reads slice 12's carrier hop relation for its endpoints, so it is downstream of this item rather
+  than parallel to it.
+* `roadmap/three-tiers-capture-derive-query.md` (R712), `roadmap/assembled-schema-owns-the-sdl-census.md`
+  (R714) and `roadmap/decodes-normalize-internal-grammars.md` (R715): the tier vocabulary the
+  re-plan reasons in. R712 supplies the recompute test that puts the keying rule in a view and files
+  `walk_` as scaffolding, R714 the per-census independence slice 12's relations respect by being
+  derivation rather than capture, and R715 the rule that resolving a reference against the catalog
+  is composition and stays derived, which is why the pairing is a view and not stored rows.
+* `roadmap/lsp-reads-the-fact-store.md` (R638), and R642 in `roadmap/changelog.md`: the two
+  consumers that have already made this move, and the evidence the re-plan leans on that a reader
+  migrates by leaving the walk rather than by teaching the walk to read.
 
 ## Open questions
 
@@ -843,10 +929,10 @@ wrong and should change first.
   `intent_field_reference_step_target` selects `via` straight through, so the recursion needs no
   edit either way. So the work is confirming the precedent extends rather than choosing a shape.
   Still decide before writing the DDL, since the target view's recursion reads whichever wins.
-* **Does the carrier's residual-path correlation arm generalise?** It anchors on a captured record
-  and walks onward, which is close to what a record-backed parent needs in R447's
-  `RecordTableField` bullet. Check whether one arm serves both before minting a carrier-specific
-  one.
+* **Does the carrier's residual-path correlation arm generalise?** *Travelled out with slice 11;
+  restated on `roadmap/routine-carrier-residual-path-correlation.md` as the question to settle at
+  pickup.* It anchors on a captured record and walks onward, which is close to what a record-backed
+  parent needs in R447's `RecordTableField` bullet, and one arm may serve both.
 * **Is `sql_routine` a subject, or is function-ness a column on `sql_table`?** *Answered by slice 7:
   both, because they are two questions.* Function-ness is `sql_table.table_type`, jOOQ's
   `TableOptions.TableType` vocabulary, which the store recorded none of and which every derived view
