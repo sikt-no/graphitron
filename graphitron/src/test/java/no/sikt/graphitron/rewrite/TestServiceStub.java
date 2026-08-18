@@ -414,7 +414,7 @@ class TestServiceStub {
      * Fixture: takes a {@link TestInputBeanRenamed} record whose component names ({@code heading},
      * {@code score}) diverge from the SDL field names ({@code title}, {@code rating}). The SDL input
      * bridges the divergence with {@code @field(name:)}; the resolved {@code FieldBinding}s must carry
-     * {@code javaFieldName} = the component name and {@code sdlFieldName} = the SDL field name. Also
+     * {@code javaFieldName} = the component name and {@code mapKey()} = the SDL field name. Also
      * the bean for the ambiguity rejection case (two SDL fields colliding on one binding key).
      */
     public static TestFilmDetailsDto runWithRenamedRecord(TestInputBeanRenamed input) {

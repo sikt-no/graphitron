@@ -776,7 +776,7 @@ final class InputBeanResolver {
             String paramName, String methodName, String className, Set<Class<?>> visited) {
         // Messages name the dotted access path, so a hoisted leaf points at the SDL the author
         // wrote rather than at a bare field name that appears nowhere on the enclosing input type.
-        String sdlFieldName = dottedPath(accessPath);
+        String fieldPath = dottedPath(accessPath);
         SdlElement sdlElt = peelSdlListNonNull(sdlField.getType());
         boolean listShape = sdlElt.list();
         boolean nonNull = GraphQLTypeUtil.isNonNull(sdlField.getType());
@@ -787,7 +787,7 @@ final class InputBeanResolver {
             if (nestedClass == null || !looksLikeBeanCandidate(nestedClass)) {
                 return new FieldResult.Fail(Rejection.structural(
                     "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                    + className + "': nested field '" + sdlFieldName + "' has SDL input-object"
+                    + className + "': nested field '" + fieldPath + "' has SDL input-object"
                     + " type but the Java member type '" + javaElementTypeName
                     + "' is not a viable bean class"));
             }
@@ -811,7 +811,7 @@ final class InputBeanResolver {
                     javaElementTypeName,
                     d.mismatches().stream().map(EnumMappingResolver.EnumConstantParity.ValueMismatch::sdlValueName).toList(),
                     d.mismatches().isEmpty() ? List.of() : d.mismatches().get(0).candidates(),
-                    "input-bean field '" + sdlFieldName + "' on parameter '" + paramName + "' of method '"
+                    "input-bean field '" + fieldPath + "' on parameter '" + paramName + "' of method '"
                         + methodName + "' in class '" + className + "'"));
             }
             leaf = new CallSiteExtraction.EnumValueOf(javaElementTypeName);
@@ -821,7 +821,7 @@ final class InputBeanResolver {
             // to a @nodeId-decode leaf, or reject loudly.
             Class<?> memberClass = tryLoad(javaElementTypeName);
             if (memberClass != null && isJooqRecord(memberClass)) {
-                RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, sdlFieldName,
+                RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, fieldPath,
                     javaElementTypeName, nonNull, paramName, methodName, className);
                 if (recordLeaf instanceof RecordLeaf.Fail rf) {
                     return new FieldResult.Fail(rf.rejection());
@@ -838,7 +838,7 @@ final class InputBeanResolver {
                 // walk.
                 var wire = WireCoercionResolver.checkScalar(sdlElt.elementType(), javaElementTypeName,
                     ctx.scalarVerdicts.values(),
-                    "input-bean field '" + sdlFieldName + "' on parameter '" + paramName + "' of method '"
+                    "input-bean field '" + fieldPath + "' on parameter '" + paramName + "' of method '"
                         + methodName + "' in class '" + className + "'");
                 if (wire instanceof WireCoercionResolver.Result.Rejected rej) {
                     return new FieldResult.Fail(rej.error());
@@ -871,10 +871,10 @@ final class InputBeanResolver {
      * malformed-directive cases: no {@code @nodeId} on the member, {@code @nodeId} without
      * {@code typeName:}, or a {@code typeName:} naming no known NodeType.
      */
-    private RecordLeaf buildJooqRecordLeaf(GraphQLInputObjectField sdlField, String sdlFieldName,
+    private RecordLeaf buildJooqRecordLeaf(GraphQLInputObjectField sdlField, String fieldPath,
             String recordTypeName, boolean nonNull,
             String paramName, String methodName, String className) {
-        String where = "field '" + sdlFieldName + "' (jOOQ record '" + recordTypeName + "') on the"
+        String where = "field '" + fieldPath + "' (jOOQ record '" + recordTypeName + "') on the"
             + " bean for parameter '" + paramName + "' of method '" + methodName + "' in class '"
             + className + "'";
         if (!sdlField.hasAppliedDirective(DIR_NODE_ID)) {

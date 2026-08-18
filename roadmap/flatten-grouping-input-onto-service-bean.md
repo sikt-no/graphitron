@@ -1,7 +1,7 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: Ready
+status: In Review
 bucket: feature
 priority: 3
 theme: service
@@ -557,6 +557,91 @@ The surviving `sdlFieldName` uses on `SetColumn`, `KeyColumn`, `GraphitronType` 
 Nothing above touches main-source behaviour except the emitter import nit, so the second pass should
 be test-and-prose only. The changelog entry stays unwritten for the Done gate, as the implementation
 notes say.
+
+## Second pass: both gaps closed, with one argued substitution
+
+Written at the second In Progress → In Review handoff. Test-and-prose only, as the note above asked:
+no main-source behaviour changed. Each of the five code-string assertions is gone, and each pin it
+carried now lives somewhere it cannot rot on a formatting change.
+
+### The four assertions in `InputBeanGroupingPipelineTest`
+
+* **Parent-before-child ordering** moved to the compiler, exactly as suggested. The
+  `graphitron-sakila-example` grouping fixture is now two levels deep: `comment` is reached through
+  `assessment.remark`, so the emitted helper must declare the `assessment` descent local before the
+  `assessment.remark` one that reads from it. That module compiles the emitted tree at
+  `<release>17</release>`, so a child-before-parent order is a compile error there. The execution
+  round-trip gained the arm that goes with it: a present outer group with the inner one absent, which
+  is the case that fails if the empty-map default holds only at the root.
+* **The unchecked-cast pin did not need a lint, and adding one would have been weaker than what
+  already guards it.** `graphitron-sakila-example` compiles the whole emitted tree under the parent
+  pom's `-Xlint:all -Werror` (its own pom says so, in the comment on the `<release>17</release>`
+  override), which is why this defect was found in the first place: the implementation notes above
+  record that the gate fired as soon as a fixture paired a singular nested-bean member with it. A
+  regex lint over emitted text would re-implement javac's `unchecked` category and could not do it as
+  well. It cannot tell a cast covered by an enclosing `@SuppressWarnings("unchecked")` from an
+  uncovered one without reproducing scope analysis, and the distinction is load-bearing: the emitted
+  tree contains 31 concretely-parameterized `Map` casts today, every one of them inside a method the
+  generator annotated, in the conditions glue and the input-record `fromMap` bodies. A rule that
+  failed on those would be a scope change the review explicitly warned against; a rule that skipped
+  them would have to encode the suppression check anyway. So the pin is stated where it is enforced
+  instead: `buildSingularHelper`'s and `buildPluralHelper`'s javadoc now name the gate, and the
+  `FilmReviewGrouped` fixture javadoc records that its `headline` member is what keeps the singular
+  nested-bean emit path inside the gate's reach. This is the "narrow, argued exception" the review
+  invited, and it is an argument for a stronger home rather than for keeping a string match.
+* **The descent-count and depth-1 no-op assertions** are gone. The "one descent per group, not one per
+  leaf" count was implementation shape, and the access-path assertions already present state the fact
+  it was standing in for. The no-op is re-expressed structurally as
+  `unflattenedBean_keepsEveryPathAtLengthOne`: the emitter opens one local per path element beyond the
+  first, so all-paths-of-length-one *is* emits-no-descent, asserted on the resolved bindings.
+* **The absent-group contract** needed no new home; `submitGroupedReview_flattensTheGroupOntoTheBean`
+  already pinned it, and now pins it per level.
+
+The class javadoc's carve-out is gone with them, replaced by a pointer to where each relocated pin now
+lives.
+
+### `TypeFetcherGeneratorTest`
+
+The plural helper's cast-shape assertion is deleted rather than rephrased, with a comment naming the
+`-Werror` gate in its place. The singular helper's `Map<?, ?>` parameter was already pinned
+structurally on the `MethodSpec` (not on its body), and that assertion is the one that matters: the
+wildcarded parameter is what makes a checked narrowing possible at every call site.
+
+### Retirement sweep
+
+The three prose sites are fixed. The sweep also turned up a fourth site the review's grep would have
+filtered out as code rather than prose: `InputBeanResolver.bindField` declared a local named
+`sdlFieldName` holding `dottedPath(accessPath)`, and passed it to `buildJooqRecordLeaf` under the same
+parameter name. It is a dotted path, not an SDL field name, so the old name was both retired and
+actively wrong; renamed to `fieldPath` (a rename of a private local and parameter, no behaviour).
+Nothing outside the out-of-scope carriers the plan names still spells `sdlFieldName`.
+
+### The precedent, filed
+
+`JooqRecordServiceParamPipelineTest`'s own body-string assertions are now R707, joining the three
+existing items on the same rule (R669, R554, R522). The item records why that file is harder than this
+one: what it pins is call-site routing, which has no carrier to assert on yet, so it needs a decision
+about where routing becomes observable before the scans can go.
+
+### Also done
+
+The `java.util.LinkedHashSet` inline qualification in `InputBeanInstantiationEmitter` is now an import,
+per the non-blocking nit.
+
+### Verification
+
+`mvn install -Plocal-db` green across all fourteen modules. `graphitron` at 3678 tests
+(`InputBeanGroupingPipelineTest` 16/16, three fewer than before: four emitted-text tests out, one
+structural test in), `graphitron-sakila-example` at 789. The emitted
+`createFilmReviewGrouped` reads as intended, which is what the depth-2 fixture is there to make the
+compiler check:
+
+```java
+Map<?, ?> assessmentMap = raw.get("assessment") instanceof Map<?, ?> assessmentGroup ? assessmentGroup : Map.of();
+Map<?, ?> assessmentRemarkMap = assessmentMap.get("remark") instanceof Map<?, ?> assessmentRemarkGroup ? assessmentRemarkGroup : Map.of();
+```
+
+The changelog entry is still unwritten, for the Done gate.
 
 ## Coordination with adjacent items
 

@@ -7357,7 +7357,7 @@ class GraphitronSchemaBuilderTest {
         // ===== @field(name:) Java-member binding on input beans =====
 
         SERVICE_MUTATION_FIELD_INPUT_BEAN_FIELD_RENAMED_RECORD(
-            "R200: @field(name:) bridges a record component whose name diverges from the SDL field name — javaFieldName carries the directive value, sdlFieldName stays the SDL (Map-key) name",
+            "@field(name:) bridges a record component whose name diverges from the SDL field name — javaFieldName carries the directive value, mapKey() stays the SDL (Map-key) name",
             """
             input TestInputBeanRenamedInput { title: String @field(name: "heading"), rating: Int @field(name: "score") }
             type FilmDetails { title: String }

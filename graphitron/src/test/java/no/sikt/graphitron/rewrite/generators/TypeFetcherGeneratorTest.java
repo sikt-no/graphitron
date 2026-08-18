@@ -2482,10 +2482,9 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.parameters().get(0).type().toString()).isEqualTo("java.lang.Object");
         var body = spec.code().toString();
         assertThat(body).contains("if (raw == null) return null");
-        assertThat(body)
-            .as("the per-element cast has no type arguments to check, so it needs no @SuppressWarnings")
-            .contains("createFoo((java.util.Map<?, ?>) e)")
-            .doesNotContain("@SuppressWarnings");
+        // Whether the per-element narrowing is checked is not asserted on the body text: the emitted
+        // sources compile under -Xlint:all -Werror in graphitron-sakila-example, so an unchecked cast
+        // here fails that build. See buildPluralHelper's javadoc for the rule and its enforcer.
     }
 
     @Test

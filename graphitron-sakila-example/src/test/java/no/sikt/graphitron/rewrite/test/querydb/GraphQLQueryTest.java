@@ -7249,8 +7249,8 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void submitGroupedReview_flattensTheGroupOntoTheBean() {
-        // Execution-tier proof for grouping inputs, all three arms in one shape. `assessment` names
-        // no component of FilmReviewGrouped, so the client's nested object is descended and its
+        // Execution-tier proof for grouping inputs, every arm in one shape. Neither `assessment` nor
+        // the `remark` inside it names a component of FilmReviewGrouped, so both are descended and
         // rating/comment land on the flat components; `headline` does name one, so it still arrives
         // as a nested bean. If the descent failed, rating and comment would come back null while the
         // build stayed green, which is exactly the defect this shape exists to catch.
@@ -7258,7 +7258,7 @@ class GraphQLQueryTest {
             mutation {
                 submitGroupedReview(in: {
                     filmId: 42,
-                    assessment: { rating: 5, comment: "ok" },
+                    assessment: { rating: 5, remark: { comment: "ok" } },
                     headline: { name: "great", weight: 3 }
                 })
             }
@@ -7276,6 +7276,17 @@ class GraphQLQueryTest {
             """);
         assertThat(absent).containsEntry("submitGroupedReview",
             "filmId=42,rating=null,comment=null,headline=null");
+
+        // A present outer group with the inner one absent: the empty-map default has to hold per
+        // level, not just at the root, so `rating` binds while `comment` stays null. This is the arm
+        // that fails if the deeper descent reads through a null parent instead of an empty map.
+        Map<String, Object> innerAbsent = execute("""
+            mutation {
+                submitGroupedReview(in: { filmId: 42, assessment: { rating: 5 } })
+            }
+            """);
+        assertThat(innerAbsent).containsEntry("submitGroupedReview",
+            "filmId=42,rating=5,comment=null,headline=null");
 
         // An explicitly-null group is the same outcome as an absent one: a bean member has only a
         // value, so there is no omitted-versus-null tri-state to preserve on this axis.

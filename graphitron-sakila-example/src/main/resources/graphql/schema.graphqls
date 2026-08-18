@@ -2394,11 +2394,16 @@ input FilmReviewTagInput {
     weight: Int
 }
 
-# Grouping-input fixture: rating and comment are clustered under a nested input object for the
+# Grouping-input fixture: rating and comment are clustered under nested input objects for the
 # client's benefit, while the backing FilmReviewGrouped record carries them flat. `assessment` names
 # no component, so it is a grouping input and its fields bind as if declared here; `headline` does
-# name one, so it keeps binding as a nested bean. The generated createFilmReviewGrouped helper opens
-# one Map local for the group and reads both hoisted leaves from it.
+# name one, so it keeps binding as a nested bean.
+#
+# The nesting is two levels deep on purpose. `comment` is reached through `assessment.remark`, so the
+# generated createFilmReviewGrouped helper must declare the descent local for `assessment` before the
+# one for `assessment.remark`, which is initialised from it. A child-before-parent emission order does
+# not compile, and these sources are compiled here at <release>17</release>, so the compiler is the
+# ordering assertion; nothing needs to match the emitted text.
 input FilmReviewGroupedInput {
     filmId: Int!
     assessment: FilmReviewAssessmentInput
@@ -2407,6 +2412,10 @@ input FilmReviewGroupedInput {
 
 input FilmReviewAssessmentInput {
     rating: Int
+    remark: FilmReviewRemarkInput
+}
+
+input FilmReviewRemarkInput {
     comment: String
 }
 
@@ -3680,13 +3689,13 @@ type Mutation {
             method: "submitSummary"
         })
 
-    # Grouping-input compilation-/execution-tier fixture: the SDL clusters rating and comment under
-    # `assessment`, while FilmReviewGrouped carries them as flat components. The generated
-    # createFilmReviewGrouped helper must declare one Map local for the group and read both leaves
-    # from it, then pass all four values positionally to the canonical constructor — a well-formed
-    # constructor call is the compile-tier proof. The round-trip in
-    # submitGroupedReview_flattensTheGroupOntoTheBean is the execution-tier proof, including the
-    # absent-group and matching-member arms.
+    # Grouping-input compilation-/execution-tier fixture: the SDL clusters rating under `assessment`
+    # and comment under `assessment.remark`, while FilmReviewGrouped carries both as flat components.
+    # The generated createFilmReviewGrouped helper declares one Map local per grouping prefix, parent
+    # before child, and passes all four values positionally to the canonical constructor — a
+    # well-formed constructor call plus a descent that compiles is the compile-tier proof. The
+    # round-trip in submitGroupedReview_flattensTheGroupOntoTheBean is the execution-tier proof,
+    # including the absent-group, absent-inner-group and matching-member arms.
     submitGroupedReview(in: FilmReviewGroupedInput!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",

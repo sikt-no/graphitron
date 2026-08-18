@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -12,9 +10,6 @@ import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -29,8 +24,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reject half matters on the JavaBean arm in particular, where every one of these built silently
  * before, dropping the group's data on the floor; the record arm's bijection already failed them.
  *
- * <p>No generated-body string assertions except where the emitted descent is the thing under test:
- * the access paths on the resolved {@code ValueShape.FieldBinding}s are the structural pin.
+ * <p>No generated-body string assertions: the access paths on the resolved
+ * {@code ValueShape.FieldBinding}s are the structural pin here. What the emitter does with a path is
+ * pinned where it is observable rather than by matching emitted text: the descent's parent-before-child
+ * ordering is a compile error when violated, so the depth-2 group in the {@code graphitron-sakila-example}
+ * schema is its assertion; the absent-group-yields-null contract is pinned by the round-trip in
+ * {@code GraphQLQueryTest.submitGroupedReview_flattensTheGroupOntoTheBean}; and the hygiene rule that
+ * no emitted cast may be unchecked is a lint over every emitted file in {@code GeneratedSourcesLintTest}.
  */
 @PipelineTier
 class InputBeanGroupingPipelineTest {
@@ -182,60 +182,18 @@ class InputBeanGroupingPipelineTest {
             .isInstanceOf(CallSiteExtraction.NodeIdDecodeRecord.class);
     }
 
-    // ===== Emitted descent =====
-
     @Test
-    void singularHelper_opensOneMapLocalPerGroup_andReadsEveryHoistedLeafFromIt() {
-        // The emitted shape is load-bearing, so it is pinned directly: one descent local per group
-        // (not one per sibling leaf), binding the empty map when the group is absent so that every
-        // per-field expression stays the expression an unflattened field emits.
-        var body = helperBody(FLATTEN_SDL, "createTestInputBeanGrouped");
-        assertThat(body)
-            .as("one Map local for the one group, defaulting to an empty map rather than null")
-            .contains("durationMap = raw.get(\"duration\") instanceof")
-            .contains("? durationGroup : java.util.Map.of()");
-        assertThat(body)
-            .as("both hoisted leaves read from that local; the top-level leaf still reads from raw")
-            .contains("durationMap.get(\"length\")")
-            .contains("durationMap.get(\"rentalDays\")")
-            .contains("raw.get(\"title\")");
-        assertThat(body.split("instanceof", -1).length - 1)
-            .as("one descent for the group, not one per leaf under it").isEqualTo(1);
-    }
-
-    @Test
-    void deepHelper_descendsParentBeforeChild() {
-        // Declaration order matters: the inner local is initialised from the outer one, so a child
-        // prefix emitted before its parent would not compile in the consumer's sources.
-        var body = helperBody(DEPTH_TWO_SDL, "createTestInputBeanGrouped");
-        assertThat(body.indexOf("specMap = raw.get(\"spec\")"))
-            .as("the outer group's local is declared first").isNotNegative()
-            .isLessThan(body.indexOf("specDurationMap = specMap.get(\"duration\")"));
-        assertThat(body).contains("specDurationMap.get(\"length\")");
-    }
-
-    @Test
-    void singularNestedBean_isNarrowedByPattern_notByAnUncheckedCast() {
-        // Generated sources land in the consumer's build, where an unchecked-cast warning is a hard
-        // failure under -Werror and no @SuppressWarnings can be attached to a cast inside an
-        // expression. The nested bean is narrowed with an instanceof pattern instead, which also
-        // subsumes the null guard: a null or non-Map value simply does not match.
-        var body = helperBody(MATCHING_MEMBER_SDL, "createTestInputBeanGroupedWithNested");
-        assertThat(body)
-            .contains("raw.get(\"period\") instanceof java.util.Map<?, ?> periodRaw")
-            .contains("createTestInputNested(periodRaw)")
-            .doesNotContain("(java.util.Map<java.lang.String, java.lang.Object>) raw.get(\"period\")");
-    }
-
-    @Test
-    void unflattenedBean_emitsNoDescent_andReadsEverythingFromRaw() {
-        // The no-op pin: a bean with no flattened field must emit exactly what it emitted before
-        // grouping existed, so the access path costs nothing at depth 1.
-        var body = helperBody(MATCHING_MEMBER_SDL, "createTestInputNested");
-        assertThat(body)
-            .contains("raw.get(\"key\")")
-            .contains("raw.get(\"value\")")
-            .doesNotContain("Map.of()");
+    void unflattenedBean_keepsEveryPathAtLengthOne() {
+        // The no-op pin, stated where it is decided rather than in the emitted text: a bean with no
+        // flattened field carries only one-element paths, and the emitter opens a descent local per
+        // path element beyond the first, so there is nothing for it to emit. This is what makes a
+        // pre-grouping bean's helper byte-identical to the one it emitted before access paths existed.
+        var nested = (ValueShape.RecordInput) recordBean(MATCHING_MEMBER_SDL, "runMixed").fields().stream()
+            .filter(fb -> fb.javaFieldName().equals("period")).findFirst().orElseThrow().shape();
+        assertThat(nested.fields())
+            .allSatisfy(fb -> assertThat(fb.accessPath()).hasSize(1))
+            .extracting(ValueShape.FieldBinding::mapKey)
+            .containsExactly("key", "value");
     }
 
     // ===== Shapes that reject =====
@@ -506,19 +464,5 @@ class InputBeanGroupingPipelineTest {
             .as("this shape must be refused at build time, not bound partially or dropped")
             .isInstanceOf(UnclassifiedField.class);
         return ((UnclassifiedField) field).reason();
-    }
-
-    /** The rendered body of one {@code create<Bean>} helper on the generated {@code QueryFetchers}. */
-    private static String helperBody(String sdl, String helperName) {
-        List<TypeSpec> specs = TypeFetcherGenerator.generate(
-            TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE);
-        return specs.stream()
-            .filter(t -> t.name().equals("QueryFetchers"))
-            .flatMap(t -> t.methodSpecs().stream())
-            .filter(m -> m.name().equals(helperName))
-            .map(MethodSpec::code)
-            .map(Object::toString)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("helper not found: " + helperName));
     }
 }

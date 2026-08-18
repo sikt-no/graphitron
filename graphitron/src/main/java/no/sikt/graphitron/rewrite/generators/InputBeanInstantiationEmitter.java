@@ -9,6 +9,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import javax.lang.model.element.Modifier;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -55,6 +56,11 @@ final class InputBeanInstantiationEmitter {
      * {@code @SuppressWarnings} can be attached to a cast sitting inside an expression. Widening
      * costs nothing at the reading end, since {@code Map.get} takes {@code Object} and every value
      * read out of it is cast to the member's own type regardless.
+     *
+     * <p>That rule is build-enforced rather than asserted on emitted text: {@code
+     * graphitron-sakila-example} compiles the whole emitted tree under {@code -Xlint:all -Werror} at
+     * {@code <release>17</release>}, and its {@code FilmReviewGroupedInput} fixture carries a singular
+     * nested-bean member, so a regression to the cast form fails that module's build.
      */
     static MethodSpec buildSingularHelper(CallSiteExtraction.InputBean ib) {
         return buildSingularHelper(ib, FetchersHelperNames.bare());
@@ -107,6 +113,11 @@ final class InputBeanInstantiationEmitter {
      * singular helper. The {@code List} suffix is used unconditionally; appending a literal
      * {@code "s"} produces ugly names ({@code createDetailss}) for types already ending in
      * {@code s}, and consumers commonly use such names.
+     *
+     * <p>The per-element narrowing is a cast to {@code Map<?, ?>}, which has no type arguments to
+     * check and so carries no {@code @SuppressWarnings}. Same enforcer as
+     * {@link #buildSingularHelper}: the emitted tree compiles under {@code -Werror}, which is what a
+     * regression to a concretely-parameterized cast would fail.
      */
     static MethodSpec buildPluralHelper(CallSiteExtraction.InputBean ib, ClassName enclosingClass) {
         return buildPluralHelper(ib, enclosingClass, FetchersHelperNames.bare());
@@ -151,7 +162,7 @@ final class InputBeanInstantiationEmitter {
      * byte-identical to the pre-flattening one.
      */
     private static void emitGroupDescents(MethodSpec.Builder b, CallSiteExtraction.InputBean ib) {
-        var declared = new java.util.LinkedHashSet<List<String>>();
+        var declared = new LinkedHashSet<List<String>>();
         for (var fb : ib.fields()) {
             List<String> path = fb.accessPath();
             for (int level = 1; level < path.size(); level++) {

@@ -65,11 +65,12 @@ public final class FilmReviewService {
     }
 
     /**
-     * Fixture: takes a {@link FilmReviewGrouped} whose {@code rating} / {@code comment} components
-     * are declared under a nested grouping input on the SDL side, while {@code headline} names a
-     * component and stays a nested bean. Renders the bean back as a string so the round-trip can
-     * observe each half independently: a present group populating its leaves, an absent group
-     * leaving them null, and the matching-member group still arriving as a nested object.
+     * Fixture: takes a {@link FilmReviewGrouped} whose {@code rating} component is declared under a
+     * nested grouping input on the SDL side and whose {@code comment} component is declared one level
+     * deeper still, while {@code headline} names a component and stays a nested bean. Renders the bean
+     * back as a string so the round-trip can observe each half independently: a present group
+     * populating its leaves, an absent group (outer or inner) leaving them null, and the
+     * matching-member group still arriving as a nested object.
      */
     public static String submitGroupedReview(FilmReviewGrouped in) {
         if (in == null) {
