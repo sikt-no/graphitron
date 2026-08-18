@@ -1,7 +1,7 @@
 ---
 id: R323
 title: "Multi-parent NestingField sharing: admit the projected leaves, retire the open BatchKey question"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: classification-model
@@ -314,8 +314,11 @@ All in `GraphitronSchemaValidator`, plus fixtures:
 - Rearm the class-mismatch check: when the mismatched pair's `ResultKeyAliasedField` membership
   differs, reject through the class-carrying `Rejection.deferred` overload (representative's class)
   with the FK-orientation wording from the design section; other mismatches keep the structural arm.
-- Rewrite the catch-all comment per the previous section, and move both deferral sites onto the
-  class-carrying overload.
+- Rewrite the catch-all comment per the previous section, and move the catch-all's own
+  `deferred(...)` call onto the class-carrying overload. That is the only existing call that moves,
+  per the previous section: the class-mismatch site calls `Rejection.structural(...)`, which has no
+  class-carrying overload, and the bullet above is what puts the rearmed membership-differs route on
+  `deferred` in the first place.
 - `ResultKeyAliasedField` javadoc: its "four families" sentence names three. Add `PivotField`.
 - Rewrite `validateNestingParentCompat`'s javadoc: its closing sentence, "Non-ColumnBackedField
   leaves reject at nested depth when the nesting type is shared", has been stale since R23 admitted
