@@ -1,7 +1,7 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: Ready
+status: In Review
 bucket: feature
 priority: 3
 theme: service
@@ -435,6 +435,49 @@ Follow R336's tier split. No generated-body string assertions.
 * Reclassifying the grouping input type itself. A flattened group's leaves are bean members
   and hover should eventually say so; that surface is R337's, and this item consults the
   enclosing bean's member set only, never the group type's own verdict.
+
+## Retired vocabulary
+
+* `CallSiteExtraction.FieldBinding.sdlFieldName` and `ValueShape.FieldBinding.sdlFieldName`, both
+  replaced by `accessPath` plus the `mapKey()` accessor. Replaced rather than kept alongside, per D1,
+  so every read site had to be revisited; nothing should still spell `sdlFieldName` on either
+  carrier. The name survives elsewhere on unrelated carriers (`SetColumn`, `KeyColumn`,
+  `GraphitronType`, the schema and input-record generators), which are out of scope and untouched.
+
+## Implementation notes
+
+Written at the In Progress → In Review handoff, for the reviewer.
+
+* **Delivered as specified for D1 through D5.** The five `RootFieldCase` assertion sites named in the
+  Tests section moved to `mapKey()`, and the thirteen test construction sites moved to `List.of(...)`
+  first arguments, both exactly as D1 predicted.
+* **Test layout deviates from the plan.** The plan put the accept cases as new `RootFieldCase` rows in
+  `GraphitronSchemaBuilderTest` and the rejections in a separate file. Both halves instead live in one
+  new `InputBeanGroupingPipelineTest`, the member-axis twin of `JooqRecordServiceParamPipelineTest`.
+  Reasoning: splitting one feature's accepts from its rejections across two files reads worse than
+  keeping them adjacent, and the `classified-corpus` skill's framing suggests the project is retiring
+  `GraphitronSchemaBuilderTest` enum rows rather than adding six. Reviewer's call to reject if the
+  enum rows were load-bearing for a reason not visible from here.
+* **A pre-existing emitter defect surfaced and was fixed in scope.** `nestedBeanExpr`'s singular arm
+  emitted `createNested((Map<String, Object>) root.get(k))`, an unchecked cast. Generated sources
+  compile in the consumer's build, so under `-Werror` that is a hard failure, and `@SuppressWarnings`
+  cannot attach to a cast inside an expression. It had gone unnoticed because no fixture in the
+  reactor paired a *singular* nested bean member with the `-Werror` compile gate; this item's
+  compilation-tier fixture is the first, so the gate fired. Fixed by widening the singular helper's
+  parameter to `Map<?, ?>` and narrowing at the call site with an `instanceof` pattern; the plural
+  helper's per-element cast became `(Map<?, ?>)` and lost its `@SuppressWarnings`. Both external call
+  sites pass `env.getArgument(...)`, whose `<T> T` infers the wildcarded map unchanged.
+* **The list-valued twin of that defect is deferred, not fixed.** `directExpr`'s list arm emits
+  `(List<String>) root.get(k)` with the same exposure. The remedy does not transfer: a pattern cannot
+  narrow `List<?>` to `List<String>`, so the generated code would have to copy the list element-wise,
+  changing both what it returns and when it fails. Filed as its own item rather than folded in.
+* **Verification.** Full reactor green, including the two tiers that matter here: `graphitron` at 3678
+  tests (`InputBeanGroupingPipelineTest` 19/19) and `graphitron-sakila-example` at 357, with the
+  flattened group both compiling against a real consumer record at `<release>17</release>` and
+  round-tripping through a real mutation.
+* **Changelog entry not written.** Left to the reviewer at the Done gate, per `roadmap/workflow.adoc`.
+  The Behaviour changes section above lists the five JavaBean-arm failures to enumerate there, plus
+  the deliberate scalar-axis asymmetry.
 
 ## Coordination with adjacent items
 
