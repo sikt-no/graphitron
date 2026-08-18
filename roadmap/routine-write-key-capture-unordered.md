@@ -13,7 +13,7 @@ last-updated: 2026-08-13
 
 A list-returning `@routine` write (`MutationField.MutationRoutineWriteField`) produces rows in
 no defined order, with no directive the author can write to fix it and no diagnostic saying so.
-Sibling of `roadmap/routine-chain-order-directive-silent-noop.md` (R659), which fixes the same
+Sibling of `roadmap/routine-composition-surface-from-facts.md` (R704), which fixes the same
 defect class on the read side; split off because the seam is different (a write's key capture,
 not a read's order surface) and the fix is not the same edit.
 

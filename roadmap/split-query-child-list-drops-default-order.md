@@ -16,7 +16,8 @@ A child list field carrying `@splitQuery` and `@defaultOrder` resolves the direc
 `OrderBySpec.Fixed` on the leaf and then emits a batch query with no `ORDER BY`. The declared
 sorting contract is discarded between the model and the generated SQL, and nothing warns.
 
-Found while reviewing `roadmap/routine-chain-order-directive-silent-noop.md` (R659), which fixes
+Found while reviewing the root-routine ordering drop, now owned by
+`roadmap/routine-composition-surface-from-facts.md` (R704), which fixes
 the same symptom at the root `@routine` chain. This is the sibling instance at the batched child
 coordinate, and it is the harder one: the leaf carries a populated ordering slot, so every
 build-time check sees an ordered field.
@@ -75,7 +76,7 @@ Nothing catches the drop:
 
 * `GraphitronSchemaValidator.validateListRequiresOrdering` fires on `OrderBySpec.None`. These
   fields carry `Fixed`, so the check passes, correctly, and the loss happens two layers later.
-  R659's enforcement widening cannot reach this population for the same reason.
+  R704's enforcement widening cannot reach this population for the same reason.
 * The primary-key fallback in `OrderByResolver.resolveDefaultOrderSpec` means a batched child
   list over a table *with* a primary key silently acquires a `Fixed` spec even with no directive
   authored, so the population that loses ordering at emit is every list-shaped batched child, not
@@ -114,7 +115,7 @@ Asserting on the generated `.orderBy(...)` string is banned by
 
 ## Related
 
-* `roadmap/routine-chain-order-directive-silent-noop.md` (R659): the same symptom at the root
+* `roadmap/routine-composition-surface-from-facts.md` (R704): the same symptom at the root
   `@routine` chain, where the model lands `None` and the fix is enforcement plus a classifier
   call. That item's enforcement does not reach this population.
 * `roadmap/lookup-unrealized-co-members.md` (R567): the `@lookupKey` grain of the same drop
@@ -123,7 +124,7 @@ Asserting on the generated `.orderBy(...)` string is banned by
 * `roadmap/routine-write-key-capture-unordered.md` (R660): the Mutation routine write path's
   unordered step 2.
 * `roadmap/list-ordering-invariant-enforcement.md` (R677): the shared enforcement question this
-  item and R659 both pushed out, now filed and nobody's rider.
+  item and R704 both pushed out, now filed as R677 and nobody's rider.
 * `roadmap/multitable-interface-query-orderby-lowering.md` (R382): the root query field over a
   multitable interface or union, where the arm carries no ordering slot at all. The consumer who
   reported this coordinate reported that one first and reads the two as one bug, so fixing either

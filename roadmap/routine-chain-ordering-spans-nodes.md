@@ -4,7 +4,7 @@ title: "Ordering over a routine chain may name columns from any node"
 status: Backlog
 bucket: feature
 theme: routine
-depends-on: [routine-chain-order-directive-silent-noop]
+depends-on: [routine-composition-surface-from-facts]
 created: 2026-08-13
 last-updated: 2026-08-13
 ---
@@ -20,7 +20,7 @@ a `@reference` hop follows it.
 The shape this blocks is ordinary. A function that computes a rank, a score, or a
 business-defined sequence, hopped out to a catalog table for the projected columns, wants to
 project `film.*` and order by `source.rank`. Today the author must either drop the hop (losing
-the catalog columns) or drop the ordering intent (and, after R659, the field will not build at
+the catalog columns) or drop the ordering intent (and, after R704, the field will not build at
 all without some ordering). Neither is a real option, so the ordering the schema can declare is
 narrower than the ordering the query could execute.
 
@@ -65,7 +65,7 @@ raw SQL name, so a chain with the same table at two positions stays expressible.
 
 ## Notes for whoever picks this up
 
-* **Ordering target is not a performance lever.** Measured under R659 on PostgreSQL 16 over a
+* **Ordering target is not a performance lever.** Measured for R704 on PostgreSQL 16 over a
   500k-row pair: naming the routine column and naming the joined catalog column produce
   byte-identical plans, for inlinable and opaque functions alike, with and without `LIMIT`,
   because the hop is an equi-join and the columns share an equivalence class. That result is about
@@ -81,6 +81,6 @@ raw SQL name, so a chain with the same table at two positions stays expressible.
   `OrderByFragments.fixedColumnParts` has the same single-alias shape as `fixedSortParts` and
   would need the same treatment.
 
-Depends on R659 (`roadmap/routine-chain-order-directive-silent-noop.md`), which makes root chains
+Depends on R704 (`roadmap/routine-composition-surface-from-facts.md`), which makes root chains
 ordered at all; ordering that spans nodes is only meaningful once ordering resolves for these
 fields in the first place.

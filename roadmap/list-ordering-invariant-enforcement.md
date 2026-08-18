@@ -22,7 +22,7 @@ whatever order the database happened to return.
 Five sites are known today:
 
 * Root `@routine` chain: the leaf is not a `SqlGeneratingField`, so a list-returning routine root
-  escapes by capability non-membership (`roadmap/routine-chain-order-directive-silent-noop.md`).
+  escapes by capability non-membership (`roadmap/routine-composition-surface-from-facts.md`).
 * `@splitQuery` child list: a resolved `OrderBySpec.Fixed` is discarded at the model-to-command
   boundary (`roadmap/split-query-child-list-drops-default-order.md`).
 * `@lookupKey` child: `LauncherCommands.batchedLookupRow`'s ordering slot is left empty
