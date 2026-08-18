@@ -1,25 +1,15 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.intent;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
+import org.jooq.Record;
+import org.jooq.Record2;
+import org.jooq.Result;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
@@ -38,8 +28,8 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The registered agreement anchor for the three resolution views a {@code @reference} path stands
- * on: {@code intent_spelled_table}, which resolves a written table name against the catalog census
+ * What the three resolution views a {@code @reference} path stands on return:
+ * {@code intent_spelled_table}, which resolves a written table name against the catalog census
  * whatever site wrote it, and the pair {@code intent_field_reference_step_hop} /
  * {@code intent_field_reference_step_target}, which split a path into its per-element resolutions
  * and the chain that walks them.
@@ -51,17 +41,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * assertion still reads the chain, because the hop's answer is only a fact about the schema once
  * something arrives at its departing table.
  *
- * <p>Most cases capture real SDL against the test catalog rather than seeding rows, because the
- * resolutions here are exactly the ones a hand-built fixture gets wrong: a fixture is free to seed
- * a chain the catalog cannot connect, and the case then documents behaviour no build can produce.
- * The seeded cases are the ones the test catalog has no instance of (a constraint name colliding
- * across two schemas) or that capture cannot express (an element carrying neither key nor table).
+ * <p>Both catalogs here are stated as rows, and the point of a case is usually a shape the catalog
+ * has to hold rather than one an author wrote: two foreign keys between the same pair of tables, a
+ * key that points at its own table, a constraint name two schemas both declare, a table name two
+ * schemas both declare. Stating the catalog is what puts those side by side in a fixture small
+ * enough to read, and a path element that resolves against nothing is a case rather than an
+ * accident. That a real crawler produces catalog rows of this shape is pinned beside the crawler.
  */
-@PipelineTier
 class ReferenceStepTargetTest {
-
-    @TempDir
-    Path tmp;
 
     // ===== The chain =====
 
@@ -73,17 +60,10 @@ class ReferenceStepTargetTest {
      */
     @Test
     void aKeyChainWalksEachElementFromTheTypesBinding() {
-        var sdl = """
-            type Film @table(name: "film") {
-                actors: [Actor!]! @reference(path: [
-                    {key: "film_actor_film_id_fkey"},
-                    {key: "film_actor_actor_id_fkey"}
-                ])
-            }
-            type Actor @table(name: "actor") { actor_id: ID }
-            type Query { films: [Film] }
-            """;
-        withCapturedStore(sdl, dsl -> {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedKeyPath(dsl, "Film", "actors", "film_actor_film_id_fkey", "film_actor_actor_id_fkey");
+
             var rows = chain(dsl, GRAPH);
             assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.POSITION)))
                 .containsExactly(0, 1);
@@ -102,14 +82,10 @@ class ReferenceStepTargetTest {
     /** A table element names its destination and leaves the foreign key to be discovered. */
     @Test
     void aTableElementDiscoversItsForeignKey() {
-        var sdl = """
-            type Film @table(name: "film") {
-                titleTexts: TranslatedTexts @reference(path: [{table: "film_translation"}])
-            }
-            type TranslatedTexts @table(name: "film_translation") { title: String }
-            type Query { films: [Film] }
-            """;
-        withCapturedStore(sdl, dsl -> {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTablePath(dsl, "Film", "titleTexts", "film_translation");
+
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
@@ -131,14 +107,10 @@ class ReferenceStepTargetTest {
      */
     @Test
     void twoForeignKeysToOneTableAreOneDestinationByTwoRoutes() {
-        var sdl = """
-            type Film @table(name: "film") {
-                lang: Language @reference(path: [{table: "language"}])
-            }
-            type Language @table(name: "language") { name: String }
-            type Query { films: [Film] }
-            """;
-        withCapturedStore(sdl, dsl -> {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTablePath(dsl, "Film", "lang", "language");
+
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(2);
             assertThat(rows.map(ReferenceStepTargetTest::hop))
@@ -160,13 +132,10 @@ class ReferenceStepTargetTest {
      */
     @Test
     void aSelfReferentialKeyIsOneHopNotTwo() {
-        var sdl = """
-            type Category @table(name: "category") {
-                parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
-            }
-            type Query { categories: [Category] }
-            """;
-        withCapturedStore(sdl, dsl -> {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Category", "category");
+            seedKeyPath(dsl, "Category", "parent", "category_parent_category_id_fkey");
+
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
@@ -184,20 +153,13 @@ class ReferenceStepTargetTest {
      */
     @Test
     void anUnresolvableFirstElementEndsTheChain() {
-        var sdl = """
-            type Film @table(name: "film") {
-                actors: [Actor!]! @reference(path: [
-                    {key: "no_such_fkey"},
-                    {key: "film_actor_actor_id_fkey"}
-                ])
-            }
-            type Actor @table(name: "actor") { actor_id: ID }
-            type Query { films: [Film] }
-            """;
-        withCapturedStore(sdl, dsl -> {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedKeyPath(dsl, "Film", "actors", "no_such_fkey", "film_actor_actor_id_fkey");
+
             assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP,
                 GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME.eq(GRAPH)))
-                .as("both elements were captured; only their resolution declines")
+                .as("both elements were authored; only their resolution declines")
                 .isEqualTo(2);
             assertThat(chain(dsl, GRAPH)).isEmpty();
         });
@@ -206,14 +168,10 @@ class ReferenceStepTargetTest {
     /** A type with no {@code @table} has no binding, so its path has nowhere to start. */
     @Test
     void aPathOnAnUnboundTypeStartsNowhere() {
-        var sdl = """
-            type Film {
-                actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
-            }
-            type Actor @table(name: "actor") { actor_id: ID }
-            type Query { films: [Film] }
-            """;
-        withCapturedStore(sdl, dsl -> assertThat(chain(dsl, GRAPH)).isEmpty());
+        withCatalog(dsl -> {
+            seedKeyPath(dsl, "Film", "actors", "film_actor_film_id_fkey");
+            assertThat(chain(dsl, GRAPH)).isEmpty();
+        });
     }
 
     // ===== The key name's two namespaces =====
@@ -221,7 +179,7 @@ class ReferenceStepTargetTest {
     /** The SQL constraint name, which is the namespace the resolver tries first. */
     @Test
     void aSqlConstraintNameAnswersInItsOwnNamespace() {
-        withCapturedStore(keyPath("film_language_id_fkey"), dsl -> {
+        withKeyPath("film_language_id_fkey", dsl -> {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
@@ -237,7 +195,7 @@ class ReferenceStepTargetTest {
      */
     @Test
     void theGeneratedConstantAnswersWhereNoSqlNameDoes() {
-        withCapturedStore(keyPath("FILM__FILM_LANGUAGE_ID_FKEY"), dsl -> {
+        withKeyPath("FILM__FILM_LANGUAGE_ID_FKEY", dsl -> {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
@@ -249,14 +207,14 @@ class ReferenceStepTargetTest {
     /** Both namespaces match case-insensitively, as the resolver matches them. */
     @Test
     void aKeyNameMatchesWithoutRegardToCase() {
-        withCapturedStore(keyPath("FILM_LANGUAGE_ID_FKEY"), dsl -> {
+        withKeyPath("FILM_LANGUAGE_ID_FKEY", dsl -> {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             assertThat(hop(rows.getFirst())).isEqualTo("film->language");
         });
     }
 
-    // ===== Seeded: what the test catalog has no instance of =====
+    // ===== A name two schemas both declare =====
 
     /**
      * A constraint name two schemas both declare reaches two different tables, so the arities move
@@ -268,7 +226,7 @@ class ReferenceStepTargetTest {
     void aKeyNameCollidingAcrossSchemasReachesEachSchemasTable() {
         withCollidingKeySeed(dsl -> {
             seedStep(dsl, "dup_fk", null);
-            var rows = chain(dsl, "g");
+            var rows = chain(dsl, GRAPH);
             assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA)))
                 .containsExactly("legacy", "public");
             assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TARGETS)))
@@ -286,7 +244,7 @@ class ReferenceStepTargetTest {
     void anAuthorQualifierScopesTheCollidingName() {
         withCollidingKeySeed(dsl -> {
             seedStep(dsl, "public.dup_fk", null);
-            var rows = chain(dsl, "g");
+            var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA))
                 .isEqualTo("public");
@@ -304,10 +262,10 @@ class ReferenceStepTargetTest {
     @Test
     void anElementNamingNeitherKeyNorTableIsNotAHop() {
         withCollidingKeySeed(dsl -> {
-            seedFieldReference(dsl, "g", "Root", "hop", 0);
-            seedFieldReferenceCall(dsl, "g", "Root", "hop", 0, 0,
+            seedFieldReference(dsl, GRAPH, "Root", "hop", 0);
+            seedFieldReferenceCall(dsl, GRAPH, "Root", "hop", 0, 0,
                 "com.example.Conditions", "byOwner");
-            assertThat(chain(dsl, "g")).isEmpty();
+            assertThat(chain(dsl, GRAPH)).isEmpty();
         });
     }
 
@@ -316,7 +274,7 @@ class ReferenceStepTargetTest {
     void aSiblingGraphReadsNoneOfTheChain() {
         withCollidingKeySeed(dsl -> {
             seedStep(dsl, "public.dup_fk", null);
-            assertThat(chain(dsl, "g")).hasSize(1);
+            assertThat(chain(dsl, GRAPH)).hasSize(1);
             assertThat(chain(dsl, "other")).isEmpty();
         });
     }
@@ -330,14 +288,10 @@ class ReferenceStepTargetTest {
      */
     @Test
     void aSpellingOnlyAPathElementWroteStillResolves() {
-        var sdl = """
-            type Film @table(name: "film") {
-                titleTexts: TranslatedTexts @reference(path: [{table: "film_translation"}])
-            }
-            type TranslatedTexts { title: String }
-            type Query { films: [Film] }
-            """;
-        withCapturedStore(sdl, dsl -> {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedTablePath(dsl, "Film", "titleTexts", "film_translation");
+
             var resolved = dsl.select(INTENT_SPELLED_TABLE.TABLE_NAME)
                 .from(INTENT_SPELLED_TABLE)
                 .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
@@ -370,8 +324,8 @@ class ReferenceStepTargetTest {
         withCollidingKeySeed(dsl -> {
             seedStep(dsl, null, "owner");
             var rows = spelled(dsl, "owner");
-            assertThat(rows.map(org.jooq.Record2::value1)).containsExactly("legacy", "public");
-            assertThat(rows.map(org.jooq.Record2::value2)).containsExactly(2, 2);
+            assertThat(rows.map(Record2::value1)).containsExactly("legacy", "public");
+            assertThat(rows.map(Record2::value2)).containsExactly(2, 2);
         });
     }
 
@@ -387,20 +341,119 @@ class ReferenceStepTargetTest {
 
     // ===== Helpers =====
 
-    private static final String GRAPH = "ReferenceStepTargetTest";
+    private static final String GRAPH = "g";
+    private static final String PKG = "pkg";
+    private static final String PUBLIC = "public";
 
-    /** A one-element key path off {@code film}, the fixture the namespace cases vary. */
-    private static String keyPath(String keySpelling) {
-        return """
-            type Film @table(name: "film") {
-                lang: Language @reference(path: [{key: "%s"}])
+    /**
+     * A catalog of six tables holding the three shapes the chain cases turn on: two foreign keys
+     * between one pair of tables, a join table declaring keys to both of its ends, and a key
+     * pointing back at its own table. One key also carries the constant jOOQ would have generated
+     * for it, which is the second namespace a spelling can answer in.
+     *
+     * <p>No type is bound here. Which type departs from which table is the case's own to state,
+     * several cases binding the same table to different shapes.
+     */
+    private static void withCatalog(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, PKG, "JOOQ_SCHEMA");
+            seedGraphSource(dsl, GRAPH, PKG);
+            for (String table : List.of("film", "actor", "language", "category",
+                    "film_actor", "film_translation")) {
+                seedTable(dsl, PKG, PUBLIC, table);
+                seedConstraint(dsl, PKG, PUBLIC, table, table + "_pkey", "PRIMARY KEY", null);
             }
-            type Language @table(name: "language") { name: String }
-            type Query { films: [Film] }
-            """.formatted(keySpelling);
+            foreignKey(dsl, "film", "film_language_id_fkey", "language", "FILM__FILM_LANGUAGE_ID_FKEY");
+            foreignKey(dsl, "film", "film_original_language_id_fkey", "language", null);
+            foreignKey(dsl, "film_actor", "film_actor_film_id_fkey", "film", null);
+            foreignKey(dsl, "film_actor", "film_actor_actor_id_fkey", "actor", null);
+            foreignKey(dsl, "film_translation", "film_translation_film_id_fkey", "film", null);
+            foreignKey(dsl, "category", "category_parent_category_id_fkey", "category", null);
+            body.accept(dsl);
+        });
     }
 
-    private static org.jooq.Result<org.jooq.Record> chain(DSLContext dsl, String graphName) {
+    /** One foreign key from {@code table} to {@code referencedTable}'s primary key. */
+    private static void foreignKey(DSLContext dsl, String table, String constraintName,
+                                   String referencedTable, String jooqName) {
+        seedConstraint(dsl, PKG, PUBLIC, table, constraintName, "FOREIGN KEY", jooqName);
+        seedReferentialConstraint(dsl, PKG, PUBLIC, table, constraintName,
+            PKG, PUBLIC, referencedTable, referencedTable + "_pkey");
+    }
+
+    /** {@code Film} bound to {@code film} with a one-element key path, the namespace cases' fixture. */
+    private static void withKeyPath(String keySpelling, Consumer<DSLContext> body) {
+        withCatalog(dsl -> {
+            seedTableBinding(dsl, GRAPH, "Film", "film");
+            seedKeyPath(dsl, "Film", "lang", keySpelling);
+            body.accept(dsl);
+        });
+    }
+
+    /** A field carrying one {@code @reference} whose elements each spell a key. */
+    private static void seedKeyPath(DSLContext dsl, String typeName, String fieldName,
+                                    String... keyRefs) {
+        seedPath(dsl, typeName, fieldName, null, keyRefs);
+    }
+
+    /** The same, with each element spelling a table instead. */
+    private static void seedTablePath(DSLContext dsl, String typeName, String fieldName,
+                                      String... tableRefs) {
+        seedPath(dsl, typeName, fieldName, tableRefs, null);
+    }
+
+    private static void seedPath(DSLContext dsl, String typeName, String fieldName,
+                                 String[] tableRefs, String[] keyRefs) {
+        seedField(dsl, GRAPH, typeName, fieldName);
+        seedFieldReference(dsl, GRAPH, typeName, fieldName, 0);
+        int elements = tableRefs != null ? tableRefs.length : keyRefs.length;
+        for (int position = 0; position < elements; position++) {
+            seedFieldReferenceStep(dsl, GRAPH, typeName, fieldName, 0, position,
+                tableRefs == null ? null : tableRefs[position],
+                keyRefs == null ? null : keyRefs[position]);
+        }
+    }
+
+    /**
+     * Two schemas of one source, each declaring a table {@code owner} and a constraint
+     * {@code dup_fk} against it, plus a {@code Root} type bound to the public one. The collision the
+     * catalog above has no instance of, seeded at the smallest shape that produces it.
+     */
+    private static void withCollidingKeySeed(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, PKG, "JOOQ_SCHEMA");
+            seedGraphSource(dsl, GRAPH, PKG);
+            for (String schema : List.of(PUBLIC, "legacy")) {
+                seedTable(dsl, PKG, schema, "owner");
+                seedTable(dsl, PKG, schema, "note");
+                // note.dup_fk -> owner.owner_pk, the same constraint name in both schemas.
+                seedConstraint(dsl, PKG, schema, "owner", "owner_pk", "PRIMARY KEY", null);
+                seedConstraint(dsl, PKG, schema, "note", "dup_fk", "FOREIGN KEY",
+                    "NOTE__DUP_FK_" + schema.toUpperCase(Locale.ROOT));
+                seedReferentialConstraint(dsl, PKG, schema, "note", "dup_fk",
+                    PKG, schema, "owner", "owner_pk");
+            }
+            seedRootType(dsl);
+            body.accept(dsl);
+        });
+    }
+
+    /** {@code type Root @table(name: "note")} with one field the seeded path hangs off. */
+    private static void seedRootType(DSLContext dsl) {
+        seedField(dsl, GRAPH, "Root", "hop");
+        // "note" is unqualified and declared in both schemas, so the departure is deliberately
+        // ambiguous: it is what lets a colliding key name be reached in either schema, and the
+        // qualified cases scope the key rather than the departure.
+        seedTableBinding(dsl, GRAPH, "Root", "note");
+    }
+
+    /** One path element on the seeded {@code Root.hop}, spelling a key or a table. */
+    private static void seedStep(DSLContext dsl, String keyRef, String tableRef) {
+        seedFieldReference(dsl, GRAPH, "Root", "hop", 0);
+        seedFieldReferenceStep(dsl, GRAPH, "Root", "hop", 0, 0, tableRef, keyRef);
+    }
+
+    private static Result<Record> chain(DSLContext dsl, String graphName) {
         return dsl.select(INTENT_FIELD_REFERENCE_STEP_TARGET.fields())
             .from(INTENT_FIELD_REFERENCE_STEP_TARGET)
             .where(INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
@@ -412,83 +465,18 @@ class ReferenceStepTargetTest {
     }
 
     /** What one spelling resolves to, schema and arity, in schema order. */
-    private static org.jooq.Result<org.jooq.Record2<String, Integer>> spelled(
-        DSLContext dsl, String spelling
-    ) {
+    private static Result<Record2<String, Integer>> spelled(DSLContext dsl, String spelling) {
         return dsl.select(INTENT_SPELLED_TABLE.TABLE_SCHEMA, INTENT_SPELLED_TABLE.CANDIDATES)
             .from(INTENT_SPELLED_TABLE)
-            .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq("g"))
+            .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
             .and(INTENT_SPELLED_TABLE.SPELLING.eq(spelling))
             .orderBy(INTENT_SPELLED_TABLE.TABLE_SCHEMA)
             .fetch();
     }
 
     /** One row's hop, lowercased, as {@code from->to}: what every chain case reads first. */
-    private static String hop(org.jooq.Record row) {
+    private static String hop(Record row) {
         return (row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE) + "->"
             + row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)).toLowerCase(Locale.ROOT);
-    }
-
-    private void withCapturedStore(String sdl, java.util.function.Consumer<DSLContext> body) {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            var schemaFile = write(tmp, sdl);
-            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
-                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-                jooq, List.of(), new NodeDeclaration(null));
-            body.accept(store.dsl());
-        }
-    }
-
-    /**
-     * Two schemas of one source, each declaring a table {@code owner} and a constraint
-     * {@code dup_fk} against it, plus a {@code Root} type bound to the public one. The collision the
-     * test catalog has no instance of, seeded at the smallest shape that produces it.
-     */
-    private static void withCollidingKeySeed(java.util.function.Consumer<DSLContext> body) {
-        withSeededStore("g", dsl -> {
-            seedSource(dsl, "pkg", "JOOQ_SCHEMA");
-            seedGraphSource(dsl, "g", "pkg");
-            for (String schema : List.of("public", "legacy")) {
-                seedTable(dsl, "pkg", schema, "owner");
-                seedTable(dsl, "pkg", schema, "note");
-                // note.dup_fk -> owner.owner_pk, the same constraint name in both schemas.
-                seedConstraint(dsl, "pkg", schema, "owner", "owner_pk", "PRIMARY KEY", null);
-                seedConstraint(dsl, "pkg", schema, "note", "dup_fk", "FOREIGN KEY",
-                    "NOTE__DUP_FK_" + schema.toUpperCase(Locale.ROOT));
-                seedReferentialConstraint(dsl, "pkg", schema, "note", "dup_fk",
-                    "pkg", schema, "owner", "owner_pk");
-            }
-            seedRootType(dsl);
-            body.accept(dsl);
-        });
-    }
-
-    /** {@code type Root @table(name: "note")} with one field the seeded path hangs off. */
-    private static void seedRootType(DSLContext dsl) {
-        seedField(dsl, "g", "Root", "hop");
-        // "note" is unqualified and declared in both schemas, so the departure is deliberately
-        // ambiguous: it is what lets a colliding key name be reached in either schema, and the
-        // qualified cases scope the key rather than the departure.
-        seedTableBinding(dsl, "g", "Root", "note");
-    }
-
-    /** One path element on the seeded {@code Root.hop}, spelling a key or a table. */
-    private static void seedStep(DSLContext dsl, String keyRef, String tableRef) {
-        seedFieldReference(dsl, "g", "Root", "hop", 0);
-        seedFieldReferenceStep(dsl, "g", "Root", "hop", 0, 0, tableRef, keyRef);
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
     }
 }

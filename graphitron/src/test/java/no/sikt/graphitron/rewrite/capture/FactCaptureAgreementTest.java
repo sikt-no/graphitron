@@ -127,12 +127,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       over the spec-by-example corpus, and the table resolution that arm stands on
  *       ({@code intent_bound_table}) through the claim's own table witness, with pins for the
  *       bindings a column claim cannot speak for;
- *       {@code no.sikt.graphitron.rewrite.derive.ReferenceStepTargetTest} binds the spelling
+ *       {@code no.sikt.graphitron.model.intent.ReferenceStepTargetTest} binds the spelling
  *       resolution the bindings themselves stand on ({@code intent_spelled_table}) and the
  *       {@code @reference} chain over it ({@code intent_field_reference_step_hop} and
  *       {@code intent_field_reference_step_target}, the hop view pinned through the chain that
- *       reaches or refuses it rather than twice), mostly over captured SDL against the test
- *       catalog because a hand-seeded chain is free to assert a path the catalog cannot connect;
+ *       reaches or refuses it rather than twice), to a catalog stated table by table in the module
+ *       whose DDL declares them, the shapes each case turns on (two foreign keys between one pair
+ *       of tables, a key pointing back at its own table, a constraint name two schemas both
+ *       declare, a table name two schemas both declare) being ones no one real catalog offers side
+ *       by side;
  *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a

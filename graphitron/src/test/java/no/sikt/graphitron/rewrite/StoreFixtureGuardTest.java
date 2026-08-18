@@ -116,8 +116,6 @@ class StoreFixtureGuardTest {
             Why.PENDING_SEEDING, "already seeds most of itself; the corpus sweep stays a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/FieldColumnTableTest.java",
             Why.PENDING_SEEDING, "the column-scope and column-table views"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/ReferenceStepTargetTest.java",
-            Why.PENDING_SEEDING, "already carries a colliding-key seed of its own"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/SeparateFetchTest.java",
             Why.PENDING_SEEDING, "the separate-fetch view; the delivery differential stays a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java",

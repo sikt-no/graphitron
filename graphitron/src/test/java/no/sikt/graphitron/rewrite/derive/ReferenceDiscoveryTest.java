@@ -19,12 +19,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The registered agreement anchor for {@code intent_field_reference_discovery}: the foreign key an
  * omitted {@code @reference} path finds between a field's two endpoints. The complement of what
- * {@code ReferenceStepTargetTest} pins, which is the chain an authored path walks; here nothing was
- * written and the resolution is the catalog's own connectivity.
+ * {@code no.sikt.graphitron.model.intent.ReferenceStepTargetTest} pins, which is the chain an
+ * authored path walks; here nothing was written and the resolution is the catalog's own
+ * connectivity.
  *
- * <p>Every case captures real SDL against the test catalog rather than seeding rows, for the reason
- * that test states: a seeded fixture is free to declare a connectivity the catalog does not have, and
- * the case then pins behaviour no build can produce. The catalog supplies each shape already, one
+ * <p>Every case captures real SDL against the test catalog rather than seeding rows, because the
+ * subject is what a real catalog connects: a seeded fixture is free to declare a connectivity no
+ * catalog has, and the case then pins behaviour no build can produce. The catalog supplies each
+ * shape already, one
  * foreign key facing either way, two between one pair, none between another, and a self-referential
  * one.
  *
