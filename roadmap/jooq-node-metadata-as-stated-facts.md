@@ -1,7 +1,7 @@
 ---
 id: R710
 title: "The jOOQ crawler records node metadata as stated, not as validated"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -20,6 +20,9 @@ question (`Optional.empty()` for malformed, with the reason available separately
 fact, and the one consumer that needs it during capture reaches across corpora to get it.
 
 This item records it as a fact, and records it *as stated*.
+
+Shipped whole at `95df965`; nothing below is pending. The sections that follow are the contract the
+delivery is reviewed against, left as written rather than rewritten in the past tense.
 
 ## Why as-stated matters here
 
