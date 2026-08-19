@@ -1,7 +1,7 @@
 ---
 id: R638
 title: "The LSP is a fact-store client"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: lsp
