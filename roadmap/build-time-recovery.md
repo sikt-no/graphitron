@@ -1,7 +1,7 @@
 ---
 id: R732
 title: "Recover the build wall clock and hold it, starting from what derived reads cost"
-status: Backlog
+status: Spec
 bucket: dx
 priority: 2
 theme: tooling
