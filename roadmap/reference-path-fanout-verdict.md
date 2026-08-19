@@ -177,25 +177,40 @@ appears only in `pg_index`, and PostgreSQL rejects `ALTER TABLE ... ADD CONSTRAI
 (a) WHERE ...` as a syntax error, so a partial unique *constraint* does not exist as a thing.
 Our capture takes UNIQUE and PRIMARY KEY rows from `Table.getKeys()`
 (`CatalogFactCapture`, the `sql_` family load), which is jOOQ's unique-key model over declared
-constraints, so a partial unique index never becomes a `sql_constraint` row. `sql_index` carries
-no uniqueness column at all, so nothing else can leak one in either. The reviewer's
+constraints, so a partial unique index never becomes a `sql_constraint` row. The reviewer's
 recommendation, treat them as non-covering, is therefore what the rule already does.
 
-State that as an invariant in the implementation, because it is one an optimisation could
-destroy: the rule reads `sql_constraint` and must never widen to `sql_index`. A future change
-that captures index uniqueness has to carry the index predicate with it, since the generated
-join does not include that predicate and the guarantee does not transfer without it.
+Our index facts cannot leak one in either, but for a reason worth stating precisely rather than
+overstating: `JooqCatalog.IndexFacts` is `(name, columns)` and `sql_index` has no uniqueness
+column, so the information is absent from *our* model by choice. jOOQ itself has it, in both
+3.20.11 and 3.21.7: `org.jooq.Index` exposes `getUnique()` and `getWhere()`. That is the useful
+half of the finding, because `getWhere()` is exactly what the reviewer's condition requires. If
+we ever do want unique indexes to clear a hop, jOOQ hands us the predicate alongside the
+uniqueness flag, so the guarantee can be transferred honestly (a partial index clears nothing
+unless the join carries its predicate) rather than assumed.
+
+Until then, state it as an invariant in the implementation, because it is one an optimisation
+could destroy: the rule reads `sql_constraint` and must never widen to `sql_index` while
+`sql_index` says nothing about uniqueness.
 
 **Temporal keys are a real hole, currently out of reach, and the safe side is the one we are
 on.** A `PRIMARY KEY (a, b, valid_at WITHOUT OVERLAPS)` guarantees one row per *instant*, not
 one row per `(a, b)`, so it must not clear a hop even when its column set is inside `bound(T)`.
 Three findings bound the risk:
 
-* **Neither jOOQ nor our capture can see it.** `org.jooq.Key` in 3.20.11 exposes `getFields`,
-  `isPrimary`, `enforced` and `nullable`, with no period concept, and the jar contains no
-  `WITHOUT OVERLAPS` string; `sql_constraint` has a `constraint_type` closed over `PRIMARY KEY |
-  UNIQUE | FOREIGN KEY` and no period flag. An explicit exclusion is therefore not a predicate
-  tweak: it needs a fact nobody captures, read outside jOOQ's model.
+* **Neither jOOQ nor our capture can see it, and upgrading does not change that.**
+  `org.jooq.Key` in 3.20.11 exposes `getFields`, `isPrimary`, `enforced` and `nullable`, with no
+  period concept, and the jar contains no `WITHOUT OVERLAPS` string; `sql_constraint` has a
+  `constraint_type` closed over `PRIMARY KEY | UNIQUE | FOREIGN KEY` and no period flag. 3.21.7
+  was checked against the same questions and answers them the same way: the `Key` and
+  `UniqueKey` interfaces are unchanged, there is still no `WITHOUT OVERLAPS` string (the
+  `OVERLAPS` occurrences are the SQL row-overlaps predicate, `org.jooq.impl.RowOverlaps`), no
+  period-named type exists in `org.jooq`, `jooq-meta` mentions `conperiod` nowhere, and its
+  generated `pg_catalog.pg_constraint` model carries `CONNAME`, `CONNAMESPACE`, `CONTYPE` and
+  `CONKEY` only, so the provider could not read the flag even if the runtime could hold it.
+  `roadmap/upgrade-jooq-3-21.md` (R466) therefore does not unblock this, and an explicit
+  exclusion is not a predicate tweak whichever version we are on: it needs a catalog read
+  outside jOOQ's model.
 * **Today the correct direction already protects us.** The period column is part of the
   constraint's column list in the catalog, and graphitron binds columns only through
   foreign-key equality, so a period column is bound by no hop. `columns(constraint) ⊆ bound(T)`
