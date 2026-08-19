@@ -216,12 +216,17 @@ class CommandSeamRatchetTest {
      * non-members by the fact, plus its two walks' {@code MutationField} narrowings. The nine are
      * the price of membership living in one place: a new mutation leaf fails to compile here
      * rather than silently emitting nothing, which is the same trade the fetcher edge producer's
-     * switch makes. Raised 139 to 140 when the key-projection relation landed: the producer narrows
+     * switch makes. Raised 139 to 140 when the key-projection relation landed: the producer narrowed
      * the type a store-resolved projection names to {@code NodeType} in order to read the decode
-     * helper and key list off it, and a name that does not narrow is the store and the walk
-     * disagreeing about nodehood, which it reports rather than works around.
+     * helper and key list off it. Lowered 140 to 139 when that producer stopped reading the walk
+     * at all: the narrowing existed only because the projection's table, key list and decode
+     * reference were fetched off {@code GraphitronSchema}, and those are captured facts, so they
+     * moved to the reader that assembles them out of the catalog and intent relations. The producer
+     * is a shape transform now, with no leaf to name and no second resolution to disagree with.
+     * This is the direction the tertiary pin exists to record: a relocation that reached the store
+     * rather than one still fed by leaf dispatch.
      */
-    private static final int PLAN_LEAF_REFERENCES = 140;
+    private static final int PLAN_LEAF_REFERENCES = 139;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

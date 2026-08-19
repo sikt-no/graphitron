@@ -87,7 +87,9 @@ public final class ConditionGlueRenderer {
                     // One projection host per class: the relation is the graph's, and reaching a decode
                     // registers its body here, so a called helper cannot go un-emitted.
                     var keyHost = new ProjectedKeyHost(keyProjections,
-                        projection -> decodes.register(projection.decode(), projection.nodeTable()));
+                        projection -> decodes.register(NodeIdEncoderRef.of(outputPackage),
+                            projection.typeId(), projection.keyColumns(),
+                            projection.nodeTable()));
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(

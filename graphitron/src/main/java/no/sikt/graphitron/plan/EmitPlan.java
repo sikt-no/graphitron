@@ -145,7 +145,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var conditions = ConditionCommands.produce(schema, outputPackage);
         var routineWrites = RoutineWriteCommands.produce(schema, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
-        var keyProjections = KeyProjectionCommands.produce(projections, schema);
+        var keyProjections = KeyProjectionCommands.produce(projections);
         requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
         return new EmitPlan(globals, conditions,
             ProjectionCommands.produce(schema, conditions, outputPackage),

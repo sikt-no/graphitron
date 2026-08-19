@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.jooq.DSLContext;
 
 import java.util.List;
@@ -39,13 +41,24 @@ public final class ResolvedKeyProjections {
     private ResolvedKeyProjections() {}
 
     /**
-     * One projected binding: the {@code argMapping} coordinate and path that named it, the node type
-     * the wire id decodes against, and the key column to read off the decoded record. Spellings as
-     * the store has them, the column under the winning key-column tier's own spelling rather than the
-     * author's, which is the spelling that lines up with the decode's value order.
+     * One projected binding, carrying everything its emission needs and nothing a walk holds: the
+     * {@code argMapping} coordinate and path that named it, the node type the wire id decodes
+     * against, that node type's wire id and table, the ordered key list the decode loads, and the one
+     * column to read off the decoded record.
+     *
+     * <p>The key list rides beside the projected column rather than being derivable from it, because
+     * the decode is positional: a {@code fromArray} load names every key field in key order and the
+     * projection then reads one of them. Carrying only the projected column would leave the emitter
+     * unable to write the load at all.
      */
     public record Projection(String typeName, String fieldName, String argumentPath,
-                             String nodeTypeName, String columnName) {}
+                             String nodeTypeName, String typeId, TableRef nodeTable,
+                             List<ColumnRef> keyColumns, ColumnRef column) {
+
+        public Projection {
+            keyColumns = List.copyOf(keyColumns);
+        }
+    }
 
     /**
      * The pass's typed product: every projection the graph resolved, at the grain a plan joins them
@@ -64,8 +77,18 @@ public final class ResolvedKeyProjections {
         }
     }
 
-    /** Reads every resolved projection over {@code graphName}'s partition, in coordinate order. */
+    /**
+     * Reads every resolved projection over {@code graphName}'s partition, in coordinate order, joined
+     * to its node type's emission facts.
+     *
+     * <p>A projection whose node type the store cannot assemble facts for is a build failure rather
+     * than a dropped row, and the two ways to arrive there are named in the message. Dropping it would
+     * emit the raw base64 wire value, which is the silence this whole family exists to close, so there
+     * is no lenient reading available: by the time this runs, the detections have already passed the
+     * projection as emittable.
+     */
     public static Projections read(DSLContext dsl, String graphName) {
+        var nodeTables = StoreNodeTables.read(dsl, graphName);
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         return new Projections(dsl
             .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH, p.NODE_TYPE_NAME,
@@ -73,7 +96,31 @@ public final class ResolvedKeyProjections {
             .from(p)
             .where(p.GRAPH_NAME.eq(graphName))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH)
-            .fetch(row -> new Projection(row.value1(), row.value2(), row.value3(), row.value4(),
-                row.value5())));
+            .fetch(row -> projectionOf(nodeTables, row.value1(), row.value2(), row.value3(),
+                row.value4(), row.value5())));
+    }
+
+    /** One store row joined to its node type's facts, or a failure naming which side came up short. */
+    private static Projection projectionOf(StoreNodeTables.Tables nodeTables, String typeName,
+                                           String fieldName, String argumentPath,
+                                           String nodeTypeName, String columnName) {
+        var nodeTable = nodeTables.get(nodeTypeName).orElseThrow(() -> new IllegalStateException(
+            "Graphitron generator bug (key projection): the store resolved a key column of node type"
+            + " '" + nodeTypeName + "' for '" + typeName + "." + fieldName + "' entry '"
+            + argumentPath + "', but no table facts assembled for that type; either its @table"
+            + " binding resolves more than one candidate or its schema publishes no Tables class, and"
+            + " a projection cannot be emitted without the record class and the column constants"));
+        var column = nodeTable.keyColumns().stream()
+            .filter(c -> c.sqlName().equalsIgnoreCase(columnName)
+                || c.javaName().equalsIgnoreCase(columnName))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException(
+                "Graphitron generator bug (key projection): the store resolved '" + columnName
+                + "' as a key column of node type '" + nodeTypeName + "' for '" + typeName + "."
+                + fieldName + "' entry '" + argumentPath + "', but the key list assembled for that"
+                + " type is " + nodeTable.keyColumns().stream().map(ColumnRef::sqlName).toList()
+                + "; the key-column relation and the bound table's own columns have drifted"));
+        return new Projection(typeName, fieldName, argumentPath, nodeTypeName, nodeTable.typeId(),
+            nodeTable.table(), nodeTable.keyColumns(), column);
     }
 }

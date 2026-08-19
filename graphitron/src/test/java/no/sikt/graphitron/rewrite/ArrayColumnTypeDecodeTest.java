@@ -69,4 +69,60 @@ class ArrayColumnTypeDecodeTest {
         var flags = cols.stream().filter(c -> c.sqlName().equals("flags")).findFirst().orElseThrow();
         assertThat(flags.columnType()).isInstanceOf(ArrayTypeName.class);
     }
+
+    // ===== The captured-name decode: the same answer without a live Class =====
+
+    /*
+     * A store-sourced reader holds sql_column.binding_type and no Class, the codegen loader being
+     * closed by then. These pin that the name alone is enough, which it is because capture records
+     * Class.getName() verbatim: the descriptor form the boundary decode reads off a live Class is the
+     * same string, so the two producers cannot disagree.
+     */
+
+    @Test
+    void capturedScalarName_decodesToClassName() {
+        var decoded = no.sikt.graphitron.rewrite.model.ColumnRef
+            .decodeBindingType("java.lang.Integer");
+        assertThat(decoded).isInstanceOf(ClassName.class);
+        assertThat(decoded.toString()).isEqualTo("java.lang.Integer");
+    }
+
+    /** The descriptor that crashed {@code bestGuess}, decoded rather than guessed. */
+    @Test
+    void capturedArrayDescriptor_decodesToArrayTypeName() {
+        var decoded = no.sikt.graphitron.rewrite.model.ColumnRef
+            .decodeBindingType("[Ljava.lang.Boolean;");
+        assertThat(decoded).isInstanceOf(ArrayTypeName.class);
+        assertThat(decoded.toString()).isEqualTo("java.lang.Boolean[]");
+    }
+
+    /** Two dimensions, one level stripped per recursion. */
+    @Test
+    void capturedNestedArrayDescriptor_decodesBothDimensions() {
+        assertThat(no.sikt.graphitron.rewrite.model.ColumnRef
+            .decodeBindingType("[[Ljava.lang.String;").toString())
+            .isEqualTo("java.lang.String[][]");
+    }
+
+    /**
+     * A primitive array keeps its element descriptor, a primitive column being boxed by the time jOOQ
+     * names it but a primitive array not being.
+     */
+    @Test
+    void capturedPrimitiveArrayDescriptor_decodesToThePrimitiveElement() {
+        assertThat(no.sikt.graphitron.rewrite.model.ColumnRef.decodeBindingType("[B").toString())
+            .isEqualTo("byte[]");
+    }
+
+    /**
+     * The captured name and the boundary decode agree on a real array column, which is the property
+     * that lets a store-sourced reader stand in for the catalog rather than approximate it.
+     */
+    @Test
+    void theCapturedNameDecodesToWhatTheBoundaryDecoded() {
+        var flags = catalog().findColumn("array_holder", "flags").orElseThrow();
+        assertThat(no.sikt.graphitron.rewrite.model.ColumnRef.decodeBindingType(flags.columnClass()))
+            .isEqualTo(flags.columnType());
+    }
+
 }

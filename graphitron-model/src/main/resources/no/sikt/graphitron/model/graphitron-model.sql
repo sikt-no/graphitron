@@ -3700,6 +3700,41 @@ COMMENT ON COLUMN intent_resolved_node_key_column.position IS '0-based position 
 COMMENT ON COLUMN intent_resolved_node_key_column.column_name IS 'the key column''s name as the winning tier spells it: as written on the pinned tier, as the generated class stated it on the metadata tier, and the catalog''s own name on the primary-key tier. Matching against a table''s columns is case-insensitive wherever a reader does it, which is settled convention rather than this relation''s rule. No fold is exposed beside it, and the reason is not that the tiers are three: intent_spelled_table is a union across as many arms with no single owning relation either, and it reads each arm''s stored fold internally without trouble. What it does not do is expose one, because no view in this schema does; forwarding a fold through a derived view is what the folded columns'' own comments forbid, a fold being minted on the base relation a comparison joins. What this relation hands out is a spelling rather than a resolved column, which is what makes the question of whether handing out a spelling is the right payload here a live one rather than a closed door, and it is asked on the roadmap rather than settled by this comment. A reader matching an authored spelling against this column therefore folds this side at the crossing and joins the authored side''s own generated column, which is where the schema mints one';
 COMMENT ON COLUMN intent_resolved_node_key_column.tier IS 'which population answered, in a closed vocabulary of three: SDL_PINNED from an @node(keyColumns:) list, JOOQ_METADATA from the well-formed node metadata the bound table''s generated class states, CATALOG_PRIMARY_KEY from the bound table''s primary key under a node type, read off intent_node_type rather than the authored @node arm alone because that view is the one relation a reader of nodehood joins. Widening it there is inert today and stated as such rather than as a fix: the inferred arm requires well-formed node metadata, well-formedness requires a declared key-columns list, and that list is what the JOOQ_METADATA tier above answers with, so an inferred node type always resolves on the higher tier and this one only ever fires under an authored @node. It is the union anyway, so the tier stops being wrong rather than starting to be right if inference ever loosens. The order is the resolution''s own precedence, and the column is what lets a test pin which tier fired rather than only that the columns came out right';
 
+CREATE VIEW intent_resolved_node_type_id
+  (graph_name, type_name, type_id, origin) AS
+SELECT graph_name, type_name, type_id, origin
+  FROM (SELECT arms.graph_name, arms.type_name, arms.type_id, arms.origin,
+               DENSE_RANK() OVER (
+                 PARTITION BY arms.graph_name, arms.type_name
+                 ORDER BY arms.precedence) AS tier_rank
+          FROM (SELECT n.graph_name, n.type_name, n.type_id, 'SDL_DECLARED' AS origin,
+                       0 AS precedence
+                  FROM graphitron_node n
+                 WHERE n.type_id IS NOT NULL
+                UNION ALL
+                SELECT n.graph_name, n.type_name, m.type_id, 'JOOQ_METADATA', 1
+                  FROM intent_node_type n
+                  JOIN intent_resolved_type_binding b
+                    ON b.graph_name = n.graph_name AND b.type_name = n.type_name
+                   AND b.candidates = 1
+                  JOIN sql_node_metadata m
+                    ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                   AND m.table_name = b.table_name
+                 WHERE m.type_id IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM intent_node_metadata_defect d
+                                    WHERE d.source_name = m.source_name
+                                      AND d.table_schema = m.table_schema
+                                      AND d.table_name = m.table_name)
+                UNION ALL
+                SELECT n.graph_name, n.type_name, n.type_name, 'TYPE_NAME', 2
+                  FROM intent_node_type n) arms) picked
+ WHERE tier_rank = 1;
+COMMENT ON VIEW intent_resolved_node_type_id IS 'The wire type id a graph''s node type encodes its ids under: the prefix a node id carries and a decode matches against. A first-tier-wins reduction over the three populations that can answer, in the precedence TypeBuilder applies with a live catalog in hand, and naming it as a relation is what lets a store-sourced reader take the same answer rather than re-deriving it. The sibling of intent_resolved_node_key_column, which resolves the other half of a node''s identity over its own three tiers; the two are read together wherever a decode is emitted, and they are separate relations because their tiers are different populations and neither precedence implies the other. The order is the author''s contract first: @node(typeId:) is a published wire format decoupled from whatever the jOOQ generator emits, so it wins outright wherever it is declared. Below it the generated model''s own stated type id, read through the well-formedness derivation rather than off the raw metadata relation, because a malformed constant is not an answer and the classifier rejects the type outright rather than falling through. Below that the type''s own name, which is the documented default and the reason this relation is total over node types: every node type resolves a type id, so absence here means the type is not a node rather than that its identity is unknown. Total by construction is the property a consumer relies on, and it is why the lowest tier is an unconditional arm over intent_node_type rather than a COALESCE at each reader. DENSE_RANK over the tiers rather than ROW_NUMBER, matching the key-column sibling: the pick is by type and a tier answers with one value, so the two window functions agree here, and the shared spelling is what keeps the pair readable as one precedence idiom. An ambiguous table binding costs only the metadata tier, that arm being the one that needs a table; the SDL tier answers without one and the type-name tier needs nothing at all.';
+COMMENT ON COLUMN intent_resolved_node_type_id.graph_name IS 'the owning graph''s partition, carried from whichever tier answered';
+COMMENT ON COLUMN intent_resolved_node_type_id.type_name IS 'the node type whose wire identity this row states';
+COMMENT ON COLUMN intent_resolved_node_type_id.type_id IS 'the type id as the winning tier states it: the authored string on the SDL tier, the generated class''s stated constant on the metadata tier, and the type''s own name on the last. Compared verbatim by a decode, so no fold is exposed beside it and none is wanted: a wire format is case-sensitive';
+COMMENT ON COLUMN intent_resolved_node_type_id.origin IS 'which population answered, in a closed vocabulary of three: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the bound table''s well-formed node metadata, TYPE_NAME from the documented default. What lets a test pin which tier fired rather than only that the id came out right, and what a diagnostic reads to tell an author where the id they are looking at came from';
+
 CREATE VIEW intent_field_reference_step_target
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,

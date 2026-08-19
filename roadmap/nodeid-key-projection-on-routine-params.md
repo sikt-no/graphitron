@@ -1495,6 +1495,44 @@ stage into a one-line note.
    reference reachable only while the codegen loader is open, which is precisely what kept table
    references a walk-side construction.
 
+   **What landed for it.** `sql_schema.tables_class_fqn` first, on its own, since nothing downstream
+   could be re-sourced without it. Then `intent_resolved_node_type_id`, a three-tier reduction in the
+   precedence `TypeBuilder` applies (`@node(typeId:)` outright, then well-formed `sql_node_metadata`
+   read through `intent_node_metadata_defect`, then the type name), total over node types so a
+   consumer needs no fallback of its own. Then `StoreNodeTables`, the first store-sourced producer of
+   a `TableRef`: table names and generated classes off `sql_table`, columns off `sql_column`, the
+   primary key through `sql_primary_key`, the constants class off the new column, the key list off
+   `intent_resolved_node_key_column` resolved against the table's own columns.
+
+   `KeyProjection` drops `HelperRef.Decode` and carries `typeId` plus the ordered key list instead.
+   Three reasons, and the third is the one that makes it obvious in hindsight: `HelperRef` carries
+   javapoet, which the plan refuses; the emitted body calls `NodeIdEncoder.decodeValues(typeId, wire)`
+   and never a per-type `decode<TypeName>`, so the row never needed a method name; and the encoder
+   class is generator configuration rather than a captured fact, so `render/NodeIdEncoderRef` mints it
+   from the output package the run already holds. `RecordDecodeFragments.decodeHelper` gained a
+   facts-taking overload with the reference-taking one delegating to it, so the input-bean family's
+   walk-minted refs keep working and the two cannot emit different bodies.
+
+   One correction worth keeping, because it looked like evidence and was not. The render side does
+   mint a decode name independently of `HelperRef.Decode`, but that is a different helper family:
+   `FetchersHelperNames.decodeSingular` names the per-class `decode<Record>` wrappers, while
+   `NodeIdEncoder.decode<TypeName>` is minted once in `TypeBuilder` and read rather than re-minted by
+   the encoder generator and the composite decode registry. There is no duplicate minter to delete,
+   and `HelperRef.Decode` stays exactly where it is for those readers. Whether the encoder family
+   should eventually have one authority is real and belongs to R682's emitter half, where a command
+   row's output key is the natural home; a render-side name registry built here would have been a
+   third mechanism mid-transition.
+
+   `KeyProjectionCommands` is now a shape transform with no schema parameter, no lookup and no throw:
+   both of its old failure modes were the store and the walk disagreeing, and with one source there is
+   nothing to disagree. `CommandSeamRatchetTest`'s plan-side pin goes 140 to 139, which is the
+   direction that pin exists to record. `KeyProjectionRelationTest` moves to the unit tier for the
+   same reason, and the claim it used to carry moves to `StoreNodeTablesTest`, where a real captured
+   store proves the assembly rather than a hand-built model standing in for it. That test drives
+   `FactCapture` itself: `CapturedStore`'s factories build their context off a temp directory, so
+   their catalog resolves no generated classes and the whole `sql_` family comes out empty, which is
+   worth knowing for any future test whose subject is a catalog fact.
+
    Exit, restated for what is left: the projection emits and executes at every site whose emitter
    reads it, `EMITTING_SITES` names exactly those, a projection whose types disagree is a build error
    naming both, and no producer of it reads the walked model.

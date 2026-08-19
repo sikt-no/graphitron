@@ -52,8 +52,28 @@ public final class RecordDecodeFragments {
      * @param nodeTable   the node type's own table, whose record the load materialises
      */
     public static MethodSpec decodeHelper(String name, HelperRef.Decode decode, TableRef nodeTable) {
+        return decodeHelper(name, decode.encoderClass(), decode.typeId(),
+            decode.outputColumnShape(), nodeTable);
+    }
+
+    /**
+     * The same body from the facts themselves rather than from a model reference, which is what a
+     * store-sourced caller has: the encoder class it minted from its own configuration, the wire type
+     * id and key column list off a command row, and the node table beside them. The overload above
+     * unpacks a {@link HelperRef.Decode} into exactly this call, so the two cannot emit different
+     * bodies; it stays for the input-bean family, whose refs the walk still mints.
+     *
+     * @param name         the method name the host allocated for this record type
+     * @param encoderClass the generated node-id encoder the decode goes through
+     * @param typeId       the wire type id the encoded id carries
+     * @param keyColumns   the node type's key columns in key order, the shape the load names
+     * @param nodeTable    the node type's own table, whose record the load materialises
+     */
+    public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            TableRef nodeTable) {
         ClassName recordType = nodeTable.recordClass();
-        int arity = decode.outputColumnShape().size();
+        int arity = keyColumns.size();
         var body = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
@@ -62,14 +82,14 @@ public final class RecordDecodeFragments {
             .addStatement("return null")
             .endControlFlow()
             .addStatement("$T values = $T.decodeValues($S, nodeId)",
-                String[].class, decode.encoderClass(), decode.typeId())
+                String[].class, encoderClass, typeId)
             .beginControlFlow("if (values == null || values.length != $L)", arity)
             .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR,
                 "Decoded NodeId did not match the expected type for this argument")
             .endControlFlow()
             .addStatement("$T decoded = new $T()", recordType, recordType);
         var fields = CodeBlock.builder();
-        for (var column : decode.outputColumnShape()) {
+        for (var column : keyColumns) {
             fields.add(", $T.$L.$L", nodeTable.constantsClass(), nodeTable.javaFieldName(),
                 column.javaName());
         }

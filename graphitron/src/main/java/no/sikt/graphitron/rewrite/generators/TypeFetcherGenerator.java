@@ -204,20 +204,23 @@ public class TypeFetcherGenerator {
      *
      * <p>The leaf carrier is built here rather than on the command row because it is walk-side
      * vocabulary, which a command may not hold; the projection carries the same facts in pure-data
-     * form ({@link no.sikt.graphitron.rewrite.model.HelperRef.Decode} and a
-     * {@link TableRef}) and this shell is where they are put back into the shape the legacy body
-     * builder takes. {@code nonNull} is irrelevant to the body and passed {@code false}, the flag
-     * being the input-bean member's own nullability rather than a fact about the decode.
+     * form (its wire type id, its key columns and a {@link TableRef}) and this shell is where they
+     * are put back into the shape the legacy body builder takes. The encoder class is the one part
+     * the row cannot carry, being generator configuration rather than a captured fact, so it is
+     * minted here from the output package this run emits into. {@code nonNull} is irrelevant to the
+     * body and passed {@code false}, the flag being the input-bean member's own nullability rather
+     * than a fact about the decode.
      */
     private static void collectProjectionDecoders(
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections, String typeName,
+            String outputPackage,
             Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> out) {
+        var encoderClass = no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage);
         keyProjections.rows().stream()
             .filter(row -> row.coordinate().getTypeName().equals(typeName))
             .forEach(row -> out.putIfAbsent(row.nodeTable().recordClass(),
-                new CallSiteExtraction.NodeIdDecodeRecord(row.decode().encoderClass(),
-                    row.decode().typeId(), row.decode().outputColumnShape(), row.nodeTable(),
-                    false)));
+                new CallSiteExtraction.NodeIdDecodeRecord(encoderClass,
+                    row.typeId(), row.keyColumns(), row.nodeTable(), false)));
     }
 
     /** First-occurrence-wins index of the {@code NestingField} embedding each nesting-reached type. */
@@ -506,7 +509,7 @@ public class TypeFetcherGenerator {
         // the same decode<Record> body an input-bean member's @nodeId needs; both register here so one
         // class hosts one body under one name however many sites call it. Registered before the
         // resolver is built, so the decode* namespace is sized over the union.
-        collectProjectionDecoders(keyProjections, typeName, scalarDecoders);
+        collectProjectionDecoders(keyProjections, typeName, outputPackage, scalarDecoders);
         var fetchersHelperNames = FetchersHelperNames.of(
             jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet());
         ctx.setFetchersHelperNames(fetchersHelperNames);

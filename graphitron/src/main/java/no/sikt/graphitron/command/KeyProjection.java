@@ -2,7 +2,6 @@ package no.sikt.graphitron.command;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 /**
@@ -17,22 +16,30 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  * unconstructable: the store resolved <em>which</em> column, and what rides here is the column
  * itself.
  *
- * <p>The decode facts arrive as the model's own {@link HelperRef.Decode}, which is the reference the
- * node-id encoder generator and every decode call site already share, so the helper this projection
- * calls cannot be named one way here and another there. Its {@code outputColumnShape} is the node
- * type's resolved key list in key order, which is what a positional {@code fromArray} load needs;
- * {@link #nodeTable} is where those columns live, and the record class the load materialises.
+ * <p>Every component is a captured fact. The row carries no reference to a generated method and no
+ * encoder class, which is what keeps it a fact carrier rather than half an emission decision: the
+ * decode this projection's read performs is {@code NodeIdEncoder.decodeValues(typeId, wire)}, whose
+ * only inputs are the wire id and the type id beside it, and the encoder class those live on is a
+ * function of generator configuration that render already holds. A per-type
+ * {@code decode<TypeName>} name is not involved at all.
+ *
+ * <p>{@link #keyColumns} is the node type's resolved key list in key order, which is what the
+ * positional {@code fromArray} load needs, and {@link #column} is the one of them this binding reads.
+ * The list rides here rather than being looked up, because a row that named only the projected column
+ * would leave its emitter unable to write the load.
  *
  * @param coordinate    the {@code argMapping}'s owning coordinate, {@code Type.field}
  * @param argumentPath  the path as the author wrote it, this projection's key within the coordinate
  * @param nodeTypeName  the node type the {@code @nodeId} named, carried for messages and locals
- * @param decode        the per-type decode helper, with its key list, encoder class and wire type id
+ * @param typeId        the wire type id the encoded node id carries, which the decode matches
  * @param nodeTable     the node type's own table: the record the decode materialises, and the
  *                      constants class the projected column is read through
- * @param column        the projected key column, one of {@code decode.outputColumnShape()}
+ * @param keyColumns    that node type's key columns in key order, the shape the decode loads
+ * @param column        the projected key column, one of {@link #keyColumns}
  */
 public record KeyProjection(FieldCoordinates coordinate, String argumentPath, String nodeTypeName,
-                            HelperRef.Decode decode, TableRef nodeTable, ColumnRef column) {
+                            String typeId, TableRef nodeTable, java.util.List<ColumnRef> keyColumns,
+                            ColumnRef column) {
 
     public KeyProjection {
         if (coordinate == null) {
@@ -43,11 +50,16 @@ public record KeyProjection(FieldCoordinates coordinate, String argumentPath, St
             throw new IllegalArgumentException("a key projection is keyed by the path the author"
                 + " wrote, which is never blank");
         }
-        if (decode == null || nodeTable == null || column == null) {
-            throw new IllegalArgumentException("a key projection carries a decode, its table and the"
-                + " projected column; none of the three is optional");
+        if (typeId == null || typeId.isBlank()) {
+            throw new IllegalArgumentException("a key projection carries the wire type id its decode"
+                + " matches, which is never blank: every node type resolves one");
         }
-        if (!decode.outputColumnShape().contains(column)) {
+        if (nodeTable == null || keyColumns == null || column == null) {
+            throw new IllegalArgumentException("a key projection carries its table, that table's key"
+                + " columns and the projected one; none of the three is optional");
+        }
+        keyColumns = java.util.List.copyOf(keyColumns);
+        if (!keyColumns.contains(column)) {
             throw new IllegalArgumentException(
                 "the projected column '" + column.sqlName() + "' is not one of '" + nodeTypeName
                 + "'s key columns, so no decode of that node id could ever produce it");

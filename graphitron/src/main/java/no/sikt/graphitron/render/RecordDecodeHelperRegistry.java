@@ -3,7 +3,6 @@ package no.sikt.graphitron.render;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.LinkedHashMap;
@@ -43,12 +42,19 @@ public final class RecordDecodeHelperRegistry {
      * Registers the decode for one node type if this class does not host it yet, and returns the
      * method name to call. The returned name is what {@link ProjectedKeyReads} spells into the
      * materialisation, so registering and calling cannot disagree.
+     *
+     * <p>Takes the decode's facts rather than a model reference: the encoder class the caller minted
+     * from generator configuration, and the wire id and key list off the command row. Nothing about a
+     * per-type generated method name is involved, the body calling {@code decodeValues} with the type
+     * id.
      */
-    public String register(HelperRef.Decode decode, TableRef nodeTable) {
+    public String register(ClassName encoderClass, String typeId,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            TableRef nodeTable) {
         ClassName recordType = nodeTable.recordClass();
         String name = helperName(recordType);
-        helpers.computeIfAbsent(recordType,
-            k -> RecordDecodeFragments.decodeHelper(name, decode, nodeTable));
+        helpers.computeIfAbsent(recordType, k -> RecordDecodeFragments.decodeHelper(
+            name, encoderClass, typeId, keyColumns, nodeTable));
         return name;
     }
 

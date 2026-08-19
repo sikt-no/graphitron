@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 
@@ -63,4 +64,55 @@ public record ColumnRef(String sqlName, String javaName, String columnClass, Typ
             return null;
         }
     }
+
+    /**
+     * Decodes a captured binding type into its javapoet form, arrays included. The third way to get a
+     * {@code columnType} right, beside carrying a sibling record's decoded one and decoding a live
+     * {@code Class} at the reflection boundary, and the one a store-sourced reader needs: it holds a
+     * name and no class, the codegen loader being closed by the time it runs.
+     *
+     * <p>Array-safe because the captured name is the raw {@code Class.getName()} form, which spells an
+     * array as a JVM descriptor ({@code [Ljava.lang.Boolean;}) and is therefore fully recoverable.
+     * That descriptor is exactly what crashes {@link ClassName#bestGuess}, which is why the scalar
+     * decoder above must not be reached for a column and why a guard test forbids the constructor that
+     * would: a boolean-array column is an ordinary column in a consumer's database, and a generator
+     * that dies on one is broken rather than unlucky.
+     *
+     * @param bindingType the captured {@code sql_column.binding_type}, a source-form FQCN for a
+     *                    scalar and a JVM descriptor for an array
+     * @throws IllegalArgumentException on a name that decodes to neither, which is capture drift
+     *                                  rather than a shape a consumer's catalog can produce
+     */
+    public static TypeName decodeBindingType(String bindingType) {
+        if (bindingType == null || bindingType.isBlank()) {
+            throw new IllegalArgumentException(
+                "a captured column carries a binding type; a blank one is capture drift");
+        }
+        if (bindingType.startsWith("[")) {
+            return ArrayTypeName.of(decodeBindingType(componentOf(bindingType)));
+        }
+        var primitive = PRIMITIVE_DESCRIPTORS.get(bindingType);
+        return primitive != null ? primitive : ClassName.bestGuess(bindingType);
+    }
+
+    /**
+     * One array dimension stripped: {@code [Ljava.lang.Boolean;} to {@code java.lang.Boolean}, and
+     * {@code [[I} to {@code [I}, so a nested array recurses one level per call.
+     */
+    private static String componentOf(String descriptor) {
+        String component = descriptor.substring(1);
+        if (component.startsWith("L") && component.endsWith(";")) {
+            return component.substring(1, component.length() - 1);
+        }
+        return component;
+    }
+
+    /**
+     * The JVM's single-letter primitive descriptors, which appear only inside an array: a primitive
+     * column is boxed by the time jOOQ names its binding type, but a primitive <em>array</em> keeps
+     * its element descriptor.
+     */
+    private static final java.util.Map<String, TypeName> PRIMITIVE_DESCRIPTORS = java.util.Map.of(
+        "Z", TypeName.BOOLEAN, "B", TypeName.BYTE, "C", TypeName.CHAR, "S", TypeName.SHORT,
+        "I", TypeName.INT, "J", TypeName.LONG, "F", TypeName.FLOAT, "D", TypeName.DOUBLE);
 }

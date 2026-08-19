@@ -45,9 +45,21 @@ class ColumnTypeConstructorArityGuardTest {
     private static final Pattern CONSTRUCTION =
         Pattern.compile("new (ColumnRef|ColumnEntry)\\(");
 
-    /** The full-arity marker: an explicit decoded {@code columnType} argument. */
+    /**
+     * The full-arity marker: an explicit decoded {@code columnType} argument. Three ways to have one,
+     * and the third arrived with the store-sourced readers: carry a sibling record's already-decoded
+     * type, decode a live {@code Class} at the reflection boundary, or decode a captured binding-type
+     * name array-safely. What the guard forbids is the scalar-only shortcut, not the third producer;
+     * {@code ColumnRef.decodeBindingType} handles the array descriptor that shortcut crashes on, which
+     * is the same property the other two have.
+     *
+     * <p>The scan is line-based, so the marker has to sit on the construction line itself. That is a
+     * real constraint on a caller rather than an accident of the regex: a decoded type mentioned three
+     * lines up is not something a line-based reader can credit, and hoisting the call onto the
+     * constructor's own line is what makes the guard's verdict checkable by eye too.
+     */
     private static final Pattern CARRIES_COLUMN_TYPE =
-        Pattern.compile("\\.columnType\\(\\)|TypeName\\.get\\(");
+        Pattern.compile("\\.columnType\\(\\)|TypeName\\.get\\(|decodeBindingType\\(");
 
     @Test
     void productionConstructsColumnRecordsWithExplicitColumnType() throws IOException {

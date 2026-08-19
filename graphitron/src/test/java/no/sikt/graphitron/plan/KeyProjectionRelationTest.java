@@ -2,11 +2,11 @@ package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
-import org.junit.jupiter.api.BeforeAll;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,97 +15,70 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The join {@link KeyProjectionCommands} performs: the store says which coordinate projects which
- * column of which node type, the walked model says what decoding that node type costs, and a relation
- * row is the two put together.
+ * What {@link KeyProjectionCommands} produces: a command row per store row, and nothing else.
  *
- * <p>The store side is handed in rather than captured, which keeps the cases about the join. What the
- * view resolves is pinned by the model module's own suite, and that the whole path from an authored
- * {@code argMapping} to an emitted read holds is pinned by the emission tier; here the subject is the
- * step between them, including the two ways it can find the store and the model disagreeing. Those two
- * throws are the reason this producer is worth a test of its own: they are the only places in the
- * family where one resolution is checked against another, and a silent fallback in either would emit
- * the raw wire value the item exists to stop.
+ * <p>The cases are deliberately thin, and the thinness is the claim. This producer used to join the
+ * store's rows against the walked model to fetch each node type's table, key list and decode
+ * reference, and it carried two throws for the two ways those could disagree. Both are gone: the facts
+ * are assembled where facts are read, so there is no second source here to reconcile and nothing that
+ * can fail. A test that still found a disagreement to provoke here would mean the join had come back.
+ *
+ * <p>Which leaves two things worth pinning. The row carries every component through unchanged, so an
+ * emitter reading one sees what the store resolved; and the relation's key holds, a second answer for
+ * one coordinate and path being a contradiction rather than a precedence question. Unit tier now
+ * rather than pipeline: with no model to build there is nothing to capture.
+ *
+ * @see no.sikt.graphitron.rewrite.derive.StoreNodeTablesTest the assembly this consumes, against a
+ *      real captured store
  */
-@PipelineTier
+@UnitTier
 class KeyProjectionRelationTest {
 
-    private static final String SDL = """
-        type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
-            id: ID!
-        }
-        type FilmActor implements Node @table(name: "film_actor") @node(keyColumns: ["actor_id", "film_id"]) {
-            id: ID!
-        }
-        type Film @table(name: "film") { title: String }
-        type Query { inventory: Inventory, filmActor: FilmActor, film: Film }
-        """;
-
-    private static GraphitronSchema model;
-
-    @BeforeAll
-    static void buildModel() {
-        model = TestSchemaHelper.buildBundle(SDL).model();
-    }
+    private static final ColumnRef ACTOR_ID = new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Long");
+    private static final ColumnRef FILM_ID = new ColumnRef("film_id", "FILM_ID", "java.lang.Long");
+    private static final TableRef FILM_ACTOR =
+        TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of(ACTOR_ID, FILM_ID));
 
     /**
-     * The ordinary row. What the emitter reads off it is the decode helper, the table whose record
-     * that helper materialises, and the projected column as a {@code ColumnRef} rather than a name,
-     * which is what lets the emitted read name the column instead of indexing a tuple.
+     * Every component arrives on the row as the store had it, the projected column as a
+     * {@link ColumnRef} rather than a name and the key list whole beside it. Naming the column is what
+     * lets the emitted read name it too instead of indexing a tuple, and carrying the list is what
+     * lets the decode's positional load be written at all.
      */
     @Test
-    void aResolvedProjectionCarriesTheDecodeItsTableAndTheNamedColumn() {
-        var row = only(projection("Mutation", "rentFilm", "input.inventoryId.inventory_id",
-            "Inventory", "inventory_id"));
+    void aRowCarriesTheStoresFactsThrough() {
+        var row = only(relationOf(projection("in.pairId.film_id", FILM_ID)));
 
         assertThat(row.coordinate().getTypeName()).isEqualTo("Mutation");
-        assertThat(row.coordinate().getFieldName()).isEqualTo("rentFilm");
-        assertThat(row.argumentPath()).isEqualTo("input.inventoryId.inventory_id");
-        assertThat(row.nodeTypeName()).isEqualTo("Inventory");
-        assertThat(row.decode().methodName())
-            .as("the per-type decode helper the node-id encoder generator emits, read off the model"
-                + " rather than reconstructed from the type name")
-            .isEqualTo("decodeInventory");
-        assertThat(row.nodeTable().recordClass().simpleName()).isEqualTo("InventoryRecord");
-        assertThat(row.column().sqlName()).isEqualTo("inventory_id");
-        assertThat(row.decode().outputColumnShape())
-            .as("the key list the decode returns values against, which the projected column is one of")
-            .containsExactly(row.column());
+        assertThat(row.coordinate().getFieldName()).isEqualTo("pair");
+        assertThat(row.argumentPath()).isEqualTo("in.pairId.film_id");
+        assertThat(row.nodeTypeName()).isEqualTo("FilmActor");
+        assertThat(row.typeId())
+            .as("the wire id the decode matches, which is the only decode input a row carries")
+            .isEqualTo("FilmActor");
+        assertThat(row.nodeTable().recordClass().simpleName()).isEqualTo("FilmActorRecord");
+        assertThat(row.column()).isEqualTo(FILM_ID);
+        assertThat(row.keyColumns())
+            .as("the whole key in the order the decode returns values")
+            .containsExactly(ACTOR_ID, FILM_ID);
     }
 
     /**
-     * A composite key projected by name, at a position that is not the first. Two parameters bound
-     * from one node id are two rows naming two columns of one key, and neither carries the position:
-     * naming the column is what makes a transposed projection unconstructable, so the row that
-     * projects the second column looks exactly like the row that projects the first.
+     * A composite key projected at two positions is two rows carrying the same key list and different
+     * columns. Neither carries a position: naming the column is what makes a transposed projection
+     * unconstructable, so the row projecting the second column looks exactly like the first.
      */
     @Test
     void aCompositeKeyIsProjectedByNameAtAnyPosition() {
-        var relation = KeyProjectionCommands.produce(new ResolvedKeyProjections.Projections(List.of(
-            new ResolvedKeyProjections.Projection("Mutation", "pair", "in.pairId.actor_id",
-                "FilmActor", "actor_id"),
-            new ResolvedKeyProjections.Projection("Mutation", "pair", "in.pairId.film_id",
-                "FilmActor", "film_id"))), model);
+        var relation = relationOf(
+            projection("in.pairId.actor_id", ACTOR_ID),
+            projection("in.pairId.film_id", FILM_ID));
 
         assertThat(relation.rows()).hasSize(2);
         assertThat(relation.projectionFor("Mutation", "pair", "in.pairId.film_id").orElseThrow()
-            .column().sqlName()).isEqualTo("film_id");
-        assertThat(relation.rows()).allSatisfy(r -> assertThat(r.decode().outputColumnShape())
-            .as("both rows carry the same whole key list, in the order the decode returns values")
-            .extracting(c -> c.sqlName()).containsExactly("actor_id", "film_id"));
-    }
-
-    /**
-     * The lookup folds case, which it has to: the store hands out whichever of its three tiers won,
-     * and those spell a column as an author wrote it in {@code @node(keyColumns:)}, as a generated
-     * class stated it, or as the catalog holds it. Matching under the same case-insensitive rule the
-     * catalog resolution already uses is what makes those one answer here rather than three.
-     */
-    @Test
-    void theColumnResolvesWhicheverCaseTheWinningTierSpelledIt() {
-        assertThat(only(projection("Mutation", "rentFilm", "input.inventoryId.INVENTORY_ID",
-            "Inventory", "INVENTORY_ID")).column().sqlName())
-            .isEqualTo("inventory_id");
+            .column()).isEqualTo(FILM_ID);
+        assertThat(relation.rows()).allSatisfy(r -> assertThat(r.keyColumns())
+            .containsExactly(ACTOR_ID, FILM_ID));
     }
 
     /**
@@ -114,63 +87,47 @@ class KeyProjectionRelationTest {
      */
     @Test
     void anUnprojectedPathHasNoRow() {
-        assertThat(KeyProjectionCommands.produce(
-                new ResolvedKeyProjections.Projections(List.of()), model)
-            .projectionFor("Mutation", "rentFilm", "input.customerId"))
+        assertThat(KeyProjectionCommands.produce(ResolvedKeyProjections.Projections.empty())
+            .projectionFor("Mutation", "pair", "in.pairId"))
             .isEmpty();
     }
 
     /**
-     * The store resolved a key column for a type the model does not classify as a node. Nodehood is
-     * required on every one of the store's three key-column tiers, so this is the two sides
-     * disagreeing about it, and there is no emission that could be right under both.
-     */
-    @Test
-    void aTypeTheModelDoesNotCallANodeIsReportedRatherThanSkipped() {
-        assertThatThrownBy(() -> projection("Mutation", "rentFilm", "input.filmId.film_id",
-            "Film", "film_id"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("classifies 'Film'")
-            .hasMessageContaining("rather than a node type");
-    }
-
-    /**
-     * The store resolved a column the model's own key list for that type does not carry. Skipping the
-     * row would emit the base64 wire value verbatim and guessing a column would encode ids against a
-     * key the author never named, so it reports, naming both sides.
-     */
-    @Test
-    void aColumnTheModelsKeyListLacksIsReportedRatherThanSkipped() {
-        assertThatThrownBy(() -> projection("Mutation", "rentFilm", "input.inventoryId.store_id",
-            "Inventory", "store_id"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("resolved 'store_id' as a key column of node type 'Inventory'")
-            .hasMessageContaining("[inventory_id]");
-    }
-
-    /**
      * The relation's key is the coordinate plus the written path, and it holds the claim that no two
-     * sites can disagree about a leaf they share: within one coordinate a path reaches one leaf and
-     * one node type whatever directive spelled it, so a second answer for one key is a contradiction
+     * sites can disagree about a leaf they share: within one coordinate a path reaches one leaf and one
+     * node type whatever directive spelled it, so a second answer for one key is a contradiction
      * rather than a precedence question.
      */
     @Test
     void onePathAtOneCoordinateCannotResolveTwoColumns() {
-        assertThatThrownBy(() -> KeyProjectionCommands.produce(
-            new ResolvedKeyProjections.Projections(List.of(
-                new ResolvedKeyProjections.Projection("Mutation", "pair", "in.pairId.actor_id",
-                    "FilmActor", "actor_id"),
-                new ResolvedKeyProjections.Projection("Mutation", "pair", "in.pairId.actor_id",
-                    "FilmActor", "film_id"))), model))
+        assertThatThrownBy(() -> relationOf(
+            projection("in.pairId.actor_id", ACTOR_ID),
+            projection("in.pairId.actor_id", FILM_ID)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("keyed by coordinate and written path");
     }
 
-    private static KeyProjectionRelation projection(String typeName, String fieldName, String path,
-                                                    String nodeTypeName, String columnName) {
-        return KeyProjectionCommands.produce(new ResolvedKeyProjections.Projections(List.of(
-            new ResolvedKeyProjections.Projection(typeName, fieldName, path, nodeTypeName,
-                columnName))), model);
+    /**
+     * The row's own invariant, which survives the move: a projected column that is not one of the key
+     * columns beside it could never come out of a decode of that node id, so the carrier refuses to
+     * hold the pair rather than letting an emitter write a read that cannot resolve.
+     */
+    @Test
+    void aColumnOutsideTheKeyListIsRefusedByTheRow() {
+        var stray = new ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime");
+        assertThatThrownBy(() -> relationOf(projection("in.pairId.last_update", stray)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("is not one of 'FilmActor's key columns");
+    }
+
+    private static ResolvedKeyProjections.Projection projection(String path, ColumnRef column) {
+        return new ResolvedKeyProjections.Projection("Mutation", "pair", path, "FilmActor",
+            "FilmActor", FILM_ACTOR, List.of(ACTOR_ID, FILM_ID), column);
+    }
+
+    private static KeyProjectionRelation relationOf(ResolvedKeyProjections.Projection... rows) {
+        return KeyProjectionCommands.produce(
+            new ResolvedKeyProjections.Projections(List.of(rows)));
     }
 
     private static KeyProjection only(KeyProjectionRelation relation) {

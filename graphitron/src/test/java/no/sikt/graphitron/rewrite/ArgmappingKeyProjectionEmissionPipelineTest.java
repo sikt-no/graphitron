@@ -8,6 +8,7 @@ import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.render.ConditionGlueRenderer;
 import no.sikt.graphitron.plan.KeyProjectionCommands;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -160,8 +161,7 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         assertThatThrownBy(() -> EmitPlan.produce(bundle.model(), bundle.federationLink(),
             bundle.usesOneOf(), DEFAULT_OUTPUT_PACKAGE,
             new ResolvedKeyProjections.Projections(List.of(
-                new ResolvedKeyProjections.Projection("Query", "rental",
-                    "input.inventoryId.inventory_id", "Inventory", "inventory_id")))))
+                inventoryProjection("Query", "rental", "input.inventoryId.inventory_id")))))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("no emitter at that coordinate reads a projection")
             .hasMessageContaining("Query.rental");
@@ -218,8 +218,7 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
     private static TypeSpec conditionsClass() {
         var bundle = TestSchemaHelper.buildBundle(CONDITION_SDL);
         var projections = new ResolvedKeyProjections.Projections(List.of(
-            new ResolvedKeyProjections.Projection("Query", "films", "in.filmId.film_id",
-                "Film", "film_id")));
+            filmProjection("Query", "films", "in.filmId.film_id")));
         var plan = EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE, projections);
         assertThat(plan.conditions().rows())
@@ -251,13 +250,12 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var schema = bundle.model();
         var projections = new ResolvedKeyProjections.Projections(List.of(
-            new ResolvedKeyProjections.Projection("Mutation", "rentFilm",
-                "input.inventoryId.inventory_id", "Inventory", "inventory_id")));
+            inventoryProjection("Mutation", "rentFilm", "input.inventoryId.inventory_id")));
         var plan = EmitPlan.produce(schema, bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE, projections);
-        assertThat(KeyProjectionCommands.produce(projections, schema).rows())
-            .as("the fixture's projection resolves against the model, so the emission below is not"
-                + " passing because nothing was carried")
+        assertThat(KeyProjectionCommands.produce(projections).rows())
+            .as("the fixture's projection reaches a command row, so the emission below is not passing"
+                + " because nothing was carried")
             .hasSize(1);
         return TypeFetcherGenerator.generate(schema, bundle.assembled(), DEFAULT_OUTPUT_PACKAGE,
                 plan.launchers(), plan.typeUnits().fetchers(), plan.routineWrites(),
@@ -269,4 +267,34 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
     private static long count(String body, String regex) {
         return Pattern.compile(regex).matcher(body).results().count();
     }
+
+    // ===== The store rows these fixtures stand in for =====
+
+    /*
+     * Spelled by hand because TestSchemaHelper builds a model with no store behind it, and written to
+     * be exactly what StoreNodeTables would have assembled from the fixture catalog: the same generated
+     * class names, the same key order, the same type id (the fixtures declare no typeId:, so it is the
+     * type's own name). That the real assembly agrees is StoreNodeTablesTest's claim against a captured
+     * store; what these fixtures need is a row of the right shape so the emission below is the subject.
+     */
+
+    private static final ColumnRef INVENTORY_ID =
+        new ColumnRef("inventory_id", "INVENTORY_ID", "java.lang.Long");
+    private static final ColumnRef FILM_ID = new ColumnRef("film_id", "FILM_ID", "java.lang.Long");
+
+    private static ResolvedKeyProjections.Projection inventoryProjection(
+            String typeName, String fieldName, String path) {
+        return new ResolvedKeyProjections.Projection(typeName, fieldName, path, "Inventory",
+            "Inventory",
+            TestFixtures.tableRef("inventory", "INVENTORY", "Inventory", List.of(INVENTORY_ID)),
+            List.of(INVENTORY_ID), INVENTORY_ID);
+    }
+
+    private static ResolvedKeyProjections.Projection filmProjection(
+            String typeName, String fieldName, String path) {
+        return new ResolvedKeyProjections.Projection(typeName, fieldName, path, "Film", "Film",
+            TestFixtures.tableRef("film", "FILM", "Film", List.of(FILM_ID)),
+            List.of(FILM_ID), FILM_ID);
+    }
+
 }
