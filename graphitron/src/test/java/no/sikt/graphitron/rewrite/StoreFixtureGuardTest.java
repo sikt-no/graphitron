@@ -112,8 +112,6 @@ class StoreFixtureGuardTest {
             Why.PENDING_SEEDING, "the separate-fetch view; the delivery differential stays a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java",
             Why.PENDING_SEEDING, "the backing views go down; the writer's own rows stay"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/InputOccurrenceShadowTest.java",
-            Why.PENDING_SEEDING, "the override view goes down; the path tables stay"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingShadowTest.java",
             Why.PENDING_SEEDING, "walk agreement end to end, so it stays whole and takes a capture "
                 + "handle rather than a seed"),

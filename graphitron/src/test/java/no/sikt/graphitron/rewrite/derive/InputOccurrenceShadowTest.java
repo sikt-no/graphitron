@@ -6,27 +6,20 @@ import graphql.schema.GraphQLFieldsContainer;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -56,11 +49,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * nesting), so the bindings cannot go vacuous, and
  * {@link #rejectedCascadeAtTwoUseSitesMintsTwoUseKeyedFacts} is the named fixture pinning the
  * Java mint's path serialization equal to the store key.
+ *
+ * <p>Which occurrences the override view calls enclosed, and which of several enclosing sites it
+ * names as the witness, is not asked here. That is the view's own algebra, its three site arms,
+ * the boundary each draws and the order it picks a witness in, and it lives in the module whose
+ * DDL declares it, in {@code no.sikt.graphitron.model.intent.InputOccurrenceOverrideTest}, against
+ * a store seeded row by row. What the fixtures below owe instead is the capture side of the same
+ * relation: that an author's {@code @condition(override: true)} arrives as a flag the view reads,
+ * that the occurrences it answers over are the ones the walk expands, and that the walk's verdicts
+ * and the view's rows do not both go empty at once.
  */
 @PipelineTier
 class InputOccurrenceShadowTest {
 
-    private static final String GRAPH = "InputOccurrenceShadowTest";
+    private static final String GRAPH = CapturedStore.GRAPH;
     private static final String OCCURRENCE_MARK = " at occurrence '";
 
     @TempDir
@@ -75,26 +77,12 @@ class InputOccurrenceShadowTest {
      * keeps the sweep from passing on an accidentally empty surface.
      */
     @Test
-    void occurrencePathsAgreeWithTheStructuralEnumerationOverTheCorpus() throws IOException {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var nodes = TestSchemaHelper.nodeDeclaration();
+    void occurrencePathsAgreeWithTheStructuralEnumerationOverTheCorpus() {
         int comparedPaths = 0;
         int cascadeVerdicts = 0;
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = captureCorpus()) {
             for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
-                String full = ClassifiedDsl.PRELUDE + "\n" + example.sdl();
-                if (!full.contains("interface Node")) {
-                    full += "\ninterface Node { id: ID! }\n";
-                }
-                Path dir = Files.createDirectories(tmp.resolve(example.id()));
-                var schemaFile = write(dir, full);
-                var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-                FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(example.id(), dir),
-                    FactCapture.SubjectConfig.none(), registry,
-                    TestSchemaHelper.attribution(schemaFile), jooq, List.of(), nodes);
-
-                var bundle = TestSchemaHelper.buildBundle(full);
+                var bundle = TestSchemaHelper.buildBundle(preluded(example));
                 var expected = enumerate(bundle.assembled());
 
                 var derived = fetchPaths(store.dsl(), example.id());
@@ -135,11 +123,12 @@ class InputOccurrenceShadowTest {
     /**
      * The admitted cascade: an arg-level {@code @condition(override: true)} resolves the unbound
      * field, so the walk mints no cascade verdict and the consumer classifies, while the override
-     * view carries the path with the argument-site witness (non-NULL argument name, the witness's
-     * own key shape).
+     * view carries the path. The flag is the fixture's subject on this side: written in SDL at a
+     * site the walk reads, it has to arrive in the store as a flag the view reads too, which is
+     * what keeps the seeded half's arms from being about a column nothing populates.
      */
     @Test
-    void admittedCascadeCarriesAnOverrideRowWithTheArgumentWitness() {
+    void admittedCascadeSilencesTheWalkAndReachesTheOverrideView() {
         String sdl = """
             input PlainFilter { foo: String }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -153,16 +142,10 @@ class InputOccurrenceShadowTest {
         assertThat(schema.field("Query", "films"))
             .isNotInstanceOf(GraphitronField.UnclassifiedField.class);
         assertThat(schema.diagnostics()).noneMatch(d -> d.message().contains(OCCURRENCE_MARK));
-        withCapturedStore(sdl, dsl -> {
-            var row = dsl.selectFrom(INTENT_INPUT_OCCURRENCE_OVERRIDE)
-                .where(INTENT_INPUT_OCCURRENCE_OVERRIDE.GRAPH_NAME.eq(GRAPH))
-                .and(INTENT_INPUT_OCCURRENCE_OVERRIDE.PATH.eq("Query.films(filter)/foo"))
-                .fetchOne();
-            assertThat(row).isNotNull();
-            assertThat(row.getOverrideTypeName()).isEqualTo("Query");
-            assertThat(row.getOverrideFieldName()).isEqualTo("films");
-            assertThat(row.getOverrideArgumentName()).isEqualTo("filter");
-        });
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
+            assertThat(fetchOverriddenPaths(store.dsl(), GRAPH))
+                .contains("Query.films(filter)/foo");
+        }
     }
 
     /**
@@ -193,11 +176,10 @@ class InputOccurrenceShadowTest {
             .toList();
         assertThat(mintedPaths).containsExactlyInAnyOrder(
             "Query.films(filter)/foo", "Query.moreFilms(other)/foo");
-        withCapturedStore(sdl, dsl -> {
-            var derived = fetchPaths(dsl, GRAPH);
-            assertThat(derived).containsAll(mintedPaths);
-            assertThat(fetchOverriddenPaths(dsl, GRAPH)).isEmpty();
-        });
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
+            assertThat(fetchPaths(store.dsl(), GRAPH)).containsAll(mintedPaths);
+            assertThat(fetchOverriddenPaths(store.dsl(), GRAPH)).isEmpty();
+        }
     }
 
     /**
@@ -250,7 +232,8 @@ class InputOccurrenceShadowTest {
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         assertThat(schema.field("Query", "films")).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        withCapturedStore(sdl, dsl -> {
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
+            var dsl = store.dsl();
             assertThat(fetchPaths(dsl, GRAPH)).containsExactlyInAnyOrder(
                 "Query.films(filter)",
                 "Query.films(filter)/b",
@@ -262,7 +245,7 @@ class InputOccurrenceShadowTest {
                 .fetch(r -> r.getOrdinal() + ":" + r.getContainerTypeName() + "."
                     + r.getFieldName() + "->" + r.getNamedType());
             assertThat(steps).containsExactly("1:A.b->B", "2:B.a->A");
-        });
+        }
     }
 
     // ===== Reference enumeration =====
@@ -351,27 +334,34 @@ class InputOccurrenceShadowTest {
             .fetch(org.jooq.Record1::value1));
     }
 
-    private void withCapturedStore(String sdl, java.util.function.Consumer<DSLContext> body) {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            var schemaFile = write(tmp, sdl);
-            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
-                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-                jooq, List.of(), TestSchemaHelper.nodeDeclaration());
-            body.accept(store.dsl());
+    /**
+     * Every corpus example captured as its own graph into one store, which is what lets the sweep
+     * read the partition as part of what it asserts. The catalog carries node inference with it,
+     * production's arrangement.
+     */
+    private CapturedStore captureCorpus() {
+        var jooq = jooq();
+        CapturedStore store = null;
+        for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
+            store = store == null
+                ? CapturedStore.ofCatalog(tmp, example.id(), preluded(example), jooq)
+                : store.andCatalogGraph(example.id(), preluded(example), jooq);
         }
+        return store;
     }
 
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
+    /**
+     * A corpus example's SDL as the walk sees it. The Relay Node interface is appended when absent
+     * so the captured document matches the one the walk parses, {@link TestSchemaHelper} injecting
+     * it there.
+     */
+    private static String preluded(ClassifiedCorpus.Example example) {
+        String full = ClassifiedDsl.PRELUDE + "\n" + example.sdl();
+        return full.contains("interface Node") ? full : full + "\ninterface Node { id: ID! }\n";
+    }
+
+    private static JooqCatalog jooq() {
+        var ctx = testContext();
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 }

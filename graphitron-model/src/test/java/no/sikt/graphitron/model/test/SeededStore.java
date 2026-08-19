@@ -485,6 +485,64 @@ public final class SeededStore {
     }
 
     /**
+     * A {@code @condition} application on a field or an input field, stated by its cascade flag
+     * alone. The reference is left unnamed, which a relation reading only the flag does not miss;
+     * a case whose subject is the reference states it with the other overload.
+     *
+     * @param override as the author wrote it, so {@code null} is the omitted spelling and a
+     *                 relation treating it as the {@code false} it defaults to has to say so
+     */
+    public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, Boolean override) {
+        seedFieldCondition(dsl, graphName, typeName, fieldName, null, null, override);
+    }
+
+    /** The same application with the reference the author wrote, on {@link #seedService}'s terms. */
+    public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, String className, String method,
+                                          Boolean override) {
+        dsl.insertInto(GRAPHITRON_FIELD_CONDITION)
+            .set(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_CONDITION.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_CONDITION.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_CONDITION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_CONDITION.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FIELD_CONDITION.CLASS_NAME, className)
+            .set(GRAPHITRON_FIELD_CONDITION.METHOD, method)
+            .set(GRAPHITRON_FIELD_CONDITION.OVERRIDE, override)
+            .execute();
+    }
+
+    /**
+     * The same directive at the argument site, which is its own relation with its own key rather
+     * than a column on the field row. A relation reading both answers with the site it matched, so
+     * a case about that reading seeds the two separately and they stay distinguishable.
+     */
+    public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String argumentName, Boolean override) {
+        seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName, null, null, override);
+    }
+
+    /** The argument-site application with the reference the author wrote. */
+    public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String argumentName, String className,
+                                             String method, Boolean override) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.CLASS_NAME, className)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.METHOD, method)
+            .set(GRAPHITRON_ARGUMENT_CONDITION.OVERRIDE, override)
+            .execute();
+    }
+
+    /**
      * A {@code @service} application on a field: the Java names as the author wrote them, neither
      * resolved against anything. Either may be null, a directive naming no method being a state the
      * resolution relations answer for rather than one a fixture is kept out of.
@@ -537,6 +595,12 @@ public final class SeededStore {
      * <p>The serialized key is built the way the writer builds it, {@code Type.field(argument)}
      * followed by one {@code /field} per step. No reader parses it; the shape matters only so two
      * occurrences cannot collide.
+     *
+     * <p>A prefix already present is left alone rather than inserted twice, so an input type
+     * branching under one argument is a call per branch. Prefixes are shared by the relation's own
+     * invariant, not by this helper's convenience: two occurrences below one argument descend
+     * through the same rows, and a seeder that insisted on writing each prefix once could not state
+     * a branch at all.
      */
     public static void seedOccurrencePath(DSLContext dsl, String graphName, String rootTypeName,
                                          String rootFieldName, String rootArgumentName,
@@ -546,6 +610,11 @@ public final class SeededStore {
             var path = new StringBuilder(root);
             for (int i = 0; i < depth; i++) {
                 path.append('/').append(steps[i].fieldName());
+            }
+            if (dsl.fetchExists(INTENT_INPUT_OCCURRENCE_PATH,
+                    INTENT_INPUT_OCCURRENCE_PATH.GRAPH_NAME.eq(graphName)
+                        .and(INTENT_INPUT_OCCURRENCE_PATH.PATH.eq(path.toString())))) {
+                continue;
             }
             dsl.insertInto(INTENT_INPUT_OCCURRENCE_PATH)
                 .set(INTENT_INPUT_OCCURRENCE_PATH.GRAPH_NAME, graphName)
@@ -633,17 +702,7 @@ public final class SeededStore {
                 GRAPHITRON_FIELD_CONDITION.GRAPH_NAME.eq(graphName)
                     .and(GRAPHITRON_FIELD_CONDITION.TYPE_NAME.eq(typeName))
                     .and(GRAPHITRON_FIELD_CONDITION.FIELD_NAME.eq(fieldName)))) {
-            dsl.insertInto(GRAPHITRON_FIELD_CONDITION)
-                .set(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_FIELD_CONDITION.TYPE_NAME, typeName)
-                .set(GRAPHITRON_FIELD_CONDITION.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_FIELD_CONDITION.SOURCE_NAME, SEED_SOURCE)
-                .set(GRAPHITRON_FIELD_CONDITION.SOURCE_LINE, 2)
-                .set(GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN, 3)
-                .set(GRAPHITRON_FIELD_CONDITION.CLASS_NAME, "no.example.Cond")
-                .set(GRAPHITRON_FIELD_CONDITION.METHOD, "apply")
-                .set(GRAPHITRON_FIELD_CONDITION.OVERRIDE, false)
-                .execute();
+            seedFieldCondition(dsl, graphName, typeName, fieldName, "no.example.Cond", "apply", false);
         }
         dsl.insertInto(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR)
             .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
@@ -674,18 +733,8 @@ public final class SeededStore {
                     .and(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME.eq(typeName))
                     .and(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME.eq(fieldName))
                     .and(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME.eq(argumentName)))) {
-            dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME, typeName)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME, argumentName)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_NAME, SEED_SOURCE)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE, 2)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN, 3)
-                .set(GRAPHITRON_ARGUMENT_CONDITION.CLASS_NAME, "no.example.Cond")
-                .set(GRAPHITRON_ARGUMENT_CONDITION.METHOD, "apply")
-                .set(GRAPHITRON_ARGUMENT_CONDITION.OVERRIDE, false)
-                .execute();
+            seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName,
+                "no.example.Cond", "apply", false);
         }
         dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR)
             .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)

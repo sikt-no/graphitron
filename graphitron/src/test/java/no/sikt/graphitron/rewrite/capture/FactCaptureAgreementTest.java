@@ -248,8 +248,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       both reductions' precedence, pinned against a census stated row by row in the module
  *       whose DDL declares them;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
- *       occurrence-path pair and the enclosing-override view to a structural reference
- *       enumeration and to the walk's use-keyed cascade verdicts;
+ *       occurrence-path pair to a structural reference enumeration and to the walk's use-keyed
+ *       cascade verdicts, and pins the authored override flag reaching the view at all, with
+ *       {@code no.sikt.graphitron.model.intent.InputOccurrenceOverrideTest} carrying what the view
+ *       makes of it: the three enclosing sites as their own arms, the boundary a step draws around
+ *       what is below it, and the order the nearest witness is picked in;
  *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the
  *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
  *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
