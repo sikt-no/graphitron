@@ -1,13 +1,13 @@
 ---
 id: R680
 title: "Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 3
 theme: testing
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest
@@ -1150,6 +1150,25 @@ their own fixture first and a shared layer only behind it, which is the right la
 what those tests want is usually the reader-side surface their own fixture keeps. What the item buys
 them is not "here is the utility" but "the shape you need is one delegation away, and adding it there
 serves every module." The guard catches the author who reads none of it.
+
+## Retired vocabulary
+
+For the Done-gate retirement sweep. Two names are gone and one habit is:
+
+* `no.sikt.graphitron.rewrite.capture.CapturedStore`. The handle moved out of the capture package
+  and up beside `TestSchemaHelper` when it became the module's shared harness; the old package is
+  where a reader looking for a capture helper still guesses.
+* `StoreFixtureGuardTest`'s `PENDING_MODULE_FLOOR` exemption reason, retired with the last entry
+  that carried it. `PENDING_SEEDING` stays, with one entry.
+* "open a store in the test that needs one." Standing a fact store up in a test class is now a
+  guard failure outside the declared harnesses and their exemptions, so a review comment or a doc
+  sentence that treats it as the ordinary thing to do is stale.
+
+Three relocations rather than retirements, worth knowing because the class names survive elsewhere:
+`StoreReaderTest` is `graphitron-model`'s, and the seeded halves of the split anchors
+(`ColumnMatchClaimTest`, `AccessorHopTest`, `FieldColumnTableTest`, `ProducerCardinalityTest`,
+`ClassMemberSlotTest`) live under `no.sikt.graphitron.model.intent` with their capture-side halves
+left behind in `graphitron` under names of their own.
 
 ## Out of scope
 
