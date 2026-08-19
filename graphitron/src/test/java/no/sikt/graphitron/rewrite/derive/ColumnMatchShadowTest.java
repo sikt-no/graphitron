@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
@@ -79,6 +80,7 @@ class ColumnMatchShadowTest {
             for (ClassifiedCorpus.Example example : examples.subList(1, examples.size())) {
                 captured.andCatalogGraph(example.id(), fullSdl(example), jooq);
             }
+            var maskedByGraph = maskedClaimsByGraph(captured.dsl());
             for (ClassifiedCorpus.Example example : examples) {
                 var schema = TestSchemaHelper.buildSchema(fullSdl(example));
 
@@ -99,14 +101,14 @@ class ColumnMatchShadowTest {
                 });
 
                 var masked = new LinkedHashMap<String, String>();
-                maskedClaims(captured.dsl(), example.id()).forEach(row -> {
-                    var previous = masked.put(key(row.value1(), row.value2()),
-                        witness(row.value3(), row.value4()));
+                for (MaskedClaim claim : maskedByGraph.getOrDefault(example.id(), List.of())) {
+                    var previous = masked.put(key(claim.typeName(), claim.fieldName()),
+                        witness(claim.tableName(), claim.columnName()));
                     assertThat(previous)
-                        .as("one claim per coordinate (%s.%s in %s)", row.value1(), row.value2(),
-                            example.id())
+                        .as("one claim per coordinate (%s.%s in %s)", claim.typeName(),
+                            claim.fieldName(), example.id())
                         .isNull();
-                });
+                }
                 // Soundness compares inside the walked domain; a claim outside it (an interface or
                 // input parent's field, an unreached type) is the demand question, not this arm's
                 // disagreement.
@@ -205,28 +207,42 @@ class ColumnMatchShadowTest {
         return ClassifiedDsl.PRELUDE + "\n" + example.sdl();
     }
 
+    /** One masked claim: the classifier's coordinate and the witness it resolved. */
+    private record MaskedClaim(String typeName, String fieldName, String tableName,
+            String columnName) {}
+
     /**
-     * The masked reading the sweep and the residue pin share: the classifier view behind the
-     * reduction's authored anti-join, less the coordinates a diverting application owns. The
-     * residue names live in one place, this query, and shrink to dead weight (never drift) as
-     * the diverting arms migrate to authored claims and the authored anti-join takes over.
+     * The masked reading the sweep compares against, for every graph in the store at once: the
+     * classifier view behind the reduction's authored anti-join, less the coordinates a diverting
+     * application owns. The residue names live in one place, this query, and shrink to dead weight
+     * (never drift) as the diverting arms migrate to authored claims and the authored anti-join
+     * takes over.
+     *
+     * <p>Read whole and paired on {@code graph_name} by the caller rather than read once per graph,
+     * which is the rule
+     * {@code docs/architecture/explanation/fact-model.adoc} states for a derivation this deep:
+     * {@code intent_column_match_claim} collapses its matches with a window over
+     * {@code intent_field_column_scope}, and a window sees its whole partition whatever predicate
+     * the reader applies outside it, so a per-graph read pays every graph's rows once per graph.
+     * The rows are identical either way: both anti-joins already correlate on {@code graph_name}
+     * themselves, so the outer graph predicate only ever chose which of these rows a caller looked
+     * at.
      */
-    private static List<org.jooq.Record4<String, String, String, String>> maskedClaims(
-            DSLContext dsl, String graphName) {
+    private static Map<String, List<MaskedClaim>> maskedClaimsByGraph(DSLContext dsl) {
         var i = INTENT_COLUMN_MATCH_CLAIM;
         var a = INTENT_AUTHORED_FIELD_CLAIM;
         var d = GRAPHQL_FIELD_DIRECTIVE;
-        return dsl.select(i.TYPE_NAME, i.FIELD_NAME, i.TABLE_NAME, i.COLUMN_NAME)
+        return dsl.select(i.GRAPH_NAME, i.TYPE_NAME, i.FIELD_NAME, i.TABLE_NAME, i.COLUMN_NAME)
             .from(i)
-            .where(i.GRAPH_NAME.eq(graphName))
-            .andNotExists(selectOne().from(a)
+            .whereNotExists(selectOne().from(a)
                 .where(a.GRAPH_NAME.eq(i.GRAPH_NAME)).and(a.TYPE_NAME.eq(i.TYPE_NAME))
                 .and(a.FIELD_NAME.eq(i.FIELD_NAME)))
             .andNotExists(selectOne().from(d)
                 .where(d.GRAPH_NAME.eq(i.GRAPH_NAME)).and(d.TYPE_NAME.eq(i.TYPE_NAME))
                 .and(d.FIELD_NAME.eq(i.FIELD_NAME))
                 .and(d.DIRECTIVE_NAME.in("reference", "pivot", "sourceRow")))
-            .fetch();
+            .fetchGroups(i.GRAPH_NAME, r -> new MaskedClaim(r.get(i.TYPE_NAME),
+                r.get(i.FIELD_NAME), r.get(i.TABLE_NAME), r.get(i.COLUMN_NAME)));
     }
 
     private static String key(String typeName, String fieldName) {
