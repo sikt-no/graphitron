@@ -973,12 +973,13 @@ Draft of the `routine.adoc` subsection:
   relation name this plan had sketched for its own child, a naming collision resolved in R710's favour
   before either was written; nothing here should reintroduce it. Nothing reads the rows yet, R710
   having shipped facts with their reader deliberately left to arrive later, and this item is it.
-* `roadmap/nodehood-derives-from-two-corpora.md` (R711) is the other item R710's facts were captured
-  for, and it is a different question: whether a type *is* a node, joined SDL claim to jOOQ metadata
-  so the federation-key macro stops reading a live catalog from inside capture. This item's
+* The nodehood derivation (R711, shipped in `b503a79` and recorded in `roadmap/changelog.md`; its item
+  file is gone, the item being Done) is the other item R710's facts were captured for, and it is a
+  different question: whether a type *is* a node, joined SDL claim to jOOQ metadata so the
+  federation-key macro stops reading a live catalog from inside capture. This item's
   `intent_resolved_node_key_column` is not that derivation and does not wait on it: nodehood is a
   predicate, the key-column view is an ordered list with a tier precedence, and neither subsumes the
-  other. They will be two readers of one relation, which is the ordinary shape here.
+  other. They are two readers of one relation, which is the ordinary shape here.
 * `roadmap/planners-read-facts-emitters-read-commands.md` (R682) inherited R704's slice 13 outright:
   re-sourcing `LauncherCommands.routineRow` off facts, as the read-side worked example of driving
   the plan tier onto the store. That is the method stage 5 joins the projection into, so the
@@ -1149,9 +1150,9 @@ stage into a one-line note.
    comment already says and `WrittenStatementCoverageTest` enforces; one writer was owed and is
    there.
 
-   **One thing the stage picked up from trunk.** R677's nodehood derivation landed mid-stage and made
-   `intent_node_type` the relation every reader of nodehood joins, `graphitron_node` becoming one of
-   its two arms. `intent_resolved_node_key_column`'s `CATALOG_PRIMARY_KEY` tier read the authored arm
+   **One thing the stage picked up from trunk.** The nodehood derivation landed mid-stage (R711,
+   `b503a79`, now Done) and made `intent_node_type` the relation every reader of nodehood joins,
+   `graphitron_node` becoming one of its two arms. `intent_resolved_node_key_column`'s `CATALOG_PRIMARY_KEY` tier read the authored arm
    and now reads the union. The widening is inert and is recorded as inert rather than as a fix:
    inference requires well-formed node metadata, well-formedness requires a declared key-columns
    list, and that list is what the `JOOQ_METADATA` tier above answers with, so an inferred node type
