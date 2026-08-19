@@ -103,9 +103,9 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         String uri = params.getTextDocument().getUri();
         try (var span = LspTrace.span("didClose")) {
             span.detail("uri", uri);
-            // Clear any diagnostics the client may still be holding for the
-            // closed file. Other dependents recalculate via the workspace's
-            // recalculate listener as part of the didClose call below.
+            // Clear any diagnostics the client may still be holding for the closed file. No other
+            // file is affected: what each one shows is the graph's last capture judging it, which a
+            // buffer closing does not change.
             if (client != null) {
                 client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
             }

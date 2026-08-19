@@ -308,10 +308,11 @@ over the claim stratum, not as a store-side rebuild of its arms. Whether the typ
 themselves also delete depends on their generator-side readers, which is a separate census; what
 this item owns is that no LSP surface dispatches on them.
 
-With them go the LSP's own tree-derived facts: `WorkspaceFile.refreshTypeIndex` and the
-declared/referenced type sets it re-derives per keystroke, whose one consumer is the cross-file
+With them went the LSP's own tree-derived facts: `WorkspaceFile.refreshTypeIndex` and the
+declared/referenced type sets it re-derived per keystroke, whose one consumer was the cross-file
 diagnostic fan-out. "Which files touch this type" is a read over `graphql_type_declaration`, and
-the only file that relation cannot speak for is the one stale buffer.
+the only file that relation cannot speak for is the one stale buffer. Settled below, with the
+cadence change that removed the fan-out those sets aimed.
 
 `CatalogFacts` had non-LSP readers that had to move with it, and they have: the sibling item
 `catalog-facts-readers-move-to-the-store.md` migrated every `graphitron-mcp` reader off the
@@ -505,9 +506,10 @@ again whenever a build swaps the snapshot; save reaches it through the rebuild, 
 | Unknown directive | `graphql_directive`, skipping the GraphQL spec built-ins |
 | The build's own findings | Every schema-side arm of the `diagnostic` view for the file: rejections, claim conflicts, lint findings, advisory warnings, and the parser's and assembler's refusals |
 
-First-iteration cadence: diagnostics ride the capture cadence, not the keystroke. Every source in
+First-iteration cadence: diagnostics ride the capture cadence, not the keystroke. Landed, settled
+below. Every source in
 the table reads as rows from the store, published per file when capture swaps; the per-keystroke
-recomputation and its cross-file fan-out retire with the type index that aimed them. A stale
+recomputation and its cross-file fan-out retired with the type index that aimed them. A stale
 buffer shows the diagnostics of its last captured content, re-anchored through its live tree where
 the text has moved, refreshed at its next capture. That trades keystroke-live feedback in the one
 buffer being typed in for a single shape everywhere, and against the incumbent it is not a close
@@ -519,14 +521,14 @@ it outright.
 
 Compile diagnostics (javac output against generated sources) are already store-side: `DevMojo`
 writes them through `CompileFacts` and the MCP diagnostics tool reads the store's `diagnostic`
-view, not the LSP push. The `Workspace.compileDiagnostics` slot they once rode has no production
-reader left and retires with the rest of the workspace bookkeeping.
+view, not the LSP push. The `Workspace.compileDiagnostics` slot they once rode had no production
+reader left and retired with the rest of the workspace bookkeeping, settled below.
 
 **Lifecycle and state.** `didOpen` / `didChange` (incremental) / `didClose` / `didSave`;
 `didChangeConfiguration` plus a `workspace/configuration` pull after `initialize` for the three inlay
 toggles; `didChangeWatchedFiles` is a no-op today. The open-buffer set stays in `Workspace`; the
 tree-derived type index (`refreshTypeIndex`'s declared/referenced sets) and the per-file
-recalculation bookkeeping it aims retire with the keystroke cadence (see the diagnostics
+recalculation bookkeeping it aimed retired with the keystroke cadence (see the diagnostics
 paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retired with the
 java-source family, settled below: the LSP walks nothing.
 
@@ -2913,8 +2915,15 @@ because the reverse happens often enough to be worth checking for.
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
-`CatalogFacts`, `LspSchemaSnapshot`, `typeDefinitionLocations`, `CatalogBuilder`'s projection pass,
-`refreshTypeIndex`, `declaredTypes` and `dependsOnDeclarations`. Gone already:
+`CatalogFacts`, `LspSchemaSnapshot`, `typeDefinitionLocations`, and `CatalogBuilder`'s projection
+pass. Gone already: the keystroke cadence's whole apparatus, which is
+`WorkspaceFile.refreshTypeIndex` with the `declaredTypes` and `dependsOnDeclarations` sets it
+maintained, `Workspace.enqueueTouched` with its `intersects`, and the `TypeNames` class that fed
+them (`extract`, the `Extracted` record, and the tree-sitter query behind both; the class is gone,
+its `BUILTIN_SCALARS` now a private constant on `IntraSchemaDefinitions`, the one surface that
+reads it). `Workspace.compileDiagnostics` and `setCompileDiagnostics` went in the same session,
+with `reportCompile`'s and `maybeStartIncrementalCompiler`'s `Workspace` parameters: every reader
+of a compile round reads the store's own relation. Before those,
 `Workspace.validationReport` with `setBuildOutput`'s report parameter, the language server reading a
 build's own findings from the store's `diagnostic` view;
 `LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
@@ -4011,3 +4020,46 @@ recalculation listener once, and that demoting a snapshot that cannot be demoted
 subject left. The snapshot's own unit test loses the case asserting the two permits look up
 identically, there being one permit. Hover's case that a column hover ignores the projection kept its
 subject and lost its stale-versus-current framing, which the type can no longer express.
+
+## Settled while building: the cadence changes, so the fan-out has nothing left to aim
+
+Diagnostics were recomputed per keystroke and fanned across every open file that referenced a type
+the edited file declared. Both halves go here. The recalculation queue fills from two events now: a
+file being opened, which has nothing published for it yet, and a build swapping what the store says,
+which changes the answer for every open file at once. An edit and a close fill it with nothing.
+
+**The fan-out was aiming at a question the store answers.** Its whole job was "which other open
+buffers might this edit have changed the verdict for", and it derived that from a tree-sitter pass
+over each buffer on every edit. The verdict is the graph's last capture, and a capture judges every
+file it read, so when the answer moves it moves for all of them at once, which is what
+`markAllForRecalculation` already does on the swap. The fan-out was a cheaper approximation of a
+republish nobody was paying for by the file.
+
+**What goes.** `WorkspaceFile.refreshTypeIndex` and the two sets it maintained, so an edit is a
+reparse and nothing else; `Workspace.enqueueTouched` and its set-intersection helper; and the
+`TypeNames` class those were the only reader of. Its `BUILTIN_SCALARS` constant outlived the
+extraction and moved to `IntraSchemaDefinitions`, the one surface that has to recognise a reference
+to a type the language itself defines. `didChange` and `didClose` stop going through the
+listener-firing funnel, which is now what its name says: the path for a mutation that changes what
+has to be published.
+
+**What an author sees.** Between two captures, a buffer shows what the last capture said about it,
+which is what every other open buffer is showing, and the buffer being typed in stops being the one
+exception. Against the incumbent this is not the loss it sounds like: the incumbent recomputed on
+each keystroke against a projection it had demoted the moment the schema broke, so the file being
+edited showed nothing at all exactly when it had most to say. What replaces the keystroke is the
+save, and the parser's own refusal now arrives on it.
+
+**The compile channel's in-memory slot goes with it.** `Workspace.compileDiagnostics` and its
+setter held the last javac round for a reader that had already moved to the store's `diagnostic`
+view. With them go the `Workspace` parameters on the dev goal's `reportCompile` and
+`maybeStartIncrementalCompiler`, which had nothing left to do with one. A round has two sinks now,
+the console and the relation, and the relation is where "a resolved failure is cleared" lives,
+since publishing a round replaces the graph's previous one.
+
+**Two guards state the cadence on the wire.** The build-trigger case already pinned that a round's
+findings reach the client without a keystroke; its new sibling pins the other half, that an edit
+between rounds publishes nothing and the next round clears the squiggle anyway. In the workspace's
+own tests, the two cross-file cases become one case that the strongest edit the fan-out existed for,
+renaming a declaration another open file references, enqueues nothing, and the listener test splits
+in two: the mutators that fire it, and the mutators that change a buffer without changing an answer.

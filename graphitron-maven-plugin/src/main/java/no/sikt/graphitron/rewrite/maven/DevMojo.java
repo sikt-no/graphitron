@@ -185,7 +185,7 @@ public class DevMojo extends AbstractRewriteMojo {
     // beside lspStore; null for the bare mojos, exactly as that one is.
     StoreReader mcpStore;
     // The javac_ family's writer over sessionStore, or null before the store opens (bare mojos in
-    // the unit tier); reportCompile writes through it beside the console and workspace sinks.
+    // the unit tier); reportCompile writes through it beside the console sink.
     CompileFacts compileFacts;
     // The java_ family's writer over the same handle. The dev session owns the source walk because
     // it owns the watcher that triggers it, and the store is where the walk's product goes: one
@@ -316,7 +316,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // the exclusive dir holds a complete runnable image the MCP query tools can execute against
         // from the first edit. Must precede the classpath watcher: its rebuildCatalog callback drives
         // the consumer-change recompile off this same driver.
-        maybeStartIncrementalCompiler(workspace);
+        maybeStartIncrementalCompiler();
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
         startSourceWatcher(initialCtx);
@@ -598,7 +598,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     var gen = lastGeneration;
                     var outcome = incrementalCompiler.recompile(
                         gen.result().emittedUnits(), gen.result().changedUnits(), gen.graph());
-                    reportCompile(workspace, outcome, "recompile");
+                    reportCompile(outcome, "recompile");
                 }
                 for (Path root : resolveSchemaRoots(ctx)) {
                     try {
@@ -646,7 +646,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     // whole cached generated tree.
                     if (incrementalCompiler != null && lastGeneration != null) {
                         var outcome = incrementalCompiler.compileAll(lastGeneration.result().emittedUnits());
-                        reportCompile(workspace, outcome, "recompile (consumer classpath change)");
+                        reportCompile(outcome, "recompile (consumer classpath change)");
                     }
                 } catch (RuntimeException e) {
                     // Bad schema mid-edit: keep the previous catalog so completions do not
@@ -757,7 +757,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * the session with a warning rather than aborting the dev loop. Called once at startup, before the
      * watchers, so the exclusive dir holds a complete image and the consumer-change path has a driver.
      */
-    void maybeStartIncrementalCompiler(Workspace workspace) {
+    void maybeStartIncrementalCompiler() {
         if (!compile) {
             getLog().info("graphitron:dev: -Dgraphitron.dev.compile=false; "
                 + "generating without compiling (in-process query tools unavailable)");
@@ -776,7 +776,7 @@ public class DevMojo extends AbstractRewriteMojo {
             + " (put this ahead of target/classes on your run classpath; not for quarkus:dev, see docs)");
         if (lastGeneration != null) {
             var outcome = incrementalCompiler.compileAll(lastGeneration.result().emittedUnits());
-            reportCompile(workspace, outcome, "initial compile");
+            reportCompile(outcome, "initial compile");
         } else {
             // No initial generation happened this startup (skipInitial, or the initial pass failed), so
             // there are no in-memory TypeSpecs to compile the whole tree from. The exclusive dir fills in
@@ -787,17 +787,16 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Surfaces one compile round through three channels: the console (a labelled
+     * Surfaces one compile round through two channels: the console (a labelled
      * generated-code block on failure via {@link CompileErrorFormatter}, a one-line summary on success),
-     * the MCP {@code diagnostics} tool (via {@code Workspace.setCompileDiagnostics}, tagged
-     * {@code source:"compile"}), and the fact store's {@code javac_diagnostic} relation (via
+     * and the fact store's {@code javac_diagnostic} relation (via
      * {@link CompileFacts}, on the session's own store handle so store-side readers see the round the
      * moment it is written). The round's full diagnostic list is published even on success so a prior
-     * failure is cleared once it resolves.
+     * failure is cleared once it resolves. Every reader of a compile round reads the store, the
+     * language server included, so there is no in-memory slot to keep in step with the relation.
      */
-    void reportCompile(Workspace workspace, CompileOutcome outcome, String label) {
+    void reportCompile(CompileOutcome outcome, String label) {
         var round = outcome.round();
-        workspace.setCompileDiagnostics(round.diagnostics());
         if (compileFacts != null) {
             compileFacts.write(round);
         }

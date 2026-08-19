@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,6 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>What a round found rides the store rather than the swap, so the case writes the round's findings
  * where the round writes them and then trips the swap, which is the order a dev round runs in.
+ *
+ * <p>The second case pins the other half of the same cadence: between rounds, an edit publishes
+ * nothing. The two together are what "diagnostics ride the capture cadence" means on the wire.
  */
 class BuildTriggerPublishesDiagnosticsTest {
 
@@ -85,6 +89,41 @@ class BuildTriggerPublishesDiagnosticsTest {
             assertThat(afterClear.getDiagnostics())
                 .as("a round that found nothing ships an empty list, clearing the previous error")
                 .isEmpty();
+        }
+    }
+
+    @Test
+    void anEditPublishesNothingAndTheNextRoundClearsWithoutOne() {
+        try (var fixture = StoreFixture.of(tmp, SDL)) {
+            String uri = Path.of(fixture.sourceName()).toUri().toString();
+            var workspace = new Workspace();
+            workspace.setStore(new StoreAccess(fixture.reader(), StoreFixture.GRAPH));
+            var service = new GraphitronTextDocumentService(workspace);
+            var client = new RecordingClient();
+            service.setClient(client);
+
+            fixture.withValidationErrors(List.of(new ValidationError("Foo.x",
+                Rejection.structural("invalid type"),
+                new SourceLocation(1, 1, fixture.sourceName()))));
+            workspace.didOpen(uri, 1, SDL);
+            assertThat(client.published).hasSize(1);
+            assertThat(client.published.getFirst().getDiagnostics()).isNotEmpty();
+
+            // The author deletes the field the round refused. Nothing publishes: no capture has read
+            // this text, and what the file shows until one does is what the graph last said about it.
+            workspace.didChange(uri, 2,
+                List.of(new TextDocumentContentChangeEvent("type Foo { y: Int }\n")));
+
+            assertThat(client.published)
+                .as("an edit is not a capture, so it puts nothing on the wire")
+                .hasSize(1);
+
+            // The save's round finds nothing, and the swap clears the squiggle, still with no keystroke.
+            fixture.withValidationErrors(List.of());
+            workspace.setBuildOutput(buildArtifacts());
+
+            assertThat(client.published).hasSize(2);
+            assertThat(client.published.get(1).getDiagnostics()).isEmpty();
         }
     }
 

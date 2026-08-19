@@ -10,14 +10,14 @@ import java.util.Locale;
  * One compiler diagnostic from an incremental compile round, flattened to the fields the dev
  * loop surfaces: the generated {@code .java} javac reported it on (as a canonical file URI),
  * {@code line:col}, javac's own {@link Diagnostic.Kind}, its stable diagnostic {@code code}, and
- * the rendered message. One flattening, three sinks: the console error block, the MCP
- * {@code diagnostics} tool, and the fact store's {@code javac_diagnostic} relation (via
- * {@link CompileFacts}) all read this record, which is why the file spelling is normalised here
- * at the javac boundary rather than per sink. These stay a small dedicated collection anchored
- * on the generated file, deliberately <em>not</em> folded into the schema-anchored
- * {@code ValidationReport} (a generated-file error has no schema coordinate to fabricate). The
- * {@code source: "compile"} discriminator that separates these from schema entries is added at
- * the MCP surface, not here.
+ * the rendered message. One flattening, two sinks: the console error block and the fact store's
+ * {@code javac_diagnostic} relation (via {@link CompileFacts}) both read this record, which is
+ * why the file spelling is normalised here at the javac boundary rather than per sink. Every
+ * reader that wants a round rather than a console line reads that relation, through the
+ * {@code diagnostic} view, where a {@code source} of {@code "compile"} is what separates these
+ * from the schema-anchored arms. These stay anchored on the generated file, deliberately
+ * <em>not</em> folded into the schema-anchored {@code ValidationReport}: a generated-file error
+ * has no schema coordinate to fabricate.
  */
 public record CompileDiagnostic(String file, long line, long column, String kind, String code,
                                 String message) {

@@ -221,7 +221,7 @@ class DevMojoTest {
         mojo.compile = false;
         mojo.setLog(new CapturingLog());
 
-        mojo.maybeStartIncrementalCompiler(new Workspace());
+        mojo.maybeStartIncrementalCompiler();
 
         assertThat(mojo.incrementalCompiler)
             .as("compile opt-out: no incremental compile driver is built")
@@ -232,11 +232,9 @@ class DevMojoTest {
     }
 
     @Test
-    void reportCompile_failure_rendersConsoleBlockAndPublishesToMcpChannel() {
-        // A failed compile round surfaces through the two channels the spec names: the console (a
-        // labelled generated-code block) and the MCP diagnostics channel (Workspace.compileDiagnostics,
-        // which the diagnostics tool tags source:"compile"). One assertion per channel.
-        var workspace = new Workspace();
+    void reportCompile_failure_rendersTheConsoleBlock() {
+        // The console channel: a labelled generated-code block naming the offending file. The other
+        // channel is the fact store, covered below; there is no in-memory one any more.
         var diagnostic = new CompileDiagnostic(
             "gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve", "cannot find symbol");
         var outcome = new CompileOutcome(
@@ -245,7 +243,7 @@ class DevMojoTest {
         var mojo = new DevMojo();
         mojo.setLog(log);
 
-        mojo.reportCompile(workspace, outcome, "recompile");
+        mojo.reportCompile(outcome, "recompile");
 
         assertThat(log.errors)
             .as("console: a labelled generated-code compile block naming the offending file")
@@ -253,29 +251,18 @@ class DevMojoTest {
                 .contains("generated-code compilation failed")
                 .contains("gen/pkg/FilmFetchers.java")
                 .contains("cannot find symbol"));
-        assertThat(workspace.compileDiagnostics())
-            .as("MCP channel: the round's diagnostics are published for the diagnostics tool")
-            .containsExactly(diagnostic);
     }
 
     @Test
-    void reportCompile_success_clearsAPriorFailureAndLogsNoError() {
-        // A clean round publishes the empty list, clearing a prior failure so the diagnostics tool no
-        // longer shows a stale compile error, and it does not log an error.
-        var workspace = new Workspace();
-        workspace.setCompileDiagnostics(List.of(
-            new CompileDiagnostic("gen/pkg/Old.java", 1, 1, "ERROR", null, "stale")));
+    void reportCompile_success_logsNoError() {
         var outcome = new CompileOutcome(
             new CompileRound(true, List.of()), Set.of("gen.pkg.A", "gen.pkg.B"));
         var log = new CapturingLog();
         var mojo = new DevMojo();
         mojo.setLog(log);
 
-        mojo.reportCompile(workspace, outcome, "recompile");
+        mojo.reportCompile(outcome, "recompile");
 
-        assertThat(workspace.compileDiagnostics())
-            .as("a clean round clears the prior failure")
-            .isEmpty();
         assertThat(log.errors)
             .as("a clean round logs no error")
             .isEmpty();
@@ -283,9 +270,11 @@ class DevMojoTest {
 
     @Test
     void reportCompile_writesTheRoundThroughTheSessionStoreHandle(@TempDir Path basedir) {
-        // The third sink: a reported round lands in the fact store's javac_diagnostic relation,
+        // The other sink: a reported round lands in the fact store's javac_diagnostic relation,
         // readable on the same handle afterwards; that is the delivery guarantee stated rather
         // than assumed (the writer and the store-side readers share the session's live handle).
+        // The clean round that follows is where "a prior failure is cleared" lives now that every
+        // reader of a compile round reads this relation.
         try (var store = GraphitronModelStore.open()) {
             var mojo = new DevMojo();
             mojo.setLog(new CapturingLog());
@@ -297,13 +286,21 @@ class DevMojoTest {
             var outcome = new CompileOutcome(
                 new CompileRound(false, List.of(diagnostic)), Set.of("gen.pkg.FilmFetchers"));
 
-            mojo.reportCompile(new Workspace(), outcome, "recompile");
+            mojo.reportCompile(outcome, "recompile");
 
             var rows = store.dsl().selectFrom(no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC).fetch();
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst().getGraphName()).isEqualTo("dev-session");
             assertThat(rows.getFirst().getFile()).isEqualTo("file:///gen/pkg/FilmFetchers.java");
             assertThat(rows.getFirst().getCode()).isEqualTo("compiler.err.cant.resolve");
+
+            mojo.reportCompile(
+                new CompileOutcome(new CompileRound(true, List.of()), Set.of("gen.pkg.FilmFetchers")),
+                "recompile");
+
+            assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC))
+                .as("a clean round clears the prior failure, so no reader shows a stale error")
+                .isZero();
         }
     }
 

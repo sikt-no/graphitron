@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.facts.SdlDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
-import no.sikt.graphitron.lsp.parsing.TypeNames;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.Location;
@@ -13,6 +12,7 @@ import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAMED_TYPE;
@@ -47,6 +47,13 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAMED_TYPE;
  */
 public final class IntraSchemaDefinitions {
 
+    /**
+     * The GraphQL spec's own scalars, which nothing declares and no jump can land on. Held here
+     * because this is the one surface that has to recognise them: a reference to {@code Int} is a
+     * reference to a type the language defines, not to a missing declaration.
+     */
+    private static final Set<String> BUILTIN_SCALARS = Set.of("Int", "Float", "String", "Boolean", "ID");
+
     private IntraSchemaDefinitions() {}
 
     public static Optional<Location> compute(
@@ -65,7 +72,7 @@ public final class IntraSchemaDefinitions {
             if (parent == null || !NAMED_TYPE.matches(parent)) return Optional.<Location>empty();
 
             String typeName = Nodes.text(leaf, cursorFile.source());
-            if (TypeNames.BUILTIN_SCALARS.contains(typeName)) return Optional.<Location>empty();
+            if (BUILTIN_SCALARS.contains(typeName)) return Optional.<Location>empty();
 
             for (var entry : views.entrySet()) {
                 var file = entry.getValue();

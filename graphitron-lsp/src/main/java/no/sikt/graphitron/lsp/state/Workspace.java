@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
@@ -13,11 +12,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -32,11 +29,12 @@ import java.util.function.Function;
  * {@code DevMojo}) is observable on the next request without taking the
  * file lock.
  *
- * <p>A {@code did_change} (or {@code did_open} / {@code did_close})
- * enqueues the touched file plus any other file whose
- * {@code dependsOnDeclarations} overlaps the touched file's
- * {@code declaredTypes}, before or after the change. Diagnostic runs
- * drain the queue.
+ * <p>Diagnostics ride the capture cadence rather than the keystroke, so the
+ * queue fills from two events only: a file being opened, which has nothing
+ * published for it yet, and a build swapping what the store says, which
+ * changes the answer for every open file at once. An edit enqueues nothing.
+ * What a buffer shows between captures is the last capture's judgement of it,
+ * which is the same judgement every other open file is showing.
  */
 public final class Workspace {
 
@@ -45,12 +43,6 @@ public final class Workspace {
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
-    // The last incremental-compile round's diagnostics, which are anchored in generated .java files
-    // rather than at a schema coordinate. The graphitron:dev compile driver swaps this after each
-    // round; the MCP diagnostics tool surfaces it with a source:"compile" discriminator. Independent
-    // of setBuildOutput's swap: a compile round follows generation, so the two never need to move
-    // atomically.
-    private volatile List<CompileDiagnostic> compileDiagnostics = List.of();
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
     // The session's read access to the fact store, set once by whoever started the session and
@@ -70,34 +62,35 @@ public final class Workspace {
 
     public void didOpen(String uri, int version, String text) {
         enqueueAndNotify(() -> {
-            var file = new WorkspaceFile(version, text);
-            files.put(uri, file);
-            enqueueTouched(uri, Set.of(), file.declaredTypes());
+            files.put(uri, new WorkspaceFile(version, text));
+            enqueue(uri);
         });
     }
 
+    /**
+     * Applies the editor's edits to the buffer. Enqueues nothing: what the store says about this
+     * document is what it said at the last capture, and typing does not change that. The diagnostics
+     * already published stand until the next capture republishes them against the buffer as it then
+     * reads.
+     */
     public void didChange(String uri, int newVersion, List<TextDocumentContentChangeEvent> changes) {
-        enqueueAndNotify(() -> {
+        mutate(() -> {
             var file = files.get(uri);
             if (file == null) {
                 return;
             }
-            var declaredBefore = file.declaredTypes();
             for (var change : changes) {
                 applyChange(file, newVersion, change);
             }
-            enqueueTouched(uri, declaredBefore, file.declaredTypes());
         });
     }
 
+    /**
+     * Drops the buffer. Enqueues nothing: the closed document's own diagnostics are cleared by the
+     * document service, and no other document's judgement depended on this one being open.
+     */
     public void didClose(String uri) {
-        enqueueAndNotify(() -> {
-            var file = files.remove(uri);
-            if (file == null) {
-                return;
-            }
-            enqueueTouched(uri, file.declaredTypes(), Set.of());
-        });
+        mutate(() -> files.remove(uri));
     }
 
     /**
@@ -254,27 +247,6 @@ public final class Workspace {
     }
 
     /**
-     * The last incremental-compile round's diagnostics (generated-code javac errors and
-     * warnings), anchored to the generated {@code .java} where javac reports them. Their own channel
-     * because they have no schema coordinate; the MCP diagnostics tool tags them
-     * {@code source:"compile"}. Stays empty until the first compile round; {@code volatile} so the
-     * swap is observable on the next request without the file lock.
-     */
-    public List<CompileDiagnostic> compileDiagnostics() {
-        return compileDiagnostics;
-    }
-
-    /**
-     * Swaps in the diagnostics from the latest {@code graphitron:dev} incremental-compile round. Called
-     * by the compile driver after each round (including the empty list on a clean round, which clears a
-     * prior failure). Independent of {@link #setBuildOutput}: compilation runs after generation, so the
-     * two swaps never need to be atomic.
-     */
-    public void setCompileDiagnostics(List<CompileDiagnostic> diagnostics) {
-        this.compileDiagnostics = List.copyOf(diagnostics);
-    }
-
-    /**
      * The LSP's directive vocabulary, parsed once at startup from the
      * bundled {@code directives.graphqls} and immutable thereafter. The
      * registry is shape, not state; there is no setter.
@@ -327,13 +299,7 @@ public final class Workspace {
      * though no individual buffer did) and internally on catalog swaps.
      */
     public void markAllForRecalculation() {
-        enqueueAndNotify(() -> {
-            for (var uri : files.keySet()) {
-                if (!toRecalculate.contains(uri)) {
-                    toRecalculate.add(uri);
-                }
-            }
-        });
+        enqueueAndNotify(() -> files.keySet().forEach(this::enqueue));
     }
 
     /**
@@ -352,12 +318,11 @@ public final class Workspace {
     }
 
     /**
-     * Funnel for every {@code toRecalculate} write reachable from the five
-     * public mutators ({@link #didOpen}, {@link #didChange},
-     * {@link #didClose}, {@link #setBuildOutput},
-     * {@link #markAllForRecalculation}). The mutation runs under
-     * {@code lock} so the queue stays consistent with the file map; the
-     * listener fires after lock release so a heavy
+     * Funnel for every {@code toRecalculate} write reachable from the three
+     * public mutators that touch the queue ({@link #didOpen},
+     * {@link #setBuildOutput}, {@link #markAllForRecalculation}). The
+     * mutation runs under {@code lock} so the queue stays consistent with the
+     * file map; the listener fires after lock release so a heavy
      * {@code publishDiagnosticsForRecalculate} on the lsp4j thread does
      * not serialise build swaps on the watcher thread behind it.
      * Idempotency on the drain side (a second {@link #drainRecalculate}
@@ -372,14 +337,28 @@ public final class Workspace {
         // listener, which drains the queue and computes diagnostics inline on this thread.
         // A `notify` far larger than its `mutate` sibling is the signal that a mutation's
         // real cost is the recalculation it triggers, not the edit itself.
+        mutate(mutation);
+        try (var _ = LspTrace.span("workspace.notify")) {
+            recalculateListener.run();
+        }
+    }
+
+    /**
+     * The lock-held half, for the mutators that change a buffer without changing what has to be
+     * published: {@link #didChange} and {@link #didClose}.
+     */
+    private void mutate(Runnable mutation) {
         try (var span = LspTrace.span("workspace.mutate")) {
             synchronized (lock) {
                 mutation.run();
                 span.detail("open", files.size()).detail("queued", toRecalculate.size());
             }
         }
-        try (var _ = LspTrace.span("workspace.notify")) {
-            recalculateListener.run();
+    }
+
+    private void enqueue(String uri) {
+        if (!toRecalculate.contains(uri)) {
+            toRecalculate.add(uri);
         }
     }
 
@@ -395,36 +374,4 @@ public final class Workspace {
             start.tsPoint(), end.tsPoint(), change.getText());
     }
 
-    private void enqueueTouched(String uri, Set<String> declaredBefore, Set<String> declaredAfter) {
-        if (!toRecalculate.contains(uri)) {
-            toRecalculate.add(uri);
-        }
-        var changedDecls = new LinkedHashSet<String>();
-        changedDecls.addAll(declaredBefore);
-        changedDecls.addAll(declaredAfter);
-        if (changedDecls.isEmpty()) {
-            return;
-        }
-        for (var entry : files.entrySet()) {
-            String otherUri = entry.getKey();
-            if (otherUri.equals(uri)) {
-                continue;
-            }
-            if (intersects(entry.getValue().dependsOnDeclarations(), changedDecls)
-                && !toRecalculate.contains(otherUri)) {
-                toRecalculate.add(otherUri);
-            }
-        }
-    }
-
-    private static boolean intersects(Set<String> a, Set<String> b) {
-        var smaller = a.size() < b.size() ? a : b;
-        var larger = smaller == a ? b : a;
-        for (var s : smaller) {
-            if (larger.contains(s)) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

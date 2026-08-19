@@ -22,7 +22,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * store's {@code javac_diagnostic} relation, verbatim and wholesale. The relation's content
  * contract is exactly the published round, so this class inherits, and does not fix, the
  * round-scoped-list semantics: publishing a round replaces the graph's previous round entirely,
- * on this sink as on the console and workspace sinks beside it.
+ * which is also how a resolved failure is cleared.
  *
  * <p>For this family the store is a delivery channel, not a cache, which is why the writer takes
  * the dev session's live store handle instead of opening its own per round: a round written into

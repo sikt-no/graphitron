@@ -22,9 +22,10 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Lifecycle and dependency-tracked recalculation queue, mirroring the
- * Rust LSP's {@code Workspace} test cases at the data-structure level
- * (no LSP framing yet; that's covered by {@code TextDocumentServiceTest}).
+ * Lifecycle and the recalculation queue at the data-structure level (no LSP framing; that's
+ * covered by {@code TextDocumentServiceTest}). The queue's subject is the capture cadence: an
+ * open needs a first publish and a build changes every open file's answer, while an edit and a
+ * close change neither.
  */
 class WorkspaceTest {
 
@@ -68,7 +69,9 @@ class WorkspaceTest {
 
         assertThat(source(ws, "file:///a.graphqls")).contains("y: Int");
         assertThat(version(ws, "file:///a.graphqls")).isEqualTo(2);
-        assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
+        assertThat(ws.drainRecalculate())
+            .as("an edit changes the buffer, not what the last capture said about it")
+            .isEmpty();
     }
 
     @Test
@@ -137,37 +140,23 @@ class WorkspaceTest {
     }
 
     @Test
-    void editingDeclaringFileEnqueuesDependents() {
+    void editingADeclaringFileLeavesEveryOtherFileAlone() {
         var ws = new Workspace();
         ws.didOpen("file:///decl.graphqls", 1, "type Foo { x: Int }\n");
         ws.didOpen("file:///dep.graphqls", 1, "type Bar { f: Foo }\n");
         ws.drainRecalculate();
 
-        // Touch the declaring file: the depending file must show up in
-        // the recalculation queue too.
-        var change = new TextDocumentContentChangeEvent("type Foo { y: String }\n");
+        // Renaming the declaration out from under the depending file is the strongest case the
+        // cross-file fan-out was aimed at, and it enqueues nothing now: dep.graphqls shows what the
+        // graph's last capture said about it, which an unsaved edit elsewhere has not changed.
+        var change = new TextDocumentContentChangeEvent("type Renamed { y: String }\n");
         ws.didChange("file:///decl.graphqls", 2, List.of(change));
 
-        assertThat(ws.drainRecalculate())
-            .containsExactlyInAnyOrder("file:///decl.graphqls", "file:///dep.graphqls");
+        assertThat(ws.drainRecalculate()).isEmpty();
     }
 
     @Test
-    void editingNonDependedFileDoesNotEnqueueOthers() {
-        var ws = new Workspace();
-        ws.didOpen("file:///a.graphqls", 1, "type A { x: Int }\n");
-        ws.didOpen("file:///b.graphqls", 1, "type B { y: Int }\n");
-        ws.drainRecalculate();
-
-        // No FK between them; an edit to A should not pull in B.
-        var change = new TextDocumentContentChangeEvent("type A { x: String }\n");
-        ws.didChange("file:///a.graphqls", 2, List.of(change));
-
-        assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
-    }
-
-    @Test
-    void didCloseRemovesFileAndEnqueuesDependents() {
+    void didCloseRemovesTheFileAndEnqueuesNothing() {
         var ws = new Workspace();
         ws.didOpen("file:///decl.graphqls", 1, "type Foo { x: Int }\n");
         ws.didOpen("file:///dep.graphqls", 1, "type Bar { f: Foo }\n");
@@ -176,8 +165,9 @@ class WorkspaceTest {
         ws.didClose("file:///decl.graphqls");
 
         assertThat(isOpen(ws, "file:///decl.graphqls")).isFalse();
-        assertThat(ws.drainRecalculate())
-            .containsExactlyInAnyOrder("file:///decl.graphqls", "file:///dep.graphqls");
+        // The closed file's own diagnostics are cleared by the document service, directly; no other
+        // file's judgement was resting on this buffer being open.
+        assertThat(ws.drainRecalculate()).isEmpty();
     }
 
     @Test
@@ -198,7 +188,7 @@ class WorkspaceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("publicQueueMutators")
-    void everyPublicQueueMutatingMethodFiresTheListener(String name, Consumer<Workspace> mutator) {
+    void everyQueueMutatingMethodFiresTheListener(String name, Consumer<Workspace> mutator) {
         var ws = new Workspace();
         // Pre-seed: one open file, and a build behind the session so setBuildOutput has a
         // well-formed BuildArtifacts to swap into.
@@ -222,11 +212,6 @@ class WorkspaceTest {
         return Stream.of(
             Arguments.of("didOpen",
                 (Consumer<Workspace>) ws -> ws.didOpen("file:///b.graphqls", 1, "type Bar { y: Int }\n")),
-            Arguments.of("didChange",
-                (Consumer<Workspace>) ws -> ws.didChange("file:///a.graphqls", 2,
-                    List.of(new TextDocumentContentChangeEvent("type Foo { y: Int }\n")))),
-            Arguments.of("didClose",
-                (Consumer<Workspace>) ws -> ws.didClose("file:///a.graphqls")),
             Arguments.of("setBuildOutput",
                 (Consumer<Workspace>) ws -> ws.setBuildOutput(
                     new GraphQLRewriteGenerator.BuildArtifacts(
@@ -234,6 +219,31 @@ class WorkspaceTest {
                         new LspSchemaSnapshot.Built()))),
             Arguments.of("markAllForRecalculation",
                 (Consumer<Workspace>) Workspace::markAllForRecalculation));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("bufferOnlyMutators")
+    void aMutatorThatChangesNoAnswerDoesNotFireTheListener(String name, Consumer<Workspace> mutator) {
+        var ws = new Workspace();
+        ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
+        ws.drainRecalculate();
+        var fires = new AtomicInteger();
+        ws.setRecalculateListener(fires::incrementAndGet);
+
+        mutator.accept(ws);
+
+        assertThat(fires.get())
+            .as("%s changes a buffer, not what the store says, so nothing republishes", name)
+            .isZero();
+    }
+
+    static Stream<Arguments> bufferOnlyMutators() {
+        return Stream.of(
+            Arguments.of("didChange",
+                (Consumer<Workspace>) ws -> ws.didChange("file:///a.graphqls", 2,
+                    List.of(new TextDocumentContentChangeEvent("type Foo { y: Int }\n")))),
+            Arguments.of("didClose",
+                (Consumer<Workspace>) ws -> ws.didClose("file:///a.graphqls")));
     }
 
     @Test

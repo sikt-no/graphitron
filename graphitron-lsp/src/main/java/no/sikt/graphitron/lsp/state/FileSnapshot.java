@@ -27,11 +27,7 @@ import io.github.treesitter.jtreesitter.Tree;
  * never mutates a published array in place (every edit reassigns a fresh one),
  * so the reference captured here stays paired with the {@code tree} it was
  * parsed from.
- *
- * <p>Deliberately does not carry {@code declaredTypes()} /
- * {@code dependsOnDeclarations()}: those feed {@link Workspace}'s own mutators
- * under the lock ({@code enqueueTouched}), not off-thread readers.
- */
+ * */
 public record FileSnapshot(Tree tree, byte[] source, int version) implements AutoCloseable {
 
     /** Releases the cloned tree's native memory. Idempotent-unsafe; call exactly once. */

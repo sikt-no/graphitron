@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
-import no.sikt.graphitron.lsp.parsing.TypeNames;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import io.github.treesitter.jtreesitter.InputEdit;
 import io.github.treesitter.jtreesitter.Parser;
@@ -9,8 +8,6 @@ import io.github.treesitter.jtreesitter.Point;
 import io.github.treesitter.jtreesitter.Tree;
 
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 /**
  * A schema file open in the workspace: source bytes + tree-sitter tree, both
@@ -41,8 +38,6 @@ public final class WorkspaceFile {
     private byte[] source;
     private Tree tree;
     private int version;
-    private Set<String> declaredTypes;
-    private Set<String> dependsOnDeclarations;
 
     public WorkspaceFile(int version, String content) {
         try (var span = LspTrace.span("file.parseInitial")) {
@@ -52,7 +47,6 @@ public final class WorkspaceFile {
             this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
         }
         this.version = version;
-        refreshTypeIndex();
     }
 
     public Tree tree() {
@@ -121,10 +115,9 @@ public final class WorkspaceFile {
         tree.edit(new InputEdit(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint));
         this.source = updated;
         Tree previous = tree;
-        // Separately timed from the type-index refresh below because the two scale for
-        // different reasons: the reparse is incremental in tree-sitter but pays a
-        // whole-buffer decode to hand the parser a String, while refreshTypeIndex walks the
-        // whole tree regardless. Both are per-edit and both scale with file size.
+        // The whole per-edit cost, and the reason it is timed: the reparse is incremental in
+        // tree-sitter, but it pays a whole-buffer decode to hand the parser a String, so it
+        // scales with file size rather than with the edit.
         try (var span = LspTrace.span("file.reparse")) {
             span.detail("bytes", updated.length);
             this.tree = parser.parse(new String(updated, StandardCharsets.UTF_8), previous)
@@ -132,7 +125,6 @@ public final class WorkspaceFile {
         }
         previous.close();
         this.version = newVersion;
-        refreshTypeIndex();
     }
 
     /**
@@ -151,34 +143,6 @@ public final class WorkspaceFile {
         }
         previous.close();
         this.version = newVersion;
-        refreshTypeIndex();
-    }
-
-    /** Type names declared in this file (objects, interfaces, unions, enums, inputs, scalars). */
-    public Set<String> declaredTypes() {
-        return declaredTypes;
-    }
-
-    /**
-     * Type names this file references but does not declare, minus built-in
-     * scalars. When another file's declarations change to add or remove one
-     * of these names, this file's diagnostics need to be recomputed.
-     */
-    public Set<String> dependsOnDeclarations() {
-        return dependsOnDeclarations;
-    }
-
-    private void refreshTypeIndex() {
-        try (var span = LspTrace.span("file.typeIndex")) {
-            span.detail("bytes", source.length);
-            var extracted = TypeNames.extract(tree.getRootNode(), source);
-            this.declaredTypes = Set.copyOf(extracted.declared());
-            var deps = new LinkedHashSet<>(extracted.referenced());
-            deps.removeAll(extracted.declared());
-            deps.removeAll(TypeNames.BUILTIN_SCALARS);
-            this.dependsOnDeclarations = Set.copyOf(deps);
-            span.detail("declared", declaredTypes.size()).detail("depends", dependsOnDeclarations.size());
-        }
     }
 
     private static IllegalStateException parseHalted() {
