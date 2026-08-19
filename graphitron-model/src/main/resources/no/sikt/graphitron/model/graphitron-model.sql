@@ -803,6 +803,7 @@ CREATE TABLE graphitron_argument_path_segment (
   argument_path VARCHAR NOT NULL,
   position      INT     NOT NULL,
   segment_name  VARCHAR NOT NULL,
+  segment_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(segment_name)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_path, position),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field (graph_name, type_name, field_name)
 );
@@ -813,6 +814,7 @@ COMMENT ON COLUMN graphitron_argument_path_segment.field_name IS 'the field name
 COMMENT ON COLUMN graphitron_argument_path_segment.argument_path IS 'the path as written, spelled exactly as the pair relations of this family spell it; a pair row reaches its own decode by joining on the coordinate and this column, which is a coordinate join rather than a match on a bare string';
 COMMENT ON COLUMN graphitron_argument_path_segment.position IS '0-based position of the segment within the path, dense from zero';
 COMMENT ON COLUMN graphitron_argument_path_segment.segment_name IS 'the segment itself, one name carrying no dot. Position zero is the head, naming an argument of the field the directive sits on, and each further position descends through an input-object field of the one before it; which of those a segment resolves to is a question for the derived stratum, and this relation only says what was written';
+COMMENT ON COLUMN graphitron_argument_path_segment.segment_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against a node type''s resolved key columns where a trailing segment names one, which intent_resolved_node_key_projection spells. Generated, so nothing writes it and nothing can. An authored spelling is folded here for that crossing alone, which is the only reason anything in this schema is folded; a segment naming a GraphQL argument or input field is matched exactly, those names being case-sensitive in the language';
 
 CREATE TABLE graphitron_table (
   graph_name       VARCHAR NOT NULL,
@@ -3670,7 +3672,7 @@ SELECT graph_name, type_name, position, column_name, tier
                 UNION ALL
                 SELECT b.graph_name, b.type_name, cc.position, cc.column_name,
                        'CATALOG_PRIMARY_KEY', 2
-                  FROM graphitron_node n
+                  FROM intent_node_type n
                   JOIN intent_resolved_type_binding b
                     ON b.graph_name = n.graph_name AND b.type_name = n.type_name
                   JOIN sql_primary_key pk
@@ -3686,8 +3688,8 @@ COMMENT ON VIEW intent_resolved_node_key_column IS 'The ordered key columns a gr
 COMMENT ON COLUMN intent_resolved_node_key_column.graph_name IS 'the owning graph''s partition, carried from whichever tier answered';
 COMMENT ON COLUMN intent_resolved_node_key_column.type_name IS 'the graph type whose node key this row is one column of';
 COMMENT ON COLUMN intent_resolved_node_key_column.position IS '0-based position within the key, dense from zero, in the order the winning tier states; the order the encoded identity depends on, which is why the pick keeps a tier''s list whole';
-COMMENT ON COLUMN intent_resolved_node_key_column.column_name IS 'the key column''s name as the winning tier spells it: as written on the pinned tier, as the generated class stated it on the metadata tier, and the catalog''s own name on the primary-key tier. Matching against a table''s columns is case-insensitive wherever a reader does it, which is settled convention rather than this relation''s rule';
-COMMENT ON COLUMN intent_resolved_node_key_column.tier IS 'which population answered, in a closed vocabulary of three: SDL_PINNED from an @node(keyColumns:) list, JOOQ_METADATA from the well-formed node metadata the bound table''s generated class states, CATALOG_PRIMARY_KEY from the bound table''s primary key under an @node. The order is the resolution''s own precedence, and the column is what lets a test pin which tier fired rather than only that the columns came out right';
+COMMENT ON COLUMN intent_resolved_node_key_column.column_name IS 'the key column''s name as the winning tier spells it: as written on the pinned tier, as the generated class stated it on the metadata tier, and the catalog''s own name on the primary-key tier. Matching against a table''s columns is case-insensitive wherever a reader does it, which is settled convention rather than this relation''s rule. No fold is exposed beside it: this is a pick across three tiers, so there is no one base relation whose generated column a reader could reach by joining, and forwarding a fold through a derived view is what the folded columns'' own comments forbid. A reader matching an authored spelling against this column therefore folds this side at the crossing and joins the authored side''s own generated column, which is where the schema mints one';
+COMMENT ON COLUMN intent_resolved_node_key_column.tier IS 'which population answered, in a closed vocabulary of three: SDL_PINNED from an @node(keyColumns:) list, JOOQ_METADATA from the well-formed node metadata the bound table''s generated class states, CATALOG_PRIMARY_KEY from the bound table''s primary key under a node type, read off intent_node_type rather than the authored @node arm alone because that view is the one relation a reader of nodehood joins. Widening it there is inert today and stated as such rather than as a fix: the inferred arm requires well-formed node metadata, well-formedness requires a declared key-columns list, and that list is what the JOOQ_METADATA tier above answers with, so an inferred node type always resolves on the higher tier and this one only ever fires under an authored @node. It is the union anyway, so the tier stops being wrong rather than starting to be right if inference ever loosens. The order is the resolution''s own precedence, and the column is what lets a test pin which tier fired rather than only that the columns came out right';
 
 CREATE VIEW intent_field_reference_step_target
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
@@ -5002,62 +5004,95 @@ COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'wi
 
 CREATE VIEW intent_argmapping_pair
   (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
-   position, param_name, argument_path) AS
+   position, param_name, argument_path, source_name, source_line, source_column) AS
 SELECT p.graph_name, 'ROUTINE',
        p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR),
        p.type_name, p.field_name, CAST(NULL AS VARCHAR), p.ordinal, CAST(NULL AS INT),
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_routine_arg_mapping_pair p
+  JOIN graphitron_routine d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name AND d.ordinal = p.ordinal
  UNION ALL
 SELECT p.graph_name, 'SERVICE',
        p.type_name || '.' || p.field_name,
        p.type_name, p.field_name, NULL, NULL, NULL,
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_service_arg_mapping_pair p
+  JOIN graphitron_service d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name
  UNION ALL
 SELECT p.graph_name, 'FIELD_CONDITION',
        p.type_name || '.' || p.field_name,
        p.type_name, p.field_name, NULL, NULL, NULL,
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_field_condition_arg_mapping_pair p
+  JOIN graphitron_field_condition d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name
   JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
  WHERE t.kind <> 'INPUT_OBJECT'
  UNION ALL
 SELECT p.graph_name, 'INPUT_FIELD_CONDITION',
        p.type_name || '.' || p.field_name,
        p.type_name, p.field_name, NULL, NULL, NULL,
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_field_condition_arg_mapping_pair p
+  JOIN graphitron_field_condition d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name
   JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
  WHERE t.kind = 'INPUT_OBJECT'
  UNION ALL
 SELECT p.graph_name, 'ARGUMENT_CONDITION',
        p.type_name || '.' || p.field_name || '(' || p.argument_name || ')',
        p.type_name, p.field_name, p.argument_name, NULL, NULL,
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_argument_condition_arg_mapping_pair p
+  JOIN graphitron_argument_condition d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name AND d.argument_name = p.argument_name
  UNION ALL
 SELECT p.graph_name, 'FIELD_REFERENCE_STEP',
        p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
          || '[' || CAST(p.step_position AS VARCHAR) || ']',
        p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_field_reference_step_arg_mapping_pair p
+  JOIN graphitron_field_reference d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name AND d.ordinal = p.ordinal
  UNION ALL
 SELECT p.graph_name, 'ARGUMENT_REFERENCE_STEP',
        p.type_name || '.' || p.field_name || '(' || p.argument_name || ')#'
          || CAST(p.ordinal AS VARCHAR) || '[' || CAST(p.step_position AS VARCHAR) || ']',
        p.type_name, p.field_name, p.argument_name, p.ordinal, p.step_position,
-       p.position, p.param_name, p.argument_path
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
   FROM graphitron_argument_reference_step_arg_mapping_pair p
+  JOIN graphitron_argument_reference d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name AND d.argument_name = p.argument_name
+   AND d.ordinal = p.ordinal
  UNION ALL
 SELECT p.graph_name, 'REFERENCE_FOR_STEP',
        p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
          || '[' || CAST(p.step_position AS VARCHAR) || ']',
        p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
-       p.position, p.param_name, p.argument_path
-  FROM graphitron_reference_for_step_arg_mapping_pair p;
-COMMENT ON VIEW intent_argmapping_pair IS 'Every argMapping pair any directive spells, in one shape: the seven pair relations of that family normalised onto the widest arm''s projection, with a site literal naming which one a row came from. Those relations are one shape only in their tail (position, param_name, argument_path); their use-site keys run from four columns to seven, so a reader over all of them either widens by hand or asks this. Naming it keeps the widening written once, which is the point: the arms are hand-written SELECTs over relations of differing key arity, a typo in one is exactly the drift a cross-site parity test exists to catch, and a second consumer re-spelling the union is how two readings of one population begin disagreeing. Every reader of a pair''s resolution therefore departs from here, and one needing an arm''s own extra key columns joins this relation on site plus the use-site key rather than parsing anything or re-assembling the union. Non-destructive by construction: it adds a discriminator and drops nothing, so an arm''s own relation stays where a reader of that site alone goes. Eight site values over seven relations, the field-condition relation being a shared coordinate whose owning type''s kind splits it into an output-field site and an input-field site with different heads and different emitters, which is how the capture side already tells those halves apart. The grain is the pair''s own with ordinal intact: @routine and @reference are repeatable and each application carries its own argMapping, so collapsing to one row per field coordinate would resolve one application''s paths and silently drop its siblings, which is the one move the nearest sibling view makes that this family must not.';
+       p.position, p.param_name, p.argument_path,
+       d.source_name, d.source_line, d.source_column
+  FROM graphitron_reference_for_step_arg_mapping_pair p
+  JOIN graphitron_reference_for d
+    ON d.graph_name = p.graph_name AND d.type_name = p.type_name
+   AND d.field_name = p.field_name AND d.ordinal = p.ordinal;
+COMMENT ON VIEW intent_argmapping_pair IS 'Every argMapping pair any directive spells, in one shape: the seven pair relations of that family normalised onto the widest arm''s projection, with a site literal naming which one a row came from. Those relations are one shape only in their tail (position, param_name, argument_path); their use-site keys run from four columns to seven, so a reader over all of them either widens by hand or asks this. Naming it keeps the widening written once, which is the point: the arms are hand-written SELECTs over relations of differing key arity, a typo in one is exactly the drift a cross-site parity test exists to catch, and a second consumer re-spelling the union is how two readings of one population begin disagreeing. Every reader of a pair''s resolution therefore departs from here, and one needing an arm''s own extra key columns joins this relation on site plus the use-site key rather than parsing anything or re-assembling the union. Non-destructive by construction: it adds a discriminator and drops nothing, so an arm''s own relation stays where a reader of that site alone goes. The owning application''s source position is carried the same way and for the same reason: every arm reaches one by a join on its own key, all eight joins are inner (each pair relation has a foreign key onto its owner, the three step arms through their step relation), and a reader assembling that eight-way lookup for itself is exactly the drift this relation exists to prevent. It is what lets a detection over a pair''s resolution locate its message without knowing which of the seven relations the pair came from. Eight site values over seven relations, the field-condition relation being a shared coordinate whose owning type''s kind splits it into an output-field site and an input-field site with different heads and different emitters, which is how the capture side already tells those halves apart. The grain is the pair''s own with ordinal intact: @routine and @reference are repeatable and each application carries its own argMapping, so collapsing to one row per field coordinate would resolve one application''s paths and silently drop its siblings, which is the one move the nearest sibling view makes that this family must not.';
 COMMENT ON COLUMN intent_argmapping_pair.graph_name IS 'the owning graph''s partition, carried from every arm''s own relation';
 COMMENT ON COLUMN intent_argmapping_pair.site IS 'which SDL site spelled this pair, in a closed vocabulary of eight: ROUTINE, SERVICE, FIELD_CONDITION, INPUT_FIELD_CONDITION, ARGUMENT_CONDITION, FIELD_REFERENCE_STEP, ARGUMENT_REFERENCE_STEP, REFERENCE_FOR_STEP. Seven relations and eight values, the two condition sites sharing one. The column a consumer switches on, and the one a test pins so a case reaching an arm is a case naming it';
 COMMENT ON COLUMN intent_argmapping_pair.use_site IS 'the consuming coordinate serialized, in intent_input_occurrence_path''s own vocabulary extended by two forms: Type.field for a field-grain site with the argument in parentheses after it, then #<ordinal> for a repeatable application and [<step>] for a step position within one. With site and position this is the relation''s grain, and it is the coordinate a rejection about a pair has to be able to name, an author told to change a definition-keyed fact needing to know which use site is asking. Serialized rather than assembled at each reader because a message needs one string and the components differ by arm; those components are columns beside it, so nothing ever parses this';
@@ -5069,6 +5104,9 @@ COMMENT ON COLUMN intent_argmapping_pair.step_position IS 'the owning step''s 0-
 COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pair within its own argMapping list, carried unchanged from every arm; part of the grain, so an author''s duplicate parameter survives here as it does in the base relations';
 COMMENT ON COLUMN intent_argmapping_pair.param_name IS 'the left side of the pair: the Java or routine parameter the path binds to';
 COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as the arm''s own relation spells it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
+COMMENT ON COLUMN intent_argmapping_pair.source_name IS 'the SDL file the owning directive application was captured from, joined from that application''s own relation rather than from the field: a rejection about a pair has to point at the argMapping the author wrote, and a repeatable directive''s second application sits on a line the field''s own position does not name. NULL where the application carries no position, on graphitron_routine.source_name''s terms. The pair itself carries no finer position, the eight owners recording the application and not the list entry, so two pairs of one application share a location and the message tells them apart by naming the entry';
+COMMENT ON COLUMN intent_argmapping_pair.source_line IS 'source line of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
+COMMENT ON COLUMN intent_argmapping_pair.source_column IS 'source column of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 
 CREATE VIEW intent_argmapping_segment_binding
   (graph_name, site, use_site, type_name, field_name, position, argument_path,
@@ -5235,10 +5273,10 @@ SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, 
    AND sg.position = l.segment_position + 1
   JOIN intent_resolved_node_key_column k
     ON k.graph_name = l.graph_name AND k.type_name = l.node_type_ref
-   AND UPPER(k.column_name) = UPPER(sg.segment_name)
+   AND UPPER(k.column_name) = sg.segment_name_upper
  WHERE l.node_type_ref IS NOT NULL
    AND l.trailing_segments = 1;
-COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key: the pairs whose leaf carries a @nodeId(typeName:), whose path spells exactly one segment beyond that leaf, and whose trailing segment names one of that node type''s resolved key columns. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the two relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_segment_binding''s, reduced to a leaf next door, and the key list is intent_resolved_node_key_column''s; this is only where the two meet. Exactly one trailing segment, never a minimum: two or more is a typo or a nested object form, and admitting it here would let a projection resolve off a path whose middle the author got wrong. The trailing segment is reached by position, one above the leaf''s own, which is the same arithmetic the count beside it does and not a second statement of it: the count says how many there are and the join says which one, and neither could be derived from the other without knowing the leaf''s position anyway. Matching is case-insensitive, which is inherited rather than introduced: the spelled-table and column-match derivations both compare under UPPER() and the catalog resolution uses the same rule, so a projection spelled the generated way and one spelled the SQL way are one answer. The column comes out under the winning tier''s own spelling and not the author''s, because it is the decode''s key list the projection indexes into, and naming the column rather than a tuple position is what makes a transposed composite-key projection unconstructable. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
+COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key: the pairs whose leaf carries a @nodeId(typeName:), whose path spells exactly one segment beyond that leaf, and whose trailing segment names one of that node type''s resolved key columns. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the two relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_segment_binding''s, reduced to a leaf next door, and the key list is intent_resolved_node_key_column''s; this is only where the two meet. Exactly one trailing segment, never a minimum: two or more is a typo or a nested object form, and admitting it here would let a projection resolve off a path whose middle the author got wrong. The trailing segment is reached by position, one above the leaf''s own, which is the same arithmetic the count beside it does and not a second statement of it: the count says how many there are and the join says which one, and neither could be derived from the other without knowing the leaf''s position anyway. Matching is case-insensitive, which is inherited rather than introduced: the catalog resolution uses the same rule, so a projection spelled the generated way and one spelled the SQL way are one answer. It is spelled once, here, and every consumer asking whether a segment names a key column asks by joining this relation rather than by repeating the predicate: the detection beside it states the unknown column as the absence of a row here, which is what keeps one match from becoming two that agree until one changes. The authored side is folded on its own base relation, graphitron_argument_path_segment.segment_name_upper, which is where the schema mints a fold; the key-column side is folded at the crossing instead, that relation being a pick across three tiers with no one base relation to reach a generated column through, and forwarding one through a derived view being what the folded columns'' own comments forbid. The column comes out under the winning tier''s own spelling and not the author''s, because it is the decode''s key list the projection indexes into, and naming the column rather than a tuple position is what makes a transposed composite-key projection unconstructable. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
 COMMENT ON COLUMN intent_resolved_node_key_projection.graph_name IS 'the owning graph''s partition, carried from both sides of the reduction, which agree on it by the join';
 COMMENT ON COLUMN intent_resolved_node_key_projection.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; the column a consumer reads to know whether an emitter is wired for this projection yet';
 COMMENT ON COLUMN intent_resolved_node_key_projection.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; with site and position the grain, and the key a planner joins the pair relation on to recover the application ordinal a command row needs';
@@ -5254,6 +5292,71 @@ COMMENT ON COLUMN intent_resolved_node_key_projection.node_type_name IS 'the nod
 COMMENT ON COLUMN intent_resolved_node_key_projection.column_name IS 'the projected key column, spelled as the winning key-column tier spells it rather than as the author wrote it: the decode returns values against that tier''s list, so this is the spelling that lines up with it. The author''s own spelling is in the path, one segment join away';
 COMMENT ON COLUMN intent_resolved_node_key_projection.key_position IS 'the projected column''s 0-based position within the node key. Not what an emitter reads (it names the column) but what a reader checking a composite projection asks, and what shows two parameters bound from one id take two different positions of one key';
 COMMENT ON COLUMN intent_resolved_node_key_projection.tier IS 'which key-column population answered for this node type, carried from intent_resolved_node_key_column''s closed vocabulary of three; a diagnostic explaining why a column is or is not available reads it rather than re-deriving the precedence';
+
+CREATE VIEW intent_argmapping_projection_defect
+  (graph_name, site, use_site, type_name, field_name, position, param_name, argument_path,
+   verdict, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
+   node_type_ref, trailing_segment_name,
+   source_name, source_line, source_column) AS
+SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, ap.param_name,
+       l.argument_path, 'BARE_NODE_ID', l.bound_kind, l.bound_type_name, l.bound_field_name,
+       l.bound_argument_name, l.node_type_ref, CAST(NULL AS VARCHAR),
+       ap.source_name, ap.source_line, ap.source_column
+  FROM intent_argmapping_binding_leaf l
+  JOIN intent_argmapping_pair ap
+    ON ap.graph_name = l.graph_name AND ap.site = l.site AND ap.use_site = l.use_site
+   AND ap.position = l.position
+ WHERE l.node_id_declared AND l.trailing_segments = 0
+ UNION ALL
+SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, ap.param_name,
+       l.argument_path, 'MISSING_TYPE_NAME', l.bound_kind, l.bound_type_name, l.bound_field_name,
+       l.bound_argument_name, l.node_type_ref, sg.segment_name,
+       ap.source_name, ap.source_line, ap.source_column
+  FROM intent_argmapping_binding_leaf l
+  JOIN intent_argmapping_pair ap
+    ON ap.graph_name = l.graph_name AND ap.site = l.site AND ap.use_site = l.use_site
+   AND ap.position = l.position
+  JOIN graphitron_argument_path_segment sg
+    ON sg.graph_name = l.graph_name AND sg.type_name = l.type_name
+   AND sg.field_name = l.field_name AND sg.argument_path = l.argument_path
+   AND sg.position = l.segment_position + 1
+ WHERE l.node_id_declared AND l.node_type_ref IS NULL AND l.trailing_segments = 1
+ UNION ALL
+SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, ap.param_name,
+       l.argument_path, 'UNKNOWN_KEY_COLUMN', l.bound_kind, l.bound_type_name, l.bound_field_name,
+       l.bound_argument_name, l.node_type_ref, sg.segment_name,
+       ap.source_name, ap.source_line, ap.source_column
+  FROM intent_argmapping_binding_leaf l
+  JOIN intent_argmapping_pair ap
+    ON ap.graph_name = l.graph_name AND ap.site = l.site AND ap.use_site = l.use_site
+   AND ap.position = l.position
+  JOIN graphitron_argument_path_segment sg
+    ON sg.graph_name = l.graph_name AND sg.type_name = l.type_name
+   AND sg.field_name = l.field_name AND sg.argument_path = l.argument_path
+   AND sg.position = l.segment_position + 1
+ WHERE l.node_id_declared AND l.node_type_ref IS NOT NULL AND l.trailing_segments = 1
+   AND NOT EXISTS (SELECT 1 FROM intent_resolved_node_key_projection pr
+                    WHERE pr.graph_name = l.graph_name AND pr.site = l.site
+                      AND pr.use_site = l.use_site AND pr.position = l.position);
+COMMENT ON VIEW intent_argmapping_projection_defect IS 'What is wrong with an argMapping binding that involves a @nodeId: one row per defective pair, in a closed verdict vocabulary of three, over the binding leaf and the resolved key columns alone. The rejections that close the silent hole this family had, where a path bound a node id and the base64 wire id went to the database verbatim with nothing in the build saying a word. Every arm is a positive statement about a captured population rather than a negative space maintained by hand: the leaf relation says what each path bound and whether that thing declares a decode, and these are the three ways a declared decode fails to become a projection. Which arm fires is decided by trailing_segments and nothing else, so the arms are disjoint by construction and no precedence rule is needed. Zero trailing segments means the author did not ask for a projection at all, and BARE_NODE_ID is that fact whether or not the directive names a type; the remedy differs in a second clause the consumer adds from node_type_ref, not in a second verdict, because the defect is one. Exactly one trailing segment means the author did ask, and then the resolution either succeeds (a row of intent_resolved_node_key_projection and no row here) or names what stopped it: MISSING_TYPE_NAME where the directive carries no typeName: and there is no containing table at this position to infer one from, UNKNOWN_KEY_COLUMN where the trailing segment matches no resolved key column of the named type. Two or more trailing segments is deliberately not an arm: the walk rejects walking through a scalar leaf and keeps rejecting it after the grammar admits one trailing segment, so an arm here would double-report a rejection the error stream already carries. The same reasoning keeps three further shapes out. A path that bound nothing has no leaf row and is ArgBindingMap.of''s rejection, a head naming no slot in scope and a path-step @condition resolving against an empty slot map both. A leaf carrying no @nodeId is an ordinary binding and nothing to judge. And a projection that resolves at a site whose emitter is not wired yet is a deferral rather than an author defect, which is why it is not a verdict here: whether an emitter exists is a fact about the generator''s own code and not about the schema, so its arm lives with the consumer that knows the wired set (no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects) rather than being asserted by a view that cannot see it. Every arm is use-keyed rather than definition-keyed, which is the point of resolving at the pair''s grain: one input type can be consumed by a routine call with no containing table and by a table-bound mutation where inference works, so an author told to add typeName: is being asked to satisfy a use-site constraint and the message has to name the use site that is asking. Locations are the owning directive application''s, carried from intent_argmapping_pair, so a message points at the argMapping the author wrote rather than at the input type''s declaration. There is no message column: the closed vocabulary plus the witness columns are the fact base, and the prose belongs with the consumer that composes it, which is also where the wording converges with the two hand-written sites stating this same condition elsewhere. Nor is there a rendered candidate list, though a message about a named type wants one: a consumer joining intent_resolved_node_key_column on the graph and node_type_ref gets the columns as rows in key order, and a render here would have to be split apart to be used, which is the one thing no reader of this schema does.';
+COMMENT ON COLUMN intent_argmapping_projection_defect.graph_name IS 'the owning graph''s partition, carried from the binding leaf';
+COMMENT ON COLUMN intent_argmapping_projection_defect.site IS 'which SDL site spelled the defective pair, in intent_argmapping_pair''s closed vocabulary of eight; with the use-site key and the position this is the grain, and it is what a message reads to name the directive the author wrote';
+COMMENT ON COLUMN intent_argmapping_projection_defect.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it: the use site whose constraint is being violated, which a message about a definition-keyed remedy has to name so the author knows which consumer is asking';
+COMMENT ON COLUMN intent_argmapping_projection_defect.type_name IS 'the spelling site''s owning type; with the field beside it, the coordinate a validation error attaches to';
+COMMENT ON COLUMN intent_argmapping_projection_defect.field_name IS 'the spelling site''s field name within that type. An input field on the INPUT_FIELD_CONDITION arm, an output field on every other';
+COMMENT ON COLUMN intent_argmapping_projection_defect.position IS 'the defective pair''s 0-based position within its own argMapping list; part of the grain, so two defective pairs of one application are two rows rather than one';
+COMMENT ON COLUMN intent_argmapping_projection_defect.param_name IS 'the left side of the pair, carried from intent_argmapping_pair so a message quotes the whole entry the author wrote rather than half of it';
+COMMENT ON COLUMN intent_argmapping_projection_defect.argument_path IS 'the right side as written; quoted in the message beside the parameter, and the column the segment decomposition is reachable through';
+COMMENT ON COLUMN intent_argmapping_projection_defect.verdict IS 'which defect, in a closed vocabulary of three: BARE_NODE_ID where a declared decode names no key column to project out of it, MISSING_TYPE_NAME where a projection is asked for against a @nodeId carrying no typeName:, UNKNOWN_KEY_COLUMN where the trailing segment names no resolved key column of the named type. Disjoint by trailing_segments, so this column is a discriminator a consumer switches on and never a precedence to re-test';
+COMMENT ON COLUMN intent_argmapping_projection_defect.bound_kind IS 'ARGUMENT where the defective leaf is a field argument, INPUT_FIELD where it is an input field; carried from the leaf, and what tells a reader which @nodeId relation the directive sits on';
+COMMENT ON COLUMN intent_argmapping_projection_defect.bound_type_name IS 'the leaf''s owning type, carried from the leaf: the type declaring the input field on an INPUT_FIELD leaf, the argument''s own owning type on an ARGUMENT one. With the two columns beside it, the @nodeId row''s own key, so a consumer wanting the directive''s own source position is one join away';
+COMMENT ON COLUMN intent_argmapping_projection_defect.bound_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
+COMMENT ON COLUMN intent_argmapping_projection_defect.bound_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component';
+COMMENT ON COLUMN intent_argmapping_projection_defect.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written. NULL on every MISSING_TYPE_NAME row, that being the arm''s own condition, and NULL or not on a BARE_NODE_ID row, which is the second clause of that arm''s remedy rather than a second verdict. Never NULL on an UNKNOWN_KEY_COLUMN row';
+COMMENT ON COLUMN intent_argmapping_projection_defect.trailing_segment_name IS 'the segment the author spelled beyond the leaf, as written: what the projection would have named. NULL exactly on the BARE_NODE_ID arm, where there is no such segment, which is the stated absent bucket rather than a missing value. Reached by position from the leaf rather than by splitting the path';
+COMMENT ON COLUMN intent_argmapping_projection_defect.source_name IS 'the SDL file the owning directive application was captured from, carried from intent_argmapping_pair; NULL where that application carries no position';
+COMMENT ON COLUMN intent_argmapping_projection_defect.source_line IS 'source line of the owning directive application, 1-based; NULL exactly where source_name is';
+COMMENT ON COLUMN intent_argmapping_projection_defect.source_column IS 'source column of the owning directive application, 1-based; NULL exactly where source_name is';
 
 -- ==== Diagnostics stratum =========================================================
 -- Violations as facts: seven arms behind one prefix-less union view (diagnostic, at the

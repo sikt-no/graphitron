@@ -377,6 +377,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_argmapping_segment_binding", Arm.DERIVED);
         registrations.put("intent_argmapping_binding_leaf", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_projection", Arm.DERIVED);
+        registrations.put("intent_argmapping_projection_defect", Arm.DERIVED);
         registrations.put("intent_carrier_data_field", Arm.DERIVED);
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);

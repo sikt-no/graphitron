@@ -12,7 +12,7 @@ import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.WalkReach;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
@@ -355,20 +355,21 @@ public class GraphQLRewriteGenerator {
 
     /**
      * Runs the capture loads into a fact store for this pass, runs the store-backed detections
-     * over it, and returns their typed {@link AuthoredClaimConflicts.Detection} product: the
+     * over it, and returns the {@link StoreDetections} product they share: the
      * violations for the caller's error stream, and the field-conflict claims the LSP/MCP
-     * snapshot's {@code Conflicted} projection overlay consumes. The detections are
-     * the store's first read: the authored-claim conflict rule reports from the claim views,
-     * gated on the walked model's {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}, which
-     * arrives with the rest of the walk's reach as a {@link WalkReach}. Every
-     * other relation still shadows the live pipeline unread, kept honest by the agreement tests
-     * until its own consumer migrates.
+     * snapshot's {@code Conflicted} projection overlay consumes. Two families read the store here.
+     * The authored-claim conflict rule reports from the claim views, gated on the walked model's
+     * {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}, which arrives with the rest of the
+     * walk's reach as a {@link WalkReach}; the {@code argMapping} node-id rules
+     * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects}) report from the SDL
+     * views alone and are gated on nothing of the walk's. Every other relation still shadows the
+     * live pipeline unread, kept honest by the agreement tests until its own consumer migrates.
      *
      * <p>Both loads read exactly what the pipeline beside them reads: the parsed registry (before
      * the synthesis rewrites, which is what {@link AttributedRegistry#preSynthesisRegistry()}
      * hands back), the jOOQ catalog projection, and the classpath scan.
      */
-    private AuthoredClaimConflicts.Detection captureFactsAndDetect(
+    private StoreDetections captureFactsAndDetect(
             AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         return captureFactsAndDetect(attributed, verdicts, schema, jooq,
@@ -380,7 +381,7 @@ public class GraphQLRewriteGenerator {
      * its already-built catalog and external references so the classpath is scanned once per
      * pass, the build paths use the convenience overload above.
      */
-    private AuthoredClaimConflicts.Detection captureFactsAndDetect(
+    private StoreDetections captureFactsAndDetect(
             AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema,
             JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         return FactCapture.runWithDetections(ctx.storeDirectory(),

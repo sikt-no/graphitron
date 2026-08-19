@@ -156,7 +156,8 @@ columns rather than per-row `UPPER` calls. `intent_resolved_node_key_projection`
 such calls against `graphitron_argument_path_segment.segment_name`; whether they become a fold on
 that column or go another way is this item's to settle before its own gate.
 `JooqCatalog.resolveColumn` still uses `equalsIgnoreCase`, so the docs can state the behaviour
-without announcing a rule. On the middle tier
+without announcing a rule. *Settled in stage 3: one fold, on the authored side, the key-column side
+being a three-tier pick no reader can join a base relation through. See that stage's note.* On the middle tier
 take the store's own twin rather than re-deriving it: `intent_node_metadata_defect`'s
 `KEY_COLUMN_UNRESOLVED` arm resolves a stated entry against `sql_column` under
 `UPPER(jooq_name) = UPPER(...) OR UPPER(column_name) = UPPER(...)`, two tiers of spelling and not
@@ -620,6 +621,9 @@ Three properties to settle here rather than let fall out of implementation:
 
 * **Verdict class.** `Rejection.structural`. There is no future in which the raw base64 was
   intended, so it holds even if the rejection ships ahead of the projection (see "Scope").
+  *Shipped as that for the bare form and the missing `typeName:`; the unknown key column ships as
+  the typed `Rejection.unknownNodeIdKeyColumn` instead, a lookup against a closed set having
+  candidates to offer, which `structural` cannot carry.*
 * **Location.** The view carries it, the way `intent_authored_claim_conflict` does: the pair row's
   own application position, so the message points at the `argMapping` the author wrote rather than
   at the input type's declaration.
@@ -712,7 +716,8 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   literal per union arm, `disposition` plus `basis`, unconsumed-segment count; *delivered at segment
   grain without the fork, per the stage-2 note*), and
   `intent_resolved_node_key_projection`, plus the detection views for the rejections including
-  the site-keyed `deferred` arm. The key-column view reads `intent_resolved_type_binding` for its
+  the site-keyed `deferred` arm (*shipped as one detection view of three arms, the deferred arm
+  derived in Java instead, per the stage-3 note*). The key-column view reads `intent_resolved_type_binding` for its
   third tier, `intent_node_metadata_defect` for its middle one, and the binding for both, so neither
   the `@table` population nor a raw as-stated row is read directly.
 * **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: records built from
@@ -1091,14 +1096,85 @@ stage into a one-line note.
    `intent_argmapping_pair` exists; and an ordinary binding is now a row with `node_id_declared`
    false rather than an absence, which moves the meaning of absence from "nothing to decode here" to
    "this path bound nothing at all".
-3. **Rejections.** The detection views, the typed product in `AuthoredClaimConflicts`' shape, and
-   the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
-   the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that
-   closes the silent-base64 hole. It is testable *before* stage 5's widening, which is what makes the
-   ordering work: capture reads SDL, and `ArgBindingMap.of` returns a typed `Result.PathRejected`
-   folded into the error stream rather than throwing, so a projected spelling the walk still rejects
-   is captured verbatim and reaches the detections. A fixture written here needs no widening; before
-   stage 5 it simply fails the build twice.
+3. **Rejections.** *Shipped, as one detection view of three arms plus a fourth derived in Java.*
+   `intent_argmapping_projection_defect`, `ArgmappingProjectionDefects` in `rewrite/derive`, and
+   `StoreDetections` carrying both rule families into the error stream. The bare form, the missing
+   `typeName:` and the unknown key column now fail the build at every `argMapping` site, and a
+   resolvable projection defers rather than emitting nothing. The silent-base64 hole is closed.
+
+   Four decisions worth reading, none of which this plan prescribed.
+
+   **The verdicts are three, not four, and the trailing-segment count alone chooses.** Zero trailing
+   segments means the author never asked for a projection, so `BARE_NODE_ID` fires whether or not
+   the directive names a type; one means they did ask, and the resolution either succeeds or says
+   what stopped it. That makes the arms disjoint by construction with no precedence rule, and it
+   keeps a bare untyped `@nodeId` from drawing two errors for one entry: naming the type is a second
+   clause of one remedy, not a second defect. Two or more trailing segments is deliberately not an
+   arm at all, the walk rejecting a scalar traversal before and after stage 5's widening, so an arm
+   here would double-report.
+
+   **The unwired-site arm is Java's, not the view's.** Whether an emitter reads a resolved
+   projection is a fact about this codebase and not about the author's schema, and a view asserting
+   it would be claiming something it cannot see. `ArgmappingProjectionDefects.EMITTING_SITES` holds
+   it, empty today, beside the enum that names all eight `site` values so a member can neither be
+   misspelled nor forgotten. It shrinks as stage 5 wires sites rather than being deleted.
+
+   **The case-fold question this plan parked is settled, and the answer is one fold, not four.**
+   The crossing is an authored `argMapping` segment against a resolved key column, so
+   `graphitron_argument_path_segment` gains `segment_name_upper` under the ordinary rule, which is a
+   fold on the authored side of an authored-meets-catalog comparison. The key-column side does not
+   get one, and the reason is a rule three shipped comments already state
+   (`sql_column.column_name_upper`, `sql_table.table_name_upper`,
+   `sql_constraint.constraint_name_upper`): a comparison wanting a fold on both sides reaches it by
+   joining the owning base relation on its key, never by having a derived view forward it. There is
+   no such base relation here. `intent_resolved_node_key_column` is a pick across three tiers, so
+   which relation holds the fold depends on which tier won, and exposing a `column_name_upper` on the
+   reduction, which is what this first shipped and then reverted, is forwarding in exactly the sense
+   the rule forbids. That side is therefore folded at the crossing, in
+   `intent_resolved_node_key_projection`, and that view is now the only place the match is spelled at
+   all: stage 3's unknown-column arm states the defect as *the absence of a projection row* rather
+   than repeating the predicate, which is a strictly better shape than the one first written and the
+   reason the two cannot drift. `intent_resolved_node_key_column.column_name`'s comment now says why
+   it exposes no fold, so the next reader does not mint one.
+
+   Two neighbouring things were deliberately left alone. `intent_node_metadata_defect`'s
+   `KEY_COLUMN_UNRESOLVED` arm keeps its four per-row `UPPER` calls, and
+   `sql_node_key_column.column_name_upper` stays unminted: both are R724's, whose Spec was filed
+   while this stage was being built and whose design replaces that arm's boolean `NOT EXISTS` with a
+   relation stating its own arity. Folding the arm's operands here would have been the weaker fix
+   that item argues against, and minting its column would have taken a deliverable its reviewer
+   signed off on.
+
+   A generated column costs a hand-written insert in `FactWrites`, which `FactSink.flush`'s own
+   comment already says and `WrittenStatementCoverageTest` enforces; one writer was owed and is
+   there.
+
+   **One thing the stage picked up from trunk.** R677's nodehood derivation landed mid-stage and made
+   `intent_node_type` the relation every reader of nodehood joins, `graphitron_node` becoming one of
+   its two arms. `intent_resolved_node_key_column`'s `CATALOG_PRIMARY_KEY` tier read the authored arm
+   and now reads the union. The widening is inert and is recorded as inert rather than as a fix:
+   inference requires well-formed node metadata, well-formedness requires a declared key-columns
+   list, and that list is what the `JOOQ_METADATA` tier above answers with, so an inferred node type
+   always resolves on the higher tier. `ResolvedNodeKeyColumnTest` pins that, which is the case that
+   will speak up if inference ever loosens.
+
+   **`intent_argmapping_pair` carries the owning application's source position.** Every one of the
+   eight arms reaches one by an inner join on its own key, so a detection locates its message
+   without knowing which of the seven relations the pair came from, and a repeatable directive's
+   second application points at its own line rather than at the field heading above it.
+
+   One thing was written and then removed: the view rendered the node type's key columns as a
+   comma-joined candidate list and the Java split it apart again, which is the one move this
+   schema's rules forbid a reader. The candidates are a join to
+   `intent_resolved_node_key_column` instead, in key order, which is also what
+   `Rejection.unknownNodeIdKeyColumn`'s typed candidate list wants. That factory existed with no
+   production caller; the unknown-column arm is its first.
+
+   Testable *before* stage 5's widening, which is what made the ordering work: capture reads SDL,
+   and `ArgBindingMap.of` returns a typed `Result.PathRejected` folded into the error stream rather
+   than throwing, so a projected spelling the walk still rejects is captured verbatim and reaches
+   the detections. The `MISSING_TYPE_NAME` fixture is exactly that case and fails the build twice
+   today, once from the walk and once from the store.
 4. **The carrier move.** The routine-write command relation, the two render-side emitters, the
    `TypeFetcherGenerator` cutover and the borrow-dial extension. A pure refactor: no author-facing
    behaviour changes and no generated output moves, which is exactly what makes it verifiable on

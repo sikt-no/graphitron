@@ -1,0 +1,43 @@
+package no.sikt.graphitron.rewrite.derive;
+
+import no.sikt.graphitron.rewrite.ValidationError;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Everything the store-backed detection pass found, one field per rule family. The product
+ * {@code FactCapture} returns and the generator folds into its error stream, so a family acquiring
+ * a derivation joins this record rather than threading a second return value through the capture
+ * entry points.
+ *
+ * <p>Each family keeps its own typed product rather than being flattened to errors here: the
+ * authored-claim family's field verdicts are read by the LSP snapshot's {@code Conflicted}
+ * projection overlay, and the {@code argMapping} family's defects carry the coordinates a consumer
+ * would otherwise recover by parsing a message. {@link #violations()} is the one place the error
+ * stream is assembled, in family declaration order, so no caller decides the order for itself.
+ */
+public record StoreDetections(AuthoredClaimConflicts.Detection claims,
+                              ArgmappingProjectionDefects.Detection argmappingProjections) {
+
+    /** The empty detection, for callers running capture without the detection pass. */
+    public static StoreDetections empty() {
+        return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
+            ArgmappingProjectionDefects.Detection.empty());
+    }
+
+    /** Every violation every family minted, each family's own order preserved within it. */
+    public List<ValidationError> violations() {
+        var out = new ArrayList<>(claims.violations());
+        out.addAll(argmappingProjections.violations());
+        return List.copyOf(out);
+    }
+
+    /**
+     * The authored-claim family's conflict verdicts, the one product a consumer beyond the error
+     * stream reads today.
+     */
+    public List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts() {
+        return claims.fieldConflicts();
+    }
+}

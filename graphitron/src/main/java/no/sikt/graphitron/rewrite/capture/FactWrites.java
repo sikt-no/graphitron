@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
@@ -86,6 +87,7 @@ final class FactWrites {
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
+        writers.put(GRAPHITRON_ARGUMENT_PATH_SEGMENT, FactWrites::graphitronArgumentPathSegment);
         return writers;
     }
 
@@ -434,6 +436,27 @@ final class FactWrites {
                                row.get(t.BINDING_TYPE),
                                row.get(t.NULLABLE),
                                row.get(t.DESCRIPTION));
+        }
+        batch.execute();
+    }
+
+    private static void graphitronArgumentPathSegment(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHITRON_ARGUMENT_PATH_SEGMENT;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.TYPE_NAME,
+                         t.FIELD_NAME,
+                         t.ARGUMENT_PATH,
+                         t.POSITION,
+                         t.SEGMENT_NAME)
+                .values(markers(6)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.TYPE_NAME),
+                               row.get(t.FIELD_NAME),
+                               row.get(t.ARGUMENT_PATH),
+                               row.get(t.POSITION),
+                               row.get(t.SEGMENT_NAME));
         }
         batch.execute();
     }

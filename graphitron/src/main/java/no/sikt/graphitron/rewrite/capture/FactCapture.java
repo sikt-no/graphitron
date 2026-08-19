@@ -4,7 +4,9 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
@@ -41,12 +43,14 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * reachability pruning; a primary-key violation on any base relation is therefore a capture bug,
  * never something an author's schema can provoke.
  *
- * <p>The store has its first reader: {@link #runWithDetections} runs the authored-claim
- * conflict rule ({@link AuthoredClaimConflicts}) over the freshly captured rows and returns its
- * typed {@link AuthoredClaimConflicts.Detection} product (the violations for the caller's error
- * stream, and the field-conflict claims the snapshot's {@code Conflicted} projection overlay
- * consumes), so what that detection reports is decided by the store's content. Every other relation is still populated beside the live pipeline and read by
- * nothing; consumers migrate onto it one at a time.
+ * <p>The store has readers: {@link #runWithDetections} runs every store-backed rule family over
+ * the freshly captured rows and returns the {@link StoreDetections} product they share (the
+ * violations for the caller's error stream, and the field-conflict claims the snapshot's
+ * {@code Conflicted} projection overlay consumes), so what those detections report is decided by
+ * the store's content. Two families run today: the authored-claim conflict rule
+ * ({@link AuthoredClaimConflicts}) and the {@code argMapping} node-id projection rules
+ * ({@link ArgmappingProjectionDefects}). Every other relation is still populated beside the live
+ * pipeline and read by nothing; consumers migrate onto it one at a time.
  *
  * <p>A run captures exactly one graph; the store may hold many. The persisted store is shared by
  * every module of a workspace, so a warm open reconciles only what this run owns, and any cache
@@ -195,16 +199,16 @@ public final class FactCapture {
 
     /**
      * {@link #run}, then the store-backed detections over the store the capture just filled,
-     * before it closes. Returns the detections' typed {@link AuthoredClaimConflicts.Detection}
-     * product (gated on {@code reach}): every caller reads its
-     * {@link AuthoredClaimConflicts.Detection#violations() violations} for the error stream, and
+     * before it closes. Returns the {@link StoreDetections} product every family writes into
+     * (gated on {@code reach}): every caller reads its
+     * {@link StoreDetections#violations() violations} for the error stream, and
      * the LSP/MCP snapshot path additionally reads its
-     * {@link AuthoredClaimConflicts.Detection#fieldConflicts() field conflicts} for the
-     * {@code Conflicted} projection overlay; the store handle never escapes. The detection runs
+     * {@link StoreDetections#fieldConflicts() field conflicts} for the
+     * {@code Conflicted} projection overlay; the store handle never escapes. The detections run
      * against whichever store the capture landed in, shared file and in-memory fallback alike,
      * so a cache demotion changes cost and never verdicts.
      */
-    public static AuthoredClaimConflicts.Detection runWithDetections(Path storeDirectory, GraphIdentity graph,
+    public static StoreDetections runWithDetections(Path storeDirectory, GraphIdentity graph,
                                                           SubjectConfig config,
                                                           TypeDefinitionRegistry registry,
                                                           SdlVerdicts verdicts,
@@ -217,7 +221,7 @@ public final class FactCapture {
             extensions, reach);
     }
 
-    private static AuthoredClaimConflicts.Detection runInternal(Path storeDirectory, GraphIdentity graph,
+    private static StoreDetections runInternal(Path storeDirectory, GraphIdentity graph,
                                                      SubjectConfig config,
                                                      TypeDefinitionRegistry registry, SdlVerdicts verdicts,
                                                      Map<String, SchemaInput> attribution, JooqCatalog jooq,
@@ -250,17 +254,23 @@ public final class FactCapture {
      * The detection pass over a freshly captured store; a {@code null} reach is {@link #run}'s
      * no-detection arm, which also writes no {@code walk_} rows. The whole of the walk's reach
      * lands first: the {@code walk_claim_domain} rows so the {@code intent_authored_claim_conflict}
-     * view's domain-gate join answers over exactly the domain this detection is gated on, and the
+     * view's domain-gate join answers over exactly the domain that detection is gated on, and the
      * backing rows because the same pass is the family's one writer and its cadence, whether or
-     * not this detection reads them.
+     * not a detection reads them.
+     *
+     * <p>The {@code argMapping} family is gated on nothing of the walk's, reading only SDL facts,
+     * and shares the {@code reach} gate anyway: a run with no classified model is a run whose
+     * verdict has already been pronounced elsewhere, and there is no build for these rejections to
+     * fail.
      */
-    private static AuthoredClaimConflicts.Detection detect(DSLContext dsl, GraphIdentity graph, WalkReach reach) {
+    private static StoreDetections detect(DSLContext dsl, GraphIdentity graph, WalkReach reach) {
         if (reach == null) {
-            return AuthoredClaimConflicts.Detection.empty();
+            return StoreDetections.empty();
         }
         ClaimDomainRows.write(dsl, graph.name(), reach.domain());
         TypeBackingClassRows.write(dsl, graph.name(), reach.backingClasses());
-        return AuthoredClaimConflicts.detect(dsl, graph.name());
+        return new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
+            ArgmappingProjectionDefects.detect(dsl, graph.name()));
     }
 
     /**

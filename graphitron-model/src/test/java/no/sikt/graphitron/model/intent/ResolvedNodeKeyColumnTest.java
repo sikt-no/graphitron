@@ -11,6 +11,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
+import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
@@ -112,14 +113,43 @@ class ResolvedNodeKeyColumnTest {
         });
     }
 
-    /** The primary-key tier does require one, that arm being an {@code @node} read by construction. */
+    /**
+     * The primary-key tier does require nodehood, and a type that is a node by neither rule reaches
+     * it by neither: no {@code @node} and nothing to infer one from leaves the tier silent.
+     */
     @Test
-    void thePrimaryKeyTierIsSilentWithoutANodeDirective() {
+    void thePrimaryKeyTierIsSilentForATypeThatIsNoNode() {
         withInventoryCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
 
             assertThat(keyColumns(dsl, "Inventory")).isEmpty();
+        });
+    }
+
+    /**
+     * An inferred node type resolves on the metadata tier and never on the primary-key one, which is
+     * what makes the primary-key arm's read of {@code intent_node_type} rather than the authored
+     * {@code @node} arm alone inert rather than a widening. Inference needs well-formed node
+     * metadata, well-formedness needs a declared key-columns list, and that list is the higher
+     * tier's own answer, so the two conditions cannot come apart. Pinned because the arm reads the
+     * union deliberately: if inference ever loosens, this is the case that says so.
+     */
+    @Test
+    void anInferredNodeTypeTakesTheMetadataTierAndNotThePrimaryKey() {
+        withInventoryCatalog(dsl -> {
+            seedImplements(dsl, GRAPH, "Inventory", "Node");
+            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
+            seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
+            seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
+            seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "store_id");
+
+            assertThat(tierOf(dsl, "Inventory"))
+                .as("a node by inference, with no @node of its own")
+                .isEqualTo("JOOQ_METADATA");
+            assertThat(keyColumns(dsl, "Inventory"))
+                .as("the primary key's store_id is the losing tier's answer")
+                .containsExactly("inventory_id");
         });
     }
 
