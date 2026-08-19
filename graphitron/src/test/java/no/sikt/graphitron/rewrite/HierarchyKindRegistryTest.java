@@ -245,6 +245,10 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.LaunchSource.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TypeUnitCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.GlobalCommand.class, HierarchyKind.COMMAND),
+        Map.entry(no.sikt.graphitron.command.RoutineWriteCommand.class, HierarchyKind.COMMAND),
+        // The catch arm's whole content, at emit grain: not the classifier's channel taxonomy but
+        // what a catch arm emits from one, which is why it is a command and not a resolved view.
+        Map.entry(no.sikt.graphitron.command.ErrorDispatch.class, HierarchyKind.COMMAND),
         Map.entry(BodyParam.class, HierarchyKind.COMMAND),
         Map.entry(DmlReturnExpression.class, HierarchyKind.COMMAND),
         Map.entry(CallSiteExtraction.class, HierarchyKind.COMMAND),

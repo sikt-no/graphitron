@@ -125,6 +125,27 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <Parent>Fetchers#<field>}: a coordinate's fetcher entry point, the method
+     * graphql-java's wiring registers for the field. The emitted name is the field's own, which
+     * is why this scheme upper-camels nothing; it is a scheme rather than a bare concatenation so
+     * a row naming its own entry point and the census that rejects two rows minting one method
+     * read the same formula.
+     */
+    public UnitMethodRef fetcherEntryMethod(String parentTypeName, String fieldName) {
+        return new UnitMethodRef(fetchers(parentTypeName), fieldName);
+    }
+
+    /** {@code <pkg>.schema.ErrorRouter} — the generated throw-disposition runtime. */
+    public UnitRef errorRouter() {
+        return unit(SUB_SCHEMA, "ErrorRouter");
+    }
+
+    /** {@code <pkg>.schema.ErrorMappings} — the per-channel {@code Mapping[]} dispatch tables. */
+    public UnitRef errorMappings() {
+        return unit(SUB_SCHEMA, "ErrorMappings");
+    }
+
+    /**
      * {@code <Parent>Fetchers#rows<Field>}: a batched child coordinate's launcher unit, the
      * DataLoader-backed rows method taking the batch keys. Same formula as the root launcher's
      * scheme and deliberately a separate method: the two populations join the relation from

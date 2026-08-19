@@ -26,8 +26,10 @@ import java.util.List;
  * fetcher edge relation ({@link FetcherEdgeRelation}: one row per covered non-launcher
  * coordinate whose emitted fetcher methods reference other generated units, produced after
  * conditions because a polymorphic root's glue targets are derived from the condition rows),
- * and the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
- * generator families' membership loops replaced kind by kind).
+ * the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
+ * generator families' membership loops replaced kind by kind), and the routine-write relation
+ * ({@link RoutineWriteRelation}: one row per {@code @routine}-writing mutation coordinate,
+ * carrying what its fetcher entry point emits).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
  * schema without entities, the node fetcher on a schema without node types, the dev executor on a
@@ -36,7 +38,8 @@ import java.util.List;
  */
 public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions,
                        ProjectionRelation projections, LauncherRelation launchers,
-                       FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits) {
+                       FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits,
+                       RoutineWriteRelation routineWrites) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -58,6 +61,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (typeUnits == null) {
             throw new IllegalArgumentException("the plan carries the type-unit relation; an empty relation is a value, not null");
+        }
+        if (routineWrites == null) {
+            throw new IllegalArgumentException("the plan carries the routine-write relation; an empty relation is a value, not null");
         }
     }
 
@@ -113,9 +119,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             units.singleton(GeneratedUnits.SUB_SCHEMA, "ConstraintViolations")));
         globals.add(one(GlobalUnitKind.CLIENT_EXCEPTION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronClientException")));
-        globals.add(one(GlobalUnitKind.ERROR_ROUTER, units.singleton(GeneratedUnits.SUB_SCHEMA, "ErrorRouter")));
+        globals.add(one(GlobalUnitKind.ERROR_ROUTER, units.errorRouter()));
         globals.add(one(GlobalUnitKind.OUTCOME, units.singleton(GeneratedUnits.SUB_SCHEMA, "Outcome")));
-        globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.singleton(GeneratedUnits.SUB_SCHEMA, "ErrorMappings")));
+        globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
         globals.add(one(GlobalUnitKind.SCHEMA_CLASS, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema")));
         if (schema.types().values().stream().anyMatch(t -> t instanceof GraphitronType.NodeType)) {
             globals.add(one(GlobalUnitKind.QUERY_NODE_FETCHER, units.queryNodeFetcher()));
@@ -129,7 +135,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             ProjectionCommands.produce(schema, conditions, outputPackage),
             LauncherCommands.produce(schema, conditions, outputPackage),
             FetcherEdgeCommands.produce(schema, conditions, outputPackage),
-            TypeUnitCommands.produce(schema, outputPackage));
+            TypeUnitCommands.produce(schema, outputPackage),
+            RoutineWriteCommands.produce(schema, outputPackage));
     }
 
     /** A fixed-substrate global command committing exactly one unit. */

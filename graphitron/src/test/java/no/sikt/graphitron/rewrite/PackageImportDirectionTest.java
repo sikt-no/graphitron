@@ -63,7 +63,10 @@ class PackageImportDirectionTest {
      * verbatim rather than narrowed so the launcher family inherits the shape decision:
      * {@code ParentCorrelation} (the step-0 dispatch its multiset arms render),
      * {@code OrderBySpec} (the inline subselect's fixed ordering), and {@code LookupMapping}
-     * (the {@code @lookupKey} VALUES keyset and its rows helper). The launcher family added
+     * (the {@code @lookupKey} VALUES keyset and its rows helper). The routine-write family added
+     * {@code RoutineChain} (borrowed whole so the one-routine-node pin rides with the chain) and
+     * {@code JoinSlot} (the captured key pairing, already implicit through {@code On.ColumnPairs}).
+     * The launcher family added
      * {@code FacetSpec} (the faceted carrier's decode data, borrowed whole on the facet plan
      * rather than copied field by field) and {@code ParticipantRef} (the discriminated arm's
      * per-participant facts, borrowed whole so type name, discriminator value, cross-table
@@ -101,7 +104,15 @@ class PackageImportDirectionTest {
         // Already admitted implicitly through ParamSource.Arg (see BORROWED_COMPONENT_CLOSURE);
         // named here because the routine call emitter forks on the path shape directly: a bare
         // slot reads the argument, a dot-path reads it through a registered descent helper.
-        "no.sikt.graphitron.rewrite.PathExpr"
+        "no.sikt.graphitron.rewrite.PathExpr",
+        // The routine-write command's two entries. RoutineChain is borrowed whole rather than
+        // decomposed into its start call and its hop list: it enforces that a chain holds exactly
+        // one routine node, and splitting it across two slots would drop that pin at the one seam
+        // whose renderer narrows on it. JoinSlot was already in the component closure through
+        // On.ColumnPairs; naming it here admits the direct import the carrier arm's captured
+        // pairs carry.
+        "no.sikt.graphitron.rewrite.model.RoutineChain",
+        "no.sikt.graphitron.rewrite.model.JoinSlot"
     );
 
     /**
@@ -134,6 +145,7 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.ParamSource",
         "no.sikt.graphitron.rewrite.model.ParentCorrelation",
         "no.sikt.graphitron.rewrite.model.ParticipantRef",
+        "no.sikt.graphitron.rewrite.model.RoutineChain",
         "no.sikt.graphitron.rewrite.model.RoutineRef",
         "no.sikt.graphitron.rewrite.model.RowsMethodShape",
         "no.sikt.graphitron.rewrite.model.SourceKey",

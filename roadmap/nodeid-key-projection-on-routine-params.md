@@ -518,7 +518,9 @@ Concretely, for the routine-write family:
   chain on the hopful arm, and this item's projection joined on. Every one of those is already a
   pure-data ref (`RoutineRef`, `TableRef`, `ColumnRef`, `Arity`, `ErrorChannel`) or a plain string,
   so the row needs no new model vocabulary and the two arms mirror the two leaves rather than
-  inventing a shape.
+  inventing a shape. *(Superseded on one name: `ErrorChannel` is not pure data, it exposes the
+  resolved `@error` types and through them the whole type hierarchy, so the row carries a
+  command-side `ErrorDispatch` holding the mappings constant's name instead. See the stage-4 note.)*
 * **`render` hosts the two emitters, reading only that command.** `TypeFetcherGenerator`'s two
   `case` arms delegate to the command relation the way its `MutationField.DmlTableField` arm already
   reads `launchers.rowFor(...)`, and stop reading the leaf.
@@ -1188,12 +1190,54 @@ stage into a one-line note.
    than throwing, so a projected spelling the walk still rejects is captured verbatim and reaches
    the detections. The `MISSING_TYPE_NAME` fixture is exactly that case and fails the build twice
    today, once from the walk and once from the store.
-4. **The carrier move.** The routine-write command relation, the two render-side emitters, the
-   `TypeFetcherGenerator` cutover and the borrow-dial extension. A pure refactor: no author-facing
-   behaviour changes and no generated output moves, which is exactly what makes it verifiable on
-   its own. Exit: the routine-write fetchers render byte-identical output from a command row, no
-   emitter imports a `MutationField` arm, and `PackageImportDirectionTest` covers the new package
-   placement.
+4. **The carrier move.** *Shipped, and the byte-identity claim is measured rather than argued.*
+   `RoutineWriteCommand` with its two arms, `RoutineWriteRelation` keyed by coordinate,
+   `RoutineWriteCommands` producing it, and `RoutineWriteFetcherRenderer` rendering both arms in
+   `render/`. `TypeFetcherGenerator`'s two dispatch arms now read a row and hand in the tenancy
+   fragments; the two leaf-reading fetcher bodies are gone. The 796 files the sakila example
+   generates are byte-for-byte identical across the cutover, checked by generating them on both
+   sides of the change rather than inferred from a green test tier.
+
+   Four decisions worth reading.
+
+   **The plan said the error channel is a pure-data ref to borrow. It is not, and the reason
+   matters.** `ErrorChannel` exposes `List<GraphitronType.ErrorType>`, so putting it on the borrow
+   dial would admit the whole sealed type hierarchy into the surface
+   `PackageImportDirectionTest.BORROWED_COMPONENT_CLOSURE` pins, which is exactly the "render holds
+   no fact hierarchy" rule the guard exists to keep. What a catch arm actually emits from a channel
+   is the mappings constant's *name*, so the command carries `ErrorDispatch`: two arms, the
+   redacting one and the localContext-routed one, the latter holding that name and the two unit refs
+   it calls. That is the plan's own "or a plain string" clause, reached by a route the plan did not
+   anticipate.
+
+   **The two tenancy fragments arrive from the shell, not the row.** `RootLauncherRenderer` already
+   takes its batched-dsl declaration and its service call that way, with the stated reason that a
+   tenancy binding's declaration form is classification-side emission; the same reason applies
+   verbatim here, so the renderer takes the declaration and the localContext tail as
+   `CodeBlock`s. The leaf is read for that and for nothing else.
+
+   **Four emission fragments moved to `render/` rather than being copied into it.** The result
+   envelope (`FetcherResult`), the carrier sentinel (`RecordSentinel`) and the two catch-arm
+   dispositions (`ErrorDispatchFragments`) are shared with the unmigrated hosts, which now delegate
+   to them, so each emitted form keeps one spelling while families cross the seam; this also
+   collapsed a pre-existing duplicate of the result envelope between two legacy generators. The
+   key-IN predicate went the other way: it had exactly one caller, so it is private to the renderer,
+   carrying forward the note that a reentry companion resolves its correlation through its launcher
+   row instead.
+
+   **One self-caught defect.** The relation first carried the case-folded method census its sibling
+   relations carry. That census exists because `rows` plus upper-camelling is not injective; a
+   fetcher entry point's name is the field's own, so distinct coordinates always mint distinct
+   methods and the census is provably vacuous, while the *folded* form is worse than vacuous: it
+   rejects `rentFilm` beside `rentfilm`, a schema that emits two perfectly legal Java methods. Both
+   are gone, the reason is in the relation's comment, and a test pins the admitted pair so the
+   census cannot come back by analogy.
+
+   Two pins moved as the Spec → Ready review predicted. `CommandSeamRatchetTest`'s
+   `PLAN_LEAF_REFERENCES` rose 128 to 139, the producer's total nine-arm mutation switch plus its
+   two narrowings, which is the price of membership living in one place. `HierarchyKindRegistryTest`
+   gained the two new sealed hierarchies as commands. `GENERATOR_LEAF_CASE_PATTERNS` did not move:
+   the two dispatch arms stay, only their bodies left.
 5. **Grammar and emit.** The `ArgBindingMap.of` widening with its six-call-site audit, the planning
    join into the routine-carrying command rows, `RoutineCallEmitter`'s pre-statement change, and
    the `@condition` helper hosting. Exit: the projection emits and executes.

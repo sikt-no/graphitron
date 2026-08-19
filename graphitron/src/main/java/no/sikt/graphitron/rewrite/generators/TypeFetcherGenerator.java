@@ -124,7 +124,8 @@ public class TypeFetcherGenerator {
         return generate(schema, assembled, outputPackage,
             no.sikt.graphitron.plan.LauncherCommands.produce(schema,
                 no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage),
-            no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage).fetchers());
+            no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage).fetchers(),
+            no.sikt.graphitron.plan.RoutineWriteCommands.produce(schema, outputPackage));
     }
 
     /**
@@ -133,13 +134,15 @@ public class TypeFetcherGenerator {
      * plus its entry point), one without falls through to its legacy builder, so the
      * covered-family predicate lives in the producer alone; the pipeline surfaces the same
      * relation on the generation result so the bidirectional closure oracle can join it against
-     * the emitted units. The overloads above default to a relation produced from the same
-     * schema.
+     * the emitted units. {@code routineWrites} is the same arrangement for the two
+     * {@code @routine}-writing mutation shapes, whose entry points render wholly from their row.
+     * The overloads above default both to relations produced from the same schema.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage,
             no.sikt.graphitron.plan.LauncherRelation launchers,
-            List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows) {
+            List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -161,7 +164,7 @@ public class TypeFetcherGenerator {
             if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
-                    nestingByType.get(row.typeName()), launchers));
+                    nestingByType.get(row.typeName()), launchers, routineWrites));
             } else if (type instanceof GraphitronType.ErrorType et) {
                 result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator.generateFor(et));
             } else {
@@ -178,7 +181,8 @@ public class TypeFetcherGenerator {
                     .toList();
                 result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
                     assembled, outputPackage, null, null,
-                    no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage)));
+                    no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage),
+                    no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(nestedFields, outputPackage)));
             }
         }
         return result;
@@ -207,7 +211,8 @@ public class TypeFetcherGenerator {
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
             ChildField.NestingField dualWiring,
-            no.sikt.graphitron.plan.LauncherRelation launchers) {
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -215,7 +220,8 @@ public class TypeFetcherGenerator {
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema, dualWiring, launchers);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
+            dualWiring, launchers, routineWrites);
     }
 
     /**
@@ -393,7 +399,8 @@ public class TypeFetcherGenerator {
             String outputPackage) {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
             null,
-            no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage));
+            no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage),
+            no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(fields, outputPackage));
     }
 
     /**
@@ -402,7 +409,9 @@ public class TypeFetcherGenerator {
      * for unit-tier model-only and nested-type callers (which never emit a joined-table interface).
      * {@code commands} is the per-run method-command registry; the non-canonical overloads
      * default it to a per-call throwaway. {@code launchers} is the launcher relation the root
-     * emission dispatches on; the schema-free overloads derive it from the fields themselves.
+     * emission dispatches on and {@code routineWrites} the routine-write relation the two
+     * {@code @routine}-writing mutation arms render from; the schema-free overloads derive both
+     * from the fields themselves.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
@@ -410,7 +419,8 @@ public class TypeFetcherGenerator {
             String outputPackage,
             GraphitronSchema graphitronSchema,
             ChildField.NestingField dualWiring,
-            no.sikt.graphitron.plan.LauncherRelation launchers) {
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -640,8 +650,13 @@ public class TypeFetcherGenerator {
                 }
                 case MutationField.DmlTableField f -> builder.addMethod(buildDmlTableFetcher(ctx, f, outputPackage,
                     launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                case MutationField.MutationRoutineWriteField f -> builder.addMethod(buildMutationRoutineWriteFetcher(ctx, f, outputPackage));
-                case MutationField.MutationRoutineWriteRecordField f -> builder.addMethod(buildMutationRoutineWriteRecordFetcher(ctx, f, outputPackage));
+                // Both @routine-writing shapes render wholly from their command row; the two
+                // fragments handed in beside it are the tenancy binding's declaration form and
+                // its localContext rider, classification-side emission no command holds.
+                case MutationField.MutationRoutineWriteField f ->
+                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
+                case MutationField.MutationRoutineWriteRecordField f ->
+                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServicePolymorphicField f ->
@@ -1257,244 +1272,23 @@ public class TypeFetcherGenerator {
 
 
     /**
- * The fetcher for a {@link MutationField.MutationRoutineWriteField} — the routine call
-     * is the write, and it commits before the follow-up query runs. The DML two-step
-     * ({@link #emitKeysTransaction} / {@link #emitReentry}) transposed onto the routine chain:
-     * step 1 executes the routine inside {@code dsl.transactionResult(tx -> ...)} (the
-     * per-mutation-field boundary; the transaction commits when the lambda returns) and captures
-     * only the columns hop 0's key pairs need from the routine's result rows — the exact analog
-     * of DML's PK-only {@code RETURNING}. Step 2 runs after the commit: a read-only SELECT
-     * anchored on hop 0's table keyed by the captured values
-     * ({@link #buildKeysInCondition}), remaining hops joined forward as in the root routine
-     * launcher's arm ({@link no.sikt.graphitron.render.RootLauncherRenderer}), projecting the
-     * terminus type. The routine never appears
-     * in step 2's {@code FROM} — re-invoking it would re-execute the write. Read errors during
-     * step 2 propagate as field errors and cannot undo the committed write (the same documented
-     * caveat the DML fetchers carry); an SQL error from the routine rolls the transaction back at
-     * the {@code transactionResult} boundary.
-     *
-     * <p>Both the routine call and the hop table expressions come off the shared emitters
-     * ({@link RoutineCallEmitter#emitCall} — all bindings are {@code ParamSource.Arg} per the
-     * {@code RoutineChain} pin, so the uncorrelated value overload — and
-     * {@link JoinPathEmitter#emitTableExpression}), reading the chain off the leaf's
-     * {@code chain} component.
-     *
-     * <p>Generated shape (list cardinality):
-     * <pre>{@code
-     * public static DataFetcherResult<Result<Record>> rentFilm(DataFetchingEnvironment env) {
-     *     try {
-     *         RentFilm source = Routines.rentFilm(env.<Integer>getArgument("inventoryId"), ...);
-     *         Rental rentFilm_0 = Tables.RENTAL.as("rentFilm_0");
-     *         DSLContext dsl = graphitronContext(env).getDslContext(env);
-     *         Result<Record1<Integer>> keys = dsl.transactionResult(tx -> DSL.using(tx)
-     *             .select(source.RENTAL_ID)
-     *             .from(source)
-     *             .fetch());
-     *         Result<Record> payload = dsl
-     *             .select(Rental.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), rentFilm_0, env))
-     *             .from(rentFilm_0)
-     *             .where(rentFilm_0.RENTAL_ID.in(keys.getValues(source.RENTAL_ID)))
-     *             .fetch();
-     *         ...
-     *     } catch (Exception e) { ... }
-     * }
-     * }</pre>
+     * Renders the fetcher entry point of one {@code @routine}-writing mutation coordinate off its
+     * command row ({@link no.sikt.graphitron.render.RoutineWriteFetcherRenderer}, total over the
+     * row's two arms). This shell reads the leaf for one thing only, the coordinate's tenancy
+     * binding, whose declaration form is classification-side emission; everything the body says
+     * about the write and its follow-up comes off the row.
      */
-    private static MethodSpec buildMutationRoutineWriteFetcher(TypeFetcherEmissionContext ctx,
-            MutationField.MutationRoutineWriteField mrwf, String outputPackage) {
-        var names = GeneratorUtils.ResolvedTableNames.of(mrwf.returnType().table(),
-            mrwf.returnType().returnTypeName(), outputPackage);
-        boolean isList = mrwf.returnType().wrapper().isList();
-        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-
-        var hops = mrwf.chain().hops();
-        var hop0 = (JoinStep.Hop) hops.get(0);
-        // ColumnPairs is the leaf constructor's own pin (the classifier's re-read-anchor
-        // verdict feeds it), so the narrowing here is checked, never a reachable failure.
-        var hop0Pairs = (On.ColumnPairs) hop0.on();
-        var builder = MethodSpec.methodBuilder(mrwf.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-
-        builder.beginControlFlow("try");
-        CodeBlock startExpr = RoutineCallEmitter.emitCall(mrwf.chain().start(),
-            new PreviousNodeRef.None(), new ArgumentValueSource.Env(), ctx.argPathHelpers());
-        builder.addStatement("$T source = $L", mrwf.chain().start().resultTable().tableClass(), startExpr);
-        for (JoinStep step : hops) {
-            var hop = (JoinStep.Hop) step;
-            CodeBlock hopTableExpr = JoinPathEmitter.emitTableExpression(
-                step, new PreviousNodeRef.None(), new ArgumentValueSource.Env(), ctx.argPathHelpers());
-            builder.addStatement("$T $L = $L.as($S)",
-                hop.targetTable().tableClass(), hop.alias(), hopTableExpr, hop.alias());
-        }
-        String anchorLocal = hop0.alias();
-        String terminalLocal = ((JoinStep.Hop) hops.getLast()).alias();
-
-        var tenantDsl = TenantDslEmitter.resolve(ctx, mrwf, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-
-        // Step 1 — the write. The routine executes inside the per-field transaction; the SELECT
-        // captures hop 0's source-side key columns off the routine's result rows, and the commit
-        // happens when the lambda returns.
-        var keyColumns = hop0Pairs.slots().stream()
-            .map(no.sikt.graphitron.rewrite.model.JoinSlot::sourceSide)
-            .toList();
-        var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
-            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), keyColumns);
-        TypeName keysType = isList
-            ? ParameterizedTypeName.get(RESULT, keyRowType)
-            : keyRowType;
-        var step1 = CodeBlock.builder()
-            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", keysType, DSL).indent()
-            .add(".select(");
-        for (int i = 0; i < keyColumns.size(); i++) {
-            if (i > 0) step1.add(", ");
-            step1.add("source.$L", keyColumns.get(i).javaName());
-        }
-        step1.add(")\n")
-            .add(".from(source)\n")
-            .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
-        builder.addCode(step1.build());
-
-        if (!isList) {
-            // A single-shape routine that returned no row: nothing was keyed, so skip the
-            // follow-up SELECT and return null — the same contract as the DML single-row shape.
-            builder.addCode("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
-                DATA_FETCHER_RESULT, valueType);
-        }
-
-        // Step 2 — the post-commit re-read. Anchored on hop 0's table keyed by the captured
-        // values; the remaining hops join forward exactly as the read chain's fetcher emits them.
-        var sel = CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType)
-            .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(names.typeClass(), terminalLocal))
-            .add(".from($L)\n", anchorLocal);
-        var filters = new java.util.ArrayList<CodeBlock>();
-        for (int i = 1; i < hops.size(); i++) {
-            var hop = (JoinStep.Hop) hops.get(i);
-            String prev = ((JoinStep.Hop) hops.get(i - 1)).alias();
-            switch (hop.on()) {
-                case On.ColumnPairs cp -> sel.add("$L\n",
-                    JoinPathEmitter.emitForwardJoin(cp, prev, hop.alias()));
-                case On.Predicate pred -> sel.add(".join($L).on($L)\n",
-                    hop.alias(), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prev, hop.alias()));
-                // Unrepresentable: RoutineChain's compact constructor rejects a lateral hop
-                // (the chain's one routine node is the start, never a hop).
-                case On.Lateral ignored -> throw new IllegalStateException(
-                    "a lateral routine hop cannot appear in a root routine chain's hops");
-            }
-            if (hop.filter() != null) {
-                filters.add(JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
-            }
-        }
-        var anchorCols = hop0Pairs.slots().stream()
-            .map(s -> CodeBlock.of("$L.$L", anchorLocal, s.targetSide().javaName()))
-            .toList();
-        var capturedCols = hop0Pairs.slots().stream()
-            .map(s -> CodeBlock.of("source.$L", s.sourceSide().javaName()))
-            .toList();
-        var keysCondition = buildKeysInCondition(anchorCols, capturedCols, isList);
-        var where = filters.stream()
-            .reduce(keysCondition, (a, b) -> CodeBlock.of("$L.and($L)", a, b));
-        sel.add(".where($L)\n", where);
-        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
-        builder.addCode(sel.build());
-        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, mrwf.errorChannel()));
-        builder.endControlFlow();
-
-        return builder.build();
-    }
-
-    /**
-     * The fetcher for a {@link MutationField.MutationRoutineWriteRecordField} — the routine
-     * carrier's step 1 alone: {@link #buildMutationRoutineWriteFetcher} truncated at the
-     * transaction boundary, returning the captured keys. The routine executes inside
-     * {@code dsl.transactionResult(...)}, the SELECT captures the leaf's
-     * {@code capturedPairs()} source columns off the routine's own result rows, and the commit
-     * happens when the lambda returns; there is no step 2 here — the post-commit re-read
-     * belongs to the payload's data field (its record-sourced
-     * {@link ChildField.BatchedTableField} fetcher), exactly as on the DML record carriers.
-     *
-     * <p>The captured tuple is projected under the <em>target table's</em> key fields (the
-     * {@code .coerce(...)} re-typing), not the routine result's same-named columns: the data
-     * field reads its correlation off this record by column, and the DML path this mirrors
-     * projects {@code Tables.<TARGET>.<PK>} directly, so matching that keeps the carried-key
-     * component and its reader agreeing by field identity rather than by jOOQ's name-lookup
-     * fallback.
-     *
-     * <p>The catch arm receives the same non-null all-null-column sentinel the DML carriers
-     * pass ({@link #singleRecordSentinelFor} / {@link #bulkRecordSentinelFor} per the data
-     * field's arrival), so graphql-java traverses into the {@code errors} field instead of
-     * short-circuiting on a null parent. The single shape's null-keys guard covers the routine
-     * legitimately returning no row: nothing was keyed, so the whole payload renders null.
-     */
-    private static MethodSpec buildMutationRoutineWriteRecordFetcher(TypeFetcherEmissionContext ctx,
-            MutationField.MutationRoutineWriteRecordField f, String outputPackage) {
-        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(f.targetTable());
-        boolean isList = f.dataFieldArrival() == no.sikt.graphitron.rewrite.model.Arity.MANY;
-        var targetKeyCols = f.capturedPairs().stream()
-            .map(no.sikt.graphitron.rewrite.model.JoinSlot::targetSide)
-            .toList();
-        TypeName keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
-            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), targetKeyCols);
-        TypeName valueType = isList
-            ? ParameterizedTypeName.get(RESULT, keyRowType)
-            : keyRowType;
-
-        var builder = MethodSpec.methodBuilder(f.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
-            .addParameter(ENV, "env");
-        builder.beginControlFlow("try");
-        CodeBlock startExpr = RoutineCallEmitter.emitCall(
-            new no.sikt.graphitron.rewrite.model.TableExpr.RoutineCall(f.routine(), f.routineResultTable()),
-            new PreviousNodeRef.None(), new ArgumentValueSource.Env(), ctx.argPathHelpers());
-        builder.addStatement("$T source = $L", f.routineResultTable().tableClass(), startExpr);
-        var tenantDsl = TenantDslEmitter.resolve(ctx, f, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-
-        // Step 1 — the whole emit. The write transaction contains the routine call and a
-        // projection of its own result columns, nothing else (the two-statements rule).
-        var step1 = CodeBlock.builder()
-            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", valueType, DSL).indent()
-            .add(".select(");
-        for (int i = 0; i < f.capturedPairs().size(); i++) {
-            if (i > 0) step1.add(", ");
-            step1.add("source.$L", f.capturedPairs().get(i).sourceSide().javaName());
-        }
-        step1.add(")\n")
-            .add(".from(source)\n")
-            .add(".coerce(");
-        for (int i = 0; i < targetKeyCols.size(); i++) {
-            if (i > 0) step1.add(", ");
-            step1.add("$T.$L.$L", tablesOnly.tablesClass(), f.targetTable().javaFieldName(),
-                targetKeyCols.get(i).javaName());
-        }
-        step1.add(")\n")
-            .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
-        builder.addCode(step1.build());
-
-        if (!isList) {
-            // The routine returned no row: nothing was keyed, so the payload renders null —
-            // the same contract as the direct-return single shape's null-keys guard.
-            builder.addCode("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
-                DATA_FETCHER_RESULT, valueType);
-        }
-
-        builder.addCode(returnSyncSuccess(valueType, "keys", tenantDsl.localContextTail()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage,
-            f.errorChannel().map(c -> (ErrorChannel.RouterDispatched) c),
-            isList
-                ? bulkRecordSentinelFor(f.targetTable(), tablesOnly, targetKeyCols)
-                : singleRecordSentinelFor(f.targetTable(), tablesOnly, targetKeyCols)));
-        builder.endControlFlow();
-
-        return builder.build();
+    private static MethodSpec renderRoutineWrite(TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.OutputField field,
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites, String outputPackage) {
+        var row = routineWrites.rowFor(ctx.parentTypeName(), field.name())
+            .orElseThrow(() -> new IllegalStateException(
+                "Graphitron generator bug (routine-write dispatch): coordinate '"
+                + ctx.parentTypeName() + "." + field.name() + "' has no routine-write row;"
+                + " the producer's membership and this dispatch have drifted"));
+        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
+        return no.sikt.graphitron.render.RoutineWriteFetcherRenderer.render(
+            row, tenantDsl.declaration(), tenantDsl.localContextTail(), ctx.argPathHelpers());
     }
 
 
@@ -4592,59 +4386,6 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The key-IN {@code Condition} expression that anchors the routine-write fetcher's step-2
-     * re-read on the {@code keys} local captured in step 1. The routine-write re-read is this
-     * helper's sole sanctioned caller: the DML reentry companions resolve their correlation through
-     * the launcher row's source arm ({@link no.sikt.graphitron.render.ReentryRowsFragments}),
-     * and the routine-write coordinate joins that seam if
-     * its member set ever mints the reentry re-select; do not grow new keys-IN callers. {@code conditionCols}
-     * are the field expressions the WHERE tests (the follow-up table's columns), {@code keyCols}
-     * the field expressions that read the captured values back off {@code keys} (the fields
-     * step 1 selected — the routine result's columns for the write chain). Composite-safe: a
-     * single-column key emits {@code col.eq(keys.value1())} / {@code col.in(keys.getValues(keyCol))},
-     * a multi-column key the {@code DSL.row(...).eq(DSL.row(...))} /
-     * {@code DSL.row(...).in(...toList())} row-value form.
-     */
-    private static CodeBlock buildKeysInCondition(
-            List<CodeBlock> conditionCols, List<CodeBlock> keyCols, boolean isList) {
-        var b = CodeBlock.builder();
-        if (isList) {
-            if (conditionCols.size() == 1) {
-                b.add("$L.in(keys.getValues($L))", conditionCols.get(0), keyCols.get(0));
-            } else {
-                b.add("$T.row(", DSL);
-                for (int i = 0; i < conditionCols.size(); i++) {
-                    if (i > 0) b.add(", ");
-                    b.add("$L", conditionCols.get(i));
-                }
-                b.add(").in(keys.stream().map(r -> $T.row(", DSL);
-                for (int i = 0; i < keyCols.size(); i++) {
-                    if (i > 0) b.add(", ");
-                    b.add("r.get($L)", keyCols.get(i));
-                }
-                b.add(")).toList())");
-            }
-        } else {
-            if (conditionCols.size() == 1) {
-                b.add("$L.eq(keys.value1())", conditionCols.get(0));
-            } else {
-                b.add("$T.row(", DSL);
-                for (int i = 0; i < conditionCols.size(); i++) {
-                    if (i > 0) b.add(", ");
-                    b.add("$L", conditionCols.get(i));
-                }
-                b.add(").eq($T.row(", DSL);
-                for (int i = 0; i < keyCols.size(); i++) {
-                    if (i > 0) b.add(", ");
-                    b.add("keys.get($L)", keyCols.get(i));
-                }
-                b.add("))");
-            }
-        }
-        return b.build();
-    }
-
-    /**
      * Builds the {@code orderBy} variable declaration for a fetcher body.
      *
      * <p>When {@code fieldName} is non-null and {@code orderBy} is an {@link OrderBySpec.Argument},
@@ -5028,7 +4769,7 @@ public class TypeFetcherGenerator {
         builder.addCode(returnSyncSuccess(payloadType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel,
-            singleRecordSentinelFor(tableRef, tablesOnly, pkCols)));
+            no.sikt.graphitron.render.RecordSentinel.single(tableRef, pkCols)));
         builder.endControlFlow();
         return builder.build();
     }
@@ -5065,47 +4806,6 @@ public class TypeFetcherGenerator {
             .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
         return new DmlChainAndGuards(chain, preGuard.build());
-    }
-
-    /**
-     * Builds the {@code DSL.using(SQLDialect.DEFAULT).newRecord(<pk fields>)} CodeBlock used as
-     * the non-null sentinel source for the {@link ErrorChannel.LocalContext} catch arm of a
-     * {@link MutationField.MutationDmlRecordField} fetcher. The sentinel is a structurally-valid
-     * {@code Record1}/{@code Record2}/... whose every column is null, so the data field's
-     * null-PK SELECT short-circuits to {@code null} (jOOQ's {@code WHERE pk = null} resolves to
-     * no row) and graphql-java traverses the carrier into the errors field. The sentinel never
-     * touches a real connection: {@link org.jooq.SQLDialect#DEFAULT} keeps construction pure.
-     */
-    private static CodeBlock singleRecordSentinelFor(no.sikt.graphitron.rewrite.model.TableRef tableRef,
-            GeneratorUtils.ResolvedTableNames tablesOnly,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols) {
-        var sql = ClassName.get("org.jooq", "SQLDialect");
-        var b = CodeBlock.builder().add("$T.using($T.DEFAULT).newRecord(", GeneratorUtils.DSL, sql);
-        for (int i = 0; i < pkCols.size(); i++) {
-            if (i > 0) b.add(", ");
-            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
-        }
-        b.add(")");
-        return b.build();
-    }
-
-    /**
-     * Bulk variant of {@link #singleRecordSentinelFor}: emits
-     * {@code DSL.using(SQLDialect.DEFAULT).newResult(<pk fields>)}. The empty {@code Result}
-     * source feeds the many-arity data fetcher, which projects no rows
-     * and renders the SDL data field as an empty list. The errors field reads localContext.
-     */
-    private static CodeBlock bulkRecordSentinelFor(no.sikt.graphitron.rewrite.model.TableRef tableRef,
-            GeneratorUtils.ResolvedTableNames tablesOnly,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols) {
-        var sql = ClassName.get("org.jooq", "SQLDialect");
-        var b = CodeBlock.builder().add("$T.using($T.DEFAULT).newResult(", GeneratorUtils.DSL, sql);
-        for (int i = 0; i < pkCols.size(); i++) {
-            if (i > 0) b.add(", ");
-            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
-        }
-        b.add(")");
-        return b.build();
     }
 
     /** Pair: the DML chain (everything from {@code .insertInto(...)} through {@code .doUpdate()....}) plus any pre-DML guard statements (e.g. dynamic SET-map construction). */
@@ -5384,7 +5084,7 @@ public class TypeFetcherGenerator {
         builder.addCode(returnSyncSuccess(resultType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel,
-            bulkRecordSentinelFor(tableRef, tablesOnly, pkCols)));
+            no.sikt.graphitron.render.RecordSentinel.bulk(tableRef, pkCols)));
         builder.endControlFlow();
         return builder.build();
     }
@@ -5784,14 +5484,14 @@ public class TypeFetcherGenerator {
     // ErrorRouterClassGenerator.noChannelRouterCall.
     // -----------------------------------------------------------------------
 
-    /** Box primitive value types so they can sit inside {@code DataFetcherResult<P>}. */
+    /** See {@link no.sikt.graphitron.render.FetcherResult#boxed}. */
     private static TypeName boxed(TypeName valueType) {
-        return valueType.isPrimitive() ? valueType.box() : valueType;
+        return no.sikt.graphitron.render.FetcherResult.boxed(valueType);
     }
 
-    /** {@code DataFetcherResult<P>}; primitives box to their wrapper. */
+    /** See {@link no.sikt.graphitron.render.FetcherResult#syncResultType}. */
     private static TypeName syncResultType(TypeName valueType) {
-        return ParameterizedTypeName.get(DATA_FETCHER_RESULT, boxed(valueType));
+        return no.sikt.graphitron.render.FetcherResult.syncResultType(valueType);
     }
 
     /** {@code CompletableFuture<DataFetcherResult<P>>}; primitives box. */
@@ -5865,11 +5565,9 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock dispatchToLocalContextCatchArm(String outputPackage,
             ErrorChannel.LocalContext channel, CodeBlock sentinel) {
-        return CodeBlock.of("return $T.dispatchToLocalContext(e, $T.$L, env, $L);\n",
-            errorRouterClass(outputPackage),
-            errorMappingsClass(outputPackage),
-            channel.mappingsConstantName(),
-            sentinel);
+        return no.sikt.graphitron.render.ErrorDispatchFragments.localContextArm(
+            errorRouterClass(outputPackage), errorMappingsClass(outputPackage),
+            channel.mappingsConstantName(), sentinel);
     }
 
     /**
@@ -5971,8 +5669,7 @@ public class TypeFetcherGenerator {
      * single-tenant form byte-identical).
      */
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, CodeBlock builderTail) {
-        return CodeBlock.of("return $T.<$T>newResult().data($L)$L.build();\n",
-            DATA_FETCHER_RESULT, boxed(valueType), payloadLocal, builderTail);
+        return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, builderTail);
     }
 
     /**

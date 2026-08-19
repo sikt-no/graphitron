@@ -137,7 +137,7 @@ public final class ErrorRouterClassGenerator {
      * disposition change is one edit, not a multi-site coordination.
      */
     public static CodeBlock noChannelRouterCall(String outputPackage, String throwableVar) {
-        return CodeBlock.of("$T.surfaceClientErrorOrRedact($L, env)",
+        return no.sikt.graphitron.render.ErrorDispatchFragments.redact(
             ClassName.get(outputPackage + ".schema", CLASS_NAME), throwableVar);
     }
 

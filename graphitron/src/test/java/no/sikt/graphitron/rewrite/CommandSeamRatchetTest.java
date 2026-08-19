@@ -211,9 +211,14 @@ class CommandSeamRatchetTest {
      * condition-glue arm). Raised 125 to 128 when the discriminated interface child's batched
      * half landed: the launcher's batched-child payload arm on both walks, plus the fetcher edge
      * producer's null arm (its participant projections being edges of the launcher row's
-     * discriminated source instead).
+     * discriminated source instead). Raised 128 to 139 when the routine-write relation landed:
+     * one producer's total mutation switch, nine arms of which two mint a row and seven are
+     * non-members by the fact, plus its two walks' {@code MutationField} narrowings. The nine are
+     * the price of membership living in one place: a new mutation leaf fails to compile here
+     * rather than silently emitting nothing, which is the same trade the fetcher edge producer's
+     * switch makes.
      */
-    private static final int PLAN_LEAF_REFERENCES = 128;
+    private static final int PLAN_LEAF_REFERENCES = 139;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

@@ -457,7 +457,7 @@ public class GraphQLRewriteGenerator {
         var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage);
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
-            plan.launchers(), plan.typeUnits().fetchers());
+            plan.launchers(), plan.typeUnits().fetchers(), plan.routineWrites());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
