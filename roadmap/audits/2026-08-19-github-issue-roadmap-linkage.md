@@ -122,9 +122,16 @@ configuration, decidable without runtime insight. Their concrete asks:
    DISTINCT-view plus synthetic-FK pattern as the official answer for
    set-semantics fields.
 
-Nothing in the roadmap owns either half. The nearest neighbours are all adjacent
-rather than overlapping, and are worth naming in the item so the next reader does
-not re-derive the search:
+Nothing in the roadmap owns either half. Filed as R723
+`reference-path-fanout-verdict` (Backlog) after a second pass established how much
+of the verdict the fact base already computes: `intent_field_reference_step_target`
+carries `fk_on_from` per path element ("TRUE when the departing table declares the
+foreign key; the element's direction"), so the rule is a predicate over rows that
+exist rather than a new catalog traversal, and `sql_constraint.constraint_type`
+plus `sql_constraint_column` sharpen it to exclude 1:1 reverse hops the reporter's
+own heuristic would have flagged. The nearest neighbours are all adjacent rather
+than overlapping, and are named in the item so the next reader does not re-derive
+the search:
 
 * `roadmap/path-element-surface-cleanup.md`, which separates join-shape from
   WHERE-filter on the `@reference` path element surface. A `distinct` flag would
@@ -199,11 +206,10 @@ Ordered so that the cheap, unblocked closures come first.
       surface half). Filed as R722 `service-opt-in-transaction-wrap`, taken
       straight to Spec, and linked from the issue. Both await a Spec → Ready
       sign-off from a different party.
-- [ ] File a Backlog item: static fan-out verdict for `@reference` paths
-      traversing a 1:N hop, plus the `distinct` flag or blessed-view decision
-      (#529). Name `path-element-surface-cleanup`,
-      `lsp-reference-path-authoring` and `list-ordering-invariant-enforcement` as
-      the neighbours.
+- [x] File a Backlog item: static fan-out verdict for `@reference` paths
+      traversing a 1:N hop (#529). Filed as R723 `reference-path-fanout-verdict`,
+      with the neighbours named and the `distinct` flag left to R235. Not yet
+      linked from the issue.
 - [ ] Add the #523 field-report citation to R382, whose half of the issue is the
       one the reporter led with.
 - [ ] Comment on #523 with the three plan links and which half each owns.
