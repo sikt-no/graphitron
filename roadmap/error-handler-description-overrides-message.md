@@ -289,6 +289,13 @@ a VALIDATION-only type's `ByType` array is empty and the walk would have fallen 
 arm ordering matters for the type that mixes VALIDATION with a dispatch handler, where the source can
 be either shape.
 
+`ErrorTypeFetcherClassGenerator`'s own class javadoc goes stale on this move and nothing catches it:
+it states that "`message` routes universally through `getMessage()`", which is the sentence the walk
+falsifies, and no gate reads javadoc prose. Rewrite it with the method, naming the three-way
+resolution (`GraphQLError` arm, then the per-type mapping walk, then the `getMessage()`
+fall-through). Do not cite the walk's behaviour only in the manual; this is the class a contributor
+reads first.
+
 Named this explicitly because the suite cannot catch getting it wrong. No sakila fixture declares
 `{handler: VALIDATION}`, so no execution-tier test reaches the `GraphQLError` arm, and the banned
 code-string assertion is the only thing that would have pinned its presence. A rewrite that collapses
@@ -335,6 +342,24 @@ The how-to's "captured but currently unused" section and its matching pitfall bu
 out, replaced by the resolution order and by the one thing that stays true: the *other*
 fields on the error type still read off the live exception.
 
+The how-to has a third `description:` site, and it is the one a reader consulting that page for
+`message:` actually lands on. Under "`path:`, `message:` field fetchers", the `message:` paragraph
+says "`message:` always reads `getMessage()` from the source", that "the handler's `description:` is
+*not* consulted here today", and recommends overriding `getMessage()` in the exception class as the
+workaround. Deleting the other two sites and leaving this one ships a how-to that still states the
+defect as behaviour, in the section about the exact field this item changes. It is an amendment
+rather than a deletion: its `GraphQLError.getMessage()` clause for VALIDATION sources stays true
+under move 4's arm ordering, so this paragraph is the natural home for the resolution order the
+paragraph above promises. Its neighbour one section up cites
+`GraphitronSchemaClassGenerator.buildErrorTypeFieldFetchers` for the `path:` body, which now only
+wires the `<ErrorType>Fetchers::path` / `::message` references; the body it quotes lives in
+`ErrorTypeFetcherClassGenerator`. Repoint it while the file is open.
+
+The how-to's "Source order is significant" pitfall ("The first match wins, not the most specific")
+already states the tree's behaviour correctly. It is the anchor for the two reference-page
+Constraints bullets below, which say the opposite; make the reference page agree with it rather
+than the other way round.
+
 "True as written" has to mean the whole page, not just the `description` row of its `ErrorHandler`
 field table. Four other statements are already false against the tree, three of them in the same
 five-row table this move edits, so leaving them would make the move's own success criterion unmet:
@@ -348,7 +373,7 @@ five-row table this move edits, so leaving them would make the move's own succes
   The DATABASE arm rejects `className` outright, so there is no default to state.
 * The same row says `className` is "ignored for `VALIDATION`". That arm's `disallowed` list rejects
   it.
-* Outside the table, the "Semantics" bullet at line 129 says "`code:` and `sqlState:` may be
+* Outside the table, the "Constraints" bullet at line 129 says "`code:` and `sqlState:` may be
   combined; both must match on the exception". Rule 3 in `parseErrorHandler` rejects a `DATABASE`
   entry carrying both outright ("cannot carry both 'sqlState' and 'code'"), so this promises the
   author a build that fails on the arrangement the page recommends.
@@ -374,11 +399,17 @@ the `handler` row: they promise an author a build that fails. The `handler` row 
 because jOOQ wraps the driver's `SQLException` as its cause and the matcher walks the chain, so the
 documented class routes anyway right up until someone relies on the documented `className:`.
 
-Two further repeats of that same `DataAccessException` slip sit off the table and go with it, since
+Three further repeats of that same `DataAccessException` slip sit off the table and go with it, since
 they are the same fact restated: the `className` comment in the directive signature block ("defaults
-to `org.jooq.exception.DataAccessException` for `DATABASE`"), and the "Semantics" bullet claiming a
+to `org.jooq.exception.DataAccessException` for `DATABASE`"), the Constraints bullet claiming a
 no-discriminator `DATABASE` routes "every `DataAccessException` on the channel" when the arm lifts to
-`ExceptionHandler("java.sql.SQLException")`. Both are one-phrase edits.
+`ExceptionHandler("java.sql.SQLException")`, and the canonical-example prose at line 91 ("when the
+service method throws a `DataAccessException` whose `sqlState` is `23514`"), which attributes
+`getSQLState()` to a class that does not declare it. All three are one-phrase edits. That same
+sentence at line 91 is also the page's statement of the `description:` contract ("builds a
+`YearOutOfRange` instance with `message = description`, or the exception's own message when
+`description:` is absent"), which this item makes true and which therefore needs no edit beyond the
+class name.
 
 Correcting these in a file already open is smaller than a second pass over the same page; the facts
 above are the whole change, so no re-derivation is needed. Nothing else on the page is in scope, and
