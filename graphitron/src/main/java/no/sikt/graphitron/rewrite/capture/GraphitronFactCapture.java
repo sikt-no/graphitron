@@ -45,6 +45,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR;
@@ -175,7 +176,8 @@ final class GraphitronFactCapture {
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                record.setTableRef(string(directive, "name"));
+                qualified(string(directive, "name"), record::setTableRef,
+                    record::setTableRefNamespacePart, record::setTableRefNamePart);
                 sink.add(record);
             }
             case "scalarType" -> {
@@ -300,13 +302,22 @@ final class GraphitronFactCapture {
         sink.add(record);
 
         int position = 0;
-        for (String path : FieldSetGrammar.paths(fields)) {
+        for (List<String> path : FieldSetGrammar.paths(fields)) {
             var row = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD);
             row.setTypeName(site.typeName());
             row.setOrdinal(ordinal);
-            row.setPosition(position++);
-            row.setFieldPath(path);
+            row.setPosition(position);
             sink.add(row);
+            for (int segment = 0; segment < path.size(); segment++) {
+                var segmentRow = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT);
+                segmentRow.setTypeName(site.typeName());
+                segmentRow.setOrdinal(ordinal);
+                segmentRow.setPosition(position);
+                segmentRow.setSegmentPosition(segment);
+                segmentRow.setSegmentName(path.get(segment));
+                sink.add(segmentRow);
+            }
+            position++;
         }
     }
 
@@ -355,7 +366,7 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, entry));
+                    row.setArgumentPath(argumentPath(sink, type, field, entry));
                     sink.add(row);
                 }
             }
@@ -376,8 +387,10 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    row.setTableRef(step.table());
-                    row.setKeyRef(step.key());
+                    qualified(step.table(), row::setTableRef,
+                        row::setTableRefNamespacePart, row::setTableRefNamePart);
+                    qualified(step.key(), row::setKeyRef,
+                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
@@ -391,7 +404,7 @@ final class GraphitronFactCapture {
                         pairRow.setStepPosition(position);
                         pairRow.setPosition(pair++);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, entry));
+                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
                         sink.add(pairRow);
                     }
                     position++;
@@ -417,8 +430,10 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    row.setTableRef(step.table());
-                    row.setKeyRef(step.key());
+                    qualified(step.table(), row::setTableRef,
+                        row::setTableRefNamespacePart, row::setTableRefNamePart);
+                    qualified(step.key(), row::setKeyRef,
+                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
@@ -432,7 +447,7 @@ final class GraphitronFactCapture {
                         pairRow.setStepPosition(position);
                         pairRow.setPosition(pair++);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, entry));
+                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
                         sink.add(pairRow);
                     }
                     position++;
@@ -486,7 +501,7 @@ final class GraphitronFactCapture {
                     row.setFieldName(field);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, entry));
+                    row.setArgumentPath(argumentPath(sink, type, field, entry));
                     sink.add(row);
                 }
             }
@@ -549,7 +564,8 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 record.setOperation(operation);
                 record.setMultiRow(bool(directive, "multiRow"));
-                record.setTableRef(string(directive, "table"));
+                qualified(string(directive, "table"), record::setTableRef,
+                    record::setTableRefNamespacePart, record::setTableRefNamePart);
                 sink.add(record);
             }
             case "pivot" -> {
@@ -605,7 +621,8 @@ final class GraphitronFactCapture {
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setRoutineRef(name);
+                qualified(name, record::setRoutineRef,
+                    record::setRoutineRefNamespacePart, record::setRoutineRefNamePart);
                 record.setArgMapping(argMapping);
                 record.setColumnMapping(columnMapping);
                 sink.add(record);
@@ -617,7 +634,7 @@ final class GraphitronFactCapture {
                     row.setOrdinal(ordinal);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, entry));
+                    row.setArgumentPath(argumentPath(sink, type, field, entry));
                     sink.add(row);
                 }
                 int column = 0;
@@ -686,7 +703,7 @@ final class GraphitronFactCapture {
                     row.setArgumentName(argument);
                     row.setPosition(pair++);
                     row.setParamName(entry.key());
-                    row.setArgumentPath(argumentPath(sink, entry));
+                    row.setArgumentPath(argumentPath(sink, type, field, entry));
                     sink.add(row);
                 }
             }
@@ -709,8 +726,10 @@ final class GraphitronFactCapture {
                     row.setArgumentName(argument);
                     row.setOrdinal(ordinal);
                     row.setPosition(position);
-                    row.setTableRef(step.table());
-                    row.setKeyRef(step.key());
+                    qualified(step.table(), row::setTableRef,
+                        row::setTableRefNamespacePart, row::setTableRefNamePart);
+                    qualified(step.key(), row::setKeyRef,
+                        row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
                     row.setArgMapping(step.argMapping());
@@ -725,7 +744,7 @@ final class GraphitronFactCapture {
                         pairRow.setStepPosition(position);
                         pairRow.setPosition(pair++);
                         pairRow.setParamName(entry.key());
-                        pairRow.setArgumentPath(argumentPath(sink, entry));
+                        pairRow.setArgumentPath(argumentPath(sink, type, field, entry));
                         sink.add(pairRow);
                     }
                     position++;
@@ -903,18 +922,23 @@ final class GraphitronFactCapture {
      * here would otherwise join and drop; recording it costs nothing and is the only chance the
      * store gets, since no reader may split a string.
      *
-     * <p>Keyed by the path rather than by the site, so a path many directives spell is decoded
-     * once. That is what the claim is doing: a repeat is the same decomposition of the same string
-     * and dropping it is not losing an author's duplicate, which is a different question the
+     * <p>Keyed by the coordinate the site sits on and then by the path, so a segment set has an
+     * owner and is reachable from every one of the seven pair relations, all of which lead with the
+     * same coordinate. A path several coordinates spell is decoded under each of them; that is a
+     * copy of a total function of the path text, which nothing can update out from under. What the
+     * claim drops is a repeat within one coordinate, several pairs of one field naming the same
+     * path, and dropping it is not losing an author's duplicate, which is a different question the
      * position-keyed pair relations already answer.
      */
-    private static String argumentPath(FactSink sink, ParsedEntry entry) {
+    private static String argumentPath(FactSink sink, String type, String field, ParsedEntry entry) {
         String path = String.join(".", entry.segments());
         for (int position = 0; position < entry.segments().size(); position++) {
-            if (!sink.claim(GRAPHITRON_ARGUMENT_PATH_SEGMENT, path, position)) {
+            if (!sink.claim(GRAPHITRON_ARGUMENT_PATH_SEGMENT, type, field, path, position)) {
                 continue;
             }
             var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_PATH_SEGMENT);
+            row.setTypeName(type);
+            row.setFieldName(field);
             row.setArgumentPath(path);
             row.setPosition(position);
             row.setSegmentName(entry.segments().get(position));
@@ -1009,6 +1033,18 @@ final class GraphitronFactCapture {
     private static void position(Directive directive, Consumer<String> name,
                                  Consumer<Integer> line, Consumer<Integer> column) {
         SdlFactCapture.setPosition(directive.getSourceLocation(), name, line, column);
+    }
+
+    /**
+     * Writes a qualifiable reference: the value as written, then the two halves of its split. One
+     * call rather than three so a site cannot record the value without its decode, which is the
+     * invariant every reader of the parts relies on. See {@link QualifiedNameGrammar} for the split.
+     */
+    private static void qualified(String written, Consumer<String> value,
+                                  Consumer<String> namespacePart, Consumer<String> namePart) {
+        value.accept(written);
+        namespacePart.accept(QualifiedNameGrammar.namespacePart(written));
+        namePart.accept(QualifiedNameGrammar.namePart(written));
     }
 
     /**

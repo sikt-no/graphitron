@@ -283,7 +283,8 @@ class FactCaptureAgreementTest {
             "graphitron_field_lookup_key", "graphitron_split_query", "graphitron_tenant_fan_out",
             "graphitron_pivot", "graphitron_routine", "graphitron_routine_arg_mapping_pair",
             "graphitron_routine_column_mapping_pair", "graphitron_discriminate", "graphitron_discriminator",
-            "graphitron_federation_key", "graphitron_federation_key_field", "graphitron_link",
+            "graphitron_federation_key", "graphitron_federation_key_field",
+            "graphitron_federation_key_field_segment", "graphitron_link",
             "graphitron_link_import", "graphitron_multitable_reference", "graphitron_record",
             "graphitron_undecoded_argument", "graphitron_type_declaration_synthesis",
             "graphitron_field_synthesis", "graphitron_type_directive_synthesis")) {

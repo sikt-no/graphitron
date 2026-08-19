@@ -106,11 +106,23 @@ final class FactSink {
      * short of that reaches it: a transaction, typed bind parameters and disabling execute logging
      * were each measured and each changed nothing. The remainder is jOOQ's per-value binding, not a
      * setting.
+     *
+     * <p>A relation with a written statement in {@link FactWrites} is rendered by that instead. The
+     * generic arm here names every column the relation declares, which a relation carrying a column
+     * the database computes cannot survive. The two arms coexist because the relations that have
+     * written statements interleave with relations that do not on both sides of the foreign keys, so
+     * the ordering below has to span them; a write issued eagerly during the walk would reach a child
+     * before its parent's bucket flushed.
      */
     void flush() {
         for (Table<?> table : parentsFirst(buckets.keySet())) {
             var rows = buckets.get(table);
             if (rows.isEmpty()) {
+                continue;
+            }
+            var writer = FactWrites.of(table);
+            if (writer != null) {
+                writer.write(dsl, rows);
                 continue;
             }
             Field<?>[] fields = table.fields();
@@ -120,7 +132,8 @@ final class FactSink {
             // The source-keyed families are shared between graphs, so two builds crawling the
             // same new jar concurrently both land: the second writer's identical rows merge away
             // instead of violating the key. Graph-keyed families stay plain inserts, where a
-            // duplicate is a capture bug the constraint must surface.
+            // duplicate is a capture bug the constraint must surface. A relation with a written
+            // statement states its own conflict rule there instead of inheriting this one.
             var batch = sharedFamily(table)
                 ? dsl.batch(insert.onDuplicateKeyIgnore())
                 : dsl.batch(insert);

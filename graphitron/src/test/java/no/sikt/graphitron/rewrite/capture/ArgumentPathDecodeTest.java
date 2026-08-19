@@ -18,15 +18,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The registered anchor for {@code graphitron_argument_path_segment}: what a dotted argMapping
- * right-hand side is made of, recorded once per distinct path.
+ * right-hand side is made of, recorded at the coordinate whose site spelled it.
  *
  * <p>Two things are pinned separately, because they can fail independently. The decode's content is
  * pinned on hand-written fixtures, including the two boundaries a splitting rule gets wrong (a bare
- * name is one segment, not none; two paths sharing a head are two decodes, not one). And the
- * decode's <em>reach</em> is pinned mechanically: every relation in the schema carrying an
- * {@code argument_path} column is enumerated from the generated catalog, and each path it holds
- * must rejoin exactly from its own segment rows. An eighth pair relation whose writer forgot the
- * decode fails that test without anyone remembering to extend a list.
+ * name is one segment, not none; two paths sharing a head are two decodes, not one) and the
+ * addressability the coordinate key buys (two fields spelling one path are two segment sets, each
+ * reachable from its own field). And the decode's <em>reach</em> is pinned mechanically: every
+ * relation in the schema carrying an {@code argument_path} column is enumerated from the generated
+ * catalog, and each path it holds must rejoin exactly from the segment rows at its own coordinate.
+ * An eighth pair relation whose writer forgot the decode fails that test without anyone
+ * remembering to extend a list.
  */
 @UnitTier
 class ArgumentPathDecodeTest {
@@ -58,7 +60,7 @@ class ArgumentPathDecodeTest {
     @DisplayName("a dotted path is its segments, in order")
     void aDottedPathIsItsSegmentsInOrder(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(segments(store.dsl(), "filter.title.value"))
+            assertThat(segments(store.dsl(), "Query", "films", "filter.title.value"))
                 .containsExactly("filter", "title", "value");
         }
     }
@@ -72,7 +74,7 @@ class ArgumentPathDecodeTest {
     @DisplayName("a bare argument name is a one-segment decode, not an absent one")
     void aBareNameIsAOneSegmentDecode(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(segments(store.dsl(), "title")).containsExactly("title");
+            assertThat(segments(store.dsl(), "Query", "films", "title")).containsExactly("title");
         }
     }
 
@@ -84,21 +86,23 @@ class ArgumentPathDecodeTest {
     @DisplayName("paths sharing a head are separate decodes")
     void pathsSharingAHeadAreSeparateDecodes(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(segments(store.dsl(), "filter.title.value"))
+            assertThat(segments(store.dsl(), "Query", "films", "filter.title.value"))
                 .containsExactly("filter", "title", "value");
-            assertThat(segments(store.dsl(), "filter.rating"))
+            assertThat(segments(store.dsl(), "Film", "actors", "filter.rating"))
                 .containsExactly("filter", "rating");
         }
     }
 
     /**
-     * The grain: one row per position of one path, not one per site that spells it. The same path
-     * written at two coordinates is decoded once, which is the whole reason this relation is keyed
-     * by the value.
+     * The grain: one row per position of one path <em>at one coordinate</em>. Two fields spelling
+     * the same path are two segment sets, each reachable from the field that wrote it, which is
+     * what the coordinate key buys and what the value-keyed form could not express: there, the
+     * segments belonged to the string and the question "which paths does this field segment into"
+     * had no answer at all.
      */
     @Test
-    @DisplayName("a path two sites spell is decoded once")
-    void aPathTwoSitesSpellIsDecodedOnce(@TempDir Path tmp) {
+    @DisplayName("two fields spelling one path each address their own segments")
+    void twoFieldsSpellingOnePathEachAddressTheirOwnSegments(@TempDir Path tmp) {
         String twice = """
             type Query {
               a(title: String): Film @service(
@@ -109,10 +113,12 @@ class ArgumentPathDecodeTest {
             type Film { title: String }
             """;
         try (var store = CapturedStore.of(tmp, twice)) {
+            assertThat(segments(store.dsl(), "Query", "a", "title")).containsExactly("title");
+            assertThat(segments(store.dsl(), "Query", "b", "title")).containsExactly("title");
             assertThat(store.dsl().fetchCount(GRAPHITRON_ARGUMENT_PATH_SEGMENT,
                 GRAPHITRON_ARGUMENT_PATH_SEGMENT.ARGUMENT_PATH.eq("title")))
-                .as("two sites, one decode")
-                .isOne();
+                .as("two coordinates, two segment sets rather than one shared one")
+                .isEqualTo(2);
         }
     }
 
@@ -164,12 +170,17 @@ class ArgumentPathDecodeTest {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             var checked = new ArrayList<String>();
             for (var relation : relations) {
+                var type = relation.field("TYPE_NAME", String.class);
+                var field = relation.field("FIELD_NAME", String.class);
                 var column = relation.field("ARGUMENT_PATH", String.class);
-                for (String path : store.dsl().selectDistinct(column).from(relation)
-                    .fetch(column)) {
-                    assertThat(String.join(".", segments(store.dsl(), path)))
-                        .as("%s holds the path %s, which must rejoin from its own decode",
-                            relation.getName(), path)
+                for (var site : store.dsl().selectDistinct(type, field, column).from(relation)
+                    .fetch()) {
+                    String path = site.get(column);
+                    assertThat(String.join(".", segments(store.dsl(),
+                        site.get(type), site.get(field), path)))
+                        .as("%s holds the path %s at %s.%s, which must rejoin from the decode at "
+                            + "that coordinate", relation.getName(), path,
+                            site.get(type), site.get(field))
                         .isEqualTo(path);
                     checked.add(path);
                 }
@@ -182,12 +193,17 @@ class ArgumentPathDecodeTest {
 
     // ===== Helpers =====
 
-    /** One path's segments in position order, which is also the density check when rejoined. */
-    private static List<String> segments(DSLContext dsl, String path) {
+    /**
+     * One coordinate's segments for one path, in position order, which is also the density check
+     * when rejoined.
+     */
+    private static List<String> segments(DSLContext dsl, String type, String field, String path) {
         var s = GRAPHITRON_ARGUMENT_PATH_SEGMENT;
         return dsl.select(s.SEGMENT_NAME)
             .from(s)
-            .where(s.ARGUMENT_PATH.eq(path))
+            .where(s.TYPE_NAME.eq(type))
+            .and(s.FIELD_NAME.eq(field))
+            .and(s.ARGUMENT_PATH.eq(path))
             .orderBy(s.POSITION)
             .fetch(s.SEGMENT_NAME);
     }

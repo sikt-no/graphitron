@@ -7,12 +7,13 @@ import java.util.List;
 
 /**
  * Decodes federation's field-set grammar, the string form {@code @key(fields:)} carries, into the
- * ordered dotted paths {@code graphitron_federation_key_field} stores.
+ * ordered selections {@code graphitron_federation_key_field} stores, each one a list of segments.
  *
  * <p>The grammar is a parse boundary SQL cannot express, so it decodes at capture. Nesting is part
- * of the grammar and is decoded as a dotted path ({@code "a { b c }"} yields {@code a.b} and
- * {@code a.c}); that today's consumer rejects nesting is a detection's business, not a limit on
- * what capture records.
+ * of the grammar and survives the decode as the segments of a selection ({@code "a { b c }"} yields
+ * {@code [a, b]} and {@code [a, c]}), rather than being rendered back into a dotted string a reader
+ * would have to take apart again; that today's consumer rejects nesting is a detection's business,
+ * not a limit on what capture records.
  *
  * <p>Like every capture path this one is tolerant: a malformed field set yields whatever prefix
  * parsed and never throws, because the value arrives from a registry that validated nothing.
@@ -21,9 +22,12 @@ final class FieldSetGrammar {
 
     private FieldSetGrammar() {}
 
-    /** The leaf selections of {@code fieldSet}, in written order, nesting rendered as dotted paths. */
-    static List<String> paths(String fieldSet) {
-        var paths = new ArrayList<String>();
+    /**
+     * The leaf selections of {@code fieldSet}, in written order, each as its segments from the
+     * outermost inward. An unnested selection is one segment, so no list is empty.
+     */
+    static List<List<String>> paths(String fieldSet) {
+        var paths = new ArrayList<List<String>>();
         Deque<String> prefix = new ArrayDeque<>();
         String pending = null;
         for (String token : tokenize(fieldSet)) {
@@ -57,11 +61,11 @@ final class FieldSetGrammar {
         return List.copyOf(paths);
     }
 
-    private static String qualify(Deque<String> prefix, String leaf) {
-        if (prefix.isEmpty()) {
-            return leaf;
-        }
-        return String.join(".", prefix) + "." + leaf;
+    private static List<String> qualify(Deque<String> prefix, String leaf) {
+        var segments = new ArrayList<String>(prefix.size() + 1);
+        segments.addAll(prefix);
+        segments.add(leaf);
+        return List.copyOf(segments);
     }
 
     /** Names and braces; whitespace and commas separate, everything else rides into a name. */

@@ -406,7 +406,7 @@ final class MacroCapture {
             if (fields == null || !(fields.getValue() instanceof StringValue value)) {
                 continue;
             }
-            if (List.of(ID_FIELD).equals(FieldSetGrammar.paths(value.getValue()))) {
+            if (List.of(List.of(ID_FIELD)).equals(FieldSetGrammar.paths(value.getValue()))) {
                 return true;
             }
         }
