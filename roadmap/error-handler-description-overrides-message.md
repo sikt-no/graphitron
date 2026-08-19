@@ -37,12 +37,15 @@ override has nothing to act through.
 
 Two things make the no-op worse than a plain missing feature. There is no diagnostic: a
 schema that sets `description:` builds clean and runs, and the author discovers the message
-is wrong only from a client. And the manual contradicts itself, so a reader cannot resolve
+is wrong only from a client. And the documentation contradicts itself, so a reader cannot resolve
 the behaviour from the docs. `docs/manual/reference/directives/error.adoc` documents
 `description` as "Static error message returned to the client. Defaults to the exception's
-`getMessage()`", the Graphitron 9 contract, while `docs/manual/how-to/error-channel.adoc`
-documents it as captured-but-unused and tells authors to write the client-facing string into
-the exception instead.
+`getMessage()`", the Graphitron 9 contract, and the directive's own SDL in
+`directives.graphqls` says the same thing in the block string the LSP serves on hover, while
+`docs/manual/how-to/error-channel.adoc` documents it as captured-but-unused and tells authors to
+write the client-facing string into the exception instead, and
+`docs/manual/how-to/migrating-from-legacy.adoc` repeats the no-op claim to the Graphitron 9 reader
+migrating in. Two surfaces promise the contract, two deny it. Move 5 names all four.
 
 ## The constraint that shapes the design
 
@@ -98,6 +101,12 @@ in dependency order.
 Replace `Optional<String> description()` with a resolved sealed slot,
 `sealed interface ClientMessage permits ClientMessage.Static, ClientMessage.FromSource`,
 decided once in `TypeBuilder`. `Static` carries the string; `FromSource` carries nothing.
+
+It lives nested in `ErrorType`, beside `Handler` and `FieldAccessorOverride`: it is a component of
+`Handler`'s variants and has no meaning outside them, and `GraphitronType` already nests the
+`@error` vocabulary there. `FromSource` is a component-less record rather than an enum constant or
+a singleton field, so `case ClientMessage.FromSource ignored ->` reads the same as every other arm
+switch in the classifier and the two variants stay symmetric.
 
 The slot goes on the three dispatch records (`ExceptionHandler`, `SqlStateHandler`,
 `VendorCodeHandler`), not on the `ErrorType.Handler` interface. Move 2 rejects
@@ -278,29 +287,64 @@ over a `null` fall-through, and the first of those three is load-bearing for the
 `ConstraintViolations.toGraphQLError` puts `GraphQLError` instances in the errors slot, the
 `TypeResolver` ladder dispatches them on `src instanceof GraphQLError`, and graphql-java's
 `GraphQLError` is an interface that its implementations need not implement on a `Throwable`. So the
-walk cannot be the method's first act, and it cannot be reached with a non-`Throwable` source at all:
-`Mapping.match` takes a `Throwable`. Emit the `GraphQLError` arm unchanged and ahead of the walk, put
-the walk under the existing `src instanceof Throwable thr` arm, and keep the `null` fall-through.
+walk cannot replace that arm, and it cannot be reached with a non-`Throwable` source at all:
+`Mapping.match` takes a `Throwable`. The walk goes under an `src instanceof Throwable thr` guard,
+the `GraphQLError` arm survives, and the `null` fall-through stays. Which of the two arms runs first
+is settled three paragraphs down; it is a precedence choice, not a consequence of this paragraph.
 
-Move 2 is what makes that ordering free of a behaviour question rather than a precedence choice: a
-`VALIDATION` handler carries no `ClientMessage`, so a `GraphQLError` source has no authored override to
-lose by resolving ahead of the walk, and `buildMappingArrayInitializer` skips `ValidationHandler`, so
-a VALIDATION-only type's `ByType` array is empty and the walk would have fallen through anyway. The
-arm ordering matters for the type that mixes VALIDATION with a dispatch handler, where the source can
-be either shape.
+Move 2 settles the ordering for the VALIDATION path: a `VALIDATION` handler carries no
+`ClientMessage`, so a validator-produced `GraphQLError` has no authored override to lose by resolving
+ahead of the walk, and `buildMappingArrayInitializer` skips `ValidationHandler`, so a VALIDATION-only
+type's `ByType` array is empty and the walk would have fallen through anyway.
+
+**It does not settle the ordering in general, and the plan must not claim it does.** A source can be
+both shapes at once. `graphql.GraphQLError` is a plain interface, so an author's own exception class
+may implement it, which is ordinary in a graphql-java codebase and resolves fine against the
+classifier classpath check `parseErrorHandler` runs on `className`. Such a class can be named by a
+`{handler: GENERIC, className: ...}` entry carrying `description:`. Dispatch matches it, the
+`TypeResolver` ladder selects the `@error` type by source class, and with the `GraphQLError` arm
+first the emitted `message()` returns `ge.getMessage()` and drops the authored override. That is
+this item's own defect surviving in a corner it opened.
+
+The codebase pairs the two shapes itself, which is the existence proof that this is not a
+hypothetical: `GraphitronClientExceptionClassGenerator` emits `GraphitronClientException` with
+`graphql.GraphqlErrorException` as its superclass, and its javadoc names the class as "the
+`instanceof` anchor a `GENERIC` `@error` handler matches with zero change at the throw site". (The
+emitted class is `final`, so that route is the class itself rather than a consumer subclass, and it
+depends on the generated class being resolvable when the classifier runs; the author-exception route
+above needs no such caveat.)
+
+So the ordering is a real precedence choice and has to be made deliberately. The `GraphQLError` arm
+is not load-bearing *first*; what is load-bearing is that the walk is **guarded** by
+`src instanceof Throwable thr`, because `Mapping.match` takes a `Throwable` and a
+`ConstraintViolations`-produced `GraphQLError` need not be one. Guarding gives both orders. The
+recommendation is to put the guarded walk first, then the `GraphQLError` arm, then the `null`
+fall-through: a validator `GraphQLError` that is not a `Throwable` skips the walk and lands on its
+own arm unchanged, a both-shapes source gets the override the author wrote, and the walk's own
+`thr.getMessage()` fall-through is what a non-matching both-shapes source would have got from the
+`GraphQLError` arm anyway (`GraphqlErrorException` inherits `Throwable.getMessage()`). If the
+implementer instead keeps the `GraphQLError` arm first, say in the plan that authored `description:`
+is deliberately not honoured for a source that implements `GraphQLError`, and add the caveat to the
+manual; do not leave it undocumented.
+
+Nothing in the suite reaches this case either way: no fixture declares an `@error` handler naming a
+`GraphQLError`-implementing exception. Whichever order lands, an execution-tier fixture for it is
+cheap next to the VALIDATION fixture the Coverage section already asks for, and the two share a
+payload.
+
+The arm structure is named this explicitly because the suite cannot catch getting it wrong. No sakila
+fixture declares `{handler: VALIDATION}`, so no execution-tier test reaches the `GraphQLError` arm,
+and the banned code-string assertion is the only thing that would have pinned its presence. A
+rewrite that collapses the body to a walk plus `thr.getMessage()` ships a green build and a null
+`message:` on every validation error. See the coverage note below.
 
 `ErrorTypeFetcherClassGenerator`'s own class javadoc goes stale on this move and nothing catches it:
 it states that "`message` routes universally through `getMessage()`", which is the sentence the walk
-falsifies, and no gate reads javadoc prose. Rewrite it with the method, naming the three-way
-resolution (`GraphQLError` arm, then the per-type mapping walk, then the `getMessage()`
-fall-through). Do not cite the walk's behaviour only in the manual; this is the class a contributor
-reads first.
-
-Named this explicitly because the suite cannot catch getting it wrong. No sakila fixture declares
-`{handler: VALIDATION}`, so no execution-tier test reaches the `GraphQLError` arm, and the banned
-code-string assertion is the only thing that would have pinned its presence. A rewrite that collapses
-the body to a walk plus `thr.getMessage()` ships a green build and a null `message:` on every
-validation error. See the coverage note below.
+falsifies, and no gate reads javadoc prose. Rewrite it with the method, naming all three resolution
+steps in whatever order lands (the guarded per-type mapping walk, the `GraphQLError` arm, and the
+`getMessage()` fall-through) and, if the `GraphQLError` arm ends up ahead of the walk, the caveat
+that goes with that. Do not leave the walk's behaviour documented only in the manual; this is the
+class a contributor reads first.
 
 The walk is per-type rather than channel-wide on purpose, and the difference is observable. Rule 8
 (`ChannelRuleChecks.checkDuplicateMatchCriteria`) rejects only *intra-variant* duplicates, so two
@@ -334,13 +378,50 @@ them in the error family alone
 `errorMappingsClass` / `errorListClass`). Minting removes the error family's copies rather than
 adding a seventh. Sweeping the other 31 is not this item's business; do not widen into it.
 
-### 5. Make the two manual pages agree
+### 5. Make the four author-facing surfaces agree
+
+Four surfaces state `@error` behaviour to authors, not two. Naming them all up front because a
+partial pass is what produced the contradiction the Problem section describes:
+
+1. `docs/manual/reference/directives/error.adoc`, the reference page.
+2. `docs/manual/how-to/error-channel.adoc`, the how-to.
+3. `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`, the
+   directive's own SDL, which is the normative signature the reference page mirrors and which the
+   LSP serves in-editor: `Hovers` falls through to the SDL docstring on an input-field coordinate
+   when nothing richer matches, so `ErrorHandler.description`'s block string is what an author reads
+   on hover.
+4. `docs/manual/how-to/migrating-from-legacy.adoc`, whose `@error` bullet points a Graphitron 9
+   reader at "what's currently a no-op (`description:` is captured but unused)". That is the page
+   the user who filed this item would have read.
+
+Editing the SDL block strings is safe against every gate: the `--verify`-gated
+`docs/manual/_generated/supported-directives.adoc` fragment carries directive names and support
+status only, `DirectiveDocCoverageTest` matches `directive @<name>` declarations, and no test pins
+`@error` docstring text. So no regeneration step, and no fixture to update.
 
 `docs/manual/reference/directives/error.adoc` becomes true as written, plus an explicit
 sentence on the VALIDATION rejection, which is not inferable from the directive signature.
 The how-to's "captured but currently unused" section and its matching pitfall bullet come
 out, replaced by the resolution order and by the one thing that stays true: the *other*
-fields on the error type still read off the live exception.
+fields on the error type still read off the live exception. The migration guide's clause comes out
+with them; it is one phrase.
+
+`directives.graphqls` carries three of the same statements, in the `ErrorHandler` input's block
+strings:
+
+* `description` reads "Provides a description of the error to be returned to the user. If not
+  provided, the exception message will be used." That is the Graphitron 9 contract, which this item
+  makes true, so it needs no correction. It does need the VALIDATION sentence move 2 adds, for the
+  same reason the reference page does, and more urgently: this is the text an author sees while
+  typing the entry that move 2 will reject.
+* `className` reads "defaults to org.jooq.exception.DataAccessException if not provided for the
+  DATABASE handler". The DATABASE arm rejects `className` outright.
+* `sqlState` reads "Can be used together with or instead of 'code'." Rule 3 rejects an entry
+  carrying both.
+
+The last two are the same two slips the reference page repeats, which is the tell that the page was
+copied from the SDL and both drifted together. Fix them at the source as well as on the page, or the
+next reader reconciling the two picks the wrong one.
 
 The how-to has a third `description:` site, and it is the one a reader consulting that page for
 `message:` actually lands on. Under "`path:`, `message:` field fetchers", the `message:` paragraph
@@ -349,8 +430,9 @@ says "`message:` always reads `getMessage()` from the source", that "the handler
 workaround. Deleting the other two sites and leaving this one ships a how-to that still states the
 defect as behaviour, in the section about the exact field this item changes. It is an amendment
 rather than a deletion: its `GraphQLError.getMessage()` clause for VALIDATION sources stays true
-under move 4's arm ordering, so this paragraph is the natural home for the resolution order the
-paragraph above promises. Its neighbour one section up cites
+under either arm order move 4 could take, so this paragraph is the natural home for the resolution
+order the paragraph above promises, and for the both-shapes caveat if the `GraphQLError` arm ends up
+first. Its neighbour one section up cites
 `GraphitronSchemaClassGenerator.buildErrorTypeFieldFetchers` for the `path:` body, which now only
 wires the `<ErrorType>Fetchers::path` / `::message` references; the body it quotes lives in
 `ErrorTypeFetcherClassGenerator`. Repoint it while the file is open.
@@ -529,30 +611,43 @@ so that tier carries the acceptance.
   entry may declare, so this item touches the validation path twice while it is unpinned, and the
   banned assertion form is the only alternative pin. Add the fixture: a VALIDATION-marked `@error`
   type on an existing sakila payload whose service method takes a constraint-annotated input, and a
-  query test asserting the violation's interpolated message arrives in the errors slot. That is the
-  regression guard for the arm ordering, and it is also what proves the "Settled questions" argument
+  query test asserting the violation's interpolated message arrives in the errors slot. That pins the
+  non-`Throwable` `GraphQLError` arm, and it is also what proves the "Settled questions" argument
   (per-violation detail survives) against the running system rather than on paper. Deferring it is the
   implementer's call to make explicitly in the plan, not by omission.
+* Execution tier, the other unpinned arm: the both-shapes source. Nothing in the suite declares an
+  `@error` handler naming an exception that implements `GraphQLError`, so the precedence move 4
+  settles is untested in either direction. Add a sakila exception implementing `graphql.GraphQLError`
+  alongside `Throwable`, a `{handler: GENERIC, className: ...}` entry carrying `description:`, and a
+  query test asserting which of the two strings reaches the client. Whichever order the implementer
+  picks, this is the test that makes it a decision rather than an accident, and it shares a payload
+  with the VALIDATION fixture above.
 
 ## Retired vocabulary
 
-* "description-overriding facade" and the "follow-on emitter concern" framing. Five known
-  occurrences: `ErrorRouterClassGenerator` lines 158 and 371-372 (the `Mapping.description()`
-  javadoc and the `dispatch` javadoc), and `docs/manual/how-to/error-channel.adoc` lines 81
-  and 85. The `Mapping` javadoc's "A future emitter pass will wrap the matched source"
-  sentence goes with it.
-* "`description:` is documentation today" as a statement of behaviour, in the how-to's
-  pitfalls list.
+* "description-overriding facade" and the "follow-on emitter concern" framing. Five occurrences,
+  which is the whole population a `facade` grep returns outside the unrelated `Graphitron` facade
+  class: `ErrorRouterClassGenerator` line 158 (the `Mapping.description()` javadoc) and line 372
+  (the `dispatch` javadoc), and `docs/manual/how-to/error-channel.adoc` lines 81, 85, and 137. The
+  `Mapping` javadoc's "A future emitter pass will wrap the matched source" sentence goes with them.
+  Listed exhaustively because the Done-gate retirement sweep reads this section, not the move
+  bodies, and line 137 is otherwise named only in move 5.
+* "`description:` is documentation today" / "captured but unused" as a statement of behaviour.
+  Three occurrences: the how-to's pitfalls list, the how-to's "captured but currently unused"
+  section heading and body, and the `@error` bullet in
+  `docs/manual/how-to/migrating-from-legacy.adoc`.
 * `description()` as an accessor name on the handler variants, if move 1 lands: the
   replacement is `clientMessage()` on the three dispatch records, and nothing at all on
   `ValidationHandler` or on the `Handler` interface.
 
 ## Out of scope
 
-* The fact store already captures `description` (`GraphitronFactCapture` writes it to
-  `graphitron_error_handler`), so the LSP surface needs no change at all: the VALIDATION
-  rejection rides the existing `@error type rejected: ...` structural diagnostic, and mints
-  no new wire code.
+* No LSP *code* change. The fact store already captures `description` (`GraphitronFactCapture`
+  reads it off the SDL AST, not off the model, so move 1's accessor rename does not reach it), and
+  the VALIDATION rejection rides the existing `@error type rejected: ...` structural diagnostic,
+  minting no new wire code. The one LSP-visible change is a consequence of move 5 rather than work
+  of its own: hover on `ErrorHandler.description` renders the SDL block string, so correcting that
+  string corrects the hover.
 * No change to dispatch, to the source-direct contract, to `redact`, or to the `path:` slot.
 * Re-sourcing the `@error` union `TypeResolver` onto `Mapping[]`, per the note above.
 
