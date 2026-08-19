@@ -216,9 +216,12 @@ class CommandSeamRatchetTest {
      * non-members by the fact, plus its two walks' {@code MutationField} narrowings. The nine are
      * the price of membership living in one place: a new mutation leaf fails to compile here
      * rather than silently emitting nothing, which is the same trade the fetcher edge producer's
-     * switch makes.
+     * switch makes. Raised 139 to 140 when the key-projection relation landed: the producer narrows
+     * the type a store-resolved projection names to {@code NodeType} in order to read the decode
+     * helper and key list off it, and a name that does not narrow is the store and the walk
+     * disagreeing about nodehood, which it reports rather than works around.
      */
-    private static final int PLAN_LEAF_REFERENCES = 139;
+    private static final int PLAN_LEAF_REFERENCES = 140;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

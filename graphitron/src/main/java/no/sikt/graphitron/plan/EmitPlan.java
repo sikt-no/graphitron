@@ -1,9 +1,12 @@
 package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.GlobalCommand;
+import no.sikt.graphitron.command.KeyProjectionRelation;
+import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 
@@ -29,7 +32,9 @@ import java.util.List;
  * the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
  * generator families' membership loops replaced kind by kind), and the routine-write relation
  * ({@link RoutineWriteRelation}: one row per {@code @routine}-writing mutation coordinate,
- * carrying what its fetcher entry point emits).
+ * carrying what its fetcher entry point emits), and the key-projection relation
+ * ({@link no.sikt.graphitron.command.KeyProjectionRelation}: one row per {@code argMapping} binding
+ * that decodes a node id and projects one of its key columns).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
  * (the federation {@code @oneOf} gate) or inside a generator's early return (entity dispatch on a
  * schema without entities, the node fetcher on a schema without node types, the dev executor on a
@@ -39,7 +44,8 @@ import java.util.List;
 public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions,
                        ProjectionRelation projections, LauncherRelation launchers,
                        FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits,
-                       RoutineWriteRelation routineWrites) {
+                       RoutineWriteRelation routineWrites,
+                       KeyProjectionRelation keyProjections) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -65,18 +71,24 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         if (routineWrites == null) {
             throw new IllegalArgumentException("the plan carries the routine-write relation; an empty relation is a value, not null");
         }
+        if (keyProjections == null) {
+            throw new IllegalArgumentException("the plan carries the key-projection relation; an empty relation is a value, not null");
+        }
     }
 
     /**
      * Produces the plan for one run. {@code federationLink} and {@code usesOneOf} are the
      * bundle's schema-level facts; the schema's resolved session-hook carrier
      * ({@link GraphitronSchema#sessionHooks()}) decides the connection runtime's hook unit;
-     * {@code outputPackage} anchors every unit name.
+     * {@code outputPackage} anchors every unit name. {@code projections} is the store's resolved
+     * key projections, the one input that arrives from the fact store rather than from the walk;
+     * {@link #produceWithoutStore} is the arm for a caller that has none.
      */
     public static EmitPlan produce(GraphitronSchema schema,
                                    boolean federationLink,
                                    boolean usesOneOf,
-                                   String outputPackage) {
+                                   String outputPackage,
+                                   ResolvedKeyProjections.Projections projections) {
         var units = new GeneratedUnits(outputPackage);
         var globals = new ArrayList<GlobalCommand>();
 
@@ -131,12 +143,72 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         }
         var conditions = ConditionCommands.produce(schema, outputPackage);
+        var routineWrites = RoutineWriteCommands.produce(schema, outputPackage);
+        var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
+        var keyProjections = KeyProjectionCommands.produce(projections, schema);
+        requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers);
         return new EmitPlan(globals, conditions,
             ProjectionCommands.produce(schema, conditions, outputPackage),
-            LauncherCommands.produce(schema, conditions, outputPackage),
+            launchers,
             FetcherEdgeCommands.produce(schema, conditions, outputPackage),
             TypeUnitCommands.produce(schema, outputPackage),
-            RoutineWriteCommands.produce(schema, outputPackage));
+            routineWrites,
+            keyProjections);
+    }
+
+    /**
+     * Refuses a plan whose projected {@code argMapping} binding sits at a coordinate no wired emitter
+     * owns.
+     *
+     * <p>The gate exists because a projection is invisible to the emitter that would mishandle it. A
+     * projected path is spelled exactly like an ordinary dotted one, so an emitter with no projection
+     * in hand renders the ordinary nested read: a base64 node id pulled off the wire map and handed to
+     * a routine parameter, which is the silence this whole family exists to close, arriving through the
+     * back door of an unwired site. The store-side deferral catches an unwired <em>site</em>, keyed on
+     * the directive; it cannot see that one site's emitters are wired unevenly, and the child-side
+     * routine hop reached through a {@link no.sikt.graphitron.rewrite.model.JoinStep} rather than
+     * through a command row is exactly that case.
+     *
+     * <p>Reachability is asked as row presence rather than re-derived: the coordinate either has a
+     * routine-write row or a launcher row whose source is a routine chain. Wiring a further shape means
+     * adding its relation here, and until then the shape fails the build naming its coordinate.
+     */
+    private static void requireEveryProjectionIsReachable(KeyProjectionRelation keyProjections,
+            RoutineWriteRelation routineWrites, LauncherRelation launchers) {
+        for (var projection : keyProjections.rows()) {
+            String type = projection.coordinate().getTypeName();
+            String field = projection.coordinate().getFieldName();
+            boolean reached = routineWrites.rowFor(type, field).isPresent()
+                || launchers.rowFor(type, field)
+                    .filter(row -> row.source() instanceof LaunchSource.RoutineChain)
+                    .isPresent();
+            if (!reached) {
+                throw new IllegalStateException(
+                    "the argMapping entry '" + projection.argumentPath() + "' at '" + type + "."
+                    + field + "' projects key column '" + projection.column().sqlName() + "' of node"
+                    + " type '" + projection.nodeTypeName() + "', but no emitter at that coordinate"
+                    + " reads a projection: the coordinate holds neither a routine-write row nor a"
+                    + " launcher row sourced from a routine chain. Emitting it as an ordinary nested"
+                    + " read would hand the routine the base64 node id verbatim, so the build stops"
+                    + " here instead");
+            }
+        }
+    }
+
+    /**
+     * The plan of a caller with no fact store to read: every relation the walk produces, and an
+     * empty key-projection relation. Named for what it lacks rather than defaulted into
+     * {@link #produce}, because the absence is not benign. A projected {@code argMapping} binding
+     * whose projection is missing renders as an ordinary nested read, which is the raw-base64
+     * emission this family exists to stop, so a caller reaching for this arm is asserting its graph
+     * has no projected binding rather than being handed that assumption silently.
+     */
+    public static EmitPlan produceWithoutStore(GraphitronSchema schema,
+                                               boolean federationLink,
+                                               boolean usesOneOf,
+                                               String outputPackage) {
+        return produce(schema, federationLink, usesOneOf, outputPackage,
+            ResolvedKeyProjections.Projections.empty());
     }
 
     /** A fixed-substrate global command committing exactly one unit. */

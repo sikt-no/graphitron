@@ -69,7 +69,7 @@ class PlanCompileGraphTest {
     @BeforeAll
     static void projectGraph() {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(SDL);
-        EmitPlan plan = EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
+        EmitPlan plan = EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             PKG);
         graph = PlanCompileGraph.fromPlan(plan, bundle.model());
     }

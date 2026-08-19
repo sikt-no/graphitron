@@ -45,6 +45,13 @@ final class TypeFetcherEmissionContext {
     private final no.sikt.graphitron.render.ArgPathHelperRegistry argPathHelpers =
         new no.sikt.graphitron.render.ArgPathHelperRegistry();
 
+    // The graph's projected argMapping bindings, for the renderers that emit a decode-and-project
+    // read. Empty by default so out-of-band and unit contexts behave as they did; TypeFetcherGenerator
+    // installs the plan's relation up front, alongside the helper-name resolver the host allocates
+    // decode<Record> names from.
+    private no.sikt.graphitron.command.KeyProjectionRelation keyProjections =
+        no.sikt.graphitron.command.KeyProjectionRelation.empty();
+
     TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
         this(assembledSchema, parentTypeName, null);
     }
@@ -103,6 +110,24 @@ final class TypeFetcherEmissionContext {
      */
     no.sikt.graphitron.render.ArgPathHelperRegistry argPathHelpers() {
         return argPathHelpers;
+    }
+
+    /** Installs the graph's projected {@code argMapping} bindings for this class's emission. */
+    void setKeyProjections(no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
+        this.keyProjections = keyProjections;
+    }
+
+    /**
+     * What this {@code <Type>Fetchers} class brings to a projected key read: the graph's projections,
+     * and this class's own {@code decode<Record>} name for a decoded record. The name is resolved
+     * lazily through {@link #fetchersHelperNames()} because the resolver is installed after this
+     * context is constructed, and it is the class's rather than a renderer's for the reason that
+     * resolver exists: two schema packages can hold same-simple-named record classes, and the
+     * {@code decode*} namespace is allocated across the whole class.
+     */
+    no.sikt.graphitron.render.ProjectedKeyHost projectedKeyHost() {
+        return new no.sikt.graphitron.render.ProjectedKeyHost(keyProjections,
+            recordClass -> fetchersHelperNames().decodeSingular(recordClass));
     }
 
     /**

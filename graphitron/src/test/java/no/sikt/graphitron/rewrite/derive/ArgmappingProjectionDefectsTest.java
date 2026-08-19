@@ -167,13 +167,14 @@ class ArgmappingProjectionDefectsTest {
     // ===== The site's emitter is the generator's gap, not the author's mistake =====
 
     /**
-     * A projection that resolves is not an author defect, and until an emitter reads it the build
-     * says so rather than emitting nothing or emitting the raw base64. A deferral rather than an
-     * author error is what carries that distinction into the report.
+     * A projection that resolves at a site whose emitter reads it is not reported at all. The wired
+     * set is what separates this from the deferral below, and asserting the silence is what keeps
+     * that set from being decoration: if the deferral arm ignored it, every wired site would still
+     * fail its own build.
      */
     @Test
-    void aResolvingProjectionDefersWhileNoEmitterReadsIt() {
-        var violations = detect("""
+    void aResolvingProjectionAtAWiredSiteMintsNothing() {
+        assertThat(detect("""
             type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
                 id: ID! @nodeId
             }
@@ -186,14 +187,26 @@ class ArgmappingProjectionDefectsTest {
                              argMapping: "pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId")
                     @reference(path: [{table: "rental"}])
             }
-            """);
+            """))
+            .as("@routine is wired, so a resolving projection there is emission rather than a report")
+            .isEmpty();
+    }
+
+    /**
+     * A projection that resolves at a site no emitter reads is not an author defect, and the build
+     * says so rather than emitting nothing or emitting the raw base64. A deferral rather than an
+     * author error is what carries that distinction into the report. The input-field
+     * {@code @condition} is the site this uses because it is the one that stays unwired: its head is
+     * the input field itself and its emitter reads no projection.
+     */
+    @Test
+    void aResolvingProjectionDefersWhileNoEmitterReadsIt() {
+        var violations = detect(UNWIRED_SITE_SDL);
 
         assertThat(violations).hasSize(1);
         assertThat(violations.getFirst().rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(violations.getFirst().message()).isEqualTo(
-            "Field 'Mutation.rentFilm': @routine argMapping entry"
-            + " 'pInventoryId: input.inventoryId.inventory_id' at Mutation.rentFilm#0 resolves a"
-            + " key column of 'Inventory', which no emitter reads at this site yet");
+        assertThat(violations.getFirst().message())
+            .contains("resolves a key column of 'Inventory', which no emitter reads at this site yet");
     }
 
     /**
@@ -207,14 +220,14 @@ class ArgmappingProjectionDefectsTest {
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["bar_id", "foo_id"]) {
                 id: ID! @nodeId
             }
-            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-            type Query { rental: Rental, bar: Bar }
-            input RentFilmInput { barId: ID! @nodeId(typeName: "Bar"), customerId: Int! }
-            type Mutation {
-                rentFilm(input: RentFilmInput!): [Rental!]!
-                    @routine(name: "rent_film",
-                             argMapping: "pInventoryId: input.barId.bar_id, pCustomerId: input.barId.foo_id")
-                    @reference(path: [{table: "rental"}])
+            type Film @table(name: "film") { title: String }
+            type Query { films(in: FilmPick!): [Film!]!, bar: Bar }
+            input FilmPick {
+                barId: ID! @nodeId(typeName: "Bar") @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "rentalRateRange",
+                    argMapping: "fra: barId.bar_id, til: barId.foo_id"
+                })
             }
             """);
 
@@ -224,6 +237,22 @@ class ArgmappingProjectionDefectsTest {
         assertThat(violations).allSatisfy(v ->
             assertThat(v.rejection()).isInstanceOf(Rejection.Deferred.class));
     }
+
+    /** An input-field {@code @condition} opening a {@code @nodeId} with its node type's key column. */
+    private static final String UNWIRED_SITE_SDL = """
+        type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+            id: ID! @nodeId
+        }
+        type Film @table(name: "film") { title: String }
+        type Query { films(in: FilmPick!): [Film!]!, inventory: Inventory }
+        input FilmPick {
+            inventoryId: ID! @nodeId(typeName: "Inventory") @condition(condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                method: "filmIdCondition",
+                argMapping: "filmId: inventoryId.inventory_id"
+            })
+        }
+        """;
 
     // ===== The boundary: what the family leaves alone =====
 

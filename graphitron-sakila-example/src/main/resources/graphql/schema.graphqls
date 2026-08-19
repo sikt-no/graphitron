@@ -73,6 +73,16 @@ input RentFilmInput {
     customerId:  Int!
 }
 
+# The key-column projection fixture: customerId arrives as a Customer node id rather than as the
+# integer key it encodes, and argMapping opens it with the node type's own key column. Without the
+# trailing segment the base64 string would reach p_customer_id verbatim, which is the silence the
+# projection rules close; with it, the fetcher decodes the id once into a CustomerRecord and reads
+# customer_id off it.
+input RentFilmProjectedInput {
+    inventoryId: Int!
+    customerId:  ID! @nodeId(typeName: "Customer")
+}
+
 # The child-position sibling: a filter input the correlated routine's argument-sourced parameter
 # reaches through a dot-path, so the descent is exercised off a SelectedField rather than env.
 input ActorFilmFilter {
@@ -3454,6 +3464,16 @@ type Mutation {
         @routine(
             name: "rent_film"
             argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId"
+        )
+
+    # The same write again with the customer arriving as a node id, opened with the key column it
+    # encodes. The trailing `customer_id` segment is not a field of any SDL type: it names a key
+    # column of the node type the @nodeId refers to, so the binding means "decode this node id and
+    # project that column out of the decoded key".
+    rentFilmPayloadProjected(input: RentFilmProjectedInput!): RentFilmPayload
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId.customer_id"
         )
 
     # The routine carrier's RLS outcome: create_secure_note is SECURITY DEFINER, so the write

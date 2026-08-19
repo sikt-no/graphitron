@@ -5830,6 +5830,54 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void rentFilmPayloadProjected_nodeIdArgMappingReachesTheRoutineAsAKey() {
+        // The key-column projection, end to end. customerId arrives as a Customer node id and
+        // argMapping opens it with customer_id, so the fetcher decodes the id into a CustomerRecord
+        // and hands p_customer_id the integer key. Before the projection existed this binding had two
+        // possible fates and neither was this one: an Int-typed parameter rejected the ID at
+        // classification, and a text-typed one shipped the base64 string to the database in silence.
+        //
+        // The assertion that the decode actually happened is the committed row: rental.customer_id
+        // must be 3, the key the node id encodes. A binding that passed the wire form through would
+        // fail the insert on the integer column rather than write the wrong number, so a green
+        // round trip here is the decode working and not merely the call arriving.
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        Integer rentalId = null;
+        try {
+            var rawResult = executeRaw("""
+                mutation {
+                    rentFilmPayloadProjected(input: { inventoryId: 2, customerId: "%s" }) {
+                        rental { rentalId inventoryId customerId }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3)));
+            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+            Map<String, Object> data = rawResult.getData();
+            var payload = assertThat(data).extractingByKey("rentFilmPayloadProjected", as(MAP));
+            payload.containsEntry("errors", null);
+            var rental = (Map<String, Object>) ((Map<String, Object>) data.get("rentFilmPayloadProjected")).get("rental");
+            assertThat(rental)
+                .as("the projected key reached the database as a key, not as the base64 node id")
+                .containsEntry("inventoryId", 2)
+                .containsEntry("customerId", 3);
+            rentalId = (Integer) rental.get("rentalId");
+            assertThat(rentalId).isNotNull();
+
+            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+                .as("rentFilmPayloadProjected committed exactly one rental row")
+                .isEqualTo(countBefore + 1);
+        } finally {
+            if (rentalId != null) {
+                dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
+                    .where(org.jooq.impl.DSL.field("rental_id").eq(rentalId))
+                    .execute();
+            }
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void rentFilmPayload_failingRoutine_routesThroughLocalContextErrorChannel() {
         // Outcome (a): the routine raised (FK violation: inventory 999999 does not exist). The
         // catch arm returns the non-null all-null-column sentinel so graphql-java traverses

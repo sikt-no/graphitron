@@ -73,7 +73,7 @@ class FetcherEdgeRelationTest {
     static void producePlan() {
         var bundle = TestSchemaHelper.buildBundle(SDL);
         model = bundle.model();
-        plan = EmitPlan.produce(model, bundle.federationLink(), bundle.usesOneOf(),
+        plan = EmitPlan.produceWithoutStore(model, bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE);
     }
 

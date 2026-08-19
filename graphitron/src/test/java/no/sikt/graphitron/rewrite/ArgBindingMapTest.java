@@ -261,7 +261,8 @@ class ArgBindingMapTest {
     @Test
     void of_walkThroughScalar_returnsPathRejected() {
         // input: InputT { foo: String }; argMapping kv: input.foo.bar
-        // Walking from String into "bar" should reject (cannot traverse scalars).
+        // A String has nothing to open, so the dot rejects. The rule the widening below is a case
+        // of, not an exception to.
         var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
                 .name("foo").type(graphql.Scalars.GraphQLString).build()).build();
@@ -270,8 +271,93 @@ class ArgBindingMapTest {
         var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "foo", "bar")));
         assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
         assertThat(((ArgBindingMap.Result.PathRejected) result).message())
-            .contains("walks through scalar 'String'")
-            .contains("at segment 'foo'");
+            .contains("opens scalar 'String'")
+            .contains("at segment 'foo'")
+            .contains("has nothing to open")
+            .as("the message states both openable kinds, so an author reading it learns the rule")
+            .contains("an ID carrying @nodeId");
+    }
+
+    // ===== The key-column segment: one dot past an ID opens the node type's key =====
+
+    /**
+     * The widening, at its narrowest useful shape: one segment past an {@code ID}-typed input field
+     * resolves to an ordinary trailing {@link PathExpr.Step}. Admitted and carried, never
+     * interpreted: which key column it names is the store's resolution and the plan's read, and the
+     * walk runs before either exists.
+     */
+    @Test
+    void of_oneSegmentPastAnId_resolvesToATrailingStep() {
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("inventoryId").type(graphql.Scalars.GraphQLID).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot,
+            Map.of("kv", java.util.List.of("input", "inventoryId", "inventory_id")));
+        assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName().get("kv"))
+            .isEqualTo(PathExpr.step(
+                PathExpr.step(PathExpr.head("input"), "inventoryId", false),
+                "inventory_id", false));
+    }
+
+    /**
+     * An {@code ID} argument opened directly, with no input object above it. The head's own type is
+     * what opens here, and the rule reads it through the same slot map every other position does,
+     * which is why the widening asks about the type rather than about the directive: a slot map
+     * carries no directives to ask.
+     */
+    @Test
+    void of_oneSegmentPastAnIdArgumentHead_resolvesToATrailingStep() {
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("inventoryId", graphql.Scalars.GraphQLID);
+        var result = ArgBindingMap.of(slot,
+            Map.of("kv", java.util.List.of("inventoryId", "inventory_id")));
+        assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName().get("kv"))
+            .isEqualTo(PathExpr.step(PathExpr.head("inventoryId"), "inventory_id", false));
+    }
+
+    /**
+     * Two segments past an {@code ID} stays rejected, and that boundary is load-bearing: the store's
+     * defect view deliberately has no arm for it, on the stated ground that the walk keeps rejecting
+     * it, so an arm there would double-report. If this ever passed, that silence would become a
+     * hole.
+     */
+    @Test
+    void of_twoSegmentsPastAnId_returnsPathRejected() {
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("inventoryId").type(graphql.Scalars.GraphQLID).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot,
+            Map.of("kv", java.util.List.of("input", "inventoryId", "inventory_id", "nope")));
+        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
+        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
+            .contains("opens the ID at segment 'inventoryId' with 'inventory_id'")
+            .contains("exactly one key column");
+    }
+
+    /**
+     * A list of node ids has no single key to project a column out of, so the dot rejects there
+     * rather than admitting a shape whose emitted read would be a list where a routine parameter
+     * wants a value. Structural and locally decidable, which is what makes it the walk's to state
+     * rather than the store's.
+     */
+    @Test
+    void of_oneSegmentPastAListOfIds_returnsPathRejected() {
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("inventoryIds")
+                .type(graphql.schema.GraphQLList.list(graphql.Scalars.GraphQLID)).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot,
+            Map.of("kv", java.util.List.of("input", "inventoryIds", "inventory_id")));
+        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
+        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
+            .contains("opens a list of ID at segment 'inventoryIds'")
+            .contains("no single key to project");
     }
 
     @Test

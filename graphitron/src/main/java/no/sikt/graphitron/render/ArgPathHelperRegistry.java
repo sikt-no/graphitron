@@ -110,7 +110,15 @@ public final class ArgPathHelperRegistry {
             body.addStatement("$T $L = $L.get($S)", Object.class, value, level, key.tail().get(depth));
             current = value;
         }
-        body.addStatement("return ($T) $L", key.leafType(), current);
+        // The leaf cast, except where the leaf type is Object and the walk's own local already is:
+        // a redundant cast is a warning, and a consumer compiling emitted sources under -Werror
+        // fails on it. An Object leaf is the projected-key-column descent, which hands the raw wire
+        // value to a decode helper that guards its shape itself rather than casting here.
+        if (key.leafType().equals(ClassName.get(Object.class))) {
+            body.addStatement("return $L", current);
+        } else {
+            body.addStatement("return ($T) $L", key.leafType(), current);
+        }
         return MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(key.leafType())

@@ -322,7 +322,10 @@ class RootLauncherRendererTest {
 
     private static MethodSpec render(LauncherCommand row) {
         return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED,
-            new no.sikt.graphitron.render.ArgPathHelperRegistry());
+            new no.sikt.graphitron.render.ArgPathHelperRegistry(),
+            // No projected key reads in these rows: the cases here are about launcher topology, and
+            // the projected read has its own emission tier.
+            no.sikt.graphitron.render.ProjectedKeyHost.unprojected());
     }
 
     private static String body(LauncherCommand row) {

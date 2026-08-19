@@ -81,8 +81,13 @@ public final class PathFragments {
             case JoinStep.Hop hop -> switch (hop.target()) {
                 case TableExpr.Catalog c -> CodeBlock.of("$T.$L",
                     c.table().constantsClass(), c.table().javaFieldName());
-                case TableExpr.RoutineCall rc ->
-                    RoutineCallEmitter.emitCall(rc, previousNode, argSource, argHelpers);
+                // A child-side routine hop carries no projection sink of its own: it is reached
+                // through a JoinStep rather than through a command row, so the plan refuses to
+                // produce a plan whose projected binding sits at a coordinate no wired emitter
+                // owns, and a shape that would arrive here fails the build with its coordinate
+                // named. See ProjectedKeyReads.unprojected().
+                case TableExpr.RoutineCall rc -> RoutineCallEmitter.emitCall(rc, previousNode,
+                    argSource, argHelpers, ProjectedKeyReads.unprojected());
             };
         };
     }

@@ -125,7 +125,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.plan.LauncherCommands.produce(schema,
                 no.sikt.graphitron.plan.ConditionCommands.produce(schema, outputPackage), outputPackage),
             no.sikt.graphitron.plan.TypeUnitCommands.produce(schema, outputPackage).fetchers(),
-            no.sikt.graphitron.plan.RoutineWriteCommands.produce(schema, outputPackage));
+            no.sikt.graphitron.plan.RoutineWriteCommands.produce(schema, outputPackage),
+            no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
 
     /**
@@ -136,13 +137,18 @@ public class TypeFetcherGenerator {
      * relation on the generation result so the bidirectional closure oracle can join it against
      * the emitted units. {@code routineWrites} is the same arrangement for the two
      * {@code @routine}-writing mutation shapes, whose entry points render wholly from their row.
-     * The overloads above default both to relations produced from the same schema.
+     * {@code keyProjections} is the graph's projected {@code argMapping} bindings, the one relation
+     * that comes from the fact store rather than the walk; a routine call whose IN parameter binds one
+     * reads its column off a decoded node id instead of off the wire map.
+     * The overloads above default the walk-derived relations to ones produced from the same schema and
+     * the projections to empty, there being no store behind a schema-only caller.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage,
             no.sikt.graphitron.plan.LauncherRelation launchers,
             List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -164,7 +170,7 @@ public class TypeFetcherGenerator {
             if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
-                    nestingByType.get(row.typeName()), launchers, routineWrites));
+                    nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections));
             } else if (type instanceof GraphitronType.ErrorType et) {
                 result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator.generateFor(et));
             } else {
@@ -182,10 +188,36 @@ public class TypeFetcherGenerator {
                 result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
                     assembled, outputPackage, null, null,
                     no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage),
-                    no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(nestedFields, outputPackage)));
+                    no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(nestedFields, outputPackage),
+                    keyProjections));
             }
         }
         return result;
+    }
+
+    /**
+     * Adds one {@code decode<Record>} target per node type this class's projected {@code argMapping}
+     * bindings decode against, into the same map the input-bean decoders land in. Two families want
+     * the same body and this is where they meet: the map's key is the record class, so a class hosting
+     * both an input-bean {@code @nodeId} member and a projected routine parameter over one node type
+     * emits one body and both call sites name it through the class's own resolver.
+     *
+     * <p>The leaf carrier is built here rather than on the command row because it is walk-side
+     * vocabulary, which a command may not hold; the projection carries the same facts in pure-data
+     * form ({@link no.sikt.graphitron.rewrite.model.HelperRef.Decode} and a
+     * {@link TableRef}) and this shell is where they are put back into the shape the legacy body
+     * builder takes. {@code nonNull} is irrelevant to the body and passed {@code false}, the flag
+     * being the input-bean member's own nullability rather than a fact about the decode.
+     */
+    private static void collectProjectionDecoders(
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections, String typeName,
+            Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> out) {
+        keyProjections.rows().stream()
+            .filter(row -> row.coordinate().getTypeName().equals(typeName))
+            .forEach(row -> out.putIfAbsent(row.nodeTable().recordClass(),
+                new CallSiteExtraction.NodeIdDecodeRecord(row.decode().encoderClass(),
+                    row.decode().typeId(), row.decode().outputColumnShape(), row.nodeTable(),
+                    false)));
     }
 
     /** First-occurrence-wins index of the {@code NestingField} embedding each nesting-reached type. */
@@ -212,7 +244,8 @@ public class TypeFetcherGenerator {
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -221,7 +254,7 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites);
+            dualWiring, launchers, routineWrites, keyProjections);
     }
 
     /**
@@ -400,7 +433,8 @@ public class TypeFetcherGenerator {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
             null,
             no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage),
-            no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(fields, outputPackage));
+            no.sikt.graphitron.plan.RoutineWriteCommands.produceWithoutSchema(fields, outputPackage),
+            no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
 
     /**
@@ -411,7 +445,9 @@ public class TypeFetcherGenerator {
      * default it to a per-call throwaway. {@code launchers} is the launcher relation the root
      * emission dispatches on and {@code routineWrites} the routine-write relation the two
      * {@code @routine}-writing mutation arms render from; the schema-free overloads derive both
-     * from the fields themselves.
+     * from the fields themselves. {@code keyProjections} is the graph's projected {@code argMapping}
+     * bindings, which no walk-side caller can derive at all: it comes from the fact store, so the
+     * schema-free overloads pass the empty relation.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
@@ -420,7 +456,8 @@ public class TypeFetcherGenerator {
             GraphitronSchema graphitronSchema,
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
+            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -435,6 +472,7 @@ public class TypeFetcherGenerator {
         // which records the dependency; class assembly drains the set below to decide which
         // helper methods to materialise.
         var ctx = new TypeFetcherEmissionContext(assembled, typeName, graphitronSchema);
+        ctx.setKeyProjections(keyProjections);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
@@ -464,6 +502,11 @@ public class TypeFetcherGenerator {
             CallSiteExtraction.NodeIdDecodeRecord>();
         InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(),
             scalarDecoders, listDecoders);
+        // A projected argMapping binding decodes a node id into that node type's own record, which is
+        // the same decode<Record> body an input-bean member's @nodeId needs; both register here so one
+        // class hosts one body under one name however many sites call it. Registered before the
+        // resolver is built, so the decode* namespace is sized over the union.
+        collectProjectionDecoders(keyProjections, typeName, scalarDecoders);
         var fetchersHelperNames = FetchersHelperNames.of(
             jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet());
         ctx.setFetchersHelperNames(fetchersHelperNames);
@@ -500,7 +543,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(launcherRow, launchers.carrierDsl(), ctx.argPathHelpers()));
+                        .render(launcherRow, launchers.carrierDsl(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The keyed-lookup row additionally owns a VALUES-building input-rows
                     // helper; the row's source arm is the fork, the same shape the batched
                     // rows renderer reads, so no leaf identity and no schema participate.
@@ -543,7 +586,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(liftRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, stf, outputPackage).declaration(),
-                            stfServiceCall, ctx.argPathHelpers()));
+                            stfServiceCall, ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
                 case ChildField.ServiceRecordField srf -> {
                     var srfService = (MethodRef.Service) srf.method();
@@ -561,7 +604,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(delegateRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, srf, outputPackage).declaration(),
-                            srfServiceCall, ctx.argPathHelpers()));
+                            srfServiceCall, ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
                 case ChildField.BatchedTableField btf -> {
                     // One fetcher builder for both source shapes: the stored
@@ -578,7 +621,7 @@ public class TypeFetcherGenerator {
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
                         : no.sikt.graphitron.javapoet.CodeBlock.of("");
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration, ctx.argPathHelpers()));
+                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration, ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The correlated-lookup row additionally owns the VALUES-building
                     // input-rows helper, named by the row's minted ref (one derivation with
                     // the body's call). The env-based variant reads args from
@@ -620,7 +663,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(interfaceRow, launchers.carrierDsl(), ctx.argPathHelpers()));
+                        .render(interfaceRow, launchers.carrierDsl(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
                 case QueryField.QueryInterfaceField f -> {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
@@ -699,7 +742,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
                         interfaceBatchedRow, launchers.carrierDsl(),
                         TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
-                        ctx.argPathHelpers()));
+                        ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
                 // ParticipantColumnReferenceField: the value is materialised in the parent record by
                 // the enclosing TableInterfaceField fetcher's discriminator-gated correlated
@@ -798,7 +841,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(pivotRow, launchers.carrierDsl(),
                             TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
-                            ctx.argPathHelpers()));
+                            ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
                 case ChildField.RecordReadField ignored         -> { /* locator read reified by FetcherEmitter.bind, collected below */ }
                 // The @service record-composite carrier's data field: the Outcome/source
@@ -1288,7 +1331,8 @@ public class TypeFetcherGenerator {
                 + " the producer's membership and this dispatch have drifted"));
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
         return no.sikt.graphitron.render.RoutineWriteFetcherRenderer.render(
-            row, tenantDsl.declaration(), tenantDsl.localContextTail(), ctx.argPathHelpers());
+            row, tenantDsl.declaration(), tenantDsl.localContextTail(), ctx.argPathHelpers(),
+            ctx.projectedKeyHost());
     }
 
 
@@ -4336,7 +4380,7 @@ public class TypeFetcherGenerator {
         String rowsName = row.unit().methodName();
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
             row, carrierDsl, TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
-            ctx.argPathHelpers()));
+            ctx.argPathHelpers(), ctx.projectedKeyHost()));
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(reentry.correlation(), dmlChain, isList));

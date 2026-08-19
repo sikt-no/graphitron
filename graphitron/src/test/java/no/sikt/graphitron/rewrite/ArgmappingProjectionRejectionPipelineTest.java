@@ -82,6 +82,143 @@ class ArgmappingProjectionRejectionPipelineTest {
             """)).doesNotThrowAnyException();
     }
 
+    // ===== The widening's blast radius: one case per ArgBindingMap.of call site =====
+
+    /*
+     * The grammar widening admits one segment past an ID at every site that spells an argMapping,
+     * and the audit of the six call sites found no site-local gate that would stop an uninterpreted
+     * one: each site's post-resolution leaf check reads ServiceCatalog.resolvePathLeafType, which
+     * returns null the moment a path descends through a non-input-object, and every consumer of a
+     * null leaf type passes through rather than rejecting. So the widening's safety is entirely the
+     * detections', and these are the cases that hold them to it.
+     *
+     * Each fixture opens an ID that declares no @nodeId, which is the shape with no other judge: a
+     * declared decode is rejected whether or not its site emits, whereas this one used to be the
+     * walk's traversal rejection and is now nobody's but the store's. The five sites that resolve a
+     * leaf assert the verdict reaches the build; the sixth resolves against an empty slot map and so
+     * mints no binding at all, which is the same obligation met one step earlier.
+     */
+
+    /** The {@code @routine} site, and the motivating case's own shape. */
+    @Test
+    void anUndeclaredNodeIdFailsTheBuildAtTheRoutineSite(@TempDir Path tmp) throws IOException {
+        assertUndeclared(tmp, """
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            input RentFilmInput { inventoryId: ID!, customerId: Int! }
+            type Mutation {
+                rentFilm(input: RentFilmInput!): [Rental!]!
+                    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId")
+                    @reference(path: [{table: "rental"}])
+            }
+            """);
+    }
+
+    /** The {@code @service} site. */
+    @Test
+    void anUndeclaredNodeIdFailsTheBuildAtTheServiceSite(@TempDir Path tmp) throws IOException {
+        assertUndeclared(tmp, """
+            input GreetInput { actorId: ID! }
+            type Query {
+                greeting(in: GreetInput!): String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+                    method: "greet",
+                    argMapping: "userId: in.actorId.actor_id"
+                })
+            }
+            """);
+    }
+
+    /** The output-field {@code @condition} site. */
+    @Test
+    void anUndeclaredNodeIdFailsTheBuildAtTheFieldConditionSite(@TempDir Path tmp)
+            throws IOException {
+        assertUndeclared(tmp, """
+            type Film @table(name: "film") { title: String }
+            input FilmPick { filmId: ID! }
+            type Query {
+                films(in: FilmPick!): [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "filmIdCondition",
+                    argMapping: "filmId: in.filmId.film_id"
+                })
+            }
+            """);
+    }
+
+    /** The argument-site {@code @condition}, whose one slot is the argument the directive sits on. */
+    @Test
+    void anUndeclaredNodeIdFailsTheBuildAtTheArgumentConditionSite(@TempDir Path tmp)
+            throws IOException {
+        assertUndeclared(tmp, """
+            type Film @table(name: "film") { title: String }
+            input FilmPick { filmId: ID! }
+            type Query {
+                films(in: FilmPick! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "filmIdCondition",
+                    argMapping: "filmId: in.filmId.film_id"
+                })): [Film!]!
+            }
+            """);
+    }
+
+    /** The input-field {@code @condition}, whose one slot is the input field itself. */
+    @Test
+    void anUndeclaredNodeIdFailsTheBuildAtTheInputFieldConditionSite(@TempDir Path tmp)
+            throws IOException {
+        assertUndeclared(tmp, """
+            type Film @table(name: "film") { title: String }
+            input FilmPick {
+                filmId: ID! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                    method: "filmIdCondition",
+                    argMapping: "filmId: filmId.film_id"
+                })
+            }
+            type Query { films(in: FilmPick!): [Film!]! }
+            """);
+    }
+
+    /**
+     * The path-step {@code @condition}, the sixth call site, which resolves against an empty slot
+     * map. No head can name a slot there, so the widened tail is never reached and no binding is
+     * minted: the obligation is met by the walk's own unknown-slot rejection rather than by the
+     * store, which sees a pair row with no leaf and correctly says nothing about it.
+     */
+    @Test
+    void aPathStepConditionRejectsTheHeadBeforeTheTailIsReached(@TempDir Path tmp)
+            throws IOException {
+        assertThatThrownBy(() -> validate(tmp, """
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") {
+                films: [Film!]! @reference(path: [{table: "film_actor", condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                    method: "filmActorsViaCondition",
+                    argMapping: "filmId: in.filmId.film_id"
+                }}])
+            }
+            type Query { actor: Actor }
+            """))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("no GraphQL arguments are in scope at a path-step @condition, so the head is"
+                    + " what fails and the tail is never interpreted")
+                .anyMatch(m -> m.contains("references GraphQL argument 'in'")));
+    }
+
+    /** That the undeclared-decode verdict reaches the build's own verdict, whatever the site. */
+    private static void assertUndeclared(Path tmp, String sdl) {
+        assertThatThrownBy(() -> validate(tmp, sdl))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("the widened segment is admitted by the walk and rejected by the store")
+                .anyMatch(m -> m.contains("declares no @nodeId")
+                    && m.contains("no node identity to project a key column out of")));
+    }
+
     /** Runs the build-time validate pass over one SDL fixture, capture and detections included. */
     private static void validate(Path tmp, String sdl) throws IOException {
         Path schema = tmp.resolve("schema.graphqls");

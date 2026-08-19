@@ -1238,9 +1238,91 @@ stage into a one-line note.
    two narrowings, which is the price of membership living in one place. `HierarchyKindRegistryTest`
    gained the two new sealed hierarchies as commands. `GENERATOR_LEAF_CASE_PATTERNS` did not move:
    the two dispatch arms stay, only their bodies left.
-5. **Grammar and emit.** The `ArgBindingMap.of` widening with its six-call-site audit, the planning
-   join into the routine-carrying command rows, `RoutineCallEmitter`'s pre-statement change, and
-   the `@condition` helper hosting. Exit: the projection emits and executes.
+5. **Grammar and emit.** *Partly shipped: the grammar widened and the `@routine` site emits and
+   executes. The `@service` and output-field `@condition` sites remain, and defer honestly until
+   they land.*
+
+   What shipped. `ArgBindingMap.of` admits one segment past an `ID`; `ResolvedKeyProjections` reads
+   the projection view; `KeyProjection` and `KeyProjectionRelation` carry it command-side;
+   `KeyProjectionCommands` joins it onto the walked model's node types; `ProjectedKeyHost` and
+   `ProjectedKeyReads` render the decode-and-project read; `EMITTING_SITES` holds `ROUTINE`. The
+   sakila example carries `Mutation.rentFilmPayloadProjected`, whose round trip proves the decoded
+   key reaches the database as a key.
+
+   Six decisions worth reading, four of which the plan did not prescribe.
+
+   **The widening opens a hole the plan did not name, and closing it is a fifth verdict.** The walk
+   admits a segment past an `ID` and asks nothing about the directive, because it has to: a path's
+   head is a slot reached through a name-to-type map, which carries no directives, so an argument
+   head could not be asked whether it declares a decode and a rule the two path positions answered
+   differently would be worse than one they share. So an `ID` carrying no `@nodeId` is now admitted
+   where the walk used to reject it, resolves no projection, and would reach an emitter as a segment
+   nothing had judged. `UNDECLARED_NODE_ID` is that arm, and its `named_type = 'ID'` predicate is its
+   disjointness rule rather than a convenience: on any other leaf type the walk still rejects, so
+   widening past `ID` would double-report. This is the open question stage 3 parked, and the answer
+   is that the detection is not optional but forced.
+
+   **The six-call-site audit's finding is that no site needs a change.** Each site's post-resolution
+   leaf check reads `ServiceCatalog.resolvePathLeafType`, which returns null the moment a path
+   descends through a non-input-object, and every consumer of a null leaf type passes through rather
+   than rejecting: `RoutineDirectiveResolver.leafTypeGate` returns early, and `argExtraction` reaches
+   `WireCoercionResolver.checkScalar`'s null arm and yields `Direct`. The obligation was therefore a
+   test obligation exactly as the plan said, and it is met per site at the pipeline tier, the sixth
+   site (the path-step `@condition`, which resolves against an empty slot map) meeting it one step
+   earlier through the walk's own unknown-slot rejection.
+
+   **The projection is handed to a renderer beside the command row, not folded into it.** The plan
+   said join it onto every command row that carries a routine call. A routine call reached through a
+   `JoinStep` belongs to whichever command owns the join path, so that would have put the same map on
+   four unrelated row families and still left the child-side hop reading someone else's copy. What
+   ships instead is a `command/` relation handed down the path the per-class helper registries already
+   travel, which keeps `render` reading only command-package data while the lookup stays one value a
+   renderer never has to assemble.
+
+   **The pre-statement change is a sink, not a signature.** The plan asked whether
+   `PathFragments.emitTableExpression` should propagate `emitCall`'s new pre-statements to its own
+   callers or keep a per-read call with a comment. Neither: `emitCall` takes a per-method sink and the
+   caller drains it, so no return type changes and the alias-declaration loops are untouched. The
+   decode depends on an argument and nothing else, so its declaration hoists to the top of the method,
+   which is what makes "materialise once" cheap and also what keeps the decode *outside* the
+   routine-write entry point's `try`: that arm catches everything and routes it through the field's
+   error channel, where a malformed node id has no business.
+
+   **The site-keyed deferral does not cover an unevenly wired site, so the plan gates it.**
+   `EMITTING_SITES` is keyed on the directive and cannot see that one site's emitters are wired
+   unevenly; the child-side routine hop is exactly that case. `EmitPlan` therefore refuses a plan whose
+   projected binding sits at a coordinate holding neither a routine-write row nor a launcher row
+   sourced from a routine chain, asked as row presence against the two relations rather than
+   re-derived. The two gates are complementary: this one runs before any plan exists, that one cannot
+   see the directive.
+
+   **The descent helper's leaf cast had to become conditional, and the example's compile step is what
+   said so.** A projected leaf's wire read is untyped, the decode helper guarding the wire shape
+   itself, so the descent registers with an `Object` leaf type and the helper's closing
+   `return (Object) value1;` casts a local already declared `Object`. That is a redundant cast, which
+   a consumer compiling emitted sources under `-Werror` rejects; the pipeline tier could not see it
+   and the sakila example's compile step did, which is the gate that surface exists for. The cast is
+   now skipped at an `Object` leaf. Worth noting beside it: the registry's suffix disambiguation
+   fired for real in the example, `argInputCustomerId` walking to `Integer` for the unprojected
+   mutation and `argInputCustomerId2` to `Object` for the projected one, which is two helpers over one
+   path rather than a collision.
+
+   **The plan's own site accounting was short by one.** It lists `@routine`, `@service` and the
+   output-field `@condition` as stage 5's sites and the input-field `@condition` plus the three path
+   steps as the residue, which is seven of eight: the argument-site `@condition` is unaccounted for. It
+   resolves a leaf (the pipeline-tier cases prove it) and its emitter is the conditions class's, so it
+   belongs with the output-field condition rather than with the residue. Wire the two together.
+
+   What remains: the `@service` site (`ArgCallEmitter`'s `NestedInputField` arm), the two
+   conditions-class sites with the decode helper body hosted there, and the compilation-tier assertion
+   about which class hosts it. One gap is filed rather than fixed: a
+   projected column whose Java type the consuming parameter cannot take is a consumer compile error
+   rather than a graphitron rejection, the coercion gate having passed through on a null leaf type. It
+   is loud rather than silent, so it is a wording problem rather than a correctness one, and it has its
+   own Backlog item.
+
+   Exit, restated for what is left: the projection emits and executes at every site whose emitter
+   reads it, and `EMITTING_SITES` names exactly those.
 
 **Why this lands as one item rather than several.** Stages 3 and 5 are two halves of one
 author-facing change: stage 3 rejects a spelling and stage 5 makes the replacement spelling work.
@@ -1267,21 +1349,16 @@ declare, so it has no relation, no `site` value and nothing to defer.
 
 ## Open questions
 
-* **What the plan-local projection relation looks like** in `EmitPlan`. The carriers are now
-  settled (the launcher command and the new routine-write command), so what is left is the
-  relation's own shape and where the join happens.
-* **How the projection reaches the child-side routine hop.** `PathFragments.emitTableExpression`
-  renders a `TableExpr.RoutineCall` reached through a `JoinStep`, not through a command row of its
-  own, so a projected binding on a child-side routine hop rides whichever command owns the join
-  path. `PathFragments` is already in `render` and `JoinStep` is already on the borrow dial, so this
-  is a routing question rather than a placement one, but it should be answered before stage 5 and it
-  shares an answer with the pre-statement question below. Whether any shipped shape reaches it is
-  worth measuring first: if none does, the honest move is a `deferred` `site` value rather than
-  speculative plumbing.
-* Whether `PathFragments.emitTableExpression` takes the pre-statement change (which propagates to
-  its callers, since it returns a bare expression consumed inside alias-declaration loops) or keeps
-  a per-read call as a documented site-local exception. A signature question one level up, not an
-  implementation detail, and it belongs to stage 5.
+* ~~What the plan-local projection relation looks like in `EmitPlan`.~~ *Settled in stage 5, and not
+  as a plan-local relation: it is a `command/` relation handed to a renderer beside the command row,
+  for the reason that note gives.*
+* ~~How the projection reaches the child-side routine hop.~~ *Settled in stage 5 by measuring rather
+  than plumbing: it does not reach it, and `EmitPlan` refuses a plan whose projected binding sits at
+  a coordinate no wired emitter owns. A `deferred` `site` value would not have covered it, the site
+  vocabulary being keyed on the directive rather than on which of a directive's emitters is wired.*
+* ~~Whether `PathFragments.emitTableExpression` takes the pre-statement change.~~ *Neither arm: the
+  pre-statements go to a per-method sink the caller drains, so no signature above `emitCall` changes.
+  See the stage-5 note.*
 * Whether a `@nodeId` input field that nothing consumes should warn. Today it is silently
   ignored wherever no consumer reads it, which is how the `TEXT` case above stays invisible;
   the bare-form rejection closes it at the `argMapping` sites only. A general "declared and

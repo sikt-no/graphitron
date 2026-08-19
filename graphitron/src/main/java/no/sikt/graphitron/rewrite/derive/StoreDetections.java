@@ -16,14 +16,23 @@ import java.util.List;
  * projection overlay, and the {@code argMapping} family's defects carry the coordinates a consumer
  * would otherwise recover by parsing a message. {@link #violations()} is the one place the error
  * stream is assembled, in family declaration order, so no caller decides the order for itself.
+ *
+ * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
+ * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
+ * than to reject. It rides here because the store handle does, opened for the capture and closed with
+ * it, so a later phase wanting a store fact either reads it inside this pass or reopens the store to
+ * ask a question the pass could have answered. The record is therefore what one open store yielded,
+ * violations and emission facts alike.
  */
 public record StoreDetections(AuthoredClaimConflicts.Detection claims,
-                              ArgmappingProjectionDefects.Detection argmappingProjections) {
+                              ArgmappingProjectionDefects.Detection argmappingProjections,
+                              ResolvedKeyProjections.Projections keyProjections) {
 
     /** The empty detection, for callers running capture without the detection pass. */
     public static StoreDetections empty() {
         return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
-            ArgmappingProjectionDefects.Detection.empty());
+            ArgmappingProjectionDefects.Detection.empty(),
+            ResolvedKeyProjections.Projections.empty());
     }
 
     /** Every violation every family minted, each family's own order preserved within it. */

@@ -95,6 +95,21 @@ input AssignFilmActorInput {
 
 A nullable (`ID`) field follows jOOQ's changed-flag contract: an omitted key leaves its column unwritten (excluded from the service's INSERT/UPDATE), an explicit `null` writes `NULL`, and a value decodes and loads. A non-null (`ID!`) field always decodes and throws on a malformed or wrong-type id. A self-reference (an `@reference` on a same-table `@nodeId`) is rejected as out of scope.
 
+=== Projecting one key column into an `argMapping` parameter
+
+Where the consumer is not a jOOQ record but a single value, a routine IN parameter or a `@service`
+method parameter, the whole decoded key is the wrong shape. Open the node id with the key column you
+want instead:
+
+[source,graphql]
+----
+argMapping: "pOrganisasjonskode: input.organisasjonId.organisasjonskode"
+----
+
+`organisasjonskode` is a key column of the node type the `@nodeId` names, not a field of any SDL
+type. `typeName:` is required at such a position: there is no containing table to infer the target
+from. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
+
 == Constraints
 
 * The named or inferred type must be a node type: either it carries xref:node.adoc[`@node`], or it declares `implements Node` over a table whose jOOQ class publishes node metadata. The build fails when `typeName:` resolves to a non-node type.
@@ -105,6 +120,7 @@ A nullable (`ID`) field follows jOOQ's changed-flag contract: an omitted key lea
 * On `[ID!]` arguments where `typeName` matches the surrounding query's return-type table, xref:lookupKey.adoc[`@lookupKey`] is implied; an explicit `@lookupKey` is permitted but redundant.
 * Decode-time ID/typeId mismatch fails the request with a GraphQL error; same with malformed base64.
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!` (lists are valid for batch decode).
+* In an `argMapping` path, a `@nodeId` leaf must be opened with one of its node type's key columns and must name `typeName:` explicitly; a list of node ids cannot be opened, there being no single key to project from. Binding such a leaf without opening it sends the encoded id to the database verbatim and is a build error. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
 
 == Editor support
 

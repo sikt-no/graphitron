@@ -83,25 +83,33 @@ public final class RoutineWriteFetcherRenderer {
 
     /** Renders one routine-write entry point from its row. */
     public static MethodSpec render(RoutineWriteCommand row, CodeBlock dslDeclaration,
-            CodeBlock localContextTail, ArgPathHelperRegistry argHelpers) {
+            CodeBlock localContextTail, ArgPathHelperRegistry argHelpers,
+            ProjectedKeyHost keyHost) {
+        var keys = keyHost.at(row.coordinate());
         return switch (row) {
             case RoutineWriteCommand.ChainReread r ->
-                renderChainReread(r, dslDeclaration, localContextTail, argHelpers);
+                renderChainReread(r, dslDeclaration, localContextTail, argHelpers, keys);
             case RoutineWriteCommand.CarrierKeys r ->
-                renderCarrierKeys(r, dslDeclaration, localContextTail, argHelpers);
+                renderCarrierKeys(r, dslDeclaration, localContextTail, argHelpers, keys);
         };
     }
 
     private static MethodSpec renderChainReread(RoutineWriteCommand.ChainReread row,
-            CodeBlock dslDeclaration, CodeBlock localContextTail, ArgPathHelperRegistry argHelpers) {
+            CodeBlock dslDeclaration, CodeBlock localContextTail, ArgPathHelperRegistry argHelpers,
+            ProjectedKeyReads keys) {
         boolean isList = row.arity() == Arity.LIST;
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
         var builder = entryPoint(row, valueType);
 
+        var call = RoutineCallEmitter.emitCall(row.call(), new PreviousNodeRef.None(),
+            new ArgumentValueSource.Env(), argHelpers, keys);
+        // Any node-id decode a projected IN parameter needs, declared ahead of the try. Outside it
+        // deliberately: the catch arm below routes what it catches through the field's error
+        // channel, and a malformed node id is a client error about an argument rather than a
+        // database error about a write.
+        builder.addCode(keys.declarations());
         builder.beginControlFlow("try");
-        builder.addStatement("$T source = $L", row.call().resultTable().tableClass(),
-            RoutineCallEmitter.emitCall(row.call(), new PreviousNodeRef.None(),
-                new ArgumentValueSource.Env(), argHelpers));
+        builder.addStatement("$T source = $L", row.call().resultTable().tableClass(), call);
         for (JoinStep step : row.hops()) {
             var hop = (JoinStep.Hop) step;
             builder.addStatement("$T $L = $L.as($S)", hop.targetTable().tableClass(), hop.alias(),
@@ -164,17 +172,20 @@ public final class RoutineWriteFetcherRenderer {
     }
 
     private static MethodSpec renderCarrierKeys(RoutineWriteCommand.CarrierKeys row,
-            CodeBlock dslDeclaration, CodeBlock localContextTail, ArgPathHelperRegistry argHelpers) {
+            CodeBlock dslDeclaration, CodeBlock localContextTail, ArgPathHelperRegistry argHelpers,
+            ProjectedKeyReads keys) {
         boolean isList = row.arity() == Arity.LIST;
         var targetKeyColumns = row.capturedPairs().stream().map(JoinSlot::targetSide).toList();
         TypeName keyRowType = SourceKey.keyElementType(new SourceKey.Wrap.Record(), targetKeyColumns);
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType;
         var builder = entryPoint(row, valueType);
 
+        var call = RoutineCallEmitter.emitCall(row.call(), new PreviousNodeRef.None(),
+            new ArgumentValueSource.Env(), argHelpers, keys);
+        // Outside the try, for the reason the sibling arm states.
+        builder.addCode(keys.declarations());
         builder.beginControlFlow("try");
-        builder.addStatement("$T source = $L", row.call().resultTable().tableClass(),
-            RoutineCallEmitter.emitCall(row.call(), new PreviousNodeRef.None(),
-                new ArgumentValueSource.Env(), argHelpers));
+        builder.addStatement("$T source = $L", row.call().resultTable().tableClass(), call);
         builder.addCode(dslDeclaration);
 
         // The whole emit: the routine call and a projection of its own result columns, re-typed

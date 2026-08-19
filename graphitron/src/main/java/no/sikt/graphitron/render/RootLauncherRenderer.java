@@ -62,8 +62,8 @@ public final class RootLauncherRenderer {
 
     /** Renders one launcher method from its row and the run's carrier-routing fact. */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            ArgPathHelperRegistry argHelpers) {
-        return render(row, carrierDsl, CodeBlock.of(""), argHelpers);
+            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+        return render(row, carrierDsl, CodeBlock.of(""), argHelpers, keyHost);
     }
 
     /**
@@ -73,8 +73,9 @@ public final class RootLauncherRenderer {
      * not hold). Ignored by every non-batched row.
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            CodeBlock batchedDslDeclaration, ArgPathHelperRegistry argHelpers) {
-        return render(row, carrierDsl, batchedDslDeclaration, CodeBlock.of(""), argHelpers);
+            CodeBlock batchedDslDeclaration, ArgPathHelperRegistry argHelpers,
+            ProjectedKeyHost keyHost) {
+        return render(row, carrierDsl, batchedDslDeclaration, CodeBlock.of(""), argHelpers, keyHost);
     }
 
     /**
@@ -86,7 +87,7 @@ public final class RootLauncherRenderer {
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
             CodeBlock batchedDslDeclaration, CodeBlock serviceCall,
-            ArgPathHelperRegistry argHelpers) {
+            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueTypeOf(row));
@@ -140,7 +141,8 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain ->
-                builder.addCode(routineBody(row, chain, carrierDsl, argHelpers));
+                builder.addCode(routineBody(row, chain, carrierDsl, argHelpers,
+                    keyHost.at(row.coordinate())));
             // Ahead of the Correlated arm below, which its sibling seal dominates: the topology
             // is shared, only the select list forks.
             case LaunchSource.DiscriminatedCorrelatedChain chain ->
@@ -509,13 +511,16 @@ public final class RootLauncherRenderer {
      * about the read surface composed over it.
      */
     private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain,
-            CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers) {
+            CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
         var code = CodeBlock.builder();
         var startTable = chain.start().resultTable();
         String startLocal = chain.hops().isEmpty() ? TableLocal.name(startTable) : "source";
-        code.addStatement("$T $L = $L", startTable.tableClass(), startLocal,
-            RoutineCallEmitter.emitCall(chain.start(), new PreviousNodeRef.None(),
-                new ArgumentValueSource.Env(), argHelpers));
+        var call = RoutineCallEmitter.emitCall(chain.start(), new PreviousNodeRef.None(),
+            new ArgumentValueSource.Env(), argHelpers, keys);
+        // The decodes first: a projected IN parameter reads a column off a materialised record, so
+        // the record has to exist before the call expression that reads it.
+        code.add(keys.declarations());
+        code.addStatement("$T $L = $L", startTable.tableClass(), startLocal, call);
         for (var hop : chain.hops()) {
             // The chain constructor pins every hop target to the catalog, so the alias wraps the
             // bare Tables.<X> singleton, matching every other alias-declaration site.

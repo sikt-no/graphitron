@@ -38,15 +38,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What {@code intent_argmapping_projection_defect} returns: the {@code argMapping} bindings that
- * involve a {@code @nodeId} and fail to become a key projection, one row per defective pair in a
- * closed verdict vocabulary of three. The rejections that close the hole where a path bound a node
- * id and the base64 wire id reached the database with nothing in the build saying a word.
+ * open, or should have opened, a {@code @nodeId} and fail to become a key projection: one row per
+ * defective pair in a closed verdict vocabulary of four. The rejections that close the hole where a
+ * path bound a node id and the base64 wire id reached the database with nothing in the build saying
+ * a word.
  *
- * <p>Which arm fires is decided by the trailing-segment count and nothing else, so the arms are
+ * <p>Which arm fires among the three declared-decode arms is decided by the trailing-segment count
+ * and nothing else, and {@code node_id_declared} separates them from the fourth, so the arms are
  * disjoint by construction; the cases below pin that as a property rather than trusting it. Beside
- * the three arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
- * projection, a two-segment tail and a path that bound nothing must each leave the relation empty,
- * and each of those absences is a rejection some other surface owns or a population no rule judges.
+ * the arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
+ * projection, a two-segment tail, a non-{@code ID} leaf opened and a path that bound nothing must
+ * each leave the relation empty, and each of those absences is a rejection some other surface owns
+ * or a population no rule judges.
  */
 class ArgmappingProjectionDefectTest {
 
@@ -262,6 +265,79 @@ class ArgmappingProjectionDefectTest {
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("UNKNOWN_KEY_COLUMN");
             assertThat(keyColumnsOf(dsl, "Inventory")).isEmpty();
+        });
+    }
+
+    // ===== The decode nobody declared: the arm the grammar widening made necessary =====
+
+    /**
+     * An {@code ID} opened with a key column that declares no {@code @nodeId} at all. The walk used
+     * to reject this as a scalar traversal and now admits it, asking nothing about the directive
+     * because a path's head is reached through a slot map carrying types rather than directives; so
+     * this arm is the only thing standing between the widened grammar and an uninterpreted segment
+     * read straight off the wire map.
+     */
+    @Test
+    void openingAnIdThatDeclaresNoNodeIdIsUndeclared() {
+        withInventoryNode(dsl -> {
+            routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("UNDECLARED_NODE_ID");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF))
+                .as("there is no directive to have named a type")
+                .isNull();
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+                .as("what the author tried to project, which the message quotes back")
+                .isEqualTo("inventory_id");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.BOUND_KIND))
+                .isEqualTo("INPUT_FIELD");
+        });
+    }
+
+    /**
+     * The same defect on an argument head rather than an input field below one, which is the other
+     * relation the leaf's declared type is read from. Two SDL relations hold the two kinds of leaf,
+     * and {@code bound_kind} is the fork; a case per kind is what keeps one of the two joins from
+     * being written wrong and never noticed.
+     */
+    @Test
+    void openingAnIdArgumentThatDeclaresNoNodeIdIsUndeclaredToo() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            inventoryNodeType(dsl, "inventory_id");
+            seedField(dsl, GRAPH, "Mutation", "rentFilm");
+            seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "ID");
+            routinePair(dsl, "pInventoryId", "inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("UNDECLARED_NODE_ID");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.BOUND_KIND))
+                .isEqualTo("ARGUMENT");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.BOUND_ARGUMENT_NAME))
+                .isEqualTo("inventoryId");
+        });
+    }
+
+    /**
+     * The arm stops at {@code ID}, and that boundary is the whole of its disjointness rule. On any
+     * other leaf type the walk still rejects the trailing segment itself, so an arm reaching further
+     * would double-report a rejection the error stream already carries. The arm covers precisely the
+     * shapes the walk stopped judging and not one more.
+     */
+    @Test
+    void openingANonIdLeafIsLeftToTheWalk() {
+        withInventoryNode(dsl -> {
+            seedField(dsl, GRAPH, "RentFilmInput", "note", "String", false);
+            seedOccurrencePath(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput",
+                new OccurrenceStep("RentFilmInput", "note", "String"));
+            routinePair(dsl, "pNote", "input.note.nope");
+
+            assertThat(rows(dsl))
+                .as("a dot on a String is the walk's rejection, before and after the widening")
+                .isEmpty();
         });
     }
 
@@ -513,7 +589,10 @@ class ArgmappingProjectionDefectTest {
     /** {@code Mutation.rentFilm(input: RentFilmInput)} and the occurrence rows under it. */
     private static void inputSurface(DSLContext dsl) {
         seedDeclaredType(dsl, GRAPH, "RentFilmInput", "INPUT_OBJECT");
-        seedField(dsl, GRAPH, "RentFilmInput", "inventoryId");
+        // ID-typed, as the occurrence step below already says it is: the undeclared-decode arm reads
+        // the leaf's own declared type, so a fixture whose two halves disagreed about it would let
+        // that arm pass or fail for the wrong reason.
+        seedField(dsl, GRAPH, "RentFilmInput", "inventoryId", "ID", false);
         seedField(dsl, GRAPH, "Mutation", "rentFilm");
         seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput");
         seedOccurrencePath(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput",

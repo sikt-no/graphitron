@@ -142,6 +142,52 @@ type Brukertilgang @table(name: "mine_tilganger") {   # mine_tilganger is a tabl
 
 An explicit `@reference(path: [{table: "rolle"}])` stays legal and resolves identically; writing it is optional, not wrong. What has no implicit spelling is a multi-hop path out of a routine result, or a join the name-match cannot key: both still need the directive, and the build error names the missing key column and points at the `condition:` element rather than at foreign keys.
 
+[[node-id-key-projection]]
+== Binding a parameter to a node id's key column
+
+An `ID` field annotated xref:nodeId.adoc[`@nodeId`] carries a base64-encoded node identity on the
+wire, not the key it encodes. A routine IN parameter almost always wants the key. Open the node id
+with the key column you want and the binding decodes it for you:
+
+[source,graphql]
+----
+input OpprettFeideApplikasjonInput {
+    navn:            String!
+    organisasjonId:  ID! @nodeId(typeName: "Organisasjon")
+    serviceId:       String!
+}
+
+type Mutation {
+    opprettFeideApplikasjon(input: OpprettFeideApplikasjonInput!): OpprettFeideApplikasjonPayload
+        @routine(
+            name:       "opprett_feide_applikasjon"
+            argMapping: "pNavn: input.navn, pOrganisasjonskode: input.organisasjonId.organisasjonskode, pServiceId: input.serviceId"
+        )
+}
+----
+
+`organisasjonskode` is not a field of any SDL type. It is a *key column of the node type the
+`@nodeId` names*, so the segment means "decode this node id and project that column out of the
+decoded key". The generated fetcher decodes the id once into `Organisasjon`'s own record and reads
+the named column off it, before the write transaction opens.
+
+This is the same rule the dot always followed: a dot opens the thing at that position, and what it
+opens into depends on what the thing is. It is documented in full under
+xref:service.adoc#arg-mapping[Binding a parameter to a nested input field], and it works the same
+way at every directive that accepts an `argMapping`.
+
+Which columns are openable comes from the node type, not from the routine: whatever
+xref:node.adoc[`@node(keyColumns:)`] declares, or the table's key metadata where it does not. Matching
+is case-insensitive, so the SQL spelling and the generated spelling are one answer.
+
+Two things are build errors rather than surprises at runtime:
+
+* *Binding a `@nodeId` without opening it.* `pOrganisasjonskode: input.organisasjonId` would hand the
+  routine the base64 string. The build stops and lists the key columns you could have named.
+* *`@nodeId` without `typeName:` at this position.* A bare `@nodeId` infers its target from the
+  containing table, and a routine parameter has no containing table, so there is nothing to infer
+  from. Name the type.
+
 [[write]]
 == Writes on Mutation
 
@@ -234,8 +280,9 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field). A carrier is not bound to the routine's result: its rows are what the data field re-reads post-commit, not what the field returns. The carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
 * `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.
 * On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. `columnMapping` is likewise illegal at the head of a root chain (there is no previous table to bind from); bind root routine parameters from GraphQL arguments.
-* `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is leaving a parameter with nothing bound to it. On the right-hand side, a path whose head is not an argument of the field, or whose later segment is not a field of the input type at that depth, is a build error listing the candidates; a `columnMapping` naming a column the previous table does not carry likewise lists that table's columns. A `columnMapping` right-hand side has no path form, since a column has no nested fields.
-* An `argMapping` path must land on a scalar or enum leaf. Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
+* `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is leaving a parameter with nothing bound to it. On the right-hand side, a path whose head is not an argument of the field, or whose later segment names nothing the value at that depth opens into, is a build error listing the candidates; a `columnMapping` naming a column the previous table does not carry likewise lists that table's columns. A `columnMapping` right-hand side has no path form, since a column has no nested fields.
+* An `argMapping` path must land on a scalar or enum leaf, or on a key column projected out of a node id (see <<node-id-key-projection>>). Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
+* A `@nodeId`-carrying leaf must be opened with one of its node type's key columns, and its `@nodeId` must name `typeName:` explicitly. Binding the leaf itself would send the encoded node id to the database verbatim, so it is a build error listing the key columns available; a `@nodeId` with no `typeName:` is a build error because a routine parameter has no containing table to infer the node type from. Naming a column the node type does not resolve is a build error suggesting the near miss, and opening an `ID` that carries no `@nodeId` at all is a build error too: there is no node identity there to project out of. Exactly one segment may follow a node id, a node id opening into one key column.
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
 * `@orderBy`, `@condition` and `@asConnection` compose normally on a routine-backed *read* (see <<read-surface,The read surface>>). `@lookupKey` composition is reported as deferred. On a `Mutation` field, `@orderBy` and `@condition` are reported as deferred (the write's result shape has no filter or order surface to compose onto) and a Connection return is rejected; at a child position `@asConnection` is reported as deferred.
 

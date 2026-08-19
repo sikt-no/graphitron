@@ -13,6 +13,11 @@ import no.sikt.graphitron.javapoet.ClassName;
  * generated {@code Routines} convenience method invoked with the bound IN parameters,
  * {@code Routines.<method>(<args>)}. Callers append {@code .as(alias)} like any table.
  *
+ * <p>A parameter bound to an {@code argMapping} path whose last segment names a key column of a
+ * {@code @nodeId}'s node type reads that column off a decoded record instead of off the wire map;
+ * {@link ProjectedKeyReads} holds those, and the fork is row presence rather than a shape test, a
+ * projected path being indistinguishable from an ordinary dotted one without the store's resolution.
+ *
  * <p>The call surface forks on correlation, decided once from the bindings:
  *
  * <ul>
@@ -47,26 +52,36 @@ public final class RoutineCallEmitter {
      *                     values (the env-vs-SelectedField fork)
      * @param argHelpers   collects the descent helper a dot-path binding needs; untouched when
      *                     every binding names a bare slot
+     * @param keys         the emitting method's node-id decodes: a binding whose path projects a
+     *                     key column reads it off a decoded record from here, and the caller emits
+     *                     {@link ProjectedKeyReads#declarations()} ahead of the statement holding
+     *                     this expression
      */
     public static CodeBlock emitCall(TableExpr.RoutineCall rc, PreviousNodeRef previousNode,
-            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers) {
+            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers,
+            ProjectedKeyReads keys) {
         var routine = rc.routine();
         boolean correlated = routine.argBindings().stream()
             .anyMatch(b -> b.source() instanceof ParamSource.SourceColumn);
         CodeBlock args = CodeBlock.join(routine.argBindings().stream()
-            .map(b -> argExpression(b, correlated, previousNode, argSource, argHelpers))
+            .map(b -> argExpression(b, correlated, previousNode, argSource, argHelpers, keys))
             .toList(), ", ");
         return CodeBlock.of("$T.$L($L)", routine.routinesClass(), routine.methodName(), args);
     }
 
     private static CodeBlock argExpression(RoutineRef.ArgBinding b, boolean correlated,
             PreviousNodeRef previousNode, ArgumentValueSource argSource,
-            ArgPathHelperRegistry argHelpers) {
+            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
         return switch (b.source()) {
             case ParamSource.Arg arg -> {
-                CodeBlock raw = arg.path().isHead()
-                    ? typedSlotRead(b.paramType(), arg.path().headName(), argSource)
-                    : nestedSlotRead(b.paramType(), arg.path(), argSource, argHelpers);
+                // Row presence decides, not a shape test on the path: a projected binding's path
+                // looks exactly like an ordinary dotted one, the difference being that its last
+                // segment named a key column, which is the store's resolution and this relation's
+                // to answer.
+                CodeBlock raw = keys.readFor(arg.path(), argSource, argHelpers)
+                    .orElseGet(() -> arg.path().isHead()
+                        ? typedSlotRead(b.paramType(), arg.path().headName(), argSource)
+                        : nestedSlotRead(b.paramType(), arg.path(), argSource, argHelpers));
                 yield correlated ? CodeBlock.of("$T.val($L)", DSL, raw) : raw;
             }
             case ParamSource.SourceColumn sc -> switch (previousNode) {

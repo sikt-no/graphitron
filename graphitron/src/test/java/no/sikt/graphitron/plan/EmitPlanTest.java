@@ -73,7 +73,7 @@ class EmitPlanTest {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
         var model = SessionHooksFixtures.withHooks(bundle.model(),
             SessionHooksFixtures.handleLess(SessionHooksFixtures.stringPayload("claims")));
-        var plan = EmitPlan.produce(model, bundle.federationLink(), bundle.usesOneOf(),
+        var plan = EmitPlan.produceWithoutStore(model, bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE);
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
@@ -84,22 +84,22 @@ class EmitPlanTest {
     void oneOfRow_requiresBothFederationAndOneOfUse() {
         var model = TestSchemaHelper.buildBundle(PLAIN_SDL).model();
 
-        var both = EmitPlan.produce(model, true, true, DEFAULT_OUTPUT_PACKAGE);
+        var both = EmitPlan.produceWithoutStore(model, true, true, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(both)).contains(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL);
         assertThat(unitNames(both, GlobalUnitKind.ONE_OF_DIRECTIVE_SDL)).containsExactly("OneOfDirectiveSdl");
 
-        var federationOnly = EmitPlan.produce(model, true, false, DEFAULT_OUTPUT_PACKAGE);
+        var federationOnly = EmitPlan.produceWithoutStore(model, true, false, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(federationOnly)).doesNotContain(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL);
 
         // The non-federation printer already prints the definition, so @oneOf alone commits nothing.
-        var oneOfOnly = EmitPlan.produce(model, false, true, DEFAULT_OUTPUT_PACKAGE);
+        var oneOfOnly = EmitPlan.produceWithoutStore(model, false, true, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(oneOfOnly)).doesNotContain(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL);
     }
 
     @Test
     void devExecutorRow_isAbsentUnderFederation() {
         var model = TestSchemaHelper.buildBundle(PLAIN_SDL).model();
-        var federated = EmitPlan.produce(model, true, false, DEFAULT_OUTPUT_PACKAGE);
+        var federated = EmitPlan.produceWithoutStore(model, true, false, DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(federated)).doesNotContain(GlobalUnitKind.DEV_EXECUTOR);
     }
 
@@ -111,7 +111,7 @@ class EmitPlanTest {
             }
             type Query { film: Film }
             """);
-        var plan = EmitPlan.produce(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
+        var plan = EmitPlan.produceWithoutStore(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE);
         assertThat(kinds(plan)).contains(GlobalUnitKind.QUERY_NODE_FETCHER);
         assertThat(unitNames(plan, GlobalUnitKind.QUERY_NODE_FETCHER)).containsExactly("QueryNodeFetcher");
@@ -135,7 +135,7 @@ class EmitPlanTest {
             }
             type Query { film: Film }
             """);
-        var plan = EmitPlan.produce(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
+        var plan = EmitPlan.produceWithoutStore(withNode.model(), withNode.federationLink(), withNode.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE);
 
         var dispatch = plan.globals().stream()
@@ -158,7 +158,7 @@ class EmitPlanTest {
 
     private static EmitPlan producePlain() {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
-        return EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
+        return EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE);
     }
 

@@ -26,20 +26,24 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * here is the decode of the view's closed {@code verdict} vocabulary into {@link Rejection} arms and
  * the prose those arms carry.
  *
- * <p>Three of the four arms are the author's to fix, and they close the silence this family had:
+ * <p>Four of the five arms are the author's to fix, and they close the silence this family had:
  * binding a {@code @nodeId} without naming a key column used to hand a routine parameter or a
  * service method the base64 wire id verbatim, and nothing in the build said a word. Which arm fires
- * is the view's decision, taken on the trailing-segment count alone, so nothing here re-tests a
- * predicate the query already settled.
+ * is the view's decision, taken on the trailing-segment count and whether a decode was declared, so
+ * nothing here re-tests a predicate the query already settled. One of the four exists because of the
+ * grammar widening rather than in spite of it: an {@code ID} with no {@code @nodeId} on it is
+ * admitted by the walk, since a path's head is reached through a slot map carrying types and not
+ * directives, and {@link Verdict#UNDECLARED_NODE_ID} is what stands where the walk's traversal
+ * rejection used to.
  *
- * <p>The fourth arm is the generator's rather than the author's, which is why it is derived here
+ * <p>The fifth arm is the generator's rather than the author's, which is why it is derived here
  * and not in SQL: a projection that resolves at a site whose emitter does not read it yet is a
  * {@link Rejection.Deferred}, and whether an emitter exists is a fact about this codebase and not
  * about the schema. {@link #EMITTING_SITES} is that fact, held beside the switch that names the
  * eight sites so a value can neither be misspelled nor forgotten, and the arm shrinks as sites are
- * wired rather than being deleted. Until then a resolvable projection fails the build saying so,
- * which is the honest state: emitting nothing, or emitting the raw base64, are the two outcomes it
- * exists to prevent.
+ * wired rather than being deleted. A projection at a site still outside that set fails the build
+ * saying so, which is the honest state: emitting nothing, or emitting the raw base64, are the two
+ * outcomes it exists to prevent.
  *
  * <p>Locations are the view's: the owning directive application's own position, so a message points
  * at the {@code argMapping} the author wrote rather than at the input type's declaration. The
@@ -53,13 +57,20 @@ public final class ArgmappingProjectionDefects {
     private ArgmappingProjectionDefects() {}
 
     /**
-     * The {@code site} values whose emitters read a resolved key projection. Empty while the
-     * emission half is unbuilt, so every resolvable projection defers; the routine, service and
-     * output-field condition sites join it when their emitters land, leaving the input-field
-     * condition and the three path-step sites, which resolve no leaf at all and can therefore only
-     * ever defer.
+     * The {@code site} values whose emitters read a resolved key projection. {@code ROUTINE} is
+     * wired: a routine IN parameter bound to a projected path reads its column off a decoded record
+     * through {@link no.sikt.graphitron.render.ProjectedKeyReads}. The service and output-field
+     * condition sites join it when their emitters land, leaving the input-field condition and the
+     * three path-step sites, which resolve no leaf at all and can therefore only ever defer.
+     *
+     * <p>The set is keyed on the site and so says nothing about whether every <em>emitter</em> at a
+     * wired site reads a projection. That second question is the plan's, asked as row presence in
+     * {@code EmitPlan}: a projection at a coordinate no wired emitter owns fails the build there
+     * rather than being emitted as an ordinary nested read. The two gates are complementary, and
+     * neither subsumes the other, because this one runs before any plan exists and that one cannot
+     * see the directive a pair was spelled on.
      */
-    private static final Set<Site> EMITTING_SITES = EnumSet.noneOf(Site.class);
+    private static final Set<Site> EMITTING_SITES = EnumSet.of(Site.ROUTINE);
 
     /**
      * The eight {@code site} values {@code intent_argmapping_pair} discriminates on, each mapped to
@@ -109,7 +120,15 @@ public final class ArgmappingProjectionDefects {
         /** A projection asked for against a {@code @nodeId} that names no node type. */
         MISSING_TYPE_NAME,
         /** A trailing segment naming no key column the node type resolved. */
-        UNKNOWN_KEY_COLUMN;
+        UNKNOWN_KEY_COLUMN,
+        /**
+         * A key column named after an {@code ID} that declares no {@code @nodeId}: the shape the
+         * grammar widening admits and nothing else judges. The walk opens an {@code ID} without
+         * asking whether a decode was declared on it, because a path's head is reached through a
+         * slot map carrying types rather than directives, so this arm stands exactly where the
+         * walk's own traversal rejection used to.
+         */
+        UNDECLARED_NODE_ID;
 
         /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
         static Verdict of(String verdict) {
@@ -191,7 +210,9 @@ public final class ArgmappingProjectionDefects {
     /**
      * The projections that resolve at a site no emitter reads. Keyed on {@code site} rather than on
      * the pair, so one row per pair however many key columns it projects: a distinct read over the
-     * projection relation's own grain would report a composite key twice for one entry.
+     * projection relation's own grain would report a composite key twice for one entry. Empty once
+     * every site that resolves a leaf is wired, which is what makes this a shrinking arm rather than
+     * a permanent one.
      */
     private static List<Defect> unwiredSites(DSLContext dsl, String graphName) {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
@@ -277,6 +298,11 @@ public final class ArgmappingProjectionDefects {
                       + " with @node(keyColumns:) on that type"
                     : ""),
                 trailingSegment, keyColumns);
+            case UNDECLARED_NODE_ID -> Rejection.structural(entry + " opens an ID with '"
+                + trailingSegment + "', but that ID declares no @nodeId, so there is no node"
+                + " identity to project a key column out of; annotate it"
+                + " @nodeId(typeName: \"<NodeType>\"), or drop the '" + trailingSegment
+                + "' segment to bind the value as written");
         };
     }
 

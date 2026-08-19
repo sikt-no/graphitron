@@ -112,6 +112,27 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
      * walking from a {@code [B]!} field's element-type B into B's child fields succeeds.
      *
      * <p>{@code overrides} is trusted to have unique keys (the parser enforces it).
+     *
+     * <h4>The key-column segment</h4>
+     *
+     * <p>A path may spell one segment past an {@code ID}, naming a key column of the node type that
+     * {@code ID}'s {@code @nodeId} refers to; see {@link #opensIntoNodeKey}. It resolves to an
+     * ordinary trailing {@link PathExpr.Step}, which is the whole of the walk's contribution: the
+     * segment is <em>admitted and carried, never interpreted</em> here. Two things follow, and both
+     * are load-bearing.
+     *
+     * <p>Interpreting it is a functional dependency of the pair's coordinate resolved against the
+     * node type's key columns, so it belongs to the store's resolution and to the plan that reads
+     * it, not to a walk that is minting a binding for a different coordinate. The walk cannot even
+     * consult that resolution: the schema is built before capture runs, so the store is empty while
+     * this executes, and a walk-local re-check would be a second spelling of the view's answer.
+     *
+     * <p>What keeps an uninterpreted segment safe is therefore the pipeline order rather than a gate
+     * here. Capture and validation both run before planning and rendering, so a trailing segment
+     * that resolves to no key column fails the build before any emitter sees the path. That makes
+     * the admission's safety exactly the completeness of those detections, which is why the store
+     * arm covering an {@code ID} with no {@code @nodeId} on it exists at all: without it this
+     * factory would hand an emitter a segment nothing had judged.
      */
     static Result of(Map<String, GraphQLInputType> slotTypes, Map<String, List<String>> overrides) {
         var resolvedOverrides = new LinkedHashMap<String, PathExpr>();
@@ -137,10 +158,29 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
                 String dottedPath = String.join(".", segments);
                 GraphQLType walkType = unwrapForTraversal(currentFieldType);
                 if (!(walkType instanceof GraphQLInputObjectType inputObj)) {
-                    return new Result.PathRejected(
-                        "argMapping entry '" + javaTarget + ": " + dottedPath
-                        + "' walks through " + describeKind(walkType) + " at segment '"
-                        + segments.get(i - 1) + "'; only input-object types may be traversed");
+                    if (!opensIntoNodeKey(walkType)) {
+                        return new Result.PathRejected(
+                            "argMapping entry '" + javaTarget + ": " + dottedPath
+                            + "' opens " + describeKind(walkType) + " at segment '"
+                            + segments.get(i - 1) + "', which has nothing to open; "
+                            + OPENABLE_KINDS);
+                    }
+                    if (isListShaped(currentFieldType)) {
+                        return new Result.PathRejected(
+                            "argMapping entry '" + javaTarget + ": " + dottedPath
+                            + "' opens a list of ID at segment '" + segments.get(i - 1)
+                            + "'; a node id opens into one key column, and a list of node ids has"
+                            + " no single key to project a column out of");
+                    }
+                    if (i != segments.size() - 1) {
+                        return new Result.PathRejected(
+                            "argMapping entry '" + javaTarget + ": " + dottedPath
+                            + "' opens the ID at segment '" + segments.get(i - 1) + "' with '"
+                            + segName + "', but a node id opens into exactly one key column, so"
+                            + " nothing may follow it");
+                    }
+                    expr = PathExpr.step(expr, segName, false);
+                    break;
                 }
                 GraphQLInputObjectField nextField = inputObj.getField(segName);
                 if (nextField == null) {
@@ -173,6 +213,32 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
         }
         byJavaName.putAll(resolvedOverrides);
         return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName)));
+    }
+
+    /**
+     * The two things a dot may open, as a message states them. One clause rather than two rules:
+     * the separator has always meant "open the thing at this position", and what a thing opens
+     * into follows from what it is.
+     */
+    private static final String OPENABLE_KINDS =
+        "an input object opens into its fields, and an ID carrying @nodeId opens into the key"
+        + " columns of the node type it names";
+
+    /**
+     * Whether a dot at this position opens a node key: the type is the {@code ID} scalar, which a
+     * {@code @nodeId} may sit on and whose decoded key tuple a trailing segment names a column of.
+     *
+     * <p>Deliberately structural, and deliberately not a test for the directive itself. The head of
+     * a path is a slot reached through {@code slotTypes}, which carries types and not directives, so
+     * an argument head could not be asked the question at all and a rule the two path positions
+     * answered differently would be worse than one they share. What the widening therefore admits is
+     * an {@code ID} that opens, whether or not a decode was declared on it; an {@code ID} carrying no
+     * {@code @nodeId} is rejected by the store's own detection over the captured leaf, which sees the
+     * directive and this does not.
+     */
+    private static boolean opensIntoNodeKey(GraphQLType walkType) {
+        return walkType instanceof GraphQLScalarType s
+            && s.getName().equals(graphql.Scalars.GraphQLID.getName());
     }
 
     /**

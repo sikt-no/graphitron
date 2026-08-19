@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
@@ -258,6 +259,11 @@ public final class FactCapture {
      * backing rows because the same pass is the family's one writer and its cadence, whether or
      * not a detection reads them.
      *
+     * <p>Beside the two detections the pass reads the {@code argMapping} family's positive half,
+     * {@link ResolvedKeyProjections}, which the plan emits from. It is read here for the reason the
+     * detections are: the store handle is this method's, and a phase that wanted the fact later would
+     * have to reopen the store to ask.
+     *
      * <p>The {@code argMapping} family is gated on nothing of the walk's, reading only SDL facts,
      * and shares the {@code reach} gate anyway: a run with no classified model is a run whose
      * verdict has already been pronounced elsewhere, and there is no build for these rejections to
@@ -270,7 +276,8 @@ public final class FactCapture {
         ClaimDomainRows.write(dsl, graph.name(), reach.domain());
         TypeBackingClassRows.write(dsl, graph.name(), reach.backingClasses());
         return new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
-            ArgmappingProjectionDefects.detect(dsl, graph.name()));
+            ArgmappingProjectionDefects.detect(dsl, graph.name()),
+            ResolvedKeyProjections.read(dsl, graph.name()));
     }
 
     /**

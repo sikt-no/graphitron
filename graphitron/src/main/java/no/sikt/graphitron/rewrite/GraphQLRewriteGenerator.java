@@ -442,9 +442,10 @@ public class GraphQLRewriteGenerator {
         logWarnings(withLintFindings(schema, attributed));
 
         // Capture runs ahead of validation: the store-backed detections feed the error stream,
-        // so the store has to be filled before the verdict is pronounced.
-        var errors = validateAndLogErrors(schema,
-            captureFactsAndDetect(attributed, read.verdicts(), schema).violations());
+        // so the store has to be filled before the verdict is pronounced. The product is kept
+        // rather than consumed inline, its key projections being the plan's one store-side input.
+        var storeFacts = captureFactsAndDetect(attributed, read.verdicts(), schema);
+        var errors = validateAndLogErrors(schema, storeFacts.violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -454,10 +455,12 @@ public class GraphQLRewriteGenerator {
         // The plan is produced before the per-type generators run: the launcher relation's rows
         // are read by the fetcher generator (a root coordinate with a row gets the launcher
         // emission, one without falls through to its legacy builder).
-        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage);
+        var plan = EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
+            storeFacts.keyProjections());
 
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
-            plan.launchers(), plan.typeUnits().fetchers(), plan.routineWrites());
+            plan.launchers(), plan.typeUnits().fetchers(), plan.routineWrites(),
+            plan.keyProjections());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
