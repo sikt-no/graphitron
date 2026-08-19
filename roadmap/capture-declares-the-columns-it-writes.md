@@ -6,7 +6,7 @@ bucket: architecture
 theme: model-cleanup
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-17
+last-updated: 2026-08-18
 ---
 
 # Capture declares the columns it writes, so an insert is designed rather than every-field
@@ -52,6 +52,24 @@ generated column, and H2 refuses an insert that names one, so `.columns(table.fi
 that relation's whole write. The item is that the write path's contract should be stated by the writer
 instead of reconstructed from the schema, which is worth landing whether or not that column ever
 arrives.
+
+**Twelve of the 123 arrive ahead of this item.** That trigger is no longer hypothetical:
+`roadmap/decodes-normalize-internal-grammars.md` adds the generated columns, and rather than wait on
+this item it converts the twelve relations it folds columns onto (`graphitron_table`,
+`graphitron_mutation`, `graphitron_routine`, the three reference-step relations,
+`graphitron_field_binding`, `graphql_field`, `sql_table`, `sql_constraint`, `sql_constraint_column`,
+`sql_column`), fourteen `newRecord` sites in all. It takes the written-statement shape and the
+settled rejections below unchanged, and it introduces the one mechanism this item's end state does
+not have: while both arms exist, `flush()` dispatches to a relation's write function where one is
+registered and renders generically where none is, because the converted relations interleave with
+unconverted parents on both sides and the write order has to span both. It also lands the
+column-coverage gate scoped to the relations that have write functions, so the gate grows with the
+conversion instead of arriving at the end.
+
+So this item keeps the remaining 111 relations, the plain-record gatherer layer, the three
+relocations below, the corpus-wide gate, and the deletion of the generic arm and its dispatch once no
+relation needs it. Read the design below as the whole of the work, with those twelve already done and
+their write functions the worked example the rest follows.
 
 ## Settled
 

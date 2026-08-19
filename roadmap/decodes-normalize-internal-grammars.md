@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
-depends-on: [capture-declares-the-columns-it-writes]
+depends-on: []
 created: 2026-08-18
 last-updated: 2026-08-18
 ---
@@ -219,29 +219,16 @@ which is exactly the drift it was meant to catch. `IS NOT DISTINCT FROM` fixes t
 rejects the same row, so a written column is at least expressible; a generated column makes the
 question moot and deletes the writer duty, the constraint and the test together.
 
-**The generated column cannot land until capture stops writing every column.** The property that
-makes generation safe is the property that breaks the current write path, and it is the same
-property: `FactSink.flush()` builds one insert per relation as
+**The property that makes generation safe is the property that breaks the current write path.**
+`FactSink.flush()` builds one insert per relation as
 `dsl.insertInto(table).columns(table.fields()).values(...)`, naming every column the DDL declares,
 and binds it from `record.intoArray()`. Measured on h2 2.4.240, an insert that names a generated
 column is rejected outright, so the first `_upper` column added to a captured relation breaks that
-relation's whole write. Every relation this item folds goes through that path: the nine qualifiable
-references, `graphitron_table.type_name`, `graphitron_field_binding.name_ref`,
-`graphql_field.field_name`, and the `sql_` columns, which reach the same sink through
-`CatalogFactCapture`.
-
-The fix is not to teach `flush()` which columns to skip. Reconstructing the column list from jOOQ's
-readonly flag replaces one inference from the relation's shape with another, and leaves the insert
-assembled at runtime rather than written. What the write path owes is type-safe DML: a statement that
-names the columns the writer has data for, in generated constants the compiler checks, so a column
-the writer has nothing for cannot enter a column list by accident and cannot drift into one later.
-That is `roadmap/capture-declares-the-columns-it-writes.md`, which already records this item as the
-trigger that turns its hypothetical into a real one, already rejects the readonly-flag shortcut by
-name, and carries a build-time gate over the columns capture writes that would have caught the
-collision at review rather than at h2's error message. This item now depends on it. Nothing here
-argues for reopening the written-column alternative: a written fold column would pass through
-`flush()` today and fail the same gate later, for the drift reason the check-constraint measurement
-above already settles.
+relation's whole write. Every relation this item folds goes through that path, the `sql_` ones
+reaching the same sink through `CatalogFactCapture`. So this item carries the write-path change for
+the relations it folds, which is its own section below. Nothing here argues for reopening the
+written-column alternative as a way around that: a written fold column writes through the same sink
+and inherits the drift the check-constraint measurement above already settles.
 
 The rule, stated over comparisons rather than over columns, because that is what decides:
 
@@ -459,6 +446,79 @@ any more is not merely unreferenced, it is unconstrainable.
   leaving them would make the schema's own documentation contradict its keys, which is the failure
   mode the comment discipline exists to prevent.
 
+## The write path states the columns it writes, for the twelve relations this touches
+
+A generated column is a column no writer may name, and capture's writer names every column there is.
+That is not a fold problem, it is a write-path problem the fold is the first to hit, and
+`roadmap/capture-declares-the-columns-it-writes.md` already holds the full statement of it: an insert
+should name the columns the writer has data for, and that list should be written rather than
+reconstructed from the relation's shape at runtime. Its settled positions carry over unchanged, in
+particular the one that matters here: **filtering `table.fields()` by jOOQ's readonly flag is not the
+fix.** It swaps one inference from the DDL for another and leaves the statement assembled at runtime,
+which is the thing being removed. So does moving a column list somewhere `flush()` consults.
+
+That item is 123 relations and a 4,702-line capture layer. This one needs twelve of them, and takes
+exactly those.
+
+### Which twelve, and how small that is
+
+Every relation this item puts a generated column on: `graphitron_table`, `graphitron_mutation`,
+`graphitron_routine`, `graphitron_field_reference_step`, `graphitron_argument_reference_step`,
+`graphitron_reference_for_step`, `graphitron_field_binding`, `graphql_field`, `sql_table`,
+`sql_constraint`, `sql_constraint_column` and `sql_column`. Fourteen `newRecord` sites across the
+twelve, eleven of them one site each and `graphql_field` three. The catalog four are the easiest of
+the set, because `JooqCatalog.ColumnFacts`, `IndexFacts` and `ForeignKeyFacts` are already plain
+records and `CatalogFactCapture` translates them field by field, so there the work is deleting a
+translation rather than inventing one.
+
+### The shape: written statements, dispatched in the order the sink already computes
+
+Each of the twelve gains a write function issuing one bulk statement that names its columns in the
+generated constants, so the column list is compile-checked and a column the writer has nothing for
+cannot enter it, now or later.
+
+The sink keeps its other three jobs and loses none of them. `claim()` still decides which occurrence
+of a duplicated declaration wins, the graph stamp still lands in `add()`, and `parentsFirst` still
+orders the write. What changes is only who renders the statement: where a relation has a write
+function, `flush()` calls it with that relation's buffered rows instead of building an insert from
+`table.fields()`. Everything else keeps the generic arm.
+
+Dispatching rather than calling directly is load-bearing, not a hedge. The twelve interleave with
+relations that stay generic on both sides: `graphql_field`'s parents `graphql_type` and
+`graphql_type_declaration` are outside the set, `sql_table`'s parents `sql_schema` and `store_source`
+are outside it, while `graphitron_field_binding`'s parent `graphql_field` and
+`sql_constraint_column`'s parents `sql_column` and `sql_constraint` are inside. A slice that wrote
+eagerly during the walk would insert a child before the sink flushed its parent. Ordering therefore
+has to span both arms while both exist, and the sort that already computes it from the declared
+foreign keys is the thing that spans them.
+
+This is a partial migration and says so. The end state is the sibling item's: every relation written,
+the caller ordering the calls, the generic arm deleted. Nothing here forecloses it, and the twelve
+are the first twelve of the 123 rather than a different mechanism.
+
+### Two things the conversion settles rather than carries over
+
+**Conflict behaviour becomes stated.** `sharedFamily()` picks `onDuplicateKeyIgnore` by testing
+whether a relation's name starts with `jvm_` or `sql_`, so the four catalog relations here currently
+get their conflict rule from a naming convention. Their written statements name it, and the generic
+arm keeps the prefix test for the relations still on it.
+
+**The bulk property is a duty, not an inheritance.** `flush()`'s bind batch beats `batchInsert` by a
+measured 1.8x (3.7 s to 2.1 s over a 207k-row census, per its own comment), and that margin comes
+from one prepared statement per relation rather than a render per row. Each write function issues one
+bulk statement, and the census load is measured before and after; `sql_column` and `graphql_field`
+are the two of the twelve big enough for a regression to show.
+
+### The gate, scoped to what exists
+
+The sibling item's gate is what would have caught this collision at review rather than at h2's error
+message, and the scoped form is worth having now: for each relation with a write function, assert
+after a capture of the fixture corpus that the columns it names cover every `NOT NULL` column of the
+relation. It ranges over the twelve today and over each relation the sibling converts after, so it
+grows rather than being rewritten. One fact bounds the risk of getting a column list wrong meanwhile:
+the DDL declares no `DEFAULT` on any column, so a column omitted from an insert and a column bound
+null produce the same row, and no conversion here can change a captured fact through that difference.
+
 ## Tests
 
 - Pipeline tier, one case per arm of the partition table, on a `@table`, a `@reference` path element's
@@ -473,6 +533,12 @@ any more is not merely unreferenced, it is unconstrainable.
 - Pipeline tier for the segment coordinate: two fields on one type whose mappings share a path text,
   pinning that each field's segments are addressable from its own coordinate, and that the two
   segment sets are separate rows rather than one shared set.
+- The write path: `FactCaptureAgreementTest` is the harness that already compares captured values
+  against the catalog's and the scanner's own readings, so a mis-bound column in a converted
+  statement fails there loudly, and it covers the wide relations that matter most here
+  (`sql_column`, `graphql_field`). Add to it the column-coverage gate above, and one case pinning
+  that a converted relation still writes under a generated column, which is the whole point and is
+  the case that fails today.
 - Nothing tests that a folded column holds the upper-cased form of the column beside it. Generation
   is the invariant, h2 rejects an `INSERT` that names the column at all, and a test over it would be
   testing the database. This is a deliberate subtraction from an earlier draft, which needed such a
@@ -557,17 +623,29 @@ is the work the description was pointing at.
 Neither of those two depends on the other and neither declares the other. This one changes the shape
 a decode lands in, that one changes what a decode reads from, and either order works.
 
-The one real dependency is `roadmap/capture-declares-the-columns-it-writes.md`, for the reason the
-fold section gives: the generated `_upper` columns cannot be written through a path that names every
-column of the relation, and that item is where the write path learns to state its own column list.
-The ordering is strict rather than a preference, so it is the sole entry in `depends-on`. Nothing
-else here waits on it, and the parts columns, the field-set segments and the segment coordinate are
-all ordinary written columns that could land first if the fold were ever split out.
+`roadmap/capture-declares-the-columns-it-writes.md` is the third sibling and the one this item nearly
+depended on. It states the write-path principle in full and carries it across 123 relations; the
+generated `_upper` columns cannot land through a path that names every column of a relation, so on
+the face of it this item waits for that one. It does not, because the twelve relations it needs are a
+prefix of that work rather than a precondition for it. Folding them in costs fourteen write sites and
+buys an unblocked item, so this item's `depends-on` is empty and the write-path section above says
+what it takes.
+
+The split is by relation and nothing is done twice: this one converts the twelve it folds columns
+onto, that one converts the remaining 111 and deletes the generic arm once none is left. It keeps
+everything this item does not touch, which is most of it: the plain-record gatherer layer, moving
+`claim()` into the gather stage, handing the ordering to the caller, and the corpus-wide form of the
+column-coverage gate. Its own body records that this item was the trigger that turned its collision
+from hypothetical into real, and it now also records which twelve arrive early.
 
 ## Out of scope
 
 - Resolving a reference to a catalog object, which is composition and stays derived. This item only
   changes the shape composition reads.
+- The other 111 relations' writes, the plain-record gatherer layer, relocating `claim()` and the
+  parents-first ordering, and deleting the generic arm of `flush()`. Twelve relations convert here
+  because twelve is what the fold needs; the rest is the sibling item and is not made harder by
+  taking them early.
 - The decodes' input, AST versus captured rows, which is the sibling item.
 - Identifying which *pair* a segment set came from. The coordinate reaches the field; the exact owner
   stays a join against the pair relation, for the reason recorded above.
