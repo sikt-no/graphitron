@@ -120,7 +120,10 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
 
     private static CallSiteExtraction toCallSiteExtraction(Param p) {
         return switch (p.source()) {
-            case ParamSource.Arg arg             -> arg.extraction();
+            // The whole binding, not the leaf transform alone: a dotted path's descent rides the
+            // NestedInputField wrapper ParamSource.Arg mints, and reading extraction() directly here
+            // is what made a dotted @condition argMapping pass its outer argument instead.
+            case ParamSource.Arg arg             -> arg.callSiteExtraction();
             case ParamSource.Context ignored     -> new CallSiteExtraction.ContextArg();
             case ParamSource.Sources ignored      -> throw nonExtractedSource(p);
             case ParamSource.DslContext ignored   -> throw nonExtractedSource(p);

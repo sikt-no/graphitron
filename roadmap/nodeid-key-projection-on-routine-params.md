@@ -1245,7 +1245,8 @@ stage into a one-line note.
    What shipped. `ArgBindingMap.of` admits one segment past a declared node id; `ResolvedKeyProjections` reads
    the projection view; `KeyProjection` and `KeyProjectionRelation` carry it command-side;
    `KeyProjectionCommands` joins it onto the walked model's node types; `ProjectedKeyHost` and
-   `ProjectedKeyReads` render the decode-and-project read; `EMITTING_SITES` holds `ROUTINE`. The
+   `ProjectedKeyReads` render the decode-and-project read; `EMITTING_SITES` holds `ROUTINE`, `FIELD_CONDITION` and `ARGUMENT_CONDITION`, the two condition
+   values together because they are one emitter. The
    sakila example carries `Mutation.rentFilmPayloadProjected`, whose round trip proves the decoded
    key reaches the database as a key.
 
@@ -1325,22 +1326,122 @@ stage into a one-line note.
    resolves a leaf (the pipeline-tier cases prove it) and its emitter is the conditions class's, so it
    belongs with the output-field condition rather than with the residue. Wire the two together.
 
-   What remains: the `@service` site (`ArgCallEmitter`'s `NestedInputField` arm), the two
-   conditions-class sites with the decode helper body hosted there, and the compilation-tier assertion
-   about which class hosts it. Also open, and larger than the rest: whether the openable key columns
-   should be *captured* per argument and input-field coordinate in the `graphitron_` / `sql_` families
-   rather than resolved by a walk-side directive read plus a store-side view join. That would make the
-   segment match a join against a relation keyed by the coordinate, collapse the unknown-column and
-   missing-type-name arms into row absence, and hand the LSP its completion answer directly. It is
-   this item's rule stated as facts rather than as two cooperating mechanisms, and it wants a Spec of
-   its own because it touches the captured families and their agreement tests. One gap is filed rather than fixed: a
-   projected column whose Java type the consuming parameter cannot take is a consumer compile error
-   rather than a graphitron rejection, the coercion gate having passed through on a null leaf type. It
-   is loud rather than silent, so it is a wording problem rather than a correctness one, and it has its
-   own Backlog item.
+   **The two conditions-class sites shipped, and getting there found the reason the feature looked
+   worthless.** `argMapping: "filmId: in.filmId"` on a `@condition` emitted
+   `String in = (String) args.get("in")` and handed the condition method the whole input object cast to
+   the parameter's type. So the projected form could not work there either: `input.filmId.film_id` was
+   unreachable because `input.filmId` was. One accessor was being read two ways.
+   `ParamSource.Arg` carries a path and an extraction, where the extraction is the leaf transform
+   alone, what to do with the value once found and never how to find it; `MethodRef.callParams()`
+   returned it raw and kept only the head as the lookup key. The service emitter re-wrapped locally
+   into a `NestedInputField` and the condition glue did not. The rule now has one home,
+   `ParamSource.Arg.callSiteExtraction()`, and both consumers read it there. That
+   `ConditionCommands.nameLocals` already carried a `NestedInputField` branch for collision avoidance
+   is the tell: the shape was anticipated and never reached. It fixes a second collision of the same
+   family, two parameters bound through one outer argument having produced two equal `CallParam` values
+   and so one shared local.
+
+   With the binding correct the projected read follows, and the decode body is hosted on the conditions
+   class, which is what the plan predicted would make this the expensive site: the `decode<Record>`
+   bodies a `<Type>Fetchers` class hosts are unreachable from `ConditionGlueRenderer`. So the body
+   derivation moved to `render/RecordDecodeFragments` with the legacy emitter delegating, and
+   `RecordDecodeHelperRegistry` mints one per record type on demand. `ProjectedKeyReads` gained a
+   site-agnostic `readFor`: the sink owns materialise-once, the local's name and the column read, and
+   how a site reaches the wire value stays the site's own, which is the one part no sink could know.
+
+   What remains: the `@service` site (`ArgCallEmitter`'s `NestedInputField` arm and the root-service
+   emitter beside it), and a compilation-tier assertion about which class hosts the decode body.
+
+   **Two emitters were spelling the same generated characters.** Wiring the condition site put the two
+   nested-wire-descent implementations side by side and they turned out identical: `ArgCallEmitter`'s
+   `buildMapChain` and `ConditionGlueRenderer`'s `mapChain` emitted the same `instanceof Map<?, ?>`
+   ternary chain, down to the binding names, from two private copies. That is one decision about
+   generated code held in two places, so a fix lands in one and not the other. It is now
+   `render/WireMapChain`, with both call sites reading it and the `rawComponent` split that lived beside
+   each chain following it there. Two nearby shapes deliberately stay where they are, and both are named
+   in the new class so a reader who finds one finds the family. `ArgPathHelperRegistry` emits the
+   *statement* form on a hoisted helper, which the development principles prefer over a ternary a
+   developer cannot breakpoint, so converging on it would change what is emitted rather than where it is
+   spelled; it is the form to grow towards, not a copy to delete. And `ArgCallEmitter.walkSegments` is a
+   list-aware superset that lifts a list-shaped segment into a `stream().map(...)` and numbers its
+   bindings off one shared counter, so folding the simple form into it would renumber every binding both
+   call sites emit.
+
+   The third duplication is the one descent still represented twice, and attempting the fold found what
+   blocks it. `ParamSource.Arg` carries a path and a leaf transform, so the path should be the whole of
+   the descent; `ConditionResolver.rewrapForNested` instead stuffs a full `NestedInputField` into the
+   transform, and `callSiteExtraction()` has to detect that and stand aside. Moving the rewrap onto the
+   path looks like a two-line change and is not: `MethodRef.callParams` names a `CallParam` after the
+   path's *head*, so a folded path would name every parameter of one nested condition after the same
+   outer argument, and `ConditionCommands.nameLocals` would number them apart (`input`, `input2`)
+   instead of using the names the author wrote. The generated conditions glue would get measurably worse
+   to read. So the prerequisite is that a `CallParam` be named after the parameter rather than after the
+   path head, which is its own change with its own blast radius; the guard stays, and its comment now
+   states that rather than promising a fold that would regress.
+
+   **The editor's half of the same rule** belongs here rather than in an item of its own, and the
+   division is settled: capture the node type at the coordinate and let the consumer join for the keys.
+   Nothing new has to be captured, which is the finding worth recording, because
+   `graphitron_argument_node_id` and `graphitron_field_node_id` already carry `node_type_ref` at the
+   argument and input-field coordinates and `intent_argmapping_binding_leaf` already coalesces it;
+   the openable columns are one join further, to `intent_resolved_node_key_column`. Materialising those
+   columns per `argMapping` coordinate instead would duplicate a three-tier resolution that has one
+   home, and the precedence has to stay in that home or two readers will disagree about which tier won.
+   What is missing is the consumer: `ArgMappingCompletions.rightCandidates` returns nothing the moment
+   a `.` appears in the value, so an author gets no help exactly where the grammar has the most to say,
+   and both openable kinds are answerable from the store as it stands. Completion after a dot asks one
+   question, what does the thing at this position open into, and answers it per kind.
+
+   **The type gate is absorbed here rather than filed, and it lands as the join predicate.** A
+   projected column whose Java type the consuming parameter cannot take used to be a consumer compile
+   error rather than a graphitron rejection, the shared coercion gate having passed through on a null
+   leaf type: the path descends past a scalar so no SDL leaf resolves and there was nothing to check.
+   The fix is not a check bolted after the resolution but the resolution asking the question, which is
+   what makes it unbypassable. `intent_resolved_node_key_projection` was a name match; it is now a name
+   match joined to the consuming parameter's own type, and the projection is where the two agree.
+   Putting the type on both sides needed one relation that did not exist,
+   `intent_argmapping_bound_parameter_type`, and the reason it did not exist is the finding: the two
+   populations answering "what type does this parameter take" are unrelated. A `@routine` parameter is a
+   position on a generated `Routines` method and its type is a catalog fact; every other site's
+   parameter is a position on an authored Java method and its type is a classpath fact. A reader had to
+   switch on `site` to know which to ask, so nobody asked. The switch now happens once, eight arms over
+   the pair vocabulary, seven of them sharing one CTE because they differ only in which owner relation
+   carries the `(class, method)` pair.
+
+   Three things the join had to get right, and all three are the kind only writing it surfaces. The
+   two censuses do not spell types the same way: `sql_column.binding_type` is fully qualified while
+   `jvm_method_parameter.parameter_type` drops the package by design, so a naive equality would have
+   matched nothing and every condition-site projection would have been reported as a type mismatch. The
+   classpath arm therefore reads the root of the declared-type decomposition,
+   `jvm_method_parameter_type_ref` at the empty `type_path`, which is qualified.
+
+   Both reaches for a type have to be outer, and the second one was found by the tier rather than by
+   reasoning. Requiring the *parameter* type would turn a parameter the census cannot name (compiled
+   without `-parameters`, a primitive `int`, a reference resolving no method) into a pair that is
+   neither a projection nor a defect, which is precisely the silence this item exists to close. That
+   much was clear before writing it. Requiring the *column* type looked safe and was not: reaching a
+   column's type means reaching the node type's bound table, and the key-column relation deliberately
+   answers on the pinned-SDL tier with no table at all, its own comment saying that a name resolving
+   against nothing is a row there and a detection elsewhere. So an inner join made a pinned key column
+   under an unbound type stop being a candidate and get reported as a column that does not exist,
+   which is exactly the wrong message the candidate split was introduced to prevent. Five derive-tier
+   cases went red saying so, `CapturedStore` capturing SDL and no jOOQ catalog and therefore being that
+   shape for every fixture. Both reaches are outer now, the type is a payload rather than a membership
+   condition, and the gate fires only where both operands are known: it strictly adds rejections and
+   removes no emission. The consequence for the tiers is that the mismatch arm cannot be exercised
+   where there is no catalog, so its message is pinned in the pipeline tier rather than beside the
+   other three verdicts, with the reason stated at both ends.
+
+   The verdict vocabulary grows to four rather than the mismatch riding `UNKNOWN_KEY_COLUMN`, and that
+   is why the name match is now its own relation, `intent_argmapping_key_column_candidate`. Riding the
+   existing verdict would tell an author who spelled the column correctly that it does not exist, which
+   is a worse message than the javac error it replaces. Splitting the relation makes the two arms
+   disjoint by construction: unknown is the absence of a candidate, mismatch is a candidate with no
+   projection, and neither re-tests the other's predicate.
 
    Exit, restated for what is left: the projection emits and executes at every site whose emitter
-   reads it, and `EMITTING_SITES` names exactly those.
+   reads it, `EMITTING_SITES` names exactly those, and a projection whose types disagree is a build
+   error naming both.
 
 **Why this lands as one item rather than several.** Stages 3 and 5 are two halves of one
 author-facing change: stage 3 rejects a spelling and stage 5 makes the replacement spelling work.

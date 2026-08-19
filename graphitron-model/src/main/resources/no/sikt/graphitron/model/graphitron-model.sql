@@ -5115,6 +5115,92 @@ COMMENT ON COLUMN intent_argmapping_pair.source_name IS 'the SDL file the owning
 COMMENT ON COLUMN intent_argmapping_pair.source_line IS 'source line of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 COMMENT ON COLUMN intent_argmapping_pair.source_column IS 'source column of the owning directive application, 1-based per the graphql-java convention; NULL exactly where source_name is';
 
+CREATE VIEW intent_argmapping_bound_parameter_type
+  (graph_name, site, use_site, position, param_name, java_type, candidates) AS
+WITH hosted (graph_name, site, use_site, position, param_name, class_name, method) AS (
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_service d
+      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
+     AND d.field_name = ap.field_name
+   WHERE ap.site = 'SERVICE'
+   UNION ALL
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_field_condition d
+      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
+     AND d.field_name = ap.field_name
+   WHERE ap.site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION')
+   UNION ALL
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_argument_condition d
+      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
+     AND d.field_name = ap.field_name AND d.argument_name = ap.argument_name
+   WHERE ap.site = 'ARGUMENT_CONDITION'
+   UNION ALL
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_field_reference_step d
+      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
+     AND d.field_name = ap.field_name AND d.ordinal = ap.ordinal
+     AND d.position = ap.step_position
+   WHERE ap.site = 'FIELD_REFERENCE_STEP'
+   UNION ALL
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_argument_reference_step d
+      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
+     AND d.field_name = ap.field_name AND d.argument_name = ap.argument_name
+     AND d.ordinal = ap.ordinal AND d.position = ap.step_position
+   WHERE ap.site = 'ARGUMENT_REFERENCE_STEP'
+   UNION ALL
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, d.class_name, d.method
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_reference_for_step d
+      ON d.graph_name = ap.graph_name AND d.type_name = ap.type_name
+     AND d.field_name = ap.field_name AND d.ordinal = ap.ordinal
+     AND d.position = ap.step_position
+   WHERE ap.site = 'REFERENCE_FOR_STEP'
+),
+resolved (graph_name, site, use_site, position, param_name, java_type) AS (
+  SELECT DISTINCT h.graph_name, h.site, h.use_site, h.position, h.param_name, tr.referenced_class
+    FROM hosted h
+    JOIN store_graph_source g ON g.graph_name = h.graph_name
+    JOIN jvm_method m
+      ON m.source_name = g.source_name AND m.class_name = h.class_name
+     AND m.method_name = h.method
+    JOIN jvm_method_parameter mp
+      ON mp.source_name = m.source_name AND mp.class_name = m.class_name
+     AND mp.method_name = m.method_name AND mp.descriptor = m.descriptor
+     AND mp.parameter_name = h.param_name
+    JOIN jvm_method_parameter_type_ref tr
+      ON tr.source_name = mp.source_name AND tr.class_name = mp.class_name
+     AND tr.method_name = mp.method_name AND tr.descriptor = mp.descriptor
+     AND tr.position = mp.position AND tr.type_path = ''
+   UNION ALL
+  SELECT DISTINCT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, rp.binding_type
+    FROM intent_argmapping_pair ap
+    JOIN intent_field_routine_method rm
+      ON rm.graph_name = ap.graph_name AND rm.type_name = ap.type_name
+     AND rm.field_name = ap.field_name AND rm.ordinal = ap.ordinal
+    JOIN sql_routine_parameter rp
+      ON rp.source_name = rm.source_name AND rp.table_schema = rm.table_schema
+     AND rp.routine_name = rm.routine_name AND rp.jooq_name = ap.param_name
+   WHERE ap.site = 'ROUTINE' AND rm.candidates = 1
+)
+SELECT r.graph_name, r.site, r.use_site, r.position, r.param_name, r.java_type,
+       CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.site, r.use_site, r.position) AS INT)
+  FROM resolved r;
+COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'The Java type the left side of an argMapping pair denotes: what the value the path resolves has to be assignable to. The missing half of every type question about this family, and the reason one existed to be missing is that the two populations answering it are unrelated relations. A @routine parameter is a position on a generated Routines method and its type comes from the catalog census, while every other site''s parameter is a position on an authored Java method and its type comes from the classpath census; a reader wanting "the type of the parameter this pair binds" had to know which of the two to ask, and therefore had to switch on site, which is the switch this relation performs once. One row per pair whose parameter resolves, at intent_argmapping_pair''s own grain, so it joins that relation and everything derived from it on site, use_site and position with no reshaping. Eight arms over that vocabulary, and the split is not the pair view''s: seven of them resolve an authored (class, method) pair the same way and differ only in which owner relation carries it, which is why they share one CTE and one join onto the classpath census; the routine arm is the eighth and reaches sql_routine_parameter through intent_field_routine_method instead. Matching is by parameter name on both sides, which is the same match the generator itself makes and inherits the same dependency: a consumer compiling without -parameters has no names to match, so a pair resolves nothing here and every reader sees that as absence. One vocabulary on both arms, and reaching it is the reason the classpath arm joins one relation further than it looks like it needs to. The catalog arm''s binding type is fully qualified, while jvm_method_parameter.parameter_type drops the package by design; comparing the two would never match, and the mismatch would look exactly like a genuine type disagreement. So the classpath arm takes the root of the parameter''s declared-type decomposition instead, jvm_method_parameter_type_ref at the empty type_path, whose referenced_class is the qualified binary name. That relation has no row where the position names no class, so a primitive parameter resolves nothing here rather than resolving int: honest, and worth stating, since an author binding a key column to an int parameter gets the gate standing aside rather than a rejection. Absence is therefore four facts and this relation distinguishes none of them: the reference resolved no method, the method declares no parameter of that name, names were not compiled in, or the parameter''s type names no class. That is deliberate, each being a condition other relations already state or reject, and it is what keeps this relation one answer rather than a verdict; what a reader does where the answer is missing is the reader''s own decision, and the projection''s own comment argues its choice. What it must not do is decide the reading, which is why candidates is a column: an overloaded method or a class declared by two classpath entries resolves two rows, and a reader requiring one type requires candidates = 1 rather than picking. DISTINCT within each arm collapses the ordinary duplicate, one method reached through two graph sources naming the same type, so candidates above one means the types genuinely differ. No assignability rule lives here and none should: this states one type per pair and comparing it to another is the asking reader''s predicate, the widenings worth admitting being a use-site question rather than a fact about a parameter.';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.graph_name IS 'the owning graph''s partition, carried from the pair relation';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; with the use-site key and the position this is the grain, and it is what decided which of the two censuses answered';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; carried rather than re-spelled, which is why the arms here join that relation instead of the eight owner relations directly';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.position IS 'the pair''s 0-based position within its own argMapping list, completing the grain';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.param_name IS 'the left side of the pair as the author wrote it, which is also the parameter name the match was made on';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.java_type IS 'the parameter''s Java type, fully qualified: sql_routine_parameter.binding_type on the routine arm and jvm_method_parameter_type_ref.referenced_class at the root type path on the other seven. Qualified on both by construction, which is the whole reason the classpath arm reads the decomposition rather than the parameter row beside it; the view''s own comment states that. The root of the declared type and so the raw head of a parameterised one, List rather than List<Film>: a comparison caring about the element type descends that relation''s own type_path rather than asking for a second column here';
+COMMENT ON COLUMN intent_argmapping_bound_parameter_type.candidates IS 'how many distinct types resolved for this pair, this row''s being one of them; 1 on an unambiguous parameter. Above one means an overload set or a doubly-declared class whose parameters of this name differ in type, which is a resolution nothing here picks between: a reader that must have one type requires 1, on intent_bound_table.candidates'' terms';
+
 CREATE VIEW intent_argmapping_segment_binding
   (graph_name, site, use_site, type_name, field_name, position, argument_path,
    segment_position, segment_name, bound_kind, bound_type_name, bound_field_name,
@@ -5266,13 +5352,13 @@ COMMENT ON COLUMN intent_argmapping_binding_leaf.node_id_declared IS 'whether th
 COMMENT ON COLUMN intent_argmapping_binding_leaf.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written; NULL where the directive is absent, and NULL where it is present without one, which at this position is a rejection rather than an inference, there being no containing table to infer a node type from. Read with node_id_declared, never alone';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.trailing_segments IS 'how many segments the path spells beyond the leaf: 0 where the path bound everything it spelled, 1 where one name is left over, more where several are. A count rather than a flag, because the readings differ: zero on a @nodeId leaf is the bare binding a rejection closes, one is a key-column projection, and two or more is a typo or a nested form neither this relation nor its readers claim to resolve. Counted over the segment rows above the leaf''s position rather than derived from a path length, so it is arithmetic over rows and never a parse';
 
-CREATE VIEW intent_resolved_node_key_projection
+CREATE VIEW intent_argmapping_key_column_candidate
   (graph_name, site, use_site, type_name, field_name, position, argument_path,
    bound_kind, bound_type_name, bound_field_name, bound_argument_name,
-   node_type_name, column_name, key_position, tier) AS
+   node_type_name, column_name, key_position, tier, column_java_type) AS
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
-       l.node_type_ref, k.column_name, k.position, k.tier
+       l.node_type_ref, k.column_name, k.position, k.tier, c.binding_type
   FROM intent_argmapping_binding_leaf l
   JOIN graphitron_argument_path_segment sg
     ON sg.graph_name = l.graph_name AND sg.type_name = l.type_name
@@ -5281,9 +5367,48 @@ SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, 
   JOIN intent_resolved_node_key_column k
     ON k.graph_name = l.graph_name AND k.type_name = l.node_type_ref
    AND UPPER(k.column_name) = sg.segment_name_upper
+  LEFT JOIN intent_resolved_type_binding b
+    ON b.graph_name = k.graph_name AND b.type_name = k.type_name
+   AND b.candidates = 1
+  LEFT JOIN sql_column c
+    ON c.source_name = b.table_source_name AND c.table_schema = b.table_schema
+   AND c.table_name = b.table_name
+   AND c.column_name_upper = UPPER(k.column_name)
  WHERE l.node_type_ref IS NOT NULL
    AND l.trailing_segments = 1;
-COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key: the pairs whose leaf carries a @nodeId(typeName:), whose path spells exactly one segment beyond that leaf, and whose trailing segment names one of that node type''s resolved key columns. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the two relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_segment_binding''s, reduced to a leaf next door, and the key list is intent_resolved_node_key_column''s; this is only where the two meet. Exactly one trailing segment, never a minimum: two or more is a typo or a nested object form, and admitting it here would let a projection resolve off a path whose middle the author got wrong. The trailing segment is reached by position, one above the leaf''s own, which is the same arithmetic the count beside it does and not a second statement of it: the count says how many there are and the join says which one, and neither could be derived from the other without knowing the leaf''s position anyway. Matching is case-insensitive, which is inherited rather than introduced: the catalog resolution uses the same rule, so a projection spelled the generated way and one spelled the SQL way are one answer. It is spelled once, here, and every consumer asking whether a segment names a key column asks by joining this relation rather than by repeating the predicate: the detection beside it states the unknown column as the absence of a row here, which is what keeps one match from becoming two that agree until one changes. The authored side is folded on its own base relation, graphitron_argument_path_segment.segment_name_upper, which is where the schema mints a fold; the key-column side is folded at the crossing instead, that relation being a pick across three tiers with no one base relation to reach a generated column through, and forwarding one through a derived view being what the folded columns'' own comments forbid. The column comes out under the winning tier''s own spelling and not the author''s, because it is the decode''s key list the projection indexes into, and naming the column rather than a tuple position is what makes a transposed composite-key projection unconstructable. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
+COMMENT ON VIEW intent_argmapping_key_column_candidate IS 'An argMapping trailing segment that names a key column of the @nodeId''s node type, with that column''s Java type beside it where the catalog can say: the name half of the projection resolution, before the type half decides whether the value can reach the parameter. Split out from intent_resolved_node_key_projection rather than living inside it, and the split is what lets a type mismatch be its own verdict: the detection beside it states an unknown column as the absence of a row here and a type disagreement as a row here with no projected row, so the two arms are disjoint by construction and neither has to re-test the other''s predicate. Absent this relation, adding the type predicate to the projection''s own join would have collapsed both into the unknown-column message, which names the wrong thing and offers the wrong remedy: an author who spelled the column correctly would be told it does not exist. The name match is the membership condition and the type is a payload, which is why the reach for it is an outer join and its absence is a NULL rather than a missing row. Requiring it would have re-broken exactly what the split fixed, and for a case the key-column relation deliberately admits: the pinned-SDL tier answers with no table at all, its own comment saying that a name resolving against nothing is a row there and a detection elsewhere, so a pinned key column under an unbound or ambiguously-bound node type would have stopped being a candidate and been reported as a column that does not exist. It stays a candidate with no type, and the gate downstream stands aside. Case-insensitive on both crossings, the authored spelling against the resolved key column and the resolved key column against the catalog, which is the same convention each side already carries a generated fold for.';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.graph_name IS 'the owning graph''s partition, carried from the binding leaf';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; with site and position the grain';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.type_name IS 'the spelling site''s owning type';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.field_name IS 'the spelling site''s field name within that type';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.position IS 'the pair''s 0-based position within its own argMapping list';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.argument_path IS 'the path as written, carried so a message quotes the author''s own spelling';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.bound_kind IS 'ARGUMENT where the decoded node id is a field argument, INPUT_FIELD where it is an input field reached below one; carried from the binding leaf';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.bound_type_name IS 'the leaf''s owning type, carried from the binding leaf';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.bound_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.bound_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.node_type_name IS 'the node type the leaf''s @nodeId names, as written';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.column_name IS 'the matched key column, spelled as the winning key-column tier spells it rather than as the author wrote it, on intent_resolved_node_key_projection.column_name''s terms';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.key_position IS 'the matched column''s 0-based position within the node key';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.tier IS 'which key-column population answered for this node type, carried from intent_resolved_node_key_column''s closed vocabulary of three';
+COMMENT ON COLUMN intent_argmapping_key_column_candidate.column_java_type IS 'the column''s Java type as jOOQ binds it, fully qualified, from sql_column.binding_type: the type of the value the emitted record read yields, and the left operand of the agreement the projection requires. The binding type and not the SQL type, because what the emitted code hands the parameter is a Java value off a jOOQ record. NULL where the catalog cannot answer, which is a node type with no unambiguous table binding or a pinned key column the bound table does not have; the view''s own comment argues why that is a payload absence rather than a missing row, and the projection stands aside on it exactly as it does on an unresolved parameter type';
+
+CREATE VIEW intent_resolved_node_key_projection
+  (graph_name, site, use_site, type_name, field_name, position, argument_path,
+   bound_kind, bound_type_name, bound_field_name, bound_argument_name,
+   node_type_name, column_name, key_position, tier, column_java_type, param_java_type) AS
+SELECT n.graph_name, n.site, n.use_site, n.type_name, n.field_name, n.position, n.argument_path,
+       n.bound_kind, n.bound_type_name, n.bound_field_name, n.bound_argument_name,
+       n.node_type_name, n.column_name, n.key_position, n.tier,
+       n.column_java_type, p.java_type
+  FROM intent_argmapping_key_column_candidate n
+  LEFT JOIN intent_argmapping_bound_parameter_type p
+    ON p.graph_name = n.graph_name AND p.site = n.site AND p.use_site = n.use_site
+   AND p.position = n.position AND p.candidates = 1
+ WHERE p.java_type IS NULL OR n.column_java_type IS NULL
+    OR p.java_type = n.column_java_type;
+COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key, where the projected value can actually reach the parameter it is bound to: the candidate rows beside it, joined to the consuming parameter''s own Java type and kept only where the two agree. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_segment_binding''s, reduced to a leaf next door, the key list is intent_resolved_node_key_column''s, the name match and the column''s type are intent_argmapping_key_column_candidate''s, and the parameter''s type is intent_argmapping_bound_parameter_type''s; this is only where they meet. The type agreement is a join predicate and not a check performed after the fact, which is the whole of why it is sound: an emitter reads this relation, so a pair whose types disagree is not a projection an emitter can see, and there is no order of operations in which one is emitted and then rejected. Equality of the erased Java type, no widening admitted: a SMALLINT key column bound to an Integer parameter is a disagreement here, and whether that is a mismatch worth telling an author about is a question the detection''s message answers rather than one this predicate softens, softening it being what would let a narrowing through. The gate fires only where both operands are known, and standing aside on either absence is the deliberate half. A parameter whose name the classpath census cannot report (a consumer compiled without -parameters, a primitive int, a reference resolving no method) and a column the catalog cannot type (a node type with no unambiguous table binding, a pinned key column the bound table does not have) both leave the pair projecting exactly as it did before this predicate existed. Requiring the match in either case would have turned such a pair into one that is neither a projection nor a defect, which is the silence this whole family exists to close, and on the column side it would additionally have contradicted the key-column relation''s own rule that a pinned name resolves without a table. Standing aside leaves those where they were, projections whose types nothing checked, with the compiler''s own error as the backstop it always was. So the gate strictly adds rejections and removes no emission, which is what makes it safe to land as a join rather than as a staged flip. Exactly one trailing segment, never a minimum, and the trailing segment reached by position: both are the candidate relation''s rules, stated there. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a candidate whose types disagree is the type mismatch, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
 COMMENT ON COLUMN intent_resolved_node_key_projection.graph_name IS 'the owning graph''s partition, carried from both sides of the reduction, which agree on it by the join';
 COMMENT ON COLUMN intent_resolved_node_key_projection.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; the column a consumer reads to know whether an emitter is wired for this projection yet';
 COMMENT ON COLUMN intent_resolved_node_key_projection.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; with site and position the grain, and the key a planner joins the pair relation on to recover the application ordinal a command row needs';
@@ -5299,15 +5424,18 @@ COMMENT ON COLUMN intent_resolved_node_key_projection.node_type_name IS 'the nod
 COMMENT ON COLUMN intent_resolved_node_key_projection.column_name IS 'the projected key column, spelled as the winning key-column tier spells it rather than as the author wrote it: the decode returns values against that tier''s list, so this is the spelling that lines up with it. The author''s own spelling is in the path, one segment join away';
 COMMENT ON COLUMN intent_resolved_node_key_projection.key_position IS 'the projected column''s 0-based position within the node key. Not what an emitter reads (it names the column) but what a reader checking a composite projection asks, and what shows two parameters bound from one id take two different positions of one key';
 COMMENT ON COLUMN intent_resolved_node_key_projection.tier IS 'which key-column population answered for this node type, carried from intent_resolved_node_key_column''s closed vocabulary of three; a diagnostic explaining why a column is or is not available reads it rather than re-deriving the precedence';
+COMMENT ON COLUMN intent_resolved_node_key_projection.column_java_type IS 'the projected column''s Java type as jOOQ binds it, fully qualified; carried from the candidate relation. Equal to the column beside it by the join, and both are kept because a reader of one row should not have to know which side of an equality it is looking at';
+COMMENT ON COLUMN intent_resolved_node_key_projection.param_java_type IS 'the consuming parameter''s Java type, fully qualified, from intent_argmapping_bound_parameter_type; equal to the column beside it wherever it is non-NULL, that equality being the gate this relation adds over its candidate. NULL where the parameter''s type does not resolve, which is a projection the gate stood aside for rather than one it approved; the view comment says why standing aside is the right reading and what the remaining backstop is';
 
 CREATE VIEW intent_argmapping_projection_defect
   (graph_name, site, use_site, type_name, field_name, position, param_name, argument_path,
    verdict, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
-   node_type_ref, trailing_segment_name,
+   node_type_ref, trailing_segment_name, column_java_type, param_java_type,
    source_name, source_line, source_column) AS
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, ap.param_name,
        l.argument_path, 'BARE_NODE_ID', l.bound_kind, l.bound_type_name, l.bound_field_name,
        l.bound_argument_name, l.node_type_ref, CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        ap.source_name, ap.source_line, ap.source_column
   FROM intent_argmapping_binding_leaf l
   JOIN intent_argmapping_pair ap
@@ -5318,6 +5446,7 @@ SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, 
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, ap.param_name,
        l.argument_path, 'MISSING_TYPE_NAME', l.bound_kind, l.bound_type_name, l.bound_field_name,
        l.bound_argument_name, l.node_type_ref, sg.segment_name,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        ap.source_name, ap.source_line, ap.source_column
   FROM intent_argmapping_binding_leaf l
   JOIN intent_argmapping_pair ap
@@ -5332,6 +5461,7 @@ SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, 
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, ap.param_name,
        l.argument_path, 'UNKNOWN_KEY_COLUMN', l.bound_kind, l.bound_type_name, l.bound_field_name,
        l.bound_argument_name, l.node_type_ref, sg.segment_name,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        ap.source_name, ap.source_line, ap.source_column
   FROM intent_argmapping_binding_leaf l
   JOIN intent_argmapping_pair ap
@@ -5342,9 +5472,30 @@ SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, 
    AND sg.field_name = l.field_name AND sg.argument_path = l.argument_path
    AND sg.position = l.segment_position + 1
  WHERE l.node_id_declared AND l.node_type_ref IS NOT NULL AND l.trailing_segments = 1
-   AND NOT EXISTS (SELECT 1 FROM intent_resolved_node_key_projection pr
-                    WHERE pr.graph_name = l.graph_name AND pr.site = l.site
-                      AND pr.use_site = l.use_site AND pr.position = l.position)
+   AND NOT EXISTS (SELECT 1 FROM intent_argmapping_key_column_candidate ca
+                    WHERE ca.graph_name = l.graph_name AND ca.site = l.site
+                      AND ca.use_site = l.use_site AND ca.position = l.position)
+ UNION ALL
+SELECT ca.graph_name, ca.site, ca.use_site, ca.type_name, ca.field_name, ca.position, ap.param_name,
+       ca.argument_path, 'KEY_COLUMN_TYPE_MISMATCH', ca.bound_kind, ca.bound_type_name,
+       ca.bound_field_name, ca.bound_argument_name, ca.node_type_name, sg.segment_name,
+       ca.column_java_type, pt.java_type,
+       ap.source_name, ap.source_line, ap.source_column
+  FROM intent_argmapping_key_column_candidate ca
+  JOIN intent_argmapping_pair ap
+    ON ap.graph_name = ca.graph_name AND ap.site = ca.site AND ap.use_site = ca.use_site
+   AND ap.position = ca.position
+  JOIN graphitron_argument_path_segment sg
+    ON sg.graph_name = ca.graph_name AND sg.type_name = ca.type_name
+   AND sg.field_name = ca.field_name AND sg.argument_path = ca.argument_path
+   AND sg.position = (SELECT MAX(s2.position) FROM graphitron_argument_path_segment s2
+                       WHERE s2.graph_name = ca.graph_name AND s2.type_name = ca.type_name
+                         AND s2.field_name = ca.field_name
+                         AND s2.argument_path = ca.argument_path)
+  JOIN intent_argmapping_bound_parameter_type pt
+    ON pt.graph_name = ca.graph_name AND pt.site = ca.site AND pt.use_site = ca.use_site
+   AND pt.position = ca.position AND pt.candidates = 1
+ WHERE pt.java_type <> ca.column_java_type
 ;
 COMMENT ON VIEW intent_argmapping_projection_defect IS 'What is wrong with an argMapping binding that opens a @nodeId: one row per defective pair, in a closed verdict vocabulary of three, over the binding leaf and the resolved key columns alone. The rejections that close the silent hole this family had, where a path bound a node id and the base64 wire id went to the database verbatim with nothing in the build saying a word. Every arm is a positive statement about a captured population rather than a negative space maintained by hand: the leaf relation says what each path bound and whether that thing declares a decode, and these are the three ways a declared decode fails to become a projection. Which arm fires is decided by trailing_segments and nothing else, so the arms are disjoint by construction and no precedence rule is needed. Zero trailing segments means the author did not ask for a projection at all, and BARE_NODE_ID is that fact whether or not the directive names a type; the remedy differs in a second clause the consumer adds from node_type_ref, not in a second verdict, because the defect is one. Exactly one trailing segment means the author did ask, and then the resolution either succeeds (a row of intent_resolved_node_key_projection and no row here) or names what stopped it: MISSING_TYPE_NAME where the directive carries no typeName: and there is no containing table at this position to infer one from, UNKNOWN_KEY_COLUMN where the trailing segment matches no resolved key column of the named type. Two or more trailing segments is deliberately not an arm: the walk rejects walking through a scalar leaf and keeps rejecting it after the grammar admits one trailing segment, so an arm here would double-report a rejection the error stream already carries. The same reasoning keeps the undeclared decode out, and that boundary is worth stating because an earlier shape of this view had an arm for it. What a dot opens is a node id, so the grammar admits a trailing segment only where the thing at that position declares a @nodeId; an ID that declares none has nothing to open and takes the walk''s own rejection, exactly as a String does. An arm here would double-report it, and worse, would say that the grammar admits something it cannot interpret. Two further shapes stay out. A path that bound nothing has no leaf row and is ArgBindingMap.of''s rejection, a head naming no slot in scope and a path-step @condition resolving against an empty slot map both. And a projection that resolves at a site whose emitter is not wired yet is a deferral rather than an author defect, which is why it is not a verdict here: whether an emitter exists is a fact about the generator''s own code and not about the schema, so its arm lives with the consumer that knows the wired set (no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects) rather than being asserted by a view that cannot see it. Every arm is use-keyed rather than definition-keyed, which is the point of resolving at the pair''s grain: one input type can be consumed by a routine call with no containing table and by a table-bound mutation where inference works, so an author told to add typeName: is being asked to satisfy a use-site constraint and the message has to name the use site that is asking. Locations are the owning directive application''s, carried from intent_argmapping_pair, so a message points at the argMapping the author wrote rather than at the input type''s declaration. There is no message column: the closed vocabulary plus the witness columns are the fact base, and the prose belongs with the consumer that composes it, which is also where the wording converges with the two hand-written sites stating this same condition elsewhere. Nor is there a rendered candidate list, though a message about a named type wants one: a consumer joining intent_resolved_node_key_column on the graph and node_type_ref gets the columns as rows in key order, and a render here would have to be split apart to be used, which is the one thing no reader of this schema does.';
 COMMENT ON COLUMN intent_argmapping_projection_defect.graph_name IS 'the owning graph''s partition, carried from the binding leaf';
@@ -5355,13 +5506,15 @@ COMMENT ON COLUMN intent_argmapping_projection_defect.field_name IS 'the spellin
 COMMENT ON COLUMN intent_argmapping_projection_defect.position IS 'the defective pair''s 0-based position within its own argMapping list; part of the grain, so two defective pairs of one application are two rows rather than one';
 COMMENT ON COLUMN intent_argmapping_projection_defect.param_name IS 'the left side of the pair, carried from intent_argmapping_pair so a message quotes the whole entry the author wrote rather than half of it';
 COMMENT ON COLUMN intent_argmapping_projection_defect.argument_path IS 'the right side as written; quoted in the message beside the parameter, and the column the segment decomposition is reachable through';
-COMMENT ON COLUMN intent_argmapping_projection_defect.verdict IS 'which defect, in a closed vocabulary of three: BARE_NODE_ID where a declared decode names no key column to project out of it, MISSING_TYPE_NAME where a projection is asked for against a @nodeId carrying no typeName:, UNKNOWN_KEY_COLUMN where the trailing segment names no resolved key column of the named type. Disjoint by trailing_segments, so this column is a discriminator a consumer switches on and never a precedence to re-test';
+COMMENT ON COLUMN intent_argmapping_projection_defect.verdict IS 'which defect, in a closed vocabulary of four: BARE_NODE_ID where a declared decode names no key column to project out of it, MISSING_TYPE_NAME where a projection is asked for against a @nodeId carrying no typeName:, UNKNOWN_KEY_COLUMN where the trailing segment names no resolved key column of the named type, KEY_COLUMN_TYPE_MISMATCH where it names one whose Java type the consuming parameter cannot take. The first three are disjoint by trailing_segments; the last two split that third bucket by whether a candidate row exists at all, which is why the candidate relation is its own view rather than a subquery. This column is a discriminator a consumer switches on and never a precedence to re-test';
 COMMENT ON COLUMN intent_argmapping_projection_defect.bound_kind IS 'ARGUMENT where the defective leaf is a field argument, INPUT_FIELD where it is an input field; carried from the leaf, and what tells a reader which @nodeId relation the directive sits on';
 COMMENT ON COLUMN intent_argmapping_projection_defect.bound_type_name IS 'the leaf''s owning type, carried from the leaf: the type declaring the input field on an INPUT_FIELD leaf, the argument''s own owning type on an ARGUMENT one. With the two columns beside it, the @nodeId row''s own key, so a consumer wanting the directive''s own source position is one join away';
 COMMENT ON COLUMN intent_argmapping_projection_defect.bound_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
 COMMENT ON COLUMN intent_argmapping_projection_defect.bound_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component';
 COMMENT ON COLUMN intent_argmapping_projection_defect.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written. NULL on every MISSING_TYPE_NAME row, that being the arm''s own condition, and NULL or not on a BARE_NODE_ID row, which is the second clause of that arm''s remedy rather than a second verdict. Never NULL on an UNKNOWN_KEY_COLUMN row';
 COMMENT ON COLUMN intent_argmapping_projection_defect.trailing_segment_name IS 'the segment the author spelled beyond the leaf, as written: what the projection would have named. NULL exactly on the BARE_NODE_ID arm, where there is no such segment, which is the stated absent bucket rather than a missing value. Reached by position from the leaf rather than by splitting the path';
+COMMENT ON COLUMN intent_argmapping_projection_defect.column_java_type IS 'the projected column''s Java type as jOOQ binds it, fully qualified; the left operand of the comparison that rejected the pair. Non-NULL exactly on the KEY_COLUMN_TYPE_MISMATCH arm, that arm being the only one about a type, which is the stated absent bucket rather than a missing value on the other three. Carried rather than left to the consumer to resolve, so a message states the operands the join actually compared and cannot describe a different comparison than the one that fired';
+COMMENT ON COLUMN intent_argmapping_projection_defect.param_java_type IS 'the consuming parameter''s Java type, fully qualified, from intent_argmapping_bound_parameter_type; the right operand, non-NULL exactly where the column beside it is';
 COMMENT ON COLUMN intent_argmapping_projection_defect.source_name IS 'the SDL file the owning directive application was captured from, carried from intent_argmapping_pair; NULL where that application carries no position';
 COMMENT ON COLUMN intent_argmapping_projection_defect.source_line IS 'source line of the owning directive application, 1-based; NULL exactly where source_name is';
 COMMENT ON COLUMN intent_argmapping_projection_defect.source_column IS 'source column of the owning directive application, 1-based; NULL exactly where source_name is';

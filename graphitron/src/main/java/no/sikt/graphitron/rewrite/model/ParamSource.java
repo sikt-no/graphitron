@@ -48,7 +48,45 @@ public sealed interface ParamSource
      * {@link no.sikt.graphitron.rewrite.FieldBuilder} (text-map detection). Defaults to
      * {@link CallSiteExtraction.Direct} for plain scalar arguments.
      */
-    record Arg(CallSiteExtraction extraction, PathExpr path) implements RoutineParamSource {}
+    record Arg(CallSiteExtraction extraction, PathExpr path) implements RoutineParamSource {
+
+        /**
+         * The extraction a call site actually reads: {@link #extraction} on a single-segment path, and
+         * that extraction as the <em>leaf</em> of a {@link CallSiteExtraction.NestedInputField} on a
+         * dotted one, so the descent into the outer argument's map rides the extraction and the leaf
+         * transform still applies at the bottom.
+         *
+         * <p>One home for a rule that had two and only one caller applying it. {@link #extraction} is
+         * the leaf transform alone: it says what to do with the value once found, never how to find it,
+         * and the path beside it says where. A consumer reading {@code extraction} directly on a dotted
+         * binding therefore emits a read of the <em>outer argument</em> cast to the leaf's type, which
+         * is a wrong value rather than a compile error. The service-call emitter wrapped locally and
+         * the condition glue did not, so a dotted {@code argMapping} at a {@code @condition} passed the
+         * whole input object where a nested scalar was meant. Wrapping here is what makes that
+         * unconstructable.
+         */
+        public CallSiteExtraction callSiteExtraction() {
+            if (extraction instanceof CallSiteExtraction.NestedInputField) {
+                // A producer that already expressed the descent owns it whole:
+                // ConditionResolver.rewrapForNested prefixes an input-field @condition's walk from the
+                // enclosing argument down to the field, which this record's own path does not carry.
+                // Two representations of one descent, and folding the rewrap onto the path is blocked
+                // on a prior change rather than merely undone: MethodRef.callParams names a CallParam
+                // after the path's head, so a folded path would name every parameter of one nested
+                // condition after the same outer argument, and ConditionCommands.nameLocals would
+                // number them apart instead of using the names the author wrote. The parameter's own
+                // name has to become the CallParam's before the path can carry the whole descent.
+                return extraction;
+            }
+            if (path.isHead()) {
+                return extraction;
+            }
+            var segments = path.segments();
+            return new CallSiteExtraction.NestedInputField(path.headName(),
+                segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList(),
+                extraction);
+        }
+    }
 
     /**
      * A context argument bound via {@code GraphitronContext.getContextArgument(dfe, name)}.

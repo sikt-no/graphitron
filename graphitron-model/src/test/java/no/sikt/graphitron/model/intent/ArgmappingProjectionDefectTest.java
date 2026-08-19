@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
+import static no.sikt.graphitron.model.test.SeededStore.seedCatalogRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -28,6 +29,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
 import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgMappingPair;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -39,12 +41,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What {@code intent_argmapping_projection_defect} returns: the {@code argMapping} bindings that
  * open a {@code @nodeId} and fail to become a key projection: one row per defective pair in a closed
- * verdict vocabulary of three. The rejections that close the hole where a path bound a node id and
+ * verdict vocabulary of four. The rejections that close the hole where a path bound a node id and
  * the base64 wire id reached the database with nothing in the build saying a word.
  *
- * <p>Which arm fires is decided by the trailing-segment count and nothing else, so the arms are
- * disjoint by construction; the cases below pin that as a property rather than trusting it. Beside
- * the three arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
+ * <p>The first three arms are decided by the trailing-segment count and nothing else, and the fourth
+ * splits the third's bucket by whether a candidate column exists at all, so the arms are disjoint by
+ * construction; the cases below pin that as a property rather than trusting it. Beside
+ * the four arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
  * projection, a two-segment tail, a leaf the grammar refuses to open and a path that bound nothing
  * must each leave the relation empty, and each of those absences is a rejection some other surface
  * owns or a population no rule judges.
@@ -263,6 +266,64 @@ class ArgmappingProjectionDefectTest {
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("UNKNOWN_KEY_COLUMN");
             assertThat(keyColumnsOf(dsl, "Inventory")).isEmpty();
+        });
+    }
+
+    // ===== The type mismatch: the column exists and the parameter cannot take it =====
+
+    /**
+     * The verdict that exists so a correct column name is not called wrong. A trailing segment naming
+     * a real key column whose Java type the consuming parameter cannot take is its own arm, carrying
+     * both types, and it is disjoint from the unknown column by whether a candidate row exists at all.
+     */
+    @Test
+    void aKeyColumnTheParameterCannotTakeIsTheTypeMismatch() {
+        withTypedRoutine(dsl -> {
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("KEY_COLUMN_TYPE_MISMATCH");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+                .as("the column the author named, which exists")
+                .isEqualTo("inventory_id");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.COLUMN_JAVA_TYPE))
+                .isEqualTo("java.lang.Integer");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.PARAM_JAVA_TYPE))
+                .isEqualTo("java.lang.String");
+        });
+    }
+
+    /**
+     * The two type columns are the mismatch arm's alone. Every other arm leaves them NULL, which is
+     * the stated absent bucket rather than a missing value: nothing else in this vocabulary is about
+     * a type, so a consumer switching on the verdict never has to test whether they are populated.
+     */
+    @Test
+    void theOtherArmsCarryNoTypes() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            routinePair(dsl, "pInventoryId", "input.inventoryId");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT)).isEqualTo("BARE_NODE_ID");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.COLUMN_JAVA_TYPE)).isNull();
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.PARAM_JAVA_TYPE)).isNull();
+        });
+    }
+
+    /**
+     * A parameter whose type nothing resolved is not a mismatch. The arm needs both operands, and the
+     * projection stands aside in the same case, so a pair the gate cannot judge is a projection rather
+     * than being reported here on a comparison against nothing.
+     */
+    @Test
+    void anUnresolvableParameterTypeIsNotAMismatch() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            assertThat(rows(dsl))
+                .as("no call surface was captured, so there is no parameter type to disagree with")
+                .isEmpty();
         });
     }
 
@@ -541,6 +602,32 @@ class ArgmappingProjectionDefectTest {
     private static void catalog(DSLContext dsl) {
         seedSource(dsl, PKG, "JOOQ_SCHEMA");
         seedGraphSource(dsl, GRAPH, PKG);
+    }
+
+    /**
+     * The whole fixture plus a captured routine call surface whose parameter takes a {@code String}
+     * while the projected key column binds as {@code Integer}: the mismatch arm's two operands, both
+     * stated, since a case about a comparison must not rely on two seed defaults happening to differ.
+     */
+    private static void withTypedRoutine(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedTable(dsl, PKG, PUBLIC, "inventory");
+            seedColumn(dsl, PKG, PUBLIC, "inventory", "inventory_id", 0, "inventoryId",
+                "java.lang.Integer");
+            seedNode(dsl, GRAPH, "Inventory");
+            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, "inventory_id");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedRoutine(dsl, GRAPH, "Mutation", "rentFilm", "rent_film");
+            seedTable(dsl, PKG, PUBLIC, "rent_film");
+            seedCatalogRoutine(dsl, PKG, PUBLIC, "rent_film", PKG + ".Routines", "rentFilm");
+            seedRoutineParameter(dsl, PKG, PUBLIC, "rent_film", 0, "pInventoryId",
+                "java.lang.String");
+            routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+            body.accept(dsl);
+        });
     }
 
     /** An {@code Inventory} node over the {@code inventory} table with its key column pinned. */

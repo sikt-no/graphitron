@@ -12,6 +12,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
+import static no.sikt.graphitron.model.test.SeededStore.seedCatalogRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -21,7 +22,9 @@ import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -33,14 +36,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * decode a node id and project one column out of the decoded key. The reduction the item turns on,
  * and the row an emitter reads to know which column of a decoded record a routine parameter gets.
  *
- * <p>It is a reduction over the two relations beside it and holds no rule of its own beyond the
- * meeting condition, so the cases here are mostly about where the meeting fails. Absence means this
- * pair is not a projection, and each way of arriving at absence is a query over the two relations
+ * <p>It is a reduction over the relations beside it and holds one rule of its own, the type
+ * agreement, so the cases here are mostly about where the meeting fails. Absence means this
+ * pair is not a projection, and each way of arriving at absence is a query over the relations
  * beside it: nothing trailing is the bare form, two or more trailing segments is the typo, a
- * trailing segment matching no key column is the unknown column, a bare {@code @nodeId} is the
- * missing {@code typeName:}, and no leaf at all is a path the walk rejects before the store is
- * written. None of them is this relation's to report, which is what keeps it a population an emitter
- * can trust rather than a verdict it has to interpret.
+ * trailing segment matching no key column is the unknown column, one matching a column the parameter
+ * cannot take is the type mismatch, a bare {@code @nodeId} is the missing {@code typeName:}, and no
+ * leaf at all is a path the walk rejects before the store is written. None of them is this relation's
+ * to report, which is what keeps it a population an emitter can trust rather than a verdict it has to
+ * interpret.
+ *
+ * <p>The type agreement fires only where both operands are known, and the cases pin the standing
+ * aside because it is where the gate deliberately does not: an unresolvable parameter type and a
+ * column the catalog cannot type both leave the pair projecting as it did before the gate existed.
+ * Requiring the match would have made a pair that is neither a projection nor a defect, which is the
+ * silence the item exists to close.
  */
 class ResolvedNodeKeyProjectionTest {
 
@@ -161,6 +171,85 @@ class ResolvedNodeKeyProjectionTest {
 
             assertThat(only(dsl).get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER))
                 .isEqualTo("CATALOG_PRIMARY_KEY");
+        });
+    }
+
+    // ===== The type gate =====
+
+    /**
+     * The gate's positive case: both types resolve and agree, and the row carries each so a reader
+     * of one row does not have to know which side of the equality it is looking at.
+     */
+    @Test
+    void aProjectionWhoseTypesAgreeResolvesAndCarriesBoth() {
+        withTypedInventoryNode("java.lang.Integer", "java.lang.Integer", dsl -> {
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_JAVA_TYPE))
+                .isEqualTo("java.lang.Integer");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.PARAM_JAVA_TYPE))
+                .isEqualTo("java.lang.Integer");
+        });
+    }
+
+    /**
+     * The gate's whole point: a column whose Java type the parameter cannot take is not a projection
+     * an emitter can see, so the disagreement is a missing row rather than a row an emitter has to
+     * re-check. The candidate beside it still exists, which is what lets the detection say the column
+     * name was right and the type was not.
+     */
+    @Test
+    void aProjectionWhoseTypesDisagreeHasNoRow() {
+        withTypedInventoryNode("java.lang.Integer", "java.lang.String", dsl ->
+            assertThat(rows(dsl))
+                .as("an Integer key column bound to a String parameter is not a projection")
+                .isEmpty());
+    }
+
+    /**
+     * One half of what the outer joins exist for. A parameter whose type does not resolve (no call
+     * surface captured, or a name the census cannot report) leaves the gate standing aside: the pair
+     * projects exactly as it did before the predicate existed, because requiring the match would turn
+     * it into a pair that is neither a projection nor a defect, which is the silence this family
+     * exists to close.
+     */
+    @Test
+    void aProjectionWhoseParameterTypeIsUnresolvableStillResolves() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.PARAM_JAVA_TYPE))
+                .as("nothing resolved the parameter's type, so the gate stood aside")
+                .isNull();
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_JAVA_TYPE))
+                .isEqualTo("java.lang.String");
+        });
+    }
+
+    /**
+     * The other half, and the one that would have re-broken what the candidate split fixed. A pinned
+     * key column under a node type with no table binding has no catalog column to take a type from,
+     * and the key-column relation admits it on purpose (its own comment: a name resolving against
+     * nothing is a row there and a detection elsewhere). So the candidate stands and the gate stands
+     * aside; had the reach for the type been an inner join, this pair would have been reported as a
+     * column that does not exist.
+     */
+    @Test
+    void aProjectionWhoseColumnTypeIsUnresolvableStillResolves() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedNode(dsl, GRAPH, "Inventory");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, "inventory_id");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER)).isEqualTo("SDL_PINNED");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_JAVA_TYPE))
+                .as("no table binding, so no catalog column to type")
+                .isNull();
         });
     }
 
@@ -296,6 +385,32 @@ class ResolvedNodeKeyProjectionTest {
             catalog(dsl);
             inventoryNodeType(dsl, "inventory_id");
             inputSurface(dsl);
+            body.accept(dsl);
+        });
+    }
+
+    /**
+     * The same fixture with both types of the gate stated: the key column's binding type and the
+     * routine parameter's, plus the call surface the parameter is reached through. A case about the
+     * gate states both sides rather than relying on two seed defaults happening to agree.
+     */
+    private static void withTypedInventoryNode(String columnJavaType, String paramJavaType,
+            Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedTable(dsl, PKG, PUBLIC, "inventory");
+            seedColumn(dsl, PKG, PUBLIC, "inventory", "inventory_id", 0, "inventoryId",
+                columnJavaType);
+            seedNode(dsl, GRAPH, "Inventory");
+            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, "inventory_id");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            seedRoutine(dsl, GRAPH, "Mutation", "rentFilm", "rent_film");
+            seedTable(dsl, PKG, PUBLIC, "rent_film");
+            seedCatalogRoutine(dsl, PKG, PUBLIC, "rent_film", PKG + ".Routines", "rentFilm");
+            seedRoutineParameter(dsl, PKG, PUBLIC, "rent_film", 0, "pInventoryId", paramJavaType);
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
             body.accept(dsl);
         });
     }

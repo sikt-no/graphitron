@@ -3,7 +3,6 @@ package no.sikt.graphitron.render;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.PathExpr;
 
@@ -30,13 +29,13 @@ import java.util.function.Function;
  * about an argument, not a database error about a write, so it has to be raised before that
  * {@code try} opens; a caller emits {@link #declarations()} first and the guard follows for free.
  *
- * <p>The decode helper's <em>name</em> arrives from the host rather than being computed here. One
- * generated class's private-static method namespace is the host's to allocate: a
- * {@code <Type>Fetchers} class may already host a {@code decode<Record>} body for a
- * jOOQ-record-typed input-bean member, and the resolver that keeps those names collision-free across
- * schema packages is the shell's. So the host hands in the naming function and owns emitting the
- * body, exactly as it owns the tenancy fragments a routine-write renderer receives, and this sink
- * spells the call.
+ * <p>The decode helper arrives from the host rather than being computed here. One generated class's
+ * private-static method namespace is the host's to allocate: a {@code <Type>Fetchers} class may already
+ * host a {@code decode<Record>} body for a jOOQ-record-typed input-bean member, and the resolver that
+ * keeps those names collision-free across schema packages is the shell's, while a conditions class has
+ * its own namespace and mints bodies on demand through {@link RecordDecodeHelperRegistry}. So the host
+ * hands in the function that reaches a decode and owns emitting the body, exactly as it owns the
+ * tenancy fragments a routine-write renderer receives, and this sink spells the call.
  */
 public final class ProjectedKeyReads {
 
@@ -46,8 +45,8 @@ public final class ProjectedKeyReads {
     /** The coordinate whose bindings this method renders. */
     private final FieldCoordinates coordinate;
 
-    /** The host's {@code decode<Record>} name for a decoded record class. */
-    private final Function<ClassName, String> decodeHelperName;
+    /** How this host reaches a decode for one projection: the name to call. */
+    private final Function<KeyProjection, String> decodeHelperFor;
 
     /** Declared locals by the leaf path that produced them, in declaration order. */
     private final Map<String, Declared> declared = new LinkedHashMap<>();
@@ -55,10 +54,10 @@ public final class ProjectedKeyReads {
     private record Declared(String local, CodeBlock declaration) {}
 
     private ProjectedKeyReads(KeyProjectionRelation projections, FieldCoordinates coordinate,
-            Function<ClassName, String> decodeHelperName) {
+            Function<KeyProjection, String> decodeHelperFor) {
         this.projections = projections;
         this.coordinate = coordinate;
-        this.decodeHelperName = decodeHelperName;
+        this.decodeHelperFor = decodeHelperFor;
     }
 
     /**
@@ -66,8 +65,8 @@ public final class ProjectedKeyReads {
      * {@link ProjectedKeyHost#at}, which is where the two per-class halves come from.
      */
     static ProjectedKeyReads at(FieldCoordinates coordinate,
-            KeyProjectionRelation projections, Function<ClassName, String> decodeHelperName) {
-        return new ProjectedKeyReads(projections, coordinate, decodeHelperName);
+            KeyProjectionRelation projections, Function<KeyProjection, String> decodeHelperFor) {
+        return new ProjectedKeyReads(projections, coordinate, decodeHelperFor);
     }
 
     /**
@@ -97,9 +96,35 @@ public final class ProjectedKeyReads {
      */
     public Optional<CodeBlock> readFor(PathExpr path, ArgumentValueSource argSource,
             ArgPathHelperRegistry argHelpers) {
+        if (path.isHead()) {
+            // A projection names a key column past a node id, so it has at least two segments. Asked
+            // before the leaf is derived rather than after: deriving it from a one-segment path is the
+            // invariant violation leafOf reports, and an ordinary bare-slot binding must not trip it.
+            return Optional.empty();
+        }
+        var leafPath = leafOf(path);
+        return readFor(path.asString(), leafPath.asString(),
+            () -> wireRead(leafPath, argSource, argHelpers));
+    }
+
+    /**
+     * The site-agnostic form, for a caller whose wire read is not the routine emitter's. Three
+     * arguments because three questions have three owners: {@code writtenPath} is the relation's key
+     * and the author's own spelling, {@code leafPath} is what two parameters off one node id have in
+     * common and so what the materialisation is deduped and named by, and {@code wireRead} is how
+     * <em>this</em> site reaches the base64 value, which differs per site and is the one part no sink
+     * could know. Evaluated only when a projection is present, so a caller composing an expensive read
+     * pays nothing for an ordinary binding.
+     *
+     * @param writtenPath the {@code argMapping} right-hand side as the author wrote it
+     * @param leafPath    that path without its trailing key-column segment
+     * @param wireRead    the expression yielding the encoded node id at {@code leafPath}
+     */
+    public Optional<CodeBlock> readFor(String writtenPath, String leafPath,
+            java.util.function.Supplier<CodeBlock> wireRead) {
         return projections
-            .projectionFor(coordinate.getTypeName(), coordinate.getFieldName(), path.asString())
-            .map(projection -> read(projection, path, argSource, argHelpers));
+            .projectionFor(coordinate.getTypeName(), coordinate.getFieldName(), writtenPath)
+            .map(projection -> read(projection, leafPath, wireRead));
     }
 
     /**
@@ -113,11 +138,10 @@ public final class ProjectedKeyReads {
     }
 
     /** {@code <local>.get(Tables.<T>.<COL>)}, declaring {@code local} on first use. */
-    private CodeBlock read(KeyProjection projection, PathExpr path, ArgumentValueSource argSource,
-            ArgPathHelperRegistry argHelpers) {
-        var leafPath = leafOf(path);
-        String local = declared.computeIfAbsent(leafPath.asString(),
-            key -> declare(projection, leafPath, argSource, argHelpers)).local();
+    private CodeBlock read(KeyProjection projection, String leafPath,
+            java.util.function.Supplier<CodeBlock> wireRead) {
+        String local = declared
+            .computeIfAbsent(leafPath, key -> declare(projection, key, wireRead)).local();
         return CodeBlock.of("$L.get($T.$L.$L)", local, projection.nodeTable().constantsClass(),
             projection.nodeTable().javaFieldName(), projection.column().javaName());
     }
@@ -127,12 +151,12 @@ public final class ProjectedKeyReads {
      * so a developer can breakpoint the decode and read a meaningful frame, which is the same reason
      * the descent helpers beside it are statements rather than a ternary chain.
      */
-    private Declared declare(KeyProjection projection, PathExpr leafPath,
-            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers) {
-        ClassName recordType = projection.nodeTable().recordClass();
+    private Declared declare(KeyProjection projection, String leafPath,
+            java.util.function.Supplier<CodeBlock> wireRead) {
         String local = localName(leafPath);
-        return new Declared(local, CodeBlock.of("$T $L = $L($L);\n", recordType, local,
-            decodeHelperName.apply(recordType), wireRead(leafPath, argSource, argHelpers)));
+        return new Declared(local, CodeBlock.of("$T $L = $L($L);\n",
+            projection.nodeTable().recordClass(), local,
+            decodeHelperFor.apply(projection), wireRead.get()));
     }
 
     /**
@@ -174,12 +198,13 @@ public final class ProjectedKeyReads {
             root);
     }
 
-    /** {@code key<Head><Segment>...}, named from the path the node id sits on. */
-    private static String localName(PathExpr leafPath) {
+    /** {@code key<Head><Segment>...}, named from the dotted path the node id sits on. */
+    private static String localName(String leafPath) {
         var name = new StringBuilder("key");
-        leafPath.segments().forEach(segment -> name
-            .append(Character.toUpperCase(segment.name().charAt(0)))
-            .append(segment.name().substring(1)));
+        for (String segment : leafPath.split("\\.")) {
+            if (segment.isEmpty()) continue;
+            name.append(Character.toUpperCase(segment.charAt(0))).append(segment.substring(1));
+        }
         return name.toString();
     }
 }

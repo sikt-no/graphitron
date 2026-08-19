@@ -488,7 +488,8 @@ public class GraphQLRewriteGenerator {
         // and every WHERE consumer calls it (call-site convergence closed the render-side dial).
         writeUnits("condition glue",
             plan.conditions().units(),
-            no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().rows(), outputPackage),
+            no.sikt.graphitron.render.ConditionGlueRenderer.render(plan.conditions().rows(), outputPackage,
+                plan.keyProjections()),
             emittedThisRun);
         // The projection command relation: one $project unit per row (anchor types, anchor-prefixed
         // nesting units, per-coordinate pivot units), each landing at the address its row committed.

@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
+import no.sikt.graphitron.render.ConditionGlueRenderer;
 import no.sikt.graphitron.plan.KeyProjectionCommands;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
@@ -76,6 +77,28 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .contains("argInputCustomerId(env.getArgument(\"input\"))");
     }
 
+    /** A fixture whose unprojected sibling binds a bare slot rather than a dotted path. */
+    private static final String BARE_SIBLING_SDL = SDL
+        .replace("input: RentFilmInput!", "input: RentFilmInput!, customerId: Int!")
+        .replace("pCustomerId: input.customerId", "pCustomerId: customerId");
+
+    /**
+     * A bare-slot binding beside a projected one renders the ordinary typed read. The case exists
+     * because the sink derives a projected path's leaf by dropping its last segment, which a
+     * one-segment path has no room for: asking the relation before deriving anything is what keeps an
+     * ordinary binding from tripping that invariant, and every fixture above happens to bind through a
+     * dotted path, so nothing else here would notice.
+     */
+    @Test
+    void aBareSlotBindingBesideAProjectedOneStillReadsItsSlot() {
+        String body = fetcherBody(BARE_SIBLING_SDL);
+
+        assertThat(body)
+            .contains("keyInputInventoryId.get(")
+            .as("the bare slot reads through the typed env accessor, untouched by the sink")
+            .contains("env.<java.lang.Integer>getArgument(\"customerId\")");
+    }
+
     /**
      * The descent to a projected leaf hands the raw wire value on rather than casting it to the
      * routine parameter's type. Casting there would be wrong twice: the value is a base64 string and
@@ -142,6 +165,70 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("no emitter at that coordinate reads a projection")
             .hasMessageContaining("Query.rental");
+    }
+
+    /** The same projection at the {@code @condition} site, whose glue hosts its own decode body. */
+    private static final String CONDITION_SDL = """
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID!
+            title: String
+        }
+        input FilmPick { filmId: ID! @nodeId(typeName: "Film") }
+        type Query {
+            film: Film
+            films(in: FilmPick!): [Film!]! @condition(condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                method: "filmIdKeyEquals",
+                argMapping: "filmId: in.filmId.film_id"
+            })
+        }
+        """;
+
+    /**
+     * The shape an author reaches for first: a {@code @condition} whose method parameter binds a key
+     * column of a {@code @nodeId}-carrying input field. The glue reads the column off a decoded record
+     * rather than handing the method the base64 wire id, and the decode body is hosted on the conditions
+     * class, which is what made this site cost more than the routine one: the bodies a
+     * {@code <Type>Fetchers} class hosts are unreachable from there.
+     */
+    @Test
+    void aConditionParameterReadsTheProjectedColumnOffADecodedRecord() {
+        var conditions = conditionsClass();
+
+        assertThat(conditions.methodSpecs())
+            .as("the decode body is hosted on the conditions class itself")
+            .extracting(MethodSpec::name)
+            .contains("decodeFilmRecord");
+
+        String glue = conditions.methodSpecs().stream()
+            .filter(m -> m.name().startsWith("filmsCondition") || m.name().contains("films"))
+            .map(m -> m.code().toString())
+            .findFirst().orElseThrow();
+        assertThat(glue)
+            .as("the wire value descends to the @nodeId leaf and the decode materialises the record")
+            .contains("keyInFilmId = decodeFilmRecord(")
+            .as("the column is named, not indexed")
+            .containsPattern("keyInFilmId\\.get\\([\\w.]*Tables\\.FILM\\.FILM_ID\\)");
+        assertThat(glue.indexOf("keyInFilmId = decodeFilmRecord("))
+            .as("the materialisation precedes the binding local that reads it")
+            .isLessThan(glue.indexOf("keyInFilmId.get("));
+    }
+
+    /** The one conditions class the fixture's single glue owner produces, rendered through the plan. */
+    private static TypeSpec conditionsClass() {
+        var bundle = TestSchemaHelper.buildBundle(CONDITION_SDL);
+        var projections = new ResolvedKeyProjections.Projections(List.of(
+            new ResolvedKeyProjections.Projection("Query", "films", "in.filmId.film_id",
+                "Film", "film_id")));
+        var plan = EmitPlan.produce(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
+            DEFAULT_OUTPUT_PACKAGE, projections);
+        assertThat(plan.conditions().rows())
+            .as("the fixture's @condition mints a row, so the glue below is not empty by accident")
+            .isNotEmpty();
+        var classes = ConditionGlueRenderer.render(plan.conditions().rows(), DEFAULT_OUTPUT_PACKAGE,
+            plan.keyProjections());
+        assertThat(classes).hasSize(1);
+        return classes.getFirst();
     }
 
     private static String fetcherBody(String sdl) {

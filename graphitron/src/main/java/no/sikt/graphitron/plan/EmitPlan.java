@@ -146,7 +146,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var routineWrites = RoutineWriteCommands.produce(schema, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
         var keyProjections = KeyProjectionCommands.produce(projections, schema);
-        requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers);
+        requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
         return new EmitPlan(globals, conditions,
             ProjectionCommands.produce(schema, conditions, outputPackage),
             launchers,
@@ -169,28 +169,33 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * routine hop reached through a {@link no.sikt.graphitron.rewrite.model.JoinStep} rather than
      * through a command row is exactly that case.
      *
-     * <p>Reachability is asked as row presence rather than re-derived: the coordinate either has a
-     * routine-write row or a launcher row whose source is a routine chain. Wiring a further shape means
-     * adding its relation here, and until then the shape fails the build naming its coordinate.
+     * <p>Reachability is asked as row presence rather than re-derived: the coordinate has a
+     * routine-write row, a launcher row whose source is a routine chain, or a condition row whose glue
+     * renders the projected read. Wiring a further shape means adding its relation here, and until then
+     * the shape fails the build naming its coordinate.
      */
     private static void requireEveryProjectionIsReachable(KeyProjectionRelation keyProjections,
-            RoutineWriteRelation routineWrites, LauncherRelation launchers) {
+            RoutineWriteRelation routineWrites, LauncherRelation launchers,
+            ConditionRelation conditions) {
         for (var projection : keyProjections.rows()) {
             String type = projection.coordinate().getTypeName();
             String field = projection.coordinate().getFieldName();
             boolean reached = routineWrites.rowFor(type, field).isPresent()
                 || launchers.rowFor(type, field)
                     .filter(row -> row.source() instanceof LaunchSource.RoutineChain)
-                    .isPresent();
+                    .isPresent()
+                || conditions.rows().stream().anyMatch(row ->
+                    row.coordinate().getTypeName().equals(type)
+                        && row.coordinate().getFieldName().equals(field));
             if (!reached) {
                 throw new IllegalStateException(
                     "the argMapping entry '" + projection.argumentPath() + "' at '" + type + "."
                     + field + "' projects key column '" + projection.column().sqlName() + "' of node"
                     + " type '" + projection.nodeTypeName() + "', but no emitter at that coordinate"
-                    + " reads a projection: the coordinate holds neither a routine-write row nor a"
-                    + " launcher row sourced from a routine chain. Emitting it as an ordinary nested"
-                    + " read would hand the routine the base64 node id verbatim, so the build stops"
-                    + " here instead");
+                    + " reads a projection: the coordinate holds no routine-write row, no launcher row"
+                    + " sourced from a routine chain, and no condition row. Emitting it as an ordinary"
+                    + " nested read would hand the consumer the base64 node id verbatim, so the build"
+                    + " stops here instead");
             }
         }
     }

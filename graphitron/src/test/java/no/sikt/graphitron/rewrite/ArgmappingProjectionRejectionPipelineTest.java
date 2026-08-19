@@ -249,6 +249,45 @@ class ArgmappingProjectionRejectionPipelineTest {
     }
 
     /**
+     * A column the node type does have, whose Java type the routine parameter cannot take. This is
+     * the shape the walk is furthest from judging: the path resolves, the segment names a real key
+     * column, and the only thing wrong is a type comparison neither the walk nor the shared coercion
+     * gate can make, the gate reading an SDL leaf type a path descending past a scalar never
+     * resolves. It used to reach the consumer as a javac error inside generated code; it fails the
+     * build here, naming both types.
+     *
+     * <p>The message is pinned here in full rather than in the derive tier beside the other three
+     * verdicts, and the reason is the harness: {@code CapturedStore} captures SDL and no jOOQ
+     * catalog, so a projected column has no type there to compare. This is the tier with a catalog
+     * on both sides.
+     */
+    @Test
+    void aKeyColumnTheParameterCannotTakeFailsTheBuild(@TempDir Path tmp) throws IOException {
+        assertThatThrownBy(() -> validate(tmp, """
+            type Customer @table(name: "customer") @node(keyColumns: ["first_name"]) {
+                id: ID! @nodeId
+            }
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental, customer: Customer }
+            input RentFilmInput { customerRef: ID! @nodeId(typeName: "Customer"), customerId: Int! }
+            type Mutation {
+                rentFilm(input: RentFilmInput!): [Rental!]!
+                    @routine(name: "rent_film", argMapping: "pInventoryId: input.customerRef.first_name, pCustomerId: input.customerId")
+                    @reference(path: [{table: "rental"}])
+            }
+            """))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("the projected column's type and the parameter's are both named")
+                .contains("Field 'Mutation.rentFilm': @routine argMapping entry"
+                    + " 'pInventoryId: input.customerRef.first_name' at Mutation.rentFilm#0 projects"
+                    + " 'first_name' of 'Customer', which jOOQ binds as String, but the parameter it"
+                    + " binds to takes Integer; bind a parameter of the column's own type, or project"
+                    + " a key column the parameter can take"));
+    }
+
+    /**
      * That the unknown-key-column verdict reaches the build's own verdict, whatever the site. The
      * walk admits the path and cannot judge the spelling, so this is the store's answer arriving.
      */

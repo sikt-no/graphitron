@@ -426,33 +426,15 @@ final class InputBeanInstantiationEmitter {
     }
 
     static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
-        ClassName recordType = rec.table().recordClass();
-        ClassName tablesClass = rec.table().constantsClass();
-        String tableField = rec.table().javaFieldName();
-        ClassName graphqlError = ClassName.get("graphql", "GraphqlErrorException");
-        int arity = rec.keyColumns().size();
-        var b = MethodSpec.methodBuilder(recordDecodeHelperName(rec, names))
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(recordType)
-            .addParameter(Object.class, "wire")
-            .beginControlFlow("if (!(wire instanceof String nodeId))")
-            .addStatement("return null")
-            .endControlFlow()
-            .addStatement("$T values = $T.decodeValues($S, nodeId)",
-                String[].class, rec.encoderClass(), rec.typeId())
-            .beginControlFlow("if (values == null || values.length != $L)", arity)
-            .addStatement("throw $T.newErrorException().message($S).build()", graphqlError,
-                "Decoded NodeId did not match the expected type for this argument")
-            .endControlFlow()
-            .addStatement("$T decoded = new $T()", recordType, recordType);
-        // decoded.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...): positional load that
-        // coerces each value through the column's DataType/Converter; no deprecated convert(Object).
-        CodeBlock.Builder fields = CodeBlock.builder();
-        for (int i = 0; i < arity; i++) {
-            fields.add(", $T.$L.$L", tablesClass, tableField, rec.keyColumns().get(i).javaName());
-        }
-        b.addStatement("decoded.fromArray(values$L)", fields.build());
-        return b.addStatement("return decoded").build();
+        // One body, two hosts: the conditions class a @condition's key-column projection lands on
+        // cannot reach this emitter, so the derivation lives in render/ and this delegates. The name
+        // stays this class's namespace's to allocate, which is why it is passed in.
+        return no.sikt.graphitron.render.RecordDecodeFragments.decodeHelper(
+            recordDecodeHelperName(rec, names),
+            new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
+                rec.encoderClass(), recordDecodeHelperName(rec, names), rec.keyColumns(),
+                rec.typeId()),
+            rec.table());
     }
 
     /**

@@ -20,6 +20,7 @@ public final class ConditionRenderTestSupport {
 
     public static List<TypeSpec> renderCommittedConditions(GraphitronSchema schema, String outputPackage) {
         var relation = ConditionCommands.produce(schema, outputPackage);
-        return ConditionGlueRenderer.render(relation.rows(), outputPackage);
+        return ConditionGlueRenderer.render(relation.rows(), outputPackage,
+            no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
 }

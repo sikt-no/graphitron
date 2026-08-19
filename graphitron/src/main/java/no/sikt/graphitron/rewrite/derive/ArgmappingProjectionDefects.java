@@ -26,15 +26,16 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * here is the decode of the view's closed {@code verdict} vocabulary into {@link Rejection} arms and
  * the prose those arms carry.
  *
- * <p>Three of the four arms are the author's to fix, and they close the silence this family had:
+ * <p>Four of the five arms are the author's to fix, and they close the silence this family had:
  * binding a {@code @nodeId} without naming a key column used to hand a routine parameter or a
  * service method the base64 wire id verbatim, and nothing in the build said a word. Which arm fires
- * is the view's decision, taken on the trailing-segment count alone, so nothing here re-tests a
- * predicate the query already settled. What a dot opens is a node id, so an {@code ID} declaring no
+ * is the view's decision, taken on the trailing-segment count and then on whether a candidate
+ * column exists, so nothing here re-tests a predicate the query already settled. What a dot opens is
+ * a node id, so an {@code ID} declaring no
  * {@code @nodeId} has nothing to open and is the walk's rejection rather than a verdict here: the
  * grammar admits only what it can confirm, which is what keeps that rule in one place.
  *
- * <p>The fourth arm is the generator's rather than the author's, which is why it is derived here
+ * <p>The fifth arm is the generator's rather than the author's, which is why it is derived here
  * and not in SQL: a projection that resolves at a site whose emitter does not read it yet is a
  * {@link Rejection.Deferred}, and whether an emitter exists is a fact about this codebase and not
  * about the schema. {@link #EMITTING_SITES} is that fact, held beside the switch that names the
@@ -55,11 +56,16 @@ public final class ArgmappingProjectionDefects {
     private ArgmappingProjectionDefects() {}
 
     /**
-     * The {@code site} values whose emitters read a resolved key projection. {@code ROUTINE} is
-     * wired: a routine IN parameter bound to a projected path reads its column off a decoded record
-     * through {@link no.sikt.graphitron.render.ProjectedKeyReads}. The service and output-field
-     * condition sites join it when their emitters land, leaving the input-field condition and the
-     * three path-step sites, which resolve no leaf at all and can therefore only ever defer.
+     * The {@code site} values whose emitters read a resolved key projection: a routine IN parameter and
+     * a {@code @condition} method parameter, both reading their column off a decoded record through
+     * {@link no.sikt.graphitron.render.ProjectedKeyReads}. The two condition sites are one emitter, the
+     * conditions class's glue, which is why they were wired together rather than one at a time.
+     *
+     * <p>{@code SERVICE} joins when its emitter lands. The input-field {@code @condition} stays out for
+     * a different reason worth stating: its pair rows are keyed by the input type and input field, while
+     * the condition row rendering it is keyed by the consuming output field, so the projection relation's
+     * coordinate never matches and the lookup misses by construction rather than by omission. The three
+     * path-step sites resolve no leaf at all and can therefore only ever defer.
      *
      * <p>The set is keyed on the site and so says nothing about whether every <em>emitter</em> at a
      * wired site reads a projection. That second question is the plan's, asked as row presence in
@@ -68,7 +74,8 @@ public final class ArgmappingProjectionDefects {
      * neither subsumes the other, because this one runs before any plan exists and that one cannot
      * see the directive a pair was spelled on.
      */
-    private static final Set<Site> EMITTING_SITES = EnumSet.of(Site.ROUTINE);
+    private static final Set<Site> EMITTING_SITES =
+        EnumSet.of(Site.ROUTINE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
 
     /**
      * The eight {@code site} values {@code intent_argmapping_pair} discriminates on, each mapped to
@@ -118,7 +125,13 @@ public final class ArgmappingProjectionDefects {
         /** A projection asked for against a {@code @nodeId} that names no node type. */
         MISSING_TYPE_NAME,
         /** A trailing segment naming no key column the node type resolved. */
-        UNKNOWN_KEY_COLUMN;
+        UNKNOWN_KEY_COLUMN,
+        /**
+         * A trailing segment naming a key column whose Java type the consuming parameter cannot
+         * take. The one verdict whose two operands are both types rather than names, which is why
+         * it carries them: without both, the message would say a correct column name is wrong.
+         */
+        KEY_COLUMN_TYPE_MISMATCH;
 
         /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
         static Verdict of(String verdict) {
@@ -167,7 +180,7 @@ public final class ArgmappingProjectionDefects {
 
     /**
      * Projects every {@code argMapping} node-id rejection over {@code graphName}'s partition: the
-     * three author defects from the detection view, then the unwired-site deferrals from the
+     * four author defects from the detection view, then the unwired-site deferrals from the
      * projection relation. Empty for a graph whose {@code argMapping} paths all bind ordinary
      * values, and for one whose projections all resolve at sites that emit them.
      */
@@ -177,7 +190,7 @@ public final class ArgmappingProjectionDefects {
         return new Detection(defects);
     }
 
-    /** The view's three arms, decoded. */
+    /** The view's four author arms, decoded. */
     private static List<Defect> authorDefects(DSLContext dsl, String graphName) {
         var v = INTENT_ARGMAPPING_PROJECTION_DEFECT;
         return dsl.selectFrom(v)
@@ -192,7 +205,8 @@ public final class ArgmappingProjectionDefects {
                     row.getUseSite(), row.getParamName(), row.getArgumentPath(), false,
                     rejectionOf(Verdict.of(row.getVerdict()), entry, row.getNodeTypeRef(),
                         row.getTrailingSegmentName(),
-                        keyColumnsOf(dsl, graphName, row.getNodeTypeRef())),
+                        keyColumnsOf(dsl, graphName, row.getNodeTypeRef()),
+                        row.getColumnJavaType(), row.getParamJavaType()),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
             });
     }
@@ -266,11 +280,14 @@ public final class ArgmappingProjectionDefects {
     /**
      * Decodes one verdict into the {@link Rejection} arm the report carries. The unknown-column arm
      * is a typed {@link Rejection.AuthorError.UnknownName} so an editor offers the key list as a
-     * fix rather than reading it out of prose; the other two are structural, there being no closed
-     * name set to have missed.
+     * fix rather than reading it out of prose; the other three are structural, there being no closed
+     * name set to have missed. The type-mismatch arm reads the two types off the row rather than
+     * resolving them here, so the message states exactly the operands the join compared and cannot
+     * describe a different comparison than the one that rejected the pair.
      */
     private static Rejection rejectionOf(Verdict verdict, String entry, String nodeTypeRef,
-                                         String trailingSegment, List<String> keyColumns) {
+                                         String trailingSegment, List<String> keyColumns,
+                                         String columnJavaType, String paramJavaType) {
         return switch (verdict) {
             case BARE_NODE_ID -> Rejection.structural(entry + " binds a "
                 + nodeIdSpelling(nodeTypeRef)
@@ -288,7 +305,26 @@ public final class ArgmappingProjectionDefects {
                       + " with @node(keyColumns:) on that type"
                     : ""),
                 trailingSegment, keyColumns);
+            case KEY_COLUMN_TYPE_MISMATCH -> Rejection.structural(entry + " projects '"
+                + trailingSegment + "' of '" + nodeTypeRef + "', which jOOQ binds as "
+                + simpleName(columnJavaType) + ", but the parameter it binds to takes "
+                + simpleName(paramJavaType) + "; bind a parameter of the column's own type, or"
+                + " project a key column the parameter can take");
         };
+    }
+
+    /**
+     * The trailing name of a fully qualified Java type. Both types in a mismatch message are
+     * qualified in the store because that is what makes them comparable; a message reads better
+     * unqualified, and two types that differ only in package are the rarer case than two that
+     * differ in name.
+     */
+    private static String simpleName(String javaType) {
+        if (javaType == null) {
+            return "an unresolved type";
+        }
+        int dot = javaType.lastIndexOf('.');
+        return dot < 0 ? javaType : javaType.substring(dot + 1);
     }
 
     /** {@code @nodeId(typeName: "X")} where the author named a type, {@code @nodeId} where not. */

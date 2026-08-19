@@ -127,7 +127,8 @@ final class TypeFetcherEmissionContext {
      */
     no.sikt.graphitron.render.ProjectedKeyHost projectedKeyHost() {
         return new no.sikt.graphitron.render.ProjectedKeyHost(keyProjections,
-            recordClass -> fetchersHelperNames().decodeSingular(recordClass));
+            projection -> fetchersHelperNames()
+                .decodeSingular(projection.nodeTable().recordClass()));
     }
 
     /**

@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * what they find.
  *
  * <p>What the view returns given rows is not asked here. That is the relation's own algebra, its
- * three arms and the absences between them, and it lives in the module whose DDL declares it, in
+ * four arms and the absences between them, and it lives in the module whose DDL declares it, in
  * {@code no.sikt.graphitron.model.intent.ArgmappingProjectionDefectTest}, against a store seeded
  * row by row. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the
  * prose it carries, the location it points at, and the deferral the unwired sites produce.
@@ -163,6 +163,14 @@ class ArgmappingProjectionDefectsTest {
                 + " 'inventry_id', which is not a key column of 'Inventory'"
                 + "; did you mean: inventory_id");
     }
+
+    /*
+     * The type-mismatch verdict is deliberately not asserted here, and the reason is the harness
+     * rather than the arm: CapturedStore captures SDL and no jOOQ catalog, so sql_column is empty and
+     * the projected column has no type to compare. That absence is exactly what the candidate
+     * relation's outer reach admits, so a projection still resolves here; the arm needs a catalog on
+     * both sides and is pinned where there is one, in ArgmappingProjectionRejectionPipelineTest.
+     */
 
     // ===== The site's emitter is the generator's gap, not the author's mistake =====
 

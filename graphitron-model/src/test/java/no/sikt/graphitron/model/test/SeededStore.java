@@ -1374,13 +1374,25 @@ public final class SeededStore {
     /** One IN parameter of a routine's call surface, at its 0-based position. */
     public static void seedRoutineParameter(DSLContext dsl, String sourceName, String tableSchema,
                                             String routineName, int position, String jooqName) {
+        seedRoutineParameter(dsl, sourceName, tableSchema, routineName, position, jooqName,
+            "java.lang.Integer");
+    }
+
+    /**
+     * The same parameter with its Java type stated. A case comparing this type against something,
+     * a projected key column's binding type being the one that does, states both sides rather than
+     * relying on two defaults happening to agree.
+     */
+    public static void seedRoutineParameter(DSLContext dsl, String sourceName, String tableSchema,
+                                            String routineName, int position, String jooqName,
+                                            String bindingType) {
         dsl.insertInto(SQL_ROUTINE_PARAMETER)
             .set(SQL_ROUTINE_PARAMETER.SOURCE_NAME, sourceName)
             .set(SQL_ROUTINE_PARAMETER.TABLE_SCHEMA, tableSchema)
             .set(SQL_ROUTINE_PARAMETER.ROUTINE_NAME, routineName)
             .set(SQL_ROUTINE_PARAMETER.POSITION, position)
             .set(SQL_ROUTINE_PARAMETER.JOOQ_NAME, jooqName)
-            .set(SQL_ROUTINE_PARAMETER.BINDING_TYPE, "java.lang.Integer")
+            .set(SQL_ROUTINE_PARAMETER.BINDING_TYPE, bindingType)
             .execute();
     }
 
@@ -1390,6 +1402,17 @@ public final class SeededStore {
      */
     public static void seedColumn(DSLContext dsl, String sourceName, String tableSchema, String tableName,
                                   String columnName, int ordinal, String jooqName) {
+        seedColumn(dsl, sourceName, tableSchema, tableName, columnName, ordinal, jooqName,
+            "java.lang.String");
+    }
+
+    /**
+     * The same column with the Java type jOOQ binds it to stated. A case whose subject is that type,
+     * the key-column projection's type gate being the one that is, states it rather than reading the
+     * default and having to know what it happens to be.
+     */
+    public static void seedColumn(DSLContext dsl, String sourceName, String tableSchema, String tableName,
+                                  String columnName, int ordinal, String jooqName, String bindingType) {
         dsl.insertInto(SQL_COLUMN)
             .set(SQL_COLUMN.SOURCE_NAME, sourceName)
             .set(SQL_COLUMN.TABLE_SCHEMA, tableSchema)
@@ -1398,7 +1421,7 @@ public final class SeededStore {
             .set(SQL_COLUMN.ORDINAL, ordinal)
             .set(SQL_COLUMN.JOOQ_NAME, jooqName)
             .set(SQL_COLUMN.SQL_TYPE, "character varying")
-            .set(SQL_COLUMN.BINDING_TYPE, "java.lang.String")
+            .set(SQL_COLUMN.BINDING_TYPE, bindingType)
             .set(SQL_COLUMN.NULLABLE, true)
             .execute();
     }

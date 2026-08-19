@@ -68,24 +68,6 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Resolves the effective {@link CallSiteExtraction} for a {@link ParamSource.Arg}: a
-     * single-segment {@link PathExpr.Head} returns {@code arg.extraction()} unchanged, and a
-     * multi-segment path wraps it as the {@code leaf} of a
-     * {@link CallSiteExtraction.NestedInputField} (head segment as {@code outerArgName}, tail
-     * as {@code path}) so {@link #buildNestedInputFieldExtraction} handles the null-safe Map
-     * traversal. Paths with intermediate {@code liftsList=true} segments never reach here;
-     * {@link #emitArgExpression} routes them to {@link #buildListAwarePathExtraction} first.
-     */
-    private static CallSiteExtraction extractionForArg(ParamSource.Arg arg) {
-        if (arg.path().isHead()) {
-            return arg.extraction();
-        }
-        var segments = arg.path().segments();
-        var tail = segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList();
-        return new CallSiteExtraction.NestedInputField(arg.path().headName(), tail, arg.extraction());
-    }
-
-    /**
      * True when {@code path} contains at least one non-terminal {@code liftsList=true} segment.
      * Such paths require element-wise list traversal, structurally distinct from the
      * {@link CallSiteExtraction.NestedInputField} Map-only chain. Terminal-list segments do
@@ -166,7 +148,8 @@ public final class ArgCallEmitter {
      * an intermediate {@code liftsList=true} segment through {@link #buildListAwarePathExtraction}
      * (element-wise list traversal, {@link CallSiteExtraction.Direct} leaves only: any other
      * leaf transform would have to interleave with the list-element walk, so it is rejected);
-     * everything else routes through {@link #extractionForArg} and {@link #buildArgExtraction}.
+     * everything else routes through {@link ParamSource.Arg#callSiteExtraction()} and
+     * {@link #buildArgExtraction}.
      */
     private static CodeBlock emitArgExpression(TypeFetcherEmissionContext ctx, ParamSource.Arg arg,
             MethodRef.Param param) {
@@ -181,9 +164,10 @@ public final class ArgCallEmitter {
             return buildListAwarePathExtraction(arg.path(), param.typeName());
         }
         // The head is the right read: it names the slot the extraction roots on, and any tail
-        // segments ride the NestedInputField extraction extractionForArg mints.
+        // segments ride the NestedInputField wrapper ParamSource.Arg mints, which is the one home
+        // for that rule now that the condition glue reads it through the same accessor.
         return buildArgExtraction(ctx,
-            new CallParam(arg.path().headName(), extractionForArg(arg), false, param.typeName()));
+            new CallParam(arg.path().headName(), arg.callSiteExtraction(), false, param.typeName()));
     }
 
     /**
@@ -279,7 +263,8 @@ public final class ArgCallEmitter {
      * A null-safe nested-Map value descent reading from a local that already holds a
      * {@code Map<?, ?>} (the mutation emitters' {@code in} / {@code row} argument-value maps). For a
      * single-segment {@code path} the result is {@code mapLocal.get(key)}; for a
-     * deeper path it is the {@code instanceof Map<?, ?>} ternary chain {@link #buildMapChain}
+     * deeper path it is the {@code instanceof Map<?, ?>} ternary chain
+     * {@link no.sikt.graphitron.render.WireMapChain}
      * produces, yielding {@code null} if any intermediate level is absent or not a {@code Map}. The
      * descent applies no leaf cast (the value flows into {@code DSL.val(value, dataType)} / a decode
      * helper that takes {@code Object}), so it is shared by the SET-value, WHERE-value, INSERT-cell
@@ -289,7 +274,7 @@ public final class ArgCallEmitter {
         if (path.size() == 1) {
             return CodeBlock.of("$L.get($S)", mapLocal, path.get(0));
         }
-        return buildMapChain(CodeBlock.of("$L", mapLocal), path, 0, /* leafType= */ null, mapLocal);
+        return no.sikt.graphitron.render.WireMapChain.of(CodeBlock.of("$L", mapLocal), path, /* leafType= */ null, mapLocal);
     }
 
     /**
@@ -310,56 +295,13 @@ public final class ArgCallEmitter {
                 + " extraction; decode and column coercion render inside the condition glue");
         }
         CodeBlock root = CodeBlock.of("env.getArgument($S)", outerArgName);
-        ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
+        ClassName rawLeaf = ClassName.bestGuess(no.sikt.graphitron.render.WireMapChain.rawComponent(leafTypeName));
         TypeName castTarget = list
             ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
             : rawLeaf;
-        return buildMapChain(root, path, 0, castTarget, null);
+        return no.sikt.graphitron.render.WireMapChain.of(root, path, castTarget, null);
     }
 
-    /**
-     * Builds the depth-0 step's ternary, recursing for inner steps. When {@code topBinding} is
-     * non-null it names a local that is already a {@code Map<?, ?>}, so depth 0 skips the
-     * {@code instanceof Map<?, ?> map1} check and emits {@code <topBinding> != null ?
-     * (..._)  : null} instead. Inner steps always rebind via {@code map2, map3, ...}.
-     */
-    private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth,
-            TypeName leafType, String topBinding) {
-        String key = path.get(depth);
-        boolean isLeaf = depth == path.size() - 1;
-        boolean liftedHead = topBinding != null && depth == 0;
-        String binding = liftedHead ? topBinding : "map" + (depth + 1);
-
-        if (isLeaf) {
-            // leafType == null means "do not cast the Map.get result" -- the consumer applies its
-            // own runtime guard (the mutation emitters' DSL.val / decode-helper reads).
-            if (liftedHead) {
-                if (leafType == null) {
-                    return CodeBlock.of("$L != null ? $L.get($S) : null", binding, binding, key);
-                }
-                return CodeBlock.of("$L != null ? ($T) $L.get($S) : null",
-                    binding, leafType, binding, key);
-            }
-            if (leafType == null) {
-                return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L.get($S) : null",
-                    currentExpr, Map.class, binding, binding, key);
-            }
-            return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($T) $L.get($S) : null",
-                currentExpr, Map.class, binding, leafType, binding, key);
-        }
-        CodeBlock next = CodeBlock.of("$L.get($S)", binding, key);
-        if (liftedHead) {
-            return CodeBlock.of("$L != null ? ($L) : null",
-                binding, buildMapChain(next, path, depth + 1, leafType, null));
-        }
-        return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
-            currentExpr, Map.class, binding, buildMapChain(next, path, depth + 1, leafType, null));
-    }
-
-    private static String rawComponent(String typeName) {
-        int lt = typeName.indexOf('<');
-        return lt < 0 ? typeName : typeName.substring(0, lt);
-    }
 
     /**
      * Returns the raw {@link TypeName} for the {@code $T.class} literal at a
@@ -482,7 +424,7 @@ public final class ArgCallEmitter {
         String mBind = "map" + mNum;
 
         if (isLast) {
-            ClassName rawLeaf = ClassName.bestGuess(rawComponent(innerLeafType));
+            ClassName rawLeaf = ClassName.bestGuess(no.sikt.graphitron.render.WireMapChain.rawComponent(innerLeafType));
             TypeName castTarget = seg.liftsList()
                 ? ParameterizedTypeName.get(ClassName.get(List.class), rawLeaf)
                 : rawLeaf;

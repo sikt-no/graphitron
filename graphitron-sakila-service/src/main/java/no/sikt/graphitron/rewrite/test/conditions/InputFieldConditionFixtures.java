@@ -41,6 +41,21 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
+     * The projected-key shape: a {@code @condition} whose parameter is the decoded key rather than the
+     * wire form, so an {@code argMapping} of {@code "filmId: in.filmId.film_id"} over an
+     * {@code ID! @nodeId(typeName: "Film")} input field binds it directly. The sibling above takes a
+     * {@code String} and parses, which is what an author writes when the decode is not available;
+     * this is what they write when it is, and the two together are the before and after of the
+     * key-column projection.
+     */
+    public static Condition filmIdKeyEquals(Table<?> table, Integer filmId) {
+        if (filmId == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.FILM_ID).eq(filmId);
+    }
+
+    /**
      * Input-field {@code @condition} narrowing customers by first name. A {@code null}
      * {@code firstName} maps to {@code noCondition()} (absent value == unconstrained), so a query
      * whose inline {@code @reference} filter argument is silently dropped returns UNFILTERED rows.

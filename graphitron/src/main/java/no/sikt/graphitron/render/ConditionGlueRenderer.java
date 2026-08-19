@@ -16,6 +16,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 
@@ -61,8 +62,18 @@ public final class ConditionGlueRenderer {
     private static final TypeName ARGS_MAP =
         ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class));
 
-    /** Renders one conditions class per distinct glue owner among {@code rows}, in row order. */
-    public static List<TypeSpec> render(List<ConditionCommand> rows, String outputPackage) {
+    /**
+     * Renders one conditions class per distinct glue owner among {@code rows}, in row order.
+     *
+     * <p>{@code keyProjections} is the graph's projected {@code argMapping} bindings: a condition
+     * parameter bound to a path that opens a {@code @nodeId} reads its column off a decoded record
+     * rather than off the args map. The decode body is hosted on this class, which is the reason this
+     * site needs more than the routine site did: the {@code decode<Record>} bodies a
+     * {@code <Type>Fetchers} class hosts are unreachable from here, so a conditions class mints its own
+     * through {@link RecordDecodeHelperRegistry}.
+     */
+    public static List<TypeSpec> render(List<ConditionCommand> rows, String outputPackage,
+            KeyProjectionRelation keyProjections) {
         var byOwner = new LinkedHashMap<UnitRef, List<ConditionCommand>>();
         for (var row : rows) {
             byOwner.computeIfAbsent(row.glue().owner(), k -> new ArrayList<>()).add(row);
@@ -71,19 +82,26 @@ public final class ConditionGlueRenderer {
         for (var entry : byOwner.entrySet()) {
             var classBuilder = TypeSpec.classBuilder(entry.getKey().simpleName()).addModifiers(Modifier.PUBLIC);
             CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry ->
+                RecordDecodeHelperRegistry.collectInto(classBuilder, decodes ->
                 RequestContextHelper.collectInto(classBuilder, outputPackage, contextHelper -> {
+                    // One projection host per class: the relation is the graph's, and reaching a decode
+                    // registers its body here, so a called helper cannot go un-emitted.
+                    var keyHost = new ProjectedKeyHost(keyProjections,
+                        projection -> decodes.register(projection.decode(), projection.nodeTable()));
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(
                             row.glue().methodName(), row.table().tableClass(),
-                            row.predicates(), row.lifts(), takesEnv, registry, contextHelper));
+                            row.predicates(), row.lifts(), takesEnv, registry, contextHelper,
+                            keyHost.at(row.coordinate())));
                         for (var fragment : row.facets()) {
                             classBuilder.addMethod(buildGlueMethod(
                                 fragment.method().methodName(), row.table().tableClass(),
-                                fragment.predicates(), fragment.lifts(), takesEnv, registry, contextHelper));
+                                fragment.predicates(), fragment.lifts(), takesEnv, registry, contextHelper,
+                                keyHost.at(row.coordinate())));
                         }
                     }
-                }));
+                })));
             out.add(classBuilder.build());
         }
         return out;
@@ -95,7 +113,8 @@ public final class ConditionGlueRenderer {
 
     private static MethodSpec buildGlueMethod(String methodName, TypeName jooqTableClass,
             List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv,
-            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper) {
+            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper,
+            ProjectedKeyReads keys) {
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(CONDITION)
@@ -118,10 +137,17 @@ public final class ConditionGlueRenderer {
             builder.addStatement("$T<?, ?> $L = args.get($S) instanceof $T<?, ?> map ? map : null",
                 MAP, lift.localName(), lift.outerArgName(), MAP);
         }
+        // Composed before it is emitted: a projected binding registers a node-id decode with the
+        // sink, and that materialisation has to be declared ahead of every local reading it. With no
+        // projection the sink contributes nothing and this emits exactly what the loop used to.
+        var bindingLocals = new ArrayList<CodeBlock>();
         for (var binding : bindings) {
+            bindingLocals.add(extractionExpr(binding.param(), liftLocals, registry, contextHelper, keys));
+        }
+        builder.addCode(keys.declarations());
+        for (int i = 0; i < bindings.size(); i++) {
             builder.addStatement("$T $L = $L",
-                localType(binding.param()), binding.localName(),
-                extractionExpr(binding.param(), liftLocals, registry, contextHelper));
+                localType(bindings.get(i).param()), bindings.get(i).localName(), bindingLocals.get(i));
         }
 
         var aliasesByReach = declareReachAliases(builder, predicates);
@@ -333,7 +359,7 @@ public final class ConditionGlueRenderer {
         if (!param.list() && param.javaType() instanceof ParameterizedTypeName full) {
             return full;
         }
-        ClassName raw = ClassName.bestGuess(rawComponent(param.typeName()));
+        ClassName raw = ClassName.bestGuess(WireMapChain.rawComponent(param.typeName()));
         return param.list() ? ParameterizedTypeName.get(LIST, raw) : raw;
     }
 
@@ -349,7 +375,8 @@ public final class ConditionGlueRenderer {
     }
 
     private static CodeBlock extractionExpr(CallParam param, Map<String, String> liftLocals,
-            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper) {
+            CompositeDecodeHelperRegistry registry, RequestContextHelper contextHelper,
+            ProjectedKeyReads keys) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("($T) args.get($S)", localType(param), param.name());
@@ -367,7 +394,7 @@ public final class ConditionGlueRenderer {
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 decodeCall(registry, nidk, param.list(), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
-                nestedExtraction(nif, param, liftLocals, registry);
+                nestedExtraction(nif, param, liftLocals, registry, keys);
             // Request context is not in the args map: the local reads through the class's own
             // graphitronContext(env) helper, whose need the collector records so the drain and
             // the call cannot separate (the shipped-twice missing-helper bug class).
@@ -400,7 +427,8 @@ public final class ConditionGlueRenderer {
      * casts to the declared type.
      */
     private static CodeBlock nestedExtraction(CallSiteExtraction.NestedInputField nif, CallParam param,
-            Map<String, String> liftLocals, CompositeDecodeHelperRegistry registry) {
+            Map<String, String> liftLocals, CompositeDecodeHelperRegistry registry,
+            ProjectedKeyReads keys) {
         if (nif.leaf() instanceof CallSiteExtraction.ContextArg) {
             // The resolver keeps context params bare when it rewraps a nested condition's value
             // params (ConditionResolver.rewrapForNested), so this leaf shape is unconstructable;
@@ -414,12 +442,26 @@ public final class ConditionGlueRenderer {
             ? CodeBlock.of("$L", lifted)
             : CodeBlock.of("args.get($S)", nif.outerArgName());
 
+        // Row presence decides, ahead of every leaf special case: a path whose last segment names a key
+        // column of a @nodeId's node type reads that column off a decoded record, and the wire value it
+        // decodes sits one segment short of the path's end. The leaf the walk resolved is an unresolvable
+        // one (the path descends past a scalar), so it arrives here as Direct and none of the arms below
+        // would know the difference.
+        String written = nif.outerArgName() + "." + String.join(".", nif.path());
+        var projected = keys.readFor(written, written.substring(0, written.lastIndexOf('.')),
+            () -> nif.path().size() == 1
+                ? CodeBlock.of("args.get($S)", nif.outerArgName())
+                : WireMapChain.of(root, nif.path().subList(0, nif.path().size() - 1), null, lifted));
+        if (projected.isPresent()) {
+            return projected.get();
+        }
+
         if (nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
             return decodeCall(registry, nidk, param.list(),
-                mapChain(root, nif.path(), 0, null, lifted));
+                WireMapChain.of(root, nif.path(), null, lifted));
         }
         if (nif.leaf() instanceof CallSiteExtraction.JooqConvert jc) {
-            CodeBlock chain = mapChain(root, nif.path(), 0, null, lifted);
+            CodeBlock chain = WireMapChain.of(root, nif.path(), null, lifted);
             if (param.list()) {
                 return CodeBlock.of(
                     "($L) instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, table.$L.getDataType()).getValue()).toList() : null",
@@ -427,46 +469,7 @@ public final class ConditionGlueRenderer {
             }
             return CodeBlock.of("$T.val($L, table.$L.getDataType()).getValue()", DSL, chain, jc.columnJavaName());
         }
-        return mapChain(root, nif.path(), 0, localType(param), lifted);
+        return WireMapChain.of(root, nif.path(), localType(param), lifted);
     }
 
-    /**
-     * Builds the depth-{@code depth} step's ternary, recursing inward. A lifted head skips the
-     * {@code instanceof Map<?, ?>} rebind in favour of a {@code != null} guard on the lifted
-     * local; inner steps rebind via {@code map2, map3, ...}. A {@code null} {@code leafType}
-     * means "do not cast the Map.get result" (the decode and converter leaves own the runtime
-     * shape).
-     */
-    private static CodeBlock mapChain(CodeBlock currentExpr, List<String> path, int depth,
-            TypeName leafType, String topBinding) {
-        String key = path.get(depth);
-        boolean isLeaf = depth == path.size() - 1;
-        boolean liftedHead = topBinding != null && depth == 0;
-        String binding = liftedHead ? topBinding : "map" + (depth + 1);
-
-        if (isLeaf) {
-            if (liftedHead) {
-                return leafType == null
-                    ? CodeBlock.of("$L != null ? $L.get($S) : null", binding, binding, key)
-                    : CodeBlock.of("$L != null ? ($T) $L.get($S) : null", binding, leafType, binding, key);
-            }
-            return leafType == null
-                ? CodeBlock.of("$L instanceof $T<?, ?> $L ? $L.get($S) : null",
-                    currentExpr, MAP, binding, binding, key)
-                : CodeBlock.of("$L instanceof $T<?, ?> $L ? ($T) $L.get($S) : null",
-                    currentExpr, MAP, binding, leafType, binding, key);
-        }
-        CodeBlock next = CodeBlock.of("$L.get($S)", binding, key);
-        if (liftedHead) {
-            return CodeBlock.of("$L != null ? ($L) : null",
-                binding, mapChain(next, path, depth + 1, leafType, null));
-        }
-        return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
-            currentExpr, MAP, binding, mapChain(next, path, depth + 1, leafType, null));
-    }
-
-    private static String rawComponent(String typeName) {
-        int lt = typeName.indexOf('<');
-        return lt < 0 ? typeName : typeName.substring(0, lt);
-    }
 }
