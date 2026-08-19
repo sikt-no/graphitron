@@ -85,30 +85,40 @@ class ArgmappingProjectionRejectionPipelineTest {
     // ===== The widening's blast radius: one case per ArgBindingMap.of call site =====
 
     /*
-     * The grammar widening admits one segment past an ID at every site that spells an argMapping,
+     * The grammar widening admits one segment past a node id at every site that spells an argMapping,
      * and the audit of the six call sites found no site-local gate that would stop an uninterpreted
      * one: each site's post-resolution leaf check reads ServiceCatalog.resolvePathLeafType, which
      * returns null the moment a path descends through a non-input-object, and every consumer of a
      * null leaf type passes through rather than rejecting. So the widening's safety is entirely the
-     * detections', and these are the cases that hold them to it.
+     * store detections', and these are the cases that hold them to it.
      *
-     * Each fixture opens an ID that declares no @nodeId, which is the shape with no other judge: a
-     * declared decode is rejected whether or not its site emits, whereas this one used to be the
-     * walk's traversal rejection and is now nobody's but the store's. The five sites that resolve a
-     * leaf assert the verdict reaches the build; the sixth resolves against an empty slot map and so
-     * mints no binding at all, which is the same obligation met one step earlier.
+     * Each fixture spells a key column the node type does not have. That is the shape with no other
+     * judge: the walk resolves the path (the leaf is a declared node id, so the dot opens) and cannot
+     * tell a real key column from a typo, which is a resolution against the node type's key list and
+     * therefore the store's. An undeclared @nodeId is deliberately not the fixture here, that being
+     * the walk's own rejection, pinned per site by the case at the end.
+     *
+     * The sixth site resolves against an empty slot map and so mints no binding at all, which is the
+     * same obligation met one step earlier.
      */
+
+    /** The node type every fixture below opens, and the one key column it actually resolves. */
+    private static final String INVENTORY_NODE = """
+        type Inventory @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+            id: ID! @nodeId
+        }
+        """;
 
     /** The {@code @routine} site, and the motivating case's own shape. */
     @Test
-    void anUndeclaredNodeIdFailsTheBuildAtTheRoutineSite(@TempDir Path tmp) throws IOException {
-        assertUndeclared(tmp, """
+    void anUnknownKeyColumnFailsTheBuildAtTheRoutineSite(@TempDir Path tmp) throws IOException {
+        assertUnknownColumn(tmp, INVENTORY_NODE + """
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
-            type Query { rental: Rental }
-            input RentFilmInput { inventoryId: ID!, customerId: Int! }
+            type Query { rental: Rental, inventory: Inventory }
+            input RentFilmInput { inventoryId: ID! @nodeId(typeName: "Inventory"), customerId: Int! }
             type Mutation {
                 rentFilm(input: RentFilmInput!): [Rental!]!
-                    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId")
+                    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventry_id, pCustomerId: input.customerId")
                     @reference(path: [{table: "rental"}])
             }
             """);
@@ -116,14 +126,15 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /** The {@code @service} site. */
     @Test
-    void anUndeclaredNodeIdFailsTheBuildAtTheServiceSite(@TempDir Path tmp) throws IOException {
-        assertUndeclared(tmp, """
-            input GreetInput { actorId: ID! }
+    void anUnknownKeyColumnFailsTheBuildAtTheServiceSite(@TempDir Path tmp) throws IOException {
+        assertUnknownColumn(tmp, INVENTORY_NODE + """
+            input GreetInput { inventoryId: ID! @nodeId(typeName: "Inventory") }
             type Query {
+                inventory: Inventory
                 greeting(in: GreetInput!): String @service(service: {
                     className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
                     method: "greet",
-                    argMapping: "userId: in.actorId.actor_id"
+                    argMapping: "userId: in.inventoryId.inventry_id"
                 })
             }
             """);
@@ -131,16 +142,17 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /** The output-field {@code @condition} site. */
     @Test
-    void anUndeclaredNodeIdFailsTheBuildAtTheFieldConditionSite(@TempDir Path tmp)
+    void anUnknownKeyColumnFailsTheBuildAtTheFieldConditionSite(@TempDir Path tmp)
             throws IOException {
-        assertUndeclared(tmp, """
+        assertUnknownColumn(tmp, INVENTORY_NODE + """
             type Film @table(name: "film") { title: String }
-            input FilmPick { filmId: ID! }
+            input FilmPick { inventoryId: ID! @nodeId(typeName: "Inventory") }
             type Query {
+                inventory: Inventory
                 films(in: FilmPick!): [Film!]! @condition(condition: {
                     className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                     method: "filmIdCondition",
-                    argMapping: "filmId: in.filmId.film_id"
+                    argMapping: "filmId: in.inventoryId.inventry_id"
                 })
             }
             """);
@@ -148,16 +160,17 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /** The argument-site {@code @condition}, whose one slot is the argument the directive sits on. */
     @Test
-    void anUndeclaredNodeIdFailsTheBuildAtTheArgumentConditionSite(@TempDir Path tmp)
+    void anUnknownKeyColumnFailsTheBuildAtTheArgumentConditionSite(@TempDir Path tmp)
             throws IOException {
-        assertUndeclared(tmp, """
+        assertUnknownColumn(tmp, INVENTORY_NODE + """
             type Film @table(name: "film") { title: String }
-            input FilmPick { filmId: ID! }
+            input FilmPick { inventoryId: ID! @nodeId(typeName: "Inventory") }
             type Query {
+                inventory: Inventory
                 films(in: FilmPick! @condition(condition: {
                     className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                     method: "filmIdCondition",
-                    argMapping: "filmId: in.filmId.film_id"
+                    argMapping: "filmId: in.inventoryId.inventry_id"
                 })): [Film!]!
             }
             """);
@@ -165,18 +178,18 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /** The input-field {@code @condition}, whose one slot is the input field itself. */
     @Test
-    void anUndeclaredNodeIdFailsTheBuildAtTheInputFieldConditionSite(@TempDir Path tmp)
+    void anUnknownKeyColumnFailsTheBuildAtTheInputFieldConditionSite(@TempDir Path tmp)
             throws IOException {
-        assertUndeclared(tmp, """
+        assertUnknownColumn(tmp, INVENTORY_NODE + """
             type Film @table(name: "film") { title: String }
             input FilmPick {
-                filmId: ID! @condition(condition: {
+                inventoryId: ID! @nodeId(typeName: "Inventory") @condition(condition: {
                     className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                     method: "filmIdCondition",
-                    argMapping: "filmId: filmId.film_id"
+                    argMapping: "filmId: inventoryId.inventry_id"
                 })
             }
-            type Query { films(in: FilmPick!): [Film!]! }
+            type Query { inventory: Inventory, films(in: FilmPick!): [Film!]! }
             """);
     }
 
@@ -208,15 +221,44 @@ class ArgmappingProjectionRejectionPipelineTest {
                 .anyMatch(m -> m.contains("references GraphQL argument 'in'")));
     }
 
-    /** That the undeclared-decode verdict reaches the build's own verdict, whatever the site. */
-    private static void assertUndeclared(Path tmp, String sdl) {
+    /**
+     * The walk's own half of the same obligation: an {@code ID} declaring no {@code @nodeId} has
+     * nothing to open, so the path never resolves and no emitter can see it. One fixture rather than
+     * six, because the rule belongs to the shared factory and not to each site; what the per-site
+     * cases above pin is the half the walk cannot decide, a spelling resolved against the node type's
+     * own key list.
+     */
+    @Test
+    void anIdDeclaringNoNodeIdIsRejectedByTheWalk(@TempDir Path tmp) throws IOException {
+        assertThatThrownBy(() -> validate(tmp, """
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            input RentFilmInput { inventoryId: ID!, customerId: Int! }
+            type Mutation {
+                rentFilm(input: RentFilmInput!): [Rental!]!
+                    @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId")
+                    @reference(path: [{table: "rental"}])
+            }
+            """))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("what opens is a node id, so the grammar refuses an ID that is not one")
+                .anyMatch(m -> m.contains("has nothing to open")
+                    && m.contains("that ID declares no @nodeId")));
+    }
+
+    /**
+     * That the unknown-key-column verdict reaches the build's own verdict, whatever the site. The
+     * walk admits the path and cannot judge the spelling, so this is the store's answer arriving.
+     */
+    private static void assertUnknownColumn(Path tmp, String sdl) {
         assertThatThrownBy(() -> validate(tmp, sdl))
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("the widened segment is admitted by the walk and rejected by the store")
-                .anyMatch(m -> m.contains("declares no @nodeId")
-                    && m.contains("no node identity to project a key column out of")));
+                .as("the widened segment is admitted by the walk and resolved by the store")
+                .anyMatch(m -> m.contains("which is not a key column of 'Inventory'")));
     }
 
     /** Runs the build-time validate pass over one SDL fixture, capture and detections included. */

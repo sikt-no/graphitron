@@ -38,18 +38,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What {@code intent_argmapping_projection_defect} returns: the {@code argMapping} bindings that
- * open, or should have opened, a {@code @nodeId} and fail to become a key projection: one row per
- * defective pair in a closed verdict vocabulary of four. The rejections that close the hole where a
- * path bound a node id and the base64 wire id reached the database with nothing in the build saying
- * a word.
+ * open a {@code @nodeId} and fail to become a key projection: one row per defective pair in a closed
+ * verdict vocabulary of three. The rejections that close the hole where a path bound a node id and
+ * the base64 wire id reached the database with nothing in the build saying a word.
  *
- * <p>Which arm fires among the three declared-decode arms is decided by the trailing-segment count
- * and nothing else, and {@code node_id_declared} separates them from the fourth, so the arms are
+ * <p>Which arm fires is decided by the trailing-segment count and nothing else, so the arms are
  * disjoint by construction; the cases below pin that as a property rather than trusting it. Beside
- * the arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
- * projection, a two-segment tail, a non-{@code ID} leaf opened and a path that bound nothing must
- * each leave the relation empty, and each of those absences is a rejection some other surface owns
- * or a population no rule judges.
+ * the three arms, the boundary matters as much as the arms do: an ordinary binding, a resolving
+ * projection, a two-segment tail, a leaf the grammar refuses to open and a path that bound nothing
+ * must each leave the relation empty, and each of those absences is a rejection some other surface
+ * owns or a population no rule judges.
  */
 class ArgmappingProjectionDefectTest {
 
@@ -268,64 +266,32 @@ class ArgmappingProjectionDefectTest {
         });
     }
 
-    // ===== The decode nobody declared: the arm the grammar widening made necessary =====
+    // ===== What the grammar admits, and what it never reaches this relation with =====
 
     /**
-     * An {@code ID} opened with a key column that declares no {@code @nodeId} at all. The walk used
-     * to reject this as a scalar traversal and now admits it, asking nothing about the directive
-     * because a path's head is reached through a slot map carrying types rather than directives; so
-     * this arm is the only thing standing between the widened grammar and an uninterpreted segment
-     * read straight off the wire map.
+     * An {@code ID} that declares no {@code @nodeId} is not a node id, so a dot on it opens nothing
+     * and the walk rejects the path before the store is asked. No arm here, deliberately: an earlier
+     * shape of this view carried one, on the ground that the grammar admitted every {@code ID} and
+     * left the undeclared case to be caught downstream. That inverted the rule. What opens is a node
+     * id, the grammar admits only what it can confirm is one, and a verdict here would both
+     * double-report the walk and claim the grammar admits something it cannot interpret.
      */
     @Test
-    void openingAnIdThatDeclaresNoNodeIdIsUndeclared() {
+    void anIdDeclaringNoNodeIdIsLeftToTheWalk() {
         withInventoryNode(dsl -> {
             routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
 
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
-                .isEqualTo("UNDECLARED_NODE_ID");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF))
-                .as("there is no directive to have named a type")
-                .isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
-                .as("what the author tried to project, which the message quotes back")
-                .isEqualTo("inventory_id");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.BOUND_KIND))
-                .isEqualTo("INPUT_FIELD");
+            assertThat(rows(dsl))
+                .as("the walk rejects a dot on an ID that carries no @nodeId; the store must not"
+                    + " say it twice")
+                .isEmpty();
         });
     }
 
     /**
-     * The same defect on an argument head rather than an input field below one, which is the other
-     * relation the leaf's declared type is read from. Two SDL relations hold the two kinds of leaf,
-     * and {@code bound_kind} is the fork; a case per kind is what keeps one of the two joins from
-     * being written wrong and never noticed.
-     */
-    @Test
-    void openingAnIdArgumentThatDeclaresNoNodeIdIsUndeclaredToo() {
-        withSeededStore(GRAPH, dsl -> {
-            catalog(dsl);
-            inventoryNodeType(dsl, "inventory_id");
-            seedField(dsl, GRAPH, "Mutation", "rentFilm");
-            seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "ID");
-            routinePair(dsl, "pInventoryId", "inventoryId.inventory_id");
-
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
-                .isEqualTo("UNDECLARED_NODE_ID");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.BOUND_KIND))
-                .isEqualTo("ARGUMENT");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.BOUND_ARGUMENT_NAME))
-                .isEqualTo("inventoryId");
-        });
-    }
-
-    /**
-     * The arm stops at {@code ID}, and that boundary is the whole of its disjointness rule. On any
-     * other leaf type the walk still rejects the trailing segment itself, so an arm reaching further
-     * would double-report a rejection the error stream already carries. The arm covers precisely the
-     * shapes the walk stopped judging and not one more.
+     * The same for any other leaf type, which is the case that shows the rule above is one rule and
+     * not two: a dot on a {@code String} and a dot on an undeclared {@code ID} are the same
+     * rejection, and neither is this relation's.
      */
     @Test
     void openingANonIdLeafIsLeftToTheWalk() {

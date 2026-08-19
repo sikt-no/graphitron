@@ -26,17 +26,15 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * here is the decode of the view's closed {@code verdict} vocabulary into {@link Rejection} arms and
  * the prose those arms carry.
  *
- * <p>Four of the five arms are the author's to fix, and they close the silence this family had:
+ * <p>Three of the four arms are the author's to fix, and they close the silence this family had:
  * binding a {@code @nodeId} without naming a key column used to hand a routine parameter or a
  * service method the base64 wire id verbatim, and nothing in the build said a word. Which arm fires
- * is the view's decision, taken on the trailing-segment count and whether a decode was declared, so
- * nothing here re-tests a predicate the query already settled. One of the four exists because of the
- * grammar widening rather than in spite of it: an {@code ID} with no {@code @nodeId} on it is
- * admitted by the walk, since a path's head is reached through a slot map carrying types and not
- * directives, and {@link Verdict#UNDECLARED_NODE_ID} is what stands where the walk's traversal
- * rejection used to.
+ * is the view's decision, taken on the trailing-segment count alone, so nothing here re-tests a
+ * predicate the query already settled. What a dot opens is a node id, so an {@code ID} declaring no
+ * {@code @nodeId} has nothing to open and is the walk's rejection rather than a verdict here: the
+ * grammar admits only what it can confirm, which is what keeps that rule in one place.
  *
- * <p>The fifth arm is the generator's rather than the author's, which is why it is derived here
+ * <p>The fourth arm is the generator's rather than the author's, which is why it is derived here
  * and not in SQL: a projection that resolves at a site whose emitter does not read it yet is a
  * {@link Rejection.Deferred}, and whether an emitter exists is a fact about this codebase and not
  * about the schema. {@link #EMITTING_SITES} is that fact, held beside the switch that names the
@@ -120,15 +118,7 @@ public final class ArgmappingProjectionDefects {
         /** A projection asked for against a {@code @nodeId} that names no node type. */
         MISSING_TYPE_NAME,
         /** A trailing segment naming no key column the node type resolved. */
-        UNKNOWN_KEY_COLUMN,
-        /**
-         * A key column named after an {@code ID} that declares no {@code @nodeId}: the shape the
-         * grammar widening admits and nothing else judges. The walk opens an {@code ID} without
-         * asking whether a decode was declared on it, because a path's head is reached through a
-         * slot map carrying types rather than directives, so this arm stands exactly where the
-         * walk's own traversal rejection used to.
-         */
-        UNDECLARED_NODE_ID;
+        UNKNOWN_KEY_COLUMN;
 
         /** The verdict a store row carries; an unknown value is vocabulary drift, a build bug. */
         static Verdict of(String verdict) {
@@ -298,11 +288,6 @@ public final class ArgmappingProjectionDefects {
                       + " with @node(keyColumns:) on that type"
                     : ""),
                 trailingSegment, keyColumns);
-            case UNDECLARED_NODE_ID -> Rejection.structural(entry + " opens an ID with '"
-                + trailingSegment + "', but that ID declares no @nodeId, so there is no node"
-                + " identity to project a key column out of; annotate it"
-                + " @nodeId(typeName: \"<NodeType>\"), or drop the '" + trailingSegment
-                + "' segment to bind the value as written");
         };
     }
 

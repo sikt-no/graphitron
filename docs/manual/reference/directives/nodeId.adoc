@@ -120,7 +120,7 @@ from. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node
 * On `[ID!]` arguments where `typeName` matches the surrounding query's return-type table, xref:lookupKey.adoc[`@lookupKey`] is implied; an explicit `@lookupKey` is permitted but redundant.
 * Decode-time ID/typeId mismatch fails the request with a GraphQL error; same with malformed base64.
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!` (lists are valid for batch decode).
-* In an `argMapping` path, a `@nodeId` leaf must be opened with one of its node type's key columns and must name `typeName:` explicitly; a list of node ids cannot be opened, there being no single key to project from. Binding such a leaf without opening it sends the encoded id to the database verbatim and is a build error. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
+* In an `argMapping` path, a `@nodeId` leaf must be opened with one of its node type's key columns and must name `typeName:` explicitly; opening a list of node ids is reported as deferred, that shape naming the list of a key column across the decoded ids and parameter binding not emitting it yet. Binding such a leaf without opening it sends the encoded id to the database verbatim and is a build error. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
 
 == Editor support
 

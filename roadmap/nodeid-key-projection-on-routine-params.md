@@ -1242,7 +1242,7 @@ stage into a one-line note.
    executes. The `@service` and output-field `@condition` sites remain, and defer honestly until
    they land.*
 
-   What shipped. `ArgBindingMap.of` admits one segment past an `ID`; `ResolvedKeyProjections` reads
+   What shipped. `ArgBindingMap.of` admits one segment past a declared node id; `ResolvedKeyProjections` reads
    the projection view; `KeyProjection` and `KeyProjectionRelation` carry it command-side;
    `KeyProjectionCommands` joins it onto the walked model's node types; `ProjectedKeyHost` and
    `ProjectedKeyReads` render the decode-and-project read; `EMITTING_SITES` holds `ROUTINE`. The
@@ -1251,18 +1251,30 @@ stage into a one-line note.
 
    Six decisions worth reading, four of which the plan did not prescribe.
 
-   **The widening opens a hole the plan did not name, and closing it is a fifth verdict.** The walk
-   admits a segment past an `ID` and asks nothing about the directive, because it has to: a path's
-   head is a slot reached through a name-to-type map, which carries no directives, so an argument
-   head could not be asked whether it declares a decode and a rule the two path positions answered
-   differently would be worse than one they share. So an `ID` carrying no `@nodeId` is now admitted
-   where the walk used to reject it, resolves no projection, and would reach an emitter as a segment
-   nothing had judged. `UNDECLARED_NODE_ID` is that arm, and its `named_type = 'ID'` predicate is its
-   disjointness rule rather than a convenience: on any other leaf type the walk still rejects, so
-   widening past `ID` would double-report. This is the open question stage 3 parked, and the answer
-   is that the detection is not optional but forced.
+   **What a dot opens is a node id, not an `ID`, and getting that wrong cost a verdict.** The first
+   shape of this widening admitted every `ID` and left an `ID` carrying no `@nodeId` to a fifth
+   store-side verdict, on the ground that a path's head is reached through a slot map carrying types
+   and not directives, so the walk could not ask. That inverted the design's own rule: it made the
+   grammar admit something it cannot interpret and put the correction a pipeline stage downstream. The
+   slot map's callers hold the arguments and input fields themselves, so `ArgBindingMap.of` now takes
+   the slot names that declare a `@nodeId` beside the types, both path positions answer identically,
+   and an `ID` that is not a node id takes the same "nothing to open" rejection a `String` takes. The
+   fifth verdict is gone, view arm and all, and the defect vocabulary is three again. What survives of
+   the earlier reasoning is only its negative: the rejection has to be somewhere, and putting it in
+   the grammar is what keeps one rule in one place.
 
-   **The six-call-site audit's finding is that no site needs a change.** Each site's post-resolution
+   Nodehood inferred from a slot's *name* is deliberately not consulted. The projection requires
+   `typeName:` explicitly at this position, there being no containing table to infer from, so a slot
+   carrying no directive at all could not have named one either.
+
+   **A list of node ids is a meaningful shape that does not emit yet, not a meaningless one.** The
+   first wording rejected it for having "no single key to project from", which is false: a list of
+   node ids of one type opens into the list of that key column, and the decode machinery already has a
+   list variant. It is still rejected, because parameter binding does not emit an array-valued IN
+   parameter, and the message now says that instead. Filed as its own item rather than left as a
+   claim.
+
+   **The six-call-site audit's finding is that no site needs a change.**   **The six-call-site audit's finding is that no site needs a change.** Each site's post-resolution
    leaf check reads `ServiceCatalog.resolvePathLeafType`, which returns null the moment a path
    descends through a non-input-object, and every consumer of a null leaf type passes through rather
    than rejecting: `RoutineDirectiveResolver.leafTypeGate` returns early, and `argExtraction` reaches
@@ -1315,7 +1327,13 @@ stage into a one-line note.
 
    What remains: the `@service` site (`ArgCallEmitter`'s `NestedInputField` arm), the two
    conditions-class sites with the decode helper body hosted there, and the compilation-tier assertion
-   about which class hosts it. One gap is filed rather than fixed: a
+   about which class hosts it. Also open, and larger than the rest: whether the openable key columns
+   should be *captured* per argument and input-field coordinate in the `graphitron_` / `sql_` families
+   rather than resolved by a walk-side directive read plus a store-side view join. That would make the
+   segment match a join against a relation keyed by the coordinate, collapse the unknown-column and
+   missing-type-name arms into row absence, and hand the LSP its completion answer directly. It is
+   this item's rule stated as facts rather than as two cooperating mechanisms, and it wants a Spec of
+   its own because it touches the captured families and their agreement tests. One gap is filed rather than fixed: a
    projected column whose Java type the consuming parameter cannot take is a consumer compile error
    rather than a graphitron rejection, the coercion gate having passed through on a null leaf type. It
    is loud rather than silent, so it is a wording problem rather than a correctness one, and it has its

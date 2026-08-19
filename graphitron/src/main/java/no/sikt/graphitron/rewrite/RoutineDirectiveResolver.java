@@ -284,7 +284,8 @@ final class RoutineDirectiveResolver {
         }
 
         var slotTypes = FieldBuilder.argSlotTypes(fieldDef);
-        var bindingResult = ArgBindingMap.of(slotTypes, overrides);
+        var bindingResult = ArgBindingMap.of(slotTypes, overrides,
+            FieldBuilder.nodeIdArgSlots(fieldDef));
         if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
             return new NodeResolved.Rejected(Rejection.structural("@routine " + f.message()));
         }
