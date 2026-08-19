@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
@@ -184,6 +185,38 @@ public final class CapturedStore implements AutoCloseable {
             new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
         return new CapturedStore(store, GRAPH, directory, file, attributed.preSynthesisRegistry(),
             attributed);
+    }
+
+    /**
+     * A graph whose newest read refused something: {@code sdl} parses and is transcribed, and
+     * {@code refusedSdl} is spelled so a stage objects to it, whether the parser (a source it cannot
+     * read) or the registry (a declaration it will not admit beside the first one's).
+     *
+     * <p>The one arm that captures a verdict rather than a registry alone, which is what a case about
+     * a store whose last read failed has to have in it: the refusal row is what makes the read
+     * not-clean, and the surviving source's coordinates are what a reader goes on answering from while
+     * it is. Through {@link RewriteSchemaLoader#parsePerSource} rather than {@code load}, because a
+     * refusal is the subject here and {@code load}'s contract is to throw on one.
+     *
+     * <p>Fails on a {@code refusedSdl} nothing objects to, so an arm whose second source quietly
+     * started parsing cannot go on passing as a fixture for a refusal.
+     */
+    public static CapturedStore ofRefusedSchema(Path directory, String sdl, String refusedSdl,
+                                                JooqCatalog jooq) {
+        Objects.requireNonNull(jooq, "jooq");
+        List<Path> files = List.of(write(directory, GRAPH, sdl),
+            write(directory, GRAPH + "-refused", refusedSdl));
+        var parse = RewriteSchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
+        if (parse.failures().isEmpty() && parse.registryErrors().isEmpty()) {
+            throw new AssertionError("nothing objected to " + files.getLast().getFileName()
+                + "; this arm's whole subject is a read that refused something");
+        }
+        var store = FactStores.inMemory();
+        FactCapture.capture(store.dsl(), false, graph(directory), FactCapture.SubjectConfig.none(),
+            parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
+            SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList()),
+            jooq, List.of());
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), null);
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,

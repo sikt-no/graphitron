@@ -1,23 +1,14 @@
 package no.sikt.graphitron.mcp;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.rewrite.FactWriters;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.capture.SourceWalker;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
-import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,12 +17,16 @@ import java.util.List;
 /**
  * A booted fact store with a graph captured into it, for the tools whose answer is a census read.
  *
- * <p>The capture writer, called directly. {@link StoreBackedBuild} beside this one runs the whole
- * generator, because the rows its tests read are written by loaders that consume the walk's own
- * streams; a census read needs none of that, and paying for a build to get one prices the generator
- * into every catalog case. What this costs is a schema parse and a walk over the generated jOOQ model,
- * which the language server's own fixture has been buying by the test for as long as it has read the
- * store.
+ * <p>A local layer over {@link CapturedStore}, which is the reactor's capture level: every factory
+ * here is one of that level's arms with this module's own vocabulary in front of it, a generated jOOQ
+ * package instead of a {@link JooqCatalog} and this module's class census instead of a list the caller
+ * assembles. What stays local is what is local: the two generated packages, the placeholder SDL, the
+ * fixture census and its walked source root, and the reader a tool's several queries go through.
+ *
+ * <p>{@link StoreBackedBuild} beside this one runs the whole generator, because the rows its tests
+ * read are written by loaders that consume the walk's own streams; a census read needs none of that,
+ * and paying for a build to get one prices the generator into every catalog case. What this costs is a
+ * schema parse and a walk over the generated jOOQ model.
  *
  * <p>Rows still arrive only through {@link FactCapture}, so a fixture cannot encode a census capture
  * would never write. That is the property that matters rather than which entry point produced it: a
@@ -42,8 +37,11 @@ import java.util.List;
  */
 public final class StoreFixture implements AutoCloseable {
 
-    /** The graph a fixture captures under unless a test names a second one. */
-    public static final String GRAPH = "fixture";
+    /**
+     * The graph a fixture captures under unless a test names a second one, which is the capture
+     * level's own default rather than a second spelling of it.
+     */
+    public static final String GRAPH = CapturedStore.GRAPH;
 
     /**
      * The single-schema generated model: {@code graphitron-sakila-db} generates it with
@@ -62,15 +60,11 @@ public final class StoreFixture implements AutoCloseable {
     /** SDL for a fixture whose subject is the catalog, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
-    private final GraphitronModelStore store;
-    private final String graphName;
-    private final Path directory;
+    private final CapturedStore captured;
     private StoreReader reader;
 
-    private StoreFixture(GraphitronModelStore store, String graphName, Path directory) {
-        this.store = store;
-        this.graphName = graphName;
-        this.directory = directory;
+    private StoreFixture(CapturedStore captured) {
+        this.captured = captured;
     }
 
     /** The catalog shape: the single-schema generated model captured under {@link #GRAPH}. */
@@ -97,11 +91,14 @@ public final class StoreFixture implements AutoCloseable {
         return ofJooqPackage(directory, PLACEHOLDER_SDL, null);
     }
 
+    /**
+     * The catalog axis in this module's terms: a generated package name, or {@code null} for the
+     * capture that has no catalog to reach at all.
+     */
     private static StoreFixture ofJooqPackage(Path directory, String sdl, String jooqPackage) {
-        var store = GraphitronModelStore.open();
-        var fixture = new StoreFixture(store, GRAPH, directory);
-        fixture.capture(sdl, jooqPackage, false, List.of());
-        return fixture;
+        return new StoreFixture(jooqPackage == null
+            ? CapturedStore.of(directory, sdl)
+            : CapturedStore.ofCatalog(directory, sdl, new JooqCatalog(jooqPackage)));
     }
 
     /** The package the code fixtures live under; the census is narrowed to it. */
@@ -124,10 +121,9 @@ public final class StoreFixture implements AutoCloseable {
      * is a class the store knows and no source positions, which is what a dependency jar is.
      */
     public static StoreFixture ofCodeFixtures(Path directory) {
-        var store = GraphitronModelStore.open();
-        var fixture = new StoreFixture(store, GRAPH, directory);
-        fixture.capture(PLACEHOLDER_SDL, null, false, codeFixtureCensus());
-        fixture.refreshJavaSources(codeFixtureSources());
+        var fixture = new StoreFixture(
+            CapturedStore.of(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus()));
+        FactWriters.refreshJavaSources(fixture.captured.dsl(), List.of(codeFixtureSources()));
         return fixture;
     }
 
@@ -141,10 +137,8 @@ public final class StoreFixture implements AutoCloseable {
      * fixture missing any one of them makes a whole family of slots silently empty.
      */
     public static StoreFixture ofSchema(Path directory, String sdl) {
-        var store = GraphitronModelStore.open();
-        var fixture = new StoreFixture(store, GRAPH, directory);
-        fixture.capture(sdl, JOOQ_PACKAGE, false, codeFixtureCensus());
-        return fixture;
+        return new StoreFixture(CapturedStore.ofCatalog(directory, GRAPH, sdl,
+            new JooqCatalog(JOOQ_PACKAGE), codeFixtureCensus()));
     }
 
     /**
@@ -153,33 +147,13 @@ public final class StoreFixture implements AutoCloseable {
      * registry (a declaration it will not admit beside the first one's).
      *
      * <p>The state the {@code Previous} freshness axis is about, reached the way an author reaches it,
-     * by leaving a file mid-edit. Both halves have to be real for the axis to mean anything: the
-     * refusal row is what makes the read not-clean, and the surviving source's coordinates are what
-     * the tools go on answering from while it is.
-     *
-     * <p>Through {@link RewriteSchemaLoader#parsePerSource} rather than {@code load}, because a
-     * refusal is what this fixture is for and {@code load} is the entry point whose contract is to
-     * throw on one.
+     * by leaving a file mid-edit. The capture level carries the arm; what is this module's is the
+     * catalog it captures against, so a tool answering from the surviving source's coordinates has a
+     * census under it as it would in a consumer's own session.
      */
     public static StoreFixture ofRefusedSchema(Path directory, String sdl, String refusedSdl) {
-        var store = GraphitronModelStore.open();
-        var fixture = new StoreFixture(store, GRAPH, directory);
-        fixture.captureRefused(sdl, refusedSdl);
-        return fixture;
-    }
-
-    private void captureRefused(String sdl, String refusedSdl) {
-        List<Path> files = List.of(write(graphName, sdl), write(graphName + "-refused", refusedSdl));
-        var parse = RewriteSchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
-        if (parse.failures().isEmpty() && parse.registryErrors().isEmpty()) {
-            throw new AssertionError("nothing objected to the second source; this fixture's whole "
-                + "subject is a read that refused something");
-        }
-        FactCapture.capture(store.dsl(), false,
-            new FactCapture.GraphIdentity(graphName, directory), FactCapture.SubjectConfig.none(),
-            parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
-            SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList()),
-            new JooqCatalog(JOOQ_PACKAGE), List.of());
+        return new StoreFixture(CapturedStore.ofRefusedSchema(directory, sdl, refusedSdl,
+            new JooqCatalog(JOOQ_PACKAGE)));
     }
 
     /**
@@ -228,16 +202,6 @@ public final class StoreFixture implements AutoCloseable {
     }
 
     /**
-     * Reads the {@code .java} files under {@code sourceRoot} into this store's {@code java_} family,
-     * the way a dev session's source watcher does. The real writer, so a fixture cannot record a
-     * declaration shape a parse never produces.
-     */
-    private void refreshJavaSources(Path sourceRoot) {
-        var roots = List.of(sourceRoot);
-        new JavaSourceFacts(store.dsl()).refresh(roots, new SourceWalker().walkFiles(roots));
-    }
-
-    /**
      * Captures this graph again over a different generated model, the way a dev session's next build
      * would after the consumer pointed their codegen somewhere else. The graph's source membership is
      * graph-keyed and rewritten whole, so what the graph's scope sees afterwards is the new catalog
@@ -247,59 +211,37 @@ public final class StoreFixture implements AutoCloseable {
      * @param jooqPackage the generated model to capture, or {@code null} for none
      */
     public StoreFixture recaptureCatalog(String jooqPackage) {
-        capture(PLACEHOLDER_SDL, jooqPackage, true, List.of());
+        if (jooqPackage == null) {
+            captured.recapture(PLACEHOLDER_SDL);
+        } else {
+            captured.recaptureCatalog(PLACEHOLDER_SDL, new JooqCatalog(jooqPackage));
+        }
         return this;
     }
 
     /** Captures a second graph into this same store, for the cases whose subject is one graph's scope. */
     public StoreFixture andGraph(String otherGraph, String jooqPackage) {
-        capture(otherGraph, PLACEHOLDER_SDL, jooqPackage, false, List.of());
-        return this;
-    }
-
-    private void capture(
-        String sdl, String jooqPackage, boolean warm, List<CompletionData.ExternalReference> classpath
-    ) {
-        capture(graphName, sdl, jooqPackage, warm, classpath);
-    }
-
-    private void capture(
-        String graph, String sdl, String jooqPackage, boolean warm,
-        List<CompletionData.ExternalReference> classpath
-    ) {
-        Path file = write(graph, sdl);
-        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(file)));
-        var attribution = SchemaInputAttribution.build(List.of(SchemaInput.file(file)));
-        FactCapture.capture(store.dsl(), warm,
-            new FactCapture.GraphIdentity(graph, directory), FactCapture.SubjectConfig.none(),
-            registry, attribution,
-            jooqPackage == null ? null : new JooqCatalog(jooqPackage),
-            classpath);
-    }
-
-    private Path write(String graph, String sdl) {
-        Path path = directory.resolve(graph + ".graphqls");
-        try {
-            Files.writeString(path, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        if (jooqPackage == null) {
+            captured.andGraph(otherGraph, PLACEHOLDER_SDL);
+        } else {
+            captured.andCatalogGraph(otherGraph, PLACEHOLDER_SDL, new JooqCatalog(jooqPackage));
         }
-        return path;
+        return this;
     }
 
     /** The graph this fixture captured under. */
     public String graphName() {
-        return graphName;
+        return captured.graphName();
     }
 
     /** The scoped query surface a single-query tool takes. */
     public StoreHandle handle() {
-        return new StoreHandle(store.dsl(), graphName);
+        return new StoreHandle(captured.dsl(), captured.graphName());
     }
 
     /** The same store seen as another graph, for asserting one graph cannot read another's rows. */
     public StoreHandle handleFor(String otherGraph) {
-        return new StoreHandle(store.dsl(), otherGraph);
+        return new StoreHandle(captured.dsl(), otherGraph);
     }
 
     /**
@@ -309,7 +251,7 @@ public final class StoreFixture implements AutoCloseable {
      */
     public StoreReader reader() {
         if (reader == null) {
-            reader = store.reader();
+            reader = captured.reader();
         }
         return reader;
     }
@@ -319,6 +261,6 @@ public final class StoreFixture implements AutoCloseable {
         if (reader != null) {
             reader.close();
         }
-        store.close();
+        captured.close();
     }
 }

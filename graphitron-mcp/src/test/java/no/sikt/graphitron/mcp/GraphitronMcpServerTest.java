@@ -12,8 +12,8 @@ import no.sikt.graphitron.mcp.rag.docs.DocChunk;
 import no.sikt.graphitron.mcp.rag.docs.DocsBundle;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.test.FactStores;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -1374,8 +1374,10 @@ class GraphitronMcpServerTest {
                 .containsEntry("rejectionKind", "author-error");
             assertThat((String) error.get("message")).contains("badColumn");
             var location = (Map<String, Object>) error.get("location");
-            // The canonical file URI, and the 1-based stored position on the 0-based wire.
-            assertThat((String) location.get("uri")).startsWith("file:").endsWith("schema.graphqls");
+            // The canonical file URI, and the 1-based stored position on the 0-based wire. The
+            // build fixture writes its schema under the graph name, so that is what the URI ends on.
+            assertThat((String) location.get("uri"))
+                .startsWith("file:").endsWith("mcp-diagnostics.graphqls");
             assertThat(location).containsEntry("line", 2);
 
             // The rule-less advisory (a real producer: @table on an input type) keeps surfacing
@@ -1536,7 +1538,7 @@ class GraphitronMcpServerTest {
         // Before the first capture there are no definitions, and the resource says that. Answering
         // with graphitron's own grammar alone would be a vocabulary silently missing the author's
         // declarations, which reads as a grammar that forbids them.
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             var text = onlyText(DirectivesResource.read(new StoreHandle(store.dsl(), "never-captured")));
 
             assertThat(text).contains("No directive definitions have been captured");

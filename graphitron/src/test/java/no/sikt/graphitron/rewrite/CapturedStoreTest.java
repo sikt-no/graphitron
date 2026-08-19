@@ -11,18 +11,20 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The capture-level harness itself, over the arms whose whole point is a shape no single-fixture
- * caller exercises: a second graph in one store, two graphs over one document, and a warm round
- * standing the previous one down. Each is a claim about what capture does rather than about the
- * helper, which is why they are worth pinning here rather than left to the first consumer to
- * discover.
+ * caller exercises: a second graph in one store, two graphs over one document, a warm round standing
+ * the previous one down, and a read that refused one of its sources. Each is a claim about what
+ * capture does rather than about the helper, which is why they are worth pinning here rather than left
+ * to the first consumer to discover.
  */
 @UnitTier
 class CapturedStoreTest {
@@ -100,6 +102,31 @@ class CapturedStoreTest {
         try (var store = CapturedStore.of(tmp.resolve("bare"), SDL)) {
             assertThat(store.dsl().fetchCount(SQL_TABLE)).isZero();
         }
+    }
+
+    @Test
+    @DisplayName("the refused arm keeps the surviving source's rows and leaves the verdict beside them")
+    void theRefusedArmCapturesBothHalvesOfARefusedRead(@TempDir Path tmp) {
+        try (var store = CapturedStore.ofRefusedSchema(tmp, SDL, "type Actor { name: String\n",
+                new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+            assertThat(store.dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Film")))
+                .as("the source that parsed is in the store, which is what a reader answers from")
+                .isOne();
+            assertThat(store.dsl().fetchCount(GRAPHQL_SYNTAX_ERROR))
+                .as("and the refusal is recorded, which is what makes the read not-clean")
+                .isPositive();
+        }
+    }
+
+    @Test
+    @DisplayName("the refused arm fails on a second source nothing objects to")
+    void theRefusedArmWillNotStandInForACleanRead(@TempDir Path tmp) {
+        // Left to itself the capture would succeed and the fixture would go on being read as a
+        // refusal, so the arm says so rather than handing back a store that disagrees with its name.
+        assertThatThrownBy(() -> CapturedStore.ofRefusedSchema(tmp, SDL, "type Actor { name: String }\n",
+            new JooqCatalog(TestConfiguration.DEFAULT_JOOQ_PACKAGE)))
+            .isInstanceOf(AssertionError.class)
+            .hasMessageContaining("fixture-refused.graphqls");
     }
 
     @Test

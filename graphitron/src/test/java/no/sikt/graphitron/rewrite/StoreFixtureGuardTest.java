@@ -114,16 +114,7 @@ class StoreFixtureGuardTest {
             Why.PENDING_SEEDING, "walk agreement end to end, so it stays whole and takes a capture "
                 + "handle rather than a seed"),
 
-        // Pending: the two downstream modules' own floors.
-        new Exempt("graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/StoreFixture.java",
-            Why.PENDING_MODULE_FLOOR, "a capture-level copy, keeping its factory set and delegating "
-                + "the floor when the module takes the shared one"),
-        new Exempt("graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/StoreBackedBuild.java",
-            Why.PENDING_MODULE_FLOOR, "a real build, so it belongs at the build level rather than "
-                + "on the capture factories"),
-        new Exempt("graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/GraphitronMcpServerTest.java",
-            Why.PENDING_MODULE_FLOOR, "one empty store, to read a graph nothing has captured; it "
-                + "wants the lifetime layer alone and the module cannot reach it yet"),
+        // Pending: the last downstream module's own floor.
         new Exempt("graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/StoreFixture.java",
             Why.PENDING_MODULE_FLOOR, "the strongest of the independent copies, and the one whose "
                 + "shapes the shared levels were sized against"));
@@ -223,7 +214,7 @@ class StoreFixtureGuardTest {
                 Run a build. BuiltStore leaves its facts in a store on disk that outlives the run.
 
               Your own module's reads over a populated store?
-                Put a fixture in your module over one of the above, the way graphitron-lsp's \
+                Put a fixture in your module over one of the above, the way graphitron-mcp's \
             StoreFixture does, and keep the reader-side surface local to you.
 
             If none of those expresses the shape you need, the finding is that a level is missing \
