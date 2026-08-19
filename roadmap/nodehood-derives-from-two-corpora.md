@@ -45,8 +45,9 @@ running inside stratum one, and its output lands in stratum-one relations where 
 from a transcription.
 
 `MacroCapture`'s javadoc once defended the arrangement in a different vocabulary, as keeping the
-store's picture effective rather than authored. That vocabulary is retired and the javadoc now states
-the stratum instead, but the reason it does not survive contact with the other corpora is worth
+store's picture effective rather than authored. That vocabulary is retired and the javadoc now calls
+the expansion a derivation inside the capture walk instead, but the reason it does not survive
+contact with the other corpora is worth
 keeping here. Everything in the store is authored by somebody: the DDL behind the jOOQ
 classes was authored, the service methods were authored, the configuration was authored. "Authored"
 therefore partitions nothing, and "effective" is singular where the truth is plural, since a
@@ -57,7 +58,7 @@ The consequence of the misplacement is visible in the schema, and is the cleares
 stratum reading. `graphitron_field_synthesis.authored_type_sdl` exists because the connection macro
 overwrote a captured fact in `graphql_field` with a derived one, so the captured fact had to be
 stashed in the provenance table as unparsed text ("the type expression as the author wrote it,
-pre-expansion"), and a view now recovers it with nested `REPLACE` calls stripping `[`, `]` and `!`.
+pre-expansion"), and two views now recover it with nested `REPLACE` calls stripping `[`, `]` and `!`.
 A captured fact is being reconstructed by string surgery because a derived fact took its seat.
 
 The three synthesis relations, `graphitron_type_directive_synthesis`,
@@ -97,10 +98,31 @@ rejecting that shape stays the classifier's job. The predicate's declared-wins s
 no transcription: a `UNION` dedupes, so precedence dissolves with the tag column that would have
 asked for it.
 
-This is the first cross-corpus join in the tree, and the licensed home for one: a derivation may
-join corpora precisely because no crawler may. The catalog side scopes through `store_graph_source`
-by standing on `intent_bound_table`, which already routes the join the `store_graph` comment calls
-underdetermined without it. Views rather than materializations: there is no recursion, and the fact
+A cross-corpus join is the licensed shape here rather than a new one: a derivation may join corpora
+precisely because no crawler may, and seven shipped `intent_` views already do it. The nearest is
+`intent_resolved_node_key_column`, whose `JOOQ_METADATA` tier already carries the conjunction this
+view needs, a `sql_node_metadata` row on the binding's table key, `candidates = 1`, and no
+`intent_node_metadata_defect` row for that table. Two things follow, and both are settled here
+rather than at the keyboard.
+
+The binding the two stand on differs, deliberately. That tier stands on
+`intent_resolved_type_binding`, which coalesces the `@table` binding with the one a `@routine`
+chain's return derives; this view stands on `intent_bound_table`, the `@table` arm alone, because
+nodehood demands a written `@table`: `NodeDeclaration.isNodeType` reads the directive's presence
+before it probes anything, so a type whose only binding is a routine return is not a node however
+well-formed that table's metadata is. Either stand scopes the catalog side through
+`store_graph_source`, which already routes the join the `store_graph` comment calls underdetermined
+without it, so the scoping is not what picks between them.
+
+The conjunction therefore gets a second spelling in SQL, and this item accepts that rather than
+extracting it. The extraction (a well-formed-stated-metadata relation on `sql_table`'s own key,
+which both stands could then join) would retrofit a shipped tier and the seeded anchor that pins it
+(`ResolvedNodeKeyColumnTest`) for a rule this item does not otherwise touch; the out-of-scope list
+names it as the follow-on. What the item does owe is that the duplication is visible rather than
+latent: each of the two view comments names the other as the sibling spelling, so a reader who finds
+one finds the pair.
+
+Views rather than materializations: there is no recursion, and the fact
 model sanctions materialization only where a view cannot serve; being views, they also cannot go
 stale against a warm-store catalog refresh, since `CatalogFactCapture` writes in the same
 transaction the readers run in.
@@ -126,12 +148,14 @@ synthesized key. A row exists when all three hold:
 
 - the graph is federation-linked: a `graphitron_link` row whose `url` has prefix
   `FederationSpec.SPEC_PREFIX`. The decode, not the verbatim twin: `graphitron_link.url` is stored
-  as written and its own comment already says the federation opt-in is a predicate over it, whereas
+  as written and the relation's own comment already says the federation opt-in is a predicate over
+  it, whereas
   reading `graphql_schema_directive_arg.value_sdl` would mean compensating for AST quoting, the
   exact string surgery this item's problem statement condemns. A `url` the author omitted is a null
   and matches nothing, which is `isFederationLink`'s null guard falling out of the join. The prefix
-  is a SQL literal, a fourth spelling beside the constant's three Java readers, so a named test pins
-  the literal against `FederationSpec.SPEC_PREFIX` (a view cannot bind a query parameter the way
+  is a SQL literal, a third spelling beside the two Java readers the constant keeps
+  (`TagLinkSynthesiser` and `FederationLinkApplier`; this item removes the third), so a named test
+  pins the literal against `FederationSpec.SPEC_PREFIX` (a view cannot bind a query parameter the way
   `ReachabilityRows` binds `DeclaredDirectives.names()`);
 - `intent_node_type` has the type;
 - no authored id-key: no `graphitron_federation_key` row on the type whose decode is exactly the
@@ -183,6 +207,10 @@ ordinal and appends the derived one in the composing query.
 - `SdlFactCapture`: the `baseSites` field loses its last reader and dies; the `ElementOrdinals`
   javadoc drops its macro sentence; the package-private `captureTypeDirective` overload taking a
   caller-supplied ordinal folds back into the private loop, its only outside caller being the macro.
+  The field javadoc above the two maps covers them jointly ("Both outlive the walk because macro
+  expansion runs after it") and is rewritten rather than trimmed: with `baseSites` gone,
+  `ordinalsByType` keeps its own unrelated reason, which is that a repeatable type directive split
+  across a base and an extension has to number 0 and 1 instead of colliding at 0.
 - `NodeDeclaration` leaves the capture API outright: the `nodes` parameter comes off
   `FactCapture.run`, `runWithDetections` and every `capture` overload, off `SdlFactCapture.capture`,
   and off `MacroCapture`'s constructor. Both production call sites in `GraphQLRewriteGenerator`
@@ -198,7 +226,10 @@ ordinal and appends the derived one in the composing query.
   keeping it would pin a permanently empty relation through `everyRelationIsRegistered`. In the same
   sweep, `graphitron_type_declaration_synthesis`'s `CHECK` drops its `FEDERATION` value: nothing
   mints it today, nothing federation-shaped remains in `MacroCapture` after this item, and a closed
-  vocabulary with an unmintable member is inventory.
+  vocabulary with an unmintable member is inventory. That relation's own table comment goes with the
+  value, its extension-site case being "the Query fields federation adds from `@link`", which is
+  exactly what the narrowed vocabulary no longer admits; the case a `CONNECTION` extension site
+  actually has, a later carrier touching shared machinery, is already the sentence after it.
 - The catalog pairing stays a construction fact. Today `FactCapture`'s javadoc obligates callers to
   build `nodes` from the same catalog they pass as `jooq`; removing the parameter removes the
   visible pairing, so nothing may reintroduce a second catalog-shaped input beside `jooq`. The
@@ -256,8 +287,13 @@ schema's object types. The shadow retires when the walk consumers re-source onto
 the out-of-scope list names as the follow-on. Beside these, the small pin holding the
 federation-link prefix literal to `FederationSpec.SPEC_PREFIX`.
 
-`fact-model.adoc` gains the rule in its stratum section with this gate as the named enforcer,
-closing one of the two gaps its "Not mechanically enforced" paragraph currently discloses. The
+`fact-model.adoc` gains the rule in its stratum section with this gate as the named enforcer. It is a
+third rule beside the two that section already carries, not a closure of either: the "Not
+mechanically enforced" paragraph discloses the recompute test and the family assignment, and this
+gate fires only on the cross-corpus subclass of a recompute violation. A capture-time derivation
+whose inputs all sit inside one corpus, which is exactly the surviving `CONNECTION` half, still
+passes every gate in the suite. That paragraph is therefore amended to name the subclass now covered
+rather than to shorten its list, which is what keeps the page's disclosed-gap discipline honest. The
 macro-inversion sentences there are amended to record that the federation half of the inversion is
 corrected and the `CONNECTION` half remains, and the "moving the rows is a schema change" paragraph
 gets its first instance.
@@ -272,13 +308,25 @@ gets its first instance.
   ordinal-interleaving case (`anOtherFieldKeyLeavesSynthesisToNumberAfterIt`) becomes an assertion
   that an authored non-id key and a derived row coexist on one type, and the position-inheritance
   case dissolves because a derived row has no position of its own, the type's declaration site being
-  one join away.
+  one join away. One case survives the move whole and loses its stated reason:
+  `repeatedApplicationsNumberAcrossSites` is authored-only (`@audit` on a base and an extension), so
+  it keeps testing the cross-site counter, but its javadoc motivates that counter as "the ordinal a
+  synthesized application numbers after ... has to survive the site boundary". The reason becomes
+  the collision the authored pair itself would hit, which the javadoc's own second sentence already
+  states.
 - `FactCaptureAgreementTest.federationKeySynthesisAgreesWithTheRewrite` keeps its expectation side
   (the registry `KeyNodeSynthesiser` mutated) and compares it against `intent_federation_key`, one
   relation rather than a composition assembled inside the test. The provenance assertion
-  retargets to the derived relation and its rationale rewrites: the failure mode it guarded, capture
-  reading the post-synthesis registry, no longer exists, and what it now pins is the derivation and
-  the rewrite agreeing on membership. The `source_line` assertion dissolves with the stratum-one row
+  retargets to the derived relation and its rationale rewrites, though not because the failure mode
+  it guarded went away: capture reading the post-synthesis registry matters more after the move, not
+  less, since a synthesized key transcribed as an authored one now lands wrong in stratum one
+  directly. What changes is how the retargeted assertion catches it. A capture that read the
+  rewritten registry would land Film's and Language's `id` keys in `graphitron_federation_key` as
+  authored rows; `intent_synthesized_federation_key`'s no-authored-id-key condition would then
+  decline on both, so the expected membership comes up empty while the first assertion still agrees.
+  The rewritten rationale says exactly that: the anchor pins the derivation and the rewrite agreeing
+  on membership, and the provenance half is what keeps that agreement from being reached by capture
+  reading the wrong registry. The `source_line` assertion dissolves with the stratum-one row
   it read. `CapturedStore.ofPipeline` today hands the walk a catalog-bearing `NodeDeclaration` while
   capturing no catalog; once the store is the only channel, the helper passes the catalog through to
   capture, which is also the honest arrangement.
@@ -316,6 +364,11 @@ macro, `CONNECTION`, is nodehood-free and pure SDL, so it neither blocks this no
   derives membership; the identity axes stay where they are, in the classifier and in the relation
   comments that already call their fallbacks derivations. The inferred relation's witness columns
   are the join that item starts from.
+- Extracting the well-formed-stated-metadata conjunction into its own relation on `sql_table`'s key,
+  so `intent_inferred_node_type` and `intent_resolved_node_key_column`'s `JOOQ_METADATA` tier join
+  one spelling instead of carrying two. Argued above: it retrofits a shipped tier and its seeded
+  anchor for a rule this item does not change, and the two comments naming each other is what holds
+  the pair until it lands.
 - Re-sourcing `NodeDeclaration`'s four walk consumers (`SchemaReachability`, `ArrivalIndex`,
   `KeyNodeSynthesiser`, `CatalogBuilder`) onto `intent_node_type`. This item creates the second
   spelling of nodehood and binds the pair with the membership shadow above; retiring the Java
