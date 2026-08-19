@@ -26,10 +26,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
-| `R672` | Register every built-in scalar the emitted schema references, not just the ones the SDL uses | Ready | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](register-referenced-builtin-scalars.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Progress | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
+| `R672` | Register every built-in scalar the emitted schema references, not just the ones the SDL uses | In Progress | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](register-referenced-builtin-scalars.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | In Review | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R711` | Nodehood derives from two corpora instead of being decided in capture | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -497,7 +497,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
 - `R677` [**Enforce the never-unsorted-list invariant off the launcher relation ordering slot, where every leak site is visible**](list-ordering-invariant-enforcement.md) — Backlog, validation
-- `R672` [**Register every built-in scalar the emitted schema references, not just the ones the SDL uses**](register-referenced-builtin-scalars.md) — Ready, bug
+- `R672` [**Register every built-in scalar the emitted schema references, not just the ones the SDL uses**](register-referenced-builtin-scalars.md) — In Progress, bug
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture, blocked by [condition-method-overload-selection](condition-method-overload-selection.md)
