@@ -447,6 +447,20 @@
                     existing `maven.javadoc.skip` lever, which the `quick` profile already sets.
                     Modules outside RoadmapReferenceGuardTest's in-scope set (roadmap-tool) opt out
                     with maven.javadoc.skip in their own pom; docs is pom-packaged and has no goal.
+
+                    The goal is `javadoc-no-fork`, not `javadoc`, and the difference is 27s of
+                    wall clock. The `javadoc` goal carries executePhase=generate-sources, so it
+                    forks that lifecycle in every module; because this gate runs at `verify`,
+                    everything the fork produces has already been produced, so the fork is pure
+                    duplication (all five graphitron:generate executions ran twice in
+                    graphitron-sakila-example). Maven runs the fork before the mojo body evaluates
+                    its skip parameter, so a module setting maven.javadoc.skip paid for the whole
+                    forked lifecycle and then skipped the goal it forked for, which is why the
+                    largest share of the waste was in a module this gate does not document.
+                    `javadoc-no-fork` is the same mojo without the fork and reads the source roots
+                    the lifecycle already populated. Any second execution added here wants the
+                    no-fork goal for the same reason; `test-javadoc-no-fork` is the pair for
+                    `test-javadoc`.
                 -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
@@ -455,7 +469,7 @@
                         <id>check-link-references</id>
                         <phase>verify</phase>
                         <goals>
-                            <goal>javadoc</goal>
+                            <goal>javadoc-no-fork</goal>
                         </goals>
                         <configuration>
                             <!--
