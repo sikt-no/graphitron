@@ -1,13 +1,13 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: service
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336
@@ -642,6 +642,87 @@ Map<?, ?> assessmentRemarkMap = assessmentMap.get("remark") instanceof Map<?, ?>
 ```
 
 The changelog entry is still unwritten, for the Done gate.
+
+## Review feedback: In Review → Ready, one clause
+
+Written at the second In Review → Done gate by a third independent reviewer session (no prior trail
+on this item). The second pass is accepted almost whole, and the next pass is a one-sentence edit.
+
+**What this gate verified and accepts.** `mvn install -Plocal-db` green across all fourteen modules.
+`InputBeanGroupingPipelineTest` 16/16, the execution-tier round-trip present and running. The five
+banned code-string assertions are genuinely gone: every surviving `.contains(...)` in
+`InputBeanGroupingPipelineTest` is on a *rejection message*, which is what the Tests section asked
+for, and `TypeFetcherGeneratorTest`'s plural-helper body assertion is deleted rather than rephrased.
+The retirement sweep is complete: no `sdlFieldName` survives on either `FieldBinding` encoding, and
+every remaining occurrence sits on a carrier the plan names as out of scope (`SetColumn`,
+`KeyColumn`, `GraphitronType`, `PayloadConstructionShape`, `InputRecordShape`, `PayloadSdlField`,
+the two walker `Contribution` records). The `bindField` local rename to `fieldPath` is a real catch;
+the old name was both retired and factually wrong. User-facing-doc check passes: the
+`handle-services.adoc` section carries no `R<n>`, no phase vocabulary, no plan-slug references.
+
+**The argued substitution is accepted, on its merits.** The two load-bearing claims were checked
+against the poms rather than taken on trust: the root `pom.xml` sets `-Xlint:all -Werror` with no
+excluded categories, and `graphitron-sakila-example`'s `<release>17</release>` override merges with
+those inherited `compilerArgs`, so the emitted tree really is compiled warning-as-error. A regex
+lint could not distinguish a covered cast from an uncovered one without scope analysis, and the
+generated tree does pair concretized casts with method-level `@SuppressWarnings` in dozens of input
+types, so the distinction is real rather than hypothetical. The emitted helper was read directly and
+is correct, including the per-level empty-map default the depth-2 fixture exists to force:
+
+```java
+Map<?, ?> assessmentMap = raw.get("assessment") instanceof Map<?, ?> assessmentGroup ? assessmentGroup : Map.of();
+Map<?, ?> assessmentRemarkMap = assessmentMap.get("remark") instanceof Map<?, ?> assessmentRemarkGroup ? assessmentRemarkGroup : Map.of();
+FilmReviewTag headline = raw.get("headline") instanceof Map<?, ?> headlineRaw ? createFilmReviewTag(headlineRaw) : null;
+```
+
+The reviewer was asked whether the `FilmReviewGrouped` fixture is durable enough to carry the pin
+without a test naming it. It is: the fixture's own javadoc states that `headline` "carries a second
+load: it is a *singular* nested-bean member", so anyone about to delete it has been told what breaks.
+That is a stronger guard than the string match it replaced, not a weaker one.
+
+### The one blocking clause
+
+`InputBeanGroupingPipelineTest.java:33` (class javadoc, last clause) says:
+
+> and the hygiene rule that no emitted cast may be unchecked is a lint over every emitted file in
+> `GeneratedSourcesLintTest`.
+
+No such lint exists. `GeneratedSourcesLintTest` declares exactly five rules:
+`emittedSourcesDoNotUseVar`, `conditionsClassesImportNoGraphqlJavaBeyondTheEnvAppendingParameter`,
+`fetcherBodiesDoNotFullyQualifyJooqTables`, `emittedSourcesDoNotImportLegacyRuntimeTypes`,
+`emittedSourcesHaveNoDunderIdentifiers`. None is about casts, and the second pass deliberately, and
+correctly, declined to add one. The commit that made that decision left the javadoc sentence written
+for the world where the lint was going to exist.
+
+This is narrow but not cosmetic. The sentence is the only place in the file that tells a reader
+where the cast pin lives, so it routes the next maintainer to a guard that is not there; the likely
+outcomes are re-adding the banned string assertion or building the redundant lint this pass argued
+against. It is also the one place the delivery contradicts its own second-pass section, which claims
+the carve-out was "replaced by a pointer to where each relocated pin now lives"; two of the three
+pointers resolve, this one does not. Every other `GeneratedSourcesLintTest` citation in the tree
+names a real rule, so a dangling one reads as a rule that was removed rather than one never written.
+
+**The fix:** point the clause at the enforcer the pass actually chose, the `-Xlint:all -Werror`
+compile of the emitted tree in `graphitron-sakila-example`, with `buildSingularHelper` /
+`buildPluralHelper`'s javadoc and the `FilmReviewGrouped` fixture as where the rule is stated. Those
+three already carry the argument; the class javadoc just needs to agree with them. No other change
+is required, and no main-source behaviour is in scope on this pass.
+
+### Not blocking, no action required to land
+
+* `TypeFetcherGeneratorTest` still asserts `contains("if (raw == null) return null")` and
+  `contains("new com.example.Foo(title)")` on rendered bodies at lines 2467-2468 and nearby. These
+  pre-date this item and were only touched to move constructors to `List.of(...)`, so they are the
+  same pre-existing debt class as R707 rather than something this item took on. Worth folding into
+  R707's scope, or a sibling, but not this gate's business.
+* Commit `25019f8` says it "Files R705" for the `JooqRecordServiceParamPipelineTest` precedent; the
+  item is actually R707, and the spec body says R707. The commit message is on trunk and immutable,
+  so this is a note for the record, not a fix.
+
+### On the next pass
+
+One clause in one test-file javadoc. The changelog entry stays unwritten for the Done gate, as
+before.
 
 ## Coordination with adjacent items
 
