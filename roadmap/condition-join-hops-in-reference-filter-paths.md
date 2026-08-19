@@ -155,9 +155,14 @@ hop 0's origin table is the filter's own start table, which is always resolved a
 and the plain-`@reference` mirror block in
 `GraphitronSchemaValidator.validateInputColumnBackedReferenceField` is not merely removed but
 replaced by the widened acceptance: the pipeline cases of item 10 become the enforcer of the new
-contract. Note for the reviewer: neither rejection message is exercised by any test today (no test
-in the tree asserts either message text), so the deletion removes untested code and item 10's cases
-are the first enforcement either surface gets, on either side of the flip.
+contract. Note for the reviewer, corrected at the Spec review: the two messages differ in how
+enforced they are today. The argument-surface message *is* pinned, by substring:
+`ReferenceFilterRemoteColumnPipelineTest.surface2_conditionJoinPath_isRejected` asserts the
+rejection reason contains "condition-join" and "foreign key", which is
+`referenceFilterConditionJoinRejection`'s text. So flipping that case to acceptance replaces a live
+pin, not dead weight. The validator's mirror message is the untested one: no test in the tree
+asserts it, so on the input-field surface item 10's cases are the first enforcement either
+direction gets.
 
 The sibling block in the same method, requiring an FK path for `@condition` on an FK-target
 `@nodeId` field, stays, but its footing changes and the plan says so explicitly: its rationale
@@ -256,12 +261,19 @@ execution coverage rather than adding a new guard to preserve an accidental reje
 producer's check obliges auditing every consumer of the relaxed shape in the same change, and the
 walker has exactly three consumers.
 
-The unlock is more than a new emitter arm becoming reachable: it lets this carrier hold
-`ParentCorrelation.OnParentJoin` where only `OnFkSlots` was reachable before, and the arm choice
-fixes both correlation topology and batch grain (the batch keys on the parent PK and the query
-anchors the parent table, per `parentKeyColumns()`). So the coverage owed is every consumer of
-`ParentCorrelation` on this carrier handling `OnParentJoin`, not just the inline `ScalarSubselect`
-render. `ParentCorrelationArmTest` is not that seam: it pins the model type's own per-arm behavior
+The unlock is more than a new emitter arm becoming reachable, but state the delta precisely (the
+first draft's version of this paragraph overstated it; corrected at the Spec review).
+`ParentCorrelation.OnParentJoin` is *already* reachable on this carrier today: the walker admits a
+`{key:, condition:}` hop because its `on()` is `On.ColumnPairs`, and
+`BuildContext.buildParentCorrelation`'s `On.ColumnPairs` arm yields `OnParentJoin` whenever
+`hop.filter() != null`. So the arm, and with it the parent-PK batch grain and parent-table anchoring
+per `parentKeyColumns()`, is load-bearing on this carrier before this item touches anything. What
+item 1 newly admits is the `On.Predicate` *occupant* inside that arm. The audit is correspondingly
+narrower than "a new arm becomes reachable" would imply: consumers already dispatch `OnParentJoin`,
+and the hop-0 predicate dispatch it now has to survive is the one
+`PathFragments.correlationWhere` already emits. What the audit must confirm is that each consumer
+reaching `OnParentJoin` on this carrier reads the correlation through that dispatch rather than
+assuming column pairs behind the arm. `ParentCorrelationArmTest` is not that seam: it pins the model type's own per-arm behavior
 (construction invariants, `parentKeyColumns()`), not consumer dispatch. The audit therefore walks
 the consumers directly and extends whichever emitter tests exercise them; the arm test grows a
 case only where a model-level fact (the batch grain of a predicate-hop `OnParentJoin`, say) is
@@ -323,6 +335,79 @@ Per the testing rubric, pipeline beats unit beats execution where the assertion 
   reverse-direction `{key:}` hop (parent reaching into its children's columns), pinning the
   `EXISTS`-over-many grain the motivation section leans on, which no test proves today. One case
   each for the scalar-leaf unlock of item 7. Compilation-tier coverage rides the fixtures for free.
+
+## Open review items (Spec review, 2026-08-19)
+
+Two things the Spec → Ready review could not sign off without the author's decision. Everything
+else in the plan verified against the tree; the two inline corrections above (item 3's testedness
+claim, item 7's `OnParentJoin` premise) are already folded in.
+
+### A. Item 4's lift of `ParsedPath.elements()` is not mechanical
+
+The item calls the lift to `List<JoinStep.Hop>` mechanical on the grounds that `JoinStep` permits
+only `Hop`. That is true of the *seal* but not of the *generic*: Java generics are invariant, so a
+`List<JoinStep.Hop>` is not assignable to a `List<JoinStep>` parameter. `ParsedPath.elements()` is
+not a leaf component; it is the single source feeding every path consumer in the classifier, and
+lifting its declared type is a compile error at each one that has not lifted with it:
+
+* 47 `.elements()` reads across `BuildContext`, `FieldBuilder`, `TypeBuilder`,
+  `NodeIdLeafResolver`, and `SourceRowDirectiveResolver`.
+* the nine `List<JoinStep> joinPath` components of `ChildField` plus its `joinPath()` interface
+  accessor, all constructed from `elements()`.
+* `BuildContext.buildParentCorrelation(List<JoinStep>, TableRef)` and
+  `ServiceCatalog.resolveColumnForReference(String, List<JoinStep>, ...)`.
+* the test-side hand-built fixtures typed `List<JoinStep>` (`ColumnReferenceFieldValidationTest`,
+  `TableFieldValidationTest`, `BatchedTableFieldValidationTest`, `BatchedLookupValidationTest`,
+  `InlineLookupValidationTest`, `ColumnBackedFieldInvariantTest`, `TypeFetcherGeneratorTest`,
+  `TestFixtures.pcFor`).
+
+So the lift as written forces exactly the census-wide type lift the same paragraph disclaims
+("components this diff does not touch keep the root type"), and which the R485 scope note also
+places outside R485. The three carrier components (`BodyParam.RemoteColumnPredicate`,
+`ArgumentRef.ScalarArg.ColumnBackedArg`, `InputField.ColumnBackedReferenceField`) *can* be lifted in
+isolation, but only if `elements()` stays at the root type and each construction site converts.
+Pick one and say so:
+
+. Drop `ParsedPath.elements()` from the lift set; lift only the three carriers, converting at their
+  construction sites.
+. Add a lifted sibling accessor (`ParsedPath.hops()`) beside `elements()`, so consumers migrate
+  incrementally and this diff migrates only the sites it already rewrites.
+. Declare the census-wide cascade in scope, with a size estimate, and reconcile it with the R485
+  scope note.
+
+### B. Item 2's collapse breaks a pinned diagnostic no item accounts for
+
+`GraphitronSchemaBuilderTest.ColumnReferenceFieldCase.CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED`
+pins the behavior the collapse retires, on exactly the carrier item 7 unlocks. Its SDL is
+`actorName: String @reference(path: [{condition: TestConditionStub.join}])` on a `@table`-bound
+`Film`, and it asserts the rejection reason contains "cannot resolve target table" and
+"no `@table` binding". Post-collapse that site has no declared target, so it reflects on
+`TestConditionStub.join`, whose signature is `(Table<?>, Table<?>)`; the case still rejects, but
+with the wildcard-parameter message. The test fails as written.
+
+Item 2 states the output-site shift in prose, but this row is not named there, item 10 adds truth
+table rows rather than retargeting one, and the retired message text is absent from Retired
+vocabulary. Owed: name the row in item 10 with the intended new assertion (retarget to the reworded
+reflection message, or point the fixture at `TestConditionStub.intermediate` if the case should keep
+pinning a resolvable-vs-unresolvable distinction), and add "cannot resolve target table because the
+carrier field's return type has no `@table` binding" to Retired vocabulary.
+
+### Non-blocking, author's call
+
+* **`ReachPath` and the identity map.** Keeping the map identity-keyed preserves today's semantics
+  exactly (the current key, `List<FkHop>`, is equally equals-bearing, so `IdentityHashMap` is
+  already load-bearing for the same reason). But `ReachPath` is a *new* named carrier, and the
+  per-occurrence identity has a natural home inside it: carry the `reachIndex` the loop already
+  mints, key a plain `HashMap`, and the subtlety disappears without taking the reach-merging
+  decision item 4 defers. Cheaper than the paragraph explaining why the map must stay identity-keyed.
+* **`ArgBinding`'s `{@link FkHop}`.** `command/ArgBinding.java`'s class javadoc links `FkHop` as its
+  exemplar ("This pairs a borrowed ref with producer data, like ..."). Retiring `FkHop` fails the
+  javadoc reference gate there. The retirement sweep catches it, but naming it in Retired vocabulary
+  saves a build cycle; that sentence needs a new exemplar, not a `{@code}` downgrade.
+* **Item 10's fixture wording.** "new fixtures beside `ReferencePathConditionFixtures`" reads as a
+  new class. That file already mixes `Table<?>` and concrete-typed methods
+  (`filmActorJunctionToActor`, `splitFilterParentIncluded`), so adding methods to it is the
+  established shape; one word settles it.
 
 ## Non-goals
 
