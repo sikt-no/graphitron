@@ -27,15 +27,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that turns a closure into a row deletion: the moment an obligation's instrument demonstrates
  * an exempted entry, keeping the entry fails the build.
  *
- * <p>The {@code LSP_PROJECTION} row is asserted at unit tier by {@code ProjectionCoverageTest}
- * (annotation-derived covered set, no corpus classification); the discovery guard here still
- * accounts for its map, so no row escapes registration.
+ * <p>Every registry row is corpus-backed, so the sweep below and the discovery guard read one
+ * list. The registry once carried a row whose covered set came from an annotation rather than the
+ * corpus, asserted at unit tier by its own meta-test; that row gated a projection payload, and
+ * both retired with the projection.
  */
 @PipelineTier
 class ExemptionRegistryTest {
 
     static Stream<ExemptionRegistry.Obligation> corpusObligations() {
-        return ExemptionRegistry.corpusObligations().stream();
+        return ExemptionRegistry.obligations().stream();
     }
 
     @ParameterizedTest(name = "{0}")
@@ -117,17 +118,6 @@ class ExemptionRegistryTest {
         } catch (IllegalAccessException e) {
             throw new AssertionError("could not read exemption map " + id, e);
         }
-    }
-
-    /**
-     * The registry's row accounting: the corpus-backed rows are exactly {@code obligations()}, so a
-     * new row cannot be added without landing in this class's parameterized sweep.
-     */
-    @Test
-    void everyObligationHasAnAssertionHome() {
-        assertThat(ExemptionRegistry.corpusObligations())
-            .as("every registry row must be asserted by this class's parameterized sweep")
-            .containsExactlyInAnyOrderElementsOf(ExemptionRegistry.obligations());
     }
 
     /** Exemption maps must be distinct objects per obligation; identity is the guard's key. */

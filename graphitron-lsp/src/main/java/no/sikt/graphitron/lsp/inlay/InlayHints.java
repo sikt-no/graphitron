@@ -131,9 +131,9 @@ public final class InlayHints {
      * keyed by directive name. This replaced the {@code switch(directiveName)}
      * whose {@code default} silently dropped any {@link InferredDirectiveArgs.Entry}
      * without a renderer; {@code InlayHintRendererCoverageTest} now fails the build
-     * when an entry has no matching key here, the LSP-side mirror of the catalog's
-     * sealed {@code AbsentArm}. The collectors stay LSP-side because they need
-     * {@link FileSnapshot} context the catalog {@code Entry} cannot carry.
+     * when an entry has no matching key here. The collectors stay here rather than
+     * beside the entry table because they need {@link FileSnapshot} context an
+     * {@link InferredDirectiveArgs.Entry} cannot carry.
      */
     private static final Map<String, InferredDirectiveCollector> INFERRED_RENDERERS = Map.of(
         "table", InlayHints::collectInferredTableName,

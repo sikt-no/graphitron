@@ -2,8 +2,8 @@ package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -29,8 +29,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
  * whole recalculation resolves its questions in one statement per graph rather than one per value an
  * author wrote. Resolving a cursor to a coordinate is a question about the vocabulary rather than
  * about the document, and the vocabulary does not change between captures, so it is held rather than
- * re-asked. {@link no.sikt.graphitron.lsp.completions.ArgNameCompletions} queries the same relations
- * directly instead, because a completion request is one cursor and pays for one answer.
+ * re-asked.
+ *
+ * <p><b>A lookup table, with no ordering contract.</b> Every question asked of it is a point lookup,
+ * so nothing here preserves the order a definition declares its members in. A surface that wants to
+ * <em>list</em> members for an author to read wants declaration order and asks the store for it,
+ * which is why {@link no.sikt.graphitron.lsp.completions.ArgNameCompletions} keeps its own ordered
+ * queries while resolving each nesting step through this table.
  *
  * <p>Wrapping is discarded on the way in. Every consumer of this surface wants the type a written
  * expression bottoms out in, which the store decodes into {@code named_type} at capture; the list and
@@ -121,7 +126,7 @@ public record DirectiveSurface(
     }
 
     private static Set<String> directiveNames(StoreHandle store) {
-        return new LinkedHashSet<>(store.dsl()
+        return new HashSet<>(store.dsl()
             .select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
             .from(GRAPHQL_DIRECTIVE)
             .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
@@ -129,22 +134,21 @@ public record DirectiveSurface(
     }
 
     private static Map<String, Map<String, String>> argumentsByDirective(StoreHandle store) {
-        var out = new LinkedHashMap<String, Map<String, String>>();
+        var out = new HashMap<String, Map<String, String>>();
         store.dsl()
             .select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
                 GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME,
                 GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE)
             .from(GRAPHQL_DIRECTIVE_ARGUMENT)
             .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL)
             .forEach(row -> out
-                .computeIfAbsent(row.value1(), ignored -> new LinkedHashMap<>())
+                .computeIfAbsent(row.value1(), ignored -> new HashMap<>())
                 .put(row.value2(), row.value3()));
         return out;
     }
 
     private static Set<String> inputObjectNames(StoreHandle store) {
-        return new LinkedHashSet<>(store.dsl()
+        return new HashSet<>(store.dsl()
             .select(GRAPHQL_TYPE.TYPE_NAME)
             .from(GRAPHQL_TYPE)
             .where(GRAPHQL_TYPE.GRAPH_NAME.eq(store.graphName()))
@@ -153,7 +157,7 @@ public record DirectiveSurface(
     }
 
     private static Map<String, Map<String, String>> fieldsByInputObject(StoreHandle store) {
-        var out = new LinkedHashMap<String, Map<String, String>>();
+        var out = new HashMap<String, Map<String, String>>();
         store.dsl()
             .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.NAMED_TYPE)
             .from(GRAPHQL_FIELD)
@@ -161,15 +165,14 @@ public record DirectiveSurface(
                 .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME)))
             .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName()))
             .and(GRAPHQL_TYPE.KIND.eq(INPUT_OBJECT_KIND))
-            .orderBy(GRAPHQL_FIELD.ORDINAL)
             .forEach(row -> out
-                .computeIfAbsent(row.value1(), ignored -> new LinkedHashMap<>())
+                .computeIfAbsent(row.value1(), ignored -> new HashMap<>())
                 .put(row.value2(), row.value3()));
         return out;
     }
 
     private static Map<String, Map<String, String>> copyNested(Map<String, Map<String, String>> source) {
-        var out = new LinkedHashMap<String, Map<String, String>>(source.size());
+        var out = new HashMap<String, Map<String, String>>(source.size());
         source.forEach((owner, members) -> out.put(owner, Map.copyOf(members)));
         return Map.copyOf(out);
     }

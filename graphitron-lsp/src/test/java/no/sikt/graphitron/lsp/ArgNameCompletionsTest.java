@@ -32,8 +32,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ArgNameCompletionsTest {
 
-    private static final LspVocabulary VOCAB = BundledVocabulary.get();
-
     /**
      * Two directives an author declared, one taking a scalar and one an input object, so the nested
      * descent has a non-bundled type to walk.
@@ -233,7 +231,7 @@ class ArgNameCompletionsTest {
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor " + cursor));
         var lspPos = new Position(cursor.row(), cursor.column());
-        return ArgNameCompletions.generate(VOCAB, handle, directive, cursor, lspPos, bytes)
+        return ArgNameCompletions.generate(LspVocabulary.load(handle), handle, directive, cursor, lspPos, bytes)
             .stream().map(CompletionItem::getLabel).toList();
     }
 }

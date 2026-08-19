@@ -164,10 +164,9 @@ named thing didn't resolve" to a cross-product of missing/inconsistent-slot erro
 == One model, many views
 
 *Code generation is the narrowest view of the model, not the model itself.* Every consumer reads
-views over the one base; none owns a private model, and a view's coverage guarantee lives at its
-seam (`CatalogBuilder.projectFieldClassification` for a projection reader,
-`TriggerDispatchMatrixTest` for a relation reader: a new variant breaks the build until every view
-covers it). The drift smell at model scale is a consumer-side shadow taxonomy; the re-sourcing
+views over the one base; none owns a private model, and each view's coverage guarantee is an
+exhaustive gate over its own sealed vocabulary (`GeneratorCoverageTest`,
+`TriggerDispatchMatrixTest`): a new variant breaks the build until every view covers it. The drift smell at model scale is a consumer-side shadow taxonomy; the re-sourcing
 invariant is xref:fact-model.adoc[The fact model].
 
 *Enforced by:* the coverage gate at each seam.

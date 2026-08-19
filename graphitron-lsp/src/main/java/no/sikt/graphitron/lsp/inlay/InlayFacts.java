@@ -240,11 +240,10 @@ final class InlayFacts {
 
         /**
          * The member a field's own name reaches, spelled as an author would write it into
-         * {@code @field(name:)}. Both arms of {@code FieldMemberName} over rows already in hand: the
-         * site's settled column first, then the type's scope, which answers only where that scope is a
-         * class's. A scope that turned out to be a table's has no answer here, the match for such a
-         * site not being derived by any relation, and the absence is the store's rather than this
-         * reader's.
+         * {@code @field(name:)}. Two arms over rows already in hand: the site's settled column first,
+         * then the type's scope, which answers only where that scope is a class's. A scope that turned
+         * out to be a table's has no answer here, the match for such a site not being derived by any
+         * relation, and the absence is the store's rather than this reader's.
          */
         Optional<String> memberName(String typeName, String fieldName) {
             var column = columnMatches.stream()

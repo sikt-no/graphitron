@@ -16,8 +16,14 @@ import java.nio.file.Files;
  *
  * <p>The definitions come from real capture, not from a hand-built surface: capture parses
  * graphitron's bundled {@code directives.graphqls} alongside whatever schema it is given, so an empty
- * placeholder schema is enough to make the whole shipped vocabulary rows. A test whose subject
- * <em>is</em> the vocabulary reads it off its own fixture instead.
+ * placeholder schema is enough to make the whole shipped vocabulary rows.
+ *
+ * <p><b>Only for a fixture that declares no directives of its own.</b> A vocabulary is one graph's,
+ * and a surface handed this one alongside a handle on some other graph is being told the shipped
+ * definitions are all there are. That is true of most fixtures and false of any that declares a
+ * directive an author wrote, so those read their vocabulary off their own store with
+ * {@link StoreFixture#vocabulary()}. Production cannot get this wrong, both halves coming from the
+ * one workspace.
  *
  * <p>Captured once per JVM and never closed, as the classpath census beside it is: the answer does
  * not change between tests, and the store is a few kilobytes of in-memory H2.

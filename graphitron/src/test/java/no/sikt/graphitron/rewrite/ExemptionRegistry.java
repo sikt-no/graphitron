@@ -336,15 +336,11 @@ public final class ExemptionRegistry {
         LAUNCHER_COMMITMENT_GAPS);
 
     /**
-     * The corpus-backed rows, asserted by {@code ExemptionRegistryTest}'s parameterized
-     * meta-test at pipeline tier.
+     * All rows: the discovery guard's registration authority, and the subjects of
+     * {@code ExemptionRegistryTest}'s parameterized meta-test at pipeline tier. Every row is
+     * corpus-backed, so one list serves both and a new row cannot reach the registry without
+     * landing in the sweep.
      */
-    public static List<Obligation> corpusObligations() {
-        return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
-            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
-    }
-
-    /** All rows, the discovery guard's registration authority. */
     public static List<Obligation> obligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
             SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);

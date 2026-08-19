@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.completions;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.facts.DirectiveSurface;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -35,10 +36,16 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
  *   <li><b>Nested.</b> Cursor inside a nested {@code object_value} (the
  *       value side of an input-type-typed directive arg) but outside any
  *       specific {@code object_field}. Completes the input type's field
- *       names, descending the {@code graphql_field} tree from the
- *       argument's named type to resolve the type at the current nesting
- *       depth.</li>
+ *       names, walking {@link DirectiveSurface} down from the argument's
+ *       named type to resolve the type at the current nesting depth.</li>
  * </ul>
+ *
+ * <p>Two sources for one answer, because the two halves are different questions. Which type a
+ * nesting step lands on is the vocabulary's shape, which {@link DirectiveSurface} already holds
+ * whole and which every other coordinate walk in the language server resolves against; asking it
+ * again per keystroke would be the same rule written twice. Which names that type declares, and in
+ * what order an author sees them, is a listing rather than a lookup, so it stays a query here: the
+ * surface is a lookup table and keeps no ordering contract.
  *
  * <p>Either case requires the directive to be one this graph's capture read;
  * a name with no rows produces no completions (the unknown-directive
@@ -87,7 +94,7 @@ public final class ArgNameCompletions {
         if (Nodes.contains(enclosing.key(), pos) && !Nodes.contains(enclosing.value(), pos)) {
             return items(directiveArgumentNames(store, directiveName), range);
         }
-        return nestedGenerate(store, directiveName, enclosing, pos, source, range);
+        return nestedGenerate(vocabulary.surface(), store, directiveName, enclosing, pos, source, range);
     }
 
     /**
@@ -98,21 +105,21 @@ public final class ArgNameCompletions {
      * object's field) answers with nothing rather than with the wrong level's names.
      */
     private static List<CompletionItem> nestedGenerate(
-        StoreHandle store, String directiveName, Directives.Argument enclosing,
-        Point pos, byte[] source, Range range
+        DirectiveSurface surface, StoreHandle store, String directiveName,
+        Directives.Argument enclosing, Point pos, byte[] source, Range range
     ) {
         Node objectValue = innermostObjectValueAt(enclosing.value(), pos);
         if (objectValue == null) return List.of();
         if (cursorInsideAnyObjectField(objectValue, pos)) return List.of();
 
         String argName = Nodes.text(enclosing.key(), source);
-        String currentType = argumentNamedType(store, directiveName, argName);
+        var currentType = surface.argumentNamedType(directiveName, argName);
         for (String fieldName : collectEnclosingFieldChain(enclosing.value(), objectValue, source)) {
-            if (currentType == null) return List.of();
-            currentType = inputFieldNamedType(store, currentType, fieldName);
+            if (currentType.isEmpty()) return List.of();
+            currentType = surface.inputFieldNamedType(currentType.get(), fieldName);
         }
-        if (currentType == null) return List.of();
-        return items(inputFieldNames(store, currentType), range);
+        if (currentType.isEmpty()) return List.of();
+        return items(inputFieldNames(store, currentType.get()), range);
     }
 
     /** The directive definition's formal arguments, in declaration order. */
@@ -124,36 +131,6 @@ public final class ArgNameCompletions {
             .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(directiveName))
             .orderBy(GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL)
             .fetch(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME);
-    }
-
-    /** The type an argument's expression bottoms out in, whatever wrapping it carries. */
-    private static String argumentNamedType(StoreHandle store, String directiveName, String argName) {
-        return store.dsl()
-            .select(GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE)
-            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
-            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(directiveName))
-            .and(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME.eq(argName))
-            .fetchOne(GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE);
-    }
-
-    /**
-     * The named type of one field of an input object, or null when the type is not an input object or
-     * declares no such field. The kind check is the guard the incumbent got from graphql-java refusing
-     * to hand back an {@code InputObjectTypeDefinition} for anything else: {@code graphql_field} holds
-     * output fields under the same shape, and only the join to {@code graphql_type} tells them apart.
-     */
-    private static String inputFieldNamedType(StoreHandle store, String typeName, String fieldName) {
-        return store.dsl()
-            .select(GRAPHQL_FIELD.NAMED_TYPE)
-            .from(GRAPHQL_FIELD)
-            .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
-                .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME)))
-            .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHQL_FIELD.TYPE_NAME.eq(typeName))
-            .and(GRAPHQL_FIELD.FIELD_NAME.eq(fieldName))
-            .and(GRAPHQL_TYPE.KIND.eq(INPUT_OBJECT_KIND))
-            .fetchOne(GRAPHQL_FIELD.NAMED_TYPE);
     }
 
     /** An input object's field names, in the effective type's declaration order. */
