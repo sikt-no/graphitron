@@ -214,11 +214,16 @@ Four instructions follow for whoever writes the DDL.
   which the arity filter removes here, and a `@table` interface child at either cardinality, which
   the `DISCRIMINATED_TARGET` exemption and the fan-in arm answer between them. Both are populations
   this item had already reasoned to independently, which is corroboration that the two relations are
-  reading one fact. One clause is *not* copied, and the arms section is where it is settled: both of
-  the sibling's joins name `intent_bound_table` where delivery's name `intent_resolved_type_binding`,
+  reading one fact. Two clauses are *not* copied, and each is settled in its own section below. Both
+  of the sibling's joins name `intent_bound_table` where delivery's name
+  `intent_resolved_type_binding`,
   because the sibling holds the `@table` population deliberately for a parent-side question delivery
   does not ask and delivery's own walk-side predicate follows a `@routine` chain's return binding.
-  That is the one place the transcription instruction does not govern.
+  And the sibling's target join names `f.named_type` where delivery's names the authored type read
+  through `graphitron_field_synthesis`, its comment recording the connection wrapper as a population
+  it does not reach; delivery cannot inherit that gap, because a discriminated `@asConnection`
+  carrier is a shipped corpus coordinate its arms have to answer. Those two are the only places the
+  transcription instruction does not govern.
 * **Say the relationship in both view comments.** A reader meeting two coordinate-grained rule views
   that share two literals and disagree on two populations needs to be told, at each of them, that the
   disagreement is the design. This item owns the comment on its own three views; amending
@@ -289,7 +294,8 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   coordinates, for the reasons the fan-in trace below gives, and reports the same
   `POLYMORPHIC_FAN_IN` literal the walk's trigger carries there. `Language.mediaList` in the same
   example is that coordinate, and `Language.mediaConnection` beside it is the `@asConnection` half,
-  whose authored bare list puts it on the same arm. The connection cardinality forks once more
+  whose authored bare list puts it on the same arm walk-side and whose synthesis row puts it there
+  store-side, per the fourth predicate below. The connection cardinality forks once more
   underneath that, at a *structurally declared* wrapper the fan-in trace below sends to a residue
   rather than to either side of this bullet. Everything the rest of this bullet establishes about *which* captured
   population the arm reads holds unchanged at either cardinality; only the cardinality gate is
@@ -345,23 +351,29 @@ established), `graphql_field.is_list`, `graphql_type.kind`,
 `graphql_implements`, `graphql_union_member`, `graphql_root_operation` (the root exemption arm,
 keyed the way `intent_field_separate_fetch`'s `ROOT_OPERATION` arm already keys it, by the binding
 rather than by the conventional names, which is that arm's keying inherited from the demand
-sibling). All exist, all are keyed
+sibling), and `graphitron_field_synthesis` (the entry a draft missed altogether rather than
+mis-picked, and the one that decides what every other arm joins *on*; the fourth predicate below is
+where that is established). All exist, all are keyed
 at the coordinate or type grain the arms would join on, and the marker relations already carry the
 `graphql_field` FK.
 
 Two families are deliberately absent from that list, each established below. The `sql_` catalog
 family, per the second predicate. And the structural connection recognition over `graphql_field` /
 `graphql_type`: the third predicate establishes that `graphitron_connection` is the wrong relation
-for the arm whose name it matches, and the arms section then settles that no arm resolves a
-connection's element at all, so what that recognition would have served is the wrapper residue rather
+for the arm whose name it matches, and the arms section then settles that no arm resolves a declared
+wrapper's element, so what that recognition would have served is the wrapper residue rather
 than a join. An arm's inputs are what the arms section's table lists, and the connection shape is not
-among them.
+among them. The `@asConnection` half of the population is answered without the recognition too, by
+the synthesis row rather than by the shape, which the fourth predicate settles; a connection is
+never something an arm tests for structurally.
 
-Three predicates want attention before an arm is written, for three different reasons. One needs
+Four predicates want attention before an arm is written, for four different reasons. One needs
 real care. A second looks like it does and does not, and the reason it does not is worth stating,
 because the obvious reading sends the arm at the catalog for nothing. The third is the one the
 inventory got wrong twice, by the same name-matching reflex that put the `RecordHandedParent`
-trigger on the wrong relation in the predicate before it.
+trigger on the wrong relation in the predicate before it. The fourth is not a relation choice at
+all but a reading of `graphql_field` itself, and it is the one that moves every other arm: what the
+store holds at a coordinate is not always what its author wrote there.
 
 **The fan-in arm's gate is non-discrimination, not participant boundness.** The tempting reading is
 that the arm has to tell `ParticipantRef.TableBound` from `JoinedTableBound`, because
@@ -395,13 +407,19 @@ is a declared connection object. The two shapes therefore part company at a chil
 *structurally declared* connection. Over a plain interface or union the walk returns `Inline`, the
 participant scan never seeing past the wrapper; over a `@table @discriminate` interface it returns
 `Batched(PolymorphicFanIn)` through the discriminated arm's element resolution. `@asConnection`
-reaches neither case: its authored expression is the bare list, which is what both `mint` and
-capture read, so `graphql_field.is_list` already carries those coordinates and the corpus's
-`Language.mediaConnection` is one of them.
+reaches neither case *on the walk side*: `mint` reads the pre-rewrite schema, where the authored
+expression is still the bare list, so the participant scan and the discriminated arm both see the
+element directly. The store side does not come free that way, and the fourth predicate below is
+where that is settled: `graphql_field` holds the expansion rather than the authored expression, so
+the arms reach the same element and the same cardinality through `graphitron_field_synthesis`
+instead of by reading the coordinate's own columns. The corpus's `Language.mediaConnection` is the
+coordinate where that distinction is load-bearing.
 
 Three consequences, and all three narrow the arms rather than widening them. **The fan-in arm's gate
-is list-valued and not connection-shaped**: adding the wrapper would fire the arm exactly where the
-walk's participant scan does not, manufacturing a disagreement that does not exist today. **The
+is authored cardinality and not connection-shapedness**: firing the arm on the wrapper *as a shape*
+would fire it exactly where the walk's participant scan does not, manufacturing a disagreement that
+does not exist today, which is why the store-side gate reads the macro fact rather than recognising
+a connection structurally. **The
 `DISCRIMINATED_TARGET` exemption's `no connection shape` conjunct is inert rather than load-bearing**,
 because a coordinate returning a declared connection object is not among "the coordinates returning
 the type" the exemption projects onto in the first place; it is kept as a stated guard rather than
@@ -485,11 +503,11 @@ identities, so it is the cross-check to read before writing the arm.
 `graphitron_connection` captures the `@asConnection` macro's authored spec, one row per carrier
 field. It is not the relation that witnesses "this coordinate's target is a connection", and the
 reason is worth following because it points the arm the other way. `mint` reads the *pre-rewrite*
-schema and capture reads the pre-synthesis registry, so both see the authored type expression and
-agree on it. For an `@asConnection` carrier the authored expression is the bare list
-(`films: [Film!]!`), so `singleTableBackedVerdict` resolves it straight through its
-`TableBackedType` arm and never enters the `ConnectionType` arm at all; store-side the same
-coordinate reaches its bound table in one hop and the marker is not needed. The `ConnectionType` arm
+schema, so for an `@asConnection` carrier it sees the bare list the author wrote
+(`films: [Film!]!`) and `singleTableBackedVerdict` resolves it straight through its
+`TableBackedType` arm, never entering the `ConnectionType` arm at all. Store-side the same
+coordinate reaches its bound table in one hop *through the authored-type reading the fourth
+predicate below establishes*, and the marker is not needed there either. The `ConnectionType` arm
 is entered only when the authored base type is *itself* connection-shaped, which is
 `BuildContext.isConnectionType`'s purely structural test (an object whose `edges` field's element
 type has a `node` field) and carries no `graphitron_connection` row anywhere:
@@ -503,12 +521,81 @@ structural edges/node pattern in SQL, so an arm that ever needs the recognition 
 the way the `RecordHandedParent` trigger copies `PRODUCER_PAYLOAD`. But *resolving the element the
 verdict anchors on* (`ConnectionType.elementTypeName`, the `edges` element's `node` type) is a
 further walk of `graphql_field` that no shipped relation publishes, and the arms section spends the
-whole shape on a residue rather than on a predicate: no arm resolves an element, the arms join the
-authored named type, and the structurally declared wrapper is one `DeliveryResidue` entry with the
-store gaining a connection-element relation as its removal criterion. So this section's finding is
+whole shape on a residue rather than on a predicate: no arm resolves a *declared* wrapper's element,
+the arms join the authored named type, and the structurally declared wrapper is one
+`DeliveryResidue` entry. So this section's finding is
 what saves the implementer from an arm keyed on `graphitron_connection`, not an instruction to build
 the other one. Every arm the table declares is a single hop, which is what the materialization
 question turns on; the closing section states it in the form that survives.
+
+**That residue's removal criterion is one column, and stating it that way is part of the finding.**
+"The store gains a connection-element relation" prices it as absent work when the walk is already
+written: the `CONNECTION_MACHINERY` arm joins `graphql_field` at `field_name = 'edges'` to its
+element object type and on to that type's `node` field, and stops short of projecting `node`'s named
+type. Publishing that projection is what closes the entry, and it is deliberately not in this item's
+scope: the residue costs nothing while it stands, and an item that ships three views plus a fourth
+whose only consumer is a residue it also declares has widened itself for no consumer. Record the
+criterion in those words in the `DeliveryResidue` entry, so whoever picks it up prices it at the
+join it is rather than at the relation it sounds like.
+
+**`graphql_field` holds the expansion, not the expression the author wrote, and every arm joins
+through that.** This is the predicate that moves the others, and it is easy to get wrong in the
+direction that ships green over today's corpus and disagrees at a shipped coordinate. The tempting
+reading is symmetry: `mint` reads the pre-rewrite schema, capture reads the pre-synthesis registry,
+so both see what the author wrote. The first half holds; the second does not, and the reason is the
+sentence right after the one it comes from. `MacroCapture`'s javadoc says capture reads the registry
+before the pipeline's synthesis rewrites *and therefore runs the expansion itself*, so
+`SdlFactCapture` writes the field's row from `MacroCapture.expandedFieldType` under a comment naming
+it "the expansion's result, not the expression the field was written with", and
+`graphitron_field_synthesis`'s table comment says the written form "survives here while the field's
+`graphql_field` row holds the expansion's result". At `Language.mediaConnection` the store therefore
+holds the minted wrapper's name and `is_list` false, where the arms need `MediaItem` and a list.
+
+Both readings the arms need are recoverable, and neither is new ground.
+
+* **The authored named type is the shipped `COALESCE`.**
+  `COALESCE(REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''), f.named_type)`
+  over a `LEFT JOIN graphitron_field_synthesis fs`, written exactly that way twice already, in
+  `intent_field_column_scope`'s named-type rule and in `intent_routine_return_binding`, each under a
+  comment saying a connection field reads its element type rather than its wrapper. A third use is
+  transcription, and the idiom's two existing homes are the argument that it is the stratum's way of
+  asking this question rather than a local trick.
+* **The authored cardinality is the synthesis row's own existence.** The idiom above recovers a name
+  and nothing reads a bracket back out of `authored_type_sdl`, which invites the conclusion that
+  listness is unrecoverable. It does not follow, because the listness is not in the text.
+  `MacroCapture.expandedFieldType` writes the synthesis row only after its
+  `unwrapped instanceof ListType` guard passes and its element resolves to a `TypeName`, returning
+  the field's own type untouched and writing nothing on either miss, and `macro` is a one-value
+  closed set. So a row with `macro = 'CONNECTION'` *is* the fact that the authored expression was a
+  bare list of a named type, and the arms read cardinality as a presence test over a captured fact
+  rather than as a new reading of a text column:
+
+  ```
+  f.is_list OR EXISTS (SELECT 1 FROM graphitron_field_synthesis fs
+                        WHERE fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+                          AND fs.field_name = f.field_name AND fs.macro = 'CONNECTION')
+  ```
+
+The disjunction is the closer transcription as well as the cheaper one, which is why it is stated
+here rather than left as an implementation detail. `mint` does not read authored brackets either: it
+computes `listOrConnection` as `shape instanceof TargetShape.Connection || leaf.target() instanceof
+Target.List`, unioning the connection shape with the list rather than asking what the author typed.
+The store-side disjunction is that same union, read off the macro fact instead of off a target
+shape. Two alternatives are declined rather than left open. Giving `graphitron_field_synthesis`
+structured columns for the authored element and its wrappers would be correct by the fact model's
+own lights and buys nothing the presence test does not already have, at the price of capture work
+and a `depends-on` edge. Sending the `@asConnection` carrier to the wrapper residue beside the
+structurally declared one is cheaper still and costs the item a shipped corpus coordinate and its
+own success test, which is the wrong trade for a reading the store already supports.
+
+Two things follow for the sections above, both folded in there rather than left here. The three
+binding arms and the exemption's projection join the `COALESCE` rather than `f.named_type`, and the
+two cardinality gates read the disjunction rather than `graphql_field.is_list` alone. And the
+sibling section's transcription instruction gains its second not-copied clause:
+`intent_field_separate_fetch`'s arm joins `f.named_type` and its comment records the connection
+wrapper as an absent population, so a verbatim copy inherits that gap. The structurally declared
+connection is untouched by any of this and stays a residue, carrying no synthesis row, so both the
+`COALESCE` and the presence test fall through and no relation names its element.
 
 ### The arms, once
 
@@ -517,7 +604,15 @@ an order anybody writing the DDL can use. Collected, so the arm list has one pla
 against. Precedence runs down the table: every exemption arm beats every rule arm, and within each
 side the first matching arm names the row.
 
-One fact is shared, and it is worth naming once as a relation rather than as a coined predicate:
+Two readings are shared by the whole table and are named once here rather than repeated per arm, per
+the fourth predicate above. **The coordinate's authored named type** is the `COALESCE` over
+`graphitron_field_synthesis`, which every target join uses in place of `f.named_type`. **The
+coordinate's authored cardinality** is `f.is_list` disjoined with the presence of that coordinate's
+synthesis row, which both cardinality gates use in place of `f.is_list` alone. Where the table below
+says "the coordinate's named type" or "list-valued", it means these.
+
+One fact is shared on top of them, and it is worth naming once as a relation rather than as a coined
+predicate:
 **the target's bound table**, `intent_resolved_type_binding` with `candidates = 1`, joined on the
 coordinate's authored named type with no element resolution of its own. Three rule arms read it; the
 fan-in arm does not, its target being polymorphic rather than table-bound. Both halves of that
@@ -571,18 +666,23 @@ earlier revision folded an element walk into the shared fact, which contradicted
 copy `intent_field_separate_fetch`'s arm verbatim: that arm joins the binding on `f.named_type` and
 its comment lists the connection wrapper as an absent population rather than a departure, no relation
 naming a connection's element type. The contradiction resolves in the sibling's favour once the
-population is split. For an `@asConnection` carrier the authored expression *is* the bare list, which
-`mint` and capture both read, so the named type is already the element and no walk is wanted. Only a
-*structurally declared* connection puts a wrapper between the coordinate and its element, and there
-the walk's helpers resolve it (`singleTableBackedVerdict` and `discriminatedInterfaceTarget` each
-carry a `ConnectionType` arm reading `elementTypeName`) while the store has no relation that can. So
+population is split, and it resolves only *partly* in the sibling's favour: the authored named type
+is read the way the fourth predicate above establishes, which is the second clause the transcription
+instruction does not govern. For an `@asConnection` carrier the authored expression *is* the bare list on the walk
+side, and store-side the `COALESCE` over `graphitron_field_synthesis` recovers it, so the authored
+named type is already the element and no element walk is wanted. Only a
+*structurally declared* connection puts a wrapper between the coordinate and its element that
+nothing recovers: there the walk's helpers resolve it (`singleTableBackedVerdict` and
+`discriminatedInterfaceTarget` each
+carry a `ConnectionType` arm reading `elementTypeName`) while the store has no relation that can,
+the synthesis row a macro would have left being absent. So
 the arms join the authored named type, and the structurally-declared wrapper is a single
 `DeliveryResidue` entry spanning every arm whose walk-side predicate unwraps one: the three binding
 arms through `singleTableBackedVerdict`, and the discriminated child through
-`discriminatedInterfaceTarget`. Its removal criterion is the store gaining a connection-element
-relation, which is the same absence the sibling's comment already records, so the two relations
-close it together. This subsumes the fan-in section's separately stated wrapper residue, which is the
-same population reached from the other side.
+`discriminatedInterfaceTarget`. Its removal criterion is the `node`-type projection the
+connection-target section prices, which is the same absence the sibling's comment already records,
+so the two relations close it together. This subsumes the fan-in section's separately stated wrapper
+residue, which is the same population reached from the other side.
 
 **`@discriminate` is a row, not an anti-join, and that is where the hardcoded `false` actually
 lands.** The negative-side section above already declined the anti-join shape for `@service`, on the
@@ -629,23 +729,23 @@ residue owing a fixture, per the Implementation section.
 
 | `DISCRIMINATED_TARGET` (exemption)
 | the target is an interface carrying both `@discriminate` and `@table`, which is what `TableInterfaceType` means, *and* the coordinate is single-valued. The list half is the fan-in arm's row, not an exemption; the structurally-connection-wrapped half is a residue, per the fan-in section
-| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates returning the type, gated on `graphql_field.is_list` false. The `no connection shape` conjunct is the stated-but-inert guard the fan-in section places
+| `graphitron_discriminate` joined to `graphitron_table` at `graphql_type.kind = 'INTERFACE'`, projected onto the coordinates whose *authored named type* is the interface, gated on the authored cardinality being non-list. Both readings are the shared ones above, so an `@asConnection` carrier over a discriminated element is correctly not exempted here. The `no connection shape` conjunct is the stated-but-inert guard the fan-in section places
 
 | `POLYMORPHIC_FAN_IN`
-| the target is an interface or union, list-valued, with at least one table-bound participant. A discriminated interface target meets this too, which is how its list half gets its row without an arm of its own. Not connection-shaped: `anyTableBoundParticipant` does not resolve a wrapper's element, so the wrapper is the residue the fan-in section states
-| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list`, `graphitron_table`
+| the target is an interface or union, list-valued by the authored cardinality, with at least one table-bound participant. A discriminated interface target meets this too, which is how its list half gets its row without an arm of its own. The gate is authored cardinality and not connection-shapedness: `anyTableBoundParticipant` does not resolve a declared wrapper's element, so that wrapper is the residue the fan-in section states, while an `@asConnection` carrier is list-valued here on its synthesis row
+| `graphql_type.kind`, `graphql_implements` / `graphql_union_member`, `graphql_field.is_list` with `graphitron_field_synthesis`, `graphitron_table`
 
 | `RECORD_HANDED_PARENT`
 | the parent is an object the backing closure grounds on a class and its own type binds no table, and the target binds one table. `intent_field_separate_fetch`'s arm of this name is the gate; copy it and add the arity filter
-| `intent_type_backing_class` on the parent at `graphql_type.kind = 'OBJECT'`, anti-joined against `intent_resolved_type_binding` on the parent, joined to `intent_resolved_type_binding` at `candidates = 1` on the target. Both joins take the resolution rather than the sibling's `intent_bound_table`, per the binding paragraph above
+| `intent_type_backing_class` on the parent at `graphql_type.kind = 'OBJECT'`, anti-joined against `intent_resolved_type_binding` on the parent, joined to `intent_resolved_type_binding` at `candidates = 1` on the target's *authored named type*. Both joins take the resolution rather than the sibling's `intent_bound_table`, per the binding paragraph above; the target join takes the shared authored-type reading, which is the clause the sibling's arm does not carry
 
 | `SPLIT_QUERY`
 | `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
-| `graphitron_split_query`, `graphitron_pivot`, `intent_resolved_type_binding` at `candidates = 1` on the target
+| `graphitron_split_query`, `graphitron_pivot`, `intent_resolved_type_binding` at `candidates = 1` on the target's authored named type
 
 | `TENANT_FAN_OUT`
 | `@tenantFanOut` on the coordinate, the target binds one table, and the coordinate carries no `@routine`
-| `graphitron_tenant_fan_out`, `graphitron_routine`, `intent_resolved_type_binding` at `candidates = 1` on the target
+| `graphitron_tenant_fan_out`, `graphitron_routine`, `intent_resolved_type_binding` at `candidates = 1` on the target's authored named type
 |===
 
 Two things the table shows that the prose could not. The two authored readings carry their own
@@ -763,7 +863,10 @@ set acquiring an enforcer that is not another switch.**
   classifier-internal route resolution (`resolveChildPolymorphicJoinPaths`) rather than on a
   captured fact. The structurally declared connection wrapper is the one the arms section settles,
   and it is a residue rather than a candidate: one entry across every arm whose walk-side predicate
-  unwraps a connection, its removal criterion the store gaining a connection-element relation.
+  unwraps a *declared* connection, an `@asConnection` carrier reaching its arms through the synthesis
+  row instead. Write its removal criterion as the column it is, per the connection-target section:
+  `CONNECTION_MACHINERY` already walks `edges` to its element type's `node` field and stops short of
+  projecting that field's named type, so publishing the projection is what closes the entry.
   The one predicate-driven residue *candidate* is the pivot-slot record parent, the
   single member of the record-handed population neither backing arm witnesses, its source being a
   graphitron-built record that no class stands for. Confirm that one before writing it: the arm it
@@ -880,7 +983,14 @@ set acquiring an enforcer that is not another switch.**
     over the whole corpus, and its javadoc states the shape it exists for: "a connection verdict
     anchors through its element, so authored connection returns stay batched-capable". That is a
     child whose *declared* type is connection-shaped, under `@splitQuery`, and nothing in the corpus
-    is one. The predicate this leaves unwitnessed is the structural one corrected above, so the
+    is one. Note what that same coordinate *does* witness, because it is the one fixture this item
+    does not owe: `Language.mediaConnection` is a shipped corpus child whose `graphql_field` row
+    holds the minted wrapper, so the authored-type `COALESCE` and the synthesis-row cardinality test
+    are both exercised by the corpus sweep on landing. Get either reading wrong and
+    `DeliveryShadowTest` fails at that coordinate rather than shipping green, which is the opposite
+    of the situation the rest of this bullet describes and is why the fourth predicate is settled in
+    the body rather than left to the implementer to discover.
+    The predicate this leaves unwitnessed is the structural one corrected above, so the
     missing coordinate and the mis-picked relation are the same gap seen twice, which is why an arm
     keyed on `graphitron_connection` would have shipped green. **So this fixture is a deliverable
     too**, on the `@tenantFanOut` bullet's terms and in the same home, beside the test rather than in
@@ -930,7 +1040,8 @@ goes away with the crosswalk it compares.
 
 **One test of whether this item succeeded:** the discriminated interface child must not appear in
 `DeliveryResidue` at either authored cardinality, single or list, the `@asConnection` carrier
-riding the list half on its authored bare list. The one carve-out is the structurally declared
+riding the list half on its synthesis row rather than on a bare list `graphql_field` never held.
+The one carve-out is the structurally declared
 connection wrapper, which the fan-in section sends to a residue for a reason that is about the
 walk's own three helpers rather than about this shape, and which no corpus coordinate reaches.
 The reason is not that the hardcoded `false` is wrong; per
@@ -1016,132 +1127,13 @@ had to derive from arm order.
   still has to author that vocabulary itself. The one real coupling is ordering: R557 should not be
   picked up before this lands, or it writes the total switch this item exists to retire.
 
-## The correction the body still owes, and it moves the arms
-
-A premise three sections rest on is false against the tree. It was found at the Spec review gate
-rather than by any draft, and what remains before this item is handoff-ready is mechanical: **the
-sections above still state the false premise, and this section states the correction.** A document
-that contradicts itself across four hundred lines cannot be handed to an implementer, because the
-arms table is billed above as "one place to check itself against" and is one of the sites that is
-wrong. The five sites to rewrite are listed at the end of this section; the reading to rewrite them
-to is settled here, and no fork is left open.
-
-**Capture does not hold an `@asConnection` carrier's authored type expression in `graphql_field`.**
-The body says it does: "`mint` reads the *pre-rewrite* schema and capture reads the pre-synthesis
-registry, so both see the authored type expression and agree on it". The first half holds and the
-second does not, and the reason is the sentence immediately after the one the body is reading.
-`MacroCapture`'s javadoc says capture reads the registry before the pipeline's synthesis rewrites
-*and therefore runs the expansion itself*, so `SdlFactCapture` writes the field's row from
-`MacroCapture.expandedFieldType` under a comment naming it "the expansion's result, not the
-expression the field was written with", and `graphitron_field_synthesis`'s own comment says the
-written form "survives here while the field's `graphql_field` row holds the expansion's result".
-For `Language.mediaConnection` the store therefore holds `named_type` of the minted wrapper and
-`is_list` false, where the body needs `MediaItem` and a list.
-
-What that falsifies, in the four places the body leans on it:
-
-* The fan-in section's "`@asConnection` reaches neither case ... `graphql_field.is_list` already
-  carries those coordinates and the corpus's `Language.mediaConnection` is one of them". It carries
-  none of them.
-* The connection-target section's "store-side the same coordinate reaches its bound table in one
-  hop". `intent_resolved_type_binding` holds no row for a minted wrapper, so the three binding arms
-  miss every `@asConnection` carrier and not only the discriminated one.
-* The arms table, whose `POLYMORPHIC_FAN_IN` and `DISCRIMINATED_TARGET` rows gate on
-  `graphql_field.is_list` and whose three binding arms join the target on the coordinate's named
-  type. The consequence is a shadow disagreement at a shipped corpus coordinate rather than a
-  hypothetical: the walk mints `Batched(PolymorphicFanIn)` at `Language.mediaConnection` off the
-  pre-rewrite `[MediaItem!]!`, the fan-in arm does not fire on a wrapper that is not list-valued,
-  the `DISCRIMINATED_TARGET` exemption does not project onto a coordinate that no longer returns
-  `MediaItem`, and the reduction says `INLINE`. No declared residue covers it.
-* The item's own success test, "the discriminated interface child must not appear in
-  `DeliveryResidue` at either authored cardinality, single or list, the `@asConnection` carrier
-  riding the list half on its authored bare list". As specified the carrier rides nothing.
-
-Half the recovery is shipped and the arms should take it. The authored named type is
-`COALESCE(REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
-f.named_type)` over a `LEFT JOIN graphitron_field_synthesis fs`, written exactly that way twice
-already, in `intent_field_column_scope`'s named-type rule and in `intent_routine_return_binding`,
-each under a comment saying a connection field reads its element type rather than its wrapper.
-Adding `graphitron_field_synthesis` to the captured-input inventory and routing the three binding
-arms and the exemption's projection through that idiom is transcription rather than new ground.
-
-**The other half is authored cardinality, and it is transcription too.** A second review posed this
-as a fork on the ground that "the shipped idiom recovers a name and nothing recovers listness:
-`authored_type_sdl` is text, and no relation reads a bracket out of it". The premise is true and the
-conclusion does not follow, because the listness does not have to come out of the text. It is the
-row's own existence. `MacroCapture.expandedFieldType` writes the `graphitron_field_synthesis` row
-only after its `unwrapped instanceof ListType` guard passes and its element resolves to a
-`TypeName`, returning the field's own type untouched and writing nothing on either miss, and the
-relation's `macro` column is a one-value closed set. So a row with `macro = 'CONNECTION'` *is* the
-fact "this coordinate's authored expression was a bare list of a named type", and the arms read
-cardinality as
-
-```
-f.is_list OR EXISTS (SELECT 1 FROM graphitron_field_synthesis fs
-                      WHERE fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-                        AND fs.field_name = f.field_name AND fs.macro = 'CONNECTION')
-```
-
-a presence test over a captured fact, not a new reading of a text column. Beside the `COALESCE`
-above it gives `Language.mediaConnection` the element `MediaItem` and list cardinality, which is
-what the fan-in arm and the `DISCRIMINATED_TARGET` exemption each need, and the item keeps its
-stated success test with no capture work and no `depends-on` edge.
-
-It is also the closer transcription of the walk, which does not read authored brackets either.
-`mint` computes `listOrConnection` as `shape instanceof TargetShape.Connection || leaf.target()
-instanceof Target.List`, unioning the connection shape with the list rather than asking what the
-author typed; the disjunction above is that same union read off the macro fact. Two options the
-same review laid beside this one are therefore declined rather than open: giving
-`graphitron_field_synthesis` structured wrapper columns is capture work that buys nothing this
-presence test does not already have, and sending the `@asConnection` carrier to the wrapper residue
-spends the item's success test and a shipped corpus coordinate for the same reason.
-
-The sibling section's transcription instruction gains a third not-copied clause all the same,
-`intent_field_separate_fetch`'s arm joining `f.named_type` with its comment recording the connection
-wrapper as an absent population being the gap a verbatim copy inherits. The structurally declared
-connection stays a residue: it carries no `graphitron_field_synthesis` row, so both the `COALESCE`
-and the presence test fall through and no relation names its element.
-
-**The residue's removal criterion is nearer than the arms section prices it, and stating it in
-concrete terms is part of this correction.** That section says resolving a connection's element "is
-a further walk of `graphql_field` that no shipped relation publishes", which is true about
-publication and misleading about cost. The walk is already assembled:
-`intent_field_exemption_rule`'s `CONNECTION_MACHINERY` arm joins `graphql_field` at
-`field_name = 'edges'` to its element object type and on to that type's `node` field, and stops one
-column short of projecting `node`'s named type. Whether to publish that column here is scope this
-item's author owns, and the item ships its residue either way; what the residue entry should record
-is that criterion in those words rather than as an open-ended absence, so the next reader prices it
-at the join it is.
-
-**The five sites, so the rewrite is a checklist rather than a re-read.** Each still states the
-falsified premise and each is corrected by the two readings above, the `COALESCE` for the element
-name and the macro-row presence test for cardinality.
-
-* The fan-in section's connection paragraph, whose "`@asConnection` reaches neither case ...
-  `graphql_field.is_list` already carries those coordinates" is the premise itself. `is_list` is
-  false at every carrier; the presence test is what carries them.
-* The connection-target section's "store-side the same coordinate reaches its bound table in one
-  hop". It reaches it in one hop *through the `COALESCE`*, which is the hop the sentence omits, and
-  a reader taking it literally joins `f.named_type` and misses every carrier.
-* The arms section's "No arm resolves a connection's element" paragraph, whose "for an
-  `@asConnection` carrier the authored expression *is* the bare list, which `mint` and capture both
-  read, so the named type is already the element" is the premise stated a second time. Capture does
-  not read it; `graphitron_field_synthesis` does. What survives the rewrite is the conclusion, no
-  arm resolving a *structurally declared* connection's element.
-* The arms table, in both directions. The three binding arms and the exemption's projection join the
-  `COALESCE` rather than `f.named_type`; the `POLYMORPHIC_FAN_IN` and `DISCRIMINATED_TARGET`
-  cardinality gates read the disjunction rather than `graphql_field.is_list` alone. Add
-  `graphitron_field_synthesis` to the captured-input inventory, which does not name it today.
-* The success test, which stands as written once the two readings are in the arms: the
-  `@asConnection` carrier does ride the list half, on the macro fact rather than on an authored bare
-  list `graphql_field` never held. Restate the mechanism, not the verdict.
-
 ## Open for the implementer
 
 Nothing is left open. The earlier draft carried two questions and a later revision a third; all
-three are settled below, in the order the questions were retired. The section above adds no fourth:
-what the review found there is a correction the body owes, with the reading to correct it to
-settled, rather than a question for the implementer to answer.
+three are settled below, in the order the questions were retired. A fourth was raised at the Spec
+review gate and is settled in the body rather than here, being a reading of `graphql_field` the arms
+depend on rather than a question about them: the captured-inputs section's fourth predicate is where
+it lands, and the arms table's two shared readings are what it produced.
 
 **Whether `graphitron_service`'s claim is a rule arm or a domain exclusion: it is neither.** It is an
 exemption arm with declared precedence, per the negative-side section above, which also establishes
