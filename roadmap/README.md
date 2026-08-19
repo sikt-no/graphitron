@@ -22,9 +22,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
-| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | Ready | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R672` | Register every built-in scalar the emitted schema references, not just the ones the SDL uses | Ready | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](register-referenced-builtin-scalars.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Progress | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | In Review | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R711` | Nodehood derives from two corpora instead of being decided in capture | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
@@ -362,7 +362,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
-- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — Ready, feature
+- `R668` [**Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection**](nodeid-key-projection-on-routine-params.md) — In Progress, feature
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
 - `R717` [**The routine carrier's explicit data-field path needs a correlation arm that anchors on the captured record**](routine-carrier-residual-path-correlation.md) — Backlog, architecture
 - `R718` [**Three reads a chain field or a routine-bound type falls through**](column-scope-admits-the-chain-terminus.md) — Backlog, architecture

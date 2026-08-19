@@ -1,7 +1,7 @@
 ---
 id: R668
 title: "Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: routine
