@@ -45,6 +45,11 @@ Six of eight issues have an owning item. Two have none. One of the six covered
 issues, the largest one, has no link visible from the issue and its headline
 symptom sits on an item that does not cite the report.
 
+That table and those counts are the state **at audit time** and are deliberately
+not updated as the gaps close, so the findings stay readable as findings. The
+working list at the end of this file is the live record: all three gaps are now
+closed, and "State at close" says what remains.
+
 ## Gap 1: #530 has no owning item
 
 [#530](https://github.com/sikt-no/graphitron/issues/530), filed 2026-08-18
@@ -227,14 +232,42 @@ Ordered so that the cheap, unblocked closures come first.
       reject it. And the report asks for a build-time author error as an
       acceptable alternative to lowering, which gives the item a cheap first
       increment it did not have.
-- [ ] Comment on #523 with the three plan links and which half each owns.
+- [x] Comment on #523 with the three plan links and which half each owns. Posted,
+      and it carries two things beyond the links: R663's correction of the
+      reporter's multitable attribution, put to them for pushback, and the news
+      that their alternative ask (a generate-time author error instead of
+      lowering) is on the table as a first increment.
 - [x] Comment on #529 and #530 with their plan links once filed, and on #529 ask
       whether the reporter wants it relabelled as an enhancement, which they
       offered. Both posted; the relabel is put to the reporter and not yet done.
-- [ ] Decide whether R663's Spec-stage plan should absorb R382, or whether the
-      two halves stay separate through implementation. R663 argues the ordering
-      loss is not multitable-specific, which weakens the case for treating the
-      two as one fix, so the default is to keep them separate.
+- [x] Decide whether R663's Spec-stage plan should absorb R382, or whether the
+      two halves stay separate through implementation. **Separate**, and the
+      R382 pass above settles it on more than R663's original argument. The two
+      coordinates fail through the same validator in opposite directions: R663's
+      leaf populates its ordering slot, so `validateListRequiresOrdering`
+      compels the `@defaultOrder` that emit then discards, while R382's arms
+      declare no slot, do not implement `SqlGeneratingField`, and are invisible
+      to that check. R382 therefore leaks a step earlier, before the model
+      resolves an ordering at all. The fixes touch disjoint code
+      (`MultiTablePolymorphicEmitter` plus the cursor codec, versus
+      `LauncherCommands` / `BatchedRowsFragments`), and only R382 has the
+      reject-at-build-time increment available, since only R382 has a field the
+      validator could reject without contradicting itself. Absorbing them would
+      merge two different defects that share a reporter.
 
-Nothing here needs a decision from the reporter before we can start, apart from
-the #529 relabel, which is cosmetic.
+## State at close
+
+All three gaps are closed and every issue on the board now has both an owning
+item and a link visible from the issue. What is left is not linkage work:
+
+* R721, R722 and R723 sit at Spec awaiting a Spec → Ready sign-off from a
+  different party than their author.
+* The #529 relabel from bug to enhancement is put to the reporter and not yet
+  done. Cosmetic, and theirs to answer.
+* The `@splitQuery` attribution correction is put to #523's reporter and may
+  come back. If they can show a multitable-specific factor we missed, R663's
+  Position needs revisiting.
+* R723's corpus owes a discriminating fixture. The rule measures 0 findings on
+  the example schema, and so does its inverse, so the corpus cannot currently
+  tell the two apart. `film_actor_note` in `graphitron-sakila-db/src/main/resources/init.sql`
+  is the half-built starting point.
