@@ -25,3 +25,12 @@ build crash becomes a located build error), not an emit capability change; reali
 ordering or window on a lookup SELECT is an emit item in its own right. Surfaced by the
 lookup-triplet dissolution's per-kind realization audit, which made the drops legible as member
 rows with no realizing seam.
+
+One combination has left this census.
+`roadmap/split-query-child-list-drops-default-order.md` (R663) takes the *batched* child lookup's
+ordering slot (`LauncherCommands.batchedLookupRow`), because that row renders through the same
+`BatchedRowsFragments.body` its plain sibling does, so the ordering is one call site into a
+renderer that item is already fixing. Everything else above stays here: the inline
+`LookupMultiset` projection arm, the root lookup row (where input ordering genuinely is entailed),
+the pagination and window half at child grain, and promoting the one-record-per-key production
+throw to a located validator rejection.

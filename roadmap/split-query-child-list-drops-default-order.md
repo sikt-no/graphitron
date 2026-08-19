@@ -1,13 +1,13 @@
 ---
 id: R663
 title: "@defaultOrder on a @splitQuery child list is dropped at emit"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-13
-last-updated: 2026-08-13
+last-updated: 2026-08-19
 ---
 
 # @defaultOrder on a @splitQuery child list is dropped at emit
@@ -96,7 +96,42 @@ Nothing catches the drop:
   by exactly that idx correspondence, which holds for a one-row-per-key re-fetch and does not hold
   for a many-rows-per-key list.
 
-## Sketch
+## Position
+
+A list field's declared order holds wherever the rows are fetched from. `@splitQuery` decides
+whether a child's rows ride the parent's statement or a batch of their own; it is a fetch-strategy
+directive and has no business changing what the field returns. So the batched arms carry the
+ordering their leaf already resolved, and the two questions this item had to settle are settled
+here rather than left to the implementer.
+
+**Both batched arms are in scope, the plain one and the lookup-keyed one.** They are two commands
+over one leaf type (`ChildField.BatchedTableField`) rendered by one method
+(`BatchedRowsFragments.body`), so the render half is shared whether or not the lookup arm is
+included. Excluding it would ship a build where `@defaultOrder` works on a batched child unless
+the field also carries `@lookupKey`, which is the same class of arbitrary asymmetry this item
+exists to remove. `Film.actorsBySplitLookup` in the example schema is the lookup arm's instance and
+drops its primary-key order today, verified the same way as the two plain ones. The overlap with
+R567 is recorded under "Related": that item keeps the inline lookup arm, the pagination half, and
+the production-throw promotion.
+
+**Under `@tenantFanOut` the per-key list is tenant-blocked, and that is the contract.** The fanned
+form runs the batch statement once per tenant and merges through the generated
+`fanOutBatchRows`, which appends each tenant's rows to the key's bucket in domain order, wraps
+each element in a `DataFetcherResult` carrying that tenant as local context, and appends one
+shared failure marker per failed tenant. A per-execution `ORDER BY` therefore sorts within a
+tenant block and not across blocks. Sorting the merged list afterwards was considered and
+rejected: it would unwrap and re-order elements the fan-out deliberately arranged, move the
+failure markers, and re-implement SQL collation and null ordering in Java. The rows come from
+different databases; a globally sorted merge is a different feature from honouring a declared
+order, and nothing here forecloses it.
+
+This is not a new contract. `docs/manual/reference/directives/tenantFanOut.adoc` already publishes
+it: results keep each tenant's ordering within that tenant's rows and concatenate tenants in a
+stable order, and are not re-sorted globally. The page names `@orderBy` where it should name both
+spellings, and the batched child does not currently deliver the promise under either.
+`Language.films` in the multitenant fixture is the reachable instance.
+
+## Implementation
 
 The shape to copy is in the tree already, on the arm next door. The batched
 discriminated-interface child does exactly what this item asks for the plain batched child:
@@ -108,45 +143,109 @@ too: one global ORDER BY plus the `__idx__` scatter reproduces the unbatched twi
 ordering, because the scatter appends rows to their key's bucket in fetch order. That argument is
 no longer this item's to establish.
 
-The work is the same pair of edits one arm over. `batchedResultOf` passes
-`orderingOf(btf.orderBy(), ...)` into the non-connection list arm instead of `null`, and
-`BatchedRowsFragments.body` renders the same two fragments against `prelude.terminalAlias()`
-before the `fetch()`. The single-record-per-key arm stays unordered, where "no ordering" is the
-honest shape. Two arms of one fragment family disagreeing on this is itself the evidence that the
-drop is an oversight rather than a design.
+The work is the same pair of edits one arm over.
+
+* **`LauncherCommands.batchedResultOf`** passes `orderingOf(btf.orderBy(), btf.parentTypeName(),
+  btf.name(), units)` into the non-connection list arm instead of `null`, the projection its
+  connection arm two lines up already performs. The single-record-per-key arm stays unordered,
+  where "no ordering" is the honest shape. Its javadoc's "both unordered (the batched
+  non-connection emission renders no ordering, a pinned current behaviour)" goes with the change,
+  since the sentence is what pinned it.
+* **`LauncherCommands.batchedLookupRow`** takes the same projection into its `RecordList`. Its
+  one-record-per-key production throw and the mirror gap recorded beside it are untouched.
+* **`BatchedRowsFragments.body`** renders the two fragments `discriminatedBody` already renders:
+  `OrderingBlock.declareSortView(ordering, prelude.terminalAlias())`, then `.orderBy(orderBy)` on
+  the select chain before `.fetch()`, both gated on the list arm carrying a populated slot. One
+  placement detail is worth stating because getting it wrong compiles: emit the declaration into
+  `body` before the `TenantStrategy.Fanned` fork, not inside the lambda. The prelude declares the
+  terminal alias outside the lambda and never reassigns it, so one declaration serves the
+  single-tenant and fanned forms alike, and the fanned form's per-tenant statement picks it up by
+  closure.
 
 `OrderingBlock.declareSortView` is total over both `Ordering` arms, so an argument-driven
 `@orderBy` renders for free at this layer. Whether the classifier admits one on a batched child is
 a separate question and not this item's.
 
-One place the copy is not mechanical: the fanned tenancy arm. `body`'s `TenantStrategy.Fanned`
-branch runs the batch statement once per tenant inside `fanOutBatchRows` and merges the per-key
-groups across tenants, so a per-execution ORDER BY leaves each key's list sorted within a tenant
-block and unsorted across blocks. `discriminatedBody` never meets this (single-tenant by the
-command backstop, so it adds the dsl declaration unconditionally). Decide it explicitly rather
-than inheriting it: either sort each key's merged list after the scatter, or state the
-tenant-blocked order as the contract.
+Two arms of one fragment family disagreeing on this is itself the evidence that the drop is an
+oversight rather than a design.
 
 ## Tests
 
-The visible defect is row order, so the closing assertion is execution-tier: `ConverterOrg` needs
-more than one campus per org in the seed (check before assuming) and an exact-order assertion on
-the child list, plus the same over `SplitParent.tags`. A command-tier assertion that the batched
-list row carries a populated ordering slot pins the projection so the fix cannot regress silently.
-Add a no-primary-key target to the closing set: that is the population the field report hit and the
-one that cannot opt out, since the deterministic-order validator leaves it no alternative to
-`@defaultOrder`.
-Asserting on the generated `.orderBy(...)` string is banned by
-`docs/architecture/explanation/development-principles.adoc` and would prove nothing about the rows.
+* **Command tier**: the batched list row carries a populated ordering slot, asserted for both arms
+  (`batchedResultOf`'s plain row and `batchedLookupRow`'s) in `LauncherCommandsPipelineTest`. This
+  pins the projection, which is where the fact is dropped today.
+* **Execution tier**: the visible defect is row order, so this is what closes the item. Existing
+  fixtures cover three of the four shapes: `SplitParent.tags` and `ConverterOrg.campuses` (plain
+  batched list, primary-key fallback) and `Film.actorsBySplitLookup` (the lookup arm). The field
+  report's shape needs a new one, a view-backed target with no primary key ordered by
+  `@defaultOrder(fields:)`, and it is the population that cannot opt out, since the
+  deterministic-order validator leaves it no alternative to the directive.
+* **The fanned contract** gets its own assertion over `Language.films` in the multitenant fixture:
+  rows sorted within each tenant's block, blocks still in domain order. Without it the decision
+  recorded under "Position" is folklore, and the next reader of a tenant-blocked list will file it
+  as a bug.
+
+One trap. **The execution assertion must be able to fail.** `split_parent_tag` and
+`converter_campus` are each seeded in key order with two or three rows per parent, so an unordered
+fetch returns them already sorted and the assertion passes against the unfixed generator. Either
+seed a row whose insertion order contradicts the sort order, or pick a fixture where the two
+already disagree, and confirm the new test fails against the current emit before the fix lands.
+
+**`BatchedChildSqlBaselineTest` will fail, and that is correct.** It freezes whole rendered
+statements for this family, `SplitParent.tags` among them, and its javadoc says editing an expected
+string is a defect being papered over. That sentence guards the launcher fold, whose promise was
+that shape may move and SQL may not. This item is a deliberate SQL change, so the expected strings
+gain their `ORDER BY` and the guard stays as written; say so in the commit message so the edit
+reads as the intended change rather than as the thing the test exists to catch.
+
+Asserting on the generated `.orderBy(...)` string in a generated *method body* is banned by
+`docs/architecture/explanation/development-principles.adoc` and would prove nothing about the rows;
+the SQL baseline above is a rendered-statement assertion, which is a different thing and is the
+idiom that file already uses.
+
+## User documentation (first-client check)
+
+The rule reads in two sentences, which is the check passing: a `@splitQuery` child list is ordered
+by the same `@defaultOrder` an inline child list obeys, because how the rows are fetched does not
+change what the field returns; under `@tenantFanOut` the rows arrive grouped by tenant in domain
+order and sorted within each group, because each tenant's rows come from its own database.
+
+Neither sentence is new, which is the strongest form of this check passing. Both pages already say
+these things: `splitQuery.adoc` pairs `@splitQuery` with `@defaultOrder` in a worked example and
+never claimed ordering was dropped, and `tenantFanOut.adoc`'s "Ordering" section already promises
+within-tenant ordering with tenants concatenated in a stable order, explicitly including
+`@splitQuery` children. The generator is what disagrees with the manual, on both counts. So the
+documentation work is one word: that section names `@orderBy`, and should name `@defaultOrder`
+beside it, since the fixed-order spelling is the one a fanned batched child is most likely to
+carry.
+
+If a reviewer wants a sharper signal that this item is a bug fix and not a feature: the delivery
+edits no user-facing prose except to widen one directive name.
+
+## Out of scope
+
+* **Argument-driven `@orderBy` on a batched child.** The render layer takes it for free (see the
+  `declareSortView` note above), but whether the classifier admits the directive there is a
+  separate question with its own rejection surface.
+* **Pagination and windowing at child lookup grain**, and **the inline `LookupMultiset` projection
+  arm's dropped ordering**: both R567's, and neither shares a seam with the two edits here.
+* **The one-record-per-key batched lookup production throw.** R567 proposes promoting it to a
+  located validator rejection. This item touches the surrounding method and deliberately leaves
+  the throw alone.
+* **Enforcing the never-unsorted-list invariant** (R677). Closing this coordinate removes one of
+  its leak sites and does not close the class.
 
 ## Related
 
 * `roadmap/routine-composition-surface-from-facts.md` (R704): the same symptom at the root
   `@routine` chain, where the model lands `None` and the fix is enforcement plus a classifier
   call. That item's enforcement does not reach this population.
-* `roadmap/lookup-unrealized-co-members.md` (R567): the `@lookupKey` grain of the same drop
-  (`LauncherCommands.batchedLookupRow`'s empty ordering slot), already filed. This item is the
-  non-lookup batched population.
+* `roadmap/lookup-unrealized-co-members.md` (R567): filed the `@lookupKey` grain of this drop
+  first. The split agreed here: this item takes `batchedLookupRow`'s ordering slot, because it is
+  one call site into the renderer this item is already fixing and splitting it would ship the
+  asymmetry described under "Position". R567 keeps the rest of its census, the inline
+  `LookupMultiset` arm, the pagination and window half, and promoting the one-record-per-key
+  production throw to a located validator rejection.
 * `roadmap/routine-write-key-capture-unordered.md` (R660): the Mutation routine write path's
   unordered step 2.
 * `roadmap/list-ordering-invariant-enforcement.md` (R677): the shared enforcement question this
