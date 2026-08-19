@@ -7,7 +7,7 @@ priority: 3
 theme: routine
 depends-on: [jooq-node-metadata-as-stated-facts]
 created: 2026-08-14
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection
@@ -134,8 +134,11 @@ Two things about that middle tier follow from R710 recording the metadata **as s
 as validated, and neither is a detail. Its rows carry a form vocabulary
 (`STRING` / `NULL` / `OTHER` / `ABSENT` on the type id, `FIELD_ARRAY` and the same three on the key
 columns), a row exists whenever the class declares either constant, and a key-column entry may name
-a column the table does not have. So this tier reads *well-formed* rows, which is a join against
-R710's own well-formedness derivation and not a direct read of the base relation; and a malformed
+a column the table does not have. So this tier reads *well-formed* rows, which is an anti-join
+against R710's own well-formedness derivation, `intent_node_metadata_defect`, and not a direct read
+of the base relation. Take the conjunction that view's comment insists on rather than the anti-join
+alone: well-formed means a `sql_node_metadata` row with zero defect rows, since no defect rows is
+also what a table publishing no metadata at all has. A malformed
 constant is a fact the tier passes over rather than an absence, which is a distinction the tier's
 comment owes a sentence. Reading the raw relation instead would let a malformed key-column list
 project a column that does not exist, which is this item's own failure mode arriving through the
@@ -189,12 +192,34 @@ itself.
 
 So the binding-leaf resolution is a **keying over that relation, not a second walk**, which is the
 move the stratum's own block comment records for `intent_bound_table` over `intent_spelled_table`
-("the binding view is a keying over it rather than a second copy of it"). An `argMapping` path maps
-to an occurrence path by a string
-expression over the pair's own key, in the `POSITION` / `SUBSTRING` vocabulary the stratum already
-uses; the leaf is that row, and "one trailing segment unconsumed" is a right-trim onto the prefix
-row rather than a traversal. Writing a second traversal instead is the drift the fact model names:
-two spellings of one resolution that agree until one of them changes.
+("the binding view is a keying over it rather than a second copy of it").
+
+**And the written path arrives already decomposed, which makes the keying a join rather than string
+surgery.** `graphitron_argument_path_segment (graph_name, type_name, field_name, argument_path,
+position, segment_name)` holds one row per segment of one path in written order, position 0 being the
+head, dense from zero, and capture writes it at all seven pair sites; every one of the seven reaches
+its own decode by joining on `(graph_name, type_name, field_name, argument_path)`, the coordinate all
+seven lead with. Against it, `intent_input_occurrence_path` needs no key parsing either: it carries
+`root_type_name`, `root_field_name`, `root_argument_name`, `leaf_named_type` and `depth` as columns.
+So the argument-rooted keying is: the pair row's coordinate to the occurrence row's root coordinate,
+segment position 0's `segment_name` to `root_argument_name`, each further segment position *i* to
+`intent_input_occurrence_path_step.ordinal = i` with `segment_name` matched to the step's
+`field_name`, and the unconsumed count is the segment count against the occurrence row's `depth`. The
+serialized path is never constructed and never split.
+
+**Do not compute this with `POSITION` / `SUBSTRING` over the serialized keys.** The segment relation
+exists so that no reader has to: its capture site records the parse's own segment list because
+"recording it costs nothing and is the only chance the store gets, since no reader may split a
+string", and its `segment_name` comment hands this item its own question outright ("which of those a
+segment resolves to is a question for the derived stratum, and this relation only says what was
+written"). Writing a second decomposition instead is the drift the fact model names: two spellings of
+one resolution that agree until one of them changes.
+
+One caveat the arms below inherit from that comment. It describes position 0 as "naming an argument
+of the field the directive sits on", which is the output-field reading; at the input-field
+`@condition` site the head names an input field of the type the pair row sits on. The relation
+records what was written either way, so discriminating the two is the arm's business and not the
+relation's.
 
 **The head is not always an argument, so the keying has four arms rather than one.** Each is
 narrow, and each absence below is a stated one rather than a silent one:
@@ -215,17 +240,19 @@ narrow, and each absence below is a stated one rather than a silent one:
   with the input field's own name for exactly that reason. Two consequences. The arm is
   discriminated by a join to `graphql_type.kind = 'INPUT_OBJECT'`, which is how the capture side
   already tells the two halves apart ("the owning type's kind is a join away, so the SDL location
-  kind of an application on one falls out of a join rather than a second table"). And the keying is
-  a **suffix** match on the serialized path rather than a prefix trim, because the written path
-  starts partway down: one row per use site that reaches the input type, so this arm is
+  kind of an application on one falls out of a join rather than a second table"). And the keying
+  starts **partway down** the occurrence path rather than at its root, because that is where the
+  written path starts: one row per use site that reaches the input type, so this arm is
   one-to-many where the others are one-to-one, and an input type no argument reaches yields no rows
   at all. That last absence is the arm's own caveat and owes a sentence in the view's comment.
-  The suffix must be anchored relationally, not by string alone: a bare suffix on `/<field>` matches
-  any occurrence path ending in a field of that name whatever input type owns it, so the arm joins
-  the pair row's `type_name` to `intent_input_occurrence_path_step.container_type_name` at the
-  matching ordinal. The step child exists for exactly this ("the step child carries the same data
-  relationally so no consumer parses the key"), and the use-keyed rejection below depends on the
-  arm naming the right consuming coordinate.
+  Where the argument-rooted arm anchors segment position 0 on `root_argument_name`, this one anchors
+  it on a step whose `container_type_name` is the pair row's own `type_name` and whose `field_name`
+  is that segment, then walks the remaining segments at consecutive ordinals from there. Anchoring on
+  the container is what makes it a join rather than a name coincidence: matching the field name alone
+  would accept a path ending in a field of that name whatever input type owns it. The step child
+  exists for exactly this ("the step child carries the same data relationally so no consumer parses
+  the key"), and the use-keyed rejection below depends on the arm naming the right consuming
+  coordinate.
 * **Path-step heads resolve no leaf, by construction.** The three step-site pair relations (two
   `*_reference_step_*`, one `*_reference_for_step_*`) carry rows, but `BuildContext` resolves a
   path-step
@@ -242,15 +269,17 @@ Two further caveats the view's comment must own:
 * The trailing-segment count is a **column, not a flag**. One unconsumed segment is this item; two
   is a typo or R249's nested form, and the rejection messages must tell them apart. The stratum
   already states arity as a column rather than leaving each reader to count (`intent_spelled_table.
-  candidates`).
+  candidates`). It is arithmetic rather than parsing: the segment rows' own count against the
+  occurrence row's `depth`.
 
 **The arms are a fork plus a basis, and that shape is already shipped next door.**
 `intent_field_column_table` answers the same kind of question this view does, which table a name
 written at a site resolves against, over `@reference` paths rather than `argMapping` paths. It
 carries two columns for it: a closed two-value `disposition` (`RESOLVE` / `SILENT`) that every
 consumer switches on, and a `basis` naming which of its four rules fired (`PATH_TERMINAL`,
-`NAMED_TYPE_TABLE`, `UNRESOLVED_PATH`, `CONFLICTED`; the column's own comment says "five-value",
-which is stale against its four union arms and should not be copied forward). Its own comment argues
+`NAMED_TYPE_TABLE`, `UNRESOLVED_PATH`, `CONFLICTED`; the `disposition` comment calls that a
+"five-value vocabulary", which is stale against the four arms and should not be copied forward). Its
+own comment argues
 for carrying both even though the first is determined by the second, because the fork is "the
 reading every consumer needs and re-deriving it from a [multi]-value vocabulary at each of them is
 how the two would drift". This view has three consumers (the detection stratum, `EmitPlan`, the
@@ -520,10 +549,14 @@ recommended, omitted rather than shipped always-null, because the database's own
 as jOOQ's camelCase transform and the SQL types only as anonymous bind placeholders behind a
 protected `TableImpl` field.
 
-**Pending, in R710.** The jOOQ node metadata, the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
-`JooqCatalog.nodeIdMetadata` reflects on today, lands as `sql_node_metadata` plus an ordered
-`sql_node_key_column` child, recorded *as stated* rather than as validated. That is the middle tier
-of the key-column resolution, and the only capture this item still waits on. The as-stated shape is
+**Landed on trunk, in R710's capture slice, while R710 itself is still `In Progress`.** The jOOQ node
+metadata, the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
+`JooqCatalog.nodeIdMetadata` reflects on today, is now `sql_node_metadata` plus an ordered
+`sql_node_key_column` child, recorded *as stated* rather than as validated, with
+`intent_node_metadata_defect` beside them as the well-formedness derivation. That is the middle tier
+of the key-column resolution, and it was the last capture this item was waiting on. Confirm the rows
+against R710's own state at pickup rather than assuming they are final, R710 not having reached Done.
+The as-stated shape is
 a better fact than the reflective read it replaces, and it is why the tier joins a well-formedness
 derivation rather than the base relation (see "What the key-column segment names").
 
@@ -586,7 +619,8 @@ free from a view whose row *is* a column name.
 
 What changes is where the facts come from: the command row, not a `CallSiteExtraction` arm. Three
 emission facts have to be on it, and each has a store answer to confirm at pickup: the node type's
-`type_id` (`graphitron_node.type_id`, with the type-name fallback that column's comment defers to),
+`type_id` (`graphitron_node.type_id`, which is "as written", with the type-name fallback the table's
+own comment defers to a derivation),
 the target table (`intent_resolved_type_binding`), and the column (the projection view). The encoder class is
 a generator-configuration fact rather than a captured one; locate it at pickup and say which side
 of the line it sits on.
@@ -597,7 +631,8 @@ Two mechanical facts about the emitters survive the redesign and still bind:
   `no.sikt.graphitron.render`, and `PackageImportDirectionTest`'s render leg rejects
   `no.sikt.graphitron.rewrite` imports that are not on the borrow dial. Whatever carries the helper
   name has to be render-side or on the command row.
-* **The decode helper body is hosted per generated class.** `decode<RecordType>Record` is drained
+* **The decode helper body is hosted per generated class.** `decode<RecordType>` (`decodeFilmRecord`,
+  the record class name already carrying the suffix) is drained
   onto `<Type>Fetchers` from a walk over that class's input-bean carriers, and
   `ConditionGlueRenderer` builds separate conditions classes with their own registry that cannot
   call it. So a projected read at `@condition` needs the body emitted onto the conditions class:
@@ -644,7 +679,8 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   `intent_field_column_table`, the sibling path-resolution view whose `disposition` / `basis` shape
   and precedence pick both apply directly here: `intent_resolved_node_key_column` (three tiers,
   `tier` column, the pick partitioned by type so a tier's column order survives),
-  `intent_argmapping_binding_leaf` (the four-arm keying over `intent_input_occurrence_path`, `site`
+  `intent_argmapping_binding_leaf` (the four-arm keying over `intent_input_occurrence_path` joined
+  through `graphitron_argument_path_segment`, no string surgery on either key, `site`
   literal per union arm, `disposition` plus `basis`, unconsumed-segment count), and
   `intent_resolved_node_key_projection`, plus the detection views for the rejections including
   the site-keyed `deferred` arm. The key-column view reads `intent_resolved_type_binding` for its
@@ -671,7 +707,10 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   `MutationField.DmlTableField` arm's existing `launchers.rowFor(...)` shape, and the leaf-reading
   bodies are deleted once the cutover holds.
 * **`PackageImportDirectionTest`**: extend the borrow dial by the refs the routine-write command
-  carries, each with the one-line justification the dial's comment convention asks for.
+  carries, each with the one-line justification the dial's comment convention asks for. The dial is
+  not the only thing to update: `borrowDialComponentClosureIsPinned` computes the legacy-tree closure
+  of the borrowed refs' arms and components by reflection and pins it as `BORROWED_COMPONENT_CLOSURE`,
+  so a borrowed ref brings its components' names with it.
 * **`RoutineCallEmitter`**: emit the decode-and-read from the command row; `emitCall` yields
   pre-statements alongside its expression and the four call sites add them.
 * **`ConditionGlueRenderer`** and the `@service` pair, when their sites land: the same read, with
@@ -686,10 +725,11 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   its own views make of those rows.
 * **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view, and
   for the binding-leaf view specifically in `FieldColumnTableTest`'s, which is the closest match in
-  the tree: a path-resolution view with silences, anchored by twelve cases. Two habits to take from
+  the tree: a path-resolution view with silences, anchored case by case (twenty-three of them today,
+  over that view and its sibling scope view). Two habits to take from
   it. It asserts on `disposition` and `basis` rather than only on the value resolved, so a case pins
   *which rule fired* and not merely that the answer came out right. And it pins absence explicitly,
-  with five of its twelve cases asserting no row at the coordinate, which is how the boundary of the
+  in roughly ten of those cases asserting no row at the coordinate, which is how the boundary of the
   relation gets tested rather than assumed. It also asserts at most one row per coordinate in its
   read helper; the analogue here is per pair-row key, since this view keeps `ordinal` rather than
   collapsing it.
@@ -704,7 +744,9 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   bare-scalar argument head, a bare `@nodeId` head (the arm the whole silent-`TEXT` case runs
   through), an input-field-level `@condition` whose head names the input field, one whose input
   type no argument reaches (the zero-row absence), a path-step `@condition` pair row that resolves
-  no leaf, a path whose leaf is an input object rather than a scalar, and the two-trailing-segment
+  no leaf, a path whose leaf is an input object rather than a scalar, a path whose middle segment
+  names no input field at all (the `UNRESOLVED_PATH` typo, which the walk is silent on and the store
+  is the only place that catches), and the two-trailing-segment
   case that must not resolve as a projection.
 * **Registration**: `FactCaptureAgreementTest` for every new relation and view, base and derived.
 * **Corpus population per arm.** A view arm no fixture reaches is a vacuous pin. Each rejection
@@ -751,10 +793,15 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   likely to want its own item if the schedule tightens. Lifting it out is fine; threading the
   projection through a `MutationField` leaf to avoid it is not, because that re-creates the
   emitter-reads-the-leaf coupling this item exists to stop relying on.
+* **The spine reads a relation another item is still editing.** `graphitron_argument_path_segment`
+  is R715's, `In Progress`, and its coordinate key (the part this item joins on) is already in the
+  tree. What is still moving there is that family's comment prose, so the exposure is a comment
+  conflict rather than a shape one.
 * **The capture half is now other items' schedules.** R704's is landed, so that half is a read
-  against relations that exist. R710's is not: it is `Ready`, so its shape is signed off but its
-  rows are not written yet, and stage 2's middle tier waits on them. The residual risk is schedule
-  rather than shape, and cheap to absorb either way, being one tier's source.
+  against relations that exist. R710's capture has now landed too, so the middle tier's source is in
+  the tree; what remains is that R710 is `In Progress` rather than Done, so its rows can still move
+  under a reader. The residual risk is schedule rather than shape, and cheap to absorb either way,
+  being one tier's source.
 * **`intent_resolved_type_binding` can answer with two candidates**, and this item's response is
   silence plus a detection rather than a pick. That is the right answer but it is a new population
   to reach in fixtures: a type bound by both a `@table` and a routine return, which did not exist
@@ -823,8 +870,8 @@ Draft of the `routine.adoc` subsection:
 
 ## Relationship to other items
 
-* `roadmap/routine-composition-surface-from-facts.md` (R704) **has landed and is in review**, and
-  it is the reason two sections of this plan were rewritten rather than annotated. It owned the
+* R704 (`routine-composition-surface-from-facts`, Done, see `roadmap/changelog.md`) **has shipped**,
+  and it is the reason two sections of this plan were rewritten rather than annotated. It owned the
   `@routine` read surface end to end; what it leaves this item is a set of reads and one pivot.
 
   **Its slice 7 captured the routine catalog facts, and chose the other shape.** This plan proposed
@@ -858,12 +905,25 @@ Draft of the `routine.adoc` subsection:
   `RoutineDirectiveResolver.writeSeatReadSurfaceDeferral`, seat-gated to the
   write classifiers, and left the write-side read surface with R454, so stage 4's carrier move
   relocates those emitters without touching the deferral.
-* `roadmap/jooq-node-metadata-as-stated-facts.md` (R710) is now the only item this one is blocked
-  by, and it owns what was stage 1's remainder: the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
-  as `sql_node_metadata` plus an ordered `sql_node_key_column` child. Two things to carry into stage
+* `roadmap/decodes-normalize-internal-grammars.md` (R715) owns `graphitron_argument_path_segment`,
+  the relation this item's spine view reads, and it landed the coordinate key that makes it readable
+  from a pair row at all: the relation used to be interned by path text for the whole graph, so a
+  segment set had no owner and could only be joined on a bare string. It now keys
+  `(graph_name, type_name, field_name, argument_path, position)` with a foreign key to `graphql_field`,
+  which is the join the binding-leaf arms use. R715 is `In Progress` and still editing that family's
+  comments, so the two items share a comment surface: this item restates `argument_path` on the seven
+  pair relations, R715 rewrites the segment relation's own. Coordinate on those, not on the key, which
+  is already in the tree. The relationship is otherwise one-way: nothing here changes anything R715
+  owns, and R715's own reading of the redundancy trade ("a consumer needing the exact owner joins the
+  pair relation on `(type_name, field_name, argument_path)`") is exactly what this item does with it.
+* `roadmap/jooq-node-metadata-as-stated-facts.md` (R710) owns what was stage 1's remainder, the
+  `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
+  as `sql_node_metadata` plus an ordered `sql_node_key_column` child, and it has stopped being a
+  blocker: the crawler slice and the `intent_node_metadata_defect` derivation are both on trunk, with
+  R710 itself still `In Progress` on the rest. Two things to carry into stage
   2 rather than discover in it. It records the metadata **as stated**, with a form vocabulary and a
   row whenever either constant is declared, so the key-column view's middle tier reads well-formed
-  rows through R710's own derivation rather than the base relation. And R710 chose the relation name
+  rows through that derivation rather than the base relation. And R710 chose the relation name
   this plan had sketched for its own child, which is a naming collision resolved in R710's favour
   before either was written; nothing here should reintroduce it.
 * `roadmap/planners-read-facts-emitters-read-commands.md` (R682) inherited R704's slice 13 outright:
@@ -936,11 +996,11 @@ can query, a rejection the build emits, a refactor that holds output identical, 
 so there is something to verify between them. The plan tracks what is next by collapsing a shipped
 stage into a one-line note.
 
-1. **Capture.** *Not this item's, on either half.* The routine call surface landed with R704
-   slice 7; the node metadata is R710's. Stage 2 is the first stage, and it starts when R710's
-   relations exist, since the key-column view's middle tier reads them. Nothing else here waits on
-   R710: the binding-leaf view and the projection reduction join no catalog fact at all, so they can
-   be written and pinned against the two tiers that are already captured while the third arrives.
+1. **Capture.** *Not this item's, on either half, and both halves are now in the tree.* The routine
+   call surface landed with R704 slice 7; the node metadata landed with R710's capture slice, R710
+   itself still being `In Progress`. Stage 2 is the first stage and nothing gates its start any more.
+   Its middle tier reads R710's rows, so re-read that item's state at pickup; the binding-leaf view
+   and the projection reduction join no catalog fact at all, so neither ever depended on it.
 2. **Resolution views.** `intent_resolved_node_key_column` (three tiers), the binding-leaf keying
    over `intent_input_occurrence_path` (four arms), and the projection reduction. Exit: each view
    pinned against hand-written expectations, every tier and all eight `site` values reached by a
@@ -949,7 +1009,11 @@ stage into a one-line note.
 3. **Rejections.** The detection views, the typed product in `AuthoredClaimConflicts`' shape, and
    the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
    the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that
-   closes the silent-base64 hole.
+   closes the silent-base64 hole. It is testable *before* stage 5's widening, which is what makes the
+   ordering work: capture reads SDL, and `ArgBindingMap.of` returns a typed `Result.PathRejected`
+   folded into the error stream rather than throwing, so a projected spelling the walk still rejects
+   is captured verbatim and reaches the detections. A fixture written here needs no widening; before
+   stage 5 it simply fails the build twice.
 4. **The carrier move.** The routine-write command relation, the two render-side emitters, the
    `TypeFetcherGenerator` cutover and the borrow-dial extension. A pure refactor: no author-facing
    behaviour changes and no generated output moves, which is exactly what makes it verifiable on
