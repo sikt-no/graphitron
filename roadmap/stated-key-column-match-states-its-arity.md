@@ -1,7 +1,7 @@
 ---
 id: R724
 title: "The stated key-column match spends its ambiguity silently; make it state its arity"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: model-cleanup
