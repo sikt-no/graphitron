@@ -1,7 +1,7 @@
 ---
 id: R672
 title: "Register every built-in scalar the emitted schema references, not just the ones the SDL uses"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: codegen-correctness
