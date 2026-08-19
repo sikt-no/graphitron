@@ -5008,231 +5008,175 @@ COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pa
 COMMENT ON COLUMN intent_argmapping_pair.param_name IS 'the left side of the pair: the Java or routine parameter the path binds to';
 COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as the arm''s own relation spells it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
 
-CREATE VIEW intent_argmapping_binding_leaf
+CREATE VIEW intent_argmapping_segment_binding
   (graph_name, site, use_site, type_name, field_name, position, argument_path,
-   disposition, basis, leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
-   node_type_ref, unconsumed_segments) AS
-WITH spelled (graph_name, site, use_site, type_name, field_name, argument_name, position,
-              argument_path, seg_count, head) AS (
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.argument_name,
-         ap.position, ap.argument_path,
-         CAST((SELECT COUNT(*) FROM graphitron_argument_path_segment c
-                WHERE c.graph_name = ap.graph_name AND c.type_name = ap.type_name
-                  AND c.field_name = ap.field_name
-                  AND c.argument_path = ap.argument_path) AS INT),
-         (SELECT h.segment_name FROM graphitron_argument_path_segment h
-           WHERE h.graph_name = ap.graph_name AND h.type_name = ap.type_name
-             AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
-             AND h.position = 0)
+   segment_position, segment_name, bound_kind, bound_type_name, bound_field_name,
+   bound_argument_name) AS
+WITH headed (graph_name, site, use_site, type_name, field_name, position, argument_path,
+             head, head_kind) AS (
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
+         ap.argument_path, h.segment_name, 'ARGUMENT'
     FROM intent_argmapping_pair ap
-), headed (graph_name, site, use_site, type_name, field_name, argument_name, position,
-           argument_path, seg_count, head, head_kind) AS (
-  SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.argument_name, s.position,
-         s.argument_path, s.seg_count, s.head, 'ARGUMENT'
-    FROM spelled s
+    JOIN graphitron_argument_path_segment h
+      ON h.graph_name = ap.graph_name AND h.type_name = ap.type_name
+     AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
+     AND h.position = 0
     JOIN graphql_argument a
-      ON a.graph_name = s.graph_name AND a.type_name = s.type_name
-     AND a.field_name = s.field_name AND a.argument_name = s.head
-   WHERE s.site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION')
+      ON a.graph_name = ap.graph_name AND a.type_name = ap.type_name
+     AND a.field_name = ap.field_name AND a.argument_name = h.segment_name
+   WHERE ap.site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION')
    UNION ALL
-  SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.argument_name, s.position,
-         s.argument_path, s.seg_count, s.head, 'ARGUMENT'
-    FROM spelled s
-   WHERE s.site = 'ARGUMENT_CONDITION' AND s.head = s.argument_name
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
+         ap.argument_path, h.segment_name, 'ARGUMENT'
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_argument_path_segment h
+      ON h.graph_name = ap.graph_name AND h.type_name = ap.type_name
+     AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
+     AND h.position = 0
+   WHERE ap.site = 'ARGUMENT_CONDITION' AND h.segment_name = ap.argument_name
    UNION ALL
-  SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.argument_name, s.position,
-         s.argument_path, s.seg_count, s.head, 'INPUT_FIELD'
-    FROM spelled s
-   WHERE s.site = 'INPUT_FIELD_CONDITION' AND s.head = s.field_name
-), descent (graph_name, site, use_site, position, leaf_type_name, leaf_field_name, consumed) AS (
-  SELECT graph_name, site, use_site, position, leaf_type_name, leaf_field_name, consumed
-    FROM (SELECT h.graph_name, h.site, h.use_site, h.position,
-                 lf.container_type_name AS leaf_type_name, lf.field_name AS leaf_field_name,
-                 p.depth AS consumed,
-                 ROW_NUMBER() OVER (PARTITION BY h.graph_name, h.site, h.use_site, h.position
-                                    ORDER BY p.depth DESC) AS rn
-            FROM headed h
-            JOIN intent_input_occurrence_path p
-              ON p.graph_name = h.graph_name AND p.root_type_name = h.type_name
-             AND p.root_field_name = h.field_name AND p.root_argument_name = h.head
-            JOIN intent_input_occurrence_path_step lf
-              ON lf.graph_name = p.graph_name AND lf.path = p.path AND lf.ordinal = p.depth
-           WHERE h.head_kind = 'ARGUMENT' AND h.seg_count >= 2
-             AND p.depth >= 1 AND p.depth <= h.seg_count - 1
-             AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
-                              WHERE o.graph_name = p.graph_name AND o.path = p.path
-                                AND NOT EXISTS (
-                                  SELECT 1 FROM graphitron_argument_path_segment sg
-                                   WHERE sg.graph_name = h.graph_name
-                                     AND sg.type_name = h.type_name
-                                     AND sg.field_name = h.field_name
-                                     AND sg.argument_path = h.argument_path
-                                     AND sg.position = o.ordinal
-                                     AND sg.segment_name = o.field_name))) ranked
-   WHERE rn = 1
-), input_descent (graph_name, site, use_site, position, leaf_type_name, leaf_field_name,
-                  consumed) AS (
-  SELECT graph_name, site, use_site, position, leaf_type_name, leaf_field_name, consumed
-    FROM (SELECT h.graph_name, h.site, h.use_site, h.position,
-                 lf.container_type_name AS leaf_type_name, lf.field_name AS leaf_field_name,
-                 lf.ordinal - an.ordinal AS consumed,
-                 ROW_NUMBER() OVER (PARTITION BY h.graph_name, h.site, h.use_site, h.position
-                                    ORDER BY lf.ordinal - an.ordinal DESC) AS rn
-            FROM headed h
-            JOIN intent_input_occurrence_path_step an
-              ON an.graph_name = h.graph_name AND an.container_type_name = h.type_name
-             AND an.field_name = h.head
-            JOIN intent_input_occurrence_path_step lf
-              ON lf.graph_name = an.graph_name AND lf.path = an.path
-             AND lf.ordinal > an.ordinal AND lf.ordinal - an.ordinal <= h.seg_count - 1
-           WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count >= 2
-             AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
-                              WHERE o.graph_name = an.graph_name AND o.path = an.path
-                                AND o.ordinal > an.ordinal AND o.ordinal <= lf.ordinal
-                                AND NOT EXISTS (
-                                  SELECT 1 FROM graphitron_argument_path_segment sg
-                                   WHERE sg.graph_name = h.graph_name
-                                     AND sg.type_name = h.type_name
-                                     AND sg.field_name = h.field_name
-                                     AND sg.argument_path = h.argument_path
-                                     AND sg.position = o.ordinal - an.ordinal
-                                     AND sg.segment_name = o.field_name))) ranked
-   WHERE rn = 1
-), resolved (graph_name, site, use_site, type_name, field_name, position, argument_path,
-             basis, leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
-             unconsumed) AS (
-  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-         'BARE_HEAD', 'ARGUMENT', h.type_name, h.field_name, h.head, 0
-    FROM headed h
-   WHERE h.head_kind = 'ARGUMENT' AND h.seg_count = 1
-   UNION ALL
-  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-         'BARE_HEAD', 'INPUT_FIELD', h.type_name, h.head, CAST(NULL AS VARCHAR), 0
-    FROM headed h
-   WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count = 1
-   UNION ALL
-  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-         'ARGUMENT_PATH', 'INPUT_FIELD', d.leaf_type_name, d.leaf_field_name, NULL,
-         h.seg_count - 1 - d.consumed
-    FROM headed h
-    JOIN descent d
-      ON d.graph_name = h.graph_name AND d.site = h.site AND d.use_site = h.use_site
-     AND d.position = h.position
-   UNION ALL
-  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-         'ARGUMENT_PATH', 'ARGUMENT', h.type_name, h.field_name, h.head, h.seg_count - 1
-    FROM headed h
-   WHERE h.head_kind = 'ARGUMENT' AND h.seg_count >= 2
-     AND NOT EXISTS (SELECT 1 FROM descent d
-                      WHERE d.graph_name = h.graph_name AND d.site = h.site
-                        AND d.use_site = h.use_site AND d.position = h.position)
-   UNION ALL
-  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-         'INPUT_FIELD_PATH', 'INPUT_FIELD', d.leaf_type_name, d.leaf_field_name, NULL,
-         h.seg_count - 1 - d.consumed
-    FROM headed h
-    JOIN input_descent d
-      ON d.graph_name = h.graph_name AND d.site = h.site AND d.use_site = h.use_site
-     AND d.position = h.position
-   UNION ALL
-  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-         'INPUT_FIELD_PATH', 'INPUT_FIELD', h.type_name, h.head, NULL, h.seg_count - 1
-    FROM headed h
-   WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count >= 2
-     AND EXISTS (SELECT 1 FROM intent_input_occurrence_path_step an
-                  WHERE an.graph_name = h.graph_name AND an.container_type_name = h.type_name
-                    AND an.field_name = h.head)
-     AND NOT EXISTS (SELECT 1 FROM input_descent d
-                      WHERE d.graph_name = h.graph_name AND d.site = h.site
-                        AND d.use_site = h.use_site AND d.position = h.position)
-), leafed (graph_name, site, use_site, type_name, field_name, position, argument_path,
-           basis, leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
-           unconsumed, node_id_declared, node_type_ref) AS (
-  SELECT r.graph_name, r.site, r.use_site, r.type_name, r.field_name, r.position, r.argument_path,
-         r.basis, r.leaf_kind, r.leaf_type_name, r.leaf_field_name, r.leaf_argument_name,
-         r.unconsumed,
-         CASE WHEN an.type_name IS NOT NULL OR fn.type_name IS NOT NULL THEN TRUE ELSE FALSE END,
-         COALESCE(an.node_type_ref, fn.node_type_ref)
-    FROM resolved r
-    LEFT JOIN graphitron_argument_node_id an
-      ON r.leaf_kind = 'ARGUMENT' AND an.graph_name = r.graph_name
-     AND an.type_name = r.leaf_type_name AND an.field_name = r.leaf_field_name
-     AND an.argument_name = r.leaf_argument_name
-    LEFT JOIN graphitron_field_node_id fn
-      ON r.leaf_kind = 'INPUT_FIELD' AND fn.graph_name = r.graph_name
-     AND fn.type_name = r.leaf_type_name AND fn.field_name = r.leaf_field_name
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
+         ap.argument_path, h.segment_name, 'INPUT_FIELD'
+    FROM intent_argmapping_pair ap
+    JOIN graphitron_argument_path_segment h
+      ON h.graph_name = ap.graph_name AND h.type_name = ap.type_name
+     AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
+     AND h.position = 0
+   WHERE ap.site = 'INPUT_FIELD_CONDITION' AND h.segment_name = ap.field_name
 )
-SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
-       'RESOLVE', l.basis, l.leaf_kind, l.leaf_type_name, l.leaf_field_name, l.leaf_argument_name,
-       l.node_type_ref, l.unconsumed
-  FROM leafed l
- WHERE l.node_id_declared
- UNION ALL
-SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
-       'SILENT', 'UNRESOLVED_PATH', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS INT)
-  FROM leafed l
- WHERE NOT l.node_id_declared AND l.unconsumed >= 1
- UNION ALL
-SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.position, s.argument_path,
-       'SILENT', 'UNRESOLVED_PATH', NULL, NULL, NULL, NULL, NULL, NULL
-  FROM spelled s
- WHERE s.site NOT IN ('FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP')
-   AND NOT EXISTS (SELECT 1 FROM headed h
-                    WHERE h.graph_name = s.graph_name AND h.site = s.site
-                      AND h.use_site = s.use_site AND h.position = s.position)
+SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+       0, h.head, 'ARGUMENT', h.type_name, h.field_name, h.head
+  FROM headed h
+ WHERE h.head_kind = 'ARGUMENT'
  UNION ALL
 SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-       'SILENT', 'UNREACHED_INPUT_TYPE', NULL, NULL, NULL, NULL, NULL, NULL
+       0, h.head, 'INPUT_FIELD', h.type_name, h.head, CAST(NULL AS VARCHAR)
   FROM headed h
- WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count >= 2
-   AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step an
-                    WHERE an.graph_name = h.graph_name AND an.container_type_name = h.type_name
-                      AND an.field_name = h.head)
+ WHERE h.head_kind = 'INPUT_FIELD'
  UNION ALL
-SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.position, s.argument_path,
-       'SILENT', 'NO_SLOT_IN_SCOPE', NULL, NULL, NULL, NULL, NULL, NULL
-  FROM spelled s
- WHERE s.site IN ('FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP');
-COMMENT ON VIEW intent_argmapping_binding_leaf IS 'What an argMapping path binds to, where the leaf it reaches carries a @nodeId: that leaf''s own coordinate, and how many trailing segments the descent did not consume. One row per pair row of intent_argmapping_pair at every site that spells an argMapping, which is what makes uniformity across @routine, @service and @condition structural rather than three call sites agreeing by discipline. A keying over intent_input_occurrence_path rather than a second walk of the input surface, joined through graphitron_argument_path_segment so neither the occurrence key nor the written path is ever split: the segment relation exists precisely so no reader has to, and a second decomposition here would be two spellings of one resolution that agree until one of them changes. The head is not always an argument, so the resolution has three resolving arms rather than one, each named in basis, and which slots a head may name is the walk''s own rule read off the site: every argument of the field at a @routine, @service or output-field @condition, the pair''s own argument at an argument-site @condition, the pair''s own input field at an input-field @condition, and nothing at all at a path-step @condition. A silence is a row, and that is what stops the unresolvable shapes from sharing one indistinguishable gap with the ordinary case. Absence therefore means exactly one thing: the path consumed every segment and its leaf carries no @nodeId, which is the ordinary binding and rightly needs no row. It is also what keeps the bare-form rejection an anti-join over a positive population rather than negative space maintained by hand. The complement of that absence is deliberate too: a path that left segments unconsumed on a leaf carrying no @nodeId is a segment naming nothing, which the walk is silent on for the same reason it is silent on the motivating path, so the store is the only place it can be caught and it is a stated row here rather than a second gap. Three caveats the arms inherit. The occurrence expansion stops at a type already visited on the path, the classification walk''s own first-visit guard restated, so a cyclic re-entry contributes no descent and a path that would have re-entered resolves at the last leaf before the cycle with its remaining segments unconsumed; that absence is load-bearing rather than incidental. An input type no argument reaches has no occurrence row to descend, so a dotted head there is UNREACHED_INPUT_TYPE and not a resolution, while a bare head at the same site resolves without one. And the input-field-rooted arm''s join is one-to-many in occurrence paths, one per use site reaching the input type, while its answer is one: the leaf is fixed by descending input-field types from the head, a definition-side fact independent of which argument reached the type, so the tied rows cannot disagree and the pick among them guards against writing the arm wrong rather than expressing a precedence. The grain stays the pair''s own, ordinal intact inside the use-site key, for the reason intent_argmapping_pair keeps it.';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.graph_name IS 'the owning graph''s partition, carried from the pair relation';
+SELECT DISTINCT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position,
+       h.argument_path, sg.position, sg.segment_name,
+       'INPUT_FIELD', lf.container_type_name, lf.field_name, CAST(NULL AS VARCHAR)
+  FROM headed h
+  JOIN intent_input_occurrence_path p
+    ON p.graph_name = h.graph_name AND p.root_type_name = h.type_name
+   AND p.root_field_name = h.field_name AND p.root_argument_name = h.head
+  JOIN intent_input_occurrence_path_step lf
+    ON lf.graph_name = p.graph_name AND lf.path = p.path AND lf.ordinal = p.depth
+  JOIN graphitron_argument_path_segment sg
+    ON sg.graph_name = h.graph_name AND sg.type_name = h.type_name
+   AND sg.field_name = h.field_name AND sg.argument_path = h.argument_path
+   AND sg.position = p.depth
+ WHERE h.head_kind = 'ARGUMENT' AND p.depth >= 1
+   AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
+                    WHERE o.graph_name = p.graph_name AND o.path = p.path
+                      AND NOT EXISTS (
+                        SELECT 1 FROM graphitron_argument_path_segment s2
+                         WHERE s2.graph_name = h.graph_name AND s2.type_name = h.type_name
+                           AND s2.field_name = h.field_name
+                           AND s2.argument_path = h.argument_path
+                           AND s2.position = o.ordinal
+                           AND s2.segment_name = o.field_name))
+ UNION ALL
+SELECT DISTINCT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position,
+       h.argument_path, sg.position, sg.segment_name,
+       'INPUT_FIELD', lf.container_type_name, lf.field_name, CAST(NULL AS VARCHAR)
+  FROM headed h
+  JOIN intent_input_occurrence_path_step an
+    ON an.graph_name = h.graph_name AND an.container_type_name = h.type_name
+   AND an.field_name = h.head
+  JOIN intent_input_occurrence_path_step lf
+    ON lf.graph_name = an.graph_name AND lf.path = an.path AND lf.ordinal > an.ordinal
+  JOIN graphitron_argument_path_segment sg
+    ON sg.graph_name = h.graph_name AND sg.type_name = h.type_name
+   AND sg.field_name = h.field_name AND sg.argument_path = h.argument_path
+   AND sg.position = lf.ordinal - an.ordinal
+ WHERE h.head_kind = 'INPUT_FIELD'
+   AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
+                    WHERE o.graph_name = an.graph_name AND o.path = an.path
+                      AND o.ordinal > an.ordinal AND o.ordinal <= lf.ordinal
+                      AND NOT EXISTS (
+                        SELECT 1 FROM graphitron_argument_path_segment s2
+                         WHERE s2.graph_name = h.graph_name AND s2.type_name = h.type_name
+                           AND s2.field_name = h.field_name
+                           AND s2.argument_path = h.argument_path
+                           AND s2.position = o.ordinal - an.ordinal
+                           AND s2.segment_name = o.field_name));
+COMMENT ON VIEW intent_argmapping_segment_binding IS 'What each segment of an argMapping path binds to, one row per segment that names something reachable. The grain is the segment and not the path, which is the whole of the design: graphitron_argument_path_segment already says whether a segment exists at a position, so a position that has a segment and no row here means exactly one thing, it means it locally, and no verdict vocabulary is needed to say it. A path that stops halfway is therefore a prefix of rows rather than a stated silence, and the reader who wants to know where it stopped reads the last position that bound. One row per segment of every pair row of intent_argmapping_pair, at every site that spells an argMapping, which is what makes uniformity across @routine, @service and @condition structural rather than three call sites agreeing by discipline. A keying over intent_input_occurrence_path rather than a second walk of the input surface, joined through graphitron_argument_path_segment so neither the occurrence key nor the written path is ever split: the segment relation exists precisely so no reader has to, and a second decomposition here would be two spellings of one resolution that agree until one of them changes. The head is not always an argument, so position 0 has three arms, and which slots a head may name is the walk''s own rule read off the site: every argument of the field at a @routine, @service or output-field @condition, the pair''s own argument at an argument-site @condition, the pair''s own input field at an input-field @condition, and nothing at all at a path-step @condition, where no arm fires and the path binds nothing at any position. Positions below the head need no recursion, and that is what lets this be a view at all: every prefix of an occurrence path is its own row, so a segment at position j binds exactly when some occurrence path of depth j has every step matching the segment at the same ordinal, which is a join per position rather than a walk. The rows are prefix-dense by construction, since the prefix of a matching path matches too, so the bound positions of a pair are always 0 through some k with no hole; a reader may rely on that rather than checking for one. DISTINCT because the join is one-to-many in occurrence paths while the answer is one: two paths agreeing on the field names at ordinals 1 through j are descending the same input fields from the same root type, so their container types agree ordinal by ordinal and the tied rows cannot disagree. Two caveats the arms inherit. The occurrence expansion stops at a type already visited on the path, the classification walk''s own first-visit guard restated, so a cyclic re-entry contributes no step and a path that would have re-entered binds up to the last segment before the cycle and no further; that stop is load-bearing rather than incidental. And an input type no argument reaches has no occurrence row to descend, so a dotted input-field head binds at position 0 and nowhere below, which looks from here like any other path that stopped; the two are deliberately one fact at this grain, and a reader who needs them apart joins intent_input_occurrence_path_step to ask whether the head''s type is reached at all.';
+COMMENT ON COLUMN intent_argmapping_segment_binding.graph_name IS 'the owning graph''s partition, carried from the pair relation';
+COMMENT ON COLUMN intent_argmapping_segment_binding.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; with the use-site key, the position and the segment position this is the grain, and it is what a consumer switches on to know whether an emitter is wired for the answer';
+COMMENT ON COLUMN intent_argmapping_segment_binding.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; the coordinate a rejection about this pair names, and the key a reader joins that relation on to recover the arm''s own components';
+COMMENT ON COLUMN intent_argmapping_segment_binding.type_name IS 'the spelling site''s owning type, carried so the segment decomposition is one join away';
+COMMENT ON COLUMN intent_argmapping_segment_binding.field_name IS 'the spelling site''s field name within that type';
+COMMENT ON COLUMN intent_argmapping_segment_binding.position IS 'the pair''s 0-based position within its own argMapping list';
+COMMENT ON COLUMN intent_argmapping_segment_binding.argument_path IS 'the path as written, carried so a message can quote what the author wrote and so the segment rows are reachable without a second read of the pair';
+COMMENT ON COLUMN intent_argmapping_segment_binding.segment_position IS 'the bound segment''s 0-based position within the path, the same ordinal graphitron_argument_path_segment gives it. Position 0 is the head; the highest bound position of a pair is where the path stopped, and a segment existing one above it is a name that resolved to nothing';
+COMMENT ON COLUMN intent_argmapping_segment_binding.segment_name IS 'the segment as the author spelled it, carried beside what it bound so a reader never re-joins the segment relation to say which name this row is about';
+COMMENT ON COLUMN intent_argmapping_segment_binding.bound_kind IS 'ARGUMENT where the segment bound a field argument, which only position 0 can do and only at a site whose slots are arguments; INPUT_FIELD where it bound an input field, which is every position below the head and also position 0 at an input-field @condition. A closed two-value vocabulary, and the column saying which of the two @nodeId relations a reader joins to ask whether this binding carries one';
+COMMENT ON COLUMN intent_argmapping_segment_binding.bound_type_name IS 'the bound thing''s owning type: the argument''s own owning type on an ARGUMENT binding, the input object declaring the field on an INPUT_FIELD binding';
+COMMENT ON COLUMN intent_argmapping_segment_binding.bound_field_name IS 'the bound thing''s owning field on an ARGUMENT binding, and the input field itself on an INPUT_FIELD binding. With the columns around it this is the @nodeId relation''s own key, so a binding''s directive row and its source position are one join away';
+COMMENT ON COLUMN intent_argmapping_segment_binding.bound_argument_name IS 'the argument''s name on an ARGUMENT binding; NULL on an INPUT_FIELD binding, whose key needs no argument component';
+
+CREATE VIEW intent_argmapping_binding_leaf
+  (graph_name, site, use_site, type_name, field_name, position, argument_path,
+   segment_position, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
+   node_id_declared, node_type_ref, trailing_segments) AS
+SELECT b.graph_name, b.site, b.use_site, b.type_name, b.field_name, b.position, b.argument_path,
+       b.segment_position, b.bound_kind, b.bound_type_name, b.bound_field_name,
+       b.bound_argument_name,
+       CASE WHEN an.type_name IS NOT NULL OR fn.type_name IS NOT NULL THEN TRUE ELSE FALSE END,
+       COALESCE(an.node_type_ref, fn.node_type_ref),
+       CAST((SELECT COUNT(*) FROM graphitron_argument_path_segment t
+              WHERE t.graph_name = b.graph_name AND t.type_name = b.type_name
+                AND t.field_name = b.field_name AND t.argument_path = b.argument_path
+                AND t.position > b.segment_position) AS INT)
+  FROM intent_argmapping_segment_binding b
+  LEFT JOIN graphitron_argument_node_id an
+    ON b.bound_kind = 'ARGUMENT' AND an.graph_name = b.graph_name
+   AND an.type_name = b.bound_type_name AND an.field_name = b.bound_field_name
+   AND an.argument_name = b.bound_argument_name
+  LEFT JOIN graphitron_field_node_id fn
+    ON b.bound_kind = 'INPUT_FIELD' AND fn.graph_name = b.graph_name
+   AND fn.type_name = b.bound_type_name AND fn.field_name = b.bound_field_name
+ WHERE NOT EXISTS (SELECT 1 FROM intent_argmapping_segment_binding nx
+                    WHERE nx.graph_name = b.graph_name AND nx.site = b.site
+                      AND nx.use_site = b.use_site AND nx.position = b.position
+                      AND nx.segment_position = b.segment_position + 1);
+COMMENT ON VIEW intent_argmapping_binding_leaf IS 'The last thing an argMapping path bound, and whether that thing carries a @nodeId. A reduction over intent_argmapping_segment_binding and not a resolution of its own, which is what the leaf reading costs: the leaf is the bound segment with no bound successor, and this view exists so that the readers needing it (the key projection beside it, and the detections that reject a bare or unresolvable spelling) share one spelling of "no bound successor" rather than one each. Prefix-density upstream is what makes the definition sound: the bound positions of a pair are 0 through some k with no hole, so "no successor" identifies exactly one row per pair and the arity is one answer rather than a set. Absence means the path bound nothing at all, which at a path-step @condition is every path (the walk resolves there against an empty slot map) and at every other site is a head naming no slot the site has in scope. Both are rejections the walk already returns from ArgBindingMap.of before the store is written, so neither is this relation''s to restate; the row is absent here because there is no leaf, not because the fact is unavailable, and a reader wanting it joins intent_argmapping_pair against this relation to find the pairs with no leaf. The @nodeId reading is two columns and not a verdict, because three answers are wanted and a fork would collapse two of them: no directive at all is the ordinary binding, a directive with typeName: is the projectable case, and a directive without one is the bare spelling that cannot infer a node type at this position, there being no containing table to infer it from. Which of the two @nodeId relations answers follows from bound_kind, so an argument binding and an input-field binding are one row shape rather than two readings.';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.graph_name IS 'the owning graph''s partition, carried from the binding relation';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; with the use-site key and the position this is the grain, and it is what a consumer switches on to know whether an emitter is wired for the answer';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; the coordinate a rejection about this pair names, and the key a reader joins that relation on to recover the arm''s own components';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.type_name IS 'the spelling site''s owning type, carried so the segment decomposition is one join away';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.field_name IS 'the spelling site''s field name within that type';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.position IS 'the pair''s 0-based position within its own argMapping list';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.argument_path IS 'the path as written, carried so a message can quote what the author wrote and so the segment rows are reachable without a second read of the pair';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.disposition IS 'RESOLVE when the row names a @nodeId-carrying leaf the path reached, SILENT when it names none and no consumer may guess one. A closed two-value fork, which is what a consumer switches on; the basis it came from is the next column. Determined by basis rather than independent of it, and carried anyway because the fork is the reading every consumer needs and re-deriving it from the wider vocabulary at each of them is how the two would drift';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.basis IS 'which rule produced this row, in a closed vocabulary of six. On the resolving side: BARE_HEAD (a single segment, so the leaf is the head slot itself), ARGUMENT_PATH (a dotted head naming an argument of the field), INPUT_FIELD_PATH (a dotted head naming the input field an input-field @condition sits on). On the silent side: NO_SLOT_IN_SCOPE (a path-step @condition, where the walk resolves against an empty slot map so nothing at that site resolves at all), UNREACHED_INPUT_TYPE (a dotted input-field head whose input type no argument reaches, so there is no occurrence path to descend), UNRESOLVED_PATH (a name that is not there: either a head naming no slot the site has in scope, or a segment below a non-@nodeId leaf naming no input field). The column that lets a test pin which rule fired rather than only that the leaf came out right';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_kind IS 'ARGUMENT where the leaf is the field argument the head names, INPUT_FIELD where it is an input field reached below one; NULL on every SILENT row. The two kinds the leaf columns below are keyed as, and the column saying which of the two @nodeId relations this row''s node reference came from';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_type_name IS 'the leaf''s owning type: the argument''s own owning type on an ARGUMENT leaf, the input object declaring the field on an INPUT_FIELD leaf. NULL on every SILENT row';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, and the input field itself on an INPUT_FIELD leaf. With the columns around it this is the @nodeId relation''s own key, so the leaf''s directive row and its source position are one join away. NULL on every SILENT row';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component, and NULL on every SILENT row';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written; NULL on a bare @nodeId, which at this position is a rejection rather than an inference, there being no containing table to infer a node type from. NULL on every SILENT row too, so a reader telling the two apart reads disposition first';
-COMMENT ON COLUMN intent_argmapping_binding_leaf.unconsumed_segments IS 'how many trailing segments named no input field below the leaf: 0 where the path consumed everything, 1 where one segment is left over, more where several are. A count rather than a flag, because the readings differ: zero is the bare binding a rejection closes, one is a key-column projection, and two or more is a typo or a nested form neither this relation nor its readers claim to resolve. Arithmetic over the segment rows against the occurrence row''s depth, never a parse. NULL on every SILENT row, no leaf having been reached to count below';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.segment_position IS 'where the path stopped: the 0-based position of the last segment that bound. 0 means only the head bound, which on a single-segment path is the whole path and on a dotted one is a name below the head that resolved to nothing. The position a reader adds one to in order to name the first segment that bound nothing';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.bound_kind IS 'ARGUMENT where the leaf is a field argument, INPUT_FIELD where it is an input field; carried from the binding relation, and what tells an emitter which slot the wire value is read out of';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.bound_type_name IS 'the leaf''s owning type, carried from the binding relation';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.bound_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.bound_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.node_id_declared IS 'whether the leaf carries a @nodeId at all. FALSE is the ordinary binding, where the wire value is the value and no decode is implied; TRUE says a decode is, and the column beside it says whether the author named what to decode against. Kept as its own column rather than read off a NULL node type, because the two NULLs mean opposite things and a reader collapsing them would treat the bare spelling as an ordinary binding, which is the silence the projection exists to close';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written; NULL where the directive is absent, and NULL where it is present without one, which at this position is a rejection rather than an inference, there being no containing table to infer a node type from. Read with node_id_declared, never alone';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.trailing_segments IS 'how many segments the path spells beyond the leaf: 0 where the path bound everything it spelled, 1 where one name is left over, more where several are. A count rather than a flag, because the readings differ: zero on a @nodeId leaf is the bare binding a rejection closes, one is a key-column projection, and two or more is a typo or a nested form neither this relation nor its readers claim to resolve. Counted over the segment rows above the leaf''s position rather than derived from a path length, so it is arithmetic over rows and never a parse';
 
 CREATE VIEW intent_resolved_node_key_projection
   (graph_name, site, use_site, type_name, field_name, position, argument_path,
-   leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
+   bound_kind, bound_type_name, bound_field_name, bound_argument_name,
    node_type_name, column_name, key_position, tier) AS
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
-       l.leaf_kind, l.leaf_type_name, l.leaf_field_name, l.leaf_argument_name,
+       l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, k.column_name, k.position, k.tier
   FROM intent_argmapping_binding_leaf l
   JOIN graphitron_argument_path_segment sg
     ON sg.graph_name = l.graph_name AND sg.type_name = l.type_name
    AND sg.field_name = l.field_name AND sg.argument_path = l.argument_path
+   AND sg.position = l.segment_position + 1
   JOIN intent_resolved_node_key_column k
     ON k.graph_name = l.graph_name AND k.type_name = l.node_type_ref
    AND UPPER(k.column_name) = UPPER(sg.segment_name)
- WHERE l.disposition = 'RESOLVE'
-   AND l.unconsumed_segments = 1
-   AND l.node_type_ref IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_path_segment nx
-                    WHERE nx.graph_name = sg.graph_name AND nx.type_name = sg.type_name
-                      AND nx.field_name = sg.field_name AND nx.argument_path = sg.argument_path
-                      AND nx.position = sg.position + 1);
-COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key: the pairs whose leaf carries a @nodeId(typeName:), whose path left exactly one segment unconsumed, and whose trailing segment names one of that node type''s resolved key columns. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the two relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_binding_leaf''s and the key list is intent_resolved_node_key_column''s, and this is only where the two meet. Exactly one unconsumed segment, never a minimum: two or more is a typo or a nested object form, and admitting it here would let a projection resolve off a path whose middle the author got wrong. The trailing segment is reached as the segment with no successor rather than by counting, so nothing arithmetic stands between the relation and the row it reads. Matching is case-insensitive, which is inherited rather than introduced: the spelled-table and column-match derivations both compare under UPPER() and the catalog resolution uses the same rule, so a projection spelled the generated way and one spelled the SQL way are one answer. The column comes out under the winning tier''s own spelling and not the author''s, because it is the decode''s key list the projection indexes into, and naming the column rather than a tuple position is what makes a transposed composite-key projection unconstructable. Absence means this pair is not a projection, and every way of arriving at that absence is a stated row next door: a leaf with nothing unconsumed is the bare form a rejection closes, a leaf with two or more unconsumed segments is the typo, a trailing segment matching no key column is the unknown column, and a bare @nodeId is the missing typeName. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
+ WHERE l.node_type_ref IS NOT NULL
+   AND l.trailing_segments = 1;
+COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key: the pairs whose leaf carries a @nodeId(typeName:), whose path spells exactly one segment beyond that leaf, and whose trailing segment names one of that node type''s resolved key columns. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the two relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_segment_binding''s, reduced to a leaf next door, and the key list is intent_resolved_node_key_column''s; this is only where the two meet. Exactly one trailing segment, never a minimum: two or more is a typo or a nested object form, and admitting it here would let a projection resolve off a path whose middle the author got wrong. The trailing segment is reached by position, one above the leaf''s own, which is the same arithmetic the count beside it does and not a second statement of it: the count says how many there are and the join says which one, and neither could be derived from the other without knowing the leaf''s position anyway. Matching is case-insensitive, which is inherited rather than introduced: the spelled-table and column-match derivations both compare under UPPER() and the catalog resolution uses the same rule, so a projection spelled the generated way and one spelled the SQL way are one answer. The column comes out under the winning tier''s own spelling and not the author''s, because it is the decode''s key list the projection indexes into, and naming the column rather than a tuple position is what makes a transposed composite-key projection unconstructable. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
 COMMENT ON COLUMN intent_resolved_node_key_projection.graph_name IS 'the owning graph''s partition, carried from both sides of the reduction, which agree on it by the join';
 COMMENT ON COLUMN intent_resolved_node_key_projection.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; the column a consumer reads to know whether an emitter is wired for this projection yet';
 COMMENT ON COLUMN intent_resolved_node_key_projection.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; with site and position the grain, and the key a planner joins the pair relation on to recover the application ordinal a command row needs';
@@ -5240,10 +5184,10 @@ COMMENT ON COLUMN intent_resolved_node_key_projection.type_name IS 'the spelling
 COMMENT ON COLUMN intent_resolved_node_key_projection.field_name IS 'the spelling site''s field name within that type';
 COMMENT ON COLUMN intent_resolved_node_key_projection.position IS 'the pair''s 0-based position within its own argMapping list; two parameters bound from one node id are two rows at two positions, which is what lets a composite key fill both';
 COMMENT ON COLUMN intent_resolved_node_key_projection.argument_path IS 'the path as written, carried so a message quotes the author''s own spelling rather than the resolution''s';
-COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_kind IS 'ARGUMENT where the decoded node id is a field argument, INPUT_FIELD where it is an input field reached below one; carried from the binding resolution, and what tells an emitter which slot the wire value is read out of';
-COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_type_name IS 'the leaf''s owning type, carried from the binding resolution';
-COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
-COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component';
+COMMENT ON COLUMN intent_resolved_node_key_projection.bound_kind IS 'ARGUMENT where the decoded node id is a field argument, INPUT_FIELD where it is an input field reached below one; carried from the binding resolution, and what tells an emitter which slot the wire value is read out of';
+COMMENT ON COLUMN intent_resolved_node_key_projection.bound_type_name IS 'the leaf''s owning type, carried from the binding resolution';
+COMMENT ON COLUMN intent_resolved_node_key_projection.bound_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
+COMMENT ON COLUMN intent_resolved_node_key_projection.bound_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component';
 COMMENT ON COLUMN intent_resolved_node_key_projection.node_type_name IS 'the node type the leaf''s @nodeId names, as written; what the wire id decodes against, and the type whose key list the column below belongs to';
 COMMENT ON COLUMN intent_resolved_node_key_projection.column_name IS 'the projected key column, spelled as the winning key-column tier spells it rather than as the author wrote it: the decode returns values against that tier''s list, so this is the spelling that lines up with it. The author''s own spelling is in the path, one segment join away';
 COMMENT ON COLUMN intent_resolved_node_key_projection.key_position IS 'the projected column''s 0-based position within the node key. Not what an emitter reads (it names the column) but what a reader checking a composite projection asks, and what shows two parameters bound from one id take two different positions of one key';

@@ -35,11 +35,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>It is a reduction over the two relations beside it and holds no rule of its own beyond the
  * meeting condition, so the cases here are mostly about where the meeting fails. Absence means this
- * pair is not a projection, and each way of arriving at absence is a stated row in one of those two
- * relations: nothing unconsumed is the bare form, two or more unconsumed is the typo, a trailing
- * segment matching no key column is the unknown column, and a bare {@code @nodeId} is the missing
- * {@code typeName:}. None of them is this relation's to report, which is what keeps it a population
- * an emitter can trust rather than a verdict it has to interpret.
+ * pair is not a projection, and each way of arriving at absence is a query over the two relations
+ * beside it: nothing trailing is the bare form, two or more trailing segments is the typo, a
+ * trailing segment matching no key column is the unknown column, a bare {@code @nodeId} is the
+ * missing {@code typeName:}, and no leaf at all is a path the walk rejects before the store is
+ * written. None of them is this relation's to report, which is what keeps it a population an emitter
+ * can trust rather than a verdict it has to interpret.
  */
 class ResolvedNodeKeyProjectionTest {
 
@@ -66,7 +67,7 @@ class ResolvedNodeKeyProjectionTest {
                 .isEqualTo("inventory_id");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)).isZero();
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER)).isEqualTo("SDL_PINNED");
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.LEAF_KIND))
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.BOUND_KIND))
                 .isEqualTo("INPUT_FIELD");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.USE_SITE))
                 .isEqualTo("Mutation.rentFilm#0");
@@ -87,8 +88,8 @@ class ResolvedNodeKeyProjectionTest {
             pair(dsl, "pInventoryId", "inventoryId.inventory_id");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.LEAF_KIND)).isEqualTo("ARGUMENT");
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.LEAF_ARGUMENT_NAME))
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.BOUND_KIND)).isEqualTo("ARGUMENT");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.BOUND_ARGUMENT_NAME))
                 .isEqualTo("inventoryId");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
                 .isEqualTo("inventory_id");
@@ -248,11 +249,12 @@ class ResolvedNodeKeyProjectionTest {
     }
 
     /**
-     * A path-step {@code @condition} resolves no leaf, so it reaches no projection whatever it
-     * spells. The silence travels through the binding relation rather than being re-decided here.
+     * A path whose head names no slot binds nothing, so it has no leaf and reaches no projection
+     * whatever the rest of it spells. The absence travels through the binding relation rather than
+     * being re-decided here.
      */
     @Test
-    void aSilentBindingHasNoRow() {
+    void aPathThatBindsNothingHasNoRow() {
         withInventoryNode(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "pInventoryId", "notAnArgument.inventory_id");

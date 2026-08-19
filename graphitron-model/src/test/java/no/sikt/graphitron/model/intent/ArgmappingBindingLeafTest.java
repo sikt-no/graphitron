@@ -25,36 +25,36 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argmapping_binding_leaf} returns: what an {@code argMapping} path binds to,
- * where the leaf it reaches carries a {@code @nodeId}, and how many trailing segments the descent
- * did not consume. The keying is over {@code intent_input_occurrence_path}, joined through the
- * segment decomposition, so no case here states a serialized key for the view to split.
+ * What {@code intent_argmapping_binding_leaf} returns: the last thing an {@code argMapping} path
+ * bound, whether that thing carries a {@code @nodeId}, and how many segments the path spells beyond
+ * it. A reduction over {@code intent_argmapping_segment_binding} rather than a resolution of its
+ * own, so the cases here are about the reduction and its three added columns; where the binding
+ * itself stops is the sibling suite's subject.
  *
- * <p>Absence is the relation's central claim rather than a gap in it, so several cases assert no
- * row. It means exactly one thing: the path consumed every segment and its leaf carries no
- * {@code @nodeId}, which is the ordinary binding. Reading those cases as untested behaviour gets the
- * relation backwards. The complement is a row on purpose: a path that left segments unconsumed on a
- * leaf carrying no {@code @nodeId} names something that is not there, and the walk is silent on it
- * for the same reason it is silent on the projection this item exists to enable.
+ * <p>Absence means the path bound nothing at all, which happens two ways: at a path-step
+ * {@code @condition}, where the walk resolves against an empty slot map, and at any other site where
+ * the head names no slot in scope. Both are rejections {@code ArgBindingMap.of} already returns
+ * before the store is written, so the absence here is the lack of a leaf and not a fact withheld.
  *
- * <p>Every silence has its own case, because the three of them are different facts sharing one
- * remedy-shaped shrug: a path-step site resolves nothing at all, an unreached input type has no
- * occurrence path to descend, and a head naming no slot is a typo.
+ * <p>An ordinary binding is a row, not a gap: {@code node_id_declared} false is what says no decode
+ * is implied. The three {@code @nodeId} readings are deliberately three answers across two columns,
+ * because a two-value fork would have to put the bare spelling on one side or the other and either
+ * choice makes it indistinguishable from something it is not.
  */
 class ArgmappingBindingLeafTest {
 
     private static final String GRAPH = "g";
 
-    // ===== The bare head, which is the silent-base64 shape =====
+    // ===== The leaf is where the binding stopped =====
 
     /**
-     * A bare head naming a {@code @nodeId} argument resolves to that argument with nothing
-     * unconsumed. This is the arm the whole silently-wrong case runs through: today such a binding
-     * hands a routine parameter the base64 wire id and nothing says a word, and a zero here is what
-     * a rejection keys on.
+     * A single-segment path leaves the head as the leaf with nothing trailing. This is the arm the
+     * silently-wrong case runs through: today such a binding hands a routine parameter the base64
+     * wire id and nothing says a word, and a declared node id with zero trailing segments is what a
+     * rejection keys on.
      */
     @Test
-    void aBareNodeIdArgumentHeadResolvesWithNothingUnconsumed() {
+    void aBareNodeIdArgumentHeadIsTheLeafWithNothingTrailing() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Mutation", "rentFilm");
             seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "ID");
@@ -62,25 +62,145 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("RESOLVE");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS)).isEqualTo("BARE_HEAD");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_KIND)).isEqualTo("ARGUMENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_ARGUMENT_NAME))
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isZero();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_KIND)).isEqualTo("ARGUMENT");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_ARGUMENT_NAME))
                 .isEqualTo("inventoryId");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isTrue();
             assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isZero();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isZero();
         });
     }
 
     /**
-     * A bare {@code @nodeId} with no {@code typeName:} resolves and carries a null reference, which
-     * is the arm the missing-{@code typeName:} rejection reads. It is a resolution rather than a
-     * silence because the leaf is known; what is missing is the node type it decodes against, and
-     * there is no containing table at this position to infer one from.
+     * The motivating case: a dotted head descends onto a {@code @nodeId} input field and one segment
+     * is left over. One trailing segment is the projection this item enables, and the count is what
+     * tells it from a typo.
      */
     @Test
-    void aBareNodeIdWithNoTypeNameResolvesWithANullReference() {
+    void aDottedPathOntoANodeIdInputFieldLeavesOneSegmentTrailing() {
+        withRentFilmInput(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(1);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_KIND)).isEqualTo("INPUT_FIELD");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_TYPE_NAME))
+                .isEqualTo("RentFilmInput");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME))
+                .isEqualTo("inventoryId");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_ARGUMENT_NAME)).isNull();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+                .isEqualTo("Inventory");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
+        });
+    }
+
+    /**
+     * The deepest bound position wins, not the first. Every prefix of an occurrence path is its own
+     * binding row, so the reduction has to be the row with no bound successor rather than any row
+     * that happens to bind.
+     */
+    @Test
+    void theLeafIsTheDeepestBoundPosition() {
+        withNestedInput(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "NestedInput", "inventoryId", "Inventory");
+            pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId",
+                "input.nested.inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(2);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_TYPE_NAME))
+                .isEqualTo("NestedInput");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME))
+                .isEqualTo("inventoryId");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
+        });
+    }
+
+    /**
+     * One leaf per pair even when the path descends several levels. The reduction identifies exactly
+     * one row only because the binding rows are prefix-dense, so a fixture whose descent has an
+     * intermediate level is where that would show up if it were not.
+     */
+    @Test
+    void aMultiLevelDescentReducesToOneLeaf() {
+        withNestedInput(dsl -> {
+            pair(dsl, "Mutation", "rentFilm", 0, "pNested", "input.nested.inventoryId");
+
+            assertThat(rows(dsl)).hasSize(1);
+            assertThat(only(dsl).get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(2);
+        });
+    }
+
+    // ===== Where the path bound nothing there is no leaf =====
+
+    /**
+     * A head naming no argument of the field binds nothing, so there is no leaf row. The walk
+     * rejects this spelling before the store is written; the absence here says there is no leaf, not
+     * that the mistake went unnoticed.
+     */
+    @Test
+    void aHeadNamingNoArgumentHasNoLeaf() {
+        withSeededStore(GRAPH, dsl -> {
+            seedField(dsl, GRAPH, "Mutation", "rentFilm");
+            seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput");
+            pair(dsl, "Mutation", "rentFilm", 0, "pNope", "notAnArgument");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A path-step {@code @condition} binds nothing at any position, so it has no leaf whatever it
+     * spells. Saying so keeps the emptiness a recorded fact rather than a suspected bug in the
+     * reduction, and it is why those sites can only ever defer.
+     */
+    @Test
+    void aPathStepConditionHasNoLeaf() {
+        withSeededStore(GRAPH, dsl -> {
+            seedField(dsl, GRAPH, "Film", "actors");
+            seedArgument(dsl, GRAPH, "Film", "actors", "since", "String");
+            seedArgumentNodeId(dsl, GRAPH, "Film", "actors", "since", "Inventory");
+            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
+                "p", "since");
+            seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "since");
+
+            assertThat(rows(dsl))
+                .as("a head that would bind anywhere else binds nothing here")
+                .isEmpty();
+        });
+    }
+
+    // ===== The three @nodeId readings =====
+
+    /**
+     * An ordinary binding is a row with no declared node id. This is what replaces an absence: the
+     * relation says what every path bound, and the column says whether a decode is implied, so a
+     * reader never has to tell "no decode" from "no answer" by the shape of an empty result.
+     */
+    @Test
+    void anOrdinaryBindingIsARowWithNoDeclaredNodeId() {
+        withRentFilmInput(dsl -> {
+            pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isFalse();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF)).isNull();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isZero();
+        });
+    }
+
+    /**
+     * A bare {@code @nodeId} with no {@code typeName:} declares a decode and names nothing to decode
+     * against, which is the arm the missing-{@code typeName:} rejection reads. The two columns
+     * disagreeing is the whole point: collapsing them would make this the same row as an ordinary
+     * binding, and an ordinary binding is exactly what it must not be taken for.
+     */
+    @Test
+    void aBareNodeIdDeclaresADecodeAndNamesNoType() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Mutation", "rentFilm");
             seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "ID");
@@ -88,72 +208,34 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("RESOLVE");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isTrue();
             assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF)).isNull();
         });
     }
 
     /**
-     * A bare head naming a plain scalar argument contributes no row. This is the absence the
-     * relation's meaning rests on: an ordinary binding needs nothing from this relation, so stating
-     * it here would make every argMapping in the graph a row and take the meaning away from the ones
-     * that matter.
+     * The {@code @nodeId} lookup follows {@code bound_kind}: an argument leaf reads the argument-grain
+     * relation and an input-field leaf the field-grain one. A directive on the input field of the
+     * same name must not answer for an argument leaf, which is what this pair of coordinates checks.
      */
     @Test
-    void aBareScalarArgumentHeadHasNoRow() {
-        withSeededStore(GRAPH, dsl -> {
-            seedField(dsl, GRAPH, "Mutation", "rentFilm");
-            seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "customerId", "Int");
-            pair(dsl, "Mutation", "rentFilm", 0, "pCustomerId", "customerId");
-
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
-
-    // ===== The dotted argument-rooted path, which is the motivating shape =====
-
-    /**
-     * The motivating case: a dotted head descends into an input object and lands on a
-     * {@code @nodeId} input field, leaving one trailing segment. One unconsumed segment is the
-     * projection this item enables, and the count is what tells it from a typo.
-     */
-    @Test
-    void aDottedPathOntoANodeIdInputFieldLeavesOneSegmentUnconsumed() {
+    void theNodeIdLookupFollowsTheBoundKind() {
         withRentFilmInput(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
-            pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId.inventory_id");
+            seedArgumentNodeId(dsl, GRAPH, "Mutation", "rentFilm", "input", "Inventory");
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Film");
+            pair(dsl, "Mutation", "rentFilm", 0, 0, "pDeep", "input.inventoryId");
+            pair(dsl, "Mutation", "rentFilm", 0, 1, "pHead", "input");
 
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("RESOLVE");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS)).isEqualTo("ARGUMENT_PATH");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_KIND)).isEqualTo("INPUT_FIELD");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_TYPE_NAME))
-                .isEqualTo("RentFilmInput");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_FIELD_NAME))
-                .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_ARGUMENT_NAME)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+            assertThat(rowAt(dsl, 0).orElseThrow().get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+                .as("the input-field leaf reads the field-grain directive")
+                .isEqualTo("Film");
+            assertThat(rowAt(dsl, 1).orElseThrow().get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+                .as("the argument leaf reads the argument-grain directive")
                 .isEqualTo("Inventory");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isEqualTo(1);
         });
     }
 
-    /**
-     * The same path with every segment consumed: the dotted binding of a {@code @nodeId} input field
-     * with no key column named. This is the bare form at depth, and the zero is what the rejection
-     * closing the silent hole keys on.
-     */
-    @Test
-    void aDottedPathOntoANodeIdInputFieldWithNoKeyColumnConsumesEverything() {
-        withRentFilmInput(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
-            pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId");
-
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS)).isEqualTo("ARGUMENT_PATH");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isZero();
-        });
-    }
+    // ===== Trailing segments are counted, not flagged =====
 
     /**
      * Two trailing segments must not read as a projection. One is this item's form; two is a typo or
@@ -168,169 +250,39 @@ class ArgmappingBindingLeafTest {
                 "input.inventoryId.inventory_id.nope");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("RESOLVE");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isEqualTo(2);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(1);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(2);
         });
     }
 
     /**
-     * A path whose leaf is an input object rather than a scalar consumes every segment and carries no
-     * {@code @nodeId}, so it has no row: the descent went as far as the author wrote and landed on an
-     * ordinary nested binding.
+     * A segment naming no input field below a leaf that carries no {@code @nodeId} counts as
+     * trailing. The count is over the segments the author spelled beyond where the path stopped, so
+     * a name that resolved to nothing is a trailing segment whether or not a decode was intended;
+     * that is what makes the count the same arithmetic in every case.
      */
     @Test
-    void aPathLandingOnAnInputObjectLeafHasNoRow() {
-        withNestedInput(dsl -> {
-            pair(dsl, "Mutation", "rentFilm", 0, "pNested", "input.nested");
-
-            assertThat(rows(dsl)).isEmpty();
-        });
-    }
-
-    /**
-     * A segment naming no input field below a leaf that carries no {@code @nodeId} is the typo the
-     * walk is silent on, and a stated row here rather than a second indistinguishable gap. The
-     * descent stops at the argument, so the leaf columns say nothing and the basis names the cause.
-     */
-    @Test
-    void aSegmentNamingNoInputFieldIsAStatedSilence() {
+    void aSegmentNamingNoInputFieldCountsAsTrailing() {
         withRentFilmInput(dsl -> {
             pair(dsl, "Mutation", "rentFilm", 0, "pNope", "input.nope");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("SILENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS)).isEqualTo("UNRESOLVED_PATH");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_KIND)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isNull();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION))
+                .as("the path stopped at the head")
+                .isZero();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_KIND)).isEqualTo("ARGUMENT");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isFalse();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
         });
     }
 
     /**
-     * A head naming no argument of the field is the same silence from the other end: nothing in
-     * scope answers, so no leaf is reached at all.
+     * An input type no argument reaches has no occurrence path to descend, so a dotted head there
+     * stops at the head and counts the rest as trailing. A bare head at the same coordinate binds
+     * regardless, which is the pair of facts this case states together.
      */
     @Test
-    void aHeadNamingNoArgumentIsSilent() {
-        withSeededStore(GRAPH, dsl -> {
-            seedField(dsl, GRAPH, "Mutation", "rentFilm");
-            seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput");
-            pair(dsl, "Mutation", "rentFilm", 0, "pNope", "notAnArgument");
-
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("SILENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS)).isEqualTo("UNRESOLVED_PATH");
-        });
-    }
-
-    /**
-     * A dotted path descending two levels resolves at its deepest matching prefix. Every prefix of
-     * an occurrence path is its own row, so the pick has to be the deepest and not the first.
-     */
-    @Test
-    void aTwoLevelDescentResolvesTheDeepestPrefix() {
-        withNestedInput(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "NestedInput", "inventoryId", "Inventory");
-            pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId",
-                "input.nested.inventoryId.inventory_id");
-
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_TYPE_NAME))
-                .isEqualTo("NestedInput");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_FIELD_NAME))
-                .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isEqualTo(1);
-        });
-    }
-
-    // ===== The head is not always an argument =====
-
-    /**
-     * At an argument-site {@code @condition} the only slot in scope is the argument the directive
-     * sits on, which is the walk's own rule. A head naming a different argument of the same field is
-     * therefore a typo here even though the same spelling resolves at a field-site condition.
-     */
-    @Test
-    void anArgumentSiteConditionResolvesOnlyItsOwnArgument() {
-        withSeededStore(GRAPH, dsl -> {
-            seedField(dsl, GRAPH, "Query", "films");
-            seedArgument(dsl, GRAPH, "Query", "films", "other", "ID");
-            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "byActor", "Actor");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "byActor", 0,
-                "p", "byActor");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "byActor");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "other", 0,
-                "p", "byActor");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "byActor");
-
-            assertThat(rowFor(dsl, "Query.films(byActor)")
-                .orElseThrow().get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS))
-                .isEqualTo("BARE_HEAD");
-            assertThat(rowFor(dsl, "Query.films(other)")
-                .orElseThrow().get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS))
-                .as("the sibling argument is not in scope at this condition")
-                .isEqualTo("UNRESOLVED_PATH");
-        });
-    }
-
-    /**
-     * At an input-field {@code @condition} the head names the input field the directive sits on, so a
-     * bare head there resolves against the field relation and needs no occurrence path at all. That
-     * independence is what lets this arm answer for an input type nothing reaches.
-     */
-    @Test
-    void anInputFieldConditionResolvesItsOwnFieldWithNoOccurrencePath() {
-        withSeededStore(GRAPH, dsl -> {
-            seedDeclaredType(dsl, GRAPH, "RentFilmInput", "INPUT_OBJECT");
-            seedField(dsl, GRAPH, "RentFilmInput", "inventoryId");
-            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "RentFilmInput", "inventoryId", 0,
-                "p", "inventoryId");
-            seedArgumentPathSegments(dsl, GRAPH, "RentFilmInput", "inventoryId", "inventoryId");
-
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SITE))
-                .isEqualTo("INPUT_FIELD_CONDITION");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS)).isEqualTo("BARE_HEAD");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_KIND)).isEqualTo("INPUT_FIELD");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isZero();
-        });
-    }
-
-    /**
-     * A dotted head at an input-field {@code @condition} anchors on a step whose container is the
-     * pair's own type, then walks from there. Anchoring on the container is what makes it a join
-     * rather than a name coincidence: matching the field name alone would accept a path ending in a
-     * field of that name whatever input type owned it.
-     */
-    @Test
-    void aDottedInputFieldConditionAnchorsOnItsOwnContainer() {
-        withNestedInput(dsl -> {
-            seedFieldNodeId(dsl, GRAPH, "NestedInput", "inventoryId", "Inventory");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "RentFilmInput", "nested", 0,
-                "p", "nested.inventoryId.inventory_id");
-            seedArgumentPathSegments(dsl, GRAPH, "RentFilmInput", "nested",
-                "nested.inventoryId.inventory_id");
-
-            var row = rowFor(dsl, "RentFilmInput.nested").orElseThrow();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SITE))
-                .isEqualTo("INPUT_FIELD_CONDITION");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS))
-                .isEqualTo("INPUT_FIELD_PATH");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_TYPE_NAME))
-                .isEqualTo("NestedInput");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.LEAF_FIELD_NAME))
-                .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)).isEqualTo(1);
-        });
-    }
-
-    /**
-     * An input type no argument reaches has no occurrence path to descend, so a dotted head there is
-     * a silence and not a resolution. A bare head at the same coordinate resolves regardless, which
-     * is the pair of facts this case states together.
-     */
-    @Test
-    void aDottedHeadOnAnUnreachedInputTypeIsSilent() {
+    void aDottedHeadOnAnUnreachedInputTypeStopsAtTheHead() {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "Orphan", "INPUT_OBJECT");
             seedField(dsl, GRAPH, "Orphan", "inner", "Inner", false);
@@ -342,64 +294,42 @@ class ArgmappingBindingLeafTest {
             seedArgumentPathSegments(dsl, GRAPH, "Orphan", "inner", "inner.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("SILENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS))
-                .isEqualTo("UNREACHED_INPUT_TYPE");
-        });
-    }
-
-    // ===== A path-step condition resolves nothing at all =====
-
-    /**
-     * A path-step {@code @condition} resolves against an empty slot map, so nothing at that site can
-     * resolve whatever it spells. Saying so keeps the emptiness a recorded fact rather than a
-     * suspected bug in the view, and it is why those sites can only ever defer.
-     */
-    @Test
-    void aPathStepConditionResolvesNoLeaf() {
-        withSeededStore(GRAPH, dsl -> {
-            seedField(dsl, GRAPH, "Film", "actors");
-            seedArgument(dsl, GRAPH, "Film", "actors", "since", "String");
-            seedArgumentNodeId(dsl, GRAPH, "Film", "actors", "since", "Inventory");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
-                "p", "since");
-            seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "since");
-
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.DISPOSITION)).isEqualTo("SILENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BASIS))
-                .as("a head that would resolve anywhere else resolves nothing here")
-                .isEqualTo("NO_SLOT_IN_SCOPE");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isZero();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME)).isEqualTo("inner");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED))
+                .as("the @nodeId below was never reached")
+                .isFalse();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
         });
     }
 
     // ===== The grain is the pair's own =====
 
     /**
-     * Two applications of one repeatable directive each resolve their own path. Collapsing them to
+     * Two applications of one repeatable directive each reduce to their own leaf. Collapsing them to
      * the field coordinate would answer for one and drop the other silently, which is the one move
      * the nearest sibling view makes that this one must not.
      */
     @Test
-    void twoRoutineApplicationsEachResolveTheirOwnPath() {
+    void twoRoutineApplicationsEachReduceToTheirOwnLeaf() {
         withRentFilmInput(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId.inventory_id");
             pair(dsl, "Mutation", "rentFilm", 1, "pInventoryId", "input.inventoryId");
 
-            var rows = rows(dsl);
-            assertThat(rows).hasSize(2);
-            assertThat(rows.stream()
-                .map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.UNCONSUMED_SEGMENTS)))
+            var all = rows(dsl);
+            assertThat(all).hasSize(2);
+            assertThat(all.stream()
+                .map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)))
                 .containsExactlyInAnyOrder(1, 0);
-            assertThat(rows.stream().map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.USE_SITE)))
+            assertThat(all.stream().map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.USE_SITE)))
                 .containsExactlyInAnyOrder("Mutation.rentFilm#0", "Mutation.rentFilm#1");
         });
     }
 
-    /** Two pairs of one application each resolve their own path, position being part of the grain. */
+    /** Two pairs of one application each reduce to their own leaf, position being part of the grain. */
     @Test
-    void twoPairsOfOneApplicationEachResolveTheirOwnPath() {
+    void twoPairsOfOneApplicationEachReduceToTheirOwnLeaf() {
         withRentFilmInput(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "Mutation", "rentFilm", 0, 0, "pInventoryId",
@@ -409,6 +339,33 @@ class ArgmappingBindingLeafTest {
             assertThat(rows(dsl)).hasSize(2);
             assertThat(rows(dsl).stream().map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.POSITION)))
                 .containsExactlyInAnyOrder(0, 1);
+        });
+    }
+
+    /**
+     * At an argument-site {@code @condition} the only slot in scope is the argument the directive
+     * sits on, so a head naming a sibling argument reduces to no leaf while the directive's own
+     * argument reduces to one. Site-dependent scope surviving the reduction is what keeps the leaf
+     * reading uniform across the eight sites.
+     */
+    @Test
+    void anArgumentSiteConditionReducesOnlyItsOwnArgument() {
+        withSeededStore(GRAPH, dsl -> {
+            seedField(dsl, GRAPH, "Query", "films");
+            seedArgument(dsl, GRAPH, "Query", "films", "other", "ID");
+            seedArgumentNodeId(dsl, GRAPH, "Query", "films", "byActor", "Actor");
+            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "byActor", 0,
+                "p", "byActor");
+            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "byActor");
+            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "other", 0,
+                "p", "byActor");
+
+            assertThat(rowFor(dsl, "Query.films(byActor)").orElseThrow()
+                .get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+                .isEqualTo("Actor");
+            assertThat(rowFor(dsl, "Query.films(other)"))
+                .as("the sibling argument is not in scope at this condition")
+                .isEmpty();
         });
     }
 
@@ -430,7 +387,7 @@ class ArgmappingBindingLeafTest {
         });
     }
 
-    /** {@link #withRentFilmInput} with a second level under it, for the deepest-prefix cases. */
+    /** {@link #withRentFilmInput} with a second level under it, for the deepest-position cases. */
     private static void withNestedInput(Consumer<DSLContext> body) {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "RentFilmInput", "INPUT_OBJECT");
@@ -481,6 +438,15 @@ class ArgmappingBindingLeafTest {
         assertThat(matching)
             .as("one row per use site and position")
             .hasSizeLessThanOrEqualTo(1);
+        return matching.isEmpty() ? Optional.empty() : Optional.of(matching.getFirst());
+    }
+
+    /** The one row at an argMapping-list position, for fixtures pairing two spellings. */
+    private static Optional<Record> rowAt(DSLContext dsl, int position) {
+        var matching = rows(dsl).stream()
+            .filter(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.POSITION) == position)
+            .toList();
+        assertThat(matching).as("one leaf per position").hasSizeLessThanOrEqualTo(1);
         return matching.isEmpty() ? Optional.empty() : Optional.of(matching.getFirst());
     }
 

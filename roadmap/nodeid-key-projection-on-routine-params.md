@@ -288,6 +288,13 @@ Two further caveats the view's comment must own:
   occurrence row's `depth`.
 
 **The arms are a fork plus a basis, and that shape is already shipped next door.**
+*Superseded in delivery. This subsection and the two after it prescribe a per-path grain with a
+`disposition`/`basis` fork; what shipped is a per-segment grain where absence at a position carries
+the same information without a vocabulary, and the fork is gone. The reasoning is in the stage-2
+note under "Delivery", and it is the note rather than this text that a stage-3 implementer should
+read. Left in place because the argument below is what the delivered shape had to answer, and
+because the arity and cyclic-guard readings it ends on survived unchanged.*
+
 `intent_field_column_table` answers the same kind of question this view does, which table a name
 written at a site resolves against, over `@reference` paths rather than `argMapping` paths. It
 carries two columns for it: a closed two-value `disposition` (`RESOLVE` / `SILENT`) that every
@@ -373,7 +380,9 @@ The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suf
   (`graphitron_routine`, `graphitron_service`, `graphitron_field_condition`,
   `graphitron_argument_condition`, `graphitron_field_reference_step`,
   `graphitron_argument_reference_step`, `graphitron_reference_for_step`) with a `site` literal per
-  arm, plus the unconsumed-segment count.
+  arm, plus the unconsumed-segment count. *Delivered as three relations rather than one: the union
+  is `intent_argmapping_pair`, the keying is `intent_argmapping_segment_binding` at segment grain,
+  and this name survives as the reduction to the last bound segment. See the stage-2 note.*
 * **`intent_resolved_node_key_projection`.** The reduction: a binding whose leaf carries `@nodeId`
   and whose single trailing segment names one of that node type's resolved key columns. Named
   `intent_resolved_*` because it is a reduction, per the same rule that names the key-column view.
@@ -700,7 +709,8 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   `tier` column, the pick partitioned by type so a tier's column order survives),
   `intent_argmapping_binding_leaf` (the four-arm keying over `intent_input_occurrence_path` joined
   through `graphitron_argument_path_segment`, no string surgery on either key, `site`
-  literal per union arm, `disposition` plus `basis`, unconsumed-segment count), and
+  literal per union arm, `disposition` plus `basis`, unconsumed-segment count; *delivered at segment
+  grain without the fork, per the stage-2 note*), and
   `intent_resolved_node_key_projection`, plus the detection views for the rejections including
   the site-keyed `deferred` arm. The key-column view reads `intent_resolved_type_binding` for its
   third tier, `intent_node_metadata_defect` for its middle one, and the binding for both, so neither
@@ -750,7 +760,9 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   the tree: a path-resolution view with silences, anchored case by case (twenty-three of them today,
   over that view and its sibling scope view). Two habits to take from
   it. It asserts on `disposition` and `basis` rather than only on the value resolved, so a case pins
-  *which rule fired* and not merely that the answer came out right. And it pins absence explicitly,
+  *which rule fired* and not merely that the answer came out right (*at segment grain the delivered
+  suites pin the bound positions instead, which is the same habit against a shape with no
+  vocabulary: where the list stops is which rule fired*). And it pins absence explicitly,
   in roughly ten of those cases asserting no row at the coordinate, which is how the boundary of the
   relation gets tested rather than assumed. It also asserts at most one row per coordinate in its
   read helper; the analogue here is per pair-row key, since this view keeps `ordinal` rather than
@@ -1036,18 +1048,49 @@ stage into a one-line note.
    call surface landed with R704 slice 7; the node metadata with R710, now Done. Stage 2 is the first
    stage and nothing gates its start: every relation it reads exists, and the binding-leaf view and
    the projection reduction join no catalog fact at all, so neither ever depended on either.
-2. **Resolution views.** *Shipped.* `intent_resolved_node_key_column`,
+2. **Resolution views.** *Shipped, at a different grain than this plan prescribed.*
+   `intent_resolved_node_key_column`, `intent_argmapping_segment_binding`,
    `intent_argmapping_binding_leaf` and `intent_resolved_node_key_projection`, plus
-   `intent_argmapping_pair`, a fourth relation this plan did not name: the seven pair relations
-   normalised into one shape so the eight-arm union is written once and a reader recovers an arm's
-   own key columns by joining rather than by parsing the use-site key. Four things came out
-   differently from this plan and are recorded in the commits: the tier pick is `DENSE_RANK` rather
-   than `ROW_NUMBER`, which is what "one tier wins for a type and its whole list is taken" actually
-   needs; the argument-rooted head is two head rules under one basis, since the slots in scope
-   differ between a field-site and an argument-site `@condition`; `UNRESOLVED_PATH` also covers a
-   segment naming no input field below a leaf carrying no `@nodeId`, which the plan's head-only
-   reading would have left as a second silent gap; and the use-site key carries its components
-   beside it for the reason `intent_argmapping_pair` exists.
+   `intent_argmapping_pair`. Two of the five this plan did not name. `intent_argmapping_pair`
+   normalises the seven pair relations into one shape, so the eight-arm union is written once and a
+   reader recovers an arm's own key columns by joining rather than by parsing the use-site key.
+   `intent_argmapping_segment_binding` is the grain correction, and it is the change worth reading
+   this note for.
+
+   This plan asked for one row per path, with a `disposition`/`basis` fork borrowed from
+   `intent_field_column_table` to say what a path that resolved nothing had done instead. Built that
+   way, the fork cost more than it bought. A path that stops halfway has no leaf, so the silent arms
+   had to null every leaf column, which discarded the descent the view had just computed and left a
+   downstream reader unable to say *where* the path stopped without re-deriving it. Worse, two
+   different facts shared one `basis` value, since a head naming no slot and a segment naming no
+   input field both came out as `UNRESOLVED_PATH` with an identical all-null payload.
+
+   The grain that removes all of it is the segment. `intent_argmapping_segment_binding` carries one
+   row per segment that binds something and no row for a segment that binds nothing, and because
+   `graphitron_argument_path_segment` already says whether a segment exists at a position, absence at
+   a position means exactly one thing and means it locally. `disposition`, `basis`,
+   `unconsumed_segments` and the null-padded arms all dissolve; `NO_SLOT_IN_SCOPE` and
+   `UNREACHED_INPUT_TYPE` stop being stored verdicts and become joins, which is where they belong,
+   the negatives being stage 3's to state. `intent_argmapping_binding_leaf` survives as a thin
+   reduction (the bound segment with no bound successor) so the projection and stage 3's detections
+   share one spelling of "no successor" rather than one each, and it carries `node_id_declared`
+   beside `node_type_ref` because three answers are wanted there and a fork would collapse two of
+   them. No recursion is needed for any of it: every prefix of an occurrence path is its own row, so
+   a segment binds exactly when some occurrence path of that depth matches segment for segment.
+
+   The tell that the plan's grain was wrong: under it, the trailing-segment fact was computed twice,
+   once as `unconsumed_segments` in the leaf view and again as a `NOT EXISTS` on the next segment
+   position in the projection. Two spellings of one fact is the thing this store's own rules forbid,
+   and at segment grain it is computed once.
+
+   Four smaller departures, recorded in the commits: the tier pick is `DENSE_RANK` rather than
+   `ROW_NUMBER`, which is what "one tier wins for a type and its whole list is taken" actually
+   needs, `ROW_NUMBER` having kept only position 0 of a composite key; the argument-rooted head is
+   two head rules rather than one, since the slots in scope differ between a field-site and an
+   argument-site `@condition`; the use-site key carries its components beside it for the reason
+   `intent_argmapping_pair` exists; and an ordinary binding is now a row with `node_id_declared`
+   false rather than an absence, which moves the meaning of absence from "nothing to decode here" to
+   "this path bound nothing at all".
 3. **Rejections.** The detection views, the typed product in `AuthoredClaimConflicts`' shape, and
    the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
    the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that
