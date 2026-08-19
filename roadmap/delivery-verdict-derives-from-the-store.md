@@ -192,7 +192,10 @@ Four instructions follow for whoever writes the DDL.
 * **The root arm is a transcription, not a new derivation.** Separate-fetch's `ROOT_OPERATION` arm is
   gate-for-gate what the `ROOT_COORDINATE` exemption needs, down to keying on `graphql_root_operation`
   rather than the three conventional names, and its comment records the renamed-root difference in
-  the same words the demand sibling uses. Copy the arm and inherit the residue; do not re-derive it.
+  the same words the demand sibling uses. Copy the arm; do not re-derive it. What does *not* transfer
+  with it is that difference's standing as a residue: it is one for the sibling and for demand, and
+  the negative-side section below establishes that delivery's absent-coordinate default collapses it
+  into agreement.
 * **The record-handed arm is a transcription too, and this is the instruction that changed latest.**
   That arm landed in `intent_field_separate_fetch` eighteen minutes after this item's previous
   revision, so the section below derives its population from first principles and arrives at the
@@ -259,10 +262,23 @@ they override are ever evaluated. The third is the hardcoded `false` this item w
   default coincides with those three exactly until a graph spells `schema { query: MyQuery }`. The
   demand sibling meets the same fork and pins the difference as a population, its view comment
   naming "a renamed root's fields" as "a known demanded-but-unregistered population the shadow
-  agreement pins"; this item inherits that fork, so the renamed root is a `DeliveryResidue` entry
-  below rather than a coincidence. No corpus example spells a `schema` block, so the two rules agree
-  everywhere the shadow test can currently look, which is the same condition under which the
-  `@discriminate` arm was narrowed at spec time rather than left for the test to find.
+  agreement pins". **This item inherits the fork and not the population, and the difference is
+  worth stating because it is what keeps a residue off the roster below.** Demand's verdict *is*
+  registration, so a coordinate demanded store-side and unclassified walk-side is a real
+  disagreement there. Delivery's is not: `DeliveryFactRelation.compute` indexes only the classified
+  `OutputField`s, `deliveryOf` answers `DeliveryFact.Inline.INSTANCE` for every coordinate outside
+  that index, and a renamed root is not merely unregistered but absent from the walk entirely,
+  along with all of its own fields, since the `RootType` mint gate is the three literal names. So
+  the walk reads `Inline` at every coordinate of a renamed root whatever markers it carries, and
+  the store's `ROOT_COORDINATE` exemption reads `INLINE` there too. The two sides agree, which is
+  checkable rather than argued: over `schema { query: MyQuery }` with
+  `MyQuery.splitFilms: [Film!]! @splitQuery` beside a marked child of a `@table` parent, the walk
+  indexes the second coordinate and reads `Batched(Authored)` on it while the first is absent from
+  `fields()` and reads `Inline`. Keep the arm keyed on the binding all the same, on the sibling's
+  stated ground that a rule view states the intended rule rather than the walk's dispatch; what
+  changes is only that nothing needs excusing. Note that the agreement holds for a stronger reason
+  than the corpus: no corpus example spells a `schema` block, so the fork is invisible to the shadow
+  test either way, but here it would stay invisible to a corpus that did spell one.
 * **The discriminated target, reason `DISCRIMINATED_TARGET`, at single cardinality only.** `mint`'s
   discriminated arm returns `Inline` at single cardinality and `Batched(PolymorphicFanIn)` at list
   or connection cardinality, ahead of both the `tableAnchoredChild` computation and the marker
@@ -596,7 +612,7 @@ and report the same literal. And the single-valued half disagrees only where a r
 all, which is a marker on the coordinate or a record-handed parent; with neither, both sides say
 `INLINE` and there is nothing to pin. So the shape that populates the residue is a single-valued
 `@table`-alone interface child under `@splitQuery`, and the corpus carries none: every `@table`
-interface in `ClassifiedCorpus` carries `@discriminate` beside it. This is therefore the third
+interface in `ClassifiedCorpus` carries `@discriminate` beside it. This is therefore the second
 residue owing a fixture, per the Implementation section.
 
 [cols="2,4,2"]
@@ -605,7 +621,7 @@ residue owing a fixture, per the Implementation section.
 
 | `ROOT_COORDINATE` (exemption)
 | the parent type is a root operation binding
-| `graphql_root_operation`, projected onto the type's fields; the binding, not the walk's three literal names, which is a stated residue rather than a match
+| `graphql_root_operation`, projected onto the type's fields; the binding, not the walk's three literal names. The difference is stated at the arm rather than carried as a residue, a renamed root's coordinates reading `INLINE` on both sides per the negative-side section
 
 | `SERVICE_CALL` (exemption)
 | the coordinate carries `@service`
@@ -756,13 +772,15 @@ set acquiring an enforcer that is not another switch.**
   may be empty by construction. An empty residue is not a harmless extra here, the shadow
   discipline below asserting each one non-empty on the shapes that create it. Note what is *not* on this list any more: the
   accessor-reached class-backed parent, which was a residue for as long as this item planned to copy
-  the producer-payload arm and stopped being one when the arm moved to `intent_type_backing_class`. The
-  renamed root is
-  next, per the root-exemption bullet above: the exemption arm reads the binding and the walk
-  reads the literal names, so a graph spelling `schema { query: MyQuery }` exempts store-side at
-  coordinates the walk never routes through `classifyRootField` at all. Carry it as a residue whose
-  removal criterion is the walk keying on the binding, rather than narrowing the arm to the three
-  names, which would transcribe the walk's defect into the store. And the `@table`-alone interface
+  the producer-payload arm and stopped being one when the arm moved to `intent_type_backing_class`.
+  The renamed root is next, and it comes off for the reason the root-exemption bullet establishes
+  rather than because the population is unreachable: the walk answers `Inline` at a coordinate it
+  never indexed, which is the same verdict the exemption reports, so the two sides agree at every
+  coordinate of a renamed root and there is nothing for a residue to excuse. Keeping the entry
+  anyway would put an exclusion in the record that no shape can exercise, which is a residue nobody
+  could tell had gone inert: the negative-space defect this item exists to kill, reproduced in its
+  own test plan. The fork itself is real and stays stated at the arm, where the binding keying is
+  the intended rule; what the fork does not produce here is a disagreement. And the `@table`-alone interface
   child is the last, per the polymorphic-mask paragraph in the arms section: the interface binds a
   table the rule arms read while `mint` routes it to the polymorphic arm and returns `Inline`, so a
   single-valued such child under a marker or a record-handed parent disagrees. Its removal criterion
@@ -771,20 +789,19 @@ set acquiring an enforcer that is not another switch.**
   answers; narrow the entry to single cardinality, the list half agreeing on `POLYMORPHIC_FAN_IN`
   through both sides' polymorphic arms. The joined-table
   participant is explicitly *not* a residue candidate, per the fan-in trace above.
-* **Every residue this item declares needs a shape that populates it, and three of them have none
+* **Every residue this item declares needs a shape that populates it, and two of them have none
   today.** The non-empty rule in the shadow bullet below is not satisfiable by a residue whose
   population the corpus cannot reach, so each such residue owes a fixture beside the shadow test in
-  the same place the `@tenantFanOut` and connection-child fixtures live. The renamed root is the
-  first: no corpus example spells a `schema` block, and `DemandShadowTest`'s
-  `renamedSubscriptionRootFieldsAreDemandedWhereTheWalkSkipsThem` is directly copyable, its
-  `schema { query: Query, subscription: Feed }` fixture asserting the pinned population non-empty in
-  exactly the shape this rule needs. The structurally declared connection wrapper is the second, and
+  the same place the `@tenantFanOut` and connection-child fixtures live. It is the same rule that
+  takes the renamed root off the roster above rather than giving it a third fixture here: a shape
+  that populates a residue is one where the two sides disagree, and a renamed root's coordinates
+  agree. The structurally declared connection wrapper is the first, and
   its fixture is the connection-child coordinate the corpus bullet below already names: authored
   against an SDL connection type rather than through `@asConnection`, it witnesses the residue rather
   than an arm, which is what that bullet means by the fixture being a deliverable. An earlier
   revision said this population was carried by its residue's non-empty assertion *instead of* a
   fixture, which cannot be true of the same assertion. The `@table`-alone interface child is the
-  third, and it is the cheapest of the three: an interface carrying `@table` and no `@discriminate`
+  second, and it is the cheaper of the two: an interface carrying `@table` and no `@discriminate`
   over `@table` participants, returned single-valued from a `@table` parent under `@splitQuery`.
   Nothing in `ClassifiedCorpus` is one, every `@table` interface there carrying `@discriminate`
   beside it, and nothing beside a shadow test is either; the shape is authorable and reaches
