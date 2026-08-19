@@ -74,9 +74,7 @@ class StoreFixtureGuardTest {
         ORACLE("a capture oracle, driving capture per view and per arm with the store's own "
             + "population as the subject"),
         PENDING_SEEDING("a relation's algebra, still reached through a crawler; its inputs are "
-            + "stateable as rows, so its home is the seeding harness"),
-        PENDING_MODULE_FLOOR("a module that has not yet taken the shared floor for the store's "
-            + "lifetime and its fixture file");
+            + "stateable as rows, so its home is the seeding harness");
 
         private final String reason;
 
@@ -112,12 +110,7 @@ class StoreFixtureGuardTest {
         // Pending: view algebra still reached through a capture.
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingShadowTest.java",
             Why.PENDING_SEEDING, "walk agreement end to end, so it stays whole and takes a capture "
-                + "handle rather than a seed"),
-
-        // Pending: the last downstream module's own floor.
-        new Exempt("graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/StoreFixture.java",
-            Why.PENDING_MODULE_FLOOR, "the strongest of the independent copies, and the one whose "
-                + "shapes the shared levels were sized against"));
+                + "handle rather than a seed"));
 
     @Test
     void noTestStandsAStoreUpOutsideAHarness() throws IOException {
@@ -214,8 +207,8 @@ class StoreFixtureGuardTest {
                 Run a build. BuiltStore leaves its facts in a store on disk that outlives the run.
 
               Your own module's reads over a populated store?
-                Put a fixture in your module over one of the above, the way graphitron-mcp's \
-            StoreFixture does, and keep the reader-side surface local to you.
+                Put a fixture in your module over one of the above, the way graphitron-mcp's and \
+            graphitron-lsp's StoreFixture do, and keep the reader-side surface local to you.
 
             If none of those expresses the shape you need, the finding is that a level is missing \
             one, so add it there. A private copy in your own test class is how the reactor arrived \

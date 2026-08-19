@@ -1,28 +1,19 @@
 package no.sikt.graphitron.lsp;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.BuiltStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.rewrite.FactWriters;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
-import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
-import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.capture.SourceWalker;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import org.jooq.DSLContext;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -31,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -44,15 +34,24 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * class list as input today, so a test hands over the same references the projection-era fixtures
  * declared and the store ends up holding what a scan of those classes would have produced.
  *
- * <p>Owns the store's lifetime so a test can query after capture. {@link #handle} is over the store's
- * own connection rather than a reader's: what a provider needs is a scoped query surface, and the
- * reader's transaction and graph resolution are {@code StoreAccess}'s own business, tested through
- * {@link #reader()}.
+ * <p>A local layer over the reactor's shared levels: every arm but one is a {@link CapturedStore}
+ * capture with this module's vocabulary in front of it, a generated jOOQ package instead of a
+ * {@link JooqCatalog} and a scanned census instead of a list the caller assembles, and
+ * {@link #ofBuild} is a {@link BuiltStore} run because a build is what its rows come from. The
+ * writers go through {@link FactWriters}. What stays local is what is local: the two generated
+ * packages, the placeholder SDL, the backing-class census, and the reads a provider makes.
+ *
+ * <p>{@link #handle} is over the store's own connection rather than a reader's: what a provider
+ * needs is a scoped query surface, and the reader's transaction and graph resolution are
+ * {@code StoreAccess}'s own business, tested through {@link #reader()}.
  */
 final class StoreFixture implements AutoCloseable {
 
-    /** The graph every fixture captures under, unless a test needs to name a second one. */
-    static final String GRAPH = "fixture";
+    /**
+     * The graph every fixture captures under, unless a test needs to name a second one, which is the
+     * capture level's own default rather than a second spelling of it.
+     */
+    static final String GRAPH = CapturedStore.GRAPH;
 
     /** The generated jOOQ model the {@code sql_} arms are captured from. */
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
@@ -73,16 +72,33 @@ final class StoreFixture implements AutoCloseable {
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
-    private final GraphitronModelStore store;
+    /**
+     * The capture level's handle, and null on {@link #ofBuild}, which came from the build level
+     * instead. Two fields rather than a flag: the further-capture arms are the capture level's and a
+     * build has no second graph to take, so what an arm can do afterwards is a matter of which field
+     * it filled.
+     */
+    private final CapturedStore captured;
+    private final BuiltStore built;
     private final String graphName;
     private final Path file;
     private final Path directory;
 
-    private StoreFixture(GraphitronModelStore store, String graphName, Path file, Path directory) {
-        this.store = store;
+    private StoreFixture(CapturedStore captured, Path directory) {
+        this(captured, null, captured.graphName(), captured.file(), directory);
+    }
+
+    private StoreFixture(CapturedStore captured, BuiltStore built, String graphName, Path file,
+                         Path directory) {
+        this.captured = captured;
+        this.built = built;
         this.graphName = graphName;
         this.file = file;
         this.directory = directory;
+    }
+
+    private DSLContext dsl() {
+        return captured != null ? captured.dsl() : built.dsl();
     }
 
     /** Captures {@code sdl} alone: the shape for arms answered by SDL-derived facts. */
@@ -124,13 +140,12 @@ final class StoreFixture implements AutoCloseable {
         return ofJooqPackage(directory, sdl, List.of(), MULTI_SCHEMA_JOOQ_PACKAGE);
     }
 
+    /** The catalog axis in this module's terms: the name of a generated package. */
     private static StoreFixture ofJooqPackage(Path directory, String sdl,
                                               List<CompletionData.ExternalReference> classpath,
                                               String jooqPackage) {
-        Path file = write(directory, GRAPH, sdl);
-        var store = GraphitronModelStore.open();
-        capture(store, file, directory, GRAPH, classpath, new JooqCatalog(jooqPackage));
-        return new StoreFixture(store, GRAPH, file, directory);
+        return new StoreFixture(CapturedStore.ofCatalog(directory, GRAPH, sdl,
+            new JooqCatalog(jooqPackage), classpath), directory);
     }
 
     /**
@@ -140,19 +155,13 @@ final class StoreFixture implements AutoCloseable {
      */
     static StoreFixture ofFiles(Path directory, String firstName, String firstSdl,
                                 String secondName, String secondSdl) {
-        Path first = write(directory, firstName, firstSdl);
-        Path second = write(directory, secondName, secondSdl);
-        var store = GraphitronModelStore.open();
-        capture(store, List.of(first, second), directory, GRAPH, List.of(), null);
-        return new StoreFixture(store, GRAPH, first, directory);
+        return new StoreFixture(
+            CapturedStore.ofFiles(directory, firstName, firstSdl, secondName, secondSdl), directory);
     }
 
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<CompletionData.ExternalReference> classpath) {
-        Path file = write(directory, graphName, sdl);
-        var store = GraphitronModelStore.open();
-        capture(store, file, directory, graphName, classpath);
-        return new StoreFixture(store, graphName, file, directory);
+        return new StoreFixture(CapturedStore.of(directory, graphName, sdl, classpath), directory);
     }
 
     /**
@@ -185,14 +194,7 @@ final class StoreFixture implements AutoCloseable {
      * cases about what a build said, where the document not reading clean is the subject.
      */
     static StoreFixture ofRefusedSchema(Path directory, String sdl) {
-        Path file = write(directory, GRAPH, sdl);
-        var store = GraphitronModelStore.open();
-        var parse = RewriteSchemaLoader.parsePerSource(List.of(SchemaSource.file(file)));
-        FactCapture.capture(store.dsl(), false, new FactCapture.GraphIdentity(GRAPH, directory),
-            FactCapture.SubjectConfig.none(), parse.registry(),
-            new SdlVerdicts(parse.failures(), parse.registryErrors()),
-            SchemaInputAttribution.build(List.of(SchemaInput.file(file))), null, List.of());
-        return new StoreFixture(store, GRAPH, file, directory);
+        return new StoreFixture(CapturedStore.ofRefusedSchema(directory, sdl), directory);
     }
 
     /**
@@ -203,24 +205,23 @@ final class StoreFixture implements AutoCloseable {
      * and in the order it runs them.
      */
     static StoreFixture ofBuild(Path directory, String sdl, LintConfig lintConfig) {
-        Path file = write(directory, GRAPH, sdl);
-        var ctx = new RewriteContext(
-            List.of(new SchemaInput(SchemaSource.file(file), Optional.empty(), Optional.empty())),
-            directory, GRAPH, directory, "fake.output", JOOQ_PACKAGE)
-            .withLintConfig(lintConfig)
-            .withStoreDirectory(directory);
-        var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-        var store = GraphitronModelStore.openAt(directory);
-        var identity = new FactCapture.GraphIdentity(GRAPH, directory);
-        new RejectionFacts(store.dsl(), identity).write(output.walkErrors());
-        new BuildWarningFacts(store.dsl(), identity).write(output.warnings());
-        return new StoreFixture(store, GRAPH, file, directory);
+        var built = BuiltStore.run(directory, GRAPH, sdl, lintConfig, JOOQ_PACKAGE, List.of());
+        var output = built.output();
+        FactWriters.rejectionFacts(built.dsl(), GRAPH, directory).write(output.walkErrors());
+        FactWriters.buildWarningFacts(built.dsl(), GRAPH, directory).write(output.warnings());
+        return new StoreFixture(null, built, built.graphName(), built.schemaFile(), directory);
     }
 
-    /** Captures a second graph, over a schema file of its own, into this same store. */
+    /**
+     * Captures a second graph, over a schema file of its own, into this same store. The directory is
+     * the one this fixture already captured into: the capture level keys a graph's file on its name
+     * inside that directory, so naming another one here is asking for something it will not do, and
+     * this says so rather than writing somewhere the store does not look.
+     */
     StoreFixture andGraph(Path directory, String otherGraph, String sdl,
                           List<CompletionData.ExternalReference> classpath) {
-        capture(store, write(directory, otherGraph, sdl), directory, otherGraph, classpath);
+        requireOwnDirectory(directory);
+        captured.andGraph(otherGraph, sdl, classpath);
         return this;
     }
 
@@ -229,28 +230,16 @@ final class StoreFixture implements AutoCloseable {
      * is the shared-file case: one document, two memberships, both true.
      */
     StoreFixture andGraphSharingTheFile(Path directory, String otherGraph) {
-        capture(store, file, directory, otherGraph, List.of());
+        requireOwnDirectory(directory);
+        captured.andGraphSharingTheFile(otherGraph);
         return this;
     }
 
-    private static void capture(GraphitronModelStore store, Path file, Path directory, String graphName,
-                                List<CompletionData.ExternalReference> classpath) {
-        capture(store, file, directory, graphName, classpath, null);
-    }
-
-    private static void capture(GraphitronModelStore store, Path file, Path directory, String graphName,
-                                List<CompletionData.ExternalReference> classpath, JooqCatalog jooq) {
-        capture(store, List.of(file), directory, graphName, classpath, jooq);
-    }
-
-    private static void capture(GraphitronModelStore store, List<Path> files, Path directory,
-                                String graphName, List<CompletionData.ExternalReference> classpath,
-                                JooqCatalog jooq) {
-        var sources = files.stream().map(SchemaSource::file).toList();
-        var registry = RewriteSchemaLoader.load(sources);
-        var attribution = SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList());
-        FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, attribution, jooq, classpath);
+    private void requireOwnDirectory(Path other) {
+        if (!directory.equals(other)) {
+            throw new IllegalArgumentException("this fixture captured into " + directory
+                + ", and a second graph lands there too, not in " + other);
+        }
     }
 
     /**
@@ -259,7 +248,7 @@ final class StoreFixture implements AutoCloseable {
      * naming strategy the generator might not be using.
      */
     String tableClassFqn(String tableName) {
-        return store.dsl().select(SQL_TABLE.CLASS_FQN)
+        return dsl().select(SQL_TABLE.CLASS_FQN)
             .from(SQL_TABLE)
             .where(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
             .fetchOptional(SQL_TABLE.CLASS_FQN)
@@ -272,7 +261,7 @@ final class StoreFixture implements AutoCloseable {
      * family to it must not hard-code a package layout the generator might not be using.
      */
     String keysClassFqn(String tableName) {
-        return store.dsl().select(SQL_SCHEMA.KEYS_CLASS_FQN)
+        return dsl().select(SQL_SCHEMA.KEYS_CLASS_FQN)
             .from(SQL_SCHEMA)
             .join(SQL_TABLE).on(SQL_TABLE.SOURCE_NAME.eq(SQL_SCHEMA.SOURCE_NAME)
                 .and(SQL_TABLE.TABLE_SCHEMA.eq(SQL_SCHEMA.TABLE_SCHEMA)))
@@ -309,17 +298,7 @@ final class StoreFixture implements AutoCloseable {
      */
     void refreshJavaSources(Path sourceRoot) {
         var roots = List.of(sourceRoot);
-        new JavaSourceFacts(store.dsl()).refresh(roots, new SourceWalker().walkFiles(roots));
-    }
-
-    private static Path write(Path directory, String graphName, String sdl) {
-        Path path = directory.resolve(graphName + ".graphqls");
-        try {
-            Files.writeString(path, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return path;
+        FactWriters.refreshJavaSources(dsl(), roots);
     }
 
     /**
@@ -329,8 +308,7 @@ final class StoreFixture implements AutoCloseable {
      * a schema is the build's subject and not this fixture's.
      */
     void withBuildWarnings(String graph, List<BuildWarning> warnings) {
-        new BuildWarningFacts(store.dsl(), new FactCapture.GraphIdentity(graph, directory))
-            .write(warnings);
+        FactWriters.buildWarningFacts(dsl(), graph, directory).write(warnings);
     }
 
     /** The same, under the graph this fixture captured. */
@@ -345,8 +323,7 @@ final class StoreFixture implements AutoCloseable {
      * subject and so is the caller's here.
      */
     void withValidationErrors(List<ValidationError> errors) {
-        new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity(graphName, directory))
-            .write(errors);
+        FactWriters.rejectionFacts(dsl(), graphName, directory).write(errors);
     }
 
     /**
@@ -360,7 +337,7 @@ final class StoreFixture implements AutoCloseable {
 
     /** A reader of this store, for the cases whose subject is the read boundary rather than a query. */
     StoreReader reader() {
-        return store.reader();
+        return captured != null ? captured.reader() : built.reader();
     }
 
     /** The schema file this fixture captured, spelled as the store's {@code source_name} spells it. */
@@ -370,12 +347,12 @@ final class StoreFixture implements AutoCloseable {
 
     /** The scoped query surface a provider takes. */
     StoreHandle handle() {
-        return new StoreHandle(store.dsl(), graphName);
+        return new StoreHandle(dsl(), graphName);
     }
 
     /** The same store seen as another graph, for asserting one graph cannot read another's rows. */
     StoreHandle handleFor(String otherGraph) {
-        return new StoreHandle(store.dsl(), otherGraph);
+        return new StoreHandle(dsl(), otherGraph);
     }
 
     /** A reference to a class the scan found inside a jar. */
@@ -477,6 +454,10 @@ final class StoreFixture implements AutoCloseable {
 
     @Override
     public void close() {
-        store.close();
+        if (captured != null) {
+            captured.close();
+        } else {
+            built.close();
+        }
     }
 }

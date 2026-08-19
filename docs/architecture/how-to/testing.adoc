@@ -163,7 +163,7 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 
 | Your own module's reads over a populated store
 | A fixture in your own module, over one of the above
-| Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `StoreBackedBuild` beside it is the same move over `BuiltStore`.
+| Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `StoreBackedBuild` beside it is the same move over `BuiltStore`. `graphitron-lsp`'s `StoreFixture` is the same shape spanning two levels in one type: a capture for every arm but the one whose rows only a build produces, which takes `BuiltStore` instead.
 |===
 
 Seeding is the method in exactly one module, the one whose subject is the DDL.

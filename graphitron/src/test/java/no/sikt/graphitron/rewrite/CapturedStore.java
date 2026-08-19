@@ -121,6 +121,24 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * Captures two documents into one graph, which is what a graph assembled from more than one
+     * schema file looks like: one parse over both, one capture, two source memberships.
+     * {@link #file()} is the first, so a case asks from that document and answers out of the other.
+     *
+     * <p>Two rather than a list, because two is what the shape claims: a graph whose answer lives in
+     * a file other than the one the question came from. A third document repeats the claim.
+     */
+    public static CapturedStore ofFiles(Path directory, String firstName, String firstSdl,
+                                        String secondName, String secondSdl) {
+        List<Path> files = List.of(write(directory, firstName, firstSdl),
+            write(directory, secondName, secondSdl));
+        var registry = RewriteSchemaLoader.load(files.stream().map(SchemaSource::file).toList());
+        var store = FactStores.inMemory();
+        captureFiles(store, files, directory, GRAPH, registry, null, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, null);
+    }
+
+    /**
      * Captures {@code sdl} against a generated jOOQ catalog: the shape for the arms whose answer
      * involves a table, a column or a key, none of which a schema alone declares.
      *
@@ -188,24 +206,41 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * A graph whose only source refused: {@code refusedSdl} is spelled so a stage objects to it, and
+     * nothing else was read. The shape for a case about what an editor shows in the file the author
+     * has just broken, where there is no surviving document to fall back on.
+     */
+    public static CapturedStore ofRefusedSchema(Path directory, String refusedSdl) {
+        return captureRefused(directory, List.of(write(directory, GRAPH, refusedSdl)), null);
+    }
+
+    /**
      * A graph whose newest read refused something: {@code sdl} parses and is transcribed, and
      * {@code refusedSdl} is spelled so a stage objects to it, whether the parser (a source it cannot
      * read) or the registry (a declaration it will not admit beside the first one's).
      *
-     * <p>The one arm that captures a verdict rather than a registry alone, which is what a case about
-     * a store whose last read failed has to have in it: the refusal row is what makes the read
-     * not-clean, and the surviving source's coordinates are what a reader goes on answering from while
-     * it is. Through {@link RewriteSchemaLoader#parsePerSource} rather than {@code load}, because a
-     * refusal is the subject here and {@code load}'s contract is to throw on one.
-     *
-     * <p>Fails on a {@code refusedSdl} nothing objects to, so an arm whose second source quietly
-     * started parsing cannot go on passing as a fixture for a refusal.
+     * <p>The pair with a catalog beside it, where the one-argument arm above is the graph that lost
+     * its only source. Both capture a verdict rather than a registry alone, which is what a case
+     * about a store whose last read failed has to have in it: the refusal row is what makes the read
+     * not-clean, and any surviving source's coordinates are what a reader goes on answering from
+     * while it is.
      */
     public static CapturedStore ofRefusedSchema(Path directory, String sdl, String refusedSdl,
                                                 JooqCatalog jooq) {
         Objects.requireNonNull(jooq, "jooq");
-        List<Path> files = List.of(write(directory, GRAPH, sdl),
-            write(directory, GRAPH + "-refused", refusedSdl));
+        return captureRefused(directory, List.of(write(directory, GRAPH, sdl),
+            write(directory, GRAPH + "-refused", refusedSdl)), jooq);
+    }
+
+    /**
+     * Reads {@code files} through {@link RewriteSchemaLoader#parsePerSource} rather than
+     * {@code load}, because a refusal is the subject here and {@code load}'s contract is to throw on
+     * one, and captures the verdict beside whatever did parse.
+     *
+     * <p>Fails when nothing objected, so an arm whose refused source quietly started parsing cannot
+     * go on passing as a fixture for a refusal.
+     */
+    private static CapturedStore captureRefused(Path directory, List<Path> files, JooqCatalog jooq) {
         var parse = RewriteSchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
         if (parse.failures().isEmpty() && parse.registryErrors().isEmpty()) {
             throw new AssertionError("nothing objected to " + files.getLast().getFileName()
@@ -214,8 +249,7 @@ public final class CapturedStore implements AutoCloseable {
         var store = FactStores.inMemory();
         FactCapture.capture(store.dsl(), false, graph(directory), FactCapture.SubjectConfig.none(),
             parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
-            SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList()),
-            jooq, List.of());
+            attributionOfFiles(files), jooq, List.of());
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), null);
     }
 
@@ -296,8 +330,14 @@ public final class CapturedStore implements AutoCloseable {
     private static void captureFile(GraphitronModelStore store, Path file, Path directory,
                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                     List<CompletionData.ExternalReference> census, boolean warm) {
+        captureFiles(store, List.of(file), directory, graphName, registry, jooq, census, warm);
+    }
+
+    private static void captureFiles(GraphitronModelStore store, List<Path> files, Path directory,
+                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                     List<CompletionData.ExternalReference> census, boolean warm) {
         FactCapture.capture(store.dsl(), warm, new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, attributionOfFile(file), jooq, census);
+            FactCapture.SubjectConfig.none(), registry, attributionOfFiles(files), jooq, census);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -340,6 +380,10 @@ public final class CapturedStore implements AutoCloseable {
 
     private static Map<String, SchemaInput> attributionOfFile(Path file) {
         return TestSchemaHelper.attribution(file);
+    }
+
+    private static Map<String, SchemaInput> attributionOfFiles(List<Path> files) {
+        return TestSchemaHelper.attribution(files.toArray(Path[]::new));
     }
 
     /**

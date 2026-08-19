@@ -21,10 +21,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The capture-level harness itself, over the arms whose whole point is a shape no single-fixture
- * caller exercises: a second graph in one store, two graphs over one document, a warm round standing
- * the previous one down, and a read that refused one of its sources. Each is a claim about what
- * capture does rather than about the helper, which is why they are worth pinning here rather than left
- * to the first consumer to discover.
+ * caller exercises: a second graph in one store, two graphs over one document, two documents in one
+ * graph, a warm round standing the previous one down, and a read that refused one of its sources or
+ * its only one. Each is a claim about what capture does rather than about the helper, which is why
+ * they are worth pinning here rather than left to the first consumer to discover.
  */
 @UnitTier
 class CapturedStoreTest {
@@ -101,6 +101,34 @@ class CapturedStoreTest {
         }
         try (var store = CapturedStore.of(tmp.resolve("bare"), SDL)) {
             assertThat(store.dsl().fetchCount(SQL_TABLE)).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("two documents in one graph are one parse, and the first is the graph's file")
+    void theTwoFileArmCapturesBothDocumentsUnderOneGraph(@TempDir Path tmp) {
+        try (var store = CapturedStore.ofFiles(tmp, "queries", SDL,
+                "nodes", "type Actor { name: String }\n")) {
+            assertThat(store.file())
+                .as("the first document is the one a case asks from")
+                .isEqualTo(tmp.resolve("queries.graphqls"));
+            assertThat(store.dsl().fetch(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.in("Film", "Actor"))
+                .map(r -> r.get(GRAPHQL_TYPE.TYPE_NAME)))
+                .as("and the second one's declarations are in the same graph, which is the point")
+                .containsExactlyInAnyOrder("Film", "Actor");
+        }
+    }
+
+    @Test
+    @DisplayName("the one-source refused arm records the verdict with no surviving source beside it")
+    void theRefusedArmAlsoCoversAGraphThatLostItsOnlySource(@TempDir Path tmp) {
+        try (var store = CapturedStore.ofRefusedSchema(tmp, "type Foo { x: }\n")) {
+            assertThat(store.dsl().fetchCount(GRAPHQL_SYNTAX_ERROR))
+                .as("the refusal is what this graph has instead of a transcription")
+                .isPositive();
+            assertThat(store.dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Foo")))
+                .as("nothing parsed, so nothing was transcribed")
+                .isZero();
         }
     }
 
