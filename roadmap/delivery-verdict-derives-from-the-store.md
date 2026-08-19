@@ -329,12 +329,17 @@ established), `graphql_field.is_list`, `graphql_type.kind`,
 `graphql_implements`, `graphql_union_member`, `graphql_root_operation` (the root exemption arm,
 keyed the way `intent_field_separate_fetch`'s `ROOT_OPERATION` arm already keys it, by the binding
 rather than by the conventional names, which is that arm's keying inherited from the demand
-sibling), and the structural connection recognition over `graphql_field` /
-`graphql_type` (the third predicate below, which is also where `graphitron_connection` turns out to
-be the wrong relation for the arm whose name it matches). All exist, all are keyed
+sibling). All exist, all are keyed
 at the coordinate or type grain the arms would join on, and the marker relations already carry the
-`graphql_field` FK. The `sql_` catalog family is deliberately absent; the second predicate below is
-where that is established.
+`graphql_field` FK.
+
+Two families are deliberately absent from that list, each established below. The `sql_` catalog
+family, per the second predicate. And the structural connection recognition over `graphql_field` /
+`graphql_type`: the third predicate establishes that `graphitron_connection` is the wrong relation
+for the arm whose name it matches, and the arms section then settles that no arm resolves a
+connection's element at all, so what that recognition would have served is the wrapper residue rather
+than a join. An arm's inputs are what the arms section's table lists, and the connection shape is not
+among them.
 
 Three predicates want attention before an arm is written, for three different reasons. One needs
 real care. A second looks like it does and does not, and the reason it does not is worth stating,
@@ -475,14 +480,18 @@ type has a `node` field) and carries no `graphitron_connection` row anywhere:
 So the marker's rows are the population the arm never sees, and the arm's population has no marker
 rows. Both directions of the inventory entry were backwards.
 
-Two consequences. The store-side gate for a connection target is the structural edges/node pattern,
-which the store already states once: `intent_field_exemption_rule`'s `CONNECTION_MACHINERY` arm
-assembles exactly this shape in SQL, so it is the arm to copy, the way the `RecordHandedParent`
-trigger copies `PRODUCER_PAYLOAD`. And resolving the element the verdict anchors on
-(`ConnectionType.elementTypeName`, the `edges` element's `node` type) is a further walk of
-`graphql_field` rather than a join on a marker, so this is the one predicate that is not a single
-hop. It is still fixed-depth and needs no closure, which is what the materialization question
-actually turns on; the closing section states it in the form that survives.
+Two consequences, and neither of them is an arm. Recognising the shape is expressible, and the store
+already states it once: `intent_field_exemption_rule`'s `CONNECTION_MACHINERY` arm assembles the
+structural edges/node pattern in SQL, so an arm that ever needs the recognition has a model to copy,
+the way the `RecordHandedParent` trigger copies `PRODUCER_PAYLOAD`. But *resolving the element the
+verdict anchors on* (`ConnectionType.elementTypeName`, the `edges` element's `node` type) is a
+further walk of `graphql_field` that no shipped relation publishes, and the arms section spends the
+whole shape on a residue rather than on a predicate: no arm resolves an element, the arms join the
+authored named type, and the structurally declared wrapper is one `DeliveryResidue` entry with the
+store gaining a connection-element relation as its removal criterion. So this section's finding is
+what saves the implementer from an arm keyed on `graphitron_connection`, not an instruction to build
+the other one. Every arm the table declares is a single hop, which is what the materialization
+question turns on; the closing section states it in the form that survives.
 
 ### The arms, once
 
@@ -979,11 +988,12 @@ reason rather than by copying a file layout.
 a cyclic type graph. Every arm in `mint` reads its own coordinate's markers, that coordinate's target
 type, and that type's participants or bound table, so nothing recurses and no arm needs a closure.
 The joined-table anti-join was the one candidate exception, and the fan-in trace above removes it:
-no arm reaches the `sql_` family. The connection predicate is the one that is not a single hop,
-walking `graphql_field` from the connection type through its edge to the node's type, and it does not
-change the answer, because what a view cannot state is a closure of unbounded depth rather than a
-join of more than one. That walk is fixed-depth by the shape's definition, so a plain view holds
-unconditionally.
+no arm reaches the `sql_` family. The connection element walk was the other, and the arms section
+removes it too, by settling that no arm resolves an element and the wrapper is a residue. So every
+arm the table declares is a single hop and the answer holds by a wider margin than the question
+assumed. It would have held either way: what a view cannot state is a closure of unbounded depth
+rather than a join of more than one, and that walk is fixed-depth by the shape's definition, so the
+day the store gains a connection-element relation and the residue closes, a plain view still holds.
 
 **The `Authored` trigger becomes two rule literals, `SPLIT_QUERY` and `TENANT_FAN_OUT`.** The
 ground is that the vocabulary captures facts, not decisions. The two readings witness two different
