@@ -2288,16 +2288,18 @@ COMMENT ON COLUMN graphitron_field_synthesis.authored_type_sdl IS 'the type expr
 -- name here correct. "Catalog" stays the prose word for what the family is about; only the
 -- prefix carries the rule.
 CREATE TABLE sql_schema (
-  source_name    VARCHAR NOT NULL,
-  table_schema   VARCHAR NOT NULL,
-  keys_class_fqn VARCHAR,
+  source_name      VARCHAR NOT NULL,
+  table_schema     VARCHAR NOT NULL,
+  keys_class_fqn   VARCHAR,
+  tables_class_fqn VARCHAR,
   PRIMARY KEY (source_name, table_schema),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
-COMMENT ON TABLE sql_schema IS 'A schema exists in the consumer''s catalog, and carries the generated artifacts that belong to the schema rather than to any one of its tables. It exists because the Keys class is per schema: hanging its name off sql_table would repeat one value across every table in the schema, which is the repeating group the projection era shipped. Written for every schema the catalog census touches, so a table''s schema is always present.';
+COMMENT ON TABLE sql_schema IS 'A schema exists in the consumer''s catalog, and carries the generated artifacts that belong to the schema rather than to any one of its tables. It exists because those classes are per schema: hanging a name off sql_table would repeat one value across every table in the schema, which is the repeating group the projection era shipped. Two such artifacts so far, the Keys class and the Tables class, and both are here for the same reason rather than the second being an afterthought: each is one class serving a whole schema, and each is reachable only by loading it off the codegen classpath. Written for every schema the catalog census touches, so a table''s schema is always present.';
 COMMENT ON COLUMN sql_schema.source_name IS 'the generated package the schema lives in; the partition this row belongs to and the key''s leading dimension, as on sql_table';
 COMMENT ON COLUMN sql_schema.table_schema IS 'SQL schema name; empty string when the generated model declares no schema for its tables, which is the same fallback sql_table applies';
 COMMENT ON COLUMN sql_schema.keys_class_fqn IS 'the fully qualified name of the generated Keys class holding this schema''s key constants, resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Keys". The guess and the fact diverge under multi-schema layouts, where each schema gets its own Keys class in its own package. Null when the generated model carries no Keys class for the schema, which is a fact: a schema with no keys has no constants to name. Goto-definition on @reference(key:) lands in this class, so it is a join key rather than a completion nicety.';
+COMMENT ON COLUMN sql_schema.tables_class_fqn IS 'the fully qualified name of the generated Tables class holding this schema''s table constants, on exactly the terms the column beside it states: resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Tables", the guess and the fact diverging under multi-schema layouts where each schema gets its own Tables class in its own package. Null when the generated model carries no Tables class for the schema, which is a fact rather than a gap. This is the column that lets a reader assemble a table reference without a live catalog: every other part of one is already here or on sql_table, and the constants class was the single piece reachable only through the codegen loader, so its absence was what kept table references a walk-side construction';
 
 CREATE TABLE sql_table (
   source_name  VARCHAR NOT NULL,

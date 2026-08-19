@@ -1453,9 +1453,51 @@ stage into a one-line note.
    disjoint by construction: unknown is the absence of a candidate, mismatch is a candidate with no
    projection, and neither re-tests the other's predicate.
 
+   **The plan tier must not read the walk, and one captured fact was missing for that.**
+   `KeyProjectionCommands` was written to join the store's projection rows against `GraphitronSchema`,
+   which its own javadoc described as a virtue: the store decides, the model locates. Under the
+   architecture rule that is the defect, not the design. A producer reads facts; the walked model is
+   not a fact source, and a plan-tier join against it is the walk surviving one tier further in.
+
+   Three of the four things it asked the model for are already captured: nodehood is
+   `intent_node_type`, the ordered key columns are `intent_resolved_node_key_column` joined to
+   `sql_column`, and a `TableRef`'s parts are on `sql_table` and its children. `HelperRef.Decode` is
+   the fourth and it leaves the row entirely rather than moving: `HelperRef` carries javapoet, the
+   projection's own emitted body calls `NodeIdEncoder.decodeValues(typeId, nodeId)` and never a
+   `decode<TypeName>`, and the encoder class is generator configuration rather than a captured fact,
+   so render mints it from the configuration it already holds. What the row carries instead is the
+   `typeId`, resolved over three tiers in the store's own precedence order (`graphitron_node.type_id`
+   as written wins outright, then well-formed `sql_node_metadata` anti-joined against
+   `intent_node_metadata_defect`, then the type name), which is the reconciliation `TypeBuilder`
+   already performs and the output-identity gate the re-source has to reproduce exactly.
+
+   One correction worth keeping, because it looked like evidence and was not. The render side does
+   mint a decode name independently of `HelperRef.Decode`, but that is a different helper family:
+   `FetchersHelperNames.decodeSingular` names the per-class `decode<Record>` wrappers, while
+   `NodeIdEncoder.decode<TypeName>` is minted once in `TypeBuilder` and read rather than re-minted by
+   the encoder generator and the composite decode registry. There is no duplicate minter to delete,
+   and `HelperRef.Decode` stays exactly where it is for those readers. Whether the encoder family
+   should eventually have one authority is real and belongs to R682's emitter half, where a command
+   row's output key is the natural home; a render-side name registry built here would be a third
+   mechanism mid-transition.
+
+   **The blocker, and the reason a capture change lands inside this item.** `TableRef.constantsClass`
+   is the schema's generated `Tables` class, and the store did not hold it. The walk reaches it by
+   loading the class off the codegen classpath, and `sql_schema.keys_class_fqn` had already settled
+   the general question for the sibling `Keys` class in exactly the terms that forbid the shortcut:
+   concatenating a configured package with the suffix is a guess that diverges under multi-schema
+   layouts, where each schema's class sits in that schema's own package. Deriving `Tables` from
+   `sql_table.class_fqn` by string surgery is that same guess, and the reactor carries a two-schema
+   fixture built to catch it. So `sql_schema` gains `tables_class_fqn` beside its sibling, written by
+   the same capture pass from the same census through a new `JooqCatalog.tablesClassFqn`, the
+   capture-facing twin of the private lookup the emit path already reads. It is not a widening of this
+   item's subject so much as its precondition: the constants class was the one part of a table
+   reference reachable only while the codegen loader is open, which is precisely what kept table
+   references a walk-side construction.
+
    Exit, restated for what is left: the projection emits and executes at every site whose emitter
-   reads it, `EMITTING_SITES` names exactly those, and a projection whose types disagree is a build
-   error naming both.
+   reads it, `EMITTING_SITES` names exactly those, a projection whose types disagree is a build error
+   naming both, and no producer of it reads the walked model.
 
 **Why this lands as one item rather than several.** Stages 3 and 5 are two halves of one
 author-facing change: stage 3 rejects a spelling and stage 5 makes the replacement spelling work.

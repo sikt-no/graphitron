@@ -1257,6 +1257,7 @@ class FactCaptureAgreementTest {
             var expectedTables = new LinkedHashMap<String, String>();
             var expectedRecords = new LinkedHashMap<String, String>();
             var expectedSchemas = new LinkedHashMap<String, String>();
+            var expectedTablesClasses = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
                 var table = entry.table();
                 var schema = table.getSchema();
@@ -1265,6 +1266,8 @@ class FactCaptureAgreementTest {
                 expectedRecords.put(schemaName + "." + table.getName(),
                     table.getRecordType().getName());
                 expectedSchemas.putIfAbsent(schemaName, jooq.keysClassFqn(schema).orElse(null));
+                expectedTablesClasses.putIfAbsent(schemaName,
+                    jooq.tablesClassFqn(schema).orElse(null));
             }
             assertThat(expectedTables).as("the catalog has tables, so this pins something").isNotEmpty();
             assertThat(expectedRecords.values())
@@ -1272,6 +1275,9 @@ class FactCaptureAgreementTest {
                 .anyMatch(name -> !name.equals(org.jooq.Record.class.getName()));
             assertThat(expectedSchemas.values())
                 .as("if no Keys class resolved, the classpath lookup is broken and this is vacuous")
+                .anyMatch(java.util.Objects::nonNull);
+            assertThat(expectedTablesClasses.values())
+                .as("same for Tables: a null everywhere would make the column pin nothing")
                 .anyMatch(java.util.Objects::nonNull);
 
             var capturedTables = store.dsl()
@@ -1298,6 +1304,46 @@ class FactCaptureAgreementTest {
             assertThat(capturedSchemas)
                 .as("one row per schema, not one per table")
                 .isEqualTo(expectedSchemas);
+
+            var capturedTablesClasses = store.dsl()
+                .select(SQL_SCHEMA.TABLE_SCHEMA, SQL_SCHEMA.TABLES_CLASS_FQN)
+                .from(SQL_SCHEMA)
+                .fetch()
+                .intoMap(r -> r.value1(), r -> r.value2());
+            assertThat(capturedTablesClasses)
+                .as("the Tables class, resolved off the classpath like its Keys sibling rather than"
+                    + " concatenated from a package, which is what a store-sourced table reference"
+                    + " needs and could not otherwise have")
+                .isEqualTo(expectedTablesClasses);
+        }
+    }
+
+    /**
+     * The multi-schema half of the same claim, and the one that would catch a concatenation. Each
+     * schema in that fixture lives in its own generated package, so the two schemas must report two
+     * different {@code Tables} classes; a capture that derived the name from a configured package
+     * would report one name twice and pass every single-schema assertion above.
+     */
+    @Test
+    @DisplayName("each schema's Tables class is its own, which is what a formula would get wrong")
+    void perSchemaTablesClassesAreDistinct(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+
+            var byPackage = store.dsl()
+                .select(SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLES_CLASS_FQN)
+                .from(SQL_SCHEMA)
+                .where(SQL_SCHEMA.TABLES_CLASS_FQN.isNotNull())
+                .fetch();
+            assertThat(byPackage).as("at least one schema resolved a Tables class").isNotEmpty();
+            assertThat(byPackage)
+                .as("a Tables class lives in its own schema's package, so the name is prefixed by"
+                    + " the source package rather than by a single configured one")
+                .allSatisfy(row -> assertThat(row.value2())
+                    .isEqualTo(row.value1() + ".Tables"));
         }
     }
 

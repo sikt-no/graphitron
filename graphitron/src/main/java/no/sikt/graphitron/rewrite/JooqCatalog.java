@@ -870,6 +870,23 @@ public class JooqCatalog {
     }
 
     /**
+     * The fully qualified name of the generated {@code Tables} class holding a schema's table
+     * constants, on exactly the terms {@link #keysClassFqn} states for {@code Keys}: resolved by
+     * loading the class off the codegen classpath, never by concatenating a configured package, the
+     * two diverging under multi-schema layouts where each schema's {@code Tables} sits in that
+     * schema's own package. Empty when the generated model carries none for the schema.
+     *
+     * <p>The capture-facing sibling of the private {@link #tablesClass} the emit path reads through
+     * {@code TableEntry.constantsClass()}. Both exist because a store-sourced reader cannot call the
+     * classpath: a {@code Tables} name is reachable only while the codegen loader is open, so it is
+     * captured or it is guessed later.
+     */
+    public Optional<String> tablesClassFqn(Schema schema) {
+        if (schema == null) return Optional.empty();
+        return tablesClass(schema).map(Class::getName);
+    }
+
+    /**
      * Return the columns of the named index on a table, in index-field order. Each column is
      * resolved via {@link #findColumn(Table, String)}. Returns empty when the index is not found
      * in the table or when any column cannot be resolved.

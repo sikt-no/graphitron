@@ -202,15 +202,17 @@ final class CatalogFactCapture {
 
     /**
      * One row per schema the census touches, carrying the schema-grain generated artifact: the
-     * {@code Keys} class name. Runs before the table walk because {@code sql_table} references this
-     * relation, and both draw their {@code (source, schema)} pairs from the same census, so the
-     * referenced row is present by construction rather than by detection.
+     * per-schema generated class names. Runs before the table walk because {@code sql_table}
+     * references this relation, and both draw their {@code (source, schema)} pairs from the same
+     * census, so the referenced row is present by construction rather than by detection.
      *
      * <p>The pairs deduplicate on the way in, which is the whole reason this is its own relation. One
-     * {@code Keys} class serves every table in its schema, so hanging its name off {@code sql_table}
-     * would repeat one value across every row; and the multi-schema layout that gives each schema its
-     * own package is exactly where concatenating a configured package with {@code ".Keys"} gets the
-     * name wrong.
+     * {@code Keys} class and one {@code Tables} class serve every table in their schema, so hanging
+     * either name off {@code sql_table} would repeat one value across every row; and the multi-schema
+     * layout that gives each schema its own package is exactly where concatenating a configured
+     * package with {@code ".Keys"} or {@code ".Tables"} gets the name wrong. Both are read here for
+     * the same reason: the codegen loader is open during capture and closed everywhere downstream, so
+     * a name reachable only through it is captured or it is guessed.
      */
     private static void captureSchemas(FactSink sink, JooqCatalog jooq) {
         var schemas = new LinkedHashMap<SchemaKey, Schema>();
@@ -229,6 +231,7 @@ final class CatalogFactCapture {
             row.setSourceName(key.source());
             row.setTableSchema(key.schemaName());
             row.setKeysClassFqn(jooq.keysClassFqn(entry.getValue()).orElse(null));
+            row.setTablesClassFqn(jooq.tablesClassFqn(entry.getValue()).orElse(null));
             sink.add(row);
         }
     }
