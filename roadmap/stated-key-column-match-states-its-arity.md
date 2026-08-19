@@ -131,13 +131,27 @@ statement of it belongs in the view comment; it is the load-bearing half of the 
 justification. It exposes no `_upper` column either, so the rule that a derived view never forwards a
 fold holds.
 
-What earns the relation is not this one consumer, which would be the sanctioned CTE case. It is that
-the entry-to-column resolution is already spelled twice and forwarded a third time: the defect view's
-`NOT EXISTS`, `JooqCatalog.findColumn`, and `intent_resolved_node_key_column.column_name`, whose comment
-explicitly declines to perform the match ("settled convention rather than this relation's rule") and
-forwards the stated spelling onward to `intent_resolved_node_key_projection` and an emitter that
-eventually needs a real column. Two spellings of one resolution agree exactly until one of them
-changes.
+What earns the relation, given that it will have one view reading it. An earlier revision argued two
+readers, R668's tier being the second; R668 has since settled and does not read it, so that argument
+is dead and is replaced here rather than quietly left standing. One reader is the shape this schema
+otherwise answers with a CTE, so the question is real.
+
+The load-bearing answer is that a CTE would state the arity where nobody can read it. This schema's
+rule for an ambiguity is not that a count exists but that the witnesses are rows;
+`intent_name_matched_key_pair.unmatched_columns` says so outright, a consumer explaining a refusal
+reading the rows behind a number above it, and `intent_bound_table` offering every candidate to an
+editor is the same rule. A `KEY_COLUMN_CASE_AMBIGUOUS` row says a table is malformed and says nothing
+about which columns collided, which is the question anyone who hits it asks first. Shipping a verdict
+whose witnesses are sealed inside the view that reached it would reproduce, one level up, exactly the
+defect this item exists to remove: an answer with nowhere to put what it knows.
+
+The resolution being spelled more than once is a second argument and no longer the main one. It stays
+spelled in Java by `JooqCatalog.findColumn`, which is R729's, and
+`intent_resolved_node_key_column.column_name` forwards the stated spelling onward to
+`intent_resolved_node_key_projection`, which R668 has landed, and to an emitter that eventually needs
+a real column; that column's comment explicitly declines to perform the match, "settled convention
+rather than this relation's rule". Lifting the defect view's own copy out takes the SQL count from two
+to one rather than to zero, which is worth stating plainly rather than claiming a sweep.
 
 *The gated arm.* `intent_node_metadata_defect`'s entry arm stops reading columns and reads the counts:
 an entry resolves when `exact_candidates = 1`, or when `exact_candidates = 0 AND candidates = 1`.
@@ -154,15 +168,15 @@ That value changes what well-formed metadata means, and that has to be stated ra
 message refinement, because well-formedness has consumers. `intent_resolved_node_key_column`'s
 `JOOQ_METADATA` tier gates on a table having no defect row at all, so a case-ambiguous entry stops that
 tier resolving and falls through rather than resolving against a column picked by field order. That is
-the payoff, and it needs no edit to that view. `intent_inferred_node_type` is on trunk as of this
-revision, R711 having landed it In Review, and stands on the same conjunction, so a case-ambiguous key
-column also stops the type being an inferred node. Both are the right answers and both are semantic
-changes this item owns.
+the payoff, and it needs no edit to that view. `intent_inferred_node_type` shipped while this item was
+in Spec and stands on the same conjunction, so a case-ambiguous key column also stops the type being
+an inferred node. Both are the right answers and both are semantic changes this item owns.
 
 Neither consumer needs editing, and the reason is worth stating so nobody goes looking. Both gate on a
 table having no defect row at all, with no filter on which value, so a new value reaches both by
-construction. R711 also deliberately accepts two spellings of that conjunction rather than extracting
-it, so the count of value-agnostic gates is already two and would keep growing. That is what makes the
+construction. The schema also deliberately accepts two spellings of that conjunction rather than
+extracting it, each view's comment naming the other as its sibling spelling, so the count of
+value-agnostic gates is already two and would keep growing. That is what makes the
 propagation worth a pinned case rather than an observation: a gate that inherits a new value silently
 is exactly the kind that nobody notices has changed.
 
@@ -224,7 +238,11 @@ than a sweep, and depends on nothing.
    `NodeMetadataDefectTest.anEntryResolvesCaseInsensitivelyThroughEitherName`. All three are rewritten
    in the same commit, and the honest replacement is that fidelity to the predecessor is evidence
    rather than a specification: the store diverges from `findColumn` on the collision case deliberately,
-   and the Java change below is what stops that being a divergence at all.
+   and the Java change below is what stops that being a divergence at all. On
+   `intent_resolved_node_key_column.column_name` the edit is that one sentence only. R668 appended a
+   paragraph to that comment explaining why the column exposes no fold, a three-tier pick having no
+   base relation to reach one through, and it is correct, load-bearing and none of this item's
+   business.
 ** The seven `sql_`-family `_upper` comments (`sql_table` two, `sql_column` two, `sql_constraint`
    three) say "Two values of one family are compared exactly". Replace *values of one family* with
    *catalog readings* in each. It is the same claim said accurately: those columns' comparisons are
@@ -319,9 +337,8 @@ than shipped as a broken generated class.
   `JOOQ_METADATA` tier, which is where the defect value earns its keep. Belongs in
   `ResolvedNodeKeyColumnTest` beside the tier's other cases rather than in this class.
 * The same for nodehood: a case-ambiguous key column takes the type out of `intent_inferred_node_type`,
-  beside that relation's own cases. That relation is on trunk as of this revision, so the case is
-  written rather than conditional. Should R711 be reworked out from under it before this item is
-  implemented, the implementer says so in the In Review hand-off rather than leaving the gap silent.
+  beside that relation's own cases. That relation is on trunk and the item that built it is Done, so
+  the case is written unconditionally.
 * The Java side, beside `JooqCatalogNodeIdMetadataTest`'s other `validateNodeIdMetadata` cases. Three,
   matching the store's: an ambiguous fold reports `Malformed` with the new reason rather than resolving;
   an exact candidate beside a folded one resolves to the exact column, which is where the Java and the
@@ -357,39 +374,42 @@ Deferring is a judgement about difficulty encountered, not a default. If it happ
 is filed as its own Backlog item with the design above carried across intact, and this item's body
 records what made it hard so the next session does not rediscover it.
 
-## Relationship to R668, which lands first
+## Relationship to R668, which has settled
 
-R668 is In Progress and shares this exact predicate on purpose. Its body states the constraint: the
-`JOOQ_METADATA` tier of `intent_resolved_node_key_column` has to resolve an entry through the same
-predicate as the arm that decides the entry is well-formed, "or the two can disagree about which
-entries resolved". Today that agreement is held by having one copy in the defect view and the tier
-reading nothing but its verdict, and R668 is deciding how the tier resolves.
+R668 has answered the question this section used to hold open, and the answer removes an obligation
+rather than adding one. Its earlier body stated the constraint that the `JOOQ_METADATA` tier of
+`intent_resolved_node_key_column` must resolve an entry through the same predicate as the arm deciding
+the entry is well-formed, "or the two can disagree about which entries resolved". Its landed stages
+hold that agreement the way it was always held: the tier reads nothing but the defect view's verdict
+and never resolves an entry itself.
 
-That makes the pairing relation the thing R668 wants rather than a complication for it. Instead of two
-copies of a folded predicate that have to be kept identical by review,
-`intent_stated_key_column_match` is one relation both read, and it carries the matched column's own
-spelling, which is what a tier projecting a resolved column needs and what the stated entry name is
-not. Whether R668's tier takes that spelling is R668's call; this item's job is to make it available
-and to stop the predicate existing twice.
+What R668 needed was a different match, a trailing `argMapping` segment against a resolved key column,
+and it closed that one without spelling a predicate twice either: the authored side is folded on its
+own base relation as `graphitron_argument_path_segment.segment_name_upper`, the key-column side is
+folded at the crossing in `intent_resolved_node_key_projection`, and the unknown-column defect is
+stated as the absence of a projection row rather than as a repeated predicate. R668's body records
+that it shipped a `column_name_upper` on `intent_resolved_node_key_column` and then reverted it, on
+the rule that a derived view never forwards a fold, and `intent_resolved_node_key_column.column_name`'s
+comment now carries the reason so nobody mints one again.
 
-Ordering, and the obligation it puts on this item: R668 lands first and is partway there. Its
-segment-grain DDL, `intent_argmapping_binding_leaf`, `intent_resolved_node_key_projection` and
-`intent_argmapping_projection_defect` are all on trunk already and all left this arm untouched, four
-`UPPER` calls still in place, so as of this revision nothing extra is owed. That can still change
-before R668 reaches Done. If
-it ends up shipping a second copy of the folded predicate, this item converts both readers onto the
-relation rather than leaving one behind; the implementer re-reads the arm as it then stands rather than
-trusting this paragraph.
+Two consequences for this item, one of them uncomfortable and stated rather than buried. R668 will not
+read `intent_stated_key_column_match`, so the two-readers argument this item first made for the
+relation is gone; what earns it now is argued above, on witnesses. And R668's landed DDL left this
+item's arm alone exactly as its body promises: the four `UPPER` calls are in place and
+`sql_node_key_column.column_name_upper` is unminted, both deliberately deferred here. The implementer
+still re-reads the arm as it then stands rather than trusting this paragraph, R668 not yet being Done.
 
 The `depends-on` field stays empty deliberately: this item is not blocked by R668, it just must not be
 written against a stale copy of the arm.
 
 ## Follow-ups not in scope
 
-* R711's parked extraction of the well-formed-stated-metadata conjunction into its own relation on
-  `sql_table`'s key. A different relation at a different grain from the pairing relation here, but a
-  reader will pair them, so this item's view comment points at it rather than leaving the adjacency to
-  look like an oversight.
+* The parked extraction of the well-formed-stated-metadata conjunction into its own relation on
+  `sql_table`'s key. Not filed as an item; it is recorded where it cannot rot, in the comments of the
+  two views that carry the conjunction twice, each calling it the follow-on neither performs
+  unilaterally. A different relation at a different grain from the pairing relation here, but a reader
+  will pair them, so this item's view comment points at it rather than leaving the adjacency to look
+  like an oversight.
 * A schema-wide census of case-colliding columns on `sql_column`, which would answer whether any real
   consumer catalog exhibits the pathology at all and would serve R729's per-site reachability
   question. Deliberately not added here: the pairing relation already carries the witnesses for this
