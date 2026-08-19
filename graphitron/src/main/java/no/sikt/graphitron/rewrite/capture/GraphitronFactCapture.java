@@ -13,6 +13,7 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 
+import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.rewrite.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.capture.SdlFactCapture.SiteRef;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;

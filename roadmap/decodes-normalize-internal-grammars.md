@@ -114,6 +114,17 @@ where the pipeline's is a fallback that has to be known about. Capture states wh
 lets the join say nothing matched, which is the same reason the store keeps a dotted
 `columnMapping` right side whole for its detection instead of repairing it.
 
+### Where the split itself lives
+
+Settled during implementation. The rule has two writers in two modules: the generator's capture,
+walking a real document, and the fact schema's own seeding harness, stating rows directly for the
+view tests that `roadmap/fact-store-test-harness-consolidation.md` moves down. That harness is
+upstream of the generator, so one implementation can only sit in `graphitron-model`, and a private
+copy on either side would be a second opinion about what a stored part means. What a part means is
+the schema's to say, so the split lives beside the columns it fills rather than beside the other
+capture-time grammars. What the namespace half *is* stays undecided there, as it must, and the
+column comments carry it.
+
 ### Columns: name the parse, not the meaning
 
 Each of the nine qualifiable references keeps its verbatim column and gains four:
@@ -235,7 +246,25 @@ The rule, stated over comparisons rather than over columns, because that is what
 > **A column either side of a case-insensitive comparison in a composition view carries a folded
 > companion.** Which family it belongs to does not enter into it.
 
-Read off the current view text, that is:
+**Settled during implementation, and it narrows that rule rather than restating it: a fold is minted
+only where an authored spelling meets a catalog name.** Which family a column belongs to does not
+decide whether it is *compared* case-insensitively, which is what the rule above is right about. It
+does decide whether the comparison earns a new column, because a fold exists to bridge two
+namespaces and a comparison inside one namespace is not bridging anything. So the rule has a second
+clause: a comparison between two values of one family mints nothing, and where such a comparison
+does want folded operands it reaches a fold some crossing already justifies, by joining the relation
+that owns the spelling on its key. A derived view never forwards a fold, and the cost of that is two
+primary-key lookups rather than a column threaded through every view between.
+
+Two comparisons are that shape and both are worked examples in the schema's own comments.
+`intent_name_matched_key_pair` pairs a function's column against a key column, both catalog values,
+and reaches the second one's fold through the foreign key `sql_constraint_column` already declares
+to `sql_column`. `intent_field_reference_discovery` compares two table names, both catalog values
+arriving through derived views, and joins `sql_table` on its key at each end. Neither mints a column;
+`sql_constraint_column` therefore carries no fold at all, which is why the write-path section below
+takes eleven relations rather than twelve.
+
+Read off the current view text, the crossings are:
 
 [cols="2,3"]
 |===
@@ -246,9 +275,6 @@ Read off the current view text, that is:
 
 | `sql_constraint.table_schema`, `sql_constraint.constraint_name`, `sql_constraint.jooq_name`
 | `intent_field_reference_step_hop`
-
-| `sql_constraint_column.column_name`, `sql_column.column_name`
-| `intent_field_reference_step_hop`'s name-match arm, and `intent_name_matched_key_pair`
 
 | `sql_column.jooq_name`, `sql_column.column_name`
 | `intent_column_match_claim`
@@ -302,11 +328,15 @@ verbatim value and the two parts) and two generated.
 ## The field-set grammar
 
 `graphitron_federation_key_field.field_path` becomes segments in a child relation keyed
-`(graph_name, type_name, ordinal, position, segment_position)`, or the existing row keeps its
-`position` and a sibling relation carries `(…, position, segment_position, segment_name)`. Either way
-the nesting the parser already computed is recorded rather than rendered, and a consumer asking "which
-leaf fields does this key select, and under what parent" answers by joining instead of by splitting a
-dotted string.
+`(graph_name, type_name, ordinal, position, segment_position)`. The nesting the parser already
+computed is recorded rather than rendered, and a consumer asking "which leaf fields does this key
+select, and under what parent" answers by joining instead of by splitting a dotted string.
+
+**The alternative, a sibling relation beside a surviving `field_path`, was weighed and dropped on one
+fact: nothing reads that column.** No view and no generator touches it; the only sites are the writer
+and the relation roster in `FactCaptureAgreementTest`. Keeping a rendered string with no reader to
+avoid deleting it would leave in place the flattening this item exists to remove, so the parent row
+keeps its `position` and nothing else, and the segments hang off it.
 
 `FieldSetGrammar.paths` changes shape to return the segmented form; its prefix deque already holds
 exactly what the new rows need, so this is surfacing state the parser has rather than parsing more.
@@ -446,7 +476,7 @@ any more is not merely unreferenced, it is unconstrainable.
   leaving them would make the schema's own documentation contradict its keys, which is the failure
   mode the comment discipline exists to prevent.
 
-## The write path states the columns it writes, for the twelve relations this touches
+## The write path states the columns it writes, for the relations this touches
 
 A generated column is a column no writer may name, and capture's writer names every column there is.
 That is not a fold problem, it is a write-path problem the fold is the first to hit, and
@@ -457,23 +487,27 @@ particular the one that matters here: **filtering `table.fields()` by jOOQ's rea
 fix.** It swaps one inference from the DDL for another and leaves the statement assembled at runtime,
 which is the thing being removed. So does moving a column list somewhere `flush()` consults.
 
-That item is 123 relations and a 4,702-line capture layer. This one needs twelve of them, and takes
+That item is 123 relations and a 4,702-line capture layer. This one needs eleven of them, and takes
 exactly those.
 
-### Which twelve, and how small that is
+### Which eleven, and how small that is
 
 Every relation this item puts a generated column on: `graphitron_table`, `graphitron_mutation`,
 `graphitron_routine`, `graphitron_field_reference_step`, `graphitron_argument_reference_step`,
 `graphitron_reference_for_step`, `graphitron_field_binding`, `graphql_field`, `sql_table`,
-`sql_constraint`, `sql_constraint_column` and `sql_column`. Fourteen `newRecord` sites across the
-twelve, eleven of them one site each and `graphql_field` three. The catalog four are the easiest of
-the set, because `JooqCatalog.ColumnFacts`, `IndexFacts` and `ForeignKeyFacts` are already plain
-records and `CatalogFactCapture` translates them field by field, so there the work is deleting a
-translation rather than inventing one.
+`sql_constraint` and `sql_column`. Thirteen `newRecord` sites across the eleven, ten of them one site
+each and `graphql_field` three. The catalog three are the easiest of the set, because
+`JooqCatalog.ColumnFacts`, `IndexFacts` and `ForeignKeyFacts` are already plain records and
+`CatalogFactCapture` translates them field by field, so there the work is deleting a translation
+rather than inventing one.
+
+`sql_constraint_column` was the twelfth until the fold rule narrowed. Its only case-insensitive
+comparison is against `sql_column` inside the catalog family, so it mints no fold, carries no
+computed column, and stays on the generic arm.
 
 ### The shape: written statements, dispatched in the order the sink already computes
 
-Each of the twelve gains a write function issuing one bulk statement that names its columns in the
+Each of the eleven gains a write function issuing one bulk statement that names its columns in the
 generated constants, so the column list is compile-checked and a column the writer has nothing for
 cannot enter it, now or later.
 
@@ -483,23 +517,23 @@ orders the write. What changes is only who renders the statement: where a relati
 function, `flush()` calls it with that relation's buffered rows instead of building an insert from
 `table.fields()`. Everything else keeps the generic arm.
 
-Dispatching rather than calling directly is load-bearing, not a hedge. The twelve interleave with
+Dispatching rather than calling directly is load-bearing, not a hedge. The eleven interleave with
 relations that stay generic on both sides: `graphql_field`'s parents `graphql_type` and
 `graphql_type_declaration` are outside the set, `sql_table`'s parents `sql_schema` and `store_source`
-are outside it, while `graphitron_field_binding`'s parent `graphql_field` and
-`sql_constraint_column`'s parents `sql_column` and `sql_constraint` are inside. A slice that wrote
+are outside it, while `graphitron_field_binding`'s parent `graphql_field` is inside, and
+`sql_constraint_column` is outside while both of its parents are in. A slice that wrote
 eagerly during the walk would insert a child before the sink flushed its parent. Ordering therefore
 has to span both arms while both exist, and the sort that already computes it from the declared
 foreign keys is the thing that spans them.
 
 This is a partial migration and says so. The end state is the sibling item's: every relation written,
-the caller ordering the calls, the generic arm deleted. Nothing here forecloses it, and the twelve
-are the first twelve of the 123 rather than a different mechanism.
+the caller ordering the calls, the generic arm deleted. Nothing here forecloses it, and the eleven
+are the first eleven of the 123 rather than a different mechanism.
 
 ### Two things the conversion settles rather than carries over
 
 **Conflict behaviour becomes stated.** `sharedFamily()` picks `onDuplicateKeyIgnore` by testing
-whether a relation's name starts with `jvm_` or `sql_`, so the four catalog relations here currently
+whether a relation's name starts with `jvm_` or `sql_`, so the catalog relations here currently
 get their conflict rule from a naming convention. Their written statements name it, and the generic
 arm keeps the prefix test for the relations still on it.
 
@@ -507,15 +541,21 @@ arm keeps the prefix test for the relations still on it.
 measured 1.8x (3.7 s to 2.1 s over a 207k-row census, per its own comment), and that margin comes
 from one prepared statement per relation rather than a render per row. Each write function issues one
 bulk statement, and the census load is measured before and after; `sql_column` and `graphql_field`
-are the two of the twelve big enough for a regression to show.
+are the two of the eleven big enough for a regression to show.
 
 ### The gate, scoped to what exists
 
 The sibling item's gate is what would have caught this collision at review rather than at h2's error
-message, and the scoped form is worth having now: for each relation with a write function, assert
-after a capture of the fixture corpus that the columns it names cover every `NOT NULL` column of the
-relation. It ranges over the twelve today and over each relation the sibling converts after, so it
-grows rather than being rewritten. One fact bounds the risk of getting a column list wrong meanwhile:
+message, and the scoped form is worth having now: for each relation with a write function, assert that the
+columns it names cover every column the relation declares and the database does not compute.
+
+**Settled during implementation: the gate reads no roster, not even of relations.** The form above
+needs each write function's column list exposed to be checked against, which is the one thing this
+item refuses to have. What it checks instead comes off the catalog: every relation carrying a
+computed column has a write function, and every write function round-trips a row whose every
+writable column holds a distinct value, so a dropped column comes back null and a swapped bind comes
+back swapped. It ranges over the eleven today and over each relation the sibling converts after, so
+it grows rather than being rewritten. One fact bounds the risk of getting a column list wrong meanwhile:
 the DDL declares no `DEFAULT` on any column, so a column omitted from an insert and a column bound
 null produce the same row, and no conversion here can change a captured fact through that difference.
 
@@ -536,9 +576,10 @@ null produce the same row, and no conversion here can change a captured fact thr
 - The write path: `FactCaptureAgreementTest` is the harness that already compares captured values
   against the catalog's and the scanner's own readings, so a mis-bound column in a converted
   statement fails there loudly, and it covers the wide relations that matter most here
-  (`sql_column`, `graphql_field`). Add to it the column-coverage gate above, and one case pinning
-  that a converted relation still writes under a generated column, which is the whole point and is
-  the case that fails today.
+  (`sql_column`, `graphql_field`). The column-coverage gate above sits beside it rather than inside
+  it, its subject being a writer over an open store rather than a capture; that a converted relation
+  writes at all under a computed column is what every case of that gate asserts, and is the case
+  that fails today.
 - Nothing tests that a folded column holds the upper-cased form of the column beside it. Generation
   is the invariant, h2 rejects an `INSERT` that names the column at all, and a test over it would be
   testing the database. This is a deliberate subtraction from an earlier draft, which needed such a
@@ -580,10 +621,20 @@ no column this item adds touches either.
 Two of the 30 `UPPER` do come off, but not by folding a base column, which is worth separating for
 the same reason. `intent_field_reference_discovery` compares
 `UPPER(sc.table_name) <> UPPER(bt.table_name)` where both sides are columns of *derived views*, not
-of `sql_` relations. Those come off only if the views underneath project the folded column alongside
-the unfolded one, which they should, on the same rule: a view that carries a spelling carries its
-fold. That is a propagation and not a new column, and it is the one part of the budget that is view
-work rather than schema work.
+of `sql_` relations.
+
+**Settled during implementation, against an earlier draft of this paragraph.** That draft had the
+views underneath project the folded column alongside the unfolded one, on the rule that a view
+carrying a spelling carries its fold. Traced, that is not one propagation: `intent_field_column_scope`
+draws from `intent_resolved_type_binding` and `intent_field_reference_step_target`, so six or seven
+views gain an output column, and the hop view's arriving table comes off
+`sql_referential_constraint`, which would then need folds of its own and become a further converted
+relation. The rule the schema adopts instead is the one stated above: a derived view forwards no
+fold, and a comparison wanting one joins the relation that owns the spelling on its key. Here that is
+`sql_table` at each end, two primary-key lookups, and no column minted anywhere. It is also the
+better order of work, this comparison being catalog against catalog, which
+`roadmap/exact-catalog-name-comparisons.md` argues should stop being folded at all: paying for a
+propagation to serve a comparison a sibling item may delete would be the wrong way round.
 
 **No build-time gate, because generation removes the thing a gate would police.** An earlier draft
 proposed a schema gate asserting that every folded `sql_` column has an `_upper` sibling, which was a

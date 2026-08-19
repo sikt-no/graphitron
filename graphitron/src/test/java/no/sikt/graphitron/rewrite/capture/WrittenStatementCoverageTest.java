@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.fail;
  * because the subject here is a statement's column list and not a relation's domains. Nothing else
  * about the schema is touched, and the rows never leave this store.
  */
-@PipelineTier
+@UnitTier
 class WrittenStatementCoverageTest {
 
     @Test

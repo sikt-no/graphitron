@@ -339,6 +339,53 @@ class ReferenceStepTargetTest {
         withCollidingKeySeed(dsl -> assertThat(spelled(dsl, "owner")).isEmpty());
     }
 
+    /**
+     * A spelling whose qualifier grammar wrote a period with one side empty resolves to nothing.
+     * The empty half is stored as the empty string rather than repaired, so the failure is the join
+     * finding no row; a rule treating a blank half as unqualified would have resolved the first of
+     * these as though the author had written {@code owner}, in a schema they did not name.
+     */
+    @Test
+    void aHalfEmptySpellingResolvesToNothing() {
+        withCollidingKeySeed(dsl -> {
+            seedStep(dsl, null, "owner.");
+            assertThat(spelled(dsl, "owner.")).isEmpty();
+        });
+        withCollidingKeySeed(dsl -> {
+            seedStep(dsl, null, ".owner");
+            assertThat(spelled(dsl, ".owner")).isEmpty();
+        });
+    }
+
+    /**
+     * Everything after the first period is the name half, so a two-period spelling names no table
+     * even though its first two segments would have. The partition stays a total function and the
+     * resolution declines, rather than the split deciding what a third segment might mean.
+     */
+    @Test
+    void aMultiPartSpellingResolvesToNothing() {
+        withCollidingKeySeed(dsl -> {
+            seedStep(dsl, null, "public.owner.x");
+            assertThat(spelled(dsl, "public.owner.x")).isEmpty();
+        });
+    }
+
+    /**
+     * The type-name fallback is a spelling like any other by the time resolution sees it, and it
+     * meets the catalog case-insensitively: {@code Owner} binds {@code owner}. Worth its own case
+     * because this is the one comparison where a GraphQL identifier stands in as a SQL one, so it is
+     * where a reader doubts whether the fold applies to the authored side as well as the catalog's.
+     */
+    @Test
+    void aTypeNameFallbackBindsItsTableAcrossCase() {
+        withCollidingKeySeed(dsl -> {
+            seedField(dsl, GRAPH, "Owner", "id");
+            seedTableBinding(dsl, GRAPH, "Owner", null);
+            assertThat(spelled(dsl, "Owner").map(Record2::value1))
+                .containsExactly("legacy", "public");
+        });
+    }
+
     // ===== Helpers =====
 
     private static final String GRAPH = "g";

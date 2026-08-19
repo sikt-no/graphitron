@@ -1,8 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 import org.junit.jupiter.api.DisplayName;
@@ -13,14 +12,11 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -33,12 +29,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that side of it. The two boundary cases pinning that distinction are the ones worth reading
  * first, since every other row of the table follows from them.
  *
- * <p>One case reaches past capture into the resolution, because the arrangement is only worth
- * anything if a half-empty reference joins nothing rather than degrading into an unqualified one.
- * That failure is meant to be visible in the stored fact and produced by the join coming up empty,
- * not by a rule somewhere deciding what a malformed value falls back to.
+ * <p>What a half-empty reference then resolves to is not asserted here, and deliberately: that is a
+ * view's algebra over stated rows, and it is pinned in the module that declares the view. What this
+ * class owes that one is the fact underneath it, which is that capture stores the empty half rather
+ * than repairing it.
  */
-@PipelineTier
+@UnitTier
 class QualifiedReferenceDecodeTest {
 
     /**
@@ -169,77 +165,6 @@ class QualifiedReferenceDecodeTest {
         }
     }
 
-    // ===== What an empty half does downstream =====
-
-    /**
-     * The point of storing the empty string rather than repairing it: the join finds nothing, so
-     * the failure is a non-match a reader can see the shape of. A fallback treating a blank half as
-     * unqualified would have resolved this spelling as though the author had written {@code film}.
-     */
-    @Test
-    @DisplayName("a half-empty reference resolves to no table rather than to the other half")
-    void aHalfEmptyReferenceResolvesToNoTable(@TempDir Path tmp) {
-        String spellings = """
-            type Query { a: Plain, b: Trailing, c: Leading, d: Deep }
-            type Plain    @table(name: "film")  { title: String }
-            type Trailing @table(name: "film.") { title: String }
-            type Leading  @table(name: ".film") { title: String }
-            type Deep     @table(name: "a.b.c") { title: String }
-            """;
-        withCatalog(tmp, spellings, dsl -> {
-            assertThat(dsl.fetchCount(INTENT_SPELLED_TABLE,
-                INTENT_SPELLED_TABLE.SPELLING.eq("film")))
-                .as("the fixture has to resolve the plain spelling, or the pins below say nothing")
-                .isPositive();
-            assertThat(dsl.fetchCount(INTENT_SPELLED_TABLE,
-                INTENT_SPELLED_TABLE.SPELLING.eq("film."))).isZero();
-            assertThat(dsl.fetchCount(INTENT_SPELLED_TABLE,
-                INTENT_SPELLED_TABLE.SPELLING.eq(".film"))).isZero();
-            assertThat(dsl.fetchCount(INTENT_SPELLED_TABLE,
-                INTENT_SPELLED_TABLE.SPELLING.eq("a.b.c"))).isZero();
-        });
-    }
-
-    // ===== The folds on the authored side =====
-
-    /**
-     * A type name is a GraphQL identifier and a table name is a SQL one, and where the author
-     * omitted {@code @table(name:)} the first stands in as a spelling of the second. Both sides of
-     * that comparison are folded columns now rather than one folded column and one per-row
-     * {@code UPPER}, so this pins behaviour the change had to preserve rather than behaviour it
-     * adds: it passed before the fold and has to pass after it.
-     */
-    @Test
-    @DisplayName("a type name binds its table across a difference in case")
-    void aTypeNameBindsItsTableAcrossCase(@TempDir Path tmp) {
-        String byTypeName = """
-            type Query { film: Film }
-            type Film @table { title: String }
-            """;
-        withCatalog(tmp, byTypeName, dsl ->
-            assertThat(dsl.select(INTENT_SPELLED_TABLE.TABLE_NAME)
-                .from(INTENT_SPELLED_TABLE)
-                .where(INTENT_SPELLED_TABLE.SPELLING.eq("Film"))
-                .fetch(INTENT_SPELLED_TABLE.TABLE_NAME))
-                .containsExactly("film"));
-    }
-
-    /** The same, on the other left side: an effective column name matched case-insensitively. */
-    @Test
-    @DisplayName("a bound name claims its column across a difference in case")
-    void aBoundNameClaimsItsColumnAcrossCase(@TempDir Path tmp) {
-        String byFieldName = """
-            type Query { film: Film }
-            type Film @table(name: "film") { heading: String @field(name: "TITLE") }
-            """;
-        withCatalog(tmp, byFieldName, dsl ->
-            assertThat(dsl.select(INTENT_COLUMN_MATCH_CLAIM.COLUMN_NAME)
-                .from(INTENT_COLUMN_MATCH_CLAIM)
-                .where(INTENT_COLUMN_MATCH_CLAIM.FIELD_NAME.eq("heading"))
-                .fetch(INTENT_COLUMN_MATCH_CLAIM.COLUMN_NAME))
-                .containsExactly("title"));
-    }
-
     /**
      * The excluded reference stays whole. A dotted {@code columnMapping} right side is an author
      * error the store holds so a detection can report it, so splitting it would delete the case it
@@ -265,16 +190,6 @@ class QualifiedReferenceDecodeTest {
     }
 
     // ===== Helpers =====
-
-    /** A capture with the fixture catalog beside it, for the cases whose subject is a resolution. */
-    private static void withCatalog(Path directory, String sdl,
-                                    java.util.function.Consumer<DSLContext> body) {
-        var ctx = testContext();
-        try (var store = CapturedStore.ofCatalog(directory, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()))) {
-            body.accept(store.dsl());
-        }
-    }
 
     /** One type's {@code @table} reference as its two halves, either of which may be null. */
     private static List<String> tableRefParts(DSLContext dsl, String typeName) {

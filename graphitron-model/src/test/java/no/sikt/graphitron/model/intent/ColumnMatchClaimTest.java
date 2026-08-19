@@ -117,6 +117,24 @@ class ColumnMatchClaimTest {
     }
 
     /**
+     * Both sides of the effective-name match are compared case-insensitively, and the authored side
+     * is a GraphQL identifier where the catalog side is a SQL one. Worth its own case because the
+     * fold on the authored side is the one a reader doubts: a {@code @field} spelling that differs
+     * from its column only in case still claims the column, and so does a field name standing in
+     * for one where no binding decoded.
+     */
+    @Test
+    void anEffectiveNameClaimsItsColumnAcrossCase() {
+        withFilm(dsl -> {
+            seedField(dsl, GRAPH, "Film", "heading");
+            seedFieldBinding(dsl, GRAPH, "Film", "heading", "TITLE");
+            seedField(dsl, GRAPH, "Film", "Rating");
+            assertThat(claims(dsl).map(r -> r.getFieldName() + " " + r.getColumnName()))
+                .containsExactlyInAnyOrder("heading title", "Rating rating");
+        });
+    }
+
+    /**
      * The two-tier match: the generated Java name is tried first, so a column whose jOOQ name equals
      * the sought name beats a different column whose SQL name does. A catalog generated from DDL has
      * every jOOQ name shadow its SQL name, so the precedence is only reachable from stated rows.

@@ -19,7 +19,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 
 /**
@@ -37,7 +36,7 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  *
  * <p>Each function issues one prepared statement bound once per row, which is the property the
  * sink's own batch has and the load's cost depends on. Conflict behaviour is stated per relation
- * rather than inferred from the relation's name prefix: the catalog four ignore a duplicate key,
+ * rather than inferred from the relation's name prefix: the catalog ones ignore a duplicate key,
  * because two builds crawling one jar concurrently both land, and the graph-keyed rest do not,
  * because there a duplicate is a capture bug the constraint must surface.
  *
@@ -86,7 +85,6 @@ final class FactWrites {
         writers.put(GRAPHQL_FIELD, FactWrites::graphqlField);
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
-        writers.put(SQL_CONSTRAINT_COLUMN, FactWrites::sqlConstraintColumn);
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
         return writers;
     }
@@ -409,27 +407,6 @@ final class FactWrites {
         batch.execute();
     }
 
-    private static void sqlConstraintColumn(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = SQL_CONSTRAINT_COLUMN;
-        var batch = dsl.batch((dsl.insertInto(t)
-                .columns(t.SOURCE_NAME,
-                         t.TABLE_SCHEMA,
-                         t.TABLE_NAME,
-                         t.CONSTRAINT_NAME,
-                         t.POSITION,
-                         t.COLUMN_NAME)
-                .values(markers(6)))
-                .onDuplicateKeyIgnore());
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.SOURCE_NAME),
-                               row.get(t.TABLE_SCHEMA),
-                               row.get(t.TABLE_NAME),
-                               row.get(t.CONSTRAINT_NAME),
-                               row.get(t.POSITION),
-                               row.get(t.COLUMN_NAME));
-        }
-        batch.execute();
-    }
 
     private static void sqlColumn(DSLContext dsl, List<TableRecord<?>> rows) {
         var t = SQL_COLUMN;

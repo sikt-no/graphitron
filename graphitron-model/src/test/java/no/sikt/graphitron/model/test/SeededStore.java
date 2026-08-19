@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -278,29 +279,11 @@ public final class SeededStore {
     }
 
     // ===== The directive applications =====
+    //
+    // A reference is seeded whole, as an author writes one, and its two parts are filled through
+    // the same grammar capture uses, so a seeded row and a captured one cannot disagree about what
+    // a part means. A case wanting a partition the split would not produce sets the columns itself.
 
-    /**
-     * The namespace half of a written reference: everything left of its first period, null where it
-     * carries none. A seeded reference arrives whole, as an author writes one, so the helpers below
-     * fill its two parts the way a real capture would; a case wanting a partition the split would
-     * not produce sets the columns itself.
-     */
-    private static String namespacePart(String written) {
-        if (written == null) {
-            return null;
-        }
-        int period = written.indexOf('.');
-        return period < 0 ? null : written.substring(0, period);
-    }
-
-    /** The name half of a written reference: everything right of its first period, or all of it. */
-    private static String namePart(String written) {
-        if (written == null) {
-            return null;
-        }
-        int period = written.indexOf('.');
-        return period < 0 ? written : written.substring(period + 1);
-    }
 
     /**
      * A {@code @table} application on a type: the reference as the author spelled it, unresolved.
@@ -318,8 +301,8 @@ public final class SeededStore {
             .set(GRAPHITRON_TABLE.SOURCE_LINE, 1)
             .set(GRAPHITRON_TABLE.SOURCE_COLUMN, 20)
             .set(GRAPHITRON_TABLE.TABLE_REF, tableRef)
-            .set(GRAPHITRON_TABLE.TABLE_REF_NAMESPACE_PART, namespacePart(tableRef))
-            .set(GRAPHITRON_TABLE.TABLE_REF_NAME_PART, namePart(tableRef))
+            .set(GRAPHITRON_TABLE.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_TABLE.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
             .execute();
     }
 
@@ -404,11 +387,11 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL, ordinal)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION, position)
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF, tableRef)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, namespacePart(tableRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAME_PART, namePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
             .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF, keyRef)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, namespacePart(keyRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAME_PART, namePart(keyRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
             .execute();
     }
 

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.grammar;
 
 /**
  * Splits a written reference on its first period, which is the whole of the qualifier grammar the
@@ -15,10 +15,14 @@ package no.sikt.graphitron.rewrite.capture;
  * <p>Null is not a qualifier question: an absent reference has no parts, so both are null. That
  * keeps a row's parts null exactly when its written value is.
  *
- * <p>What the namespace <em>means</em> is not this grammar's business and varies by what is being
- * named; the column comments in the store carry that. Here it is only the text left of the period.
+ * <p>It lives in the module that declares the columns rather than in the one that fills them,
+ * because two things fill them and they are in different modules: the generator's capture, walking
+ * a real document, and this module's own seeding harness, stating rows directly. A private copy on
+ * either side would be a second opinion about what a stored part means, and what a part means is
+ * this schema's to say. The column comments carry the rest of that meaning; what the namespace half
+ * <em>is</em> varies by what is being named and is deliberately not decided here.
  */
-final class QualifiedNameGrammar {
+public final class QualifiedNameGrammar {
 
     private QualifiedNameGrammar() {
     }
@@ -27,7 +31,7 @@ final class QualifiedNameGrammar {
      * The text left of {@code written}'s first period, null when it carries none, and null when
      * {@code written} is itself null.
      */
-    static String namespacePart(String written) {
+    public static String namespacePart(String written) {
         if (written == null) {
             return null;
         }
@@ -39,7 +43,7 @@ final class QualifiedNameGrammar {
      * The text right of {@code written}'s first period, or the whole value when it carries none;
      * null when {@code written} is itself null.
      */
-    static String namePart(String written) {
+    public static String namePart(String written) {
         if (written == null) {
             return null;
         }
