@@ -180,10 +180,13 @@ sealed interface JoinPathResult permits Lifted, Unlifted, Failed
     record Failed(Rejection rejection)
 ```
 
-`resolveFkJoinPath` answers `Unlifted` where it used to reject, `resolve` takes the `DirectFk` arm
-only on a `Lifted` result conjoined with a non-null key-column permutation, and everything else
-falls through to the `TranslatedFk` arm already there. The typed `Rejection` stops round-tripping
-through a string on the way.
+`resolveFkJoinPath` answers `Unlifted` where the lift walk used to reject, `resolve` takes the
+`DirectFk` arm only on a `Lifted` result conjoined with a non-null key-column permutation, and
+everything else falls through to the `TranslatedFk` arm already there. The typed `Rejection` stops
+round-tripping through a string on the way. Note which rejection converts: the *lift* failure
+becomes `Unlifted`, while a condition-join hop keeps answering `Failed`, for the emitter reason
+stated in the gate decision below. Three arms rather than two is what lets those two say different
+things through one result.
 
 Spiked with the nullable-slot shortcut rather than the sealed one (the discriminator is what the
 spike was testing), `film -> film_category -> category` (the same shape as
@@ -231,16 +234,33 @@ author now sees. Where the answer is "a worse message", that rail keeps a check 
 `DirectFk`'s javadoc states the multi-hop lift as a class invariant; it stays true, but the
 rejection it justifies moves, so the prose moves with it.
 
-**The two gates in `resolveFkJoinPath` are one predicate.** `CONDITION_STEP_MARKER` and
-`validateLift` both mean "the decoded key does not land on a tuple of the parent's own row", stated
-twice as two negations, and that is precisely the `DirectFk` precondition. R705 is queued to relax
-the first while this item relaxes the second. Relaxed independently, the discriminator ends up as
-two separately-maintained refusals whose agreement nothing binds, which is the implicit-coordination
-smell the principles name. Stated once and positively, the lift walk *returns a tuple or nothing*
-and a condition-join hop is simply a hop that cannot contribute one; both gates collapse into the
-sealed result above and both items land the same emitter route. The earlier note that this item and
-R705 "should be read together" understates it: they are one edit, and whichever lands first should
-land the sealed result for both.
+**The two gates in `resolveFkJoinPath` state one predicate but are not one edit.**
+`CONDITION_STEP_MARKER` and `validateLift` both mean "the decoded key does not land on a tuple of
+the parent's own row", stated twice as two negations, and that is precisely the `DirectFk`
+precondition. Stated once and positively, the lift walk *returns a tuple or nothing*, and a
+condition-join hop is simply a hop that cannot contribute one. So both gates express themselves
+through the sealed result above, and that much is this item's to land.
+
+What only one of them may do is *relax*, and the difference is the emitter rather than the
+classifier. The `EXISTS` emitter is hop-general over foreign-key hops and over nothing else:
+`ConditionCommands.narrowPath` narrows every step of a `RemoteColumnPredicate.joinPath` through
+`FkHop.narrow`, which throws on any hop whose `on()` is not `On.ColumnPairs`. Routing a condition
+hop to `TranslatedFk` today therefore replaces a stated author-facing rejection with an untyped
+generation-time throw, which is the regression class R57's own Done gate caught once already.
+Widening it is not a sealed-result edit: it is R705's reach-carrier work, which retires `FkHop`,
+`FkHop.narrow` and `narrowPath` outright.
+
+R705 does not ask for the relaxation either. Its rejection targets are
+`FieldBuilder.referenceFilterConditionJoinRejection` and the mirror in
+`GraphitronSchemaValidator.validateInputColumnBackedReferenceField`; its retired vocabulary names
+neither marker; and its non-goals keep an FK path required where a `@nodeId` leaf is involved,
+citing `NodeIdLeafResolver`'s FK-only-at-every-position rule as a standing fact.
+
+**Decision: stage 2 relaxes `validateLift` only.** A condition hop keeps answering `Failed` through
+the sealed result with the message it has today, so `CONDITION_STEP_MARKER` survives this item.
+This item lands before R705, which inherits the sealed result rather than co-authoring it; if that
+item later relaxes the condition hop, it does so with the emitter widening in its own scope, where
+the widening already lives. What the two items owe each other is the shape, not the schedule.
 
 ### Site 4a: the reverse hop needs a message and a page, not an emitter
 
@@ -257,8 +277,12 @@ searched direction reads it as not applying to them. Two small changes:
   searched direction is a different fact, and the message should say that a foreign key declared on
   the *target* side is reachable by naming it explicitly;
 * `docs/manual/how-to/multi-hop-nodeid-filter.adoc` stops asserting that a single direct foreign
-  key never produces a subquery. That page correction is R691 and this item should either absorb
-  it or depend on it rather than restate it.
+  key never produces a subquery. That page correction is R691, and this item **absorbs** it rather
+  than depending on it: stage 2 is already editing that page (the rejection section it retires
+  lives there) and stage 3 is already editing that page's other half, so leaving the third false
+  sentence to a separate item would mean three passes over one file to fix one page's account of
+  one mechanism. R691 is discarded at this item's Done gate, and its file stays as the redirect
+  until then.
 
 ### Sites 1 and 2: reject in v1, and let the projection arrive from R668
 
@@ -331,6 +355,14 @@ encode is the existing arm, and no private per-`@error`-type taxonomy appears. T
 change is one arm in `FieldBuilder.classifyChildFieldOnErrorType`, which today ignores every
 directive.
 
+The unification is slightly wider than a retype, and the stage should budget for it.
+`accessorOverrides` holds only the fields carrying an `@field(name:)` override; an extra field
+without one gets no registration at all and falls through to graphql-java's own property fetcher on
+the SDL name. A per-field list has to hold every extra field, so it gains a default-read arm for the
+un-overridden case, and the encode has to be reachable both with an override and without one. That
+is the same population the classified `RecordReadField` already covers with its `DefaultRead`
+locator, which is the other half of why these two lists want to be one.
+
 **Composite keys.** `encode<TypeName>` takes N key values positionally and an accessor returns one
 Java value. The arity is already a fact in the model (`HelperRef.Encode.paramSignature.size()`), so
 the branch belongs in the model rather than in the emitter. One accessor cannot supply N values, so
@@ -346,8 +378,8 @@ SDL to name N accessors, which `@field(name:)` cannot express.
 
 ### Scope
 
-In scope: the site-4b discriminator change; the site-4a message and page; the site-1/2 classify-time
-rejection; the site-3 encode with whatever arity answer the Spec review settles.
+In scope: the site-4b discriminator change; the site-4a message and page, absorbing R691's page
+correction; the site-1/2 classify-time rejection; the site-3 encode, single-key in v1.
 
 Out of scope, each with a reason rather than a silence: minting the key-column projection at
 `@service` (R668 owns it); whole-record binding of a decoded node ID to a scalar `@service`
@@ -373,9 +405,10 @@ replacement.
    precondition, the retirement of `LIFT_FAILURE_MARKER`, the per-rail consumer audit, and coverage
    at the carrier, glue and execution tiers. Exit: a junction chain lowers to a multi-hop
    `RemoteColumnPredicate` and returns each parent once against PostgreSQL; the identity-carrying
-   chain still binds `Local`; each of the four write rails has a stated message. Coordinated with
-   R705 per the gate-collapse note, and with R676, whose Spec body cites `LIFT_FAILURE_MARKER` as a
-   constraint its path grammar inherits.
+   chain still binds `Local`; a condition hop still rejects with its own message rather than
+   reaching the emitter; each of the four write rails has a stated message. Lands the sealed result
+   ahead of R705 per the gate note, and notifies R676, whose Spec body cites `LIFT_FAILURE_MARKER`
+   as a constraint its path grammar inherits.
 3. **Site 4a, the message and the page.** The auto-discovery rejection separates its two causes; the
    manual page's single-hop claim is corrected; the reverse filter gets the execution-tier row-count
    pin it has never had. Exit: an author who writes the reverse filter without a `@reference` is
@@ -430,8 +463,8 @@ code-string matching on generated bodies is banned at every tier.
 * **The site-4b relaxation widens what classifies.** Schemas that fail the build today start
   generating. That is the point, but a schema whose author wrote a junction path expecting the
   rejection now silently gets an `EXISTS` over a fan-out. R723 is the item that says "this path
-  multiplies" out loud; whether its rule fires on a junction `@nodeId` filter path is a question
-  this Spec should answer before stage 2 lands, and if it does not fire, whether it should.
+  multiplies" out loud, and the question of whether its rule reaches here is settled below under
+  "Relationship to other items": it does not, and it does not need to. The `EXISTS` is why.
 * **The write-side diagnostic gets worse before the audit fixes it.** Named above and handled by
   making the per-rail message an exit condition of stage 2 rather than a follow-up.
 * **Two rejections, one condition, two wordings.** Stage 4 and R668's stage 3 partition rather than
@@ -448,16 +481,20 @@ code-string matching on generated bodies is banned at every tier.
   say what it asserts without naming the reporter or this item. Nothing in the design above needs
   such a type, and the review should treat one appearing as a signal the grain slipped.
 * **Site 3 stays single-key in v1.** Smaller than the item's framing promises. Acceptable because
-  the composite spelling does not exist yet and inventing one here would be a second capability;
-  the Spec review should confirm that rather than let it pass silently.
+  the composite spelling does not exist yet and inventing one here would be a second capability.
+  Confirmed at Spec review, on the precedent rather than on the convenience: the arity fact is
+  already in the model as `HelperRef.Encode.paramSignature.size()`, and `NodeIdLeafResolver`'s
+  `Row22` rejection is the same shape of refusal one screen away, so v1 refuses a case it can
+  name rather than one it cannot see.
 
 ## User documentation (first-client check)
 
 * `docs/manual/reference/directives/nodeId.adoc` gains the coordinate table this item is really
   about: where `@nodeId` binds, what it binds to, and what happens where it cannot.
-* `docs/manual/how-to/multi-hop-nodeid-filter.adoc` loses the false single-hop claim (stage 2) and
-  gains the junction shape as a worked example (stage 1).
-* `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case (stage 4).
+* `docs/manual/how-to/multi-hop-nodeid-filter.adoc` gains the junction shape as a worked example and
+  loses its `=== identity-carrying FKs` rejection section (stage 2), and loses the false single-hop
+  claim (stage 3).
+* `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case (stage 5).
 
 ## Retired vocabulary
 
@@ -467,7 +504,24 @@ code-string matching on generated bodies is banned at every tier.
 * The `=== identity-carrying FKs` rejection section of
   `docs/manual/how-to/multi-hop-nodeid-filter.adoc`, which documents that gate to authors.
 * `NodeIdLeafResolver.JoinPathResult`'s nullable-slot shape, replaced by the sealed result.
-* `CONDITION_STEP_MARKER` too, if stage 2 lands the collapsed gate with R705 rather than beside it.
+* Three statements of the old one-conjunct discriminator, in `NodeIdLeafResolver`'s own javadoc.
+  All are falsified by a junction chain, whose terminal target-side columns *are* the node's key
+  columns and which translates nothing; the arm is reached because no own-table tuple exists, not
+  because a translation is needed. The three are the `FkTarget` seal's "sealed into two arms on the
+  positional-correspondence question between the FK's target-side columns and `T`'s `keyColumns`",
+  which becomes that question conjoined with liftability; `TranslatedFk`'s "FK target-side columns
+  differ from `T`'s key columns", which appears twice, in the seal's arm list and in the record's
+  own javadoc with its "SQL has to convert a decoded key into an FK-column value" gloss; and
+  `TranslatedFk`'s `@param joinPath single-hop FK path from the containing table to T.table()`.
+
+`CONDITION_STEP_MARKER` is deliberately *not* retired here, and neither is the rejection it anchors;
+see the gate decision under Design. The Done-gate sweep should read a surviving `CONDITION_STEP_MARKER`
+as intact rather than as a missed retirement.
+
+The arm name `TranslatedFk` outlives its own description: after this change the property that
+selects it is "binds remotely" rather than "translates". Renaming it is not in this item, and
+saying so here is the point. The javadoc rewrites above should state the arm's actual precondition
+so the name is the only thing left carrying the old reading.
 
 The retirement sweep at the Done gate has one coordination point beyond the tree:
 `roadmap/nodeid-filter-per-participant-paths.md` (R676, Spec) names `LIFT_FAILURE_MARKER` as a
@@ -488,32 +542,57 @@ carrier assertions, and stage 2 expresses it there.
   a `@service` argument with no authored `argMapping` produces no pair row and is reached by
   neither R668's projection nor R668's rejection. That is exactly the reported shape. R668 also
   rules out binding a whole decoded record to a `@service` parameter as a separate capability,
-  which is the record-shaped half of this item's first Spec question. Whether this item depends on
-  R668, absorbs its unreached cases, or is scoped to exclude them is a Spec decision that should
-  be taken with R668's author.
+  which is the record-shaped half of this item's first Spec question. **Settled: scoped to exclude,
+  and R668 agrees in its own body.** Its plan says the bare-form rejection "closes it at the
+  `argMapping` sites only", and that a general "declared and unconsumed" warning "belongs in its own
+  item if anyone wants it". Stage 4 is that item. So neither this item's projection nor its
+  rejection duplicates R668's; the only edge between them is stage 4's gate on R668's stage-3
+  wording, which is about one shared vocabulary rather than about code landing.
+
+  That gate stays out of `depends-on:`. The field means "must ship first" and renders as *blocked
+  by*, which would be false here: stages 1 through 3 land with R668 untouched, and stage 4 waits on
+  a wording rather than an artefact. Recorded here so the next reader does not re-raise it as a
+  missing edge.
 * **R57** (Done, see `roadmap/changelog.md`) shipped the single-hop translated-FK `EXISTS` and
   filed multi-hop translated paths as deferred. Site 4's junction case is that deferral. Its
   reasoning that `EXISTS` is the semantically right shape rather than a convenient one, because a
   non-unique path multiplies no rows and a NULL foreign-key column fails the correlation instead
   of duplicating, is the argument site 4 inherits.
 * **R705** (`condition-join-hops-in-reference-filter-paths`, Spec) is R57's sibling deferral for
-  the other rejected hop kind, and it is closer than "read together". Its gate and this item's
-  `validateLift` are two negations of one predicate, the `DirectFk` precondition, so relaxed
-  independently they become two refusals whose agreement nothing binds. Whichever item lands first
-  should land the sealed lift result for both; see the gate-collapse note under Design.
+  the other rejected hop kind. The two are adjacent in the classifier and far apart in the emitter,
+  and the Design gate note works that out: `CONDITION_STEP_MARKER` and `validateLift` state one
+  predicate, so both express themselves through the sealed lift result, but only the lift gate can
+  relax without the reach carrier being widened first, and that widening is R705's own work
+  (retiring `FkHop`, `FkHop.narrow` and `ConditionCommands.narrowPath`). R705 does not relax the
+  marker either: its targets are the plain-`@reference` filter rejections in `FieldBuilder` and
+  `GraphitronSchemaValidator`, and its non-goals keep an FK path required where a `@nodeId` leaf is
+  involved. This item lands first and lands the sealed result; R705 inherits it. Worth telling that
+  item's author, because its own body cites `NodeIdLeafResolver`'s FK-only-at-every-position rule
+  as a standing fact and after stage 2 that rule is stated in a different place.
 * **R676** (`nodeid-filter-per-participant-paths`, Spec) states that its path grammar inherits "the
   identity-carrying lift validation ... the `NodeIdLeafResolver` arms behind `LIFT_FAILURE_MARKER`".
   Stage 2 removes that gate, so R676's author needs to know the constraint moved rather than
   vanished. This is a notification, not a dependency in either direction.
 * **R723** (`reference-path-fanout-verdict`, Spec) is the item that warns when a `@reference` path
-  fans out. Stage 2 makes junction paths authorable on a `@nodeId` filter, which is a new population
-  for R723's rule to have an opinion about. Whether the rule fires there today is a question for
-  this Spec's review.
+  fans out. Stage 2 makes junction paths authorable on a `@nodeId` filter, which looks like a new
+  population for R723's rule. It is not one, on either half of the question. The rule does not fire
+  there: R723 takes an explicit scope decision to cover field-site paths only, because its derived
+  hop and target views are field-site only and reaching filter paths means first authoring sibling
+  views over `graphitron_argument_reference_step`; argument-site paths are named in its Out of
+  scope. Nor should it, because the defect R723 names is duplicate rows in a *projection*, and a
+  filter path lowers to a correlated `EXISTS`, which is exactly the shape R57 argued does not
+  multiply rows. The junction filter population cannot carry R723's defect. What R723 does gain is
+  a documentation obligation it already accepted: its rule's note has to say a quiet build is not a
+  statement about filter paths, and after stage 2 there are more of those to be quiet about. A
+  notification, not a dependency.
 * **R691** (`multi-hop-nodeid-filter-single-fk-claim`, Backlog) is why site 4's reverse case reads
   as unsupported. `docs/manual/how-to/multi-hop-nodeid-filter.adoc` still tells the reader that a
   single direct foreign key never produces a subquery and that the translated emission "is not yet
   shipping", both of which R57 made false. An author checking the manual before filing concludes
-  correctly from the page and incorrectly about the generator.
+  correctly from the page and incorrectly about the generator. **Absorbed by this item**, per site
+  4a: stages 2 and 3 both edit that page, so the correction rides along and R691 is discarded at
+  the Done gate rather than sending a third pass over the same file. Its `status: Backlog` file is
+  a tombstone in the meantime.
 * **R262** (Done) rejects `@nodeId` on a non-`ID` coordinate at validate time: the precedent for
   the rejection half, and the reason its vocabulary is already established. This item extends the
   same judgement from the slot's *type* to the slot's *coordinate*.

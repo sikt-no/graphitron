@@ -32,3 +32,11 @@ The fix is a paragraph, not a restructure: the page's subject is multi-hop chain
 content is accurate. Name the two single-hop shapes and what discriminates them (does the FK target the
 NodeType's key columns), and point at the reference material for the translated one, so the contrast the
 page is drawing survives with a true premise.
+
+**Absorbed by R728 (`nodeid-effective-at-every-coordinate`); this file is a tombstone.** That item
+edits this same page twice on its own account: it retires the page's `=== identity-carrying FKs`
+rejection section when it makes junction chains authorable, and it corrects the reverse-hop guidance
+in the section this item is about. Three passes over one file to fix one page's account of one
+mechanism is what absorption avoids, so the paragraph above ships inside R728 and this file deletes
+at that item's Done gate. Nothing here is withdrawn: if R728 is discarded or descoped away from the
+page, this item stands again as written.
