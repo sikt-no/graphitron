@@ -5008,6 +5008,209 @@ COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pa
 COMMENT ON COLUMN intent_argmapping_pair.param_name IS 'the left side of the pair: the Java or routine parameter the path binds to';
 COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as the arm''s own relation spells it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
 
+CREATE VIEW intent_argmapping_binding_leaf
+  (graph_name, site, use_site, type_name, field_name, position, argument_path,
+   disposition, basis, leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
+   node_type_ref, unconsumed_segments) AS
+WITH spelled (graph_name, site, use_site, type_name, field_name, argument_name, position,
+              argument_path, seg_count, head) AS (
+  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.argument_name,
+         ap.position, ap.argument_path,
+         CAST((SELECT COUNT(*) FROM graphitron_argument_path_segment c
+                WHERE c.graph_name = ap.graph_name AND c.type_name = ap.type_name
+                  AND c.field_name = ap.field_name
+                  AND c.argument_path = ap.argument_path) AS INT),
+         (SELECT h.segment_name FROM graphitron_argument_path_segment h
+           WHERE h.graph_name = ap.graph_name AND h.type_name = ap.type_name
+             AND h.field_name = ap.field_name AND h.argument_path = ap.argument_path
+             AND h.position = 0)
+    FROM intent_argmapping_pair ap
+), headed (graph_name, site, use_site, type_name, field_name, argument_name, position,
+           argument_path, seg_count, head, head_kind) AS (
+  SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.argument_name, s.position,
+         s.argument_path, s.seg_count, s.head, 'ARGUMENT'
+    FROM spelled s
+    JOIN graphql_argument a
+      ON a.graph_name = s.graph_name AND a.type_name = s.type_name
+     AND a.field_name = s.field_name AND a.argument_name = s.head
+   WHERE s.site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION')
+   UNION ALL
+  SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.argument_name, s.position,
+         s.argument_path, s.seg_count, s.head, 'ARGUMENT'
+    FROM spelled s
+   WHERE s.site = 'ARGUMENT_CONDITION' AND s.head = s.argument_name
+   UNION ALL
+  SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.argument_name, s.position,
+         s.argument_path, s.seg_count, s.head, 'INPUT_FIELD'
+    FROM spelled s
+   WHERE s.site = 'INPUT_FIELD_CONDITION' AND s.head = s.field_name
+), descent (graph_name, site, use_site, position, leaf_type_name, leaf_field_name, consumed) AS (
+  SELECT graph_name, site, use_site, position, leaf_type_name, leaf_field_name, consumed
+    FROM (SELECT h.graph_name, h.site, h.use_site, h.position,
+                 lf.container_type_name AS leaf_type_name, lf.field_name AS leaf_field_name,
+                 p.depth AS consumed,
+                 ROW_NUMBER() OVER (PARTITION BY h.graph_name, h.site, h.use_site, h.position
+                                    ORDER BY p.depth DESC) AS rn
+            FROM headed h
+            JOIN intent_input_occurrence_path p
+              ON p.graph_name = h.graph_name AND p.root_type_name = h.type_name
+             AND p.root_field_name = h.field_name AND p.root_argument_name = h.head
+            JOIN intent_input_occurrence_path_step lf
+              ON lf.graph_name = p.graph_name AND lf.path = p.path AND lf.ordinal = p.depth
+           WHERE h.head_kind = 'ARGUMENT' AND h.seg_count >= 2
+             AND p.depth >= 1 AND p.depth <= h.seg_count - 1
+             AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
+                              WHERE o.graph_name = p.graph_name AND o.path = p.path
+                                AND NOT EXISTS (
+                                  SELECT 1 FROM graphitron_argument_path_segment sg
+                                   WHERE sg.graph_name = h.graph_name
+                                     AND sg.type_name = h.type_name
+                                     AND sg.field_name = h.field_name
+                                     AND sg.argument_path = h.argument_path
+                                     AND sg.position = o.ordinal
+                                     AND sg.segment_name = o.field_name))) ranked
+   WHERE rn = 1
+), input_descent (graph_name, site, use_site, position, leaf_type_name, leaf_field_name,
+                  consumed) AS (
+  SELECT graph_name, site, use_site, position, leaf_type_name, leaf_field_name, consumed
+    FROM (SELECT h.graph_name, h.site, h.use_site, h.position,
+                 lf.container_type_name AS leaf_type_name, lf.field_name AS leaf_field_name,
+                 lf.ordinal - an.ordinal AS consumed,
+                 ROW_NUMBER() OVER (PARTITION BY h.graph_name, h.site, h.use_site, h.position
+                                    ORDER BY lf.ordinal - an.ordinal DESC) AS rn
+            FROM headed h
+            JOIN intent_input_occurrence_path_step an
+              ON an.graph_name = h.graph_name AND an.container_type_name = h.type_name
+             AND an.field_name = h.head
+            JOIN intent_input_occurrence_path_step lf
+              ON lf.graph_name = an.graph_name AND lf.path = an.path
+             AND lf.ordinal > an.ordinal AND lf.ordinal - an.ordinal <= h.seg_count - 1
+           WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count >= 2
+             AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
+                              WHERE o.graph_name = an.graph_name AND o.path = an.path
+                                AND o.ordinal > an.ordinal AND o.ordinal <= lf.ordinal
+                                AND NOT EXISTS (
+                                  SELECT 1 FROM graphitron_argument_path_segment sg
+                                   WHERE sg.graph_name = h.graph_name
+                                     AND sg.type_name = h.type_name
+                                     AND sg.field_name = h.field_name
+                                     AND sg.argument_path = h.argument_path
+                                     AND sg.position = o.ordinal - an.ordinal
+                                     AND sg.segment_name = o.field_name))) ranked
+   WHERE rn = 1
+), resolved (graph_name, site, use_site, type_name, field_name, position, argument_path,
+             basis, leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
+             unconsumed) AS (
+  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+         'BARE_HEAD', 'ARGUMENT', h.type_name, h.field_name, h.head, 0
+    FROM headed h
+   WHERE h.head_kind = 'ARGUMENT' AND h.seg_count = 1
+   UNION ALL
+  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+         'BARE_HEAD', 'INPUT_FIELD', h.type_name, h.head, CAST(NULL AS VARCHAR), 0
+    FROM headed h
+   WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count = 1
+   UNION ALL
+  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+         'ARGUMENT_PATH', 'INPUT_FIELD', d.leaf_type_name, d.leaf_field_name, NULL,
+         h.seg_count - 1 - d.consumed
+    FROM headed h
+    JOIN descent d
+      ON d.graph_name = h.graph_name AND d.site = h.site AND d.use_site = h.use_site
+     AND d.position = h.position
+   UNION ALL
+  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+         'ARGUMENT_PATH', 'ARGUMENT', h.type_name, h.field_name, h.head, h.seg_count - 1
+    FROM headed h
+   WHERE h.head_kind = 'ARGUMENT' AND h.seg_count >= 2
+     AND NOT EXISTS (SELECT 1 FROM descent d
+                      WHERE d.graph_name = h.graph_name AND d.site = h.site
+                        AND d.use_site = h.use_site AND d.position = h.position)
+   UNION ALL
+  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+         'INPUT_FIELD_PATH', 'INPUT_FIELD', d.leaf_type_name, d.leaf_field_name, NULL,
+         h.seg_count - 1 - d.consumed
+    FROM headed h
+    JOIN input_descent d
+      ON d.graph_name = h.graph_name AND d.site = h.site AND d.use_site = h.use_site
+     AND d.position = h.position
+   UNION ALL
+  SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+         'INPUT_FIELD_PATH', 'INPUT_FIELD', h.type_name, h.head, NULL, h.seg_count - 1
+    FROM headed h
+   WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count >= 2
+     AND EXISTS (SELECT 1 FROM intent_input_occurrence_path_step an
+                  WHERE an.graph_name = h.graph_name AND an.container_type_name = h.type_name
+                    AND an.field_name = h.head)
+     AND NOT EXISTS (SELECT 1 FROM input_descent d
+                      WHERE d.graph_name = h.graph_name AND d.site = h.site
+                        AND d.use_site = h.use_site AND d.position = h.position)
+), leafed (graph_name, site, use_site, type_name, field_name, position, argument_path,
+           basis, leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
+           unconsumed, node_id_declared, node_type_ref) AS (
+  SELECT r.graph_name, r.site, r.use_site, r.type_name, r.field_name, r.position, r.argument_path,
+         r.basis, r.leaf_kind, r.leaf_type_name, r.leaf_field_name, r.leaf_argument_name,
+         r.unconsumed,
+         CASE WHEN an.type_name IS NOT NULL OR fn.type_name IS NOT NULL THEN TRUE ELSE FALSE END,
+         COALESCE(an.node_type_ref, fn.node_type_ref)
+    FROM resolved r
+    LEFT JOIN graphitron_argument_node_id an
+      ON r.leaf_kind = 'ARGUMENT' AND an.graph_name = r.graph_name
+     AND an.type_name = r.leaf_type_name AND an.field_name = r.leaf_field_name
+     AND an.argument_name = r.leaf_argument_name
+    LEFT JOIN graphitron_field_node_id fn
+      ON r.leaf_kind = 'INPUT_FIELD' AND fn.graph_name = r.graph_name
+     AND fn.type_name = r.leaf_type_name AND fn.field_name = r.leaf_field_name
+)
+SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
+       'RESOLVE', l.basis, l.leaf_kind, l.leaf_type_name, l.leaf_field_name, l.leaf_argument_name,
+       l.node_type_ref, l.unconsumed
+  FROM leafed l
+ WHERE l.node_id_declared
+ UNION ALL
+SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
+       'SILENT', 'UNRESOLVED_PATH', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS INT)
+  FROM leafed l
+ WHERE NOT l.node_id_declared AND l.unconsumed >= 1
+ UNION ALL
+SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.position, s.argument_path,
+       'SILENT', 'UNRESOLVED_PATH', NULL, NULL, NULL, NULL, NULL, NULL
+  FROM spelled s
+ WHERE s.site NOT IN ('FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP')
+   AND NOT EXISTS (SELECT 1 FROM headed h
+                    WHERE h.graph_name = s.graph_name AND h.site = s.site
+                      AND h.use_site = s.use_site AND h.position = s.position)
+ UNION ALL
+SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
+       'SILENT', 'UNREACHED_INPUT_TYPE', NULL, NULL, NULL, NULL, NULL, NULL
+  FROM headed h
+ WHERE h.head_kind = 'INPUT_FIELD' AND h.seg_count >= 2
+   AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step an
+                    WHERE an.graph_name = h.graph_name AND an.container_type_name = h.type_name
+                      AND an.field_name = h.head)
+ UNION ALL
+SELECT s.graph_name, s.site, s.use_site, s.type_name, s.field_name, s.position, s.argument_path,
+       'SILENT', 'NO_SLOT_IN_SCOPE', NULL, NULL, NULL, NULL, NULL, NULL
+  FROM spelled s
+ WHERE s.site IN ('FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP', 'REFERENCE_FOR_STEP');
+COMMENT ON VIEW intent_argmapping_binding_leaf IS 'What an argMapping path binds to, where the leaf it reaches carries a @nodeId: that leaf''s own coordinate, and how many trailing segments the descent did not consume. One row per pair row of intent_argmapping_pair at every site that spells an argMapping, which is what makes uniformity across @routine, @service and @condition structural rather than three call sites agreeing by discipline. A keying over intent_input_occurrence_path rather than a second walk of the input surface, joined through graphitron_argument_path_segment so neither the occurrence key nor the written path is ever split: the segment relation exists precisely so no reader has to, and a second decomposition here would be two spellings of one resolution that agree until one of them changes. The head is not always an argument, so the resolution has three resolving arms rather than one, each named in basis, and which slots a head may name is the walk''s own rule read off the site: every argument of the field at a @routine, @service or output-field @condition, the pair''s own argument at an argument-site @condition, the pair''s own input field at an input-field @condition, and nothing at all at a path-step @condition. A silence is a row, and that is what stops the unresolvable shapes from sharing one indistinguishable gap with the ordinary case. Absence therefore means exactly one thing: the path consumed every segment and its leaf carries no @nodeId, which is the ordinary binding and rightly needs no row. It is also what keeps the bare-form rejection an anti-join over a positive population rather than negative space maintained by hand. The complement of that absence is deliberate too: a path that left segments unconsumed on a leaf carrying no @nodeId is a segment naming nothing, which the walk is silent on for the same reason it is silent on the motivating path, so the store is the only place it can be caught and it is a stated row here rather than a second gap. Three caveats the arms inherit. The occurrence expansion stops at a type already visited on the path, the classification walk''s own first-visit guard restated, so a cyclic re-entry contributes no descent and a path that would have re-entered resolves at the last leaf before the cycle with its remaining segments unconsumed; that absence is load-bearing rather than incidental. An input type no argument reaches has no occurrence row to descend, so a dotted head there is UNREACHED_INPUT_TYPE and not a resolution, while a bare head at the same site resolves without one. And the input-field-rooted arm''s join is one-to-many in occurrence paths, one per use site reaching the input type, while its answer is one: the leaf is fixed by descending input-field types from the head, a definition-side fact independent of which argument reached the type, so the tied rows cannot disagree and the pick among them guards against writing the arm wrong rather than expressing a precedence. The grain stays the pair''s own, ordinal intact inside the use-site key, for the reason intent_argmapping_pair keeps it.';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.graph_name IS 'the owning graph''s partition, carried from the pair relation';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; with the use-site key and the position this is the grain, and it is what a consumer switches on to know whether an emitter is wired for the answer';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; the coordinate a rejection about this pair names, and the key a reader joins that relation on to recover the arm''s own components';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.type_name IS 'the spelling site''s owning type, carried so the segment decomposition is one join away';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.field_name IS 'the spelling site''s field name within that type';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.position IS 'the pair''s 0-based position within its own argMapping list';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.argument_path IS 'the path as written, carried so a message can quote what the author wrote and so the segment rows are reachable without a second read of the pair';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.disposition IS 'RESOLVE when the row names a @nodeId-carrying leaf the path reached, SILENT when it names none and no consumer may guess one. A closed two-value fork, which is what a consumer switches on; the basis it came from is the next column. Determined by basis rather than independent of it, and carried anyway because the fork is the reading every consumer needs and re-deriving it from the wider vocabulary at each of them is how the two would drift';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.basis IS 'which rule produced this row, in a closed vocabulary of six. On the resolving side: BARE_HEAD (a single segment, so the leaf is the head slot itself), ARGUMENT_PATH (a dotted head naming an argument of the field), INPUT_FIELD_PATH (a dotted head naming the input field an input-field @condition sits on). On the silent side: NO_SLOT_IN_SCOPE (a path-step @condition, where the walk resolves against an empty slot map so nothing at that site resolves at all), UNREACHED_INPUT_TYPE (a dotted input-field head whose input type no argument reaches, so there is no occurrence path to descend), UNRESOLVED_PATH (a name that is not there: either a head naming no slot the site has in scope, or a segment below a non-@nodeId leaf naming no input field). The column that lets a test pin which rule fired rather than only that the leaf came out right';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_kind IS 'ARGUMENT where the leaf is the field argument the head names, INPUT_FIELD where it is an input field reached below one; NULL on every SILENT row. The two kinds the leaf columns below are keyed as, and the column saying which of the two @nodeId relations this row''s node reference came from';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_type_name IS 'the leaf''s owning type: the argument''s own owning type on an ARGUMENT leaf, the input object declaring the field on an INPUT_FIELD leaf. NULL on every SILENT row';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, and the input field itself on an INPUT_FIELD leaf. With the columns around it this is the @nodeId relation''s own key, so the leaf''s directive row and its source position are one join away. NULL on every SILENT row';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component, and NULL on every SILENT row';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written; NULL on a bare @nodeId, which at this position is a rejection rather than an inference, there being no containing table to infer a node type from. NULL on every SILENT row too, so a reader telling the two apart reads disposition first';
+COMMENT ON COLUMN intent_argmapping_binding_leaf.unconsumed_segments IS 'how many trailing segments named no input field below the leaf: 0 where the path consumed everything, 1 where one segment is left over, more where several are. A count rather than a flag, because the readings differ: zero is the bare binding a rejection closes, one is a key-column projection, and two or more is a typo or a nested form neither this relation nor its readers claim to resolve. Arithmetic over the segment rows against the occurrence row''s depth, never a parse. NULL on every SILENT row, no leaf having been reached to count below';
+
 -- ==== Diagnostics stratum =========================================================
 -- Violations as facts: seven arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this stratum directly. The arms, and

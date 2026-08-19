@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
@@ -46,6 +47,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
+import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
@@ -519,6 +522,57 @@ public final class SeededStore {
             .execute();
     }
 
+    // ===== The input surface under a use site =====
+
+    /** One input-field step of an occurrence path: where the field is declared, and where it leads. */
+    public record OccurrenceStep(String containerTypeName, String fieldName, String namedType) {}
+
+    /**
+     * An occurrence of the input surface under one use site, with every prefix present as its own
+     * row and each prefix's steps under it, which is the shape the capture-cadence writer leaves
+     * behind. Stated rather than expanded from types, because a case about a keying over this
+     * relation is a case about these rows and not about the descent that produced them; a case that
+     * wants the descent's own rule tested is beside the writer.
+     *
+     * <p>The serialized key is built the way the writer builds it, {@code Type.field(argument)}
+     * followed by one {@code /field} per step. No reader parses it; the shape matters only so two
+     * occurrences cannot collide.
+     */
+    public static void seedOccurrencePath(DSLContext dsl, String graphName, String rootTypeName,
+                                         String rootFieldName, String rootArgumentName,
+                                         String rootInputType, OccurrenceStep... steps) {
+        var root = rootTypeName + "." + rootFieldName + "(" + rootArgumentName + ")";
+        for (int depth = 0; depth <= steps.length; depth++) {
+            var path = new StringBuilder(root);
+            for (int i = 0; i < depth; i++) {
+                path.append('/').append(steps[i].fieldName());
+            }
+            dsl.insertInto(INTENT_INPUT_OCCURRENCE_PATH)
+                .set(INTENT_INPUT_OCCURRENCE_PATH.GRAPH_NAME, graphName)
+                .set(INTENT_INPUT_OCCURRENCE_PATH.PATH, path.toString())
+                .set(INTENT_INPUT_OCCURRENCE_PATH.ROOT_TYPE_NAME, rootTypeName)
+                .set(INTENT_INPUT_OCCURRENCE_PATH.ROOT_FIELD_NAME, rootFieldName)
+                .set(INTENT_INPUT_OCCURRENCE_PATH.ROOT_ARGUMENT_NAME, rootArgumentName)
+                .set(INTENT_INPUT_OCCURRENCE_PATH.ROOT_INPUT_TYPE, rootInputType)
+                .set(INTENT_INPUT_OCCURRENCE_PATH.LEAF_NAMED_TYPE,
+                    depth == 0 ? rootInputType : steps[depth - 1].namedType())
+                .set(INTENT_INPUT_OCCURRENCE_PATH.DEPTH, depth)
+                .execute();
+            for (int ordinal = 1; ordinal <= depth; ordinal++) {
+                var step = steps[ordinal - 1];
+                dsl.insertInto(INTENT_INPUT_OCCURRENCE_PATH_STEP)
+                    .set(INTENT_INPUT_OCCURRENCE_PATH_STEP.GRAPH_NAME, graphName)
+                    .set(INTENT_INPUT_OCCURRENCE_PATH_STEP.PATH, path.toString())
+                    .set(INTENT_INPUT_OCCURRENCE_PATH_STEP.ORDINAL, ordinal)
+                    .set(INTENT_INPUT_OCCURRENCE_PATH_STEP.CONTAINER_TYPE_NAME,
+                        step.containerTypeName())
+                    .set(INTENT_INPUT_OCCURRENCE_PATH_STEP.FIELD_NAME, step.fieldName())
+                    .set(INTENT_INPUT_OCCURRENCE_PATH_STEP.NAMED_TYPE, step.namedType())
+                    .execute();
+            }
+        }
+    }
+
     // ===== argMapping pairs, one seeder per site =====
 
     /**
@@ -838,8 +892,22 @@ public final class SeededStore {
             .execute();
     }
 
-    /** A {@code @nodeId} application on a field: presence, plus the type reference as written. */
+    /**
+     * A bare {@code @nodeId} application on a field or input field: presence with no
+     * {@code typeName:}, which is the shape whose target the walk infers from a containing table
+     * where there is one.
+     */
     public static void seedNodeId(DSLContext dsl, String graphName, String typeName, String fieldName) {
+        seedFieldNodeId(dsl, graphName, typeName, fieldName, null);
+    }
+
+    /**
+     * {@link #seedNodeId} with the {@code typeName:} the author wrote. Null is the bare form, which
+     * is a distinct fact rather than a missing value: at a position with no containing table it is
+     * what a rejection reads.
+     */
+    public static void seedFieldNodeId(DSLContext dsl, String graphName, String typeName,
+                                       String fieldName, String nodeTypeRef) {
         dsl.insertInto(GRAPHITRON_FIELD_NODE_ID)
             .set(GRAPHITRON_FIELD_NODE_ID.GRAPH_NAME, graphName)
             .set(GRAPHITRON_FIELD_NODE_ID.TYPE_NAME, typeName)
@@ -847,6 +915,33 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_LINE, 2)
             .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FIELD_NODE_ID.NODE_TYPE_REF, nodeTypeRef)
+            .execute();
+    }
+
+    /**
+     * A {@code @nodeId} application on a field argument, the sibling relation of
+     * {@link #seedFieldNodeId} keyed one grain further in. The argument is seeded if the case has
+     * not, a directive application needing something to sit on.
+     */
+    public static void seedArgumentNodeId(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, String argumentName,
+                                          String nodeTypeRef) {
+        if (!dsl.fetchExists(GRAPHQL_ARGUMENT, GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)
+                .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq(typeName))
+                .and(GRAPHQL_ARGUMENT.FIELD_NAME.eq(fieldName))
+                .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName)))) {
+            seedArgument(dsl, graphName, typeName, fieldName, argumentName, "ID");
+        }
+        dsl.insertInto(GRAPHITRON_ARGUMENT_NODE_ID)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID.NODE_TYPE_REF, nodeTypeRef)
             .execute();
     }
 
