@@ -5,7 +5,7 @@ status: In Progress
 bucket: cleanup
 priority: 3
 theme: testing
-depends-on: [lsp-reads-the-fact-store]
+depends-on: []
 created: 2026-08-14
 last-updated: 2026-08-18
 ---

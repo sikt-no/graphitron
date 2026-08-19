@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R638` | The LSP is a fact-store client | In Review | 2026-08-19 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Spec | 2026-08-19 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
@@ -29,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Progress | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
-| `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
+| `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R672` | Register every built-in scalar the emitted schema references, not just the ones the SDL uses | In Review | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](register-referenced-builtin-scalars.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
@@ -471,7 +470,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R626` [**LSP argMapping completions and diagnostics at the @routine coordinate**](lsp-argmapping-routine-coordinate.md) — Backlog, architecture
-- `R638` [**The LSP is a fact-store client**](lsp-reads-the-fact-store.md) — In Review, architecture
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
@@ -574,7 +572,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### testing
 
 - `R561` [**ConditionGluePipelineTest still scans glue bodies for the shared decode-helper call**](condition-glue-pipeline-body-scans.md) — Backlog, test-quality
-- `R680` [**Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest**](fact-store-test-harness-consolidation.md) — In Progress, cleanup, blocked by [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)
+- `R680` [**Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest**](fact-store-test-harness-consolidation.md) — In Progress, cleanup
 - `R707` [**JooqRecordServiceParamPipelineTest asserts on generated helper body strings**](jooq-record-param-pipeline-body-string-assertions.md) — Backlog, tech-debt
 - `R550` [**Pin around the Quarkus ArC unused-bean removal flake**](quarkus-arc-removal-flake.md) — Backlog, bug
 - `R554` [**Retire the generated-body string-scan helpers in TypeSpecAssertions**](generated-body-string-assertion-helpers.md) — Backlog, test-quality

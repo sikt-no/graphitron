@@ -219,7 +219,7 @@ COMMENT ON COLUMN store_stamp.generator_version IS 'the capturing generator''s i
 -- elements no SDL line declares (built-in scalars). Elements contributed by the bundled
 -- directives.graphqls are stamped with that resource name as source_name (for a type, the
 -- stamp sits on its declaration rows); consumers wanting user-authored declarations filter on
--- it, as CatalogBuilder.projectTypeDefinitionLocations does today.
+-- it.
 CREATE TABLE graphql_type (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,

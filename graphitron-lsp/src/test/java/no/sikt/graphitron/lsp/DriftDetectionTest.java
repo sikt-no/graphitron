@@ -42,8 +42,8 @@ class DriftDetectionTest {
         var vocab = BundledVocabulary.get();
 
         // Spot-check a representative subset of the canonical overlay
-        // (the full table lives in the spec; this guards against silent
-        // shrinkage of the binding set).
+        // (LspVocabulary.CanonicalOverlay.overlay() is the full table; this
+        // guards against silent shrinkage of the binding set).
         assertThat(vocab.overlay()).containsKeys(
             new SchemaCoordinate.InputField("ExternalCodeReference", "className"),
             new SchemaCoordinate.InputField("ExternalCodeReference", "method"),
