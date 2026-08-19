@@ -1,7 +1,7 @@
 ---
 id: R715
 title: "Capture decodes internal grammars into normalized relations"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -540,8 +540,13 @@ arm keeps the prefix test for the relations still on it.
 **The bulk property is a duty, not an inheritance.** `flush()`'s bind batch beats `batchInsert` by a
 measured 1.8x (3.7 s to 2.1 s over a 207k-row census, per its own comment), and that margin comes
 from one prepared statement per relation rather than a render per row. Each write function issues one
-bulk statement, and the census load is measured before and after; `sql_column` and `graphql_field`
-are the two of the eleven big enough for a regression to show.
+bulk statement, so it keeps that shape by construction rather than by measurement: the written
+statement goes through the same `dsl.batch(insert).bind(...)` per row as the generic arm it replaces,
+one render and one prepare either way. Settled during implementation, against an earlier draft that
+made this a before-and-after timing duty on `sql_column` and `graphql_field`: a timing on a load this
+short is noise next to the property it would be standing in for, and the property is readable off the
+statement. What would need a measurement is a change to the batching shape, and no conversion here
+makes one.
 
 ### The gate, scoped to what exists
 
@@ -618,6 +623,19 @@ census rather than a match against anything. `intent_authored_field_claim` and
 already appears in the path a recursive term has walked. Neither is a case fold nor a dot split, and
 no column this item adds touches either.
 
+**The `UPPER` budget reached zero and then did not stay there, which the accounting has to say rather
+than round off.** The node-identity defect view landed on trunk between this item's first
+implementation commit and its fold-rule one, bringing four `UPPER` calls in one predicate that
+matches `sql_column`'s two names against `sql_node_key_column.column_name`. Those are outside the
+30 this item counted and outside the rule it applies: both operands are values the crawler produced,
+so the comparison crosses no namespace and mints no column, and it is the hedge
+`roadmap/exact-catalog-name-comparisons.md` argues against rather than a fold anything owes a column
+to. Not swept here, because whether that constant's spelling is catalog-canonical decides between
+deleting the four calls and minting a companion, and that question is its own item
+(`roadmap/store-side-catalog-name-fold-is-a-hedge.md`). The consequence for this item is only that
+the no-`UPPER`-in-a-view gate still cannot land, for the reason it already could not: a gate that
+fails on day one is not useful.
+
 Two of the 30 `UPPER` do come off, but not by folding a base column, which is worth separating for
 the same reason. `intent_field_reference_discovery` compares
 `UPPER(sc.table_name) <> UPPER(bt.table_name)` where both sides are columns of *derived views*, not
@@ -651,8 +669,11 @@ and the two cycle guards, which puts a list of blessed views back into a gate wh
 having no list. `UPPER` is the operation this item is about, its reducible count and its total are
 both 30, and a fold is the one string operation whose absence a stored column can guarantee. The
 residual `POSITION` and `SUBSTRING` uses in those three views are then not exempted from a rule,
-they are outside it. Whether the gate lands now or once the count reaches zero is an implementation call; a gate that
-fails on day one is not useful, so it arrives with the last of the 30.
+they are outside it. Whether the gate lands now or once the count reaches zero is an implementation
+call; a gate that fails on day one is not useful, so it arrives with the last of the 30. Which is not
+here: this item took the 30 it counted down to zero and a concurrent view brought four back, so the
+gate waits on the hedge item named above rather than on anything left in this one. Landing it needs
+one predicate changed, not a list.
 
 ## Notes settled during spec
 
@@ -677,25 +698,26 @@ a decode lands in, that one changes what a decode reads from, and either order w
 `roadmap/capture-declares-the-columns-it-writes.md` is the third sibling and the one this item nearly
 depended on. It states the write-path principle in full and carries it across 123 relations; the
 generated `_upper` columns cannot land through a path that names every column of a relation, so on
-the face of it this item waits for that one. It does not, because the twelve relations it needs are a
-prefix of that work rather than a precondition for it. Folding them in costs fourteen write sites and
+the face of it this item waits for that one. It does not, because the eleven relations it needs are a
+prefix of that work rather than a precondition for it. Folding them in costs thirteen write sites and
 buys an unblocked item, so this item's `depends-on` is empty and the write-path section above says
 what it takes.
 
-The split is by relation and nothing is done twice: this one converts the twelve it folds columns
-onto, that one converts the remaining 111 and deletes the generic arm once none is left. It keeps
+The split is by relation and nothing is done twice: this one converts the eleven it folds columns
+onto, that one converts the remaining 112 and deletes the generic arm once none is left. It keeps
 everything this item does not touch, which is most of it: the plain-record gatherer layer, moving
 `claim()` into the gather stage, handing the ordering to the caller, and the corpus-wide form of the
 column-coverage gate. Its own body records that this item was the trigger that turned its collision
-from hypothetical into real, and it now also records which twelve arrive early.
+from hypothetical into real, and it now also records which eleven arrive early and why
+`sql_constraint_column`, the twelfth before the fold rule narrowed, is not among them.
 
 ## Out of scope
 
 - Resolving a reference to a catalog object, which is composition and stays derived. This item only
   changes the shape composition reads.
-- The other 111 relations' writes, the plain-record gatherer layer, relocating `claim()` and the
-  parents-first ordering, and deleting the generic arm of `flush()`. Twelve relations convert here
-  because twelve is what the fold needs; the rest is the sibling item and is not made harder by
+- The other 112 relations' writes, the plain-record gatherer layer, relocating `claim()` and the
+  parents-first ordering, and deleting the generic arm of `flush()`. Eleven relations convert here
+  because eleven is what the fold needs; the rest is the sibling item and is not made harder by
   taking them early.
 - The decodes' input, AST versus captured rows, which is the sibling item.
 - Identifying which *pair* a segment set came from. The coordinate reaches the field; the exact owner
@@ -706,55 +728,39 @@ from hypothetical into real, and it now also records which twelve arrive early.
   machinery for a value with no attributes beyond its own decode, and it would still leave "which
   paths does this field segment into" answerable only through the pair relations.
 
-## Rework requested at the Done gate, 2026-08-19
+## Rework at the Done gate, 2026-08-19, and it closes
 
-The implementation is clean and the full build passes. Every finding below is stale accounting in
-prose, and two of the three rot into artifacts that outlive this file. Nothing here asks for a
-design change; the eleven-relation narrowing was the right call and this is the sweep it did not
-finish.
+The gate found the implementation clean and the build green, and held on stale accounting in prose.
+All four findings are addressed above and in the sibling's own body; recorded here so the next
+reviewer reads the resolution rather than re-deriving the objection.
 
-**The sibling item still describes the twelve it no longer gets.** `sql_constraint_column` lost its
-fold when the rule narrowed, so eleven relations converted, not twelve, and thirteen `newRecord`
-sites, not fourteen. `roadmap/capture-declares-the-columns-it-writes.md` was not updated to match:
-its line 56 still says "Twelve of the 123 arrive ahead of this item", line 60 still names
-`sql_constraint_column` in the converted list, line 61 still says "fourteen `newRecord` sites in
-all", line 69 still keeps "the remaining 111 relations" and line 71 still reads "with those twelve
-already done". That is the one finding with teeth, because that file survives this one: an
-implementer picking it up reads `sql_constraint_column` as already converted and it falls into
-neither bucket, so it is the one relation of the 123 that gets silently skipped. Correct the count
-to eleven, the sites to thirteen, the remainder to 112, and drop `sql_constraint_column` from the
-early list, saying it stayed on the generic arm because its only case-insensitive comparison is
-inside the catalog family. This item's own "Relationship to the sibling items" section claims that
-file "now also records which twelve arrive early", so keeping it in sync was part of what shipped.
+- **The sibling's handoff named the twelfth relation.** `sql_constraint_column` lost its fold when
+  the rule narrowed to comparisons that cross families, so eleven relations converted, not twelve,
+  and thirteen `newRecord` sites, not fourteen. That correction had landed here and not in
+  `roadmap/capture-declares-the-columns-it-writes.md`, which survives this file; an implementer
+  picking it up would have read that relation as already converted while it sits on the generic arm,
+  making it the one relation of the 123 in neither bucket. That body now says eleven, thirteen and
+  112, and says outright that `sql_constraint_column` is not converted and why.
+- **The explanation page overclaimed the sweep.** It ended on "a schema whose views hold no `UPPER`
+  at all", which stopped being true when the node-identity defect view landed on trunk between this
+  item's first implementation commit and its fold-rule one. The page now claims what the rule
+  actually delivers, no per-row fold on any comparison the rule reaches, and names the survivor for
+  what it is: two catalog-produced values matched case-insensitively as a hedge, which no fold rule
+  owes a column to and which goes away by becoming exact. Filed as its own item rather than swept
+  here, the store-side instance of the hedge `roadmap/exact-catalog-name-comparisons.md` already
+  argues against in Java.
+- **This body contradicted itself on the same counts.** The write-path sections said eleven and
+  thirteen while the sibling-relationship and out-of-scope ones still said twelve, fourteen and 111.
+  Corrected.
+- **A stated measurement had no result.** The bulk-property paragraph promised a before-and-after
+  census timing on `sql_column` and `graphql_field` and nothing recorded one. Resolved by dropping
+  the duty rather than manufacturing a number: the property is one prepared statement per relation,
+  the written statements keep that shape by construction, and the paragraph now says so.
 
-**The explanation page overclaims the `UPPER` sweep.** `docs/architecture/explanation/fact-model.adoc`
-line 99 ends "and a schema whose views hold no `UPPER` at all". Not true at the reviewed head:
-`intent_node_metadata_defect` spends two per-row `UPPER` calls matching `sql_column.jooq_name` and
-`column_name` against `sql_node_key_column.column_name`
-(`graphitron-model.sql`, in the `KEY_COLUMN_UNRESOLVED` arm). Those are not this item's: the
-node-metadata view landed on trunk between the first implementation commit and the fold-rule one, so
-the sweep was complete when it was measured and had regressed by the time the sentence was written.
-The claim still has to match the tree, which is the failure mode this item's own comment discipline
-names. Either soften the sentence to state the rule without the absolute, or sweep the two, which
-needs a decision the fold rule does not settle on its own: both operands are `sql_` values, so the
-rule mints nothing, and yet a jOOQ-constant spelling meeting a catalog column name is arguably the
-same dual-namespace crossing every other fold serves. Softening is the smaller change and the
-sweep is a fair Backlog item; either is fine, the overclaim is not. The item that landed that view
-has since reached Done, so no in-flight item covers those two: whoever wants them swept files for
-it rather than looking for an owner.
-
-**This body contradicts itself on the same counts.** "The write path" and its subsections say eleven,
-thirteen and `sql_constraint_column`-excluded; "Relationship to the sibling items" and "Out of scope"
-still say twelve, fourteen and 111. Same correction as the first finding, applied here.
-
-Two things worth recording as clean rather than left implicit, so the next reviewer does not re-derive
-them. The eleven written statements in `FactWrites` were checked mechanically: column list, marker
-arity and bind order agree on all eleven. The three rewritten view predicates are faithful
-translations of what they replaced, including `intent_field_reference_step_hop`'s
-`POSITION('.') > 0` becoming `key_ref_namespace_part IS NOT NULL` and
-`UPPER(COALESCE(a, b))` becoming `COALESCE(a_upper, b_upper)`, and `intent_spelled_table`'s widened
-`UNION` still dedupes to one row per spelling because the split is a total function of it.
-
-One thing the body promises and no artifact records: "the census load is measured before and after;
-`sql_column` and `graphql_field` are the two of the eleven big enough for a regression to show."
-State the measurement or drop the promise on the next pass.
+Two findings the gate recorded as clean, kept so a later reader need not re-establish them. The
+eleven written statements agree on column list, marker arity and bind order, checked mechanically
+across all eleven rather than by eye. The three rewritten view predicates are faithful translations
+of what they replaced: `POSITION('.') > 0` becomes `key_ref_namespace_part IS NOT NULL`,
+`UPPER(COALESCE(a, b))` becomes `COALESCE(a_upper, b_upper)` because `UPPER(NULL)` is `NULL`, and
+`intent_spelled_table`'s widened `UNION` still yields one row per spelling because the split is a
+total function of it, so `candidates` is unchanged.
