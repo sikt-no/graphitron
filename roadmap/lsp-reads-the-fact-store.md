@@ -7,7 +7,7 @@ priority: 2
 theme: lsp
 depends-on: []
 created: 2026-08-12
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # The LSP is a fact-store client
@@ -23,6 +23,34 @@ works around by hand.
 
 The store holds these facts as relations, at the grain the facts have, for every graph in the
 workspace.
+
+
+## Reading this at the gate
+
+This item is large, and most of its length is a record rather than a request. The judgement being
+asked for is one thing: whether where this landed is the delivery the intention describes.
+
+Read in this order.
+
+* **The intention**, everything from "The shape" down to "Resolved questions". Written before and
+  during the work: what the language server was, what it was meant to become, and the capability
+  list it was measured against. Some of it speaks in the present tense about an incumbent that is
+  gone; it is preserved as written, because what the gate compares against is what was promised, not
+  a retelling of it.
+* **"Where it landed"**, the delivery stated against that intention, including the places the two
+  diverge. Every divergence is named there rather than left for the gate to discover.
+* **"Open at the gate"**, the calls that are the reviewer's rather than the implementer's.
+* **"Retired vocabulary"**, the grep list the retirement sweep runs against.
+
+**The build log below is not required reading.** It is a chronological record, one section per design
+decision, appended as each was settled. Its job is to let any single claim in "Where it landed" be
+challenged without that claim having to carry its own reasoning: a decision you want to push on has a
+section there stating what the alternatives were and why the tree looks the way it does. Read it by
+search, not front to back.
+
+**Verification state.** The full reactor build is green: `mvn install -Plocal-db`, fourteen modules.
+`graphitron-lsp` carries 606 tests across 68 files, 3 skipped and none failing. A self review ran
+before this handoff; what it found and fixed is the last section of the build log.
 
 ## The shape
 
@@ -586,6 +614,444 @@ fact model; the reviewer confirms rather than decides.
   cursors and buffers, and folding them in credits their `rewrite/catalog` lines to the LSP
   measurement. That item has shipped, taking `CatalogFacts` with it. The doctrine binding the two
   outlives both: they read one shared store-side *base*, never a narrowing made for one of them.
+
+
+## Where it landed
+
+The delivery, stated against the intention above. Everything here is checkable on the tree; where the
+delivery differs from what the intention said, the difference is named rather than smoothed over.
+
+### The seam, which is the item's own structural test
+
+The intention nominated one test that could not be argued with: `graphitron-lsp`'s pom. It named
+`graphitron` and imported twenty-one types from it, ten of them out of `rewrite/catalog`, and the
+standard set was that it should name `graphitron-model` instead, with whatever remained accounted for
+one type at a time.
+
+It names `graphitron-model`. **No main source in `graphitron-lsp` imports any generator type, and the
+`graphitron` dependency is test-scope.** The module's compile classpath is `graphitron-model`, lsp4j,
+jtreesitter, the tree-sitter natives and slf4j. Nothing the language server ships can reach a
+generator type, and the pom says so in a way a future commit cannot quietly undo: widening the scope
+back to compile is a visible edit with a comment beside it explaining what it would cost.
+
+Accounting for the last six, the ones a late audit found still crossing (five imported, one reached
+by fully-qualified name and therefore missed by the import count):
+
+* **Four were rules or constants rather than models**, and moved *down* to `graphitron-model` rather
+  than being copied, joining the grammar package that already stated the case: a rule about a column
+  belongs in the module that declares the column, not in either module that reads it, because a
+  private copy on either side is a second opinion about a spelling neither owns.
+  * `SourceUri`, both directions of the source-name/URI trip. That was the worst of the six: the
+    forward trip was the generator's `canonicalUri` and the reverse was the language server's
+    `sourceNameOf`, so one round trip was defined in two modules with nothing holding the halves to
+    each other.
+  * `ConstantReferenceGrammar`, the split-at-last-period rule behind
+    `ScalarTypeResolver.parseDirectiveValue`, with the sealed shape verdict over it.
+  * `FieldSourceSigilGrammar`, the two sigil literals and the message for one written where it is not
+    admitted. This was the edge the import count missed, reached by fully-qualified name. The
+    generator rejects such a site and the language server marks it while the author is still typing,
+    so a literal spelled twice is the two surfaces disagreeing about one value.
+  * `InferredDirectiveArgs`, as it is.
+* **Two were the directive vocabulary's**, `RewriteSchemaLoader.directivesSdl` for the bundled
+  definitions and `DeprecationRecognizer` for whether a coordinate is deprecated. Neither moved. The
+  vocabulary was **replaced**, and that is the change worth the reviewer's attention below.
+
+The test-scope edge is 29 distinct generator types, all of them fixture-side: capture, schema
+loading, lint configuration, the validation report. The fixtures stand a store up by running real
+capture rather than by inserting rows, which is what the Acceptance section asked for, and it is why
+they need the build tier. Consolidating that surface is
+`fact-store-test-harness-consolidation.md`'s, not this item's.
+
+### The vocabulary, which was the last thing holding the edge open
+
+The language server used to parse graphitron's bundled `directives.graphqls` at startup into a
+graphql-java `TypeDefinitionRegistry` and resolve every cursor against it. That was the single
+remaining reason the module needed graphql-java and the generator at runtime, and it was also a
+second model: a directive an author declared themselves was known only by argument name, because the
+registry held graphitron's definitions and the projection held everyone else's.
+
+It is gone. `DirectiveSurface` reads the same four relations an author's own declarations land in
+(`graphql_directive`, `graphql_directive_argument`, `graphql_type`, `graphql_field`), because capture
+parses the bundled file like any other schema file. Three consequences, in descending order of how
+much they change:
+
+* **The bundled-versus-user split is unrepresentable rather than fixed.** An author's own directive
+  now gets the same nested descent through its input types that `@reference` gets. That asymmetry was
+  never a decision; it was what having two sources looked like.
+* **The vocabulary became state.** It is loaded per graph and reloaded when capture swaps, where it
+  used to be a constant compiled into the session. `Workspace` holds it; `LspVocabulary.empty()` is
+  what a session before its first build has, and it resolves nothing rather than guessing.
+* **The startup drift check became a test.** The vocabulary used to refuse to be constructed when an
+  overlay coordinate failed to resolve, which was a sound guard while it was reading a file shipped in
+  the jar. Read against a captured graph it conflates two different failures, and only one of them is
+  drift: a graph nobody has captured yet would take the whole editor down. `DriftDetectionTest`
+  asserts exactly the old invariant, against a capture of the shipped file, with none of the
+  collateral. This is a deliberate weakening of a runtime guard and the single change here most worth
+  a second opinion.
+
+The surface is loaded whole and held rather than queried per question. That is forced rather than
+chosen: the diagnostics walk reads nothing by construction, so that a recalculation costs one
+statement per graph rather than one per value an author wrote, and a store round trip inside
+coordinate resolution would have broken the invariant four tests pin. The one place that still
+queries these relations directly is `ArgNameCompletions`, and only for the half the surface cannot
+answer: it needs an input object's field names *in declaration order*, which is a listing rather than
+a lookup, while every nesting step it walks resolves through the held surface.
+
+Deprecation left with the same commit and for a plainer reason: nothing on any request path read it.
+`deprecationOf` and `deprecatedCoordinates` had exactly one consumer, a test asserting that the
+shipped SDL and the shipped quick-fix registry agree, so the reading moved to test support beside
+that assertion. One honest gap came out of it: no relation carries `@deprecated` applied to a
+*directive definition's formal argument*, so `SdlDeprecations` parses the shipped file rather than
+reading a graph, and its javadoc says why instead of a store-shaped reader quietly answering for two
+of the three markers.
+
+### The six named projections, and one miscount
+
+"What retires" named six projection types the language server imported, on the reasoning that a port
+would keep them.
+
+* `DirectiveShape`, `InputValueShape`, `FieldClassification` and `TypeClassification` are **deleted
+  outright**, along with `LspSchemaSnapshot` and the projection half of `CatalogBuilder`.
+* `TypeBackingShape` **stays**, and not as residue: its producer is `CatalogBuilder.projectTypesByName`
+  and its reader is the walk shadow, a capture-time transcription rather than anything shipped to a
+  consumer.
+* `InferredDirectiveArgs` was a **miscount at drafting**. It is a three-entry constant table naming
+  which argument each inference rule fills in, rebuilt by nothing and read by both tiers. A query over
+  the claim stratum cannot replace it, because what it states is which arguments inference fills in,
+  not what any of them resolves to. It moved to `graphitron-model` with the other rules.
+
+`CompletionData` also **stays**, which an earlier draft of the retired-vocabulary list got wrong. It
+is capture's input type for the classpath census now, not a projection any consumer reads.
+
+The item had deferred one question rather than answering it: whether the classification projections
+themselves delete depends on their generator-side readers, "which is a separate census". The census
+ran at the gate and the answer was **nobody**. `CatalogBuilder.buildSnapshot` ran on every generator
+pass and reached exactly one production statement in the reactor, an `instanceof` in the dev goal
+asking whether a round had classified at all. The generator does not classify through the projection;
+it classifies into `GraphitronSchema` and reads that. So the projection was a model with no consumer
+being rebuilt on every build, which is precisely the second model this item exists to remove, and it
+deleted here rather than in a follow-up.
+
+### The numbers, said plainly
+
+Acceptance asked for the line counts at the end, as an outcome rather than a gate.
+
+| Measure | At filing | Now |
+|---|---|---|
+| `graphitron-lsp` main | 9,119 lines | 14,203 lines across 81 files |
+| `graphitron-lsp` tests | not recorded | 16,063 lines, 606 tests in 68 files |
+| `rewrite/catalog` | 4,008 lines | 1,536 lines |
+| the seam inside it (the package less `ClasspathScanner`, with `SourceWalker` moved to `rewrite/capture`) | 3,232 lines | 997 lines |
+| the store's DDL | n/a | 5,603 lines, with 45 `intent_` views as the derived stratum |
+
+**The two directions are opposite and both were expected.** The item said in advance that saying so
+was the point. A query answering a capability from relations is more code than a switch reading a
+value someone else pre-projected, and the `intent_` stratum is new code that did not exist before.
+The largest package in the module is `facts` at 3,231 lines, and that package **is** the seam: queries
+and the row types they return, with nothing behind them. What it replaced went the other way and
+further than the baseline anticipated, because once the language server stopped reading the
+classification projection the census found nobody else reading it either.
+
+Attribution is coarser than the figures look. The module took other items' work over the same period,
+and the clone these were measured in does not reach back to the baseline commit, so these are the
+totals now against the totals then rather than this item's own diff.
+
+### The acceptance corpus
+
+All five cases are pinned. Two are pinned as the property they illustrate rather than as literally
+worded, and the difference is stated here rather than left for the gate to find.
+
+| Acceptance case | Pinned by |
+|---|---|
+| A dirty buffer beside well-formed siblings | `CompletionStoreWiringTest.aBufferThatWillNotParseCompletesAgainstWhatTheOtherFileDeclares` (see the divergence below) |
+| A type assembled from several files, resolving to its declaration sites | `IntraSchemaDefinitionTest` (see the divergence below) |
+| Two graphs in one store, neither seeing the other's tables | `CompletionStoreWiringTest.oneGraphsPopupDoesNotOfferAnothersClasses`, `ReferenceCompletionsTest.aSiblingGraphReadsNoneOfTheBinding`, `SdlDescriptionsTest.anotherGraphsDeclarationsAreInvisible` |
+| One file in two graphs, surfacing the multi-graph membership arm | `StoreAccessTest.aDocumentTwoGraphsReadResolvesToTheSessionsOwn`, with the neighbouring absent-arm cases |
+| A `.java` edit and save beside an untouched schema | `SourceCadenceHoverAndDefinitionTest.aSourceEditMovesHoverAndGotoTogetherWithoutAGeneratorPass` |
+
+**Divergence one: the first case names a trigger that does not exist.** "`extend type |` completes
+against the other files" asks for SDL type-name completion, which the language server does not have
+and never had; there is no such arm anywhere in the capability inventory. What the example
+illustrates is the division of labour: a buffer the parser refuses is the question, not a reason to
+decline it. That property is pinned on a trigger the inventory does carry. The test opens a captured
+document, replaces its content with SDL carrying a syntax error, completes `@nodeId(typeName:)`
+against a `@node` type only the graph's *other* schema file declares, and asserts the buffer's tree
+carries an error so the case cannot quietly decay into a well-formed-buffer one.
+
+One boundary the example blurred is worth naming beside it: the store answers for a document some
+graph has captured, so a file nobody has saved yet resolves to no graph and gets no answer, which
+`StoreAccess` states and `StoreAccessTest.aDocumentNoGraphHasReadAnswersAbsent` pins.
+
+**Divergence two: the second case overshoots the other way.** It asks a jump to resolve to *all* a
+type's declaration sites. `IntraSchemaDefinitions` returns one, and one is the right answer for a
+jump. What the flattened `typeDefinitionLocations` map could not do was **choose**: one entry per type
+name meant an extension overwrote a definition by whichever the projection pass reached last. The
+store carries every site and the resolution is a rule over them, an open buffer's live span beating a
+captured one and a base declaration beating its extension. The test pins both preferences and the
+across-files jump.
+
+Neither divergence changes a shipped behaviour. Both are the Acceptance text catching up with what
+the capability inventory actually contains.
+
+Latency was not measured, and the item said in advance that it would not be sequenced or gated: the
+sanctioned answer to a slow path is a materialized view with the DDL comment owning why, so the
+decision is already made and only its trigger is open. No path has been reported slow and none has
+materialized.
+
+### The cadence change, which is the one behaviour an author will notice
+
+Diagnostics ride the capture cadence rather than the keystroke. Every source reads as rows from the
+store, published per file when capture swaps; the per-keystroke recomputation and its cross-file
+fan-out retired with the tree-derived type index that aimed them.
+
+That trades keystroke-live feedback in the one buffer being typed in for a single shape everywhere.
+Against the incumbent it is not a close comparison, because the incumbent silenced the whole replay
+while the snapshot was demoted: a newly broken schema showed nothing at all, where here a file that
+will not parse and a schema that will not assemble each report exactly why, as rows, per file. A
+stale buffer shows the diagnostics of its last captured content, re-anchored through its live tree
+where the text has moved.
+
+### The doctrine the retirement owed a repointing
+
+Three named exemplars in `docs/architecture/explanation/`, repointed rather than deleted.
+
+* The one-slot provenance exemplar in `fact-model.adoc` was `CompletionData.NodeMetadata` and is
+  `graphitron_node` now, whose `type_id` holds the authored value, stays null where nothing was
+  authored, and whose own comment names the type-name fallback as a derivation.
+* The freshness paragraph beside it described a consumer carrying an availability axis and a
+  current-versus-previous one. It explains why no consumer carries either now: two-stage capture
+  turned both refusals into rows, and what is left is a lag of stated size rather than a state a
+  surface switches on.
+* The projection-seam enforcer, named in both `fact-model.adoc` and `development-principles.adoc`,
+  was `CatalogBuilder.projectFieldClassification`. **No projection seam survives**, so both documents
+  now say that each consumer's coverage gate is over its own sealed vocabulary instead:
+  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` for code generation and
+  `TriggerDispatchMatrixTest` for the language server. (An earlier gate section in the build log says
+  the exemplar was kept and only restyled; the census that ran afterwards deleted the method, and the
+  documents had not caught up until the self review.)
+
+`DocSizeBudgetTest` shaped how that last one was worded, and was right to. `development-principles.adoc`
+has no headroom left against its own 3,500-word cap; the next addition to it displaces something.
+
+### What stands in for a parity gate
+
+The intention declined a shadow-parity gate and nominated an enforcer instead: an exhaustive
+partition over (trigger × surface), with the trigger universe derived from
+`getPermittedSubclasses()` rather than hand-listed, so a new trigger cannot sit unaccounted for while
+the test stays green.
+
+That is `TriggerDispatchMatrixTest`, over 13 sealed `Trigger` leaves and 6 `LspSurface` arms. Every
+cell is `answered`, `declared-no-answer` or `unimplemented`, and each surface's dispatch is a
+compile-checked exhaustive switch. The `†` gaps in the capability inventory are declared facts the
+matrix pins rather than silently empty arms.
+
+## Open at the gate
+
+Four things left deliberately for the reviewer rather than decided at the end of the item.
+
+**1. Two author-visible changes are undocumented, and whether that is a gap is a call.** The item is
+an internal re-platforming and carries no `User documentation (first-client check)` section, which
+the workflow exempts an internal refactor from. Two shipped changes are nonetheless visible to a
+schema author, and neither is written down in the manual: diagnostics now appear when capture swaps
+rather than as the author types, and a session that has never captured completes nothing at all,
+argument names included. No manual page claims otherwise today, so nothing there is *wrong*. The
+question is whether either deserves a sentence on a reference page. Adding one at the end of the item
+without asking would be a silent scope widening, so it was not done.
+
+**2. Three design calls worth a second opinion.** Each is stated where it landed, with its reasoning
+in the build log; they are collected here so the review does not have to find them.
+
+* The drift check stopped being fatal (see "The vocabulary"). A guard that used to take the session
+  down is now a build-time test. The argument is that an unresolved coordinate has a second cause,
+  an uncaptured graph, that must not kill an editor. The counter-argument, if there is one, is that
+  a genuinely drifted overlay now degrades silently in a running session.
+* `DirectiveSurface` is loaded whole and held rather than queried per question. The alternative costs
+  the one-statement-per-graph invariant that four tests pin, so this is the load-bearing shape
+  decision in the vocabulary cut.
+* The `graphitron` dependency is test-scope rather than removed. The argument is that the fixtures
+  stand a store up by running real capture, which is what Acceptance asked for and which needs the
+  build tier. It does mean the structural test is "no main source imports one" rather than "the
+  module cannot see it at all".
+
+**3. This item's deletions falsified premises in other roadmap items.** Found by the self review's
+retirement sweep, listed rather than acted on, because retiring another item is that item's decision
+and not this one's. Each names a type this item deleted.
+
+* `lsp-structural-consolidation.md` (In Progress) is the strongest case for `Discarded`. It is
+  an umbrella over duplication in a module that has since been rewritten wholesale, and the "sound
+  spine" it consolidates *toward* is the vocabulary's startup invariant (now a test) and the
+  freshness-aware snapshot matching (deleted).
+* `mcp-snapshot-axis-key-naming.md` (Backlog) is entirely about how four MCP tools spell the
+  availability and freshness axes of `LspSchemaSnapshot`. The snapshot is deleted and no consumer
+  carries a freshness axis, so the item has no subject left.
+* `lsp-compile-diagnostics-publish.md` (Backlog) is premised on diagnostics landing on
+  `Workspace.compileDiagnostics()`, which retired. The feature it wants, javac errors published
+  against generated-file URIs, may still be wanted; the mechanism it names is gone.
+* Eleven more name `CompletionData`, `SourceWalker`, `LspSchemaSnapshot` or a retired method in
+  passing rather than as a premise, so each needs a line edited rather than a decision:
+  `lsp-reference-path-authoring.md`, `lsp-nodetype-hover-column-scoping.md`,
+  `validator-reference-candidate-hint-terminal-table.md`, `consumers-share-relations-not-queries.md`,
+  `assembled-schema-owns-the-sdl-census.md`, `split-query-marker-sweep.md`,
+  `coordinate-lowers-to-datafetcher-queryparts.md`, `fact-store-test-harness-consolidation.md`,
+  `model-free-of-emit-vocabulary.md`, `deprecate-externalfield-fold-into-service.md` and
+  `relevance-ranked-search.md`. The two files under `roadmap/audits/` that also match are historical
+  records and should be left as written.
+
+**4. The test-scope edge is real and is somebody else's.** 29 distinct generator types across
+`graphitron-lsp`'s tests. `fact-store-test-harness-consolidation.md` owns consolidating that surface;
+this item deliberately stopped at the runtime edge.
+
+## Retired vocabulary
+
+The Done-gate sweep greps prose surfaces for these: javadoc, implementation comments, `.adoc` files,
+the user manual, fixture prose and SDL descriptions, test names, and roadmap bodies. Grouped by what
+they belonged to rather than by when they went, because the sweep is a search and not a history. Read
+"**Collisions**" and "**Survives elsewhere**" first: they are the names that will match something
+live and correctly so.
+
+### Collisions the sweep will hit and should not act on
+
+* `DirectiveShapeSmokeTest` names the SDL shape of `@service` and its siblings, the nested input under
+  an outer argument. Not the retired projection type.
+* `graphitron-sakila-example`'s federation tests say "directive shape" about emitted SDL. Same word,
+  different subject.
+* The retired `compileDiagnostics` is `Workspace`'s slot. The concept is alive and the MCP tool
+  answers about it from the store's own relation.
+* `TypeContext.tableNameOf` is retired; `CatalogBuilder.tableNameOf` is a different method and is
+  alive.
+* `LspVocabulary.findInputValue` is retired; `DeprecationRecognizer.findInputValue` is generator-side
+  and alive.
+* `ClaimFacts.separateFetchRules` is retired; `InlayFacts.Rows.separateFetchRules` is the relation's
+  new home.
+
+### Survives elsewhere, retired only from the language server
+
+* `DeprecationRecognizer` still backs the `no-deprecated-directive-usage` lint rule.
+* `RewriteSchemaLoader` is still how every build finds its schema.
+* The language server calls neither; its tests still do.
+
+### Not retired, despite an earlier draft of this list saying so
+
+* `CompletionData` stays, as capture's input type for the classpath census.
+* `InferredDirectiveArgs` stays, and moved to `graphitron-model`'s grammar package. Listing it among
+  the projections was a miscount.
+* `TypeBackingShape` and `CatalogBuilder.projectTypesByName` stay; their reader is the walk shadow.
+* `SourceWalker` stays, one product lighter, moved to `rewrite/capture` beside `ClasspathScanner`.
+* `TypeBackingClass.resolve` stays; only `TypeBackingClass.contested` and `ofTypes` went.
+
+### The classification projections, and the coverage apparatus that gated them
+
+`FieldClassification` with every arm it declared, and `FieldClassification.lspColumnDispatch` with the
+sealed `LspColumnDispatch` its three column readers switched on. `TypeClassification` with every arm.
+`CatalogBuilder.buildSnapshot` in both overloads, `projectFieldClassifications`,
+`projectFieldClassification`, `projectTypeClassifications`, `projectTypeClassification`,
+`inputConsumerTables`. `GraphQLRewriteGenerator.BuildArtifacts` with `BuildOutput.artifacts`.
+`DevMojo.InitialOutput.snapshot`. `LspClassificationLabels` with `projectionLabel` and
+`projectionTypeLabel`. The `@ProjectionFor` annotation, `ProjectionCoverageTest`,
+`ExemptionRegistry.LSP_PROJECTION` with `NO_PROJECTION_REQUIRED`, `PROJECTION_WALKER`,
+`projectionForCoveredLeaves` and `allModelLeaves`, and `ExemptionRegistry.corpusObligations` now that
+it and `obligations` agree.
+
+### The snapshot, and everything that took one
+
+`LspSchemaSnapshot` with `Built`, `Unavailable` and `unavailable()`, and the `Built.Current` /
+`Built.Previous` seal with `Workspace.demoteSnapshot` and the dev goal's three calls to it.
+`Workspace.snapshot` and `Workspace.setBuildOutput`. `CompletionRequest.snapshot`. The snapshot
+parameter on `DeclarationDefinitions.compute`, `DeclarationHovers.compute` and `Hovers.compute`.
+`DeclTarget.projectedMethod`, `DeclTarget.of`'s and `DeclarationFacts`'s `ProjectedMethod` parameter
+with the record itself, and `DeclarationFacts.Rows.projectedArity` with the `jvm_method_parameter` arm
+behind it. `typeDefinitionLocations` with `CatalogBuilder.projectTypeDefinitionLocations` and
+`putTypeLocation`. The snapshot's `typesByName` with its `typeBacking` lookup.
+
+### The directive vocabulary's registry
+
+`LspVocabulary.registry` with the `load()` and `load(overlay, sdl)` factories that built one,
+`LspVocabulary.unwrapToInputTypeName`, `LspVocabulary.findInputValue`,
+`LspVocabulary.deprecatedCoordinates`, `LspVocabulary.deprecationOf`,
+`LspVocabulary.descriptionOf` and `LspVocabulary.LspStartupException`. `Workspace.resolveDirective`.
+
+### The directive projection and its readers
+
+`DirectiveResolution` with its `Bundled` / `User` / `Unknown` permits. `Diagnostics.validateUnknownArgs`,
+`descendUnknownArgs`, `validateRequiredArgs`, `validateUnknownArgsAgainstSnapshot` and
+`validateRequiredArgsAgainstSnapshot`. `LspSchemaSnapshot.Built.directives` with its `directive(name)`
+lookup, `DirectiveShape`, `InputValueShape`, the sealed `TypeShape` with its `Named` / `List` permits,
+`CatalogBuilder.projectInputValues`, `projectType(Type)` and `descriptionOf`, and the registry-only
+`buildSnapshot` overload.
+
+### The keystroke cadence
+
+`WorkspaceFile.refreshTypeIndex` with the `declaredTypes` and `dependsOnDeclarations` sets it
+maintained. `Workspace.enqueueTouched` with its `intersects`. The `TypeNames` class that fed them, with
+`extract`, the `Extracted` record and the tree-sitter query behind both; its `BUILTIN_SCALARS` is a
+private constant on `IntraSchemaDefinitions` now, the one surface that reads it.
+
+### The workspace's other slots
+
+`Workspace.compileDiagnostics` and `setCompileDiagnostics`, with `reportCompile`'s and
+`maybeStartIncrementalCompiler`'s `Workspace` parameters. `Workspace.validationReport` with
+`setBuildOutput`'s report parameter. `Workspace`'s `catalog` field with its `catalog()` accessor and
+both `CompletionData`-taking constructors, and the `CompletionData` parameters on `Hovers.compute`,
+`SdlActions.all` and `buildSnapshot`. `Workspace.sourceIndex` and `setSourceIndex`.
+
+### Diagnostics' per-value readers
+
+`Diagnostics.validateCatalogTable`, `validateCatalogFk`, `validateClassName`,
+`validateScalarTypeClasspath`, `validateNodeType`, `validateMethod`, `validateFieldMember`,
+`validateColumnOnResolvedTable`, `validateColumnOnTables`, `validateMemberSlot`, `validateArgMapping`
+and `resolveParameterNames`, all replaced by a walk that collects and a judgement that reads one
+answer. `Diagnostics.collectAllFkNames`. `Diagnostics` no longer reads `CatalogTables`, `CatalogKeys`,
+`CatalogColumns`, `ClasspathClasses`, `ClasspathMethods`, `FieldColumnTable` or `TypeMemberScope`
+directly at all; those relations are arms of `DiagnosticFacts`, and the two rules that had to survive
+the move are `TypeMemberScope.resolve` and the `spelledBy` conditions on `CatalogTables` and
+`CatalogKeys`.
+
+### The per-grain bulk readers, recomposed into `InlayFacts`
+
+The whole of `ClaimClassifiers` (`ofTypes`, `ofFields`) and of `FieldMemberName` (`of`,
+`matchedColumn`). `BoundTables.unambiguous` and `unambiguousByType`. `TypeBackingClass.ofTypes` with
+its `candidatesByType`. `ClaimFacts.separateFetchRules`. `InlayHints` names no reader class at all now
+and its per-directive registry holds collectors rather than renderers, so
+`renderInferredTableNameHint`, `renderInferredFieldNameHint` and `renderInferredReferencePathHint` are
+gone with the `InferenceSources` record and the `InlayHintKind` parameter on `makeHint`.
+
+### The carrier projection and the source sigil
+
+`payloadDataFieldByType` off both `Built` arms, `LspSchemaSnapshot.siteContext`,
+`CatalogBuilder.projectPayloadDataFields`, and the sealed `FieldSourceSigil.SiteContext` with its
+`PayloadDataField` / `Other` permits and `sourceSigilDefinedAt`.
+
+### The source-position index, and its resolution policy
+
+`SourceWalker.Index` with `ambiguousMethods`, `methodsByName`, `resolveMethod`, `methodByName` and the
+`Decl` / `MethodKey` / `MethodNameKey` / `FieldKey` shapes it was keyed by. `SourceWalker.walk` and
+`indexOf` that built it. `Definitions.methodLocation`. The whole of `Descriptions` (`ofTable`,
+`ofColumn`, `classJavadoc`).
+
+### The backing shapes and the type context
+
+`TypeBackingShape.MemberSlot` with the `RecordBacking.components` / `PojoBacking.accessors` payloads,
+and `CatalogBuilder`'s `projectRecord`, `projectPojo`, `beanAccessorSlot` and `lowercaseFirst`.
+`TypeBackingClass.contested` with `ClaimFacts.ofType`'s classifier parameter. `TypeContext.tableNameOf`
+with `ArgMappingSupport.resolveMethod`. `TypeContext.tableNameFromClassification` with the sealed
+`InferredDirectiveArgs.AbsentArm` and its `TableName` permit. The relation
+`intent_class_member_type_ref`, whose union the owner-keyed `intent_declared_type_ref` states one key
+lower.
+
+### Gone with the sibling item that took them
+
+`CompletionData`'s non-LSP readers went to `catalog-facts-readers-move-to-the-store.md`, which deleted
+`CatalogFacts` with the last of them, `GraphQLRewriteGenerator`'s output record included.
+`CatalogBuilder`'s projection pass went here.
+
+## Build log
+
+Everything below this line is the record of design decisions taken while implementing, one section
+per decision, appended as each was settled and left in the order it happened. **It is not required
+reading at the gate.** Its job is to let a claim in "Where it landed" be challenged without that
+claim having to carry its own reasoning: search it for the subject you want to push on, and the
+section that settled it states the alternatives that were considered and why the tree looks the way
+it does. The last section is the self review that ran before this handoff.
 
 ## Settled while building: the reading stages
 
@@ -2917,107 +3383,6 @@ relation shares two literals with and whose comments already cross-reference eac
 constraint was mechanical and the outcome is the ordering a reader wants, which is worth noting only
 because the reverse happens often enough to be worth checking for.
 
-## Retired vocabulary
-
-Provisional until the cutover lands; the Done-gate sweep greps for these. Gone outright at the gate,
-with the census that found them unread: `FieldClassification` and `TypeClassification` with every
-arm either declared, `LspSchemaSnapshot` with `Built`, `Unavailable` and `unavailable()`,
-`CatalogBuilder.buildSnapshot` in both overloads with `projectFieldClassifications`,
-`projectFieldClassification`, `projectTypeClassifications`, `projectTypeClassification` and
-`inputConsumerTables`, `GraphQLRewriteGenerator.BuildArtifacts` with `BuildOutput.artifacts`,
-`DevMojo.InitialOutput.snapshot`, and the projection-coverage apparatus: the `@ProjectionFor`
-annotation, `ProjectionCoverageTest`, `ExemptionRegistry.LSP_PROJECTION` with
-`NO_PROJECTION_REQUIRED`, `PROJECTION_WALKER`, `projectionForCoveredLeaves` and `allModelLeaves`,
-and `ExemptionRegistry.corpusObligations`'s distinction from `obligations` now that the two agree.
-Gone with the vocabulary's registry: `LspVocabulary.registry` with the `load()` and
-`load(overlay, sdl)` factories that built one, `LspVocabulary.unwrapToInputTypeName`,
-`LspVocabulary.findInputValue`, `LspVocabulary.deprecatedCoordinates`, `LspVocabulary.deprecationOf`
-and `LspVocabulary.LspStartupException`. Two names the sweep will hit that are retired only from the
-language server and not at all from the generator: `DeprecationRecognizer` still backs the
-`no-deprecated-directive-usage` lint rule, and `RewriteSchemaLoader` is still how every build finds
-its schema; the language server no longer calls either, and its tests still do. Two collisions the sweep
-will hit and should not act on, both of them the words meaning something else: `DirectiveShapeSmokeTest`
-names the SDL shape of `@service` and its siblings, the nested input under an outer argument, not the
-retired projection type; and `graphitron-sakila-example`'s federation tests say "directive shape"
-about emitted SDL. The retired `compileDiagnostics` is `Workspace`'s slot, not the concept, which the
-MCP tool still answers about from the store's own relation. `CompletionData`,
-`CatalogFacts`, and `CatalogBuilder`'s projection pass. Gone already: every language-server read of
-`LspSchemaSnapshot`, which is `DeclTarget.projectedMethod`, `DeclTarget.of`'s and
-`DeclarationFacts`'s `ProjectedMethod` parameter, the record itself, `DeclarationFacts.Rows`'s
-`projectedArity` with the `jvm_method_parameter` arm behind it, and the snapshot parameter on
-`DeclarationDefinitions.compute`, `DeclarationHovers.compute` and `Hovers.compute`; with them
-`Workspace.snapshot` and `Workspace.setBuildOutput`, a completed build's whole effect on the
-workspace being the enqueue `markAllForRecalculation` already names. The projection stays where it is
-produced, the classifier deriving its type projection from its field one. Also gone already: the
-keystroke cadence's whole apparatus, which is
-`WorkspaceFile.refreshTypeIndex` with the `declaredTypes` and `dependsOnDeclarations` sets it
-maintained, `Workspace.enqueueTouched` with its `intersects`, and the `TypeNames` class that fed
-them (`extract`, the `Extracted` record, and the tree-sitter query behind both; the class is gone,
-its `BUILTIN_SCALARS` now a private constant on `IntraSchemaDefinitions`, the one surface that
-reads it). `Workspace.compileDiagnostics` and `setCompileDiagnostics` went in the same session,
-with `reportCompile`'s and `maybeStartIncrementalCompiler`'s `Workspace` parameters: every reader
-of a compile round reads the store's own relation. Before those,
-`Workspace.validationReport` with `setBuildOutput`'s report parameter, the language server reading a
-build's own findings from the store's `diagnostic` view;
-`LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
-(`ofTable`, `ofColumn`, `classJavadoc`), `Definitions.methodLocation`, and
-`FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
-switched on, and `LspClassificationLabels` with `projectionLabel` and `projectionTypeLabel`,
-and `TypeBackingShape.MemberSlot` with the `RecordBacking.components` /
-`PojoBacking.accessors` payloads and `CatalogBuilder`'s `projectRecord`, `projectPojo`,
-`beanAccessorSlot` and `lowercaseFirst`, and `TypeContext.tableNameOf` with
-`Diagnostics.collectAllFkNames` and `ArgMappingSupport.resolveMethod`, and
-`TypeContext.tableNameFromClassification` with the sealed `InferredDirectiveArgs.AbsentArm`
-and its `TableName` permit, and the relation `intent_class_member_type_ref`, whose union the
-owner-keyed `intent_declared_type_ref` states one key lower; `DirectiveResolution`
-follows when diagnostics moves. `typeDefinitionLocations` is gone outright, along with `CatalogBuilder`'s `projectTypeDefinitionLocations`
-and `putTypeLocation`: goto's intra-schema arm was its only reader, it reads the declaration sites now,
-and the comment naming the MCP schema view as a second reader was describing a reader that had already
-left. The
-`Built.Current` / `Built.Previous` seal is gone outright, along with `Workspace.demoteSnapshot` and
-the dev goal's three calls to it: the diagnostics replay was its last reader, and the replay reads a
-build's own findings from the store now. `Built` is one record, and what a failed pass leaves behind
-is the last good projection rather than a demoted one. `TypeBackingClass.contested` is gone as well, along with
-`ClaimFacts.ofType`'s classifier parameter: the type hover was the only caller of either, and its
-block reads the conflict relation as one arm of a single statement now, with `TypeBackingClass.resolve`
-deciding whether that arm's arity is an answer. Diagnostics' own per-value readers went the same way:
-`Diagnostics.validateCatalogTable`, `validateCatalogFk`, `validateClassName`, `validateScalarTypeClasspath`,
-`validateNodeType`, `validateMethod`, `validateFieldMember`, `validateColumnOnResolvedTable`,
-`validateColumnOnTables`, `validateMemberSlot`, `validateArgMapping` and `resolveParameterNames` are all
-gone, replaced by a walk that collects and a judgement that reads one answer. `Diagnostics` no longer
-reads `CatalogTables`, `CatalogKeys`, `CatalogColumns`, `ClasspathClasses`, `ClasspathMethods`,
-`FieldColumnTable` or `TypeMemberScope` directly at all; the relations those readers own are arms of
-`DiagnosticFacts`, and the two rules that had to survive the move are `TypeMemberScope.resolve` and the
-`spelledBy` conditions on `CatalogTables` and `CatalogKeys`. The inlay recomposition retires the rest of
-the per-grain bulk readers: the whole of `ClaimClassifiers` (`ofTypes`, `ofFields`) and of
-`FieldMemberName` (`of`, `matchedColumn`), plus `BoundTables.unambiguous` and `unambiguousByType`,
-`TypeBackingClass.ofTypes` with its `candidatesByType`, and `ClaimFacts.separateFetchRules`. Their
-relations are arms of `InlayFacts` now. `InlayHints` no longer names a reader class at all, and its
-per-directive registry holds collectors rather than renderers, so `renderInferredTableNameHint`,
-`renderInferredFieldNameHint` and `renderInferredReferencePathHint` are gone along with the
-`InferenceSources` record and the `InlayHintKind` parameter on `makeHint`. The carrier projection
-went with the sigil's two readers: `payloadDataFieldByType` off both `Built` arms,
-`LspSchemaSnapshot.siteContext`, `CatalogBuilder.projectPayloadDataFields`, and the sealed
-`FieldSourceSigil.SiteContext` with its `PayloadDataField` / `Other` permits and
-`sourceSigilDefinedAt`. `CompletionRequest.snapshot` is gone too, with `Completions` no longer passing
-one: the sigil arm was its last reader. What the language server no longer receives went next:
-`Workspace`'s `catalog` field with its `catalog()` accessor and both `CompletionData`-taking
-constructors, the `CompletionData` parameters on `Hovers.compute` and `SdlActions.all`, and the
-snapshot's `typesByName` with its `typeBacking` lookup, which took `buildSnapshot`'s own
-`CompletionData` parameter with it. `CatalogBuilder.projectTypesByName` stays: its reader is the walk
-shadow, which is capture-time rather than a projection anyone ships. The directive surface went next,
-readers first: `DirectiveResolution` with its `Bundled` / `User` / `Unknown` permits and
-`Diagnostics`' `validateUnknownArgs`, `descendUnknownArgs`, `validateRequiredArgs`,
-`validateUnknownArgsAgainstSnapshot` and `validateRequiredArgsAgainstSnapshot`, then the projection
-itself: `LspSchemaSnapshot.Built.directives` with its `directive(name)` lookup, `DirectiveShape`,
-`InputValueShape`, the sealed `TypeShape` with its `Named` / `List` permits, `CatalogBuilder`'s
-`projectInputValues`, `projectType(Type)` and `descriptionOf`, and the registry-only `buildSnapshot`
-overload. The source-position index went
-the same way and took its resolution policy with it: `SourceWalker.Index` with `ambiguousMethods`,
-`methodsByName`, `resolveMethod`, `methodByName` and the `Decl` / `MethodKey` / `MethodNameKey` /
-`FieldKey` shapes it was keyed by, `SourceWalker.walk` and `indexOf` that built it, and `Workspace`'s
-`sourceIndex` / `setSourceIndex`. `SourceWalker` itself stays, one product lighter, and moves to
-`rewrite/capture` beside `ClasspathScanner`.
 
 ## Settled while building: the missing relation was two rules already written, one grain apart
 
@@ -4372,3 +4737,59 @@ land in, so two of the three shipped markers are rows and the third is not.
 fixtures need it to stand a store up by running real capture rather than by inserting rows.
 graphql-java leaves the language server's compile classpath with it. What remains at compile scope is
 `graphitron-model`, lsp4j, tree-sitter and its natives, and slf4j.
+
+
+## Settled at the gate: the self review, and what a stale `{@code}` reference is
+
+Run before the handoff, on the reasoning that a reviewer's fresh context is worth spending on
+judgement rather than on rot the implementer could have found with a grep. Four sweeps, five real
+findings, all fixed here.
+
+**The retirement sweep, run against the implementer's own list.** Every name in "Retired vocabulary"
+greped across code, `.adoc` files and roadmap bodies. Three names still stood in live prose. Two
+architecture documents named `CatalogBuilder.projectFieldClassification` as the live enforcer of "one
+model, many views", and it had been deleted by the census that ran later in the same item, which is
+the hazard of a document naming a symbol and an item settling a question in two passes. Both now say
+what is actually true and is a stronger statement of the principle: no projection seam survives, so
+each consumer's coverage gate is over its own sealed vocabulary. `ExemptionRegistryTest`'s javadoc
+still explained the `LSP_PROJECTION` row and the unit-tier test that asserted it, both deleted.
+
+That sweep also found the finding this item cannot fix, which is item three of "Open at the gate":
+fifteen other roadmap items name a type deleted here, three of them premised on one.
+
+**A `{@code}` sweep, which is the one the build cannot do for itself.** The javadoc reference gate
+resolves `{@link}` and fails the build on a dangling one, which is why no `{@link}` had rotted. It
+cannot see `{@code}`, and that is exactly where the rot was: every capitalised `{@code Identifier}`
+in the language server's main sources was checked against the type names that exist. Two named
+deleted classes, `InlayHints` pointing at the sealed `AbsentArm` and `InlayFacts` at
+`FieldMemberName`, both retired by this item and both invisible to the gate. Worth naming as a
+standing hazard rather than as two typos: a reference downgraded from `{@link}` to `{@code}` to
+silence the gate is a reference that will rot, which is why the convention says to downgrade only
+when the target genuinely is not a resolvable symbol.
+
+**Dead code the item's own last commit left.** `ExemptionRegistry.corpusObligations` and
+`obligations` had been reduced to two hand-written literals of the same five constants, with a test
+asserting they agreed; the distinction was already declared retired and the code had not caught up.
+One list now, and the test that compared them goes, its invariant being structural rather than
+asserted. In `DirectiveSurface`, the `orderBy(ORDINAL)` clauses and the `LinkedHashMap` /
+`LinkedHashSet` around them were inert: the canonical constructor's `Map.copyOf` and `Set.copyOf`
+discard insertion order, so the surface advertised a guarantee it did not keep. The ordering machinery
+goes and the javadoc states the contract instead, which is that this is a lookup table and a caller
+who wants declaration order asks the store.
+
+**One rule written twice, and the wiring hazard finding it exposed.** `ArgNameCompletions` took an
+`LspVocabulary` parameter it never read, and separately ran its own queries for the two lookups
+`DirectiveSurface` holds, kind-guard and explanatory javadoc included. Its nesting descent resolves
+through the surface now, which is what the unused parameter was for; it keeps its own ordered-name
+queries, because a listing is a different question from a lookup and the surface has no ordering to
+give.
+
+Making that change turned one test red, and the failure is worth recording because it is a property
+of the fixtures rather than of the code. `ArgNameCompletionsTest` paired `BundledVocabulary`, whose
+surface is a capture of graphitron's shipped definitions alone, with a handle on its own fixture graph
+that declares two directives of an author's own. While the completion queried the store directly, the
+mismatch was invisible; reading the held surface made it a wrong answer. Production cannot reach this
+state, both halves coming from the one workspace, and the test now loads its vocabulary from the graph
+it is asking about. `BundledVocabulary`'s javadoc states the rule it was missing: it is for a fixture
+that declares no directives of its own, and a fixture that does reads its vocabulary off its own
+store.

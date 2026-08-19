@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R638` | The LSP is a fact-store client | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
+| `R638` | The LSP is a fact-store client | In Progress | 2026-08-19 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Spec | 2026-08-19 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
