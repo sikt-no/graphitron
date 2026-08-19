@@ -2919,7 +2919,17 @@ because the reverse happens often enough to be worth checking for.
 
 ## Retired vocabulary
 
-Provisional until the cutover lands; the Done-gate sweep greps for these. Two collisions the sweep
+Provisional until the cutover lands; the Done-gate sweep greps for these. Gone outright at the gate,
+with the census that found them unread: `FieldClassification` and `TypeClassification` with every
+arm either declared, `LspSchemaSnapshot` with `Built`, `Unavailable` and `unavailable()`,
+`CatalogBuilder.buildSnapshot` in both overloads with `projectFieldClassifications`,
+`projectFieldClassification`, `projectTypeClassifications`, `projectTypeClassification` and
+`inputConsumerTables`, `GraphQLRewriteGenerator.BuildArtifacts` with `BuildOutput.artifacts`,
+`DevMojo.InitialOutput.snapshot`, and the projection-coverage apparatus: the `@ProjectionFor`
+annotation, `ProjectionCoverageTest`, `ExemptionRegistry.LSP_PROJECTION` with
+`NO_PROJECTION_REQUIRED`, `PROJECTION_WALKER`, `projectionForCoveredLeaves` and `allModelLeaves`,
+and `ExemptionRegistry.corpusObligations`'s distinction from `obligations` now that the two agree.
+Two collisions the sweep
 will hit and should not act on, both of them the words meaning something else: `DirectiveShapeSmokeTest`
 names the SDL shape of `@service` and its siblings, the nested input under an outer argument, not the
 retired projection type; and `graphitron-sakila-example`'s federation tests say "directive shape"
@@ -4153,32 +4163,35 @@ deprecated. `ScalarTypeResolver.parseDirectiveValue` for the shape of a `@scalar
 projection: each is a rule or a constant the build tier owns and the language server applies, which
 is reuse of a rule rather than a second model.
 
-**The six named projection types, and one miscount.** `DirectiveShape` and `InputValueShape` deleted
-outright. `FieldClassification`, `TypeClassification` and `TypeBackingShape` stay where they are
-produced, their generator-side readers being the separate census this item does not own, and no
-language-server surface imports any of them. `InferredDirectiveArgs` is the sixth and it is still
-imported, because listing it among the projections was a miscount at drafting: it is a three-entry
-constant table naming which argument each inference rule fills in, rebuilt by nothing, read by both
-tiers, and `InlayHintRendererCoverageTest` fails the build when the language server carries no
-collector for an entry. A query over the claim stratum cannot replace it, because what it states is
-which arguments inference fills in, not what any of them resolves to.
+**The six named projection types, and one miscount.** `DirectiveShape`, `InputValueShape`,
+`FieldClassification` and `TypeClassification` are deleted outright, the last two once the census
+below answered the question this item had deferred. `TypeBackingShape` stays, and not as a residue:
+its producer is `CatalogBuilder.projectTypesByName` and its reader is the walk shadow, which is a
+capture-time transcription rather than anything shipped to a consumer. `InferredDirectiveArgs` is
+the sixth and it is still imported by the language server, because listing it among the projections
+was a miscount at drafting: it is a three-entry constant table naming which argument each inference
+rule fills in, rebuilt by nothing, read by both tiers, and `InlayHintRendererCoverageTest` fails the
+build when the language server carries no collector for an entry. A query over the claim stratum
+cannot replace it, because what it states is which arguments inference fills in, not what any of
+them resolves to.
 
 **The line counts, said plainly.** `graphitron-lsp` main is 14,196 lines across 80 files against the
-9,119 recorded when the item was filed, with 15,824 more in its tests. `rewrite/catalog` is 3,032
+9,119 recorded when the item was filed, with 15,824 more in its tests. `rewrite/catalog` is 1,590
 against 4,008, and the seam inside it, the package less `ClasspathScanner` and with `SourceWalker`
-moved out to `rewrite/capture`, is 2,493 against 3,232. The store's DDL is 5,246 lines, 3,171 of them
+moved out to `rewrite/capture`, is 1,051 against 3,232. The store's DDL is 5,246 lines, 3,171 of them
 base tables and 1,906 the 41 `intent_` views the derived stratum is made of. Attribution is coarser
 than those figures look: the module took other items' work over the same period, and the clone they
 were measured in does not reach back to the baseline commit, so these are the totals now against the
 totals then rather than this item's own diff.
 
-The direction is not the one a reader hoping for a smaller module would want, and the item said in
-advance that saying so was the point. A query that answers a capability from relations is more code
-than a switch reading a value someone else pre-projected; the projections' own lines mostly stayed
-put, because their generator-side readers kept them; and the `intent_` stratum is new code that did
-not exist before. What got smaller is the number of models, not the number of lines. The largest
-package in the module is now `facts` at 3,052 lines, and that package is the seam: queries and the
-row types they return, with nothing behind them.
+The two directions are opposite and both are worth saying. The language server grew, and the item
+said in advance that saying so was the point: a query answering a capability from relations is more
+code than a switch reading a value someone else pre-projected, and the `intent_` stratum is new code
+that did not exist before. The largest package in the module is now `facts` at 3,052 lines, and that
+package is the seam, queries and the row types they return with nothing behind them. The seam it
+replaced went the other way, and further than the baseline anticipated: two thirds of
+`rewrite/catalog` is gone, because once the language server stopped reading the classification
+projection the census found nobody else reading it either. That is the settled section below.
 
 **Two corpus cases whose wording overshot what shipped.** All five Acceptance cases are pinned, but
 two are pinned as properties rather than as written, and the difference is worth stating here rather
@@ -4236,3 +4249,58 @@ explaining the split, failed the build. The gate's instruction is to displace ra
 and to move a narrative to its audience's reference page, so the principles document names both
 gates in one parenthesis and `fact-model.adoc` carries the reasoning. Worth knowing at the gate: that
 document has no headroom left, and the next addition to it displaces something.
+
+## Settled at the gate: the deferred census answered "nobody", so the projection deletes here
+
+The item deferred one question rather than answering it: "whether the types themselves also delete
+depends on their generator-side readers, which is a separate census". That sentence was written when
+the answer was genuinely unknown and the assumption behind it was that generator-side readers
+existed. Running the census at the gate says they do not.
+
+`CatalogBuilder.buildSnapshot` ran on every generator pass and built both classification maps. The
+result reached exactly one production statement in the reactor, an `instanceof` in the dev goal
+asking whether a round had classified at all. Nothing in production read the payload: the only
+readers of the maps and of the two lookups beside them were the record's own accessors and four test
+files. The generator does not classify through the projection, it classifies into
+`GraphitronSchema` and reads that; the projection was always the language server's view of the
+classifier, and with the language server gone from it, it was a model with no consumer being rebuilt
+per pass.
+
+So it deletes here rather than in a follow-up. Leaving it would have contradicted this item's own
+headline: what got smaller is the number of models, and a dead model rebuilt on every build is
+exactly the second model the item exists to remove.
+
+**What went, and what stayed.** `FieldClassification`, `TypeClassification` and `LspSchemaSnapshot`
+delete outright, with the projection half of `CatalogBuilder`, which takes the package from 3,032
+lines to 1,590. `BuildArtifacts` goes with them: with the snapshot gone it carried one component, so
+`BuildOutput` names the catalog directly. The dev goal's availability gate becomes the boolean it
+always was, `InitialOutput.classified`, true when the round got as far as classifying and false in
+the catch that already knew. `TypeBackingShape` and `projectTypesByName` stay, their reader being
+the walk shadow rather than a consumer; `CompletionData` stays, its role now capture's input type
+for the classpath census rather than a projection anyone reads.
+
+**The coverage gate that went with it, and the one that did not.** `@ProjectionFor` was a
+drift-prevention contract: every sealed leaf of `GraphitronField` or `GraphitronType` had to have a
+payload-asserting projection test or a documented exemption, enforced by `ProjectionCoverageTest`
+over the annotation and by the `LSP_PROJECTION` row in `ExemptionRegistry`. All three retire,
+because what they gated was the projection's payload and there is no payload now. Leaf coverage
+itself is not what they were pinning and is untouched:
+`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` still partitions every leaf
+by dispatch status, the corpus still owns the verdicts, and `VariantCoverageTest` still holds the
+corpus obligations. Nine exemption rows retire with the obligation, each of them an admission that
+some leaf had no projection assertion, which is no longer a debt anyone owes.
+
+**The tests that went were tests of the deleted code.** Thirty-six members left
+`GraphitronSchemaBuilderTest`, all but a few named `...Projection...` and every one of them
+asserting a projection payload rather than a classifier verdict; the file keeps 109 `@Test` methods
+and every enum truth table it had. `SchemaReachabilityTest` lost one case, the one that exercised
+the snapshot comparator, and keeps all four reachability invariants. Three tests that carried a
+`@ProjectionFor` annotation but asserted the classifier's own model kept their bodies and lost the
+annotation. Deleted outright: `FieldClassificationProjectionTest`, `TypeClassificationProjectionTest`,
+`LspSchemaSnapshotTest`, `ProjectionCoverageTest`, `ConflictedProjectionPipelineTest` and
+`ProjectionSnapshotComparator`.
+
+**The one this does not finish.** `graphitron-lsp` still depends on `graphitron`. Its main sources
+import five types, each accounted for above and none of them a projection, against 42 imports from
+`graphitron-model`; its tests import thirty. The pom edge stays until those five find another home,
+which is a smaller question than the one this item owned and is not answered here.

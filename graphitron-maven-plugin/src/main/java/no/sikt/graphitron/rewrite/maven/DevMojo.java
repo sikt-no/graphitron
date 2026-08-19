@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
@@ -261,7 +260,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // carry two transactions: the language server's reads and an MCP tool's would otherwise
         // serialize behind each other for no better cause than sharing a socket.
         this.mcpStore = sessionStore.reader();
-        if (initial.snapshot() instanceof LspSchemaSnapshot.Built) {
+        if (initial.classified()) {
             // The round classified, so it has findings worth replaying. The facts go in before the
             // enqueue: a recalculation replays what this round wrote about each open file.
             writeReportFacts(initial.walkErrors(), initial.warnings());
@@ -636,7 +635,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
-                    var catalog = output.artifacts().catalog();
+                    var catalog = output.catalog();
                     getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
                         + " tables, " + catalog.types().size() + " scalars)");
                     // A consumer .class changed: a generated unit that compiles against it may now be
@@ -662,37 +661,31 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Initial catalog + snapshot pair at dev-goal startup. A schema parse /
-     * classification failure is surfaced as a warning and an empty catalog
-     * plus {@link LspSchemaSnapshot.Unavailable}: the LSP must still come
-     * up so the developer can fix the schema, and the schema watcher will
-     * re-build on the next save.
+     * Initial catalog at dev-goal startup. A schema parse or classification failure is surfaced as a
+     * warning and an empty catalog that did not classify: the LSP must still come up so the developer
+     * can fix the schema, and the schema watcher will re-build on the next save.
      */
     private InitialOutput buildOutputQuietly(RewriteContext ctx) {
         try {
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-            return new InitialOutput(output.artifacts().catalog(), output.artifacts().snapshot(),
-                output.walkErrors(), output.warnings());
+            return new InitialOutput(output.catalog(), true, output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
                 + "starting with empty catalog: " + e.getMessage());
-            return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable(),
-                List.of(), List.of());
+            return new InitialOutput(CompletionData.empty(), false, List.of(), List.of());
         }
     }
 
     /**
-     * Carrier for {@link #buildOutputQuietly}'s output. {@code snapshot} is {@link LspSchemaSnapshot}
-     * rather than {@link LspSchemaSnapshot.Built} because the failure path returns
-     * {@link LspSchemaSnapshot.Unavailable}; the success path narrows back to {@code Built}
-     * via an {@code instanceof} check at the call site before constructing
-     * {@link GraphQLRewriteGenerator.BuildArtifacts}. The two lists are the diagnostics-stratum
-     * loaders' input, published only on the success path: a failed build writes nothing, so the store
-     * keeps the last good round's rows rather than an empty partition that would read as a clean
-     * schema. The assembled report does not ride along, the language server reading a build's own
-     * findings from the store those lists are written to.
+     * Carrier for {@link #buildOutputQuietly}'s output. {@code classified} says whether the round
+     * got as far as classifying, which is the whole of what the caller needs to know: a round that
+     * threw has no findings to publish and nothing to enqueue. The two lists are the
+     * diagnostics-stratum loaders' input, published only on that path, so a failed build writes
+     * nothing and the store keeps the last good round's rows rather than an empty partition that
+     * would read as a clean schema. The assembled report does not ride along, the language server
+     * reading a build's own findings from the store those lists are written to.
      */
-    private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot,
+    private record InitialOutput(CompletionData catalog, boolean classified,
                                  List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
                                  List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {}
 

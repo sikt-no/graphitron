@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.WalkReach;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
@@ -220,25 +219,20 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        // Capture-and-detect runs ahead of the snapshot: the detection's field conflicts feed
-        // the snapshot's Conflicted projection overlay, sourced from the claim relations.
         var detection = captureFactsAndDetect(attributed, read.verdicts(), bundle.model(), jooq,
             catalog.externalReferences());
-        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(),
-            detection.fieldConflicts());
         var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(bundle.model()));
         var errors = new ArrayList<>(walkErrors);
         errors.addAll(detection.violations());
         var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
-        return new BuildOutput(new BuildArtifacts(catalog, snapshot), report,
-            walkErrors, warnings);
+        return new BuildOutput(catalog, report, walkErrors, warnings);
     }
 
     /**
      * Splits the build output along the two lifecycle steps {@link #buildOutput()} spans:
-     * classification produces {@link BuildArtifacts} (catalog + snapshot); the validator
-     * pass over the same classified model produces {@link ValidationReport}.
+     * classification produces the {@link CompletionData} catalog capture takes its classpath census
+     * from; the validator pass over the same classified model produces {@link ValidationReport}.
      *
      * <p>The two pre-fuse lists ride alongside the fused report for the diagnostics-stratum
      * loaders, each carrying a partition the report cannot express once fused:
@@ -247,18 +241,8 @@ public class GraphQLRewriteGenerator {
      * input), and {@code warnings} is the suppression-filtered list the report was assembled
      * from (so stored lint rows are post-suppression survivors, never resurrected findings).
      */
-    public record BuildOutput(BuildArtifacts artifacts, ValidationReport report,
+    public record BuildOutput(CompletionData catalog, ValidationReport report,
                               List<ValidationError> walkErrors, List<BuildWarning> warnings) {}
-
-    /**
-     * Classification-stage products: the LSP {@link CompletionData} catalog and the classification
-     * projection. Both are build-derived in one pass and swapped onto the live {@code Workspace}
-     * together.
-     */
-    public record BuildArtifacts(
-        CompletionData catalog,
-        LspSchemaSnapshot.Built snapshot
-    ) {}
 
     /**
      * Runs schema loading, attribution, classification, and validation without writing any output.

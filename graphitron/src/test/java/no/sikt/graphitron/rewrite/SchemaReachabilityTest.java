@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLUnionType;
-import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -145,29 +144,6 @@ class SchemaReachabilityTest {
         // directive declaration references them, so pruning would dangle a type reference
         // (federation__FieldSet on @key is the production case).
         assertThat(types).containsKey("SurvivorKind");
-    }
-
-    @Test
-    void comparatorReportsNoDiffForEqualSnapshotsAndADiffForChangedOnes() {
-        var snapshot = snapshotOf(SDL);
-
-        assertThat(ProjectionSnapshotComparator.diff(snapshot, snapshot))
-            .as("identical snapshots produce no differences")
-            .isEmpty();
-
-        var changed = snapshotOf(SDL.replace(
-            "type Actor @table(name: \"actor\") { firstName: String @field(name: \"FIRST_NAME\") }",
-            "type Actor @table(name: \"actor\") { firstName: String @field(name: \"FIRST_NAME\")"
-                + " lastName: String @field(name: \"LAST_NAME\") }"));
-
-        assertThat(ProjectionSnapshotComparator.diff(snapshot, changed))
-            .as("a changed snapshot is localised by the bisect aid, down to the coordinate")
-            .anyMatch(line -> line.contains("Actor.lastName"));
-    }
-
-    private static no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built snapshotOf(String sdl) {
-        return CatalogBuilder.buildSnapshot(
-            TestSchemaHelper.parseRegistryWithPrelude(sdl), TestSchemaHelper.buildSchema(sdl));
     }
 
     private static Set<String> reachableExcludingOperationRoots(GraphitronSchemaBuilder.Bundle bundle) {

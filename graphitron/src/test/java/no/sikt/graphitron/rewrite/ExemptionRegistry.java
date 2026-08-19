@@ -29,10 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * still uncovered (the covered-entry-must-be-removed ratchet that forces a closed row off the
  * list), and every domain member is covered or exempt.
  *
- * <p>The corpus-backed rows are asserted by the parameterized meta-test in
- * {@code ExemptionRegistryTest} (pipeline tier); the annotation-derived
- * {@link #LSP_PROJECTION} row is asserted at unit tier by {@code ProjectionCoverageTest}, whose
- * obligation needs no corpus classification. {@code ExemptionRegistryTest} also carries the
+ * <p>The rows are asserted by the parameterized meta-test in
+ * {@code ExemptionRegistryTest} (pipeline tier). It also carries the
  * reflective discovery guard: a static {@code Map<..., Exemption>} anywhere in the test tree that
  * is not a registry row fails the build, so a sixth exemption list cannot appear outside the
  * registry's checks.
@@ -127,10 +125,6 @@ public final class ExemptionRegistry {
     private static final String SYNTHESISED_CONNECTION_FIELDS_NOT_COORDINATES =
         "synthesised connection fields (totalCount, facets) as classified coordinates (R562)";
 
-    /** The instrument the LSP-projection obligation reads; shared by its walker-gap rows. */
-    private static final String PROJECTION_WALKER =
-        "the @ProjectionFor annotation scan over GraphitronSchemaBuilderTest test methods";
-
     // ===== The exemption maps, one per obligation =====
 
     /**
@@ -193,60 +187,6 @@ public final class ExemptionRegistry {
      * this map the moment its declaration lands.
      */
     public static final Map<Class<?>, Exemption> LAUNCHER_COMMITMENT_GAPS = Map.of();
-
-    /** The plain-jOOQ-record backing pair shares one row story, declared once for both keys. */
-    private static final Exemption PLAIN_JOOQ_RECORD_PROJECTION_UNASSERTED =
-        new Exemption.FixtureAbsent(
-            "a @ProjectionFor-annotated projection assertion for the plain-jOOQ-record backing "
-            + "pair (JooqRecordType / JooqRecordInputType)",
-            "The classification is demonstrated by the corpus's plain-jOOQ-record example, but "
-            + "no test asserts the LSP projection arm's payload for either leaf.");
-
-    /**
-     * Sealed leaves without a payload-asserting {@code @ProjectionFor} test under
-     * {@code GraphitronSchemaBuilderTest}.
-     */
-    public static final Map<Class<?>, Exemption> NO_PROJECTION_REQUIRED = Map.ofEntries(
-        Map.entry(ChildField.ErrorsField.class, ERRORS_FIELD_PENDING),
-        Map.entry(GraphitronType.JooqRecordType.class, PLAIN_JOOQ_RECORD_PROJECTION_UNASSERTED),
-        Map.entry(GraphitronType.JooqRecordInputType.class, PLAIN_JOOQ_RECORD_PROJECTION_UNASSERTED),
-        Map.entry(GraphitronType.JavaRecordInputType.class, new Exemption.FixtureAbsent(
-            "an @input-only fixture exercising the Java-record input permit in isolation under "
-            + "the default catalog",
-            "Input-side Java record backing lands via the same TestRecordDto class as "
-            + "JavaRecordType; the projector arm covers both sides, so no standalone snapshot "
-            + "entry exists for the input permit to assert on.")),
-        Map.entry(GraphitronType.JooqTableRecordInputType.class, new Exemption.FixtureAbsent(
-            "a standalone projection-asserting fixture for the input-side jOOQ TableRecord "
-            + "backing under the default catalog",
-            "Covered structurally by the codegen tier, but no @ProjectionFor-annotated method "
-            + "asserts the input permit's projection payload.")),
-        Map.entry(ChildField.PivotSlotField.class, new Exemption.WalkerGap(
-            PROJECTION_WALKER,
-            GraphitronSchemaBuilderTest.class,
-            "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(); its "
-            + "classification is demonstrated by the pivot cases and the corpus walk's descent, "
-            + "but no @ProjectionFor-annotated method asserts a slot projection payload. The "
-            + "emit-side pivot/nesting wiring-key defect is filed as its own item and is not "
-            + "this row's blocker.")),
-        Map.entry(InputField.ColumnBackedField.class, new Exemption.WalkerGap(
-            PROJECTION_WALKER,
-            GraphitronSchemaBuilderTest.class,
-            "The composite same-table @nodeId filter cases demonstrate classification on the "
-            + "enum truth table (enum constants carry no method annotation), and no "
-            + "@ProjectionFor-annotated method asserts the leaf's projection payload.")),
-        Map.entry(InputField.ColumnBackedReferenceField.class, new Exemption.WalkerGap(
-            PROJECTION_WALKER,
-            GraphitronSchemaBuilderTest.class,
-            "The FK-target @nodeId and @reference input cases demonstrate classification on the "
-            + "enum truth table (enum constants carry no method annotation), and no "
-            + "@ProjectionFor-annotated method asserts the leaf's projection payload.")),
-        Map.entry(ChildField.SingleRecordIdFieldFromReturning.class, new Exemption.WalkerGap(
-            PROJECTION_WALKER,
-            MutationDmlNodeIdClassificationTest.class,
-            "The payload-returning DELETE data field is demonstrated by the admission matrix "
-            + "and by the corpus's DELETE-payload example, but no @ProjectionFor-annotated "
-            + "method asserts its projection payload.")));
 
     // ===== Domain and covered-set derivations =====
 
@@ -344,24 +284,6 @@ public final class ExemptionRegistry {
         return covered;
     }
 
-    /** All sealed-leaf classes named by any {@code @ProjectionFor} annotation in the truth table. */
-    private static Set<Class<?>> projectionForCoveredLeaves() {
-        var covered = new HashSet<Class<?>>();
-        for (var method : GraphitronSchemaBuilderTest.class.getDeclaredMethods()) {
-            var pf = method.getAnnotation(no.sikt.graphitron.rewrite.catalog.ProjectionFor.class);
-            if (pf != null) {
-                covered.addAll(Arrays.asList(pf.value()));
-            }
-        }
-        return covered;
-    }
-
-    private static Set<Class<?>> allModelLeaves() {
-        var leaves = new HashSet<Class<?>>(GeneratorCoverageTest.sealedLeaves(GraphitronField.class));
-        leaves.addAll(GeneratorCoverageTest.sealedLeaves(GraphitronType.class));
-        return leaves;
-    }
-
     // ===== The obligations =====
 
     public static final Obligation VARIANT_COVERAGE_OUTPUT = new Obligation(
@@ -413,17 +335,9 @@ public final class ExemptionRegistry {
         memo(ExemptionRegistry::corpusCommittedLauncherArms),
         LAUNCHER_COMMITMENT_GAPS);
 
-    public static final Obligation LSP_PROJECTION = new Obligation(
-        "lsp-projection: sealed leaves vs @ProjectionFor assertions",
-        memo(ExemptionRegistry::allModelLeaves),
-        memo(ExemptionRegistry::projectionForCoveredLeaves),
-        NO_PROJECTION_REQUIRED);
-
     /**
      * The corpus-backed rows, asserted by {@code ExemptionRegistryTest}'s parameterized
-     * meta-test at pipeline tier. {@link #LSP_PROJECTION} is deliberately absent: its covered
-     * set is annotation-derived, needs no classification, and is asserted at unit tier by
-     * {@code ProjectionCoverageTest}.
+     * meta-test at pipeline tier.
      */
     public static List<Obligation> corpusObligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
@@ -433,7 +347,7 @@ public final class ExemptionRegistry {
     /** All rows, the discovery guard's registration authority. */
     public static List<Obligation> obligations() {
         return List.of(VARIANT_COVERAGE_OUTPUT, VARIANT_COVERAGE_INPUT, MEMBER_ARMS,
-            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT, LSP_PROJECTION);
+            SOURCE_SHAPE_CORPUS, LAUNCHER_COMMITMENT);
     }
 
     private static <T> Supplier<T> memo(Supplier<T> s) {

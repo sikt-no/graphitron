@@ -120,17 +120,13 @@ class ExemptionRegistryTest {
     }
 
     /**
-     * The registry's row accounting: the corpus-backed rows plus the unit-tier
-     * {@code LSP_PROJECTION} row are exactly {@code obligations()}, so a new row cannot be added
-     * without landing in one of the two assertion homes.
+     * The registry's row accounting: the corpus-backed rows are exactly {@code obligations()}, so a
+     * new row cannot be added without landing in this class's parameterized sweep.
      */
     @Test
     void everyObligationHasAnAssertionHome() {
-        var swept = new ArrayList<>(ExemptionRegistry.corpusObligations());
-        swept.add(ExemptionRegistry.LSP_PROJECTION);
-        assertThat(swept)
-            .as("every registry row must be asserted either by this class's parameterized sweep "
-                + "or by ProjectionCoverageTest's unit-tier delegation")
+        assertThat(ExemptionRegistry.corpusObligations())
+            .as("every registry row must be asserted by this class's parameterized sweep")
             .containsExactlyInAnyOrderElementsOf(ExemptionRegistry.obligations());
     }
 
