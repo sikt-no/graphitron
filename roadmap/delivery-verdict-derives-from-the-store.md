@@ -1016,10 +1016,77 @@ had to derive from arm order.
   still has to author that vocabulary itself. The one real coupling is ordering: R557 should not be
   picked up before this lands, or it writes the total switch this item exists to retire.
 
+## Open at review, and it moves the arms
+
+One question is open, raised at the Spec review gate rather than by any draft, and it is open
+because a premise three sections rest on is false against the tree.
+
+**Capture does not hold an `@asConnection` carrier's authored type expression in `graphql_field`.**
+The body says it does: "`mint` reads the *pre-rewrite* schema and capture reads the pre-synthesis
+registry, so both see the authored type expression and agree on it". The first half holds and the
+second does not, and the reason is the sentence immediately after the one the body is reading.
+`MacroCapture`'s javadoc says capture reads the registry before the pipeline's synthesis rewrites
+*and therefore runs the expansion itself*, so `SdlFactCapture` writes the field's row from
+`MacroCapture.expandedFieldType` under a comment naming it "the expansion's result, not the
+expression the field was written with", and `graphitron_field_synthesis`'s own comment says the
+written form "survives here while the field's `graphql_field` row holds the expansion's result".
+For `Language.mediaConnection` the store therefore holds `named_type` of the minted wrapper and
+`is_list` false, where the body needs `MediaItem` and a list.
+
+What that falsifies, in the four places the body leans on it:
+
+* The fan-in section's "`@asConnection` reaches neither case ... `graphql_field.is_list` already
+  carries those coordinates and the corpus's `Language.mediaConnection` is one of them". It carries
+  none of them.
+* The connection-target section's "store-side the same coordinate reaches its bound table in one
+  hop". `intent_resolved_type_binding` holds no row for a minted wrapper, so the three binding arms
+  miss every `@asConnection` carrier and not only the discriminated one.
+* The arms table, whose `POLYMORPHIC_FAN_IN` and `DISCRIMINATED_TARGET` rows gate on
+  `graphql_field.is_list` and whose three binding arms join the target on the coordinate's named
+  type. The consequence is a shadow disagreement at a shipped corpus coordinate rather than a
+  hypothetical: the walk mints `Batched(PolymorphicFanIn)` at `Language.mediaConnection` off the
+  pre-rewrite `[MediaItem!]!`, the fan-in arm does not fire on a wrapper that is not list-valued,
+  the `DISCRIMINATED_TARGET` exemption does not project onto a coordinate that no longer returns
+  `MediaItem`, and the reduction says `INLINE`. No declared residue covers it.
+* The item's own success test, "the discriminated interface child must not appear in
+  `DeliveryResidue` at either authored cardinality, single or list, the `@asConnection` carrier
+  riding the list half on its authored bare list". As specified the carrier rides nothing.
+
+Half the recovery is shipped and the arms should take it. The authored named type is
+`COALESCE(REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''), '!', ''),
+f.named_type)` over a `LEFT JOIN graphitron_field_synthesis fs`, written exactly that way twice
+already, in `intent_field_column_scope`'s named-type rule and in `intent_routine_return_binding`,
+each under a comment saying a connection field reads its element type rather than its wrapper.
+Adding `graphitron_field_synthesis` to the captured-input inventory and routing the three binding
+arms and the exemption's projection through that idiom is transcription rather than new ground.
+
+**The fork is the other half, authored cardinality, and it is the author's to settle.** The shipped
+idiom recovers a name and nothing recovers listness: `authored_type_sdl` is text, and no relation
+reads a bracket out of it. Three ways out, not equivalent for this item's shape:
+
+* Read the listness off the same column (`fs.authored_type_sdl LIKE '%[%'` coalesced with
+  `f.is_list`). Cheapest, keeps the success test true, and is a new reading of a text column that
+  both shipped uses deliberately stopped short of.
+* Give `graphitron_field_synthesis` structured columns for the authored element and its wrappers,
+  so no arm parses text. Correct by the fact model's own lights, and it is capture work, so it
+  wants its own Backlog item and a `depends-on` edge rather than riding here.
+* Send the `@asConnection` carrier to the connection-wrapper residue beside the structurally
+  declared one. Cheapest of all and in scope, and it costs the item its stated success test and
+  puts a shipped corpus coordinate in a residue.
+
+Whichever way it goes, the sibling section's transcription instruction gains a third not-copied
+clause, `intent_field_separate_fetch`'s arm joining `f.named_type` with its comment recording the
+connection wrapper as an absent population being the gap a verbatim copy inherits, and the residue
+roster, the fixture accounting and the arms table's `Reads` column all move with it. The
+structurally declared connection stays a residue under all three: it carries no
+`graphitron_field_synthesis` row, so the `COALESCE` falls back to the wrapper and no relation names
+its element.
+
 ## Open for the implementer
 
-Nothing is left open. The earlier draft carried two questions and a later revision a third; all
-three are settled below, in the order the questions were retired.
+Nothing the drafts left open remains open, and the section above is the one question the review
+added. The earlier draft carried two questions and a later revision a third; all three are settled
+below, in the order the questions were retired.
 
 **Whether `graphitron_service`'s claim is a rule arm or a domain exclusion: it is neither.** It is an
 exemption arm with declared precedence, per the negative-side section above, which also establishes
