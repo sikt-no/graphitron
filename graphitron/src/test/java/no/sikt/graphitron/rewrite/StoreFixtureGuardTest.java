@@ -108,8 +108,6 @@ class StoreFixtureGuardTest {
             Why.ORACLE, "the same family, plus bare-store gates over the model's own DDL"),
 
         // Pending: view algebra still reached through a capture.
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java",
-            Why.PENDING_SEEDING, "the backing views go down; the writer's own rows stay"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingShadowTest.java",
             Why.PENDING_SEEDING, "walk agreement end to end, so it stays whole and takes a capture "
                 + "handle rather than a seed"),

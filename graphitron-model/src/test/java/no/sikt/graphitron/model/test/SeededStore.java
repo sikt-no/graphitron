@@ -1329,6 +1329,23 @@ public final class SeededStore {
     }
 
     /**
+     * A table whose generated model exposes no record class of its own. The catalog reports that as
+     * {@code org.jooq.Record} rather than as an absence, so a rule reading the column has a name to
+     * drop rather than a NULL to guard, and a rule that failed to drop it would hand every such
+     * table the same class.
+     */
+    public static void seedTableWithoutRecordClass(DSLContext dsl, String sourceName,
+                                                   String tableSchema, String tableName) {
+        seedTable(dsl, sourceName, tableSchema, tableName);
+        dsl.update(SQL_TABLE)
+            .set(SQL_TABLE.RECORD_CLASS_FQN, "org.jooq.Record")
+            .where(SQL_TABLE.SOURCE_NAME.eq(sourceName))
+            .and(SQL_TABLE.TABLE_SCHEMA.eq(tableSchema))
+            .and(SQL_TABLE.TABLE_NAME.eq(tableName))
+            .execute();
+    }
+
+    /**
      * The callable behind a catalog object, with the generated call surface an emitted FROM clause
      * calls. Named for the catalog rather than for the directive, {@link #seedRoutine} being the
      * {@code @routine} application that names one of these. Both generated names are nullable
@@ -1669,19 +1686,33 @@ public final class SeededStore {
      * under the parameter's own ordinal, and the member-slot rule reads the mere presence of a
      * parameter row as the method being no slot. A case wanting only the second states an empty map.
      *
-     * <p>The parameter's own name is deliberately not an argument here. It is NULL for a consumer
-     * compiled without {@code -parameters}, so the ordinal is the identity and nothing reading these
-     * rows may depend on a name being there.
+     * <p>The parameter seeded here is nameless, which is what a consumer compiled without
+     * {@code -parameters} hands the census: the ordinal is its whole identity, and a rule reading
+     * these rows may not depend on a name being there. The overload below names it.
      */
     public static void seedMethodParameter(DSLContext dsl, String sourceName, String className,
                                            String methodName, String descriptor, int position,
                                            Map<String, String> declaredType) {
+        seedMethodParameter(dsl, sourceName, className, methodName, descriptor, position, null,
+            declaredType);
+    }
+
+    /**
+     * The same parameter carrying the name its classfile recorded, on the overload above's terms.
+     * A rule that feeds a parameter from something an author wrote matches it by this name unless a
+     * mapping redirects it, so a case about such a rule states the name and a case about its
+     * absence takes the overload that leaves it NULL.
+     */
+    public static void seedMethodParameter(DSLContext dsl, String sourceName, String className,
+                                           String methodName, String descriptor, int position,
+                                           String parameterName, Map<String, String> declaredType) {
         dsl.insertInto(JVM_METHOD_PARAMETER)
             .set(JVM_METHOD_PARAMETER.SOURCE_NAME, sourceName)
             .set(JVM_METHOD_PARAMETER.CLASS_NAME, className)
             .set(JVM_METHOD_PARAMETER.METHOD_NAME, methodName)
             .set(JVM_METHOD_PARAMETER.DESCRIPTOR, descriptor)
             .set(JVM_METHOD_PARAMETER.POSITION, position)
+            .set(JVM_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
             .set(JVM_METHOD_PARAMETER.PARAMETER_TYPE, "Object")
             .set(JVM_METHOD_PARAMETER.DECLARED_PARAMETER_TYPE, "Object")
             .execute();

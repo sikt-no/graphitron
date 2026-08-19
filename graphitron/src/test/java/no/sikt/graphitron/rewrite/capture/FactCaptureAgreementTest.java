@@ -230,12 +230,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       two directions in which the hop differs from the reflective walk pinned as pins rather than
  *       expectations;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds
- *       {@code intent_type_backing_class}, the closure over those hops, together with
- *       {@code intent_type_backing_seed} naming the groundings it closes over,
- *       {@code intent_type_backing} coalescing it with the table-bound population and
- *       {@code intent_type_backing_conflict} over the coalesce, to captured SDL over a hand-built
- *       census, its cases pinning the reachability itself, each population the closure
- *       deliberately does not reach, and every way two backings can disagree;
+ *       {@code intent_type_backing_class}, the closure over those hops, to captured SDL over a
+ *       hand-built census, which is the only way its rows can be read at all: the closure runs over
+ *       a cyclic type graph, so the relation is materialized and a writer's run is what puts rows
+ *       there, its cases pinning how far the frontier goes, that a cycle terminates, the one
+ *       condition that stops a hop, and each population the closure deliberately does not reach;
+ *       with {@code no.sikt.graphitron.model.intent.TypeBackingSeedTest} carrying the two axes that
+ *       ground it and {@code no.sikt.graphitron.model.intent.TypeBackingTest} carrying what
+ *       coalescing those rows with the table-bound population makes of them, both against a store
+ *       seeded row by row in the module whose DDL declares them;
  *       {@code no.sikt.graphitron.model.intent.ProducerCardinalityTest} binds
  *       {@code intent_producer_cardinality_conflict}, where a field and its producer disagree
  *       about how many, to seeded rows in the module whose DDL declares it, both sides of the

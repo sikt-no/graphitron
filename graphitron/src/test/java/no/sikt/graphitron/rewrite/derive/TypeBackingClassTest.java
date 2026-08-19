@@ -1,43 +1,45 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
-import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The registered agreement anchor for {@code intent_type_backing_class}, the closure that answers
- * which Java class backs a graph's type, and for {@code intent_type_backing_conflict}, the types it
- * answers more than one way.
+ * which Java class backs a graph's type.
  *
- * <p>The SDL is captured for real and the census is hand-built. A directive application is a fact
- * capture produces, while a census row is a name, a descriptor and a decomposed declared type,
- * which is all these rules read. Hand-building it is also what lets one fixture hold the shapes a
- * closure has to get right side by side, a chain three types deep, a cycle, a coordinate two
- * producers answer differently, and a field whose own producer overrides what its parent's member
- * would say.
+ * <p>The subject here is reach. The relation is materialized rather than derived on read, because
+ * the closure runs over the SDL type graph and that graph is cyclic, so its rows are what a
+ * capture-cadence derivation writer put there and only a run of that writer can state what it
+ * produces. Each case therefore captures a schema for real and reads the table afterwards: which
+ * groundings arrive, how much further than one step the frontier goes, that a cycle terminates at
+ * one row rather than looping, and the one condition that stops a hop.
+ *
+ * <p>The SDL is captured and the census is hand-built. A directive application is a fact capture
+ * produces, while a census row is a name, a descriptor and a decomposed declared type, which is all
+ * these rules read. Hand-building it is also what lets one fixture hold the shapes a closure has to
+ * get right side by side: a chain three types deep, a cycle, a coordinate two producers answer
+ * differently, and a field whose own producer overrides what its parent's member would say.
+ *
+ * <p>What a producer's facts make of the groundings, and what coalescing this closure with the
+ * table-bound population makes of its rows, are not asked here. Those are the algebra of
+ * {@code intent_type_backing_seed}, {@code intent_type_backing} and
+ * {@code intent_type_backing_conflict}, and they live in the module whose DDL declares them, in
+ * {@code no.sikt.graphitron.model.intent.TypeBackingSeedTest} and
+ * {@code no.sikt.graphitron.model.intent.TypeBackingTest}, against a store seeded row by row.
  *
  * <p>Several cases assert that a coordinate produces no row. Those are the closure's own claim
  * rather than gaps in it: the boundary of what a class can back is where the closure stops, and the
@@ -122,27 +124,17 @@ class TypeBackingClassTest {
             assertThat(backing(dsl, GRAPH, "Review")).containsExactly("app.ReviewDto"));
     }
 
-    // ===== Disagreement is rows =====
-
     /**
-     * Two producers answering one type differently are two rows and a conflict, where the walk
-     * suppresses the second observation to protect the first and leaves the disagreement
-     * unobservable. This is the population the decomposition surfaces rather than preserves.
+     * Two producers answering one type differently are two rows, where the walk suppresses the
+     * second observation to protect the first and leaves the disagreement unobservable. The writer
+     * records both and prefers neither; that a reader can then learn the type is contested is the
+     * coalesce's own claim, stated where that view lives.
      */
     @Test
-    void aTypeTwoProducersAnswerDifferentlyIsTwoRowsAndAConflict() {
-        withCapturedStore(dsl -> {
+    void aTypeTwoProducersAnswerDifferentlyIsTwoRows() {
+        withCapturedStore(dsl ->
             assertThat(backing(dsl, GRAPH, "Contested"))
-                .containsExactly("app.Left", "app.Right");
-            assertThat(conflict(dsl, GRAPH, "Contested"))
-                .containsExactly("app.Left, app.Right 2");
-        });
-    }
-
-    /** A type one answer suffices for is no conflict, the view naming the contested population only. */
-    @Test
-    void aTypeWithOneAnswerIsNotContested() {
-        withCapturedStore(dsl -> assertThat(conflict(dsl, GRAPH, "Film")).isEmpty());
+                .containsExactly("app.Left", "app.Right"));
     }
 
     // ===== The input axis =====
@@ -171,96 +163,17 @@ class TypeBackingClassTest {
                 .containsExactly("app.NestedFilterInput"));
     }
 
-    /**
-     * An {@code argMapping} entry naming the parameter on its left redirects it: the argument fed
-     * to it is the one the right side names, not the one sharing the parameter's name. Here the
-     * parameter is called {@code f} and no argument is, so a rule ignoring the mapping would back
-     * nothing at all.
-     */
-    @Test
-    void anArgMappingRedirectsAParameterToAnotherArgument() {
-        withCapturedStore(dsl ->
-            assertThat(backing(dsl, GRAPH, "ActorFilter"))
-                .containsExactly("app.ActorFilterInput"));
-    }
+    // ===== What the closure does not reach =====
 
     /**
-     * A dotted right side is fed by the argument its head names, and the tail is a descent inside
-     * that argument rather than a second coordinate. The mapping here reads {@code deep.inner}, so
-     * the parameter backs {@code DeepFilter} and says nothing about {@code InnerFilter}.
+     * A type bound by {@code @table} seeds nothing here, that population being the table binding's
+     * own. The classes it would seed are the generated jOOQ records the classpath census excludes by
+     * design, so the answer comes from the catalog or from nowhere, and where the two populations
+     * meet is the coalesce rather than this relation.
      */
     @Test
-    void aDottedPathIsFedByItsHead() {
-        withCapturedStore(dsl -> {
-            assertThat(backing(dsl, GRAPH, "DeepFilter"))
-                .containsExactly("app.DeepFilterInput");
-            assertThat(backing(dsl, GRAPH, "InnerFilter"))
-                .as("the tail names a descent, not the argument being fed")
-                .isEmpty();
-        });
-    }
-
-    /**
-     * A parameter compiled without {@code -parameters} has no name to match an argument by, and the
-     * walk this shadows skips it rather than falling back to position. Same answer here, and it is
-     * a rule rather than a NULL leaking through a join.
-     */
-    @Test
-    void aParameterWithNoNameFeedsNothing() {
-        withCapturedStore(dsl ->
-            assertThat(backing(dsl, GRAPH, "PlainFilter")).isEmpty());
-    }
-
-    /**
-     * A scalar argument is not backed, on the same terms the result axis states: a class can stand
-     * for an object or an input object, and no Java reject list is consulted to say so.
-     */
-    @Test
-    void aScalarArgumentIsNotBacked() {
-        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "String")).isEmpty());
-    }
-
-    // ===== Where the two populations meet =====
-
-    /**
-     * The other arm. A type bound by {@code @table} is backed by the record class of the table it
-     * resolves to, which the closure never seeds and could not reach: the census excludes the
-     * generated jOOQ package by design, so this answer comes from the catalog or from nowhere.
-     */
-    @Test
-    void aTableBoundTypeIsBackedByItsTablesRecord() {
-        withCapturedStore(dsl -> {
-            assertThat(coalesced(dsl, GRAPH, "Tabled"))
-                .containsExactly(FILM_RECORD + " BOUND_TABLE");
-            assertThat(backing(dsl, GRAPH, "Tabled"))
-                .as("and the closure said nothing about it")
-                .isEmpty();
-        });
-    }
-
-    /** The closure's own answers arrive through the coalesce marked as the closure's. */
-    @Test
-    void aClosureAnswerKeepsItsProvenance() {
-        withCapturedStore(dsl ->
-            assertThat(coalesced(dsl, GRAPH, "Film"))
-                .containsExactly("app.FilmRecord BACKING_CLOSURE"));
-    }
-
-    /**
-     * A type its {@code @table} binding and the closure answer differently is two rows and a
-     * conflict, not a precedence. The walk reads the table and never consults the class, which is a
-     * defensible reading and still a choice; folding it in here would have recorded agreement where
-     * there is none.
-     */
-    @Test
-    void aTypeItsTableAndItsClosureAnswerDifferentlyIsContested() {
-        withCapturedStore(dsl -> {
-            assertThat(coalesced(dsl, GRAPH, "Language"))
-                .containsExactly("app.LanguageRecord BACKING_CLOSURE",
-                    LANGUAGE_RECORD + " BOUND_TABLE");
-            assertThat(conflict(dsl, GRAPH, "Language"))
-                .containsExactly("app.LanguageRecord, " + LANGUAGE_RECORD + " 2");
-        });
+    void aTableBoundTypeIsNotSomethingTheClosureSeeds() {
+        withCapturedStore(dsl -> assertThat(backing(dsl, GRAPH, "Tabled")).isEmpty());
     }
 
     // ===== Which rows a producer grounded =====
@@ -268,7 +181,7 @@ class TypeBackingClassTest {
     /**
      * The seeds are the groundings and nothing else: a producer's return on one axis, the class
      * feeding an argument on the other. A type only a hop reaches has no row here even though the
-     * closure backs it, which is the whole of what this relation adds over the closure.
+     * closure backs it, which is the whole of what that relation adds over this one.
      */
     @Test
     void aSeedIsAGroundingAndAHopIsNot() {
@@ -282,9 +195,9 @@ class TypeBackingClassTest {
     }
 
     /**
-     * The contest this relation exists to let a reader settle. A type a producer grounds and a
-     * member of another type also delivers is two rows in the closure, which cannot say which of
-     * them a producer answered for. Here it can, and the difference matters rather than being a
+     * The contest the grounding relation exists to let a reader settle. A type a producer grounds
+     * and a member of another type also delivers is two rows in the closure, which cannot say which
+     * of them a producer answered for. Here it can, and the difference matters rather than being a
      * tie-break: the hop reads the parent's member type without checking it against the child's own
      * grounding, so the class it lands on can be wrong and not merely second. The precedence stays
      * the reader's, which is why the closure keeps both rows.
@@ -295,8 +208,6 @@ class TypeBackingClassTest {
             assertThat(backing(dsl, GRAPH, "Grounded"))
                 .containsExactly("app.GroundedDto", "app.GroundedRecord");
             assertThat(seeds(dsl, GRAPH, "Grounded")).containsExactly("app.GroundedDto");
-            assertThat(conflict(dsl, GRAPH, "Grounded"))
-                .containsExactly("app.GroundedDto, app.GroundedRecord 2");
         });
     }
 
@@ -328,50 +239,34 @@ class TypeBackingClassTest {
 
     /**
      * Two graphs in one store, each with its own classpath entry declaring the same service class.
-     * The seeds resolve through store_graph_source and the hops depart from that graph's own
-     * classes, so neither graph's types are backed by the other's.
+     * The seeds resolve through the graph's own membership and the hops depart from that graph's
+     * own classes, so neither graph's types are backed by the other's.
      */
     @Test
     void siblingGraphsCloseOverTheirOwnMembership() {
-        withCapturedStore(dsl -> {
-            capture(dsl, SIBLING, tmp.resolve("sibling"), List.of(
-                reference(OTHER, "app.FilmService",
-                    method("findAll", "()Ljava/util/List;",
-                        ref("", "java.util.List"), ref("0", "lib.FilmDto"))),
-                record(OTHER, "lib.FilmDto",
-                    component("language", ref("", "lib.LangDto")))));
-
+        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, SDL, jooq(), census())
+                 .andGraph(SIBLING, SIBLING_SDL, siblingCensus())) {
+            var dsl = store.dsl();
             assertThat(backing(dsl, SIBLING, "Film")).containsExactly("lib.FilmDto");
             assertThat(backing(dsl, SIBLING, "Language")).containsExactly("lib.LangDto");
             assertThat(backing(dsl, GRAPH, "Film")).containsExactly("app.FilmRecord");
             assertThat(backing(dsl, GRAPH, "Language")).containsExactly("app.LanguageRecord");
-        });
+        }
     }
 
     // ===== Helpers =====
 
-    private static final String GRAPH = "TypeBackingClassTest";
-    private static final String SIBLING = "TypeBackingClassTestSibling";
+    private static final String GRAPH = CapturedStore.GRAPH;
+    private static final String SIBLING = "sibling";
 
     private static final String APP = "app/target/classes";
     private static final String OTHER = "other/target/classes";
 
     /**
-     * The test catalog's own record classes, spelled out rather than read back off
-     * {@code sql_table}: the table arm's claim is that it carries the table's record class, and an
-     * expectation that fetched the same column would agree with any value capture happened to put
-     * there.
-     */
-    private static final String RECORDS = "no.sikt.graphitron.rewrite.test.jooq.tables.records.";
-    private static final String FILM_RECORD = RECORDS + "FilmRecord";
-    private static final String LANGUAGE_RECORD = RECORDS + "LanguageRecord";
-
-    /**
      * One chain three types deep, one cycle, one coordinate two producers answer differently, one
      * field whose own producer overrides its parent's member, one scalar producer and one object
-     * nothing reaches. Two types carry {@code @table} against the test catalog: one the closure
-     * never reaches, so the table arm stands alone, and one the closure reaches with a different
-     * class, so the two arms meet and disagree.
+     * nothing reaches. One type carries {@code @table} against the test catalog, which is the
+     * population the closure never seeds.
      */
     private static final String SDL = """
         type Query {
@@ -383,15 +278,6 @@ class TypeBackingClassTest {
             one: Carrier @service(service: {className: "app.FilmService", method: "one"})
             search(filter: FilmFilter): [Film] @service(
                 service: {className: "app.FilmService", method: "search"})
-            mapped(other: ActorFilter): [Film] @service(
-                service: {className: "app.FilmService", method: "mapped", argMapping: "f: other"})
-            dotted(deep: DeepFilter): [Film] @service(
-                service: {className: "app.FilmService", method: "dotted",
-                          argMapping: "v: deep.inner"})
-            nameless(plain: PlainFilter): [Film] @service(
-                service: {className: "app.FilmService", method: "nameless"})
-            scalarArg(q: String): [Film] @service(
-                service: {className: "app.FilmService", method: "scalarArg"})
             grounded: Grounded @service(
                 service: {className: "app.FilmService", method: "grounded"})
         }
@@ -403,7 +289,7 @@ class TypeBackingClassTest {
             related: Film
             grounded: Grounded
         }
-        type Language @table(name: "language") {
+        type Language {
             name: String
             country: Country
         }
@@ -418,10 +304,15 @@ class TypeBackingClassTest {
         interface Node { id: ID }
         input FilmFilter { title: String, nested: NestedFilter }
         input NestedFilter { code: String }
-        input ActorFilter { name: String }
-        input DeepFilter { inner: InnerFilter }
-        input InnerFilter { code: String }
-        input PlainFilter { code: String }
+        """;
+
+    /** The sibling graph's own schema, reaching one hop so the partition covers both directions. */
+    private static final String SIBLING_SDL = """
+        type Query {
+            films: [Film] @service(service: {className: "app.FilmService", method: "findAll"})
+        }
+        type Film { title: String  language: Language }
+        type Language { name: String }
         """;
 
     /**
@@ -442,14 +333,6 @@ class TypeBackingClassTest {
                     ref("", "java.util.List"), ref("0", "app.CarrierRecord")),
                 producer("search", "(Lapp/FilmFilterInput;)Ljava/util/List;",
                     List.of(parameter("filter", ref("", "app.FilmFilterInput")))),
-                producer("mapped", "(Lapp/ActorFilterInput;)Ljava/util/List;",
-                    List.of(parameter("f", ref("", "app.ActorFilterInput")))),
-                producer("dotted", "(Lapp/DeepFilterInput;)Ljava/util/List;",
-                    List.of(parameter("v", ref("", "app.DeepFilterInput")))),
-                producer("nameless", "(Lapp/PlainFilterInput;)Ljava/util/List;",
-                    List.of(parameter(null, ref("", "app.PlainFilterInput")))),
-                producer("scalarArg", "(Ljava/lang/String;)Ljava/util/List;",
-                    List.of(parameter("q", ref("", "java.lang.String")))),
                 method("grounded", "()Lapp/GroundedDto;", ref("", "app.GroundedDto"))),
             reference(APP, "app.ReviewService",
                 method("forFilm", "()Ljava/util/List;",
@@ -475,11 +358,20 @@ class TypeBackingClassTest {
                 component("title", ref("", "java.lang.String")),
                 component("nested", ref("", "app.NestedFilterInput"))),
             record(APP, "app.NestedFilterInput", component("code", ref("", "java.lang.String"))),
-            record(APP, "app.ActorFilterInput", component("name", ref("", "java.lang.String"))),
-            record(APP, "app.DeepFilterInput", component("code", ref("", "java.lang.String"))),
-            record(APP, "app.PlainFilterInput", component("code", ref("", "java.lang.String"))),
             record(APP, "app.GroundedDto", component("id", ref("", "java.lang.String"))),
             record(APP, "app.GroundedRecord", component("id", ref("", "java.lang.String"))));
+    }
+
+    /** The same service class on a classpath entry of the sibling's own, delivering other records. */
+    private static List<CompletionData.ExternalReference> siblingCensus() {
+        return List.of(
+            reference(OTHER, "app.FilmService",
+                method("findAll", "()Ljava/util/List;",
+                    ref("", "java.util.List"), ref("0", "lib.FilmDto"))),
+            record(OTHER, "lib.FilmDto",
+                component("title", ref("", "java.lang.String")),
+                component("language", ref("", "lib.LangDto"))),
+            record(OTHER, "lib.LangDto", component("name", ref("", "java.lang.String"))));
     }
 
     private static CompletionData.ExternalReference reference(
@@ -507,7 +399,6 @@ class TypeBackingClassTest {
             "Object", List.of(ref("", "java.util.List"), ref("0", "app.FilmRecord")));
     }
 
-    /** A parameter; a null name is one the consumer compiled without {@code -parameters}. */
     private static CompletionData.Parameter parameter(
         String name, CompletionData.TypeRef... refs) {
         return new CompletionData.Parameter(name, "Object", "", "", "Object", List.of(refs));
@@ -532,7 +423,7 @@ class TypeBackingClassTest {
             .fetch(0, String.class);
     }
 
-    /** Every backing the coalesce holds, each with the population that answered. */
+    /** The groundings of the named type, which is the subset a producer answered for. */
     private static List<String> seeds(DSLContext dsl, String graphName, String typeName) {
         var s = INTENT_TYPE_BACKING_SEED;
         return dsl.select(s.CLASS_NAME).from(s)
@@ -541,51 +432,14 @@ class TypeBackingClassTest {
             .fetch(0, String.class);
     }
 
-    private static List<String> coalesced(DSLContext dsl, String graphName, String typeName) {
-        return dsl.select(INTENT_TYPE_BACKING.CLASS_NAME, INTENT_TYPE_BACKING.DECLARED_VIA)
-            .from(INTENT_TYPE_BACKING)
-            .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(graphName)
-                .and(INTENT_TYPE_BACKING.TYPE_NAME.eq(typeName)))
-            .orderBy(INTENT_TYPE_BACKING.CLASS_NAME)
-            .fetch(r -> r.value1() + " " + r.value2());
-    }
-
-    /** The canonical render and the arity together, which is the whole of what the view adds. */
-    private static List<String> conflict(DSLContext dsl, String graphName, String typeName) {
-        return dsl.select(INTENT_TYPE_BACKING_CONFLICT.CLASS_NAMES,
-                INTENT_TYPE_BACKING_CONFLICT.CANDIDATES)
-            .from(INTENT_TYPE_BACKING_CONFLICT)
-            .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(graphName)
-                .and(INTENT_TYPE_BACKING_CONFLICT.TYPE_NAME.eq(typeName)))
-            .fetch(r -> r.value1() + " " + r.value2());
-    }
-
     private void withCapturedStore(Consumer<DSLContext> body) {
-        try (var store = GraphitronModelStore.open()) {
-            capture(store.dsl(), GRAPH, tmp, census());
+        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, SDL, jooq(), census())) {
             body.accept(store.dsl());
         }
     }
 
-    private static void capture(DSLContext dsl, String graphName, Path root,
-                                List<CompletionData.ExternalReference> census) {
+    private static JooqCatalog jooq() {
         var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var schemaFile = write(root, SDL);
-        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-        FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, root),
-            FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-            jooq, census);
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 }
