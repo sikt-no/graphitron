@@ -41,7 +41,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-08-06 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
-| `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Spec | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
+| `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -566,7 +566,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R573` [**graphitron-tree-sitter-natives keeps the maven-archiver 3.6.4 hard-fail: it is deliberately not a child of the parent pom, so the pluginManagement override does not reach it**](natives-module-archiver-override.md) — Backlog, cleanup
 - `R553` [**srp resolves one disqualified session where the guard means every session with a trail on the draft**](srp-disqualified-session-set.md) — Backlog, improvement
 - `R506` [**Roadmap tool as statechart driver, items as machine instances**](roadmap-tool-statechart-driver.md) — Backlog, architecture
-- `R730` [**The javadoc reference gate reaches test sources, and the capture-API residue it missed**](capture-api-residue-after-nodehood-move.md) — Spec, cleanup
+- `R730` [**The javadoc reference gate reaches test sources, and the capture-API residue it missed**](capture-api-residue-after-nodehood-move.md) — Ready, cleanup
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
 - `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Spec, architecture

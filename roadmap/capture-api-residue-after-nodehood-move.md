@@ -1,7 +1,7 @@
 ---
 id: R730
 title: "The javadoc reference gate reaches test sources, and the capture-API residue it missed"
-status: Spec
+status: Ready
 bucket: cleanup
 theme: tooling
 priority: 6
