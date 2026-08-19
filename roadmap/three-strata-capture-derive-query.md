@@ -66,23 +66,25 @@ The word is spent on three other things.
 - A layering *within* a family: `meta_family`'s `intent_` charter has "The stratum has two layers",
   `intent_resolved_field_claim`'s comment has "The stratum's second layer", and three block comments
   inside the `Derived stratum` section say "The stratum's second / third / fourth resident group".
-- One rendered `.adoc` heading, in the second page this item already edits:
-  `pipeline-overview.adoc`'s `== The derived strata: claims and violations as facts`. Plural, and the
-  set it names spans every bucket, since claims are stratum two while the violations beside them are
+- Two rendered sites on the second page this item already edits: `pipeline-overview.adoc`'s heading
+  `== The derived strata: claims and violations as facts` and, above it, the mermaid node
+  `E["Derived strata<br/>(intent_ claim views,<br/>violation facts)"]`. Plural, and the
+  set they name spans every bucket, since claims are stratum two while the violations beside them are
   `rejection_` (no stratum), `lint_` (two), `javac_` (one), `build_warning_` (per resident) and
-  `graphql_`'s two verdict residents (one, and two on the `ASSEMBLY` arm). Its section body then uses
+  `graphql_`'s two verdict residents (one, and two on the `ASSEMBLY` arm). The section body then uses
   both "the `intent_` stratum" and "the diagnostics stratum" in one paragraph. This is the same
-  collision as the DDL's `Diagnostics stratum` header, one page closer to the reader, and it is a
-  heading rather than a comment, so Implementation takes it.
+  collision as the DDL's `Diagnostics stratum` header, one page closer to the reader and rendered
+  rather than commented, so Implementation takes both sites.
 
 None of that argues for a different word, because the numbered form is the disambiguator and it is
 free: **stratum one / two / three** is this axis and only this axis, and an unnumbered "the X stratum"
 is a section of the DDL or a layer inside one family. State that rule where the strata are named,
 because a reader who meets "the diagnostics stratum" a few paragraphs from "stratum one" will
-otherwise count four. What the rule cannot paper over is a heading that positively teaches the wrong
-partition, and two do: the DDL's `Semantic stratum` and `pipeline-overview.adoc`'s `The derived
-strata`. Implementation takes both and argues the rest safe under the rule. All of it is comment and
-heading prose, the same category as the `meta_family` rows.
+otherwise count four. What the rule cannot paper over is a name that positively teaches the wrong
+partition, and three do: the DDL's `Semantic stratum` header, and `pipeline-overview.adoc`'s `The
+derived strata` heading and its mermaid node. Implementation takes all three and argues the rest safe
+under the rule. All of it is comment, heading and diagram prose, the same category as the
+`meta_family` rows.
 
 One further stratum use needs reconciling rather than adopting, and Implementation takes it too:
 `meta_family`'s `intent_` charter calls the three-family stack `graphql_` / `graphitron_` / `intent_`
@@ -282,11 +284,13 @@ that is the discipline it generalises. It carries:
   argues case by case.
 - The numbering rule, in the same breath as the names: the numbered form is this axis and only this
   axis, and an unnumbered "the X stratum" in the DDL or on this page is a section of the schema file or
-  a layer inside one family. This page itself carries three of the unnumbered uses ("the claim
-  stratum", "the diagnostics stratum" twice, "the derived stratum"), and "the derived stratum" is
-  stratum two under another name, so say which of those the numbering replaces and leave the rest
-  reading as what they are. Without this rule the page names three strata and then uses the word four
-  more times for something else.
+  a layer inside one family. This page itself carries five unnumbered uses besides the sentence being
+  reworded ("the claim stratum", "the whole `intent_` stratum", "the derived stratum", and "the
+  diagnostics stratum" twice), and "the derived stratum" is stratum two under another name, so say
+  which of those the numbering replaces and leave the rest reading as what they are. Enumerate them
+  from the file rather than from this list; a count in the section that argues against unguarded
+  counts is the wrong thing to trust. Without the rule the page names three strata and then uses the
+  word five more times for something else.
 - The family assignment from "Which stratum each family is in" above: all thirteen families and the
   one placement exemption, the four buckets (transcription, derivation, queries, and the two
   no-stratum reasons), and the verdict rule that a transcribed verdict is stratum one exactly while
@@ -303,7 +307,21 @@ that is the discipline it generalises. It carries:
   inputs are captured facts. The sentence later in the same document that currently says the
   stratum "is decided by what produces its rows" (the `intent_class_member_slot` paragraph) is
   reworded to this same test in the same edit, keeping its walk-versus-rule contrast as the
-  illustration, so the two sections state one rule instead of two.
+  illustration.
+
+  **The retired rule has a twin in the DDL, and the DDL wins, so correcting the page alone makes
+  things worse rather than better.** The block comment above `intent_class_member_slot`, inside the
+  `Derived stratum: claims` section, carries the same argument to the same conclusion: "The derived
+  stratum is chosen by what produces a row, a rule rather than a transcription, and never by which
+  key the row happens to carry." That is the DDL's version of the page's paragraph, not a passing
+  echo of it. This page's own preamble says "Where this page and the DDL disagree, the DDL wins", so
+  rewording only the page leaves the retired rule standing in the authoritative place and formally
+  overriding the new one, which is the exact inversion this item exists to stop. Reword the block
+  comment in the same edit, keeping its keying argument (a resolution is keyed by whatever its own
+  question is about, which is why not every resident leads with `graph_name`) and replacing only the
+  what-produces-a-row conclusion with the recompute test. It is the only twin: that phrasing appears
+  nowhere else in the DDL and at no other site in the docs, so this is one comment, in the category
+  Implementation already accepts.
 - The corollary that the foreign keys from `graphitron_` into `graphql_` are a derivation's edges
   to its inputs, correct and permanent, and no argument for or against separating the families.
   State it without the count (48 today); an unguarded census rots silently. Where a reader wants the
@@ -365,22 +383,26 @@ prose.
   derivation whose producer runs at capture cadence; the paragraph's own closing sentence ("Two
   derivations materialize at capture cadence inside the same transaction") already has the
   vocabulary, so this is one clause.
-- The section heading `== The derived strata: claims and violations as facts` calls one set "the
-  derived strata" where the set spans every bucket this item assigns. Reword the heading to what the
-  section is about, the claim and violation relations the pipeline builds above the base ones, and
-  drop the stratum claim rather than trying to make it true; the numbering rule cannot rescue a
-  plural "strata" that names both a stratum-two family and four diagnostics families at once. The
-  body's own "the `intent_` stratum" and "the diagnostics stratum" are the safe unnumbered uses and
-  stay, since one is the tree's name for that family and the other for that arm set. No `xref`
-  anywhere carries a `pipeline-overview.adoc#` anchor, so the rename reaches no link; re-confirm with a
-  grep for the anchor rather than trusting this sentence.
+- Two sites on this page carry "derived strata" over a set that spans every bucket this item assigns,
+  and both are edited. The section heading `== The derived strata: claims and violations as facts`,
+  and the mermaid node above it, `E["Derived strata<br/>(intent_ claim views,<br/>violation facts)"]`,
+  which folds the two in by name and renders as a diagram, making it the most visible carrier on the
+  page and the first one a reader meets. Reword both to what they are about, the claim and violation
+  relations the pipeline builds above the base ones, dropping the stratum claim rather than trying to
+  make it true; the numbering rule cannot rescue a plural "strata" that names a stratum-two family and
+  four diagnostics families at once. The body's own "the `intent_` stratum" and "the diagnostics
+  stratum" are the safe unnumbered uses and stay, since one is the tree's name for that family and the
+  other for that arm set. No `xref` anywhere carries a `pipeline-overview.adoc#` anchor, so the
+  heading rename reaches no link; re-confirm with a grep for the anchor rather than trusting this
+  sentence.
 
   Three other pages use the same phrase and none is edited, which is worth stating so the asymmetry
   does not read as a miss: `architecture/index.adoc` and `explanation/index.adoc` use "the derived
   strata" in navigation blurbs for this very page, and `development-principles.adoc` has "the derived
   strata carry each decision as views". All three mean the derivation layer, which is what this item
   calls stratum two, so they are the frame under another name rather than a competing partition. The
-  heading is the only one that folds the diagnostics families in and so the only one that is wrong.
+  two sites above are the ones that fold the diagnostics families in, which is what makes them wrong
+  where the three are merely coarser.
 
 `meta_family` is the schema's own family roster, thirteen constant rows stated as a view. Its
 `definition` column carries each family's charter, and its comment says those charters were
@@ -426,10 +448,24 @@ the same category of edit as the `Macro synthesis provenance` header below.
   few thousand lines from `-- ==== Derived stratum: claims`, which is the same numbered stratum. Fold
   the two into one reading rather than renumbering the file: keep the sections, and reword this header
   so it names what the section holds (the decoded graphitron and federation inventory, a derivation over
-  the transcription) without claiming a stratum of its own. The `Derived stratum: claims` header is
-  consistent with the assignment as written and needs no edit, though it is worth checking that its
-  block prose ("rows derive on read from the transcription strata above") still reads right beside a
-  singular stratum one.
+  the transcription) without claiming a stratum of its own.
+
+  **One comment refers to this header by name and is orphaned by the reword, so it moves in the same
+  edit.** `COMMENT ON TABLE graphql_duplicate_declaration` opens "sibling of the semantic stratum's
+  undecoded-argument relation", and `graphitron_undecoded_argument` lives inside this section, so the
+  phrase is a by-name pointer at the header rather than a loose use of the word. The numbering rule
+  does not licence it once the header stops saying stratum, since the rule's licence is for an
+  unnumbered use that names a section of the DDL and there would no longer be such a section. Repoint
+  it at the relation, which is what the sentence is actually about: name
+  `graphitron_undecoded_argument` directly, the two being siblings because each holds what a decode
+  declined to absorb. These are the only two live sites; the word appears nowhere else in the DDL, in
+  the docs, or in Java. Run the same dependency check the `Diagnostics stratum` alternative below gets,
+  because a header reword that strands a reference is worse than the header it fixed.
+
+  The `Derived stratum: claims` header is consistent with the assignment as written and needs no edit,
+  though its block prose is not: see the twin of the retired keying rule inside that section, which the
+  `fact-model.adoc` section above scopes in. Worth checking in the same pass that its "rows derive on
+  read from the transcription strata above" still reads right beside a singular stratum one.
 - `-- ==== Diagnostics stratum`, whose section prose already says "nothing reads a base relation of this
   stratum directly". This grouping genuinely spans stratum one, stratum two and no stratum, so it is not
   a wrong claim about any relation, it is the word doing a second job at the widest possible spread.
@@ -511,27 +547,43 @@ relation changes; comment edits only, as above.
 
 Three siblings restate this frame in the retired word, so the vocabulary would otherwise ship
 half-adopted across `roadmap/`. The file rename and the three `depends-on:` keys that named the old
-slug are already done in the revision that scoped this in; what remains is the body prose:
+slug are already done in the revision that scoped this in; what remains is the body prose.
 
-- `nodehood-derives-from-two-corpora.md` opens its own restatement with "The store has three tiers"
-  and concludes "It is tier two"; it also still carries the retired "effective rather than authored"
-  phrase quoted from `MacroCapture`, which the same edit corrects.
-- `graphitron-decodes-read-rows-not-ast.md`: "so a Java-computed derivation over captured rows is
-  tier two".
-- `assembled-schema-owns-the-sdl-census.md`: "that tier one for SDL should bottom out at".
+**The instruction is `grep -in tier` over each of the three bodies and convert every use on this axis,
+not the quotations below.** Because Retired vocabulary deliberately keeps `roadmap/` out of its own
+grep, this enumeration is the only mechanism reaching these files, and quotations alone reach a small
+fraction of the sites. The counts, so an implementer can tell when a file is done:
+
+- `nodehood-derives-from-two-corpora.md`, fourteen lines, including a section heading (`## A misplaced
+  tier, not an inverted polarity`) and the phrases "tier-one relation", "Under tier discipline",
+  "across the two tiers", "a tier-three query" and "the tier reading" twice. Its opening restatement
+  ("The store has three tiers", concluding "It is tier two") is the visible one and the roll-up quotes
+  it, but it is two lines of the fourteen. The file also carries the retired "effective rather than
+  authored" phrase quoted from `MacroCapture`, which the same pass corrects.
+- `graphitron-decodes-read-rows-not-ast.md`, six lines, not the one previously named: "a derivation
+  running in the transcription tier", "A tier is decided by what a relation's rows are computed from",
+  "is tier two", "The tier label is a description of what", "the tier-naming item", "the tier reading".
+- `assembled-schema-owns-the-sdl-census.md`, one line: "that tier one for SDL should bottom out at".
+
+One exclusion, so the grep is readable: `nodeid-key-projection-on-routine-params.md`'s five "three
+tiers" are the name-match precedence axis (`intent_resolved_node_key_column`'s three-way resolution),
+not this one, and stay. That file is not a sibling of this item and is not edited.
 
 Regenerate `roadmap/README.md` after editing the bodies, since the rendered roll-up quotes each
 item's opening paragraph.
 
 ## Sweep fences
 
-The Retired vocabulary section below defines the Done-gate greps. Four families of hits are a
+The Retired vocabulary section below defines the Done-gate greps. Five families of hits are a
 different sense of the same words and stay:
 
 - "the effective schema-file-extension filter" (`SchemaRecipe`, `AbstractRewriteMojo`, the
   `store_graph_schema_extension` table comment, `FactCaptureAgreementTest`'s round-trip
   assertion): "effective" as the filter in effect, even though "the effective schema"
-  substring-matches it.
+  substring-matches it. The same in-effect sense reaches one site the filter wording does not
+  cover, so read this fence as the sense rather than as its list: `SdlFactCapture`'s
+  `captureSchema` javadoc, "the relation is total over the effective roots", meaning the roots in
+  effect after the name convention fills in for a missing schema definition.
 - "effective type" meaning the base declaration merged with its extensions
   (`graphql_field.ordinal`'s comment, `ArgNameCompletions`' field-order javadoc).
 - "authored" contrasting author input with structural inference or with generator output: the
@@ -554,10 +606,19 @@ different sense of the same words and stay:
   This fence is the reason the `Macro synthesis provenance` header is a *sweep* target while its
   neighbours are not: that header uses the pair for both kinds in one sentence, and only the
   rewritten half is retired.
+- Identifiers. The retirement is a vocabulary sweep over prose, and the only identifier it renames is
+  `effectiveFieldType`, argued above on cost and reach. Every other `effective` or `authored` in a
+  name stays, including the paired locals `var effective` / `var authored` in `MacroCaptureTest`'s
+  carrier-rewrite test, which sit in the very method whose `@DisplayName` this item edits and which
+  the grep therefore hits. Renaming those two would be churn in a test whose assertions the item does
+  not touch; the sweep stops at the display name and the class javadoc. This fence is why the
+  `authored_type_sdl` column and the `intent_authored_*` views are declined in Retired vocabulary
+  rather than merely deferred.
 
 The third and fourth fences together are what "scoped to authored-versus-synthesized as names for
 the store's contents" means: the retirement takes the *pre-expansion-value* sense and leaves the
-*which-rows* sense, and neither fence is a licence to sweep the other's sites.
+*which-rows* sense, and neither fence is a licence to sweep the other's sites. The fifth keeps the
+whole sweep on the prose side of the line the method rename is the single stated exception to.
 
 No `RetiredVocabularyGuardTest.PHRASE_REGISTRY` entry now: the registry's own bar is a term that
 survives a sweep, and this item is the first sweep. Registration is the escalation if the phrase
@@ -567,10 +628,14 @@ recurs.
 
 - `mvn install -Plocal-db`: the docs render, the javadoc reference gate over the edited javadoc,
   `RoadmapReferenceGuardTest` over the edited prose, `FactSchemaGateTest`'s comment-coverage and
-  roster gates over the edited `meta_family` rows, and the full suite over the `effectiveFieldType`
-  rename.
-- `mvn -pl roadmap-tool exec:java -q` after the file rename, so `roadmap/README.md` carries the new
-  title and the three siblings' dependency links resolve.
+  roster gates over the edited `meta_family` rows and the edited `graphql_duplicate_declaration` and
+  `graphitron_field_synthesis` comments, and the full suite over the `effectiveFieldType` rename. The
+  DDL section headers are block comments and no gate reads them, which is why the orphaned-reference
+  check on the `Semantic stratum` reword is a manual grep rather than something the build catches.
+- `mvn -pl roadmap-tool exec:java -q` after the sibling bodies are edited, since the roll-up quotes
+  each item's opening paragraph and `nodehood-derives-from-two-corpora.md`'s opening is one of the
+  lines the `tier` sweep rewrites. The file rename and the three `depends-on:` keys landed in an
+  earlier revision, so there is no rename left to perform here.
 - Pre-run the Retired vocabulary greps before requesting In Review; the fences above say what a
   hit that stays looks like. Every hit is either edited per Implementation or matches a stated
   fence: a hit that matches neither means the fences are wrong, not that the hit is fine.
