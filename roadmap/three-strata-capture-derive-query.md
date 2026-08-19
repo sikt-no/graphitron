@@ -457,9 +457,17 @@ the same category of edit as the `Macro synthesis provenance` header below.
   does not licence it once the header stops saying stratum, since the rule's licence is for an
   unnumbered use that names a section of the DDL and there would no longer be such a section. Repoint
   it at the relation, which is what the sentence is actually about: name
-  `graphitron_undecoded_argument` directly, the two being siblings because each holds what a decode
-  declined to absorb. These are the only two live sites; the word appears nowhere else in the DDL, in
-  the docs, or in Java. Run the same dependency check the `Diagnostics stratum` alternative below gets,
+  `graphitron_undecoded_argument` directly, the two being siblings because each is its family's
+  *overflow* relation, holding what the primary write path declined so no authored text is lost. Take
+  that from what the two comments already say rather than reaching for a sharper-sounding property:
+  each opens on the word (`The tolerant-decode overflow`, `The duplicate-declaration overflow`) and
+  each closes the same thought ("the authored value is never lost", "no authored text is lost"). In
+  particular do not write that both hold what a *decode* declined. That is true of the `graphitron_`
+  side and false of this one, whose own comment names the mechanism as a transcription merge, "Capture
+  is first-wins in merge order; the losing occurrence records here", in a relation that lives in the
+  `graphql_` transcription family. Attributing a decode to a stratum-one transcription artifact, in a
+  rendered comment, is the inversion this item exists to name. These are the only two live sites; the
+  word appears nowhere else in the DDL, in the docs, or in Java. Run the same dependency check the `Diagnostics stratum` alternative below gets,
   because a header reword that strands a reference is worse than the header it fixed.
 
   The `Derived stratum: claims` header is consistent with the assignment as written and needs no edit,
@@ -566,8 +574,13 @@ fraction of the sites. The counts, so an implementer can tell when a file is don
 - `assembled-schema-owns-the-sdl-census.md`, one line: "that tier one for SDL should bottom out at".
 
 One exclusion, so the grep is readable: `nodeid-key-projection-on-routine-params.md`'s five "three
-tiers" are the name-match precedence axis (`intent_resolved_node_key_column`'s three-way resolution),
-not this one, and stay. That file is not a sibling of this item and is not edited.
+tiers" are a node-key-source precedence axis, the reconciled `NodeType` then the table's own generator
+metadata then `@node` plus the catalog primary key. Not this axis, and not the name-match precedence
+the collision list already covers, so they stay; that file is not a sibling of this item and is not
+edited. Its `intent_resolved_node_key_column`, with the `tier` column it would carry, is a relation
+that item *proposes* and that exists nowhere in the tree, so name it as planned or not at all rather
+than sending a reader to grep for it. It is also quiet support for the word: a fourth tier axis is
+arriving in a sibling plan, which is one more reason the numbered form has to be stratum.
 
 Regenerate `roadmap/README.md` after editing the bodies, since the rendered roll-up quotes each
 item's opening paragraph.
