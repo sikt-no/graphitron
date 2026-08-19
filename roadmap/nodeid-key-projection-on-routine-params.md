@@ -1029,11 +1029,18 @@ stage into a one-line note.
    call surface landed with R704 slice 7; the node metadata with R710, now Done. Stage 2 is the first
    stage and nothing gates its start: every relation it reads exists, and the binding-leaf view and
    the projection reduction join no catalog fact at all, so neither ever depended on either.
-2. **Resolution views.** `intent_resolved_node_key_column` (three tiers), the binding-leaf keying
-   over `intent_input_occurrence_path` (four arms), and the projection reduction. Exit: each view
-   pinned against hand-written expectations, every tier and all eight `site` values reached by a
-   fixture, and the two arms that resolve no leaf (the unreached input type, the path-step
-   `@condition`) pinned as empty on purpose rather than left untested.
+2. **Resolution views.** *Shipped.* `intent_resolved_node_key_column`,
+   `intent_argmapping_binding_leaf` and `intent_resolved_node_key_projection`, plus
+   `intent_argmapping_pair`, a fourth relation this plan did not name: the seven pair relations
+   normalised into one shape so the eight-arm union is written once and a reader recovers an arm's
+   own key columns by joining rather than by parsing the use-site key. Four things came out
+   differently from this plan and are recorded in the commits: the tier pick is `DENSE_RANK` rather
+   than `ROW_NUMBER`, which is what "one tier wins for a type and its whole list is taken" actually
+   needs; the argument-rooted head is two head rules under one basis, since the slots in scope
+   differ between a field-site and an argument-site `@condition`; `UNRESOLVED_PATH` also covers a
+   segment naming no input field below a leaf carrying no `@nodeId`, which the plan's head-only
+   reading would have left as a second silent gap; and the use-site key carries its components
+   beside it for the reason `intent_argmapping_pair` exists.
 3. **Rejections.** The detection views, the typed product in `AuthoredClaimConflicts`' shape, and
    the validator fusion. Exit: the bare form, the unknown key column, the missing `typeName:` and
    the unwired-site arm all fail the build, at every `argMapping` site. This is the stage that

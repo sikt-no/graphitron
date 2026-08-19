@@ -1,0 +1,332 @@
+package no.sikt.graphitron.model.intent;
+
+import no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
+import org.jooq.DSLContext;
+import org.jooq.Record;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.function.Consumer;
+
+import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
+import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
+import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
+import static no.sikt.graphitron.model.test.SeededStore.seedField;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedNode;
+import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
+import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
+import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedTable;
+import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * What {@code intent_resolved_node_key_projection} returns: the {@code argMapping} bindings that
+ * decode a node id and project one column out of the decoded key. The reduction the item turns on,
+ * and the row an emitter reads to know which column of a decoded record a routine parameter gets.
+ *
+ * <p>It is a reduction over the two relations beside it and holds no rule of its own beyond the
+ * meeting condition, so the cases here are mostly about where the meeting fails. Absence means this
+ * pair is not a projection, and each way of arriving at absence is a stated row in one of those two
+ * relations: nothing unconsumed is the bare form, two or more unconsumed is the typo, a trailing
+ * segment matching no key column is the unknown column, and a bare {@code @nodeId} is the missing
+ * {@code typeName:}. None of them is this relation's to report, which is what keeps it a population
+ * an emitter can trust rather than a verdict it has to interpret.
+ */
+class ResolvedNodeKeyProjectionTest {
+
+    private static final String GRAPH = "g";
+    private static final String PKG = "no.example.jooq";
+    private static final String PUBLIC = "public";
+
+    // ===== The projection resolves =====
+
+    /**
+     * The motivating case end to end: a {@code @nodeId} input field bound through its key column,
+     * with the tier that answered carried so a reader can explain the answer.
+     */
+    @Test
+    void aTrailingSegmentNamingAKeyColumnResolves() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.NODE_TYPE_NAME))
+                .isEqualTo("Inventory");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
+                .isEqualTo("inventory_id");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)).isZero();
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER)).isEqualTo("SDL_PINNED");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.LEAF_KIND))
+                .isEqualTo("INPUT_FIELD");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.USE_SITE))
+                .isEqualTo("Mutation.rentFilm#0");
+        });
+    }
+
+    /**
+     * A projection off a {@code @nodeId} argument rather than an input field. The leaf kind is what
+     * tells an emitter which slot the wire value is read out of, and both kinds reach this relation.
+     */
+    @Test
+    void aProjectionOffANodeIdArgumentResolves() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedField(dsl, GRAPH, "Mutation", "rentFilm");
+            seedArgumentNodeId(dsl, GRAPH, "Mutation", "rentFilm", "inventoryId", "Inventory");
+            inventoryNodeType(dsl, "inventory_id");
+            pair(dsl, "pInventoryId", "inventoryId.inventory_id");
+
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.LEAF_KIND)).isEqualTo("ARGUMENT");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.LEAF_ARGUMENT_NAME))
+                .isEqualTo("inventoryId");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
+                .isEqualTo("inventory_id");
+        });
+    }
+
+    /**
+     * Matching is case-insensitive, so a segment spelled the generated way and one spelled the SQL
+     * way are one answer, and the column comes out under the tier's spelling rather than the
+     * author's. That is what lines the projection up with the key list the decode returns values
+     * against.
+     */
+    @Test
+    void aSegmentSpelledTheOtherWayStillMatchesAndTakesTheTiersSpelling() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.INVENTORY_ID");
+
+            assertThat(only(dsl).get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
+                .as("the row is the tier's own spelling, not the one the author happened to type")
+                .isEqualTo("inventory_id");
+        });
+    }
+
+    /**
+     * A composite key opens into each of its columns, so two parameters bound from one node id are
+     * two rows at two pair positions carrying two different key positions. This is what makes a
+     * composite projection expressible without indexing a tuple anywhere.
+     */
+    @Test
+    void twoParametersBoundFromOneIdAreTwoRowsOfOneKey() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedTable(dsl, PKG, PUBLIC, "bar");
+            seedColumn(dsl, PKG, PUBLIC, "bar", "bar_id", 0, "barId");
+            seedColumn(dsl, PKG, PUBLIC, "bar", "foo_id", 1, "fooId");
+            seedNode(dsl, GRAPH, "Bar");
+            seedTableBinding(dsl, GRAPH, "Bar", "bar");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Bar", 0, "bar_id");
+            seedNodeKeyColumnRef(dsl, GRAPH, "Bar", 1, "foo_id");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Bar");
+            pair(dsl, 0, "pBarId", "input.inventoryId.bar_id");
+            pair(dsl, 1, "pFooId", "input.inventoryId.foo_id");
+
+            var rows = rows(dsl);
+            assertThat(rows).hasSize(2);
+            assertThat(rows.stream()
+                .map(r -> List.of(r.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.POSITION),
+                    r.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME),
+                    r.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION))))
+                .containsExactlyInAnyOrder(List.of(0, "bar_id", 0), List.of(1, "foo_id", 1));
+        });
+    }
+
+    /** The projection resolves off whichever tier answered, the primary key included. */
+    @Test
+    void aProjectionResolvesOffThePrimaryKeyTierToo() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedTable(dsl, PKG, PUBLIC, "inventory");
+            seedColumn(dsl, PKG, PUBLIC, "inventory", "inventory_id", 0, "inventoryId");
+            seedNode(dsl, GRAPH, "Inventory");
+            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
+            seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            assertThat(only(dsl).get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER))
+                .isEqualTo("CATALOG_PRIMARY_KEY");
+        });
+    }
+
+    // ===== Where the meeting fails =====
+
+    /**
+     * A trailing segment naming no key column of the node type is not a projection. The unknown
+     * column is a rejection the detection stratum reads off the binding relation, and swallowing it
+     * here as a near miss is what would let a build emit a read of a column nobody has.
+     */
+    @Test
+    void aTrailingSegmentNamingNoKeyColumnHasNoRow() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.no_such_column");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A binding with nothing unconsumed is the bare form, not a projection: the author named no key
+     * column, which is the state whose rejection closes the silently-wrong hole.
+     */
+    @Test
+    void aBindingWithNoTrailingSegmentHasNoRow() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * Two trailing segments do not resolve as a projection even where the first of them names a key
+     * column. Exactly one, never a minimum: admitting more would let a projection resolve off a path
+     * whose middle the author got wrong.
+     */
+    @Test
+    void twoTrailingSegmentsHaveNoRowEvenWhenTheFirstNamesAKeyColumn() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id.nope");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A bare {@code @nodeId} carries no node type to resolve a key list against, so there is nothing
+     * to project even where the trailing segment would have matched. The missing {@code typeName:}
+     * is the rejection, and this relation stays quiet.
+     */
+    @Test
+    void aBareNodeIdHasNoRow() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", null);
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A node type whose key columns resolve on no tier projects nothing, which is the ambiguous
+     * binding and the keyless table arriving here as absence. The key-column relation is where that
+     * silence is stated; this one only fails to find a match.
+     */
+    @Test
+    void aNodeTypeWithNoResolvedKeyColumnsHasNoRow() {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            seedTable(dsl, PKG, PUBLIC, "inventory");
+            seedColumn(dsl, PKG, PUBLIC, "inventory", "inventory_id", 0, "inventoryId");
+            seedNode(dsl, GRAPH, "Inventory");
+            seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
+            inputSurface(dsl);
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
+
+            assertThat(rows(dsl))
+                .as("no tier answered for Inventory, so there is no key list to project out of")
+                .isEmpty();
+        });
+    }
+
+    /**
+     * A path-step {@code @condition} resolves no leaf, so it reaches no projection whatever it
+     * spells. The silence travels through the binding relation rather than being re-decided here.
+     */
+    @Test
+    void aSilentBindingHasNoRow() {
+        withInventoryNode(dsl -> {
+            seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
+            pair(dsl, "pInventoryId", "notAnArgument.inventory_id");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    // ===== Fixtures =====
+
+    /** The source the graph resolves catalog names against. */
+    private static void catalog(DSLContext dsl) {
+        seedSource(dsl, PKG, "JOOQ_SCHEMA");
+        seedGraphSource(dsl, GRAPH, PKG);
+    }
+
+    /** An {@code Inventory} node over the {@code inventory} table with its key column pinned. */
+    private static void inventoryNodeType(DSLContext dsl, String pinnedColumn) {
+        seedTable(dsl, PKG, PUBLIC, "inventory");
+        seedColumn(dsl, PKG, PUBLIC, "inventory", "inventory_id", 0, "inventoryId");
+        seedNode(dsl, GRAPH, "Inventory");
+        seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
+        seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, pinnedColumn);
+    }
+
+    /** {@code Mutation.rentFilm(input: RentFilmInput)} and the occurrence rows under it. */
+    private static void inputSurface(DSLContext dsl) {
+        seedDeclaredType(dsl, GRAPH, "RentFilmInput", "INPUT_OBJECT");
+        seedField(dsl, GRAPH, "RentFilmInput", "inventoryId");
+        seedField(dsl, GRAPH, "Mutation", "rentFilm");
+        seedArgument(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput");
+        seedOccurrencePath(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput",
+            new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
+    }
+
+    /** The whole fixture most cases depart from: the node, its key, and the input surface above it. */
+    private static void withInventoryNode(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            catalog(dsl);
+            inventoryNodeType(dsl, "inventory_id");
+            inputSurface(dsl);
+            body.accept(dsl);
+        });
+    }
+
+    /** A {@code @routine} pair at position zero, with its segment decomposition beside it. */
+    private static void pair(DSLContext dsl, String paramName, String argumentPath) {
+        pair(dsl, 0, paramName, argumentPath);
+    }
+
+    /** A {@code @routine} pair at a position the case names. */
+    private static void pair(DSLContext dsl, int position, String paramName, String argumentPath) {
+        seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
+            argumentPath);
+        seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
+    }
+
+    // ===== Reads =====
+
+    /** Every row of the graph under assertion. */
+    private static List<Record> rows(DSLContext dsl) {
+        return dsl.select(INTENT_RESOLVED_NODE_KEY_PROJECTION.fields())
+            .from(INTENT_RESOLVED_NODE_KEY_PROJECTION)
+            .where(INTENT_RESOLVED_NODE_KEY_PROJECTION.GRAPH_NAME.eq(GRAPH))
+            .fetch()
+            .stream()
+            .map(Record.class::cast)
+            .toList();
+    }
+
+    /** The one row a single-pair fixture produces. */
+    private static Record only(DSLContext dsl) {
+        var all = rows(dsl);
+        assertThat(all).hasSize(1);
+        return all.getFirst();
+    }
+}

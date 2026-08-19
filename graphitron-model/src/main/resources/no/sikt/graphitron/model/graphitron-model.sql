@@ -5211,6 +5211,44 @@ COMMENT ON COLUMN intent_argmapping_binding_leaf.leaf_argument_name IS 'the argu
 COMMENT ON COLUMN intent_argmapping_binding_leaf.node_type_ref IS 'the typeName: the leaf''s @nodeId names, as written; NULL on a bare @nodeId, which at this position is a rejection rather than an inference, there being no containing table to infer a node type from. NULL on every SILENT row too, so a reader telling the two apart reads disposition first';
 COMMENT ON COLUMN intent_argmapping_binding_leaf.unconsumed_segments IS 'how many trailing segments named no input field below the leaf: 0 where the path consumed everything, 1 where one segment is left over, more where several are. A count rather than a flag, because the readings differ: zero is the bare binding a rejection closes, one is a key-column projection, and two or more is a typo or a nested form neither this relation nor its readers claim to resolve. Arithmetic over the segment rows against the occurrence row''s depth, never a parse. NULL on every SILENT row, no leaf having been reached to count below';
 
+CREATE VIEW intent_resolved_node_key_projection
+  (graph_name, site, use_site, type_name, field_name, position, argument_path,
+   leaf_kind, leaf_type_name, leaf_field_name, leaf_argument_name,
+   node_type_name, column_name, key_position, tier) AS
+SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, l.argument_path,
+       l.leaf_kind, l.leaf_type_name, l.leaf_field_name, l.leaf_argument_name,
+       l.node_type_ref, k.column_name, k.position, k.tier
+  FROM intent_argmapping_binding_leaf l
+  JOIN graphitron_argument_path_segment sg
+    ON sg.graph_name = l.graph_name AND sg.type_name = l.type_name
+   AND sg.field_name = l.field_name AND sg.argument_path = l.argument_path
+  JOIN intent_resolved_node_key_column k
+    ON k.graph_name = l.graph_name AND k.type_name = l.node_type_ref
+   AND UPPER(k.column_name) = UPPER(sg.segment_name)
+ WHERE l.disposition = 'RESOLVE'
+   AND l.unconsumed_segments = 1
+   AND l.node_type_ref IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argument_path_segment nx
+                    WHERE nx.graph_name = sg.graph_name AND nx.type_name = sg.type_name
+                      AND nx.field_name = sg.field_name AND nx.argument_path = sg.argument_path
+                      AND nx.position = sg.position + 1);
+COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key: the pairs whose leaf carries a @nodeId(typeName:), whose path left exactly one segment unconsumed, and whose trailing segment names one of that node type''s resolved key columns. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the two relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_binding_leaf''s and the key list is intent_resolved_node_key_column''s, and this is only where the two meet. Exactly one unconsumed segment, never a minimum: two or more is a typo or a nested object form, and admitting it here would let a projection resolve off a path whose middle the author got wrong. The trailing segment is reached as the segment with no successor rather than by counting, so nothing arithmetic stands between the relation and the row it reads. Matching is case-insensitive, which is inherited rather than introduced: the spelled-table and column-match derivations both compare under UPPER() and the catalog resolution uses the same rule, so a projection spelled the generated way and one spelled the SQL way are one answer. The column comes out under the winning tier''s own spelling and not the author''s, because it is the decode''s key list the projection indexes into, and naming the column rather than a tuple position is what makes a transposed composite-key projection unconstructable. Absence means this pair is not a projection, and every way of arriving at that absence is a stated row next door: a leaf with nothing unconsumed is the bare form a rejection closes, a leaf with two or more unconsumed segments is the typo, a trailing segment matching no key column is the unknown column, and a bare @nodeId is the missing typeName. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
+COMMENT ON COLUMN intent_resolved_node_key_projection.graph_name IS 'the owning graph''s partition, carried from both sides of the reduction, which agree on it by the join';
+COMMENT ON COLUMN intent_resolved_node_key_projection.site IS 'which SDL site spelled the pair, in intent_argmapping_pair''s closed vocabulary of eight; the column a consumer reads to know whether an emitter is wired for this projection yet';
+COMMENT ON COLUMN intent_resolved_node_key_projection.use_site IS 'the consuming coordinate, serialized as intent_argmapping_pair serializes it; with site and position the grain, and the key a planner joins the pair relation on to recover the application ordinal a command row needs';
+COMMENT ON COLUMN intent_resolved_node_key_projection.type_name IS 'the spelling site''s owning type';
+COMMENT ON COLUMN intent_resolved_node_key_projection.field_name IS 'the spelling site''s field name within that type';
+COMMENT ON COLUMN intent_resolved_node_key_projection.position IS 'the pair''s 0-based position within its own argMapping list; two parameters bound from one node id are two rows at two positions, which is what lets a composite key fill both';
+COMMENT ON COLUMN intent_resolved_node_key_projection.argument_path IS 'the path as written, carried so a message quotes the author''s own spelling rather than the resolution''s';
+COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_kind IS 'ARGUMENT where the decoded node id is a field argument, INPUT_FIELD where it is an input field reached below one; carried from the binding resolution, and what tells an emitter which slot the wire value is read out of';
+COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_type_name IS 'the leaf''s owning type, carried from the binding resolution';
+COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_field_name IS 'the leaf''s owning field on an ARGUMENT leaf, the input field itself on an INPUT_FIELD leaf';
+COMMENT ON COLUMN intent_resolved_node_key_projection.leaf_argument_name IS 'the argument''s name on an ARGUMENT leaf; NULL on an INPUT_FIELD leaf, whose key needs no argument component';
+COMMENT ON COLUMN intent_resolved_node_key_projection.node_type_name IS 'the node type the leaf''s @nodeId names, as written; what the wire id decodes against, and the type whose key list the column below belongs to';
+COMMENT ON COLUMN intent_resolved_node_key_projection.column_name IS 'the projected key column, spelled as the winning key-column tier spells it rather than as the author wrote it: the decode returns values against that tier''s list, so this is the spelling that lines up with it. The author''s own spelling is in the path, one segment join away';
+COMMENT ON COLUMN intent_resolved_node_key_projection.key_position IS 'the projected column''s 0-based position within the node key. Not what an emitter reads (it names the column) but what a reader checking a composite projection asks, and what shows two parameters bound from one id take two different positions of one key';
+COMMENT ON COLUMN intent_resolved_node_key_projection.tier IS 'which key-column population answered for this node type, carried from intent_resolved_node_key_column''s closed vocabulary of three; a diagnostic explaining why a column is or is not available reads it rather than re-deriving the precedence';
+
 -- ==== Diagnostics stratum =========================================================
 -- Violations as facts: seven arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this stratum directly. The arms, and
