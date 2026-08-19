@@ -26,23 +26,29 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * here is the decode of the view's closed {@code verdict} vocabulary into {@link Rejection} arms and
  * the prose those arms carry.
  *
- * <p>Four of the five arms are the author's to fix, and they close the silence this family had:
- * binding a {@code @nodeId} without naming a key column used to hand a routine parameter or a
- * service method the base64 wire id verbatim, and nothing in the build said a word. Which arm fires
- * is the view's decision, taken on the trailing-segment count and then on whether a candidate
- * column exists, so nothing here re-tests a predicate the query already settled. What a dot opens is
- * a node id, so an {@code ID} declaring no
- * {@code @nodeId} has nothing to open and is the walk's rejection rather than a verdict here: the
- * grammar admits only what it can confirm, which is what keeps that rule in one place.
+ * <p>Six arms are the author's to fix, and they close the silence this family had: binding a
+ * {@code @nodeId} without naming a key column used to hand a routine parameter or a service method
+ * the base64 wire id verbatim, and nothing in the build said a word. Which arm fires is the view's
+ * decision, taken on whether the leaf declares a decode, then on the trailing-segment count, then on
+ * whether a candidate column exists, so nothing here re-tests a predicate the query already settled.
  *
- * <p>The fifth arm is the generator's rather than the author's, which is why it is derived here
- * and not in SQL: a projection that resolves at a site whose emitter does not read it yet is a
- * {@link Rejection.Deferred}, and whether an emitter exists is a fact about this codebase and not
- * about the schema. {@link #EMITTING_SITES} is that fact, held beside the switch that names the
- * eight sites so a value can neither be misspelled nor forgotten, and the arm shrinks as sites are
- * wired rather than being deleted. A projection at a site still outside that set fails the build
- * saying so, which is the honest state: emitting nothing, or emitting the raw base64, are the two
- * outcomes it exists to prevent.
+ * <p>That includes the two arms a reader might expect the schema walk to own. An {@code ID} carrying
+ * no {@code @nodeId} has nothing to open, and more than one segment past a node id resolves nothing,
+ * but both are questions about captured directive facts and the walk runs before capture. So the walk
+ * carries every segment it cannot resolve against SDL and judges none of them, and
+ * {@code UNDECLARED_NODE_ID} and {@code TRAILING_SEGMENTS_BEYOND_ONE} are where those rules live. A
+ * rule spelled in the walk instead would be an earlier second copy that wins by rejecting first,
+ * which is how one family ends up with two answers that agree until one changes.
+ *
+ * <p>Two further arms are the generator's rather than the author's, which is why they are derived
+ * here and not in SQL: a projection that resolves at a site whose emitter does not read it yet, and
+ * one off a list-shaped node id, are both {@link Rejection.Deferred}. Whether an emitter exists is a
+ * fact about this codebase and not about the schema. {@link #EMITTING_SITES} is the first of those
+ * facts, held beside the switch that names the eight sites so a value can neither be misspelled nor
+ * forgotten; the second is the list shape, a coherent request naming the list of a key column across
+ * the decoded ids that nothing builds yet. Both shrink as emitters land rather than being deleted,
+ * and a projection either arm covers fails the build saying so, which is the honest state: emitting
+ * nothing, or emitting the raw base64, are the two outcomes they exist to prevent.
  *
  * <p>Locations are the view's: the owning directive application's own position, so a message points
  * at the {@code argMapping} the author wrote rather than at the input type's declaration. The
@@ -120,8 +126,20 @@ public final class ArgmappingProjectionDefects {
 
     /** Which defect, in the view's own closed vocabulary. */
     private enum Verdict {
+        /**
+         * A path opening something with nothing to open: an ID carrying no {@code @nodeId}, and
+         * equally a String or an enum. The walk carries such a segment rather than rejecting it,
+         * because deciding it needs the directive facts only capture holds, so this arm is where the
+         * whole rule lives.
+         */
+        UNDECLARED_NODE_ID,
         /** A declared decode with no key column named after it: the silently-wrong binding. */
         BARE_NODE_ID,
+        /**
+         * More names following the single key column a node id opens into: a typo, or a nested form
+         * nothing resolves.
+         */
+        TRAILING_SEGMENTS_BEYOND_ONE,
         /** A projection asked for against a {@code @nodeId} that names no node type. */
         MISSING_TYPE_NAME,
         /** A trailing segment naming no key column the node type resolved. */
@@ -180,17 +198,17 @@ public final class ArgmappingProjectionDefects {
 
     /**
      * Projects every {@code argMapping} node-id rejection over {@code graphName}'s partition: the
-     * four author defects from the detection view, then the unwired-site deferrals from the
-     * projection relation. Empty for a graph whose {@code argMapping} paths all bind ordinary
-     * values, and for one whose projections all resolve at sites that emit them.
+     * six author defects from the detection view, then the deferrals for projections that resolve and
+     * cannot be emitted. Empty for a graph whose {@code argMapping} paths all bind ordinary values,
+     * and whose projections all resolve at sites that emit them in a shape those emitters build.
      */
     public static Detection detect(DSLContext dsl, String graphName) {
         var defects = new ArrayList<Defect>(authorDefects(dsl, graphName));
-        defects.addAll(unwiredSites(dsl, graphName));
+        defects.addAll(unemittableProjections(dsl, graphName));
         return new Detection(defects);
     }
 
-    /** The view's four author arms, decoded. */
+    /** The view's six author arms, decoded. */
     private static List<Defect> authorDefects(DSLContext dsl, String graphName) {
         var v = INTENT_ARGMAPPING_PROJECTION_DEFECT;
         return dsl.selectFrom(v)
@@ -206,23 +224,30 @@ public final class ArgmappingProjectionDefects {
                     rejectionOf(Verdict.of(row.getVerdict()), entry, row.getNodeTypeRef(),
                         row.getTrailingSegmentName(),
                         keyColumnsOf(dsl, graphName, row.getNodeTypeRef()),
-                        row.getColumnJavaType(), row.getParamJavaType()),
+                        row.getColumnJavaType(), row.getParamJavaType(),
+                        row.getLeafNamedType(), row.getTrailingSegments()),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
             });
     }
 
     /**
-     * The projections that resolve at a site no emitter reads. Keyed on {@code site} rather than on
-     * the pair, so one row per pair however many key columns it projects: a distinct read over the
-     * projection relation's own grain would report a composite key twice for one entry. Empty once
-     * every site that resolves a leaf is wired, which is what makes this a shrinking arm rather than
-     * a permanent one.
+     * The projections that resolve but cannot be emitted, both reasons together. Keyed on the pair
+     * rather than on the projection's own grain, so one row per bound parameter however many key
+     * columns it projects: a distinct read over the finer grain would report a composite key twice
+     * for one entry.
+     *
+     * <p>Two deferrals, and they are here rather than in SQL for one reason: each is a fact about
+     * this codebase and not about the schema. A site whose emitter does not read a projection yet is
+     * {@link #EMITTING_SITES}' business, and a list-shaped node id is an emitter that does not exist
+     * for a request that is perfectly coherent, the author having named the list of one key column
+     * across the decoded ids. A view cannot see either. Both arms shrink as emitters land, which is
+     * what distinguishes them from the author defects the view states.
      */
-    private static List<Defect> unwiredSites(DSLContext dsl, String graphName) {
+    private static List<Defect> unemittableProjections(DSLContext dsl, String graphName) {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         var ap = INTENT_ARGMAPPING_PAIR;
         return dsl.selectDistinct(p.SITE, p.USE_SITE, p.TYPE_NAME, p.FIELD_NAME, p.POSITION,
-                p.ARGUMENT_PATH, p.NODE_TYPE_NAME, ap.PARAM_NAME,
+                p.ARGUMENT_PATH, p.NODE_TYPE_NAME, p.LEAF_IS_LIST, ap.PARAM_NAME,
                 ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
             .from(p)
             .join(ap).on(ap.GRAPH_NAME.eq(p.GRAPH_NAME), ap.SITE.eq(p.SITE),
@@ -231,16 +256,24 @@ public final class ArgmappingProjectionDefects {
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.USE_SITE, p.POSITION)
             .fetch()
             .stream()
-            .filter(row -> !EMITTING_SITES.contains(Site.of(row.get(p.SITE))))
+            .filter(row -> Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
+                || !EMITTING_SITES.contains(Site.of(row.get(p.SITE))))
             .map(row -> {
                 var site = Site.of(row.get(p.SITE));
                 var entry = entry(site, row.get(p.USE_SITE), row.get(p.TYPE_NAME),
                     row.get(p.FIELD_NAME), row.get(ap.PARAM_NAME), row.get(p.ARGUMENT_PATH));
+                // The list reason is reported ahead of the unwired-site one where both hold: it is
+                // the shape the author can act on, an unwired site being nothing they control.
+                String why = Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
+                    ? " opens a list of node ids, so it names the list of a key column of '"
+                      + row.get(p.NODE_TYPE_NAME)
+                      + "' across the decoded ids, which parameter binding does not emit yet"
+                    : " resolves a key column of '" + row.get(p.NODE_TYPE_NAME)
+                      + "', which no emitter reads at this site yet";
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
                     row.get(p.USE_SITE), row.get(ap.PARAM_NAME), row.get(p.ARGUMENT_PATH), true,
-                    Rejection.deferred(entry + " resolves a key column of '"
-                        + row.get(p.NODE_TYPE_NAME) + "', which no emitter reads at this site yet"),
+                    Rejection.deferred(entry + why),
                     location(row.get(ap.SOURCE_NAME), row.get(ap.SOURCE_LINE),
                         row.get(ap.SOURCE_COLUMN)));
             })
@@ -287,8 +320,22 @@ public final class ArgmappingProjectionDefects {
      */
     private static Rejection rejectionOf(Verdict verdict, String entry, String nodeTypeRef,
                                          String trailingSegment, List<String> keyColumns,
-                                         String columnJavaType, String paramJavaType) {
+                                         String columnJavaType, String paramJavaType,
+                                         String leafNamedType, int trailingSegments) {
         return switch (verdict) {
+            case UNDECLARED_NODE_ID -> Rejection.structural(entry + " opens "
+                + article(leafNamedType) + " '" + leafNamedType + "' with '" + trailingSegment
+                + "', which has nothing to open"
+                + ("ID".equals(leafNamedType)
+                    ? ": that ID declares no @nodeId, so there is no node identity to project a key"
+                      + " column out of. Annotate it @nodeId(typeName: \"<NodeType>\") to open it"
+                      + " into that node type's key columns"
+                    : "; " + OPENABLE_KINDS));
+            case TRAILING_SEGMENTS_BEYOND_ONE -> Rejection.structural(entry + " opens the "
+                + nodeIdSpelling(nodeTypeRef) + " with '" + trailingSegment + "' and "
+                + (trailingSegments - 1) + " more segment"
+                + (trailingSegments - 1 == 1 ? "" : "s")
+                + ", but a node id opens into exactly one key column, so nothing may follow it");
             case BARE_NODE_ID -> Rejection.structural(entry + " binds a "
                 + nodeIdSpelling(nodeTypeRef)
                 + " and names no key column, so the encoded node id would reach the database"
@@ -325,6 +372,21 @@ public final class ArgmappingProjectionDefects {
         }
         int dot = javaType.lastIndexOf('.');
         return dot < 0 ? javaType : javaType.substring(dot + 1);
+    }
+
+    /**
+     * The two things a dot may open, as a message states them. One clause rather than two rules: the
+     * separator has always meant "open the thing at this position", and what a thing opens into
+     * follows from what it is.
+     */
+    private static final String OPENABLE_KINDS =
+        "an input object opens into its fields, and an ID carrying @nodeId opens into the key"
+        + " columns of the node type it names";
+
+    /** {@code an} before a vowel, {@code a} otherwise; the type name is the author's own spelling. */
+    private static String article(String typeName) {
+        return typeName != null && !typeName.isEmpty()
+            && "AEIOUaeiou".indexOf(typeName.charAt(0)) >= 0 ? "an" : "a";
     }
 
     /** {@code @nodeId(typeName: "X")} where the author named a type, {@code @nodeId} where not. */

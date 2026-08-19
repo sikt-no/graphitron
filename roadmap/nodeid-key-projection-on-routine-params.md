@@ -729,9 +729,11 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
 * **`FactCapture`**: run the detection over the freshly captured rows inside the existing
   transaction and return it in the typed product the caller already folds into the error stream.
 * **`GraphitronSchemaValidator`**: fuse the new violations the way the claim conflicts are fused.
-* **`ArgBindingMap.of`**: widen the traversal rejection to admit one trailing segment after an
-  `ID`-typed leaf, *with* the six-call-site audit and the `RoutineCallEmitter.nestedSlotRead`
-  consequence handled in the same commit (see "What this item does not add").
+* **`ArgBindingMap.of`**: delete the traversal rejection, carrying every segment below an input
+  object instead, *with* the six-call-site audit and the `RoutineCallEmitter.nestedSlotRead`
+  consequence handled in the same commit (see "What this item does not add"). One deletion and no
+  new parameter: the method runs before capture, so every judgment about a carried segment is the
+  store's.
 * **`EmitPlan`**: read the projection view into a plan-local relation keyed by the pair's natural
   key and join it into every command row that carries a routine call: `LaunchSource.RoutineChain`
   in `LauncherCommands`, and the new routine-write command below. Nothing in `rewrite/model`
@@ -1242,7 +1244,8 @@ stage into a one-line note.
    executes. The `@service` and output-field `@condition` sites remain, and defer honestly until
    they land.*
 
-   What shipped. `ArgBindingMap.of` admits one segment past a declared node id; `ResolvedKeyProjections` reads
+   What shipped. `ArgBindingMap.of` carries every segment it cannot resolve against SDL and judges
+   none of them; `ResolvedKeyProjections` reads
    the projection view; `KeyProjection` and `KeyProjectionRelation` carry it command-side;
    `KeyProjectionCommands` joins it onto the walked model's node types; `ProjectedKeyHost` and
    `ProjectedKeyReads` render the decode-and-project read; `EMITTING_SITES` holds `ROUTINE`, `FIELD_CONDITION` and `ARGUMENT_CONDITION`, the two condition
@@ -1252,17 +1255,26 @@ stage into a one-line note.
 
    Six decisions worth reading, four of which the plan did not prescribe.
 
-   **What a dot opens is a node id, not an `ID`, and getting that wrong cost a verdict.** The first
-   shape of this widening admitted every `ID` and left an `ID` carrying no `@nodeId` to a fifth
-   store-side verdict, on the ground that a path's head is reached through a slot map carrying types
-   and not directives, so the walk could not ask. That inverted the design's own rule: it made the
-   grammar admit something it cannot interpret and put the correction a pipeline stage downstream. The
-   slot map's callers hold the arguments and input fields themselves, so `ArgBindingMap.of` now takes
-   the slot names that declare a `@nodeId` beside the types, both path positions answer identically,
-   and an `ID` that is not a node id takes the same "nothing to open" rejection a `String` takes. The
-   fifth verdict is gone, view arm and all, and the defect vocabulary is three again. What survives of
-   the earlier reasoning is only its negative: the rejection has to be somewhere, and putting it in
-   the grammar is what keeps one rule in one place.
+   **What a dot opens is a node id, not an `ID`, and the rule belongs in the store.** This went wrong
+   twice before landing, and both wrong turns are worth recording because they are the same mistake
+   from opposite directions. The first shape admitted every `ID` and left an `ID` carrying no
+   `@nodeId` to a store verdict, which is the right *place* but was argued from the wrong premise:
+   that the walk could not ask. The correction to that premise was true (the callers do hold the
+   arguments and input fields, so the walk *could* ask) and I drew the wrong conclusion from it, which
+   was to make the walk ask. That put a resolution over captured directive facts into a pass that runs
+   before capture, so it became an earlier second copy of the view's own answer that won by rejecting
+   first, and the view arm was deleted to avoid double-reporting. Both halves were wrong together.
+
+   The rule the section above already states is the one that holds: this stage is **one deletion**,
+   the walk stops rejecting, and nothing about the segment is judged there. Whether a `@nodeId` is
+   declared, whether it names a type, whether the trailing name is a key column, how many names
+   follow, and whether the column's type fits the parameter are five questions over the same captured
+   facts, and they are answered in one place. So `UNDECLARED_NODE_ID` is back, joined by
+   `TRAILING_SEGMENTS_BEYOND_ONE`, and the defect vocabulary is six. `intent_argmapping_binding_leaf`
+   grew `leaf_named_type` and `leaf_is_list`, coalesced over the two coordinates exactly as its
+   `@nodeId` columns already were, which is what lets the undeclared arm offer two remedies from one
+   row: an `ID` is told to annotate it, a `String` is told it has nothing to open. Nothing new had to
+   be captured for any of it.
 
    Nodehood inferred from a slot's *name* is deliberately not consulted. The projection requires
    `typeName:` explicitly at this position, there being no containing table to infer from, so a slot
@@ -1271,8 +1283,10 @@ stage into a one-line note.
    **A list of node ids is a meaningful shape that does not emit yet, not a meaningless one.** The
    first wording rejected it for having "no single key to project from", which is false: a list of
    node ids of one type opens into the list of that key column, and the decode machinery already has a
-   list variant. It is still rejected, because parameter binding does not emit an array-valued IN
-   parameter, and the message now says that instead. Filed as its own item rather than left as a
+   list variant. Because it is coherent rather than mistaken, it is not an author defect at all: the
+   projection resolves and carries `leaf_is_list`, and the deferral is minted beside the unwired-site
+   one in `ArgmappingProjectionDefects`, which is where a fact about which emitters exist belongs. That
+   is the same division the view comment draws for the unwired site, applied to a second case. Filed as its own item rather than left as a
    claim.
 
    **The six-call-site audit's finding is that no site needs a change.**   **The six-call-site audit's finding is that no site needs a change.** Each site's post-resolution

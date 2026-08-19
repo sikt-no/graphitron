@@ -1,13 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
-import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
-import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
-import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser;
@@ -113,31 +110,28 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
      *
      * <p>{@code overrides} is trusted to have unique keys (the parser enforces it).
      *
-     * <h4>The key-column segment</h4>
+     * <h4>Segments below an input object</h4>
      *
-     * <p>A path may spell one segment past a node id, naming a key column of the node type that
-     * {@code @nodeId} refers to; see {@link #isNodeId}. {@code nodeIdSlots} names the slots of
-     * {@code slotTypes} that declare one, which the caller holds and this map cannot. It resolves to an
-     * ordinary trailing {@link PathExpr.Step}, which is the whole of the walk's contribution: the
-     * segment is <em>admitted and carried, never interpreted</em> here. Two things follow, and both
-     * are load-bearing.
+     * <p>A path may descend past something that is not an input object, which is how a key column of
+     * a {@code @nodeId}'s node type gets named. The remaining segments are carried as ordinary
+     * {@link PathExpr.Step}s and that is the whole of this method's contribution: they are
+     * <em>carried, never interpreted</em>.
      *
-     * <p>Interpreting it is a functional dependency of the pair's coordinate resolved against the
-     * node type's key columns, so it belongs to the store's resolution and to the plan that reads
-     * it, not to a walk that is minting a binding for a different coordinate. The walk cannot even
-     * consult that resolution: the schema is built before capture runs, so the store is empty while
-     * this executes, and a walk-local re-check would be a second spelling of the view's answer.
+     * <p>No judgment about them lives here, and the reason is not convenience. Whether the thing
+     * being opened carries a {@code @nodeId}, whether it names a type, whether the trailing segment
+     * is one of that type's key columns, whether there is exactly one of them, and whether the
+     * column's Java type fits the parameter are all resolutions over captured facts, answered by
+     * {@code intent_argmapping_binding_leaf} and the relations that reduce it. This method cannot
+     * consult any of them: the schema is built before capture runs, so the store is empty while this
+     * executes. A rule spelled here would therefore be a second, earlier, unfalsifiable copy of an
+     * answer the store already gives, and the copy would win by rejecting first.
      *
-     * <p>What keeps an uninterpreted segment safe is therefore the pipeline order rather than a gate
-     * here. Capture and validation both run before planning and rendering, so a trailing segment
-     * that resolves to no key column fails the build before any emitter sees the path. That makes
-     * the admission's safety exactly the completeness of those detections, which is why the rule
-     * above admits only what it can confirm is a node id: whether the named column is one of that
-     * node type's is a resolution the store owns, but whether there is a node identity there at all
-     * is decidable here, and deciding it here is what keeps one rule in one place.
+     * <p>What keeps a carried segment safe is the pipeline order. Capture and validation both run
+     * before planning and rendering, so a path the store cannot resolve fails the build before any
+     * emitter sees it. The safety of carrying is exactly the completeness of those detections, which
+     * is where a reader should go to audit it.
      */
-    static Result of(Map<String, GraphQLInputType> slotTypes, Map<String, List<String>> overrides,
-            Set<String> nodeIdSlots) {
+    static Result of(Map<String, GraphQLInputType> slotTypes, Map<String, List<String>> overrides) {
         var resolvedOverrides = new LinkedHashMap<String, PathExpr>();
         var claimedSlots = new LinkedHashSet<String>();
         for (var entry : overrides.entrySet()) {
@@ -156,42 +150,18 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
             claimedSlots.add(head);
             PathExpr expr = PathExpr.head(head);
             GraphQLInputType currentFieldType = slotTypes.get(head);
-            // What the dot at position i opens is the thing segment i-1 named: the head slot at
-            // i == 1, and the input field resolved on the previous turn below it. Tracked because
-            // opening a node id asks about the declaration and not only about the type.
-            boolean openedDeclaresNodeId = nodeIdSlots.contains(head);
             for (int i = 1; i < segments.size(); i++) {
                 String segName = segments.get(i);
                 String dottedPath = String.join(".", segments);
                 GraphQLType walkType = unwrapForTraversal(currentFieldType);
                 if (!(walkType instanceof GraphQLInputObjectType inputObj)) {
-                    if (!isNodeId(walkType, openedDeclaresNodeId)) {
-                        return new Result.PathRejected(
-                            "argMapping entry '" + javaTarget + ": " + dottedPath
-                            + "' opens " + describeKind(walkType) + " at segment '"
-                            + segments.get(i - 1) + "', which has nothing to open"
-                            + (isIdScalar(walkType)
-                                ? ": that ID declares no @nodeId, so there is no node identity to"
-                                  + " project a key column out of. Annotate it"
-                                  + " @nodeId(typeName: \"<NodeType>\") to open it into that node"
-                                  + " type's key columns"
-                                : "; " + OPENABLE_KINDS));
+                    // Below an input object there is no SDL surface left to resolve against, so the
+                    // rest of the path is carried verbatim and judged by the store. Every remaining
+                    // segment, not one: how many there are is what the leaf relation's
+                    // trailing_segments counts, and truncating here would hide a miscount from it.
+                    for (int j = i; j < segments.size(); j++) {
+                        expr = PathExpr.step(expr, segments.get(j), false);
                     }
-                    if (isListShaped(currentFieldType)) {
-                        return new Result.PathRejected(
-                            "argMapping entry '" + javaTarget + ": " + dottedPath
-                            + "' opens a list of node ids at segment '" + segments.get(i - 1)
-                            + "'; that names the list of a key column across the decoded ids, which"
-                            + " parameter binding does not emit yet");
-                    }
-                    if (i != segments.size() - 1) {
-                        return new Result.PathRejected(
-                            "argMapping entry '" + javaTarget + ": " + dottedPath
-                            + "' opens the node id at segment '" + segments.get(i - 1) + "' with '"
-                            + segName + "', but a node id opens into exactly one key column, so"
-                            + " nothing may follow it");
-                    }
-                    expr = PathExpr.step(expr, segName, false);
                     break;
                 }
                 GraphQLInputObjectField nextField = inputObj.getField(segName);
@@ -209,8 +179,6 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
                 boolean liftsList = isListShaped(fieldType);
                 expr = PathExpr.step(expr, segName, liftsList);
                 currentFieldType = fieldType;
-                openedDeclaresNodeId =
-                    nextField.hasAppliedDirective(BuildContext.DIR_NODE_ID);
             }
             resolvedOverrides.put(javaTarget, expr);
         }
@@ -227,46 +195,6 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
         }
         byJavaName.putAll(resolvedOverrides);
         return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName)));
-    }
-
-    /**
-     * The two things a dot may open, as a message states them. One clause rather than two rules:
-     * the separator has always meant "open the thing at this position", and what a thing opens
-     * into follows from what it is.
-     */
-    private static final String OPENABLE_KINDS =
-        "an input object opens into its fields, and an ID carrying @nodeId opens into the key"
-        + " columns of the node type it names";
-
-    /** No slot declares a {@code @nodeId}; the arm for a site resolving against no slots at all. */
-    static final Set<String> NO_NODE_ID_SLOTS = Set.of();
-
-    /**
-     * Whether a dot at this position opens a node key. Two conditions, and both are the rule rather
-     * than a gate on it: the type is the {@code ID} scalar, and the thing at that position declares a
-     * {@code @nodeId}. What opens is a node id, so an {@code ID} that is not one has nothing to open
-     * and takes the same rejection any other unopenable thing takes.
-     *
-     * <p>Asking about the declaration is what keeps that rule in one place. An earlier shape admitted
-     * every {@code ID} and left the undeclared case to a store-side verdict, on the ground that a
-     * path's head is reached through a slot map carrying types and not directives. That inverted the
-     * rule: it made the grammar admit something it cannot interpret and put the correction one
-     * pipeline stage downstream. The slot map's callers hold the arguments and input fields
-     * themselves, so they can say which slots declare one, and both path positions now answer
-     * identically.
-     *
-     * <p>Nodehood inferred from a slot's <em>name</em> is deliberately not consulted. The projection
-     * requires {@code typeName:} explicitly at this position, there being no containing table to
-     * infer a node type from, so a slot carrying no directive at all could not name one either.
-     */
-    private static boolean isNodeId(GraphQLType walkType, boolean declaresNodeId) {
-        return declaresNodeId && isIdScalar(walkType);
-    }
-
-    /** The {@code ID} scalar, the one type a {@code @nodeId} may sit on. */
-    private static boolean isIdScalar(GraphQLType walkType) {
-        return walkType instanceof GraphQLScalarType s
-            && s.getName().equals(graphql.Scalars.GraphQLID.getName());
     }
 
     /**
@@ -299,15 +227,6 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
             current = nn.getWrappedType();
         }
         return current instanceof GraphQLList;
-    }
-
-    /** Human-readable description of a non-input-object type for {@link Result.PathRejected}. */
-    private static String describeKind(GraphQLType t) {
-        if (t instanceof GraphQLScalarType s) return "scalar '" + s.getName() + "'";
-        if (t instanceof GraphQLEnumType e) return "enum '" + e.getName() + "'";
-        if (t instanceof GraphQLNamedType n) return n.getClass().getSimpleName().replace("GraphQL", "").toLowerCase()
-            + " '" + n.getName() + "'";
-        return t.toString();
     }
 
     /**

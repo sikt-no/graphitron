@@ -69,9 +69,7 @@ final class ConditionResolver {
             return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + cond.argMappingError()));
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(argName, arg.getType()),
-            cond.argMapping(),
-            arg.hasAppliedDirective(BuildContext.DIR_NODE_ID)
-                ? Set.of(argName) : ArgBindingMap.NO_NODE_ID_SLOTS);
+            cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
             return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + f.message()));
         }
@@ -99,8 +97,7 @@ final class ConditionResolver {
         if (cond.argMappingError() != null) {
             return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError()));
         }
-        var bindingResult = ArgBindingMap.of(FieldBuilder.argSlotTypes(fieldDef), cond.argMapping(),
-            FieldBuilder.nodeIdArgSlots(fieldDef));
+        var bindingResult = ArgBindingMap.of(FieldBuilder.argSlotTypes(fieldDef), cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
             return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + f.message()));
         }

@@ -217,8 +217,7 @@ final class ServiceDirectiveResolver {
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_SERVICE);
         var slotTypes = FieldBuilder.argSlotTypes(fieldDef);
         var argMapping = serviceRef != null ? serviceRef.argMapping() : Map.<String, List<String>>of();
-        var argBindingsResult = ArgBindingMap.of(slotTypes, argMapping,
-            FieldBuilder.nodeIdArgSlots(fieldDef));
+        var argBindingsResult = ArgBindingMap.of(slotTypes, argMapping);
         if (argBindingsResult instanceof ArgBindingMap.Result.Failure f) {
             return new Resolved.Rejected(Rejection.structural("service method could not be resolved — @service " + f.message()));
         }

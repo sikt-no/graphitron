@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -145,7 +144,7 @@ class ArgBindingMapTest {
 
     @Test
     void of_emptyOverrides_returnsIdentityForEveryArgName() {
-        var result = ArgBindingMap.of(scalarSlots("a", "b"), Map.of(), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(scalarSlots("a", "b"), Map.of());
         assertThat(result).isInstanceOf(ArgBindingMap.Result.Ok.class);
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map)
@@ -160,7 +159,7 @@ class ArgBindingMapTest {
         // not "input"), so the identity for `input` is dropped. dryRun stays as identity.
         var result = ArgBindingMap.of(
             scalarSlots("input", "dryRun"),
-            headOverrides(Map.of("inputs", "input")), ArgBindingMap.NO_NODE_ID_SLOTS);
+            headOverrides(Map.of("inputs", "input")));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map).containsExactlyInAnyOrderEntriesOf(Map.of(
             "dryRun", PathExpr.head("dryRun"),
@@ -172,7 +171,7 @@ class ArgBindingMapTest {
         // Spec example: argMapping "a: x, b: x" against slot {x} produces {a: x, b: x}.
         // The Java method has parameters `a` and `b`, both receiving the value of GraphQL arg `x`.
         var result = ArgBindingMap.of(scalarSlots("x"),
-            headOverrides(new java.util.LinkedHashMap<>(Map.of("a", "x", "b", "x"))), ArgBindingMap.NO_NODE_ID_SLOTS);
+            headOverrides(new java.util.LinkedHashMap<>(Map.of("a", "x", "b", "x"))));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map)
             .containsEntry("a", PathExpr.head("x"))
@@ -182,7 +181,7 @@ class ArgBindingMapTest {
     @Test
     void of_overrideValueNotInArgNames_returnsUnknownArgRef() {
         var result = ArgBindingMap.of(scalarSlots("input", "dryRun"),
-            headOverrides(Map.of("inputs", "notAnArg")), ArgBindingMap.NO_NODE_ID_SLOTS);
+            headOverrides(Map.of("inputs", "notAnArg")));
         assertThat(result).isInstanceOf(ArgBindingMap.Result.UnknownArgRef.class);
         assertThat(((ArgBindingMap.Result.UnknownArgRef) result).message())
             .contains("argMapping entry 'inputs: notAnArg'")
@@ -195,7 +194,7 @@ class ArgBindingMapTest {
     void of_pathStepEmptySlots_emptyOverrides_isOk() {
         // Path-step @condition: no GraphQL arguments are in scope; with no argMapping the result
         // is the empty binding, identical to ArgBindingMap.empty().
-        var result = ArgBindingMap.of(java.util.Map.of(), Map.of(), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(java.util.Map.of(), Map.of());
         assertThat(result).isInstanceOf(ArgBindingMap.Result.Ok.class);
         assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName()).isEmpty();
     }
@@ -205,7 +204,7 @@ class ArgBindingMapTest {
         // Path-step @condition with argMapping: every override's GraphQL-source is unknown
         // because the slot set is empty.
         var result = ArgBindingMap.of(java.util.Map.of(),
-            headOverrides(Map.of("javaParam", "anyArg")), ArgBindingMap.NO_NODE_ID_SLOTS);
+            headOverrides(Map.of("javaParam", "anyArg")));
         assertThat(result).isInstanceOf(ArgBindingMap.Result.UnknownArgRef.class);
         assertThat(((ArgBindingMap.Result.UnknownArgRef) result).message())
             .contains("argMapping entry 'javaParam: anyArg'");
@@ -220,7 +219,7 @@ class ArgBindingMapTest {
         slot.put("input", graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
                 .name("foo").type(graphql.Scalars.GraphQLString).build()).build());
-        var result = ArgBindingMap.of(slot, Map.of("kvotesporsmal", java.util.List.of("input")), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(slot, Map.of("kvotesporsmal", java.util.List.of("input")));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map.get("kvotesporsmal")).isEqualTo(PathExpr.head("input"));
     }
@@ -234,7 +233,7 @@ class ArgBindingMapTest {
                 .name("foo").type(graphql.Scalars.GraphQLString).build()).build();
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("input", inputType);
-        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "foo")), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "foo")));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map.get("kv"))
             .isEqualTo(PathExpr.step(PathExpr.head("input"), "foo", false));
@@ -252,114 +251,88 @@ class ArgBindingMapTest {
                 .name("bs").type(graphql.schema.GraphQLList.list(bType)).build()).build();
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("input", inputType);
-        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "bs")), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "bs")));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map.get("kv"))
             .isEqualTo(PathExpr.step(PathExpr.head("input"), "bs", true));
     }
 
-    @Test
-    void of_walkThroughScalar_returnsPathRejected() {
-        // input: InputT { foo: String }; argMapping kv: input.foo.bar
-        // A String has nothing to open, so the dot rejects. The rule the widening below is a case
-        // of, not an exception to.
-        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
-            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
-                .name("foo").type(graphql.Scalars.GraphQLString).build()).build();
-        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
-        slot.put("input", inputType);
-        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "foo", "bar")), ArgBindingMap.NO_NODE_ID_SLOTS);
-        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
-        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
-            .contains("opens scalar 'String'")
-            .contains("at segment 'foo'")
-            .contains("has nothing to open")
-            .as("the message states both openable kinds, so an author reading it learns the rule")
-            .contains("an ID carrying @nodeId");
-    }
-
-    // ===== The key-column segment: one dot past a node id opens its node type's key =====
+    // ===== Below an input object: carried, never judged =====
 
     /*
-     * These cases open an argument head, where the node-id declaration arrives as a slot name. The
-     * nested-input-field position asks the field's own directive instead, which needs real SDL to
-     * carry, so it is covered at the pipeline tier (ArgmappingProjectionRejectionPipelineTest) rather
-     * than by hand-building an applied directive here.
+     * These cases pin the one thing this method does with a segment it cannot resolve against SDL,
+     * which is carry it. Every question about such a segment (does the thing being opened declare a
+     * @nodeId, does it name a type, is the trailing name one of that type's key columns, is there
+     * exactly one of them, does the column's type fit the parameter) is answered over captured facts
+     * by intent_argmapping_binding_leaf and the relations that reduce it. This method runs while the
+     * store is still empty, so a rule here would be an earlier second copy that wins by rejecting
+     * first. The rejections themselves are pinned where they live: the store's own tier, and
+     * ArgmappingProjectionRejectionPipelineTest for the build verdict.
      */
 
     /**
-     * The widening at its narrowest useful shape: one segment past a node id resolves to an ordinary
-     * trailing {@link PathExpr.Step}. Admitted and carried, never interpreted: which key column it
-     * names is the store's resolution and the plan's read, and the walk runs before either exists.
+     * One segment past a scalar resolves to an ordinary trailing {@link PathExpr.Step}. No slot set,
+     * no directive lookup: whether that scalar is a node id at all is not asked here.
      */
     @Test
-    void of_oneSegmentPastANodeId_resolvesToATrailingStep() {
+    void of_oneSegmentPastAScalar_resolvesToATrailingStep() {
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("inventoryId", graphql.Scalars.GraphQLID);
         var result = ArgBindingMap.of(slot,
-            Map.of("kv", java.util.List.of("inventoryId", "inventory_id")),
-            Set.of("inventoryId"));
+            Map.of("kv", java.util.List.of("inventoryId", "inventory_id")));
         assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName().get("kv"))
             .isEqualTo(PathExpr.step(PathExpr.head("inventoryId"), "inventory_id", false));
     }
 
     /**
-     * An {@code ID} that declares no {@code @nodeId} is not a node id, so it has nothing to open and
-     * takes the same rejection a {@code String} takes. This is the rule the widening is a case of
-     * rather than an exception to: what opens is a node id, and the grammar admits only what it can
-     * confirm is one. An earlier shape admitted every {@code ID} and left this to a store-side
-     * verdict, which put the correction a pipeline stage downstream of the rule.
+     * An {@code ID} declaring no {@code @nodeId} is carried exactly like one that does, because the
+     * difference is a directive fact and this method cannot see directives. The rejection for it is
+     * the store's {@code UNDECLARED_NODE_ID} arm, and pinning it here instead would have been the
+     * second copy: an earlier one, worded worse, that fires before the arm can.
      */
     @Test
-    void of_oneSegmentPastAnUndeclaredId_returnsPathRejected() {
+    void of_aScalarThatIsNoNodeId_isCarriedJustTheSame() {
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
-        slot.put("inventoryId", graphql.Scalars.GraphQLID);
+        slot.put("name", graphql.Scalars.GraphQLString);
         var result = ArgBindingMap.of(slot,
-            Map.of("kv", java.util.List.of("inventoryId", "inventory_id")),
-            ArgBindingMap.NO_NODE_ID_SLOTS);
-        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
-        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
-            .contains("has nothing to open")
-            .contains("that ID declares no @nodeId")
-            .as("the remedy names the directive the author has to write")
-            .contains("@nodeId(typeName:");
+            Map.of("kv", java.util.List.of("name", "whatever")));
+        assertThat(result)
+            .as("nothing here distinguishes an openable leaf from an unopenable one")
+            .isInstanceOf(ArgBindingMap.Result.Ok.class);
+        assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName().get("kv"))
+            .isEqualTo(PathExpr.step(PathExpr.head("name"), "whatever", false));
     }
 
     /**
-     * Two segments past a node id stays rejected, and that boundary is load-bearing: the store's
-     * defect view deliberately has no arm for it, on the stated ground that the walk keeps rejecting
-     * it, so an arm there would double-report. If this ever passed, that silence would become a hole.
+     * Every remaining segment is carried, not one. How many follow the leaf is what the store's
+     * {@code trailing_segments} counts and its {@code TRAILING_SEGMENTS_BEYOND_ONE} arm rejects, so
+     * truncating here would hide a miscount from the relation that reports it.
      */
     @Test
-    void of_twoSegmentsPastANodeId_returnsPathRejected() {
+    void of_twoSegmentsPastAScalar_carriesBoth() {
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("inventoryId", graphql.Scalars.GraphQLID);
         var result = ArgBindingMap.of(slot,
-            Map.of("kv", java.util.List.of("inventoryId", "inventory_id", "nope")),
-            Set.of("inventoryId"));
-        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
-        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
-            .contains("opens the node id at segment 'inventoryId' with 'inventory_id'")
-            .contains("exactly one key column");
+            Map.of("kv", java.util.List.of("inventoryId", "inventory_id", "nope")));
+        assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName().get("kv"))
+            .isEqualTo(PathExpr.step(
+                PathExpr.step(PathExpr.head("inventoryId"), "inventory_id", false),
+                "nope", false));
     }
 
     /**
-     * A list of node ids names the list of a key column across the decoded ids, which is a perfectly
-     * meaningful shape and not a nonsensical one. It is rejected because parameter binding does not
-     * emit it yet, and the message says exactly that rather than claiming there is no key to project.
+     * A list-shaped head is carried too. It names the list of a key column across the decoded ids,
+     * which is a coherent request rather than a mistake, and the reason it does not reach a consumer
+     * is that no emitter builds that shape yet: a deferral the detection mints from the leaf's own
+     * {@code leaf_is_list}, not a grammar refusal.
      */
     @Test
-    void of_oneSegmentPastAListOfNodeIds_saysTheShapeDoesNotEmitYet() {
+    void of_oneSegmentPastAListOfScalars_isCarried() {
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("inventoryIds", graphql.schema.GraphQLList.list(graphql.Scalars.GraphQLID));
         var result = ArgBindingMap.of(slot,
-            Map.of("kv", java.util.List.of("inventoryIds", "inventory_id")),
-            Set.of("inventoryIds"));
-        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
-        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
-            .contains("opens a list of node ids at segment 'inventoryIds'")
-            .contains("the list of a key column across the decoded ids")
-            .contains("does not emit yet");
+            Map.of("kv", java.util.List.of("inventoryIds", "inventory_id")));
+        assertThat(result).isInstanceOf(ArgBindingMap.Result.Ok.class);
     }
 
     @Test
@@ -371,7 +344,7 @@ class ArgBindingMapTest {
                 .name("fooId").type(graphql.Scalars.GraphQLString).build()).build();
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("input", inputType);
-        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "fooid")), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "fooid")));
         assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
         assertThat(((ArgBindingMap.Result.PathRejected) result).message())
             .contains("segment 'fooid' does not exist on input type 'InputT'")
@@ -394,8 +367,8 @@ class ArgBindingMapTest {
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("input", inputType);
 
-        var unknownHead = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("nope")), ArgBindingMap.NO_NODE_ID_SLOTS);
-        var badTail = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "fooid")), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var unknownHead = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("nope")));
+        var badTail = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "fooid")));
 
         assertThat(unknownHead).isInstanceOf(ArgBindingMap.Result.Failure.class);
         assertThat(badTail).isInstanceOf(ArgBindingMap.Result.Failure.class);
@@ -415,7 +388,7 @@ class ArgBindingMapTest {
     void of_emptySlotMap_rendersTheAvailableArgumentListAsEmptyBrackets() {
         // The rendering that makes the path-step @condition clause load-bearing: with no slots
         // in scope there is nothing to list, so the shared message alone reads as a puzzle.
-        var result = ArgBindingMap.of(Map.of(), Map.of("kv", java.util.List.of("anything")), ArgBindingMap.NO_NODE_ID_SLOTS);
+        var result = ArgBindingMap.of(Map.of(), Map.of("kv", java.util.List.of("anything")));
         assertThat(((ArgBindingMap.Result.Failure) result).message())
             .contains("available arguments are []");
     }

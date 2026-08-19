@@ -327,44 +327,53 @@ class ArgmappingProjectionDefectTest {
         });
     }
 
-    // ===== What the grammar admits, and what it never reaches this relation with =====
+    // ===== Nothing to open: the arm that has to be here because the walk judges nothing =====
 
     /**
-     * An {@code ID} that declares no {@code @nodeId} is not a node id, so a dot on it opens nothing
-     * and the walk rejects the path before the store is asked. No arm here, deliberately: an earlier
-     * shape of this view carried one, on the ground that the grammar admitted every {@code ID} and
-     * left the undeclared case to be caught downstream. That inverted the rule. What opens is a node
-     * id, the grammar admits only what it can confirm is one, and a verdict here would both
-     * double-report the walk and claim the grammar admits something it cannot interpret.
+     * An {@code ID} that declares no {@code @nodeId} is not a node id, so a dot on it opens nothing.
+     * That is this relation's verdict and no one else's, which took two wrong turns to settle. An
+     * earlier shape put it here and argued it from the wrong premise (that the schema walk could not
+     * ask about directives); the correction to that premise was right and the conclusion drawn from
+     * it was not, which was to make the walk ask. A walk that asks is a resolution over captured
+     * facts running before capture, so it is an earlier second copy of this arm that wins by
+     * rejecting first. The walk carries the segment and this arm judges it.
      */
     @Test
-    void anIdDeclaringNoNodeIdIsLeftToTheWalk() {
+    void anIdDeclaringNoNodeIdIsUndeclared() {
         withInventoryNode(dsl -> {
             routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
 
-            assertThat(rows(dsl))
-                .as("the walk rejects a dot on an ID that carries no @nodeId; the store must not"
-                    + " say it twice")
-                .isEmpty();
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("UNDECLARED_NODE_ID");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.LEAF_NAMED_TYPE))
+                .as("an ID gets the annotate-it remedy, which is what this column is for")
+                .isEqualTo("ID");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+                .isEqualTo("inventory_id");
         });
     }
 
     /**
-     * The same for any other leaf type, which is the case that shows the rule above is one rule and
-     * not two: a dot on a {@code String} and a dot on an undeclared {@code ID} are the same
-     * rejection, and neither is this relation's.
+     * The same arm for any other leaf type, which is what shows it is one rule and not two: a dot on
+     * a {@code String} and a dot on an undeclared {@code ID} are the same defect. Only the remedy
+     * differs, and {@code leaf_named_type} is what a consumer reads to pick it, rather than the
+     * vocabulary carrying two verdicts for one condition.
      */
     @Test
-    void openingANonIdLeafIsLeftToTheWalk() {
+    void openingANonIdLeafIsUndeclaredToo() {
         withInventoryNode(dsl -> {
             seedField(dsl, GRAPH, "RentFilmInput", "note", "String", false);
             seedOccurrencePath(dsl, GRAPH, "Mutation", "rentFilm", "input", "RentFilmInput",
                 new OccurrenceStep("RentFilmInput", "note", "String"));
             routinePair(dsl, "pNote", "input.note.nope");
 
-            assertThat(rows(dsl))
-                .as("a dot on a String is the walk's rejection, before and after the widening")
-                .isEmpty();
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("UNDECLARED_NODE_ID");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.LEAF_NAMED_TYPE))
+                .as("a String gets the nothing-to-open remedy off the same arm")
+                .isEqualTo("String");
         });
     }
 
@@ -429,26 +438,33 @@ class ArgmappingProjectionDefectTest {
     }
 
     /**
-     * Two trailing segments is deliberately not an arm. The walk rejects walking through a scalar
-     * leaf and goes on rejecting it after the grammar admits one trailing segment, so a row here
-     * would double-report a rejection the error stream already carries.
+     * More than one name past a node id is its own arm. A node id opens into exactly one key column,
+     * so a second name is a typo or a nested form nothing resolves, and the count is carried so a
+     * message can say how far past the openable position the author went. Its own verdict rather than
+     * a clause on the unknown-column one, because the remedy is different: nothing about the column
+     * name is wrong, the path is too long.
      */
     @Test
-    void twoTrailingSegmentsAreLeftToTheWalk() {
+    void moreThanOneTrailingSegmentIsItsOwnArm() {
         withInventoryNode(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id.nope");
 
-            assertThat(rows(dsl))
-                .as("the walk already rejects this and the store must not say it twice")
-                .isEmpty();
+            var row = only(dsl);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
+                .isEqualTo("TRAILING_SEGMENTS_BEYOND_ONE");
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENTS)).isEqualTo(2);
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+                .as("the first name past the node id, which is the one that was openable")
+                .isEqualTo("inventory_id");
         });
     }
 
     /**
      * A path whose head names no slot in scope has no leaf, so it reaches no arm whatever the rest of
      * it spells. That rejection is {@code ArgBindingMap.of}'s and arrives before the store is
-     * written, which is why the absence here is the lack of a leaf and not a defect overlooked.
+     * written, and it is the one the walk still owns: whether a name is an argument of the field in
+     * front of it is a question about the SDL surface the walk is holding, not about captured facts.
      */
     @Test
     void aHeadNamingNoSlotHasNoRow() {

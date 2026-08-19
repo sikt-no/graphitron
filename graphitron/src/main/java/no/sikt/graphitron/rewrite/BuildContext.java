@@ -2471,8 +2471,7 @@ class BuildContext {
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
         var bindingResult = ArgBindingMap.of(
-            java.util.Map.<String, graphql.schema.GraphQLInputType>of(), segmentChains,
-            ArgBindingMap.NO_NODE_ID_SLOTS);
+            java.util.Map.<String, graphql.schema.GraphQLInputType>of(), segmentChains);
         // The two arms are kept apart here rather than read through Result.Failure: the slot map
         // is empty, so the shared message renders the available-argument list as [], and the
         // clause below is the only prose that says why.
@@ -2565,9 +2564,7 @@ class BuildContext {
             return Optional.empty();
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(field.getName(), field.getType()),
-            cond.argMapping(),
-            field.hasAppliedDirective(DIR_NODE_ID)
-                ? java.util.Set.of(field.getName()) : ArgBindingMap.NO_NODE_ID_SLOTS);
+            cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.Failure f) {
             // Unprefixed, like the reflect arm below: the "@condition on input field X" context is
             // rendered by InputFieldConditionFailure#message, not at this site.

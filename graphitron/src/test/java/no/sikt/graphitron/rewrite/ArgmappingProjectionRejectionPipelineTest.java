@@ -92,11 +92,9 @@ class ArgmappingProjectionRejectionPipelineTest {
      * null leaf type passes through rather than rejecting. So the widening's safety is entirely the
      * store detections', and these are the cases that hold them to it.
      *
-     * Each fixture spells a key column the node type does not have. That is the shape with no other
-     * judge: the walk resolves the path (the leaf is a declared node id, so the dot opens) and cannot
-     * tell a real key column from a typo, which is a resolution against the node type's key list and
-     * therefore the store's. An undeclared @nodeId is deliberately not the fixture here, that being
-     * the walk's own rejection, pinned per site by the case at the end.
+     * Each fixture spells a key column the node type does not have, which is one of six things the
+     * store decides about such a path. The walk decides none of them: it carries every segment it
+     * cannot resolve against SDL, so each of these reaches capture and is rejected by a view arm.
      *
      * The sixth site resolves against an empty slot map and so mints no binding at all, which is the
      * same obligation met one step earlier.
@@ -222,14 +220,13 @@ class ArgmappingProjectionRejectionPipelineTest {
     }
 
     /**
-     * The walk's own half of the same obligation: an {@code ID} declaring no {@code @nodeId} has
-     * nothing to open, so the path never resolves and no emitter can see it. One fixture rather than
-     * six, because the rule belongs to the shared factory and not to each site; what the per-site
-     * cases above pin is the half the walk cannot decide, a spelling resolved against the node type's
-     * own key list.
+     * An {@code ID} declaring no {@code @nodeId} has nothing to open. Same obligation as the per-site
+     * cases above and the same owner: the walk carries the segment, the store's
+     * {@code UNDECLARED_NODE_ID} arm judges it, and the build fails. One fixture rather than six,
+     * because the rule sits on a relation keyed by the pair rather than on any one site's emitter.
      */
     @Test
-    void anIdDeclaringNoNodeIdIsRejectedByTheWalk(@TempDir Path tmp) throws IOException {
+    void anIdDeclaringNoNodeIdFailsTheBuild(@TempDir Path tmp) throws IOException {
         assertThatThrownBy(() -> validate(tmp, """
             type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
             type Query { rental: Rental }
@@ -243,18 +240,17 @@ class ArgmappingProjectionRejectionPipelineTest {
             .isInstanceOf(ValidationFailedException.class)
             .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                 .extracting(ValidationError::message)
-                .as("what opens is a node id, so the grammar refuses an ID that is not one")
+                .as("what opens is a node id, and the store says so about one that is not")
                 .anyMatch(m -> m.contains("has nothing to open")
                     && m.contains("that ID declares no @nodeId")));
     }
 
     /**
-     * A column the node type does have, whose Java type the routine parameter cannot take. This is
-     * the shape the walk is furthest from judging: the path resolves, the segment names a real key
-     * column, and the only thing wrong is a type comparison neither the walk nor the shared coercion
-     * gate can make, the gate reading an SDL leaf type a path descending past a scalar never
-     * resolves. It used to reach the consumer as a javac error inside generated code; it fails the
-     * build here, naming both types.
+     * A column the node type does have, whose Java type the routine parameter cannot take. The path
+     * resolves, the segment names a real key column, and the only thing wrong is a type comparison
+     * the shared coercion gate cannot make, that gate reading an SDL leaf type a path descending past
+     * a scalar never resolves. It used to reach the consumer as a javac error inside generated code;
+     * it fails the build here, naming both types.
      *
      * <p>The message is pinned here in full rather than in the derive tier beside the other three
      * verdicts, and the reason is the harness: {@code CapturedStore} captures SDL and no jOOQ

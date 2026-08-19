@@ -8417,20 +8417,4 @@ class FieldBuilder {
         return out;
     }
 
-    /**
-     * Which of {@link #argSlotTypes}'s slots declare a {@code @nodeId}: the companion an
-     * {@code argMapping} resolution needs in order to know whether a dot at the head opens a node
-     * id. Kept beside the type map rather than folded into it because every other reader of that map
-     * wants types alone, and read off the arguments here because {@link ArgBindingMap} is handed the
-     * map rather than the field.
-     */
-    static java.util.Set<String> nodeIdArgSlots(GraphQLFieldDefinition fieldDef) {
-        var out = new java.util.LinkedHashSet<String>();
-        for (var arg : fieldDef.getArguments()) {
-            if (arg.hasAppliedDirective(DIR_NODE_ID)) {
-                out.add(arg.getName());
-            }
-        }
-        return out;
-    }
 }
