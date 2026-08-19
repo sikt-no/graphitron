@@ -579,8 +579,9 @@ class FactCaptureAgreementTest {
             assertThat(expected).as("the fixture federates nodes, so this pins something").isNotEmpty();
             assertThat(captured).isEqualTo(expected);
 
-            // The authored picture is the anti-join, so the macro has to be what put the unauthored
-            // keys there. Film carries an alternative and Language carries nothing, so both are
+            // A synthesis row marks a key the expansion added, so the transcription is the anti-join
+            // and the macro has to be what put these keys there. Film carries an alternative and
+            // Language carries nothing, so both are
             // synthesized; Actor's authored id key stands synthesis down on both implementations.
             assertThat(store.dsl()
                 .select(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.TYPE_NAME)
@@ -656,8 +657,8 @@ class FactCaptureAgreementTest {
 
     /**
      * The other half of the same expansion: the carrier's own field. The model records that the
-     * return type was rewritten; the store keeps the authored expression, and the two have to be
-     * talking about the same set of carriers.
+     * return type was rewritten; the store keeps the expression the field was written with, and the
+     * two have to be talking about the same set of carriers.
      */
     @Test
     @DisplayName("rewritten carriers agree with the model's directive-driven rows")

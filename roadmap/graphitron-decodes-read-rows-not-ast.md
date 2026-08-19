@@ -23,15 +23,15 @@ So one corpus is transcribed twice, and the second pass's rows are a function of
 rows. `graphitron_field_reference_step` decomposes a `@reference` path argument;
 `graphitron_service_arg_mapping_sigil` extracts a sigil from an argument value; `graphitron_table`
 reads a `name:`. Every one of them is computable from what `graphql_` already holds, which makes the
-family a derivation and makes this pass a derivation running in the transcription tier.
+family a derivation and makes this pass a derivation running in the transcription stratum.
 
 The tree already has the right word for it. `MacroCapture`'s javadoc distinguishes what "transcribes
 into `graphql_type_directive`" from what "decodes into `graphitron_federation_key`", in one sentence.
 
 ## What this is not
 
-Not a demand that the decoding become SQL. A tier is decided by what a relation's rows are computed
-from, not by what computes them, so a Java-computed derivation over captured rows is tier two.
+Not a demand that the decoding become SQL. A stratum is decided by what a relation's rows are computed
+from, not by what computes them, so a Java-computed derivation over captured rows is stratum two.
 `GraphQLSelectionParser` parses selection-set syntax out of a string argument and will stay a parser
 in Java under any arrangement.
 
@@ -51,7 +51,7 @@ sibling nodehood item introduces.
 
 What it does *not* buy, contrary to an earlier draft of this item: decoupling the `graphitron_`
 population from the `graphql_` one. Both decode the same document at the same cadence, so the
-population never separates and there is no cadence to be won. The tier label is a description of what
+population never separates and there is no cadence to be won. The stratum label is a description of what
 the family is, not a schedule. The payoff this item was reaching for lives in the join-readiness
 item instead, and move one is a supporting change rather than the prize.
 
@@ -189,7 +189,7 @@ no rows for the sakila example.
 
 ## Sequencing and blast radius
 
-Depends on the tier-naming item for the vocabulary it uses. Wants the nodehood item ahead of it
+Depends on the stratum-naming item for the vocabulary it uses. Wants the nodehood item ahead of it
 rather than the reverse: nodehood is the one decode whose inputs span two corpora, so it is the
 smallest instance of the same move and proves the shape on one relation before this item does it on
 sixty-three.
@@ -203,7 +203,7 @@ moves work out of that transaction, which interacts with the per-crawler transac
 
 - The value-structure model, unless the measurement above says move two pays; it is called out here
   so the decision is recorded rather than rediscovered.
-- Retiring the three `graphitron_*_synthesis` provenance relations, which the tier reading predicts
+- Retiring the three `graphitron_*_synthesis` provenance relations, which the stratum reading predicts
   become unnecessary once synthesis is derived.
 - Which producer owns the composed `graphql_` payload. The coordinate keys are the assembled
   schema's own grain, and moving the payload's source from the `TypeDefinitionRegistry` to

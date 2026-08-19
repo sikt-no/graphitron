@@ -594,10 +594,10 @@ public final class SdlFactCapture {
             record.setOrdinal(ordinals.field++);
             record.setDeclarationLine(site.location().getLine());
             record.setDeclarationColumn(site.location().getColumn());
-            // The effective type, not the authored one: a macro that rewrites a field's type
-            // expression records the authored form in its own provenance relation, so the store's
-            // picture is the schema consumers see and the authored one is the anti-join.
-            var wrapping = Wrapping.of(macros.effectiveFieldType(site.typeName(), field));
+            // The expansion's result, not the expression the field was written with: a macro that
+            // rewrites a field's type expression records the written form in its own provenance
+            // relation, which is the only place that form survives.
+            var wrapping = Wrapping.of(macros.expandedFieldType(site.typeName(), field));
             record.setTypeSdl(wrapping.typeSdl());
             record.setNamedType(wrapping.namedType());
             record.setNonNull(wrapping.nonNull());

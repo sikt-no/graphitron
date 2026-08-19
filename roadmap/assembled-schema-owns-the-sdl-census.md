@@ -116,7 +116,7 @@ wrong answer for a silent absence.
 - Capture's own extension merge, and with it the first-wins claim on a coordinate two files declare.
   A duplicate is then either graphql-java's merge or graphql-java's refusal, and the refusal is
   already a fact in `graphql_schema_error`.
-- The argument, floated and withdrawn during design, that tier one for SDL should bottom out at
+- The argument, floated and withdrawn during design, that stratum one for SDL should bottom out at
   declaration sites with composition as a derivation of ours. Recorded because it is the tempting
   wrong answer: it reimplements the merge instead of reading it.
 

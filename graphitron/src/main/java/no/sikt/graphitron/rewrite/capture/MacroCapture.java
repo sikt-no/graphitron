@@ -39,8 +39,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
  *
  * <p>Capture reads the registry <em>before</em> the pipeline's synthesis rewrites, so an expansion
  * that only ran as a rewrite would leave the store describing a schema no consumer sees. Running it
- * here instead keeps the store's picture effective rather than authored, and keeps the authored
- * picture recoverable as the anti-join against the provenance relations. While a rewrite
+ * here makes the expansion a derivation inside the capture walk: its rows go through capture's own
+ * doors, and the provenance relations record what an expansion contributed. What that leaves
+ * recoverable splits by kind. For rows an expansion <em>added</em>
+ * ({@code graphitron_type_declaration_synthesis}, {@code graphitron_type_directive_synthesis}) the
+ * transcription is the anti-join against the provenance. For the one row kind an expansion
+ * <em>rewrote</em> ({@code graphitron_field_synthesis}) it is not: the expression the field was
+ * written with survives only in that relation's own text column, and no anti-join recovers it.
+ * While a rewrite
  * implementation of the same rule is still live for the legacy pipeline, the two are pinned to each
  * other by the agreement suite rather than by one calling the other; they run at different stages
  * over different representations, and a shared caller would invert the pipeline's ordering.
@@ -111,16 +117,17 @@ final class MacroCapture {
     }
 
     /**
-     * The effective type of an output field, called while the walk writes the field's row. A
-     * directive-driven {@code @asConnection} carrier returns the Connection it mints; the authored
-     * expression it replaces is recorded here rather than lost, so the authored picture stays the
-     * anti-join against the provenance relations. Every other field returns its own type unchanged.
+     * The expanded type of an output field, called while the walk writes the field's row. A
+     * directive-driven {@code @asConnection} carrier returns the Connection it mints, and the
+     * expression the field was written with is recorded in {@code graphitron_field_synthesis} rather
+     * than lost, that relation being the only place it survives. Every other field returns its own
+     * type unchanged.
      *
      * <p>Only the directive-driven arm rewrites. A carrier whose return type already names a
      * declared Connection is minting nothing and rewriting nothing: those rows are the author's and
      * the walk captured them already.
      */
-    Type<?> effectiveFieldType(String parentTypeName, FieldDefinition field) {
+    Type<?> expandedFieldType(String parentTypeName, FieldDefinition field) {
         var applications = field.getDirectives(AS_CONNECTION);
         if (applications.isEmpty()) {
             return field.getType();

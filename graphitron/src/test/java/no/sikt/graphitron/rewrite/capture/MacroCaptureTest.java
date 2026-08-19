@@ -21,9 +21,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Macro expansion inside the capture walk. The store's picture is the effective schema, so a row a
- * macro contributes must be present and indistinguishable from an authored one except through its
- * provenance relation; these tests pin both halves of that.
+ * Macro expansion inside the capture walk. An expansion's rows go through capture's own doors, so a
+ * row a macro contributes must be present and indistinguishable from an authored one except through
+ * its provenance relation; these tests pin both halves of that.
  */
 @UnitTier
 class MacroCaptureTest {
@@ -222,7 +222,7 @@ class MacroCaptureTest {
         """;
 
     @Test
-    @DisplayName("a carrier's field takes the minted Connection, and the authored type survives")
+    @DisplayName("a carrier's field takes the minted Connection, and the written type expression survives")
     void theCarrierFieldIsRewritten(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             var effective = store.dsl()

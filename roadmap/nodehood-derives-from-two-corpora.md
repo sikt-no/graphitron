@@ -32,29 +32,29 @@ string a crawler transcribed, not a pointer at `sql_table`. But this coupling do
 reference. It changes *which rows exist*. No constraint expressible in the DDL could have rejected
 it, which is why the gate below is part of the deliverable rather than a nice-to-have.
 
-## A misplaced tier, not an inverted polarity
+## A misplaced stratum, not an inverted polarity
 
-The store has three tiers. Capture transcribes facts from a corpus. Derivation computes further
+The store has three strata. Capture transcribes facts from a corpus. Derivation computes further
 facts from captured ones. Queries read facts to serve a goal. Every relation belongs to exactly one
-tier, and the test is mechanical: a row that can be recomputed from captured facts alone is a
+stratum, and the test is mechanical: a row that can be recomputed from captured facts alone is a
 derived fact and must not be captured.
 
 Federation-key synthesis fails that test. It consumes captured facts, the SDL claim rows and the
-node metadata the sibling item records, and produces a fact computable from them. It is tier two
-running inside tier one, and its output lands in tier-one relations where nothing distinguishes it
+node metadata the sibling item records, and produces a fact computable from them. It is stratum two
+running inside stratum one, and its output lands in stratum-one relations where nothing distinguishes it
 from a transcription.
 
-`MacroCapture`'s javadoc defends the arrangement in different terms, as keeping "the store's picture
-effective rather than authored, and keeps the authored picture recoverable as the anti-join against
-the provenance relations". That framing does not survive contact with the other corpora and should
-not be carried forward. Everything in the store is authored by somebody: the DDL behind the jOOQ
+`MacroCapture`'s javadoc once defended the arrangement in a different vocabulary, as keeping the
+store's picture effective rather than authored. That vocabulary is retired and the javadoc now states
+the stratum instead, but the reason it does not survive contact with the other corpora is worth
+keeping here. Everything in the store is authored by somebody: the DDL behind the jOOQ
 classes was authored, the service methods were authored, the configuration was authored. "Authored"
 therefore partitions nothing, and "effective" is singular where the truth is plural, since a
 round-trip emitter, a federation publisher and an LSP hover each want a different composition. Baking
 one of them into the base relations makes one goal's answer the store's shape.
 
 The consequence of the misplacement is visible in the schema, and is the clearest argument for the
-tier reading. `graphitron_field_synthesis.authored_type_sdl` exists because the connection macro
+stratum reading. `graphitron_field_synthesis.authored_type_sdl` exists because the connection macro
 overwrote a captured fact in `graphql_field` with a derived one, so the captured fact had to be
 stashed in the provenance table as unparsed text ("the type expression as the author wrote it,
 pre-expansion"), and a view now recovers it with nested `REPLACE` calls stripping `[`, `]` and `!`.
@@ -62,17 +62,17 @@ A captured fact is being reconstructed by string surgery because a derived fact 
 
 The three synthesis relations, `graphitron_type_directive_synthesis`,
 `graphitron_field_synthesis` and `graphitron_type_declaration_synthesis`, each carry a foreign key to
-the tier-one relation whose rows they annotate. They exist only to mark which rows a macro put there.
-Under tier discipline a derived fact lives in a derived relation and the relation is its own
+the stratum-one relation whose rows they annotate. They exist only to mark which rows a macro put there.
+Under stratum discipline a derived fact lives in a derived relation and the relation is its own
 provenance, so all three become unnecessary. Retiring them is out of scope here (this item moves one
 macro), but they are the measure of whether the frame is right.
 
 The wrinkle most likely to bite: `expandFederationKeys` writes through
 `SdlFactCapture.captureTypeDirective` with an ordinal drawn from the SDL walk's per-type counter, so
-a synthesized application is interleaved into a tier-one relation's ordinal sequence. A derivation
+a synthesized application is interleaved into a stratum-one relation's ordinal sequence. A derivation
 has to allocate above the maximum transcribed ordinal for its type instead. That is computable from
 the rows, but it changes where a synthesized application sits, and any reader comparing ordinals
-across the two tiers has to be found.
+across the two strata has to be found.
 
 ## Shape
 
@@ -85,8 +85,8 @@ across the two tiers has to be found.
 - The federation-key macro moves whole, not by arm. The rule is a disjunction over a declared arm
   (pure SDL) and an inferred arm (needs jOOQ), and splitting it across capture and derivation would
   give one rule two homes and two ordinal allocators.
-- Readers wanting the composition including synthesized keys issue a tier-three query over the
-  transcribed rows plus the derived ones, rather than reading one composition off tier one.
+- Readers wanting the composition including synthesized keys issue a stratum-three query over the
+  transcribed rows plus the derived ones, rather than reading one composition off stratum one.
 
 ## The gate that keeps it fixed
 
@@ -115,7 +115,7 @@ SDL, so it neither blocks this nor is fixed by it.
   `graphitron_node` is the relation this item's nodehood derivation belongs in, which makes this item
   the first instance of that reclassification rather than a special case. The rest of the family is
   its own item.
-- The `CONNECTION` macro, and the general tier correction across every family. Also the three
-  synthesis relations and `graphitron_field_synthesis.authored_type_sdl`, which the tier reading
+- The `CONNECTION` macro, and the general stratum correction across every family. Also the three
+  synthesis relations and `graphitron_field_synthesis.authored_type_sdl`, which the stratum reading
   predicts become unnecessary but which this item does not touch.
 - Splitting the capture transaction per crawler.
