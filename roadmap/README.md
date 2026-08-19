@@ -16,13 +16,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | Spec | 2026-08-18 | [plan](store-contention-fails-fast.md) |
-| `R715` | Capture decodes internal grammars into normalized relations | Spec | 2026-08-18 | [plan](decodes-normalize-internal-grammars.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection <sub>blocked by: [jooq-node-metadata-as-stated-facts](jooq-node-metadata-as-stated-facts.md)</sub> | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R712` | Name the three strata, and retire authored versus effective | Spec | 2026-08-18 | [plan](three-strata-capture-derive-query.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
+| `R715` | Capture decodes internal grammars into normalized relations | Ready | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | In Review | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
@@ -291,7 +291,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R705` [**A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships**](condition-join-hops-in-reference-filter-paths.md) — Backlog, feature
-- `R715` [**Capture decodes internal grammars into normalized relations**](decodes-normalize-internal-grammars.md) — Spec, architecture
+- `R715` [**Capture decodes internal grammars into normalized relations**](decodes-normalize-internal-grammars.md) — Ready, architecture
 - `R666` [**Delivery verdict derives from the store, not from a hand-maintained negative-space switch**](delivery-verdict-derives-from-the-store.md) — Spec, architecture
 - `R682` [**Planners read facts, emitters read commands: close the seam on both tiers**](planners-read-facts-emitters-read-commands.md) — Spec, architecture, blocked by [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug

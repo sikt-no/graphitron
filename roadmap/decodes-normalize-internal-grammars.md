@@ -1,13 +1,13 @@
 ---
 id: R715
 title: "Capture decodes internal grammars into normalized relations"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # Capture decodes internal grammars into normalized relations
