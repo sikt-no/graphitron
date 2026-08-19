@@ -169,6 +169,40 @@ a separate question and not this item's.
 Two arms of one fragment family disagreeing on this is itself the evidence that the drop is an
 oversight rather than a design.
 
+## Relationship to the facts pivot
+
+The two halves of this fix sit on opposite sides of the line R682 is drawing, and that is worth
+stating before an implementer wonders whether to write the fix in the new vocabulary.
+
+The render half is already in the target architecture. `no.sikt.graphitron.render` holds no
+`GraphitronSchema` and no fact hierarchy and may not import `plan`, structurally guarded by
+`PackageImportDirectionTest`, and the fragment this item adds reads the ordering off the command
+row's `ResultShape.RecordList`. That is "emitters read commands" exactly, and nothing in the pivot
+touches it. `ResultShape` lives in `command`, which the pivot keeps; only the tier that *produces*
+the row changes.
+
+The plan half is written in the vocabulary the pivot dissolves. `batchedResultOf` and
+`batchedLookupRow` read the ordering off the leaf, and R682 converts `no.sikt.graphitron.plan` to
+derive its command rows from the store instead. So this item's two-line projection is leaf-reading
+code with a scheduled end. Three reasons that is the right thing to write anyway:
+
+* Every neighbouring arm in the same method family reads the leaf today, the connection arm two
+  lines up included. Writing this one arm against the store would leave the file speaking two
+  vocabularies for one decision, which is harder to convert than four consistent arms.
+* The fact is already captured (`graphitron_default_order`), so the conversion is a change of
+  source, not of shape. Post-pivot the same arm projects the same ordering from a fact instead of
+  a getter, and the thing this item establishes, that the arm projects rather than passing `null`,
+  is unchanged by the move.
+* Ordering is a property of the child coordinate's own query, so it survives the normalization
+  R333 describes. What moves there is the split leaf's welded-on parent-key projection, which
+  depends on the parent's query; the sort does not.
+
+**Sequencing: this lands before R682, not after.** A faithful re-sourcing of the planner reproduces
+current behaviour, and current behaviour here is a hardcoded `null` sitting under a javadoc calling
+it "a pinned current behaviour". A conversion that preserved it would be doing its job. Fixing the
+drop first means the pivot inherits four arms that agree, with one less special case to carry
+across the seam, and no behaviour delta at this coordinate to argue about mid-conversion.
+
 ## Tests
 
 * **Command tier**: the batched list row carries a populated ordering slot, asserted for both arms
