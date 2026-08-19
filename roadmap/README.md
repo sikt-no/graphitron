@@ -29,7 +29,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Progress | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
-| `R715` | Capture decodes internal grammars into normalized relations | In Review | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R672` | Register every built-in scalar the emitted schema references, not just the ones the SDL uses | In Review | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](register-referenced-builtin-scalars.md) |
 | `R711` | Nodehood derives from two corpora instead of being decided in capture | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -292,7 +291,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R705` [**A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships**](condition-join-hops-in-reference-filter-paths.md) — Spec, feature
-- `R715` [**Capture decodes internal grammars into normalized relations**](decodes-normalize-internal-grammars.md) — In Review, architecture
 - `R666` [**Delivery verdict derives from the store, not from a hand-maintained negative-space switch**](delivery-verdict-derives-from-the-store.md) — Spec, architecture
 - `R682` [**Planners read facts, emitters read commands: close the seam on both tiers**](planners-read-facts-emitters-read-commands.md) — Spec, architecture, blocked by [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug

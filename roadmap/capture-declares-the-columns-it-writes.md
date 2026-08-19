@@ -53,9 +53,9 @@ that relation's whole write. The item is that the write path's contract should b
 instead of reconstructed from the schema, which is worth landing whether or not that column ever
 arrives.
 
-**Eleven of the 123 arrive ahead of this item.** That trigger is no longer hypothetical:
-`roadmap/decodes-normalize-internal-grammars.md` adds the generated columns, and rather than wait on
-this item it converts the eleven relations it folds columns onto (`graphitron_table`,
+**Eleven of the 123 arrived ahead of this item.** That trigger is no longer hypothetical: the
+grammar-normalisation item shipped the generated columns (`28c4f64`, `71b7473`), and rather than wait
+on this one it converted the eleven relations it folds columns onto (`graphitron_table`,
 `graphitron_mutation`, `graphitron_routine`, the three reference-step relations,
 `graphitron_field_binding`, `graphql_field`, `sql_table`, `sql_constraint`, `sql_column`), thirteen
 `newRecord` sites in all. `sql_constraint_column` was the twelfth in an earlier draft of that item
@@ -63,13 +63,13 @@ and is *not* converted: its only case-insensitive comparison is against `sql_col
 catalog family, so the narrowed fold rule mints it no folded column, it carries nothing the database
 computes, and it stays on the generic arm for this item to convert with the rest.
 
-That item takes the written-statement shape and the
-settled rejections below unchanged, and it introduces the one mechanism this item's end state does
+That item took the written-statement shape and the
+settled rejections below unchanged, and it introduced the one mechanism this item's end state does
 not have: while both arms exist, `flush()` dispatches to a relation's write function where one is
 registered and renders generically where none is, because the converted relations interleave with
-unconverted parents on both sides and the write order has to span both. It also lands the
-column-coverage gate scoped to the relations that have write functions, so the gate grows with the
-conversion instead of arriving at the end.
+unconverted parents on both sides and the write order has to span both. It also landed the
+column-coverage gate (`WrittenStatementCoverageTest`) scoped to the relations that have write
+functions, so the gate grows with the conversion instead of arriving at the end.
 
 So this item keeps the remaining 112 relations, the plain-record gatherer layer, the three
 relocations below, the corpus-wide gate, and the deletion of the generic arm and its dispatch once no

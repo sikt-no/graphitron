@@ -146,9 +146,17 @@ project a column that does not exist, which is this item's own failure mode arri
 back door.
 
 The spelling is the SQL column name, because that is what `@node(keyColumns:)` itself is a list of,
-and matching is case-insensitive. That is inherited rather than introduced: `intent_spelled_table`
-and `intent_column_match_claim` both compare under `UPPER()`, and `JooqCatalog.resolveColumn` uses
-`equalsIgnoreCase`, so the docs can state the behaviour without announcing a rule. On the middle tier
+and matching is case-insensitive. The behaviour is inherited rather than introduced, but the
+mechanism named here is stale and has to be re-decided: `intent_spelled_table` and
+`intent_column_match_claim` no longer compare under `UPPER()`, the grammar-normalisation item having
+moved both onto stored `_upper` companion columns the database generates. The rule it settled is that
+a fold is minted where an authored spelling meets a catalog name, and a `@node(keyColumns:)` entry
+matched against a catalog column is exactly that crossing, so this item's comparisons want folded
+columns rather than per-row `UPPER` calls. `intent_resolved_node_key_projection` shipped with two
+such calls against `graphitron_argument_path_segment.segment_name`; whether they become a fold on
+that column or go another way is this item's to settle before its own gate.
+`JooqCatalog.resolveColumn` still uses `equalsIgnoreCase`, so the docs can state the behaviour
+without announcing a rule. On the middle tier
 take the store's own twin rather than re-deriving it: `intent_node_metadata_defect`'s
 `KEY_COLUMN_UNRESOLVED` arm resolves a stated entry against `sql_column` under
 `UPPER(jooq_name) = UPPER(...) OR UPPER(column_name) = UPPER(...)`, two tiers of spelling and not
@@ -923,15 +931,14 @@ Draft of the `routine.adoc` subsection:
   `RoutineDirectiveResolver.writeSeatReadSurfaceDeferral`, seat-gated to the
   write classifiers, and left the write-side read surface with R454, so stage 4's carrier move
   relocates those emitters without touching the deferral.
-* `roadmap/decodes-normalize-internal-grammars.md` (R715) owns `graphitron_argument_path_segment`,
+* The grammar-normalisation item (shipped, `28c4f64`) owns `graphitron_argument_path_segment`,
   the relation this item's spine view reads, and it landed the coordinate key that makes it readable
   from a pair row at all: the relation used to be interned by path text for the whole graph, so a
   segment set had no owner and could only be joined on a bare string. It now keys
   `(graph_name, type_name, field_name, argument_path, position)` with a foreign key to `graphql_field`,
-  which is the join the binding-leaf arms use. R715's delivery is in the tree; the item itself went
-  back to `Ready` from In Review over stale accounting in its own prose, not over the relations. So
-  the shape is settled and what the two items share is a comment surface: this item restates
-  `argument_path` on the seven pair relations, R715 rewrites the segment relation's own. Coordinate on
+  which is the join the binding-leaf arms use. That item has since shipped in full, so
+  the shape is settled and what the two share is a comment surface: this item restates
+  `argument_path` on the seven pair relations, that one rewrote the segment relation's own. Coordinate on
   those, not on the key. The relationship is otherwise one-way: nothing here changes anything R715
   owns, and R715's own reading of the redundancy trade ("a consumer needing the exact owner joins the
   pair relation on `(type_name, field_name, argument_path)`") is exactly what this item does with it.
