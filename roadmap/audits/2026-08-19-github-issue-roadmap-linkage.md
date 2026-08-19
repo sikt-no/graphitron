@@ -208,14 +208,14 @@ Ordered so that the cheap, unblocked closures come first.
       sign-off from a different party.
 - [x] File a Backlog item: static fan-out verdict for `@reference` paths
       traversing a 1:N hop (#529). Filed as R723 `reference-path-fanout-verdict`,
-      with the neighbours named and the `distinct` flag left to R235. Not yet
-      linked from the issue.
+      with the neighbours named and the `distinct` flag left to R235, and linked
+      from the issue.
 - [ ] Add the #523 field-report citation to R382, whose half of the issue is the
       one the reporter led with.
 - [ ] Comment on #523 with the three plan links and which half each owns.
-- [ ] Comment on #529 and #530 with their plan links once filed, and on #529 ask
+- [x] Comment on #529 and #530 with their plan links once filed, and on #529 ask
       whether the reporter wants it relabelled as an enhancement, which they
-      offered.
+      offered. Both posted; the relabel is put to the reporter and not yet done.
 - [ ] Decide whether R663's Spec-stage plan should absorb R382, or whether the
       two halves stay separate through implementation. R663 argues the ordering
       loss is not multitable-specific, which weakens the case for treating the
