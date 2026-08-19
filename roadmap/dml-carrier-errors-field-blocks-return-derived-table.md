@@ -7,7 +7,7 @@ priority: 5
 theme: mutation-write
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-17
+last-updated: 2026-08-19
 ---
 
 # A DML carrier payload with an errors field loses its return-derived write target
@@ -166,11 +166,19 @@ all, the `clear()` retires, and a future pass inserted anywhere in `prepareForWa
 inherits the property instead of having to know about it.
 
 One expected consequence of the gate, so it does not read as a regression at implementation:
-the two passes that today run *after* the grounding call and *before* the `clear()` (the
-directive-ignored warning loop and `surfaceMultiProducerRejections`) currently populate the memo
-and then have it discarded. Under the gate they stop populating it and recompute per type
-instead. Net behaviour is identical, since a populated-then-cleared memo has no observable
-effect; the cost is a handful of recomputes inside `prepareForWalk`.
+the entries the `clear()` discards today are the grounding passes' own. Both grounding passes
+probe `lookAheadVerdict` transitively, through `BuildContext.scanStructuralPayload`'s element
+lookup behind `scanStructuralDmlPayload` / `scanStructuralRoutineCarrierPayload`, and every
+verdict they compute currently sticks in the memo until the trailing `clear()` drops it. Under
+the gate those probes stop populating it, and the first post-walk reader of each type recomputes
+once. Net behaviour is identical, since a populated-then-cleared memo has no observable effect;
+the cost is one recompute per type that only a grounding probe had touched.
+
+Nothing else inside `prepareForWalk` is affected, which is worth stating because it is the
+natural place to look for fallout: the two passes between the grounding call and the `clear()`
+(the directive-ignored warning loop `emitDirectiveIgnoredWarning`, and
+`surfaceMultiProducerRejections`) never reach `lookAheadVerdict` at all. They read the binding
+fixed point, SDL directives and the registry, so the gate is invisible to them.
 
 The `ServiceEmitted` family stays in `groundRootProducers()`, deliberately. Its carrier
 detection never reads the `ErrorIndex` (`groundServicePayloadBinding` and
@@ -225,7 +233,10 @@ payload the DML scan can admit first and this arm's admitting-scan field would n
 family for that site. Subsuming it needs a decision about how the recognizer publishes per-family
 facts, not a mechanical edit, and it changes a live `@service` diagnostic that carries its own pins.
 Because the arm is reachable from any of the three scans, it carries which scan admitted
-alongside the scan result, and the DML seat below forks wording only for a DML-scan admit
+alongside the scan result. More than one scan can admit the same payload, so the recorded family
+is the first that admits in `carrierBinding`'s existing DML → routine → `@service` order; that is
+the order the method already runs and it needs no rule of its own. The DML seat below forks
+wording only for a DML-scan admit
 (the seat's precondition, a non-`Reject` DML scan, makes that the live case) and otherwise
 keeps the generic write-target message.
 
@@ -234,9 +245,14 @@ no-component record and `Table` carries only the element type name, so neither c
 offending data field, which the `IdElement` wording below wants; `Admit.dataField()` is the only
 source for it.
 
-The wording forks on the element kind, because the three populations need different
-advice and, post-fix, this arm is their *only* diagnostic (the per-verb classifiers'
-existing record-element / ID-element rejections are unreachable without a grounded binding):
+The wording forks on the element kind, because the three populations need different advice.
+For each population this arm is the only diagnostic *when the payload does not ground*, which
+post-fix means only when `@mutation(table:)` is also absent. The per-verb classifiers' existing
+record-element / ID-element rejections stay live and stay reachable: `groundDmlMutationField`
+gates on the payload being a non-`@table` SDL Object, never on its element kind, so a
+record-element or ID-element payload that names its table on `@mutation(table:)` still grounds,
+still classifies as a `ResultReturnType`, and still hits those rejections. Do not read them as
+newly dead code.
 
 * `Table` element: a genuine missing write target; steer to `@mutation(table:)` (and, where
   the shared precedence returned `WriteTableRef.UnknownTable`, the existing unknown-table
@@ -267,7 +283,11 @@ both verbs. No further work unless the fixed build still rejects their real sche
 * `RecordBindingResolver.groundRootProducers`: drop `groundDmlMutationField` from the field
   loop.
 * `RecordBindingResolver.groundRoutineCarriers`: rename for the precondition (post-index
-  grounding), add the DML loop ahead of the routine loop; javadoc reworked to cover both
+  grounding), add the DML loop ahead of the routine loop. The precondition name is also the
+  accurate one for what the pass already holds: its routine loop runs `groundRoutineReturnType`
+  beside `groundRoutineMutationField`, and a routine read field's return binding is not a carrier
+  grounding, so no family-accurate name was available even before the DML loop arrives. Javadoc
+  reworked to cover both
   families and to carry the deliberate `ServiceEmitted` exception (its result-axis half must
   feed the fold, and its carrier detection is `ErrorIndex`-free by construction), so the
   next reader doesn't "complete" the migration by moving it.
@@ -282,7 +302,8 @@ both verbs. No further work unless the fixed build still rejects their real sche
 * `MutationInputResolver.validateReturnType`: the scalar arm's new case switches over the
   recognizer's published fact, wording forked per element kind as above. The method is static
   over `(ReturnTypeRef, DmlKind, boolean, BuildContext)`, so it reaches the recognizer through
-  `BuildContext.typeBuilder` rather than a signature change across the seven call sites; that
+  `BuildContext.typeBuilder` rather than a signature change across its six call sites (all in
+  `FieldBuilder`, two per verb: the `resolveInput` path and the inline path); that
   field is null for unit-tier harnesses, so null-guard it the way `BuildContext.lookAheadVerdict`
   and `FieldBuilder`'s binding accessors already do.
 * Stale-comment sweep, in the same change (these are the comments the next reader will use
@@ -300,7 +321,10 @@ both verbs. No further work unless the fixed build still rejects their real sche
   supported verb, else the input's `@table`". That is already false independently of this bug.
   Rung 1 is the return-derived table, and the input `@table` bridge is not a rung of
   `resolveDmlWriteTableRef` at all. It sits in the middle of the comments this sweep exists to
-  fix, so correct it here rather than leaving it to the next reader.
+  fix, so correct it here rather than leaving it to the next reader. The same phantom rung is
+  spelled a second time on `MutationInputResolver.RETURN_DERIVED_TABLE_VERBS` ("preferred over
+  `@mutation(table:)` and the input `@table` bridge"); correct both spellings or the sweep leaves
+  the claim standing where the next reader will look for it.
 
 The deeper fix, a typed not-yet-built arm on the indices so a pre-index read refuses instead of
 answering, is filed as R689 and out of scope here.
@@ -309,20 +333,26 @@ answering, is filed as R689 and out of scope here.
 
 Pipeline tier, in `SingleRecordPayloadPipelineTest`:
 
-* Flip the errors-bearing fixtures (`payload_singleInput_withErrorsField_…`,
+* Flip all three errors-bearing fixtures (`payload_singleInput_withErrorsField_…`,
   `payload_bulkInput_withErrorsField_…`,
   `payload_withErrorsField_emittedFetcher_dispatchesThroughLocalContextRouter`) from
   `tableArg = true` to the return-derived form, and correct their "does not return-derive"
   comments. These land on `MutationDmlRecordField` / `MutationBulkDmlRecordField` with the
   `LocalContext` error channel present, on INSERT and UPDATE, single and bulk input: the
   consumer shape from the report, classifying without `@mutation(table:)`.
-* Keep one errors-bearing fixture on `tableArg = true` (the explicit argument must keep
-  working, and the rung-1-vs-rung-2 same-table agreement path stays covered).
+* Those three are *every* errors-bearing `tableArg = true` fixture in the class (the only other
+  two, at the `alsoFilms` and `description` payloads, are deliberately-broken carrier shapes),
+  so flipping them leaves the errors-bearing population with no explicit-argument coverage at
+  all. Add one new errors-bearing fixture holding `tableArg = true` rather than sparing one of
+  the three: the explicit argument must keep working alongside an errors channel, and it is what
+  the rung-1-vs-rung-2 same-table agreement path below is asserted on. Sparing one of the three
+  instead would cost a verb or a cardinality from the regression pins, which is the coverage this
+  item exists to add.
 * The flipped fixtures above are the regression pins that carry this item's weight: pre-fix,
   an errors-bearing carrier with no `@mutation(table:)` resolves neither rung at grounding
   time, so no `DmlEmitted` is minted and the field rejects. They fail before the ordering
   move and pass after it.
-* Optionally pin rung agreement on the kept `tableArg = true` fixture: the grounded
+* Optionally pin rung agreement on the added `tableArg = true` fixture: the grounded
   `DmlEmitted.tableRef` equals the classified write target. Note what this can and cannot
   see. Pre-fix the two call sites diverged in *provenance* (grounding fell to rung 2 while
   classification took rung 1), but on an agreeing fixture both rungs resolve the same
@@ -332,7 +362,9 @@ Pipeline tier, in `SingleRecordPayloadPipelineTest`:
   regression pin for this bug. Do not let it stand in for the flipped fixtures.
 * Correct the `mutationDirective` helper's javadoc: of its two stated reasons for
   `tableArg`, only "an errors-shaped sibling present" becomes false; "a deliberately broken
-  carrier shape" remains, so the fix is a split, not a deletion.
+  carrier shape" remains, so the fix is a split, not a deletion. The added fixture above needs
+  the replacement clause, since it passes `tableArg` on a payload that now return-derives
+  perfectly well: the third reason is covering the explicit argument itself.
 * Pin each population of the new ungrounded-carrier diagnostic, since it is now the sole
   message for these shapes: a `Table`-element carrier that cannot ground (write-target
   steer), a record-element carrier without `@service` (producer steer), and an ID-element
