@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -46,12 +45,11 @@ public final class Workspace {
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
-    private volatile ValidationReport validationReport = ValidationReport.empty();
-    // The last incremental-compile round's diagnostics, kept separate from the
-    // schema-anchored validationReport (a generated-file javac error has no schema coordinate to
-    // fabricate). The graphitron:dev compile driver swaps this after each round; the MCP diagnostics
-    // tool surfaces it with a source:"compile" discriminator. Independent of setBuildOutput's swap: a
-    // compile round follows generation, so the two never need to move atomically.
+    // The last incremental-compile round's diagnostics, which are anchored in generated .java files
+    // rather than at a schema coordinate. The graphitron:dev compile driver swaps this after each
+    // round; the MCP diagnostics tool surfaces it with a source:"compile" discriminator. Independent
+    // of setBuildOutput's swap: a compile round follows generation, so the two never need to move
+    // atomically.
     private volatile List<CompileDiagnostic> compileDiagnostics = List.of();
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
@@ -245,7 +243,7 @@ public final class Workspace {
     }
 
     /**
-     * Projection of the parsed user schema's directive surface, swapped on
+     * The classifier's projection of the last build, swapped on
      * every successful generator pass through {@link #setBuildOutput}. Stays
      * {@link LspSchemaSnapshot.Unavailable} until the first build succeeds;
      * demotes to {@link LspSchemaSnapshot.Built.Previous} on subsequent
@@ -256,23 +254,11 @@ public final class Workspace {
     }
 
     /**
-     * Validator output paired with the catalog and snapshot, swapped on
-     * every successful generator pass through {@link #setBuildOutput}. Stays
-     * {@link ValidationReport#empty()} until the first build completes;
-     * unaffected by {@link #demoteSnapshot()} so a stale-snapshot state
-     * still has the last good validator output sitting there ready to
-     * re-publish on revert.
-     */
-    public ValidationReport validationReport() {
-        return validationReport;
-    }
-
-    /**
      * The last incremental-compile round's diagnostics (generated-code javac errors and
-     * warnings), anchored to the generated {@code .java} where javac reports them. Distinct from
-     * {@link #validationReport()}: these have no schema coordinate, so they ride their own channel and
-     * the MCP diagnostics tool tags them {@code source:"compile"}. Stays empty until the first compile
-     * round; {@code volatile} so the swap is observable on the next request without the file lock.
+     * warnings), anchored to the generated {@code .java} where javac reports them. Their own channel
+     * because they have no schema coordinate; the MCP diagnostics tool tags them
+     * {@code source:"compile"}. Stays empty until the first compile round; {@code volatile} so the
+     * swap is observable on the next request without the file lock.
      */
     public List<CompileDiagnostic> compileDiagnostics() {
         return compileDiagnostics;
@@ -319,24 +305,19 @@ public final class Workspace {
     }
 
     /**
-     * Success-path swap: snapshot and validator report move together
-     * atomically (from the perspective of consumers that hold the
-     * workspace through two volatile reads), one recalculation. Used by
-     * both the schema-save trigger (where the validator runs against the
-     * freshly parsed user schema) and the classpath trigger (where the
-     * validator's classpath-dependent rejections — unresolved {@code @service}
-     * class, etc. — surface on the next {@code mvn compile} without waiting
-     * for a schema save). The producer ships only
-     * {@link LspSchemaSnapshot.Built.Current}; freshness demotion happens
-     * through {@link #demoteSnapshot()} when a later parse fails.
+     * Success-path swap, one recalculation. Used by both the schema-save trigger and the classpath
+     * trigger, the latter so a build's classpath-dependent verdicts surface on the next
+     * {@code mvn compile} without waiting for a schema save. The producer ships only
+     * {@link LspSchemaSnapshot.Built.Current}; freshness demotion happens through
+     * {@link #demoteSnapshot()} when a later parse fails.
      *
-     * <p>The artifacts also carry the build's {@code CompletionData} catalog, which no
-     * language-server surface reads any more; the dev goal logs its census counts from
-     * its own copy.
+     * <p>The build's own errors and warnings do not ride along: capture writes them to the store's
+     * diagnostics stratum on the same round, and the language server reads them there. The artifacts
+     * also carry the build's {@code CompletionData} catalog, which no language-server surface reads
+     * any more; the dev goal logs its census counts from its own copy.
      */
-    public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts, ValidationReport report) {
+    public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts) {
         this.snapshot = artifacts.snapshot();
-        this.validationReport = report;
         markAllForRecalculation();
     }
 

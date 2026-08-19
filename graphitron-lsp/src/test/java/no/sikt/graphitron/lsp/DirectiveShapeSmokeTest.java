@@ -196,7 +196,6 @@ class DirectiveShapeSmokeTest {
 
     private static List<org.eclipse.lsp4j.Diagnostic> diagnose(String source, StoreFixture store) {
         return Diagnostics.compute(VOCAB, "", WorkspaceFileTestSupport.snapshot(source),
-            LspSchemaSnapshot.unavailable(), ValidationReport.empty(),
             Optional.of(store.handle()));
     }
 

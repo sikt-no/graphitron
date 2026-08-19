@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -57,7 +56,6 @@ class ArgMappingDiagnosticsTest {
         var file = WorkspaceFileTestSupport.snapshot(source);
         try (var store = StoreFixture.ofClasspath(tmp, census)) {
             return Diagnostics.compute(LspVocabulary.load(), "", file,
-                LspSchemaSnapshot.unavailable(), ValidationReport.empty(),
                 Optional.of(store.handle()));
         }
     }

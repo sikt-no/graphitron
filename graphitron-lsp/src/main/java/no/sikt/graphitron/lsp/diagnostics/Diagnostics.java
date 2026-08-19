@@ -1,6 +1,5 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
-import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.parsing.ArgMapping;
 import no.sikt.graphitron.lsp.parsing.ArgMappingSupport;
 import no.sikt.graphitron.lsp.parsing.Behavior;
@@ -16,12 +15,7 @@ import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -62,6 +56,11 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  * questions are independent: a table name, a foreign key, a class, a method, a {@code @node} reference
  * and a member name are resolved by relations sharing no key, so no answer decides what to ask next, and
  * the walk can therefore collect all of them before any of them is resolved.
+ *
+ * <p>The build's own findings arrive the same way. What the last build said about a document is a row
+ * set keyed on the file, read in the same statement as everything else and replayed after the
+ * document's own verdicts. Nothing gates it on freshness: a buffer the author has since edited shows
+ * what the schema said when it was last captured, which is this class's posture everywhere.
  *
  * <p>Three units meet here and only one of them owns the statement. A <em>file</em> is what an editor is
  * told about, {@code publishDiagnostics} being per-URI. A <em>graph</em> is what the facts are keyed on.
@@ -193,31 +192,25 @@ public final class Diagnostics {
         }
     }
 
-    public static List<Diagnostic> compute(
-        String uri, FileSnapshot file, LspSchemaSnapshot snapshot, ValidationReport report
-    ) {
-        return compute(LspVocabulary.load(), uri, file, snapshot, report);
+    public static List<Diagnostic> compute(String uri, FileSnapshot file) {
+        return compute(LspVocabulary.load(), uri, file);
     }
 
     /**
      * The store-free form: every arm that resolves a value against the catalog or the classpath
-     * answers as if the census were unavailable, which is silence. That is the same policy the class
-     * takes on a snapshot it cannot trust, and it is what a session before its first build sees.
+     * answers as if the census were unavailable, which is silence, and the build's own verdict on the
+     * document is unreadable for the same reason. That is what a session before its first build sees.
      */
-    public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, String uri, FileSnapshot file,
-        LspSchemaSnapshot snapshot, ValidationReport report
-    ) {
-        return compute(vocabulary, uri, file, snapshot, report, Optional.empty());
+    public static List<Diagnostic> compute(LspVocabulary vocabulary, String uri, FileSnapshot file) {
+        return compute(vocabulary, uri, file, Optional.empty());
     }
 
     public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, String uri, FileSnapshot file,
-        LspSchemaSnapshot snapshot, ValidationReport report, Optional<StoreHandle> store
+        LspVocabulary vocabulary, String uri, FileSnapshot file, Optional<StoreHandle> store
     ) {
         try (var span = LspTrace.span("diagnostics.compute")) {
             span.detail("uri", uri);
-            var batch = new Batch(vocabulary, snapshot, report);
+            var batch = new Batch(vocabulary);
             batch.add(uri, file, span);
             var result = batch.judgeAll(ignored -> store).getOrDefault(uri, List.of());
             span.detail("diagnostics", result.size());
@@ -246,14 +239,10 @@ public final class Diagnostics {
     public static final class Batch {
 
         private final LspVocabulary vocabulary;
-        private final LspSchemaSnapshot snapshot;
-        private final ValidationReport report;
         private final List<Document> documents = new ArrayList<>();
 
-        public Batch(LspVocabulary vocabulary, LspSchemaSnapshot snapshot, ValidationReport report) {
+        public Batch(LspVocabulary vocabulary) {
             this.vocabulary = vocabulary;
-            this.snapshot = snapshot;
-            this.report = report;
         }
 
         /** Walks one document into the batch, reading nothing. */
@@ -268,17 +257,12 @@ public final class Diagnostics {
             var findings = new ArrayList<Finding>();
             var questions = new DiagnosticFacts.Questions();
             walk(vocabulary, file, findings, questions, span);
-            // The validator's own findings are the tree's too, its ranges being re-anchored through
-            // the document's description nodes, so they are settled here and appended last, which is
-            // where they were emitted before.
-            try (var reportSpan = LspTrace.span("diagnostics.validatorReport")) {
-                reportSpan.detail("errors", report.errors().size())
-                    .detail("warnings", report.warnings().size());
-                for (var diagnostic : validatorDiagnostics(uri, file, snapshot, report)) {
-                    findings.add(new Finding.Ready(diagnostic));
-                }
-            }
-            documents.add(new Document(uri, file.source(), findings, questions));
+            questions.replayFile(uri);
+            // The replay's own tree-side input, read here because here is where the tree is alive:
+            // where each documented definition's description block sits, and what name it documents.
+            var described = new ArrayList<DescribedDefinition>();
+            collectDescribedDefinitions(file, file.tree().getRootNode(), described);
+            documents.add(new Document(uri, file.source(), findings, questions, described));
         }
 
         /**
@@ -324,6 +308,10 @@ public final class Diagnostics {
             for (var finding : document.findings()) {
                 judge(finding, answers, document.source(), out);
             }
+            // Appended after the document's own verdicts, which is where the build's were emitted
+            // before: what the walk found is about the buffer as it stands, and what the build found
+            // is about the last capture of it.
+            replay(document, answers, out);
             return out;
         }
 
@@ -339,7 +327,8 @@ public final class Diagnostics {
          * position at judgement.
          */
         private record Document(
-            String uri, byte[] source, List<Finding> findings, DiagnosticFacts.Questions questions
+            String uri, byte[] source, List<Finding> findings, DiagnosticFacts.Questions questions,
+            List<DescribedDefinition> describedDefinitions
         ) {}
     }
 
@@ -428,195 +417,104 @@ public final class Diagnostics {
     }
 
     /**
-     * Maps {@link ValidationReport} entries for {@code uri} into LSP diagnostics. Silent under
-     * {@link LspSchemaSnapshot.Unavailable} (no build yet) and {@link LspSchemaSnapshot.Built.Previous}
-     * (stale snapshot after a parse failure), mirroring the freshness-aware silence policy:
-     * the validator's last output may not reflect the buffer the user is editing, and a stale
-     * red squiggle the developer cannot fix by rewriting their schema is the noise we are trying
-     * to avoid. Short-circuits when the open file has no entries in {@link ValidationReport#sourceUris}.
+     * A documented definition, as the replay needs it after the tree it was read from is gone: the
+     * span its documentation block occupies, and the range of the name that block documents.
      *
-     * <p>{@code ValidationError} with a null or {@code (0, 0)} location is dropped silently:
-     * every error in the current rule set carries a usable location, and the console / watch
-     * formatter is the surface for no-location (schema-wide) errors. Warnings without location
-     * are dropped for the same reason.
+     * <p>It exists because graphql-java anchors a <em>described</em> definition's location at the
+     * opening delimiter of its doc block rather than at the name, the description being the AST
+     * node's first token, so a build finding on a documented definition would underline the prose
+     * instead of the declaration an author has to fix. The incumbent resolved that by walking up from
+     * the location's node to the enclosing description; the walk collects every description instead,
+     * and the judgement asks which one covers a location. Same answer, and it holds no node.
      */
-    private static List<Diagnostic> validatorDiagnostics(
-        String uri, FileSnapshot file, LspSchemaSnapshot snapshot, ValidationReport report
+    private record DescribedDefinition(Position start, Position end, Range nameRange) {
+
+        boolean covers(Position position) {
+            return !before(position, start) && before(position, end);
+        }
+
+        private static boolean before(Position a, Position b) {
+            return a.getLine() != b.getLine()
+                ? a.getLine() < b.getLine()
+                : a.getCharacter() < b.getCharacter();
+        }
+    }
+
+    /**
+     * Every documented definition in the document, in the order the tree holds them. The identifying
+     * child of a description's parent is a {@code name} for every definition kind except
+     * {@code enum_value_definition}, which carries an {@code enum_value}; a description whose parent
+     * offers neither is skipped, having no name to re-anchor to.
+     */
+    private static void collectDescribedDefinitions(
+        FileSnapshot file, Node node, List<DescribedDefinition> out
     ) {
-        return switch (snapshot) {
-            case LspSchemaSnapshot.Unavailable ignored -> List.of();
-            case LspSchemaSnapshot.Built.Previous ignored -> List.of();
-            case LspSchemaSnapshot.Built.Current ignored -> validatorDiagnosticsForCurrent(uri, file, report);
-        };
-    }
-
-    private static List<Diagnostic> validatorDiagnosticsForCurrent(String uri, FileSnapshot file, ValidationReport report) {
-        if (!report.sourceUris().contains(uri)) {
-            return List.of();
-        }
-        var out = new ArrayList<Diagnostic>();
-        for (ValidationError error : report.errors()) {
-            var loc = error.location();
-            if (!matchesOpenFile(uri, loc)) continue;
-            out.add(validatorDiagnostic(file, loc, severityOf(error.rejection()), error.message(),
-                lspCodeOf(error.rejection())));
-        }
-        for (BuildWarning warning : report.warnings()) {
-            var loc = warning.location();
-            if (!matchesOpenFile(uri, loc)) continue;
-            out.add(validatorDiagnostic(file, loc, DiagnosticSeverity.Warning, warning.message(), null));
-        }
-        return out;
-    }
-
-    private static boolean matchesOpenFile(String uri, SourceLocation loc) {
-        if (loc == null || loc.getLine() <= 0) return false;
-        String sourceName = loc.getSourceName();
-        if (sourceName == null || sourceName.isEmpty()) return false;
-        return uri.equals(ValidationReport.canonicalUri(sourceName));
-    }
-
-    /**
-     * Reads the stable wire code for typed AuthorError arms that publish one. The
-     * {@link no.sikt.graphitron.rewrite.model.ServiceMethodCallError} arms expose
-     * {@code lspCode()} under the {@code graphitron.service-method-call.} namespace; the
-     * LSP projector forwards the code into the lsp4j {@link Diagnostic#setCode} field so
-     * editor extensions can key off the arm without parsing the prose message. Returns
-     * {@code null} for rejection arms that don't publish a code; the lsp4j Diagnostic just
-     * omits the field in that case.
-     */
-    private static String lspCodeOf(Rejection rejection) {
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError sce) {
-            return sce.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.ReflectionError re) {
-            return re.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.UpdateRowsError ure) {
-            return ure.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.DeleteRowsError dre) {
-            return dre.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.MutationTableArgError mtae) {
-            return mtae.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError ecwe) {
-            return ecwe.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.WireCoercionError wce) {
-            return wce.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError scse) {
-            return scse.lspCode();
-        }
-        if (rejection instanceof no.sikt.graphitron.rewrite.model.PivotError pe) {
-            return pe.lspCode();
-        }
-        return null;
-    }
-
-    private static DiagnosticSeverity severityOf(Rejection rejection) {
-        // Every Rejection variant fails the build via ValidationFailedException
-        // (GraphQLRewriteGenerator throws on any non-empty error list, regardless
-        // of arm); the editor must surface the same finality so the developer
-        // sees one consistent signal across the LSP and `mvn graphitron:dev`.
-        // Deferred is Error rather than Warning: the actionable hint is the
-        // rejection's message, not the severity.
-        return switch (rejection) {
-            case Rejection.AuthorError ignored -> DiagnosticSeverity.Error;
-            case Rejection.InvalidSchema ignored -> DiagnosticSeverity.Error;
-            case Rejection.Deferred ignored -> DiagnosticSeverity.Error;
-        };
-    }
-
-    /**
-     * Builds an LSP diagnostic for a validator error or warning. {@code SourceLocation.getLine()}
-     * and {@code getColumn()} are 1-based; LSP {@code Position} is 0-based. End column is
-     * {@link Integer#MAX_VALUE} (gcc/AsciiDoctor convention, clamped by the LSP client to the
-     * actual line end): a zero-width range at column 1 (the common case for type-level errors that
-     * point at the type's declaration) is too subtle to find in editors.
-     */
-    private static Diagnostic validatorDiagnostic(
-        FileSnapshot file, SourceLocation loc, DiagnosticSeverity severity, String message, String code
-    ) {
-        var d = new Diagnostic(signatureRange(file, loc), message);
-        d.setSeverity(severity);
-        d.setSource(VALIDATOR_SOURCE);
-        if (code != null) {
-            d.setCode(code);
-        }
-        return d;
-    }
-
-    /**
-     * The range to highlight for a validator finding at {@code loc}. graphql-java anchors a
-     * <em>described</em> definition's {@code getSourceLocation()} at the opening delimiter of its
-     * documentation block, not the type/field name, because the description is the AST node's first
-     * token. An error on a documented definition would otherwise underline the doc block rather than
-     * the declaration the author must fix. When {@code loc} lands inside a tree-sitter
-     * {@code description} node we re-anchor to the enclosing definition's name; otherwise (the common
-     * no-doc case, or any tree shape we don't recognise) we fall back to the column-to-end-of-line
-     * range straight from {@code loc}.
-     *
-     * <p>The tree-sitter walk is exact for every documentation style: single-line {@code "..."},
-     * inline block {@code """..."""}, and multi-line block. It needs no line arithmetic over the
-     * graphql-java description content, which cannot distinguish an inline block from an own-line
-     * one (both report {@code multiLine=true} with no interior newlines) and is the dominant style
-     * in this codebase's directive schema.
-     */
-    private static Range signatureRange(FileSnapshot file, SourceLocation loc) {
-        var reanchored = descriptionNameRange(file, loc);
-        if (reanchored != null) {
-            return reanchored;
-        }
-        var start = new Position(loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
-        var end = new Position(loc.getLine() - 1, Integer.MAX_VALUE);
-        return new Range(start, end);
-    }
-
-    /**
-     * Range of the name of the definition documented by the {@code description} node containing
-     * {@code loc}, or {@code null} when {@code loc} is not inside a description (or the file has no
-     * usable tree). The enclosing definition is the description node's parent; its identifying child
-     * is a {@code name} for every definition kind except {@code enum_value_definition}, which carries
-     * an {@code enum_value} instead.
-     */
-    private static Range descriptionNameRange(FileSnapshot file, SourceLocation loc) {
-        if (file == null || file.tree() == null) {
-            return null;
-        }
-        var resolved = Positions.resolve(file.source(), loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
-        Node leaf = file.tree().getRootNode().getDescendant(resolved.tsPoint(), resolved.tsPoint()).orElse(null);
-        Node description = enclosingDescription(leaf);
-        if (description == null) {
-            return null;
-        }
-        Node def = description.getParent().orElse(null);
-        if (def == null) {
-            return null;
-        }
-        Node name = Nodes.childOfKind(def, NAME);
-        if (name == null) {
-            name = Nodes.childOfKind(def, ENUM_VALUE);
-        }
-        if (name == null) {
-            return null;
-        }
-        return new Range(
-            Positions.toLspPosition(file.source(), name.getStartByte()),
-            Positions.toLspPosition(file.source(), name.getEndByte()));
-    }
-
-    /** Nearest {@code description} ancestor of {@code node} (inclusive), or {@code null}. */
-    private static Node enclosingDescription(Node node) {
-        while (node != null) {
-            if (DESCRIPTION.matches(node)) {
-                return node;
+        if (node == null) return;
+        if (DESCRIPTION.matches(node)) {
+            Node def = node.getParent().orElse(null);
+            Node name = def == null ? null : Nodes.childOfKind(def, NAME);
+            if (name == null && def != null) {
+                name = Nodes.childOfKind(def, ENUM_VALUE);
             }
-            node = node.getParent().orElse(null);
+            if (name != null) {
+                out.add(new DescribedDefinition(
+                    Positions.toLspPosition(file.source(), node.getStartByte()),
+                    Positions.toLspPosition(file.source(), node.getEndByte()),
+                    rangeOf(file, name)));
+            }
+            return;
         }
-        return null;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectDescribedDefinitions(file, node.getChild(i).orElse(null), out);
+        }
+    }
+
+    /**
+     * The last build's own findings about this document, placed in the buffer as it stands. Nothing
+     * is judged here: the verdict is the build's, and what the row set holds is what a capture
+     * recorded, so a buffer the author has since edited shows what the schema said when it was last
+     * read rather than nothing at all.
+     */
+    private static void replay(
+        Batch.Document document, DiagnosticFacts.Answers answers, List<Diagnostic> out
+    ) {
+        for (var row : answers.replayFor(document.uri())) {
+            var d = new Diagnostic(replayRange(document, row), row.message());
+            d.setSeverity(severityOf(row.severity()));
+            d.setSource(VALIDATOR_SOURCE);
+            if (row.lspCode() != null) {
+                d.setCode(row.lspCode());
+            }
+            out.add(d);
+        }
+    }
+
+    /**
+     * Where a replayed finding squiggles: the name of the definition it landed inside the
+     * documentation of, or the column-to-end-of-line range straight from the stored location. The end
+     * column is {@link Integer#MAX_VALUE} (the gcc convention, clamped by the client to the line's
+     * end), a zero-width range at column 1 being too subtle to find in an editor.
+     */
+    private static Range replayRange(Batch.Document document, DiagnosticFacts.ReplayRow row) {
+        int line = row.sourceLine() - 1;
+        int column = row.sourceColumn() == null ? 0 : Math.max(0, row.sourceColumn() - 1);
+        var start = new Position(line, column);
+        for (var described : document.describedDefinitions()) {
+            if (described.covers(start)) {
+                return described.nameRange();
+            }
+        }
+        return new Range(start, new Position(line, Integer.MAX_VALUE));
+    }
+
+    /**
+     * The view's severity, which is a closed pair. Every rejection arm is an error there, including
+     * the deferred one, on the build's own finality: what an author can act on is the message, not a
+     * softer colour. Anything that is not the error spelling is a warning, which is what the lint and
+     * advisory arms are.
+     */
+    private static DiagnosticSeverity severityOf(String severity) {
+        return "error".equals(severity) ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning;
     }
 
     /**

@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -263,10 +262,11 @@ public class DevMojo extends AbstractRewriteMojo {
         // serialize behind each other for no better cause than sharing a socket.
         this.mcpStore = sessionStore.reader();
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
-            workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current),
-                initial.report());
+            // The facts before the swap: the swap enqueues every open file for recalculation, and a
+            // recalculation replays what this round wrote about them.
             writeReportFacts(initial.walkErrors(), initial.warnings());
+            workspace.setBuildOutput(
+                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current));
         }
         // Build the debounce and save-listener before bindServer so DevServer
         // can hand the listener to each editor-facing GraphitronLanguageServer.
@@ -616,8 +616,8 @@ public class DevMojo extends AbstractRewriteMojo {
                 // rather than punishing the user for the broken parse.
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-                    workspace.setBuildOutput(output.artifacts(), output.report());
                     writeReportFacts(output.walkErrors(), output.warnings());
+                    workspace.setBuildOutput(output.artifacts());
                 } catch (RuntimeException e) {
                     getLog().warn("graphitron:dev: catalog refresh after save failed; "
                         + "keeping previous: " + e.getMessage());
@@ -638,8 +638,8 @@ public class DevMojo extends AbstractRewriteMojo {
             withCodegenScope(ctx -> {
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-                    workspace.setBuildOutput(output.artifacts(), output.report());
                     writeReportFacts(output.walkErrors(), output.warnings());
+                    workspace.setBuildOutput(output.artifacts());
                     var catalog = output.artifacts().catalog();
                     getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
                         + " tables, " + catalog.types().size() + " scalars)");
@@ -678,12 +678,12 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
             return new InitialOutput(output.artifacts().catalog(), output.artifacts().snapshot(),
-                output.report(), output.walkErrors(), output.warnings());
+                output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
                 + "starting with empty catalog: " + e.getMessage());
             return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable(),
-                ValidationReport.empty(), List.of(), List.of());
+                List.of(), List.of());
         }
     }
 
@@ -692,13 +692,13 @@ public class DevMojo extends AbstractRewriteMojo {
      * rather than {@link LspSchemaSnapshot.Built.Current} because the failure path returns
      * {@link LspSchemaSnapshot.Unavailable}; the success path narrows back to {@code Built.Current}
      * via an {@code instanceof} check at the call site before constructing
-     * {@link GraphQLRewriteGenerator.BuildArtifacts}. The pre-fuse lists ride along for the
-     * diagnostics-stratum loaders, published only on the success path: a failed build writes
-     * nothing, so the store keeps the previous snapshot's rows and the snapshot axes carry the
-     * staleness, rather than an empty partition reading as a clean schema.
+     * {@link GraphQLRewriteGenerator.BuildArtifacts}. The two lists are the diagnostics-stratum
+     * loaders' input, published only on the success path: a failed build writes nothing, so the store
+     * keeps the last good round's rows rather than an empty partition that would read as a clean
+     * schema. The assembled report does not ride along, the language server reading a build's own
+     * findings from the store those lists are written to.
      */
     private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot,
-                                 ValidationReport report,
                                  List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
                                  List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {}
 

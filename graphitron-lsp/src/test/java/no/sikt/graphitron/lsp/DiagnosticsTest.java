@@ -6,7 +6,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -133,7 +132,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING").contains("table");
@@ -148,7 +147,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -161,7 +160,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains("column");
@@ -175,7 +174,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -188,7 +187,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -228,7 +227,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withBackingClasses, noBackings());
+        var diags = compute(file, withBackingClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -243,36 +242,26 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withBackingClasses, noBackings());
+        var diags = compute(file, withBackingClasses);
 
         assertThat(diags).isEmpty();
     }
 
     /**
-     * A built projection holding no backing at all, which is what every member-check case now passes:
-     * the arm reads the store for what a type resolves against, so what the projection would have
-     * said about it is not a variable of these cases. Built rather than unavailable so the
-     * freshness-gated warn arms behave as they do in a settled session.
-     */
-    private static LspSchemaSnapshot noBackings() {
-        return new LspSchemaSnapshot.Built.Current();
-    }
-
-    /**
-     * The projection is not merely unread here, it is absent: a session before its first build gets
-     * the same member check as a settled one, because the capture the check reads is on the save
-     * cadence rather than the pipeline's. Under the projection-era dispatch this was silence, an
-     * absent snapshot meaning an absent backing meaning nothing to check against.
+     * The check reads the store for what a type resolves against, so it runs the same before a
+     * build as after one: the capture it reads is on the save cadence rather than the pipeline's.
+     * Under the projection-era dispatch this was silence, an absent snapshot meaning an absent
+     * backing meaning nothing to check against.
      */
     @Test
-    void theCheckRunsWithNoProjectionAtAll() {
+    void theCheckRunsBeforeAnyBuildHasRun() {
         var file = file("""
             type FilmCard {
                 bar: Int @field(name: "TYPO")
             }
             """);
 
-        var diags = compute(file, withBackingClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withBackingClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains(RECORD_FIXTURE);
@@ -291,7 +280,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING").contains("column");
@@ -305,7 +294,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -393,7 +382,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -406,7 +395,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NOPE").contains("foreign key");
@@ -420,7 +409,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -436,7 +425,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -453,7 +442,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -469,7 +458,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, multiSchema, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, multiSchema);
 
         assertThat(diags).isEmpty();
     }
@@ -485,7 +474,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, multiSchema, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, multiSchema);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("multischema_b.dup_gizmo_fk");
@@ -502,7 +491,7 @@ class DiagnosticsTest {
             }
             """);
 
-        assertThat(compute(file, withNodes, LspSchemaSnapshot.unavailable())).isEmpty();
+        assertThat(compute(file, withNodes)).isEmpty();
     }
 
     @Test
@@ -515,7 +504,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, multiSchema, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, multiSchema);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("multischema_a.NOPE").contains("foreign key");
@@ -529,7 +518,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING");
@@ -651,7 +640,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -664,7 +653,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         var d = diags.get(0);
         // The reported range should sit on line 0 of the source.
@@ -682,7 +671,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
@@ -696,7 +685,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -713,7 +702,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -726,7 +715,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -739,7 +728,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("missing").contains("FilmService");
@@ -753,7 +742,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -773,7 +762,7 @@ class DiagnosticsTest {
         try (var nameless = StoreFixture.ofClasspath(tmp, List.of(
             StoreFixture.jarClass("com.example.FilmService", List.of(
                 StoreFixture.method("list", "List", StoreFixture.parameter(null, "int"))))))) {
-            var diags = compute(file, nameless, LspSchemaSnapshot.unavailable());
+            var diags = compute(file, nameless);
 
             assertThat(diags).hasSize(1);
             assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
@@ -789,7 +778,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -802,7 +791,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
@@ -814,7 +803,7 @@ class DiagnosticsTest {
             enum Foo @enum(enumReference: {className: "com.example.Missing"}) { A B }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -831,7 +820,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -845,7 +834,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -859,7 +848,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -874,25 +863,24 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());  // empty externalReferences
+        var diags = compute(file, catalogOnly);  // empty externalReferences
 
         assertThat(diags).isEmpty();
     }
 
     @Test
     void unknownDirectiveProducesWarning() {
-        // Built.Current with no user-declared directives mimics the
-        // post-build state on a schema that does not define @tabel: the
-        // typo lands in the warn arm because the snapshot rules out the
-        // "user declared it" branch.
+        // A captured graph declaring no @tabel: the typo lands in the warn arm because the
+        // definitions the graph holds rule out the "the author declared it" branch. The verdict is
+        // against what the graph last captured, with no freshness gate over it, so a buffer whose
+        // schema will not parse reports here rather than falling silent.
         var file = file("""
             type Foo @tabel(name: "film") {
                 bar: Int
             }
             """);
 
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Current());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
@@ -910,25 +898,7 @@ class DiagnosticsTest {
             }
             """);
 
-        assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
-    }
-
-    @Test
-    void unknownDirectiveReportedAgainstTheLastCapture() {
-        // The freshness gate the projection carried is gone: a buffer whose schema will not parse
-        // used to silence this whole arm, so a newly broken schema showed nothing. The verdict now
-        // comes from what the graph last captured, which is the same posture every value arm takes.
-        var file = file("""
-            type Foo @tabel(name: "film") {
-                bar: Int
-            }
-            """);
-
-        var diags = compute(file, catalogOnly,
-            new LspSchemaSnapshot.Built.Previous());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
+        assertThat(computeWithoutStore(file)).isEmpty();
     }
 
     @Test
@@ -958,7 +928,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -971,7 +941,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         // No required-arg miss because @table(name:) is optional.
         assertThat(diags).hasSize(1);
@@ -988,7 +958,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1005,7 +975,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1021,7 +991,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -1034,7 +1004,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "NoDotsHere")
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -1049,7 +1019,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Scalars.")
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("fully.qualified.Class.FIELD");
@@ -1061,7 +1031,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -1076,7 +1046,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Scalars.MONEY")
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -1089,7 +1059,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "")
             """);
 
-        var diags = compute(file, withClasses, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withClasses);
 
         assertThat(diags).isEmpty();
     }
@@ -1103,7 +1073,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());  // empty externalReferences
+        var diags = compute(file, catalogOnly);  // empty externalReferences
 
         assertThat(diags).isEmpty();
     }
@@ -1187,7 +1157,7 @@ class DiagnosticsTest {
             }
             """);
 
-        assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
+        assertThat(computeWithoutStore(file)).isEmpty();
     }
 
     // @node(keyColumns:) and @nodeId(typeName:) diagnostics.
@@ -1204,7 +1174,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING").contains("column");
@@ -1219,7 +1189,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, noBackings());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).isEmpty();
     }
@@ -1232,7 +1202,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withNodes, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withNodes);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("@node");
@@ -1247,7 +1217,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, withNodes, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, withNodes);
 
         assertThat(diags).isEmpty();
     }
@@ -1263,7 +1233,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, catalogOnly, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogOnly);
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("@node");
@@ -1279,7 +1249,7 @@ class DiagnosticsTest {
             }
             """);
 
-        assertThat(computeWithoutStore(file, LspSchemaSnapshot.unavailable())).isEmpty();
+        assertThat(computeWithoutStore(file)).isEmpty();
     }
 
 
@@ -1295,17 +1265,14 @@ class DiagnosticsTest {
      * production callers to a backward-compat overload.
      */
     private static List<org.eclipse.lsp4j.Diagnostic> compute(
-        FileSnapshot file, StoreFixture store, LspSchemaSnapshot snapshot
+        FileSnapshot file, StoreFixture store
     ) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file, snapshot,
-            ValidationReport.empty(), Optional.of(store.handle()));
+        return Diagnostics.compute(LspVocabulary.load(), "", file, Optional.of(store.handle()));
     }
 
     /** The same walk with no store at all, which is what a session before its first build sees. */
-    private static List<org.eclipse.lsp4j.Diagnostic> computeWithoutStore(
-        FileSnapshot file, LspSchemaSnapshot snapshot
-    ) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file, snapshot, ValidationReport.empty());
+    private static List<org.eclipse.lsp4j.Diagnostic> computeWithoutStore(FileSnapshot file) {
+        return Diagnostics.compute(LspVocabulary.load(), "", file);
     }
 
     /**
@@ -1316,8 +1283,7 @@ class DiagnosticsTest {
     private List<org.eclipse.lsp4j.Diagnostic> computeCaptured(String sdl) {
         try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
             return Diagnostics.compute(LspVocabulary.load(), "", file(sdl),
-                LspSchemaSnapshot.unavailable(),
-                ValidationReport.empty(), Optional.of(fixture.handle()));
+                Optional.of(fixture.handle()));
         }
     }
 

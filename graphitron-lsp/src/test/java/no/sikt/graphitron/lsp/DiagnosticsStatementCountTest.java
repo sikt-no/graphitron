@@ -5,8 +5,6 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Diagnostic;
 import org.jooq.ExecuteContext;
 import org.jooq.ExecuteListener;
@@ -158,14 +156,16 @@ class DiagnosticsStatementCountTest {
     }
 
     @Test
-    void aDocumentWithNothingToResolveCostsNoStatement() {
-        // Nothing to ask is not one statement returning nothing. A schema whose directives name no
-        // value a census could resolve is the honest reading of a file carrying only @deprecated.
+    void aDocumentWithNothingToResolveStillCostsTheOneStatement() {
+        // A file carrying only @deprecated names no value a census could resolve, and still asks one
+        // thing: what the last build said about it. That question is keyed on the file rather than on
+        // anything written in it, so the floor is one statement rather than none, and a document with
+        // build errors and no directives is not a document the editor stays silent about.
         assertThat(statementsFor("""
             type Film {
                 title: String @deprecated(reason: "gone")
             }
-            """)).isZero();
+            """)).isEqualTo(1);
     }
 
     @Test
@@ -175,8 +175,7 @@ class DiagnosticsStatementCountTest {
         // whatever the classpath holds.
         var counted = new AtomicInteger();
         var out = Diagnostics.compute(
-            LspVocabulary.load(), "file:///x.graphqls", file(WRONG_SDL),
-            LspSchemaSnapshot.unavailable(), ValidationReport.empty(), Optional.empty());
+            LspVocabulary.load(), "file:///x.graphqls", file(WRONG_SDL), Optional.empty());
         assertThat(out).isEmpty();
         assertThat(counted.get()).isZero();
     }
@@ -186,8 +185,7 @@ class DiagnosticsStatementCountTest {
         // The unit of work is the drain, not the file. A recalculation walks every queued document
         // first, so the whole set's questions are known before any of them is resolved, and twenty
         // files about one graph are twenty near-identical statements only if nobody unions them.
-        var batch = new Diagnostics.Batch(
-            LspVocabulary.load(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var batch = new Diagnostics.Batch(LspVocabulary.load());
         for (int i = 0; i < 20; i++) {
             batch.add("file:///f" + i + ".graphqls", file(fields(5)));
         }
@@ -202,8 +200,7 @@ class DiagnosticsStatementCountTest {
     void aDrainSpanningTwoGraphsCostsOneStatementPerGraph() {
         // The questions are keyed on a graph, so the floor is one statement per graph the drain
         // touched rather than a flat one. A session's files need not all belong to one capture.
-        var batch = new Diagnostics.Batch(
-            LspVocabulary.load(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var batch = new Diagnostics.Batch(LspVocabulary.load());
         batch.add("file:///a.graphqls", file(fields(5)));
         batch.add("file:///b.graphqls", file(fields(5)));
         var counted = new AtomicInteger();
@@ -216,8 +213,7 @@ class DiagnosticsStatementCountTest {
 
     @Test
     void aDrainOfFilesTheStoreAnswersForNoneOfCostsNoStatement() {
-        var batch = new Diagnostics.Batch(
-            LspVocabulary.load(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var batch = new Diagnostics.Batch(LspVocabulary.load());
         batch.add("file:///a.graphqls", file(fields(5)));
         var counted = new AtomicInteger();
         counting(counted);
@@ -250,8 +246,7 @@ class DiagnosticsStatementCountTest {
 
     private static List<Diagnostic> diagnose(StoreHandle handle, String source) {
         return Diagnostics.compute(
-            LspVocabulary.load(), "file:///x.graphqls", file(source),
-            LspSchemaSnapshot.unavailable(), ValidationReport.empty(), Optional.of(handle));
+            LspVocabulary.load(), "file:///x.graphqls", file(source), Optional.of(handle));
     }
 
     /** The fixture's own store, seen through a handle that counts the statements it executes. */

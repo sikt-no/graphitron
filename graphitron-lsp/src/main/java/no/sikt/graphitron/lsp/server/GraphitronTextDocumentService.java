@@ -139,8 +139,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             // Every queued file is walked first, which reads nothing, so the whole drain's questions
             // are known before any of them is resolved. A file with no open view is never added and
             // so is never published for, which is what the per-file null check used to say.
-            var batch = new Diagnostics.Batch(
-                workspace.vocabulary(), workspace.snapshot(), workspace.validationReport());
+            var batch = new Diagnostics.Batch(workspace.vocabulary());
             var walked = new ArrayList<String>(queued.size());
             for (String uri : queued) {
                 Boolean added = workspace.withView(uri, null, view -> {

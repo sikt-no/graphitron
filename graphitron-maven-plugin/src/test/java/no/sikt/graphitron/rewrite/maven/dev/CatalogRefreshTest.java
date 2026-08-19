@@ -5,7 +5,6 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.capture.SourceWalker;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
@@ -60,8 +59,7 @@ class CatalogRefreshTest {
 
         Runnable rebuilder = () -> {
             workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), rebuilt),
-                ValidationReport.empty());
+                new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), rebuilt));
             fired.countDown();
         };
 

@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
+import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
@@ -79,9 +80,12 @@ import static org.jooq.impl.DSL.selectOne;
  * own type's kind, so the descent walks the rows it already has rather than asking one question per
  * level.
  *
- * <p>An empty question set costs nothing rather than a statement returning nothing: a document whose
- * directives name no value the store could resolve has nothing to ask, which is the honest reading of a
- * file carrying only {@code @deprecated}.
+ * <p>One question is not the document's own values but the build's verdict on it: what the last build
+ * recorded about this file, which is a row set keyed on the file rather than on anything an author
+ * wrote in it. It rides the same statement because it is the same read, and because a document with no
+ * directive at all still has build errors and lint findings to show. An empty question set therefore
+ * means a batch with no documents rather than a file carrying only {@code @deprecated}, and it costs
+ * nothing rather than a statement returning nothing.
  */
 final class DiagnosticFacts {
 
@@ -109,6 +113,13 @@ final class DiagnosticFacts {
     /** The {@code graphql_type.kind} a nested directive-argument literal descends through. */
     private static final String INPUT_OBJECT_KIND = "INPUT_OBJECT";
 
+    /**
+     * The {@code diagnostic.source} channel the replay reads. The view's other channel is the compile
+     * oracle's, whose rows are anchored in generated {@code .java} files rather than in the schema a
+     * buffer holds; the MCP surface reads both, the editor's schema diagnostics only this one.
+     */
+    private static final String SCHEMA_CHANNEL = "schema";
+
     /** One method an author named, which is the grain the census answers about overloads at. */
     record MethodRef(String className, String methodName) {}
 
@@ -133,6 +144,7 @@ final class DiagnosticFacts {
         private final Set<String> sigilTypeNames = new LinkedHashSet<>();
         private final Set<String> directiveNames = new LinkedHashSet<>();
         private final Set<String> nestedArgFieldNames = new LinkedHashSet<>();
+        private final Set<String> replayFiles = new LinkedHashSet<>();
 
         void tableName(String spelling) {
             tableNames.add(spelling);
@@ -205,6 +217,15 @@ final class DiagnosticFacts {
         }
 
         /**
+         * What the last build recorded about this document, asked by file rather than by anything
+         * written in it. Every document asks it, a file with no directive at all still being a file a
+         * build can have refused, so this is the one question a walk contributes unconditionally.
+         */
+        void replayFile(String uri) {
+            replayFiles.add(uri);
+        }
+
+        /**
          * Folds another document's questions in. Sets throughout, so the union of what several
          * documents ask is what one statement answers for all of them, and two files naming the same
          * type ask about it once.
@@ -221,12 +242,13 @@ final class DiagnosticFacts {
             sigilTypeNames.addAll(other.sigilTypeNames);
             directiveNames.addAll(other.directiveNames);
             nestedArgFieldNames.addAll(other.nestedArgFieldNames);
+            replayFiles.addAll(other.replayFiles);
         }
 
         boolean isEmpty() {
             return tableNames.isEmpty() && foreignKeyNames.isEmpty() && classNames.isEmpty()
                 && methods.isEmpty() && nodeTypeNames.isEmpty() && memberTypeNames.isEmpty()
-                && sigilTypeNames.isEmpty() && directiveNames.isEmpty();
+                && sigilTypeNames.isEmpty() && directiveNames.isEmpty() && replayFiles.isEmpty();
         }
     }
 
@@ -309,6 +331,20 @@ final class DiagnosticFacts {
     ) {}
 
     /**
+     * One thing the last build said about a document, in the {@code diagnostic} view's vocabulary:
+     * every arm of it that anchors in a schema file, whichever oracle authored the row. Nothing here
+     * is judged, the verdict having been reached by the build; what the replay does with a row is
+     * place it in the buffer as it stands.
+     *
+     * @param severity the view's closed pair, {@code error} or {@code warning}
+     * @param lspCode the producing arm's stable machine code, or absent where it publishes none
+     */
+    record ReplayRow(
+        String file, String severity, String message, String lspCode, Integer sourceLine,
+        Integer sourceColumn
+    ) {}
+
+    /**
      * The store's answer to a whole document, and the only thing the judgement reads. The accessors are
      * the questions restated; the components are the arms, and nothing outside this class reads them.
      */
@@ -333,7 +369,8 @@ final class DiagnosticFacts {
         List<String> declaredDirectiveNames,
         boolean anyDirective,
         List<DirectiveArgRow> directiveArguments,
-        List<InputFieldRow> inputFields
+        List<InputFieldRow> inputFields,
+        List<ReplayRow> replay
     ) {
 
         /**
@@ -469,6 +506,15 @@ final class DiagnosticFacts {
                 .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
                 .findFirst()
                 .map(row -> new Descent(row.namedType(), row.namedTypeKind()));
+        }
+
+        /**
+         * What the last build recorded about one file, in the order the view returns it. Filtered
+         * here rather than in the arm because one statement answers the whole batch and a drain can
+         * span files; each document takes the rows anchored in it.
+         */
+        List<ReplayRow> replayFor(String uri) {
+            return replay.stream().filter(row -> row.file().equals(uri)).toList();
         }
 
         private static Resolution resolution(boolean resolves, boolean populated) {
@@ -618,7 +664,7 @@ final class DiagnosticFacts {
     static Answers none() {
         return new Answers(false, List.of(), false, List.of(), false, List.of(), false, List.of(),
             List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(), List.of(), false, List.of(), List.of());
+            List.of(), List.of(), List.of(), false, List.of(), List.of(), List.of());
     }
 
     /** Every question the document asked, answered in one statement. */
@@ -668,7 +714,8 @@ final class DiagnosticFacts {
                 censusHolds(selectOne().from(GRAPHQL_DIRECTIVE)
                     .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))),
                 directiveArgumentArm(store, questions.directiveNames),
-                inputFieldArm(store, questions.nestedArgFieldNames))
+                inputFieldArm(store, questions.nestedArgFieldNames),
+                replayArm(store, questions.replayFiles))
             .fetchOne(Records.mapping(Answers::new));
     }
 
@@ -756,6 +803,31 @@ final class DiagnosticFacts {
             .and(GRAPHQL_TYPE.KIND.eq(INPUT_OBJECT_KIND))
             .orderBy(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.ORDINAL))
             .convertFrom(rows -> rows.map(Records.mapping(InputFieldRow::new)));
+    }
+
+    /**
+     * What the last build recorded about the batch's files, read from the one surface the diagnostics
+     * stratum publishes. Every schema-side arm of that view rides in: the walk's rejection residue,
+     * the claim-conflict detection, the lint findings and the advisory warnings, and the parser's and
+     * the schema assembler's own refusals, which the language server never surfaced before because a
+     * schema that would not assemble produced no report to replay.
+     *
+     * <p>A row with no line is dropped in SQL rather than at judgement: a finding the build could not
+     * place is real and is the console's to report, and there is no span in a buffer to squiggle for
+     * it. The order is the document's own, so an editor lists a file's findings the way the file
+     * reads.
+     */
+    private static Field<List<ReplayRow>> replayArm(StoreHandle store, Collection<String> uris) {
+        return multiset(select(DIAGNOSTIC.FILE, DIAGNOSTIC.SEVERITY, DIAGNOSTIC.MESSAGE,
+                DIAGNOSTIC.LSP_CODE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN)
+            .from(DIAGNOSTIC)
+            .where(DIAGNOSTIC.GRAPH_NAME.eq(store.graphName()))
+            .and(DIAGNOSTIC.SOURCE.eq(SCHEMA_CHANNEL))
+            .and(DIAGNOSTIC.FILE.in(uris))
+            .and(DIAGNOSTIC.SOURCE_LINE.isNotNull())
+            .orderBy(DIAGNOSTIC.FILE, DIAGNOSTIC.SOURCE_LINE, DIAGNOSTIC.SOURCE_COLUMN,
+                DIAGNOSTIC.MESSAGE))
+            .convertFrom(rows -> rows.map(Records.mapping(ReplayRow::new)));
     }
 
     /** One arm out of a probe per spelling, empty where the document asked about none of this kind. */

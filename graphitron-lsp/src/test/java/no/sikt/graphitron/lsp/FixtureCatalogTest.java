@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -151,17 +150,8 @@ class FixtureCatalogTest {
         assertThat(diagnose(file)).isEmpty();
     }
 
-    /**
-     * A projection carrying nothing. The {@code @field(name:)} arm reads which table {@code Foo} is
-     * bound to off the captured binding and what that table holds off the census, so a projection has
-     * nothing to contribute and handing it one would only let a case pass on a fall-back.
-     */
-    private static LspSchemaSnapshot noProjection() {
-        return new LspSchemaSnapshot.Built.Current();
-    }
 
     private static List<Diagnostic> diagnose(no.sikt.graphitron.lsp.state.FileSnapshot file) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file, noProjection(),
-            ValidationReport.empty(), Optional.of(store.handle()));
+        return Diagnostics.compute(LspVocabulary.load(), "", file, Optional.of(store.handle()));
     }
 }

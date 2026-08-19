@@ -2,35 +2,43 @@ package no.sikt.graphitron.lsp;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Meta-test asserting the validator-to-LSP severity switch in
- * {@link Diagnostics} covers every {@link Rejection} sealed permit reachable from a
- * {@link ValidationError}. The exhaustive {@code switch} in production code already makes
- * "missing permit" a compile error; this test pins the runtime invariant against a
- * {@code default} branch sneaking in via refactor, and surfaces unmapped permits as a
- * targeted failure rather than a generic NPE.
+ * Meta-test asserting that every {@link Rejection} sealed permit reachable from a
+ * {@link ValidationError} survives the round trip a finding now takes to the editor: written to the
+ * store's rejection residue by the build's loader, read back through the diagnostics view, replayed
+ * as one squiggle carrying a severity. The residue loader's exhaustive {@code switch} already makes
+ * "missing permit" a compile error; this pins that no permit is lost or doubled on the wire, and
+ * surfaces a permit that is as a targeted failure rather than a generic NPE.
  */
 class RejectionSeverityCoverageTest {
 
+    /** The graph every fixture here writes under, and the one the replay reads back through. */
+    private static final String GRAPH = "coverage";
+
     @Test
-    void everyRejectionPermitMapsToANonNullSeverity() {
+    void everyRejectionPermitReplaysWithASeverity(@TempDir java.nio.file.Path tmp) {
         var permits = collectLeafPermits(Rejection.class);
         assertThat(permits)
             .as("Rejection sealed hierarchy must have at least one leaf")
@@ -39,52 +47,59 @@ class RejectionSeverityCoverageTest {
         var path = "/tmp/coverage.graphqls";
         var uri = ValidationReport.canonicalUri(path);
         var loc = new SourceLocation(1, 1, path);
-        var snapshot = new LspSchemaSnapshot.Built.Current();
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var unmapped = new ArrayList<String>();
-        for (var permit : permits) {
-            var sample = sampleFor(permit);
-            if (sample == null) {
-                unmapped.add(permit.getName() + " (no test sample)");
-                continue;
-            }
-            var report = ValidationReport.from(
-                List.of(new ValidationError("Coord", sample, loc)),
-                List.of());
-            List<Diagnostic> diags;
-            try {
-                diags = Diagnostics.compute(uri, file, snapshot, report);
-            } catch (RuntimeException e) {
-                unmapped.add(permit.getName() + " (compute threw: " + e + ")");
-                continue;
-            }
-            if (diags.size() != 1 || diags.get(0).getSeverity() == null) {
-                unmapped.add(permit.getName() + " (unmapped severity)");
+        try (var store = GraphitronModelStore.open()) {
+            var facts = new RejectionFacts(store.dsl(),
+                new FactCapture.GraphIdentity(GRAPH, tmp));
+            for (var permit : permits) {
+                var sample = sampleFor(permit);
+                if (sample == null) {
+                    unmapped.add(permit.getName() + " (no test sample)");
+                    continue;
+                }
+                List<Diagnostic> diags;
+                try {
+                    facts.write(List.of(new ValidationError("Coord", sample, loc)));
+                    diags = replay(store, uri, file);
+                } catch (RuntimeException e) {
+                    unmapped.add(permit.getName() + " (replay threw: " + e + ")");
+                    continue;
+                }
+                if (diags.size() != 1 || diags.get(0).getSeverity() == null) {
+                    unmapped.add(permit.getName() + " (unmapped severity)");
+                }
             }
         }
         assertThat(unmapped)
-            .as("every Rejection permit must map to a non-null DiagnosticSeverity")
+            .as("every Rejection permit must replay as one diagnostic carrying a severity")
             .isEmpty();
     }
 
+    /** The editor's read of what the build recorded, over the store this test writes into. */
+    private static List<Diagnostic> replay(
+        GraphitronModelStore store, String uri, FileSnapshot file
+    ) {
+        return Diagnostics.compute(LspVocabulary.load(), uri, file,
+            Optional.of(new StoreHandle(store.dsl(), GRAPH)));
+    }
+
     /**
-     * The membership binding for the {@code lspCode()} sub-seals: every leaf that declares a
-     * code surfaces it through both readers of the retiring hierarchy, the LSP diagnostic's
-     * code field ({@code Diagnostics}' explicit sub-seal matches) and the residue loader's
-     * {@code lsp_code} column ({@code RejectionFacts}' exhaustive switch), and every codeless
-     * leaf is codeless through both. Membership is read off the leaf itself (does it expose a
-     * public no-arg {@code lspCode()}?), so a leaf <em>gaining</em> a code that either reader's
-     * match list does not know fails here rather than passing silently, which the exhaustive
-     * switches alone cannot catch.
+     * The membership binding for the {@code lspCode()} sub-seals: every leaf that declares a code
+     * carries it to the wire, and every codeless leaf arrives codeless. Membership is read off the
+     * leaf itself (does it expose a public no-arg {@code lspCode()}?), so a leaf <em>gaining</em> a
+     * code the residue loader's match list does not know fails here rather than passing silently,
+     * which its exhaustive switch alone cannot catch. One decode site now: the loader writes
+     * {@code lsp_code} and the editor reads the column, where the code used to be matched a second
+     * time on the way to the diagnostic.
      */
     @Test
-    void everyDeclaredLspCodeSurfacesThroughBothReaders(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) {
+    void everyDeclaredLspCodeReachesTheWire(@TempDir java.nio.file.Path tmp) {
         var permits = collectLeafPermits(Rejection.class);
         var path = "/tmp/coverage.graphqls";
         var uri = ValidationReport.canonicalUri(path);
         var loc = new SourceLocation(1, 1, path);
-        var snapshot = new LspSchemaSnapshot.Built.Current();
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var samples = new ArrayList<Rejection>();
@@ -97,34 +112,26 @@ class RejectionSeverityCoverageTest {
             .as("the hierarchy declares codes, so this pins something")
             .isTrue();
 
-        var errors = new ArrayList<ValidationError>();
-        for (var sample : samples) {
-            errors.add(new ValidationError("Coord", sample, loc));
-        }
-        try (var store = no.sikt.graphitron.model.boot.GraphitronModelStore.open()) {
-            new no.sikt.graphitron.rewrite.diagnostics.RejectionFacts(store.dsl(),
-                new no.sikt.graphitron.rewrite.capture.FactCapture.GraphIdentity("coverage", tmp))
-                .write(errors);
-            var storeCodes = store.dsl()
-                .selectFrom(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR)
-                .orderBy(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR.ORDINAL)
-                .fetch(r -> Optional.ofNullable(r.getLspCode()));
-            assertThat(storeCodes).hasSameSizeAs(samples);
-
-            for (int i = 0; i < samples.size(); i++) {
-                var sample = samples.get(i);
+        try (var store = GraphitronModelStore.open()) {
+            var facts = new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp));
+            for (var sample : samples) {
                 String declared = declaredLspCode(sample);
-                var report = ValidationReport.from(
-                    List.of(new ValidationError("Coord", sample, loc)), List.of());
-                var diags = Diagnostics.compute(uri, file, snapshot, report);
-                String lspSide = diags.size() == 1 && diags.get(0).getCode() != null
+                facts.write(List.of(new ValidationError("Coord", sample, loc)));
+
+                var storeCode = store.dsl()
+                    .selectFrom(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR)
+                    .fetchOne(r -> Optional.ofNullable(r.getLspCode()));
+                assertThat(storeCode).isNotNull();
+                assertThat(storeCode.orElse(null))
+                    .as("the residue lsp_code for %s", sample.getClass().getName())
+                    .isEqualTo(declared);
+
+                var diags = replay(store, uri, file);
+                String onTheWire = diags.size() == 1 && diags.get(0).getCode() != null
                     ? diags.get(0).getCode().getLeft()
                     : null;
-                assertThat(lspSide)
-                    .as("the LSP code for %s", sample.getClass().getName())
-                    .isEqualTo(declared);
-                assertThat(storeCodes.get(i).orElse(null))
-                    .as("the residue lsp_code for %s", sample.getClass().getName())
+                assertThat(onTheWire)
+                    .as("the replayed code for %s", sample.getClass().getName())
                     .isEqualTo(declared);
             }
         }

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
@@ -191,8 +190,7 @@ class WorkspaceTest {
         ws.setBuildOutput(
             new GraphQLRewriteGenerator.BuildArtifacts(
                 CompletionData.empty(),
-                new LspSchemaSnapshot.Built.Current()),
-            ValidationReport.empty());
+                new LspSchemaSnapshot.Built.Current()));
 
         assertThat(ws.drainRecalculate())
             .containsExactlyInAnyOrder("file:///a.graphqls", "file:///b.graphqls");
@@ -209,8 +207,7 @@ class WorkspaceTest {
         ws.setBuildOutput(
             new GraphQLRewriteGenerator.BuildArtifacts(
                 CompletionData.empty(),
-                new LspSchemaSnapshot.Built.Current()),
-            ValidationReport.empty());
+                new LspSchemaSnapshot.Built.Current()));
         ws.drainRecalculate();
         var fires = new AtomicInteger();
         ws.setRecalculateListener(fires::incrementAndGet);
@@ -235,8 +232,7 @@ class WorkspaceTest {
                 (Consumer<Workspace>) ws -> ws.setBuildOutput(
                     new GraphQLRewriteGenerator.BuildArtifacts(
                         CompletionData.empty(),
-                        new LspSchemaSnapshot.Built.Current()),
-                    ValidationReport.empty())),
+                        new LspSchemaSnapshot.Built.Current()))),
             Arguments.of("demoteSnapshot",
                 (Consumer<Workspace>) Workspace::demoteSnapshot),
             Arguments.of("markAllForRecalculation",
@@ -278,8 +274,7 @@ class WorkspaceTest {
             ws.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(
                     CompletionData.empty(),
-                    new LspSchemaSnapshot.Built.Current()),
-                ValidationReport.empty());
+                    new LspSchemaSnapshot.Built.Current()));
             ws.demoteSnapshot();
             assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Built.Previous.class);
         } else {
@@ -304,21 +299,14 @@ class WorkspaceTest {
     }
 
     @Test
-    void setBuildOutputSwapsSnapshotAndReportAtomically() {
+    void setBuildOutputSwapsTheSnapshotIn() {
         var ws = new Workspace();
         assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
-        assertThat(ws.validationReport().isEmpty()).isTrue();
 
-        var catalog = CompletionData.empty();
         var snapshot = new LspSchemaSnapshot.Built.Current();
-        var report = ValidationReport.from(java.util.List.of(),
-            java.util.List.<no.sikt.graphitron.rewrite.BuildWarning>of(new no.sikt.graphitron.rewrite.BuildWarning.NoRule(
-                "shadowed directive",
-                new graphql.language.SourceLocation(5, 3, "/x.graphqls"))));
 
-        ws.setBuildOutput(new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
+        ws.setBuildOutput(new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), snapshot));
 
         assertThat(ws.snapshot()).isSameAs(snapshot);
-        assertThat(ws.validationReport()).isSameAs(report);
     }
 }

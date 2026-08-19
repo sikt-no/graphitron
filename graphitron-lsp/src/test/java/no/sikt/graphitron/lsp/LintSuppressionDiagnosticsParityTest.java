@@ -1,19 +1,15 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -24,14 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Single-evaluator parity (LSP tier): a lint finding suppressed at the build does not replay as
  * an editor squiggle. This drives the real {@link GraphQLRewriteGenerator#buildOutput()} with a rule
- * disabled and feeds the resulting {@link ValidationReport}, the exact object the dev-loop hands to
- * the LSP through {@code Workspace.setBuildOutput}, into {@link Diagnostics#compute}. Because
- * suppression rides that single report rather than a Maven-log-only filter, the squiggle is gone at
- * the editor with no LSP-side filter; a co-present, non-disabled rule still surfaces.
+ * disabled, writes its warnings through the loader a dev round writes them with, and replays them
+ * the way the editor does. Because suppression is applied before the loader's input rather than by a
+ * Maven-log-only filter, the squiggle is gone at the editor with no LSP-side filter; a co-present,
+ * non-disabled rule still surfaces.
  */
 class LintSuppressionDiagnosticsParityTest {
-
-    private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static final String SDL = """
         type Film @table(name: "film") {
@@ -41,7 +35,7 @@ class LintSuppressionDiagnosticsParityTest {
         """;
 
     @Test
-    void buildSuppressedFindingDoesNotReplayAsSquiggle(@TempDir Path tmp) throws IOException {
+    void buildSuppressedFindingDoesNotReplayAsSquiggle(@TempDir Path tmp) {
         var diags = diagnosticsWith(tmp,
             LintConfig.validated(Set.of("field-names-camel-case"), List.of()));
 
@@ -54,7 +48,7 @@ class LintSuppressionDiagnosticsParityTest {
     }
 
     @Test
-    void withoutSuppression_theFindingSquiggles(@TempDir Path tmp) throws IOException {
+    void withoutSuppression_theFindingSquiggles(@TempDir Path tmp) {
         var diags = diagnosticsWith(tmp, LintConfig.empty());
 
         assertThat(diags)
@@ -62,17 +56,13 @@ class LintSuppressionDiagnosticsParityTest {
             .anyMatch(d -> d.getMessage().contains("original_language_id"));
     }
 
-    private static List<Diagnostic> diagnosticsWith(Path tmp, LintConfig lintConfig) throws IOException {
-        Path schema = tmp.resolve("schema.graphqls");
-        Files.writeString(schema, SDL);
-        var ctx = new RewriteContext(
-            List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
-            tmp, "LintSuppressionDiagnosticsParityTest", tmp, "fake.output", JOOQ_PACKAGE
-        ).withLintConfig(lintConfig);
-
-        var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-        var uri = ValidationReport.canonicalUri(schema.toString());
-        var file = WorkspaceFileTestSupport.snapshot(SDL);
-        return Diagnostics.compute(uri, file, output.artifacts().snapshot(), output.report());
+    private static List<Diagnostic> diagnosticsWith(Path tmp, LintConfig lintConfig) {
+        // The dev round's own sequence: a real build, its findings loaded into the store, and the
+        // editor reading them back from there rather than from a report object.
+        try (var fixture = StoreFixture.ofBuild(tmp, SDL, lintConfig)) {
+            return Diagnostics.compute(LspVocabulary.load(),
+                ValidationReport.canonicalUri(fixture.sourceName()),
+                WorkspaceFileTestSupport.snapshot(SDL), Optional.of(fixture.handle()));
+        }
     }
 }

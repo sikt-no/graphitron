@@ -502,7 +502,7 @@ again whenever a build swaps the snapshot; save reaches it through the rebuild, 
 | Unknown args | Directive args not declared, one path over `graphql_directive_argument` for bundled and user-declared alike, descending `graphql_field` into object literals |
 | Required args | Declared-required args absent |
 | Unknown directive | `graphql_directive`, skipping the GraphQL spec built-ins |
-| `ValidationReport` replay | Build errors and warnings for URIs the report covers |
+| The build's own findings | Every schema-side arm of the `diagnostic` view for the file: rejections, claim conflicts, lint findings, advisory warnings, and the parser's and assembler's refusals |
 
 First-iteration cadence: diagnostics ride the capture cadence, not the keystroke. Every source in
 the table reads as rows from the store, published per file when capture swaps; the per-keystroke
@@ -546,8 +546,10 @@ retired with them. The projections nothing read at all went next, also settled b
 declaration-location maps, and the source-position index the workspace held beside them. The
 directive surface followed, reader first: diagnostics judges a directive against
 `graphql_directive` and `graphql_directive_argument` now, and the projection retired in the same
-session. What the snapshot still carries beyond the site above is the freshness axis, which the
-validator's replay of a build's own errors reads.
+session. Then the replay of a build's own errors moved, reading the `diagnostic` view rather than
+the report object the workspace held, and the freshness axis it gated on now has no reader at all. What
+the snapshot carries beyond the site above is therefore nothing anything asks about, which is the
+next slice.
 
 ## Resolved questions
 
@@ -3923,3 +3925,61 @@ and a defensive copy at construction, both on the directive list. The same two p
 of the classification maps and are pinned there now, which is where the next reader will look.
 `CatalogBuilderSnapshotTest` lost its subject one slice earlier and is renamed
 `TypeBackingProjectionTest` after what it actually asserts.
+
+## Settled while building: a build's own findings are rows, and the report was the last thing carrying them in memory
+
+The language server replayed what a build concluded from the `ValidationReport` object the dev goal
+handed it. Capture already writes those conclusions down: the walk's rejections, the lint findings,
+the advisory warnings, the claim-conflict detection, and the parser's and the schema assembler's own
+refusals. The replay reads them from the store now, as one more arm of the statement the diagnostics
+batch already issues, and the report leaves the workspace with the freshness gate that silenced it.
+
+**The view was already the surface.** `diagnostic` unions every arm of the diagnostics stratum and is
+what the MCP tools read; this is a second reader of a published view rather than a new query shape.
+It filters to the schema channel, the compile channel's rows being anchored in generated `.java`
+files rather than in a buffer an author has open. Severity comes from the view's own column instead
+of a switch over the rejection hierarchy, which is where the build's finality was being restated: an
+arm is an error because the build refuses on it, the deferred arm included, and the view says so once
+for both readers.
+
+**Two arms arrive that never reached an editor.** A schema that will not parse and one that will not
+assemble each produce verdicts, and neither used to reach the author, because the pass that would
+have built a report threw before making one. Capture records those refusals before the throw, so a
+broken file now shows the parser's own message where the parser found it. That is exactly the case
+the freshness gate was worst at: it silenced the whole replay at the moment the schema had just
+broken, which is when the author most needs to be told where.
+
+**The claim-conflict arm keeps its place by being read as rows.** Those violations are minted from a
+view rather than written to the residue, and the incumbent saw them only because the report fused the
+walk's list with the detection's. Re-deriving them here was never on: that derivation is an N+1 walk
+enriching each conflict with its claims, and the enrichment serves the classification overlay rather
+than any message. The union already publishes the row a diagnostic needs, so the arm arrives with
+everything else.
+
+**The re-anchoring is a fact about the document, not about the finding.** graphql-java anchors a
+documented definition at its doc block, so a finding on one has to be moved to the name it documents;
+the incumbent did that by walking up from the location's node, which needs the tree. Findings are
+judged after the file lock is gone, so the walk collects every description's span with the name it
+documents and the judgement asks which one covers a location. Same answer, no node held, and the same
+discipline every other thing crossing that stage boundary follows.
+
+**Order matters at the writer now.** The swap that publishes a round enqueues every open file for
+recalculation, and a recalculation reads what the round wrote, so the dev goal writes its facts
+before it swaps. The two lines the other way round would publish the previous round's findings and
+wait for a keystroke to correct them.
+
+**The floor is one statement rather than none.** A document with no directive at all still asks what
+the build said about it, so the case that pinned "nothing to resolve costs no statement" pins one.
+That is the honest count: a file carrying a lint warning and no graphitron directives is not a file
+the editor should be silent about, and the alternative is a second statement issued conditionally,
+which is worse at both grains.
+
+**What the tests stopped describing and started driving.** Every case here now writes through the
+loaders a dev round runs and reads back through the view, so a fixture cannot state a row shape a
+build does not produce. The lint-suppression parity case gains the most: it ran the real generator
+and then handed the LSP a report object, and it now runs the real generator, loads its findings the
+way the dev goal loads them, and reads them as the editor does, which is the whole chain rather than
+its two ends. The severity meta-test's premise changes with it. It pinned that the LSP's switch
+covered every rejection permit; there is no such switch, so it pins that every permit survives the
+round trip, and its sibling pins that a leaf's declared code reaches the wire through the one decode
+site the loader now owns.

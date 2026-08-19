@@ -17,7 +17,6 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import org.eclipse.lsp4j.CompletionItem;
@@ -150,15 +149,14 @@ class R157PipelineTest {
         TypeDefinitionRegistry registry,
         no.sikt.graphitron.rewrite.GraphitronSchema schema,
         CompletionData catalog,
-        java.util.Map<String, TypeBackingShape> backing,
-        LspSchemaSnapshot.Built.Current snapshot
+        java.util.Map<String, TypeBackingShape> backing
     ) {}
 
     /**
      * Loads {@code directives.graphqls} + the {@code Node} interface, parses
      * the combined registry, runs the real classifier, runs the real catalog
      * builder over the LSP module's {@code target/test-classes}, and projects
-     * the walk's backing resolution beside the snapshot the diagnostic leg reads.
+     * the walk's backing resolution.
      */
     private static Artefacts build(String schemaText) {
         var registry = parse(prelude(schemaText) + schemaText);
@@ -167,13 +165,11 @@ class R157PipelineTest {
         var jooq = new JooqCatalog(JOOQ_PACKAGE);
         // GraphitronSchemaBuilder.buildBundle would have given us the assembled
         // GraphQLSchema; rebuilding it here keeps the test focused on what the
-        // walk bound each type to rather than on the assembled-schema
-        // construction (which buildSnapshot does not need either).
+        // walk bound each type to rather than on the assembled-schema construction.
         var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        var snapshot = CatalogBuilder.buildSnapshot(registry, schema);
         return new Artefacts(schemaText, registry, schema, catalog,
-            CatalogBuilder.projectTypesByName(schema), snapshot);
+            CatalogBuilder.projectTypesByName(schema));
     }
 
     private static String prelude(String schemaText) {
@@ -247,8 +243,7 @@ class R157PipelineTest {
     private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {
         var file = WorkspaceFileTestSupport.snapshot(source);
         try (var store = storeOver(artefacts)) {
-            return Diagnostics.compute(LspVocabulary.load(), "", file,
-                artefacts.snapshot(), ValidationReport.empty(), Optional.of(store.handle()));
+            return Diagnostics.compute(LspVocabulary.load(), "", file, Optional.of(store.handle()));
         }
     }
 

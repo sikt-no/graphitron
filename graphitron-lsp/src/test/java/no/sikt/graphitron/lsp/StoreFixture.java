@@ -4,15 +4,21 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
+import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
+import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
@@ -24,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -157,6 +164,45 @@ final class StoreFixture implements AutoCloseable {
         }
     }
 
+    /**
+     * Captures {@code sdl} through the read that keeps its stage refusals as data, so a source the
+     * parser or the assembler refused lands in the store's own verdict relations. The shape for the
+     * cases about what a build said, where the document not reading clean is the subject.
+     */
+    static StoreFixture ofRefusedSchema(Path directory, String sdl) {
+        Path file = write(directory, GRAPH, sdl);
+        var store = GraphitronModelStore.open();
+        var parse = RewriteSchemaLoader.parsePerSource(List.of(SchemaSource.file(file)));
+        FactCapture.capture(store.dsl(), false, new FactCapture.GraphIdentity(GRAPH, directory),
+            FactCapture.SubjectConfig.none(), parse.registry(),
+            new SdlVerdicts(parse.failures(), parse.registryErrors()),
+            SchemaInputAttribution.build(List.of(SchemaInput.file(file))), null, List.of(),
+            new NodeDeclaration(null));
+        return new StoreFixture(store, GRAPH, file, directory);
+    }
+
+    /**
+     * Runs a real generator pass over {@code sdl} into a store on disk and loads the round's own
+     * findings the way a dev round loads them. The shape for the cases about what an editor shows
+     * after a build, where the finding has to be one the build reached rather than one a test wrote:
+     * the walk's errors and the suppression-filtered warnings, through the loaders the dev goal runs
+     * and in the order it runs them.
+     */
+    static StoreFixture ofBuild(Path directory, String sdl, LintConfig lintConfig) {
+        Path file = write(directory, GRAPH, sdl);
+        var ctx = new RewriteContext(
+            List.of(new SchemaInput(SchemaSource.file(file), Optional.empty(), Optional.empty())),
+            directory, GRAPH, directory, "fake.output", JOOQ_PACKAGE)
+            .withLintConfig(lintConfig)
+            .withStoreDirectory(directory);
+        var output = new GraphQLRewriteGenerator(ctx).buildOutput();
+        var store = GraphitronModelStore.openAt(directory);
+        var identity = new FactCapture.GraphIdentity(GRAPH, directory);
+        new RejectionFacts(store.dsl(), identity).write(output.walkErrors());
+        new BuildWarningFacts(store.dsl(), identity).write(output.warnings());
+        return new StoreFixture(store, GRAPH, file, directory);
+    }
+
     /** Captures a second graph, over a schema file of its own, into this same store. */
     StoreFixture andGraph(Path directory, String otherGraph, String sdl,
                           List<CompletionData.ExternalReference> classpath) {
@@ -270,6 +316,17 @@ final class StoreFixture implements AutoCloseable {
     /** The same, under the graph this fixture captured. */
     void withBuildWarnings(List<BuildWarning> warnings) {
         withBuildWarnings(graphName, warnings);
+    }
+
+    /**
+     * Writes {@code errors} into this store's rejection residue under the graph this fixture
+     * captured, the way a dev session's build does once the classification walk has run. The real
+     * writer, for {@link #withBuildWarnings}'s reason; what the walk concluded is the build's
+     * subject and so is the caller's here.
+     */
+    void withValidationErrors(List<ValidationError> errors) {
+        new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity(graphName, directory))
+            .write(errors);
     }
 
     /** A reader of this store, for the cases whose subject is the read boundary rather than a query. */
