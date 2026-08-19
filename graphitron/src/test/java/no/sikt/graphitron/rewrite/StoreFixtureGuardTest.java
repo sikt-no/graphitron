@@ -32,8 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>Two lists, and no arithmetic over either.</b> {@link #HOMES} names the harnesses
  * themselves, which stand a store up because that is their job. {@link #EXEMPT} names the classes
- * that stand one up and stay: {@link Why#LIFETIME} and {@link Why#ORACLE} permanently, the
- * {@code PENDING_} reasons until the population they name has adopted a layer. Nothing counts the
+ * that stand one up and stay, on the two reasons {@link Why} carries, both permanent: the store's
+ * own lifetime is the subject, or the class is a capture oracle. Nothing counts the
  * entries; what keeps them honest is
  * {@link #everyDeclaredEntryStillDescribesSomething}, which fails on an entry whose file is gone
  * or has quietly stopped standing a store up. An entry that outlives its reason is the failure
@@ -72,9 +72,7 @@ class StoreFixtureGuardTest {
         LIFETIME("the store's own lifetime is the subject: it reopens a home, compares cold against "
             + "warm, or holds the store across a failure, so it cannot take a handle that owns it"),
         ORACLE("a capture oracle, driving capture per view and per arm with the store's own "
-            + "population as the subject"),
-        PENDING_SEEDING("a relation's algebra, still reached through a crawler; its inputs are "
-            + "stateable as rows, so its home is the seeding harness");
+            + "population as the subject");
 
         private final String reason;
 
@@ -87,9 +85,10 @@ class StoreFixtureGuardTest {
     private record Exempt(String path, Why why, String note) {}
 
     /**
-     * The exemptions. A {@code PENDING_} entry is a promise rather than a permission: it says a
-     * population has a layer waiting and has not moved onto it yet, and it fails the build the day
-     * the class does move, which is what stops the list from becoming the architecture.
+     * The exemptions, and the list is closed: every class here has a reason no migration retires,
+     * which is what a reader needs to know before adding a sixth. A class that stands a store up
+     * for any other reason is the finding this guard exists to report, so the answer to it is a
+     * shape at the level that owns its subject rather than an entry here.
      */
     private static final List<Exempt> EXEMPT = List.of(
         // Permanent: the store's lifetime is what these assert on.
@@ -105,12 +104,7 @@ class StoreFixtureGuardTest {
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java",
             Why.ORACLE, "one arm per view against the walk, opening directly where no factory fits"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactSchemaGateTest.java",
-            Why.ORACLE, "the same family, plus bare-store gates over the model's own DDL"),
-
-        // Pending: view algebra still reached through a capture.
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingShadowTest.java",
-            Why.PENDING_SEEDING, "walk agreement end to end, so it stays whole and takes a capture "
-                + "handle rather than a seed"));
+            Why.ORACLE, "the same family, plus bare-store gates over the model's own DDL"));
 
     @Test
     void noTestStandsAStoreUpOutsideAHarness() throws IOException {

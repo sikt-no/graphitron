@@ -1,22 +1,16 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -184,13 +178,8 @@ class TypeBackingShadowTest {
      */
     private void withBothSides(String sdl, java.util.function.Consumer<DSLContext> body) {
         var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            var schemaFile = write(tmp, sdl);
-            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
-                FactCapture.SubjectConfig.none(), registry,
-                TestSchemaHelper.attribution(schemaFile), jooq, census());
+        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl,
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census())) {
             var bundle = TestSchemaHelper.buildBundle(sdl);
             TypeBackingClassRows.write(store.dsl(), GRAPH, TypeBackingClasses.of(bundle.model()));
             body.accept(store.dsl());
@@ -233,16 +222,5 @@ class TypeBackingShadowTest {
             .from(INTENT_TYPE_BACKING_SEED)
             .where(INTENT_TYPE_BACKING_SEED.GRAPH_NAME.eq(GRAPH))
             .fetch(r -> r.value1() + "=" + r.value2());
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
     }
 }
