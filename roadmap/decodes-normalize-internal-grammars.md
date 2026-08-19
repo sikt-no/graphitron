@@ -1,7 +1,7 @@
 ---
 id: R715
 title: "Capture decodes internal grammars into normalized relations"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
@@ -705,3 +705,56 @@ from hypothetical into real, and it now also records which twelve arrive early.
   the shape the current comment's argument actually calls for. It is not proposed here: it is more
   machinery for a value with no attributes beyond its own decode, and it would still leave "which
   paths does this field segment into" answerable only through the pair relations.
+
+## Rework requested at the Done gate, 2026-08-19
+
+The implementation is clean and the full build passes. Every finding below is stale accounting in
+prose, and two of the three rot into artifacts that outlive this file. Nothing here asks for a
+design change; the eleven-relation narrowing was the right call and this is the sweep it did not
+finish.
+
+**The sibling item still describes the twelve it no longer gets.** `sql_constraint_column` lost its
+fold when the rule narrowed, so eleven relations converted, not twelve, and thirteen `newRecord`
+sites, not fourteen. `roadmap/capture-declares-the-columns-it-writes.md` was not updated to match:
+its line 56 still says "Twelve of the 123 arrive ahead of this item", line 60 still names
+`sql_constraint_column` in the converted list, line 61 still says "fourteen `newRecord` sites in
+all", line 69 still keeps "the remaining 111 relations" and line 71 still reads "with those twelve
+already done". That is the one finding with teeth, because that file survives this one: an
+implementer picking it up reads `sql_constraint_column` as already converted and it falls into
+neither bucket, so it is the one relation of the 123 that gets silently skipped. Correct the count
+to eleven, the sites to thirteen, the remainder to 112, and drop `sql_constraint_column` from the
+early list, saying it stayed on the generic arm because its only case-insensitive comparison is
+inside the catalog family. This item's own "Relationship to the sibling items" section claims that
+file "now also records which twelve arrive early", so keeping it in sync was part of what shipped.
+
+**The explanation page overclaims the `UPPER` sweep.** `docs/architecture/explanation/fact-model.adoc`
+line 99 ends "and a schema whose views hold no `UPPER` at all". Not true at the reviewed head:
+`intent_node_metadata_defect` spends two per-row `UPPER` calls matching `sql_column.jooq_name` and
+`column_name` against `sql_node_key_column.column_name`
+(`graphitron-model.sql`, in the `KEY_COLUMN_UNRESOLVED` arm). Those are not this item's: the
+node-metadata view landed on trunk between the first implementation commit and the fold-rule one, so
+the sweep was complete when it was measured and had regressed by the time the sentence was written.
+The claim still has to match the tree, which is the failure mode this item's own comment discipline
+names. Either soften the sentence to state the rule without the absolute, or sweep the two, which
+needs a decision the fold rule does not settle on its own: both operands are `sql_` values, so the
+rule mints nothing, and yet a jOOQ-constant spelling meeting a catalog column name is arguably the
+same dual-namespace crossing every other fold serves. Softening is the smaller change and the
+sweep is a fair Backlog item; either is fine, the overclaim is not. The item that landed that view
+has since reached Done, so no in-flight item covers those two: whoever wants them swept files for
+it rather than looking for an owner.
+
+**This body contradicts itself on the same counts.** "The write path" and its subsections say eleven,
+thirteen and `sql_constraint_column`-excluded; "Relationship to the sibling items" and "Out of scope"
+still say twelve, fourteen and 111. Same correction as the first finding, applied here.
+
+Two things worth recording as clean rather than left implicit, so the next reviewer does not re-derive
+them. The eleven written statements in `FactWrites` were checked mechanically: column list, marker
+arity and bind order agree on all eleven. The three rewritten view predicates are faithful
+translations of what they replaced, including `intent_field_reference_step_hop`'s
+`POSITION('.') > 0` becoming `key_ref_namespace_part IS NOT NULL` and
+`UPPER(COALESCE(a, b))` becoming `COALESCE(a_upper, b_upper)`, and `intent_spelled_table`'s widened
+`UNION` still dedupes to one row per spelling because the split is a total function of it.
+
+One thing the body promises and no artifact records: "the census load is measured before and after;
+`sql_column` and `graphql_field` are the two of the eleven big enough for a regression to show."
+State the measurement or drop the promise on the next pass.
