@@ -2511,6 +2511,52 @@ COMMENT ON COLUMN sql_routine_parameter.position IS '0-based position in the cal
 COMMENT ON COLUMN sql_routine_parameter.jooq_name IS 'the generated method parameter''s Java name, read reflectively; jOOQ''s camelCase transform of the database''s own parameter name, and the closest this relation gets to it. Reflection reports it only when the consumer compiled their jOOQ output with -parameters, and reports arg0, arg1 otherwise. The generator already depends on that flag, matching @routine(argMapping:) against these names, so recording the name makes an existing dependency visible rather than creating one.';
 COMMENT ON COLUMN sql_routine_parameter.binding_type IS 'the fully qualified Java type the generated method takes at this position, as on sql_column.binding_type. Unlike a column, a parameter carries no sql_type beside it; the relation''s own comment says why';
 
+CREATE TABLE sql_node_metadata (
+  source_name       VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  type_id_form      VARCHAR NOT NULL,
+  type_id           VARCHAR,
+  type_id_class     VARCHAR,
+  key_columns_form  VARCHAR NOT NULL,
+  key_columns_class VARCHAR,
+  PRIMARY KEY (source_name, table_schema, table_name),
+  FOREIGN KEY (source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name),
+  CHECK (type_id_form IN ('STRING', 'NULL', 'OTHER', 'ABSENT')),
+  CHECK (key_columns_form IN ('FIELD_ARRAY', 'NULL', 'OTHER', 'ABSENT')),
+  CHECK ((type_id IS NOT NULL) = (type_id_form = 'STRING')),
+  CHECK ((type_id_class IS NOT NULL) = (type_id_form = 'OTHER')),
+  CHECK ((key_columns_class IS NOT NULL) = (key_columns_form = 'OTHER')),
+  CHECK (NOT (type_id_form = 'ABSENT' AND key_columns_form = 'ABSENT'))
+);
+COMMENT ON TABLE sql_node_metadata IS 'A generated jOOQ table class states node-identity metadata: the two static constants Sikt''s KjerneJooqGenerator emits on a table it treats as a node, transcribed as stated rather than as validated. A row exists exactly when the class declares either constant, so a table with no row publishes neither, and a class declaring only half the pair is a row with the other half''s ABSENT form rather than the silence the live reflection probe folds it into. Whether what the class stated is well-formed is not asked here: that is intent_node_metadata_defect, a derivation over these rows and sql_column, which is what keeps the crawler''s job transcription. Under the sql_ family because the constants ride on the same generated package sql_table partitions on, refreshed in the same clearing round by the same walk, and sql_table.class_fqn already commits this family to facts about the generated classes; a family boundary here would cut one refresh unit in half.';
+COMMENT ON COLUMN sql_node_metadata.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_metadata.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_node_metadata.table_name IS 'SQL table name. With the two columns above this is sql_table''s full key: the metadata is a property of the table rather than of the class, which is why the key is the table''s and not a class name';
+COMMENT ON COLUMN sql_node_metadata.type_id_form IS 'what the type-id constant stated, in a closed taxonomy the reading side''s own discrimination fixes: STRING when it held a String, NULL when it held null, OTHER when it held anything else, ABSENT when the class declares no such constant. The empty string is STRING like any other, its emptiness being a judgement the derivation makes rather than a shape capture recognises';
+COMMENT ON COLUMN sql_node_metadata.type_id IS 'the stated value, exactly when type_id_form is STRING, empty string included; NULL otherwise, which the form column tells apart from a stated null';
+COMMENT ON COLUMN sql_node_metadata.type_id_class IS 'the stated value''s runtime class, fully qualified, exactly when type_id_form is OTHER; NULL otherwise. The class name and deliberately not a rendering of the value: an arbitrary object''s toString may carry an identity hash, and a column that varied between two reads of one classpath would fail the warm-and-cold agreement sweep this relation sits under';
+COMMENT ON COLUMN sql_node_metadata.key_columns_form IS 'what the key-columns constant stated, on the same terms as type_id_form: FIELD_ARRAY when it held an array of jOOQ fields, NULL when it held null, OTHER when it held anything else, ABSENT when the class declares no such constant. Child rows exist exactly under FIELD_ARRAY, so an empty array is that form with no children rather than a flag of its own';
+COMMENT ON COLUMN sql_node_metadata.key_columns_class IS 'the stated value''s runtime class, fully qualified, exactly when key_columns_form is OTHER; NULL otherwise, on the same determinism ground as type_id_class';
+
+CREATE TABLE sql_node_key_column (
+  source_name  VARCHAR NOT NULL,
+  table_schema VARCHAR NOT NULL,
+  table_name   VARCHAR NOT NULL,
+  position     INT     NOT NULL,
+  column_name  VARCHAR,
+  PRIMARY KEY (source_name, table_schema, table_name, position),
+  FOREIGN KEY (source_name, table_schema, table_name)
+    REFERENCES sql_node_metadata (source_name, table_schema, table_name)
+);
+COMMENT ON TABLE sql_node_key_column IS 'An ordered entry of the key-columns constant, as stated. Deliberately no foreign key to sql_column: the constant spells a column by name and may spell one the table does not have, which is exactly the state worth recording, and the schema''s own rule puts a foreign key only where the walk writes the child while standing on the parent, never on a reference an author spells by name. The crawler stands on the table. Whether an entry resolves is intent_node_metadata_defect''s question.';
+COMMENT ON COLUMN sql_node_key_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_key_column.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_node_key_column.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_node_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: the encoded identity depends on the declared order, so a reader that recovered the order from the table''s columns or from a key would encode different ids than the ones already issued. Dense from zero within a parent, and present only under a FIELD_ARRAY parent, both gated';
+COMMENT ON COLUMN sql_node_key_column.column_name IS 'the name the entry states, as jOOQ reports it for the field; NULL exactly when the array entry itself is null, which is a stated fact about the entry rather than an absence of one. Resolution against the table''s own columns is the derivation''s business, and it matches the reading side: case-insensitively, against the generated Java name or the SQL name';
+
 
 -- ==== JVM classpath facts =========================================================
 -- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes, the
@@ -3232,6 +3278,55 @@ COMMENT ON COLUMN intent_name_matched_key_pair.position IS 'the key column''s po
 COMMENT ON COLUMN intent_name_matched_key_pair.to_column IS 'the arriving table''s primary-key column at this position: the target side of the pair, and the column a diagnostic names when the function does not expose it';
 COMMENT ON COLUMN intent_name_matched_key_pair.from_column IS 'the function result''s column of the same name, spelled as the function spells it, which is the source side of the pair. NULL where the function exposes no column of that name, which is the shortfall this relation states as a row rather than as a missing one';
 COMMENT ON COLUMN intent_name_matched_key_pair.unmatched_columns IS 'how many of the arriving key''s columns this function does not expose; 0 on a pairing a consumer can take whole. Stated as a column rather than left to each reader''s count, for the reason the arity columns elsewhere are: whether the pairing is total decides the reading, a consumer keying a join demanding 0 and a consumer explaining a refusal reading the rows behind a number above it';
+
+CREATE VIEW intent_node_metadata_defect
+  (source_name, table_schema, table_name, defect, position) AS
+SELECT source_name, table_schema, table_name, 'TYPE_ID_NOT_DECLARED', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE type_id_form = 'ABSENT'
+ UNION ALL
+SELECT source_name, table_schema, table_name, 'TYPE_ID_NULL', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE type_id_form = 'NULL'
+ UNION ALL
+SELECT source_name, table_schema, table_name, 'TYPE_ID_WRONG_TYPE', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE type_id_form = 'OTHER'
+ UNION ALL
+SELECT source_name, table_schema, table_name, 'TYPE_ID_EMPTY', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE type_id_form = 'STRING' AND type_id = ''
+ UNION ALL
+SELECT source_name, table_schema, table_name, 'KEY_COLUMNS_NOT_DECLARED', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE key_columns_form = 'ABSENT'
+ UNION ALL
+SELECT source_name, table_schema, table_name, 'KEY_COLUMNS_NULL', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE key_columns_form = 'NULL'
+ UNION ALL
+SELECT source_name, table_schema, table_name, 'KEY_COLUMNS_WRONG_TYPE', CAST(NULL AS INT)
+  FROM sql_node_metadata WHERE key_columns_form = 'OTHER'
+ UNION ALL
+SELECT m.source_name, m.table_schema, m.table_name, 'KEY_COLUMNS_EMPTY', CAST(NULL AS INT)
+  FROM sql_node_metadata m
+ WHERE m.key_columns_form = 'FIELD_ARRAY'
+   AND NOT EXISTS (SELECT 1 FROM sql_node_key_column k
+                    WHERE k.source_name = m.source_name AND k.table_schema = m.table_schema
+                      AND k.table_name = m.table_name)
+ UNION ALL
+SELECT k.source_name, k.table_schema, k.table_name, 'KEY_COLUMN_ENTRY_NULL', k.position
+  FROM sql_node_key_column k
+ WHERE k.column_name IS NULL
+ UNION ALL
+SELECT k.source_name, k.table_schema, k.table_name, 'KEY_COLUMN_UNRESOLVED', k.position
+  FROM sql_node_key_column k
+ WHERE k.column_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = k.source_name AND c.table_schema = k.table_schema
+                      AND c.table_name = k.table_name
+                      AND (UPPER(c.jooq_name) = UPPER(k.column_name)
+                           OR UPPER(c.column_name) = UPPER(k.column_name)));
+COMMENT ON VIEW intent_node_metadata_defect IS 'What is wrong with the node-identity metadata a generated table class stated: one row per defect, over the sql_node_metadata rows and their entries alone. The rows it reads are transcription because a walk read them; this is not, because no walk read the verdict that metadata is malformed. Graphitron''s rule produces it, and every join is inside the jOOQ corpus, which is what makes it a derivation over one corpus rather than a validation smuggled into a crawler. Well-formed metadata is a sql_node_metadata row with no defect rows, and the conjunction is the whole test: no defect rows alone is also what a table publishing nothing at all has, that table having no metadata row to be well-formed. Every defect a table exhibits gets a row, with no first-failing short-circuit, so no evaluation order becomes normative; a reader wanting one message reduces by an ordering it owns. There is no reason-text column, deliberately: the closed defect vocabulary plus the witness columns already stored are the fact base, and message prose belongs with the consumer that composes it. Keyed on the catalog''s own key with no graph partition, as intent_name_matched_key_pair is: the question is about a table, and a graph reaches it the way it reaches any source-keyed fact.';
+COMMENT ON COLUMN intent_node_metadata_defect.source_name IS 'the table''s catalog partition, the first column of the sql_node_metadata key this row is about';
+COMMENT ON COLUMN intent_node_metadata_defect.table_schema IS 'the table''s SQL schema';
+COMMENT ON COLUMN intent_node_metadata_defect.table_name IS 'the table''s SQL name; with the two columns above, the metadata row this defect is about';
+COMMENT ON COLUMN intent_node_metadata_defect.defect IS 'which defect, in a closed vocabulary of ten: TYPE_ID_NOT_DECLARED, TYPE_ID_NULL, TYPE_ID_WRONG_TYPE and TYPE_ID_EMPTY on the type-id constant; KEY_COLUMNS_NOT_DECLARED, KEY_COLUMNS_NULL, KEY_COLUMNS_WRONG_TYPE and KEY_COLUMNS_EMPTY on the key-columns constant; KEY_COLUMN_ENTRY_NULL and KEY_COLUMN_UNRESOLVED on one entry of it. The vocabulary is finer than the reflection probe it will eventually replace, which reports one message per constant however that constant went wrong: the store distinguishes the states because it holds the forms separately, and collapsing them here to match the probe would discard a distinction the rows already carry';
+COMMENT ON COLUMN intent_node_metadata_defect.position IS 'the offending entry''s index in the stated array, on the two per-entry defects; NULL on the eight that are about a whole constant, which is the stated absent bucket rather than a missing value';
 
 CREATE VIEW intent_field_reference_step_hop
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
@@ -5062,7 +5157,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, definition) AS VALUES
   ('store_', 'The store''s own record', 0, 'The store''s own record: what it read, what it was built from, and which graphs it holds. Its rows are never a reading of the consumer''s schema, database or classpath, which is what the transcription families are named for; the graph recipe rows are configuration the run held in hand, which is what keeps them in this family rather than making them a family of their own.'),
   ('graphql_', 'Generic SDL transcription', 1, 'Generic GraphQL: a row any SDL reader could produce from the document without knowing graphitron exists, which is every declaration, every directive definition, and every directive application including graphitron''s own. The family is a total transcription, with no hole where graphitron''s namespace was: whether an application survives into the emitted schema is a namespace query over graphql_directive at emission time, not something capture decides by choosing a table, and a directive that is both re-emitted and decoded (federation''s @key) is simply a row in each family rather than a special case. Two residents are verdicts rather than declarations (graphql_syntax_error, graphql_schema_error: what the SDL toolchain concluded about whether the document is a schema at all), which makes this the one family holding both a transcription and a judgement of the same artifact. They are here on the reader-neutrality test that names the family, since a syntax error and a specification violation are as much things any SDL reader produces from the document as a declaration is, and the alternative was a second family aliasing this one''s subject.'),
   ('graphitron_', 'The decoded graphitron reading', 2, 'What graphitron makes of the SDL document: the decoded directives, and the provenance of the rows macro expansion mints. A row here is still a transcription, not a conclusion: it says what a directive application spelled, in graphitron''s vocabulary instead of the document''s.'),
-  ('sql_', 'The consumer database catalog', 3, 'What the consumer''s database declares, read through jOOQ''s generated model. Not jooq_: naming a family for its reader is what this name replaces, because jOOQ defines neither table nor column nor foreign key.'),
+  ('sql_', 'The consumer database catalog', 3, 'What the consumer''s database declares, read through jOOQ''s generated model, plus what that generated model states about the catalog it was generated from. Not jooq_: naming a family for its reader is what this name replaces, because jOOQ defines neither table nor column nor foreign key. The second clause is the narrower residency the generated-model facts earn, sql_table.class_fqn and the node-identity metadata a generated table class publishes: the corpus is one generated package, refreshed as one unit by one walk, and a prefix boundary drawn through the middle of that unit would buy a tidier charter at the price of a family that no longer matches a refresh.'),
   ('jvm_', 'The compile classpath census', 4, 'What the classfiles on the compile classpath declare. Not extension_: naming a family for a presumed role is what this name replaces, because an ObjectMapper on the classpath extends nothing yet still earns a row.'),
   ('java_', 'The consumer''s Java sources', 5, 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
   ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),

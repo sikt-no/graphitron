@@ -16,6 +16,7 @@ import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
@@ -62,8 +63,11 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
+import static no.sikt.graphitron.model.Tables.INTENT_NODE_METADATA_DEFECT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -294,6 +298,7 @@ class FactCaptureAgreementTest {
             "sql_schema", "sql_table", "sql_column", "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "sql_routine", "sql_routine_parameter",
+            "sql_node_metadata", "sql_node_key_column",
             "jvm_class", "jvm_class_supertype", "jvm_method",
             "jvm_method_return_type_ref", "jvm_method_parameter",
             "jvm_method_parameter_type_ref", "jvm_record_component",
@@ -319,6 +324,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_spelled_table", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
+        registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
@@ -915,6 +921,99 @@ class FactCaptureAgreementTest {
                 .fetch()
                 .intoMap(r -> r.value1(), r -> r.value2());
             assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The store's verdict about a table's node-identity metadata against the live reflection
+     * probe's, over the fixture catalog. This is the reader that makes the as-stated rows and the
+     * defect derivation checkable on the day they land, rather than on the day a diagnostic arrives
+     * to consume them: capture writes the forms and the entries, the view judges them, and the path
+     * the view will eventually replace is still standing beside it to disagree.
+     *
+     * <p>The probe is called with the schema-qualified spelling, not the bare table name. Its
+     * unqualified path answers absent for a name two schemas share exactly as it does for one no
+     * catalog holds, so a bare name would let this gate agree by luck; the qualified path never
+     * surfaces an ambiguity by construction. That the fixture catalog has no such collision today is
+     * hand-kept rather than structural, the metadata map being keyed on the bare table name across
+     * every codegen execution, which is the sort of property a gate should not rest on.
+     *
+     * <p>The store legitimately says more than the probe in one place, and the assertion states it
+     * rather than papering over it: a class declaring only one of the two constants is a row here
+     * with the other half's absent form, where the probe folds it into the same silence a class
+     * declaring neither gets.
+     */
+    @Test
+    @DisplayName("the stored node metadata's verdict equals the reflection probe's, per table")
+    void nodeMetadataVerdictEqualsTheProbes(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
+                new NodeDeclaration(null));
+
+            var metadata = store.dsl()
+                .select(SQL_NODE_METADATA.TABLE_SCHEMA, SQL_NODE_METADATA.TABLE_NAME,
+                    SQL_NODE_METADATA.TYPE_ID_FORM, SQL_NODE_METADATA.TYPE_ID,
+                    SQL_NODE_METADATA.KEY_COLUMNS_FORM)
+                .from(SQL_NODE_METADATA)
+                .fetch()
+                .intoMap(r -> r.value1() + "." + r.value2());
+            var defectCounts = store.dsl()
+                .select(INTENT_NODE_METADATA_DEFECT.TABLE_SCHEMA,
+                    INTENT_NODE_METADATA_DEFECT.TABLE_NAME, org.jooq.impl.DSL.count())
+                .from(INTENT_NODE_METADATA_DEFECT)
+                .groupBy(INTENT_NODE_METADATA_DEFECT.TABLE_SCHEMA,
+                    INTENT_NODE_METADATA_DEFECT.TABLE_NAME)
+                .fetch()
+                .intoMap(r -> r.value1() + "." + r.value2(), r -> r.value3());
+            var entryNames = new LinkedHashMap<String, List<String>>();
+            store.dsl()
+                .select(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, SQL_NODE_KEY_COLUMN.TABLE_NAME,
+                    SQL_NODE_KEY_COLUMN.COLUMN_NAME)
+                .from(SQL_NODE_KEY_COLUMN)
+                .orderBy(SQL_NODE_KEY_COLUMN.POSITION)
+                .forEach(r -> entryNames
+                    .computeIfAbsent(r.value1() + "." + r.value2(), k -> new java.util.ArrayList<>())
+                    .add(r.value3()));
+
+            var storeVerdicts = new LinkedHashMap<String, String>();
+            var probeVerdicts = new LinkedHashMap<String, String>();
+            for (String qualified : store.dsl()
+                    .select(SQL_TABLE.TABLE_SCHEMA.concat(".").concat(SQL_TABLE.TABLE_NAME))
+                    .from(SQL_TABLE).fetch(0, String.class)) {
+                var row = metadata.get(qualified);
+                String stored;
+                if (row == null
+                    || "ABSENT".equals(row.get(SQL_NODE_METADATA.TYPE_ID_FORM))
+                    || "ABSENT".equals(row.get(SQL_NODE_METADATA.KEY_COLUMNS_FORM))) {
+                    stored = "ABSENT";
+                } else if (defectCounts.getOrDefault(qualified, 0) > 0) {
+                    stored = "MALFORMED";
+                } else {
+                    stored = "PRESENT";
+                }
+                storeVerdicts.put(qualified, stored);
+
+                var present = jooq.nodeIdMetadata(qualified);
+                probeVerdicts.put(qualified, present.isPresent() ? "PRESENT"
+                    : jooq.nodeIdMetadataDiagnostic(qualified).isPresent() ? "MALFORMED" : "ABSENT");
+                if (present.isPresent()) {
+                    assertThat(row.get(SQL_NODE_METADATA.TYPE_ID))
+                        .as("stored type id of " + qualified)
+                        .isEqualTo(present.get().typeId());
+                    assertThat(entryNames.getOrDefault(qualified, List.of()))
+                        .as("stored key-column entries of " + qualified)
+                        .containsExactlyElementsOf(present.get().keyColumns().stream()
+                            .map(ColumnRef::sqlName).toList());
+                }
+            }
+
+            assertThat(storeVerdicts.values())
+                .as("the fixture catalog declares both metadata-bearing and stock tables")
+                .contains("PRESENT", "ABSENT");
+            assertThat(storeVerdicts).isEqualTo(probeVerdicts);
         }
     }
 

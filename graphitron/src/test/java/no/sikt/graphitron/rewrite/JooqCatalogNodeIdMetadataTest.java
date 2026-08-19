@@ -169,4 +169,102 @@ class JooqCatalogNodeIdMetadataTest {
     // worth the maintenance cost — the real NodeIdFixtureGenerator models well-behaved output
     // and nodeIdMetadataDiagnostic itself is a three-line instanceof dispatch over the same
     // NodeIdMetadataLookup sum type the unit tests already exercise.
+
+    // --- The as-stated reduction, the store's half ---
+    //
+    // Same technique and the same reason as the validator cases above: the reduction is a static
+    // over stated values, so every form is reachable with synthetic constants instead of a
+    // generated class deliberately broken one way per case. What it must not do is judge, which
+    // is what the empty-string, null-entry and unresolvable-name cases pin.
+
+    private static JooqCatalog.StatedConstant stated(Object value) {
+        return JooqCatalog.StatedConstant.of(value);
+    }
+
+    private static final JooqCatalog.StatedConstant ABSENT = JooqCatalog.StatedConstant.absent();
+
+    @Test
+    void reductionRecordsBothConstantsAsStated() {
+        var facts = JooqCatalog.reduceNodeMetadata(stated("Bar"), stated(VALID_KEYS));
+        assertThat(facts.typeIdForm()).isEqualTo(JooqCatalog.TypeIdForm.STRING);
+        assertThat(facts.typeId()).isEqualTo("Bar");
+        assertThat(facts.typeIdClass()).isNull();
+        assertThat(facts.keyColumnsForm()).isEqualTo(JooqCatalog.KeyColumnsForm.FIELD_ARRAY);
+        assertThat(facts.keyColumnsClass()).isNull();
+        assertThat(facts.keyColumnNames()).containsExactly("id_1", "id_2");
+    }
+
+    @Test
+    void reductionKeepsAnUndeclaredConstantApartFromADeclaredNullOne() {
+        var undeclared = JooqCatalog.reduceNodeMetadata(ABSENT, stated(VALID_KEYS));
+        assertThat(undeclared.typeIdForm()).isEqualTo(JooqCatalog.TypeIdForm.ABSENT);
+
+        var declaredNull = JooqCatalog.reduceNodeMetadata(stated(null), stated(VALID_KEYS));
+        assertThat(declaredNull.typeIdForm()).isEqualTo(JooqCatalog.TypeIdForm.NULL);
+
+        assertThat(undeclared.typeId()).isNull();
+        assertThat(declaredNull.typeId())
+            .as("both arms carry no value; the form is what tells them apart")
+            .isNull();
+    }
+
+    @Test
+    void reductionNamesTheClassOfAConstantOfAnotherType() {
+        var facts = JooqCatalog.reduceNodeMetadata(stated(42), stated("not-an-array"));
+        assertThat(facts.typeIdForm()).isEqualTo(JooqCatalog.TypeIdForm.OTHER);
+        assertThat(facts.typeIdClass()).isEqualTo("java.lang.Integer");
+        assertThat(facts.keyColumnsForm()).isEqualTo(JooqCatalog.KeyColumnsForm.OTHER);
+        assertThat(facts.keyColumnsClass()).isEqualTo("java.lang.String");
+        assertThat(facts.keyColumnNames()).isEmpty();
+    }
+
+    @Test
+    void reductionKeepsAnUndeclaredArrayApartFromADeclaredNullOne() {
+        assertThat(JooqCatalog.reduceNodeMetadata(stated("Bar"), ABSENT).keyColumnsForm())
+            .isEqualTo(JooqCatalog.KeyColumnsForm.ABSENT);
+        assertThat(JooqCatalog.reduceNodeMetadata(stated("Bar"), stated(null)).keyColumnsForm())
+            .isEqualTo(JooqCatalog.KeyColumnsForm.NULL);
+    }
+
+    /** The empty string is a value, not a rejection: the store records it and a derivation judges it. */
+    @Test
+    void reductionRecordsAnEmptyTypeIdAsTheValueItIs() {
+        var facts = JooqCatalog.reduceNodeMetadata(stated(""), stated(VALID_KEYS));
+        assertThat(facts.typeIdForm()).isEqualTo(JooqCatalog.TypeIdForm.STRING);
+        assertThat(facts.typeId()).isEmpty();
+    }
+
+    /** An empty array is the array form with no entries, which is what makes the children structural. */
+    @Test
+    void reductionRecordsAnEmptyArrayAsTheArrayItIs() {
+        var facts = JooqCatalog.reduceNodeMetadata(stated("Bar"), stated(new Field<?>[0]));
+        assertThat(facts.keyColumnsForm()).isEqualTo(JooqCatalog.KeyColumnsForm.FIELD_ARRAY);
+        assertThat(facts.keyColumnNames()).isEmpty();
+    }
+
+    @Test
+    void reductionPreservesANullEntryAtItsOwnPosition() {
+        var facts = JooqCatalog.reduceNodeMetadata(
+            stated("Bar"), stated(new Field<?>[] { field("id_1"), null }));
+        assertThat(facts.keyColumnNames()).containsExactly("id_1", null);
+    }
+
+    /** A name belonging to no column of the table reduces as spelled; resolving it is not this step. */
+    @Test
+    void reductionRecordsAnUnresolvableNameAsSpelled() {
+        var facts = JooqCatalog.reduceNodeMetadata(
+            stated("Bar"), stated(new Field<?>[] { field("not_a_column_on_bar") }));
+        assertThat(facts.keyColumnNames()).containsExactly("not_a_column_on_bar");
+    }
+
+    /** The one population with no row at all: a class publishing neither constant. */
+    @Test
+    void aTableStatingNeitherConstantHasNoFactsToRecord() {
+        var catalog = catalog();
+        assertThat(catalog.findTable("qux").asEntry()).isPresent();
+        assertThat(catalog.nodeMetadataFactsOf(catalog.findTable("qux").asEntry().orElseThrow().table()))
+            .isEmpty();
+        assertThat(catalog.nodeMetadataFactsOf(catalog.findTable("bar").asEntry().orElseThrow().table()))
+            .isPresent();
+    }
 }

@@ -25,6 +25,8 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
@@ -130,6 +132,7 @@ final class CatalogFactCapture {
             sink.add(record);
 
             captureColumns(sink, jooq, table, source, schema, name);
+            captureNodeMetadata(sink, jooq, table, source, schema, name);
             captureConstraints(sink, jooq, table, source, schema, name);
             captureForeignKeys(sink, jooq, table, source, schema, name, sourceByTable);
             captureIndexes(sink, jooq, table, source, schema, name);
@@ -185,6 +188,10 @@ final class CatalogFactCapture {
             dsl.deleteFrom(SQL_CONSTRAINT_COLUMN)
                 .where(SQL_CONSTRAINT_COLUMN.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_CONSTRAINT).where(SQL_CONSTRAINT.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_NODE_KEY_COLUMN)
+                .where(SQL_NODE_KEY_COLUMN.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_NODE_METADATA)
+                .where(SQL_NODE_METADATA.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_COLUMN).where(SQL_COLUMN.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_TABLE).where(SQL_TABLE.SOURCE_NAME.eq(source)).execute();
             // After sql_table, which references it.
@@ -273,6 +280,48 @@ final class CatalogFactCapture {
             row.setNullable(column.nullable());
             row.setDescription(nullIfBlank(column.comment()));
             sink.add(row);
+        }
+    }
+
+    /**
+     * The node-identity metadata a generated table class states, transcribed as stated: the two
+     * form arms with whatever each arm carries, and one child row per entry of the key-columns
+     * array in the order the constant declares. No row at all when the class declares neither
+     * constant, which is what makes "no row" mean "publishes nothing".
+     *
+     * <p>Nothing is judged on the way in. An empty type id, an empty array, a null entry and a name
+     * belonging to no column of this table are all recorded as stated; whether the metadata is
+     * admissible is {@code intent_node_metadata_defect}'s question, a derivation over these rows and
+     * the table's own columns. Recording it the other way round would put a validation inside the
+     * crawler and leave a malformed constant indistinguishable from a table that publishes nothing.
+     */
+    private static void captureNodeMetadata(FactSink sink, JooqCatalog jooq, Table<?> table,
+                                            String source, String schema, String name) {
+        var stated = jooq.nodeMetadataFactsOf(table);
+        if (stated.isEmpty() || !sink.claim(SQL_NODE_METADATA, source, schema, name)) {
+            return;
+        }
+        JooqCatalog.NodeMetadataFacts facts = stated.get();
+        var row = sink.dsl().newRecord(SQL_NODE_METADATA);
+        row.setSourceName(source);
+        row.setTableSchema(schema);
+        row.setTableName(name);
+        row.setTypeIdForm(facts.typeIdForm().name());
+        row.setTypeId(facts.typeId());
+        row.setTypeIdClass(facts.typeIdClass());
+        row.setKeyColumnsForm(facts.keyColumnsForm().name());
+        row.setKeyColumnsClass(facts.keyColumnsClass());
+        sink.add(row);
+        int position = 0;
+        // Empty on every form but FIELD_ARRAY, which is what leaves the child rows structural.
+        for (String columnName : facts.keyColumnNames()) {
+            var entry = sink.dsl().newRecord(SQL_NODE_KEY_COLUMN);
+            entry.setSourceName(source);
+            entry.setTableSchema(schema);
+            entry.setTableName(name);
+            entry.setPosition(position++);
+            entry.setColumnName(columnName);
+            sink.add(entry);
         }
     }
 

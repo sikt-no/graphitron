@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.field;
@@ -242,6 +246,63 @@ class FactSchemaGateTest {
                 .fetch(0, String.class);
             assertThat(gaps).as("types whose declaration sites do not number densely from 0").isEmpty();
         }
+    }
+
+    /**
+     * The parentage half of what the node-metadata relations state and no check constraint can
+     * hold: an entry hangs only off a parent that stated an array. That is what leaves an empty
+     * array a form with no children rather than an ambiguity, and it ranges over two rows, so
+     * without this the schema would say it with nothing failing when it broke.
+     *
+     * <p>Needs a catalog, the relations being written by the jOOQ walk. The fixture catalog carries
+     * metadata-bearing tables, which the non-vacuity assertion pins so a catalog that stopped
+     * producing entries could not pass this silently.
+     */
+    @Test
+    @DisplayName("node key-column entries hang only off a parent that stated an array")
+    void nodeKeyColumnEntriesHangOffAnArrayParent(@TempDir Path tmp) {
+        try (var store = CapturedStore.ofCatalog(tmp, FIXTURE, fixtureCatalog())) {
+            assertThat(store.dsl().fetchCount(SQL_NODE_KEY_COLUMN))
+                .as("entries the fixture catalog's node-bearing tables state")
+                .isPositive();
+
+            var orphans = store.dsl()
+                .select(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, SQL_NODE_KEY_COLUMN.TABLE_NAME)
+                .from(SQL_NODE_KEY_COLUMN)
+                .join(SQL_NODE_METADATA)
+                .on(SQL_NODE_METADATA.SOURCE_NAME.eq(SQL_NODE_KEY_COLUMN.SOURCE_NAME)
+                    .and(SQL_NODE_METADATA.TABLE_SCHEMA.eq(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA))
+                    .and(SQL_NODE_METADATA.TABLE_NAME.eq(SQL_NODE_KEY_COLUMN.TABLE_NAME)))
+                .where(SQL_NODE_METADATA.KEY_COLUMNS_FORM.ne("FIELD_ARRAY"))
+                .fetch();
+            assertThat(orphans).as("entries under a parent that stated no array").isEmpty();
+        }
+    }
+
+    /**
+     * The density half, and the third case in the shape the two ordinal gates above already pin
+     * for other relations. It matters more here than for an ordinal a reader only orders by: an
+     * encoded identity is built position by position, so a gap would silently shorten a key.
+     */
+    @Test
+    @DisplayName("node key-column positions are dense from zero within each table")
+    void nodeKeyColumnPositionsAreDense(@TempDir Path tmp) {
+        try (var store = CapturedStore.ofCatalog(tmp, FIXTURE, fixtureCatalog())) {
+            var gaps = store.dsl()
+                .select(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, SQL_NODE_KEY_COLUMN.TABLE_NAME)
+                .from(SQL_NODE_KEY_COLUMN)
+                .groupBy(SQL_NODE_KEY_COLUMN.SOURCE_NAME, SQL_NODE_KEY_COLUMN.TABLE_SCHEMA,
+                    SQL_NODE_KEY_COLUMN.TABLE_NAME)
+                .having(max(SQL_NODE_KEY_COLUMN.POSITION).ne(count().minus(1)))
+                .fetch();
+            assertThat(gaps).as("tables whose stated entries do not number densely from 0").isEmpty();
+        }
+    }
+
+    /** The generated catalog the two node-metadata gates above read; a composite key lives in it. */
+    private static JooqCatalog fixtureCatalog() {
+        var ctx = TestConfiguration.testContext();
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 
     @Test

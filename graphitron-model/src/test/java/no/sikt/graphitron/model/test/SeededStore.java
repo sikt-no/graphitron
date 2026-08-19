@@ -30,6 +30,8 @@ import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -524,6 +526,61 @@ public final class SeededStore {
             .set(SQL_COLUMN.SQL_TYPE, "character varying")
             .set(SQL_COLUMN.BINDING_TYPE, "java.lang.String")
             .set(SQL_COLUMN.NULLABLE, true)
+            .execute();
+    }
+
+    /**
+     * The node-identity metadata a generated table class stated, in full: both form arms and
+     * whatever each arm carries. The general form, for a case whose subject is a form the crawler
+     * only reaches from a malformed generated class; a case that just needs well-formed metadata
+     * under it wants {@link #seedStatedNodeMetadata} instead.
+     *
+     * @param typeIdForm {@code STRING}, {@code NULL}, {@code OTHER} or {@code ABSENT}
+     * @param typeId the stated string, non-null exactly on {@code STRING}
+     * @param typeIdClass the stated value's class, non-null exactly on {@code OTHER}
+     * @param keyColumnsForm {@code FIELD_ARRAY}, {@code NULL}, {@code OTHER} or {@code ABSENT}
+     * @param keyColumnsClass the stated value's class, non-null exactly on {@code OTHER}
+     */
+    public static void seedNodeMetadata(DSLContext dsl, String sourceName, String tableSchema,
+                                        String tableName, String typeIdForm, String typeId,
+                                        String typeIdClass, String keyColumnsForm,
+                                        String keyColumnsClass) {
+        dsl.insertInto(SQL_NODE_METADATA)
+            .set(SQL_NODE_METADATA.SOURCE_NAME, sourceName)
+            .set(SQL_NODE_METADATA.TABLE_SCHEMA, tableSchema)
+            .set(SQL_NODE_METADATA.TABLE_NAME, tableName)
+            .set(SQL_NODE_METADATA.TYPE_ID_FORM, typeIdForm)
+            .set(SQL_NODE_METADATA.TYPE_ID, typeId)
+            .set(SQL_NODE_METADATA.TYPE_ID_CLASS, typeIdClass)
+            .set(SQL_NODE_METADATA.KEY_COLUMNS_FORM, keyColumnsForm)
+            .set(SQL_NODE_METADATA.KEY_COLUMNS_CLASS, keyColumnsClass)
+            .execute();
+    }
+
+    /**
+     * Metadata that stated a type-id string and an array beside it, which is what a class jOOQ
+     * generated for a node-bearing table publishes. Whether the entries under it resolve is the
+     * case's own business; this states only that both constants were declared in the expected form.
+     */
+    public static void seedStatedNodeMetadata(DSLContext dsl, String sourceName, String tableSchema,
+                                              String tableName, String typeId) {
+        seedNodeMetadata(dsl, sourceName, tableSchema, tableName,
+            "STRING", typeId, null, "FIELD_ARRAY", null);
+    }
+
+    /**
+     * One stated entry of the key-columns array. {@code columnName} is null exactly where the array
+     * entry itself was null, and needs to resolve against no column: a name the table does not have
+     * is the state the defect derivation exists to name.
+     */
+    public static void seedNodeKeyColumn(DSLContext dsl, String sourceName, String tableSchema,
+                                         String tableName, int position, String columnName) {
+        dsl.insertInto(SQL_NODE_KEY_COLUMN)
+            .set(SQL_NODE_KEY_COLUMN.SOURCE_NAME, sourceName)
+            .set(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, tableSchema)
+            .set(SQL_NODE_KEY_COLUMN.TABLE_NAME, tableName)
+            .set(SQL_NODE_KEY_COLUMN.POSITION, position)
+            .set(SQL_NODE_KEY_COLUMN.COLUMN_NAME, columnName)
             .execute();
     }
 
