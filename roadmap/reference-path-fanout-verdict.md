@@ -40,16 +40,34 @@ item adopts:
 
 Their two asks: a warning naming the multiset property, in the same class of feedback as the
 existing deterministic-order requirement; and either an opt-in `distinct` flag on `@reference`,
-or documentation blessing the DISTINCT-view plus synthetic-FK pattern. They offered to have the
-issue relabelled as an enhancement. The reply on the issue records the divergence this spec
-arrives at.
+or documentation blessing the DISTINCT-view plus synthetic-FK pattern.
+
+**The reporter then reviewed this spec on the issue and raised three points, all of which are
+folded in here at their request.** The subset direction is the one that changed the document:
+they read the stub's ambiguous "covered by" as `bound ⊆ columns(constraint)` and were right that
+it is wrong, and the reply that had been posted to the issue stated it in that inverted form, so
+the correction is owed publicly as well as here. Their temporal-key and partial-unique-index
+points are answered under "Which constraints may clear a hop"; one was already satisfied by
+construction and one is a genuine hole whose reach this spec now bounds. Their reading also
+exposed something the measurement had missed, recorded in the measurement section: the inverted
+predicate scores identically on our corpus, so the numbers could not have caught it.
 
 ## The rule
 
 Their proposal, stated as a predicate: a path contains a hop into the *child* side of a foreign
 key (1:N) and does not terminate in that child table. Mine, when this item was filed as a
-stub, sharpened it by excluding a reverse hop whose FK columns are covered by a PK or unique
-constraint on the declaring table, since such a hop is 1:1.
+stub, sharpened it by excluding a reverse hop whose FK columns are, in that stub's words,
+"covered by a PK or unique constraint on the declaring table". Both are rejected below; the
+stub's phrase is also ambiguous about which way the subset runs, and the review round on the
+issue caught that. **The direction is the whole rule, so state it before anything else.**
+
+Uniqueness is a statement about columns whose values are *known*. A constraint pins a row only
+when every column of that constraint is bound by the join, so the test is
+`columns(constraint) ⊆ bound`, never `bound ⊆ columns(constraint)`. The wrong direction fails on
+any composite constraint: with an FK on `(a)` and a `UNIQUE (a, b)`, the FK columns sit inside
+the constraint, yet arbitrarily many rows share one `a`. Clearing that hop as 1:1 would be a
+false negative, which is the failure mode this rule cannot afford: a warning that stays silent
+teaches the author the path is a set.
 
 **Both are wrong, and the measurement is what shows it.** Applied to the example schema, each
 fires on exactly six coordinates, and all six are `film -> film_actor -> actor`:
@@ -71,7 +89,7 @@ Take an intermediate `T` entered by one hop and left by the next, and let `bound
 union of the columns those two hops bind on `T`. Then:
 
 > The path fans out at `T` unless some PRIMARY KEY or UNIQUE constraint on `T` has all its
-> columns inside `bound(T)`.
+> columns inside `bound(T)`, that is `columns(constraint) ⊆ bound(T)`.
 
 For `film_actor`, the entering hop binds `film_id` and the leaving hop binds `actor_id`, so
 `bound = {film_id, actor_id}`, and `film_actor_pkey` is exactly `(actor_id, film_id)`. Covered,
@@ -101,7 +119,16 @@ Numbers from the example schema's main execution, captured 2026-08-19 on trunk.
 | Elements the walk resolves (`intent_field_reference_step_target`) | 62 |
 | Resolved elements arriving on the child side (`fk_on_from = FALSE`) | 35 |
 | Non-terminal child-side elements (the two rejected formulations' finding set) | 6 |
+| Findings under the wrong-direction reading (`bound ⊆ columns(constraint)`) | 0 |
 | **Findings under the pair-coverage rule** | **0** |
+
+**The last two rows are the same number, and that is the important result.** The corpus cannot
+tell the correct rule from the inverted one: the only non-terminal reverse hops it contains go
+through `film_actor`, whose key is exactly the bound pair, so both readings clear all six. Had
+the inverted wording been implemented, the example schema would have reported zero findings and
+the measurement would have read as confirmation, while the rule stayed silent on every
+composite-key case, the reporter's own tables included. A measurement that cannot separate the
+candidate predicates is not evidence for either of them, and this one could not.
 
 Reproduce it with:
 
@@ -119,14 +146,75 @@ to materialise on a cold query through the H2 shell, which is a number the imple
 to re-take in process before this rule goes on every build; see the cost bullet below.
 
 **The zero is not yet evidence the rule is right.** It says the corpus contains no genuine
-fan-out shape, so the corpus cannot currently witness the rule firing at all. Adding a fixture
-that does fan out is therefore an acceptance criterion, not a nicety: without it the rule ships
-proven only against the cases where it stays quiet.
+fan-out shape, so the corpus cannot currently witness the rule firing at all, and per the row
+above it cannot separate the correct predicate from the inverted one either. The corpus owes
+**discriminating** fixtures, not merely one that fires, and that is an acceptance criterion
+rather than a nicety.
+
+The shape to author is exactly the reporter's table: an intermediate whose key carries a
+discriminator beyond the two join keys. A payload-carrying join table with `PRIMARY KEY (a, b,
+c)`, entered on `(a)` and left on `(b)`, is the minimal case: the correct rule fires because
+`c` is bound by neither hop, and the inverted rule clears it. `film_actor_note` in
+`graphitron-sakila-db/src/main/resources/init.sql` is already half of it (`PRIMARY KEY
+(actor_id, film_id, lang_code)` with an FK on `(actor_id, film_id)`); it is the corpus's only
+three-column key and no `@reference` path currently reaches it, so what it lacks is an outgoing
+foreign key to leave by and a coordinate that walks through it. Pair that with the existing
+`Film.actors` shape as the negative case and the two fixtures pin the direction between them.
 
 One caveat on the population: 32 of the 94 authored path elements resolve to nothing the walk
 can reach, and absence on that view means "not reached" rather than "resolves to nothing in
 particular". Those coordinates get no verdict from this rule, which is right, since a path that
 does not walk fails elsewhere and a fan-out warning on top would be noise.
+
+## Which constraints may clear a hop
+
+Not every PRIMARY KEY or UNIQUE row in the store carries a guarantee the generated join
+inherits. Two kinds were raised in the review round on the issue, and they resolve differently.
+
+**Partial unique indexes do not reach the rule, by construction.** Verified on the session's
+PostgreSQL 16: a `CREATE UNIQUE INDEX ... WHERE ...` produces zero `pg_constraint` rows and
+appears only in `pg_index`, and PostgreSQL rejects `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE
+(a) WHERE ...` as a syntax error, so a partial unique *constraint* does not exist as a thing.
+Our capture takes UNIQUE and PRIMARY KEY rows from `Table.getKeys()`
+(`CatalogFactCapture`, the `sql_` family load), which is jOOQ's unique-key model over declared
+constraints, so a partial unique index never becomes a `sql_constraint` row. `sql_index` carries
+no uniqueness column at all, so nothing else can leak one in either. The reviewer's
+recommendation, treat them as non-covering, is therefore what the rule already does.
+
+State that as an invariant in the implementation, because it is one an optimisation could
+destroy: the rule reads `sql_constraint` and must never widen to `sql_index`. A future change
+that captures index uniqueness has to carry the index predicate with it, since the generated
+join does not include that predicate and the guarantee does not transfer without it.
+
+**Temporal keys are a real hole, currently out of reach, and the safe side is the one we are
+on.** A `PRIMARY KEY (a, b, valid_at WITHOUT OVERLAPS)` guarantees one row per *instant*, not
+one row per `(a, b)`, so it must not clear a hop even when its column set is inside `bound(T)`.
+Three findings bound the risk:
+
+* **Neither jOOQ nor our capture can see it.** `org.jooq.Key` in 3.20.11 exposes `getFields`,
+  `isPrimary`, `enforced` and `nullable`, with no period concept, and the jar contains no
+  `WITHOUT OVERLAPS` string; `sql_constraint` has a `constraint_type` closed over `PRIMARY KEY |
+  UNIQUE | FOREIGN KEY` and no period flag. An explicit exclusion is therefore not a predicate
+  tweak: it needs a fact nobody captures, read outside jOOQ's model.
+* **Today the correct direction already protects us.** The period column is part of the
+  constraint's column list in the catalog, and graphitron binds columns only through
+  foreign-key equality, so a period column is bound by no hop. `columns(constraint) ⊆ bound(T)`
+  is therefore false for a temporal key and the rule fires. The reviewer's own counterexample
+  demonstrates the corrected rule working rather than failing; it defeats only the inverted
+  reading, which is what they were reading.
+* **Both plausible jOOQ behaviours land conservatively.** If jOOQ reports the key with all its
+  columns, the period column is unbound and the key does not cover. If jOOQ skips a key whose
+  backing index is GiST, the table has no covering key at all. Either way the rule fires, which
+  is the direction a warning should fail in.
+
+The hole opens if graphitron ever binds a period column, which means gaining range or overlap
+join vocabulary it does not have. Two obligations follow, both small: pin the assumption with an
+execution-tier fixture on PostgreSQL 18, where `postgres:18-alpine` already runs and
+`WITHOUT OVERLAPS` is available, asserting that a temporal key does not clear a hop; and record
+on that test why it is the fixture that guards the invariant, so a later change to the join
+vocabulary meets it. The session's own PostgreSQL is 16, which cannot express the syntax, so
+this could not be settled while writing this spec and is stated as an assumption rather than a
+measurement.
 
 ## Where it lives
 
@@ -211,10 +299,17 @@ numbers in hand.
 * **Unit / pipeline.** The predicate over authored fixtures: a pure join table stays quiet, a
   payload-carrying join table fires, a path terminating on the many side stays quiet, a path
   with two intermediates fires once and names the multiplying hop.
-* **The fixture the corpus lacks.** A genuinely fanning-out `@reference` path in the example
-  schema, since the rule currently has no witness for firing at all. Pair it with the existing
-  `Film.actors` shape as the negative case, which is the regression this rule's first two
-  formulations would have shipped.
+* **The discriminating pair the corpus lacks**, per the measurement section: a composite-key
+  intermediate whose extra key column is bound by neither hop (fires), against the existing
+  `Film.actors` shape (quiet). One test asserting both is what pins the subset direction; a
+  fixture that only fires would pass under the inverted reading too, which is how that reading
+  survived a measurement.
+* **The direction, asserted as such.** A unit-tier case with an FK on `(a)` and a `UNIQUE (a,
+  b)` on the arriving table, asserting the hop fires. This is the minimal counterexample to
+  `bound ⊆ columns(constraint)` and it belongs in the suite under that name, so the next reader
+  who thinks the subset looks backwards finds the answer in a test rather than re-deriving it.
+* **The temporal key**, execution tier on PostgreSQL 18, per the constraints section: a key
+  declared `WITHOUT OVERLAPS` does not clear a hop.
 * **Suppression.** The rule id in `disabledRuleIds` removes the finding from the report and from
   `lint_finding`.
 * **The ordering pin** described above.
