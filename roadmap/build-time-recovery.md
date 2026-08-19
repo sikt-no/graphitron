@@ -1,7 +1,7 @@
 ---
 id: R732
 title: "Recover the build wall clock, starting from what derived reads cost"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
