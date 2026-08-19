@@ -23,7 +23,10 @@ This item is prose and naming only. No relation changes, no code moves.
 ## The word is stratum, not tier
 
 Naming three things is the whole deliverable, so the word has to be one the tree does not already
-spend elsewhere. "Tier" is spent three times over:
+spend elsewhere. "Tier" is spent three times over on a named axis, and in loose prose besides
+(`PolymorphicSelectionSetClassGenerator`'s "the same wire-boundary tier", `GraphitronSchemaBuilder`'s
+"the actionable tier of the `@table`-on-input deprecation signal"), which the list below does not try
+to enumerate. The three named axes:
 
 - Test tiers. `no.sikt.graphitron.rewrite.test.tier.UnitTier` and its three siblings
   (`PipelineTier`, `CompilationTier`, `ExecutionTier`) annotate roughly four hundred test files,
@@ -49,7 +52,7 @@ the argument for the word and not just an absence of collisions.
 
 The count is not the whole argument, though, and the section would be dishonest if it stopped there:
 the same collision analysis run on "tier" has to be run on "stratum", and it does not come back empty.
-The word is spent on two other things.
+The word is spent on three other things.
 
 - A coarser sectional partition, in the DDL's own section headers: `-- ==== Semantic stratum: the
   decoded graphitron and federation inventory`, `-- ==== Derived stratum: claims`, `-- ==== Diagnostics
@@ -63,14 +66,23 @@ The word is spent on two other things.
 - A layering *within* a family: `meta_family`'s `intent_` charter has "The stratum has two layers",
   `intent_resolved_field_claim`'s comment has "The stratum's second layer", and three block comments
   inside the `Derived stratum` section say "The stratum's second / third / fourth resident group".
+- One rendered `.adoc` heading, in the second page this item already edits:
+  `pipeline-overview.adoc`'s `== The derived strata: claims and violations as facts`. Plural, and the
+  set it names spans every bucket, since claims are stratum two while the violations beside them are
+  `rejection_` (no stratum), `lint_` (two), `javac_` (one), `build_warning_` (per resident) and
+  `graphql_`'s two verdict residents (one, and two on the `ASSEMBLY` arm). Its section body then uses
+  both "the `intent_` stratum" and "the diagnostics stratum" in one paragraph. This is the same
+  collision as the DDL's `Diagnostics stratum` header, one page closer to the reader, and it is a
+  heading rather than a comment, so Implementation takes it.
 
 None of that argues for a different word, because the numbered form is the disambiguator and it is
 free: **stratum one / two / three** is this axis and only this axis, and an unnumbered "the X stratum"
 is a section of the DDL or a layer inside one family. State that rule where the strata are named,
 because a reader who meets "the diagnostics stratum" a few paragraphs from "stratum one" will
-otherwise count four. What the rule cannot paper over is a header that positively teaches the wrong
-partition, and one of the three does; Implementation takes that one, and argues the other two are safe
-under the rule. These are comment-grade edits, the same category as the `meta_family` rows.
+otherwise count four. What the rule cannot paper over is a heading that positively teaches the wrong
+partition, and two do: the DDL's `Semantic stratum` and `pipeline-overview.adoc`'s `The derived
+strata`. Implementation takes both and argues the rest safe under the rule. All of it is comment and
+heading prose, the same category as the `meta_family` rows.
 
 One further stratum use needs reconciling rather than adopting, and Implementation takes it too:
 `meta_family`'s `intent_` charter calls the three-family stack `graphql_` / `graphitron_` / `intent_`
@@ -296,18 +308,30 @@ that is the discipline it generalises. It carries:
   to its inputs, correct and permanent, and no argument for or against separating the families.
   State it without the count (48 today); an unguarded census rots silently. Where a reader wants the
   enumerable answer, `meta_relation_family` and the roster gates are where it lives.
-- The enforcer line the page's preamble demands. The live gate for the decode half is
-  `FactSchemaGateTest.theDecodeDoesNotReplaceTheTranscription`, the verbatim-transcription twins
-  already cited in the executable-form section: a stratum-two decode may not displace the
-  stratum-one transcription. Name it, and state the gap precisely: the gate covers a decode that
-  adds rows beside the transcription, and does not cover a macro that rewrites
-  `graphql_field.type_sdl` in place, which is exactly the inverted case the macro paragraph names.
-  Say in the same clause why a half-covered rule still belongs on the page: the preamble's bar is
-  that a claim *names* its enforcer, not that the enforcer closes it, so a disclosed gap is the
-  honest form and a later reader should not read it as an oversight. Do not cite
-  `FactCaptureAgreementTest`'s registration arms as the stratum's reflection: they file
-  `graphitron_` under the containment arm beside `graphql_`, because the arms answer how a
-  relation's contents are pinned, not what its rows are computed from.
+- The enforcer line the page's preamble demands, written per claim rather than as one line for the
+  section. This section carries three claims of different enforceability and one enforcer line
+  covering all of them would overstate two of them, which on a page whose preamble reads "a rule
+  without one is not on this page" is the failure worth avoiding.
+  - *A stratum-two decode may not displace the stratum-one transcription.* Gated, partly.
+    `FactSchemaGateTest.theDecodeDoesNotReplaceTheTranscription`, the verbatim-transcription twins
+    already cited in the executable-form section. State the gap precisely: the gate covers a decode
+    that adds rows beside the transcription, and does not cover a macro that rewrites
+    `graphql_field.type_sdl` in place, which is exactly the inverted case the macro paragraph names.
+  - *The recompute test itself, and the family assignment.* Not gated at all, and say so rather than
+    letting the first gate's name cover them by proximity. Nothing in the suite fails when a captured
+    relation turns out to be recomputable; that is the whole reason `lint_finding` and
+    `authored_type_sdl` sit inverted today with every gate green. The absence is the argument for the
+    `meta_family` stratum column in Out of scope, so point at it here rather than leaving the reader
+    to wonder what would catch the next inversion.
+  - Either way, say why a claim whose enforcer does not close it still belongs on the page: the
+    preamble's bar is that a claim *names* its enforcer, and a disclosed gap is the honest form, so a
+    later reader should not read it as an oversight. This is the one place the item argues with the
+    preamble rather than obeying it, since the preamble asks for the gate "that fails when the claim
+    breaks"; make the disagreement visible instead of quietly satisfying the letter.
+
+  Do not cite `FactCaptureAgreementTest`'s registration arms as the stratum's reflection: they file
+  `graphitron_` under the containment arm beside `graphql_`, because the arms answer how a relation's
+  contents are pinned, not what its rows are computed from.
 
 ### `fact-model.adoc`: the macro paragraph
 
@@ -322,7 +346,7 @@ as the transitional present rather than defended. State the prediction (correcti
 makes the side column unnecessary) without citing item ids; roadmap ids do not belong in docs
 prose.
 
-### `pipeline-overview.adoc`: two sentences, not one
+### `pipeline-overview.adoc`: two sentences and a heading
 
 - In "Parse and attribute", the sentence "the store records what the author wrote, with synthesis
   recorded as provenance rows rather than silently merged into the authored picture" is factually
@@ -341,8 +365,22 @@ prose.
   derivation whose producer runs at capture cadence; the paragraph's own closing sentence ("Two
   derivations materialize at capture cadence inside the same transaction") already has the
   vocabulary, so this is one clause.
+- The section heading `== The derived strata: claims and violations as facts` calls one set "the
+  derived strata" where the set spans every bucket this item assigns. Reword the heading to what the
+  section is about, the claim and violation relations the pipeline builds above the base ones, and
+  drop the stratum claim rather than trying to make it true; the numbering rule cannot rescue a
+  plural "strata" that names both a stratum-two family and four diagnostics families at once. The
+  body's own "the `intent_` stratum" and "the diagnostics stratum" are the safe unnumbered uses and
+  stay, since one is the tree's name for that family and the other for that arm set. No `xref`
+  anywhere carries a `pipeline-overview.adoc#` anchor, so the rename reaches no link; re-confirm with a
+  grep for the anchor rather than trusting this sentence.
 
-### `meta_family`: the roster is the one home, so it cannot disagree
+  Three other pages use the same phrase and none is edited, which is worth stating so the asymmetry
+  does not read as a miss: `architecture/index.adoc` and `explanation/index.adoc` use "the derived
+  strata" in navigation blurbs for this very page, and `development-principles.adoc` has "the derived
+  strata carry each decision as views". All three mean the derivation layer, which is what this item
+  calls stratum two, so they are the frame under another name rather than a competing partition. The
+  heading is the only one that folds the diagnostics families in and so the only one that is wrong.
 
 `meta_family` is the schema's own family roster, thirteen constant rows stated as a view. Its
 `definition` column carries each family's charter, and its comment says those charters were
