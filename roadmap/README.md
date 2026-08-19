@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Ready | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](error-handler-description-overrides-message.md) |
-| `R711` | Nodehood derives from two corpora instead of being decided in capture | In Progress | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
+| `R711` | Nodehood derives from two corpora instead of being decided in capture | In Review | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -301,7 +301,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
-- `R711` [**Nodehood derives from two corpora instead of being decided in capture**](nodehood-derives-from-two-corpora.md) — In Progress, architecture
+- `R711` [**Nodehood derives from two corpora instead of being decided in capture**](nodehood-derives-from-two-corpora.md) — In Review, architecture
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
 - `R727` [**Run-record families: committed command rows and the emitted-unit census land in the store**](run-record-families-for-commands-and-emitted-units.md) — Backlog, architecture
 - `R337` [**Surface input-field projections honestly on the lowered coordinate**](input-nesting-projection-classification.md) — Backlog, architecture
