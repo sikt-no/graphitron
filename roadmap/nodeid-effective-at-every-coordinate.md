@@ -392,15 +392,39 @@ Ordered so each stage is separately verifiable, and so nothing ships a rejection
 replacement.
 
 1. **The leaf-arm enforcer.** `ValueShape.Scalar.leafTransform` is typed at `CallSiteExtraction`'s
-   nine-arm root, and the restriction to its four legal leaves is prose ("the walker enforces that
-   restriction structurally"). Because the component is typed too wide,
-   `ServiceMethodCallEmitter.scalarLeaf` needs a `default ->` arm, and that default is exactly why
-   site 1 is silent: the `NodeIdDecodeKeys` case there emits a body byte-identical to `Direct`, and
-   nothing failed when it was written that way. Lift the four arms into a sealed
-   `CallSiteExtraction.Leaf permits Direct, EnumValueOf, JooqConvert, NodeIdDecodeKeys`, retype
-   `Scalar.leafTransform` to `Leaf`, delete the `default`. Exit: minting a decode extraction without
-   an emitter arm fails to compile. This is a prerequisite for any answer at sites 1 and 2, it is
-   cheap, and without it the item's central bug can silently recur.
+   nine-arm root, and the restriction to its legal leaves is prose. Because the component is typed
+   too wide, `ServiceMethodCallEmitter.scalarLeaf` needs a `default ->` arm, and that default is
+   exactly why site 1 is silent: the `NodeIdDecodeKeys` case there emits a body byte-identical to
+   `Direct`, and nothing failed when it was written that way. Lift the arms into a sealed
+   `CallSiteExtraction.Leaf`, retype `Scalar.leafTransform` to `Leaf`, delete the `default`. Exit:
+   minting a decode extraction without an emitter arm fails to compile. This is a prerequisite for
+   any answer at sites 1 and 2, it is cheap, and without it the item's central bug can silently
+   recur.
+
+   **The seal is five arms, not the four the prose claims.** `ValueShape.Scalar`'s javadoc says
+   `leafTransform` is "one of `CallSiteExtraction`'s four leaf arms (`Direct`, `EnumValueOf`,
+   `JooqConvert`, `NodeIdDecodeKeys`); the walker enforces that restriction structurally", and
+   `ServiceMethodCallWalker.isLeaf` does test exactly those four. The walker does not enforce it.
+   `ServiceMethodCallWalker.fieldBindingShape` has a branch above the `isLeaf` call that puts a
+   `CallSiteExtraction.NodeIdDecodeRecord` into a `ValueShape.Scalar` on purpose, so a record-typed
+   bean member's decode survives to the `create<Bean>` helper; `TypeFetcherGenerator
+   .leafForFieldBinding` reads it back out to rebuild the `CallSiteExtraction.FieldBinding` that
+   emitter consumes. The carrying is load-bearing, and `NodeIdDecodeRecord` implements
+   `CallSiteExtraction` directly rather than extending `NodeIdDecodeKeys`, so a four-arm `Leaf`
+   does not compile against that assignment. Seal
+   `permits Direct, EnumValueOf, JooqConvert, NodeIdDecodeKeys, NodeIdDecodeRecord` and correct the
+   javadoc's count with it. This is the stage's own premise arriving one arm stronger than the item
+   assumed: the prose restriction is not merely unenforced, it is already false, which is the same
+   failure mode at a second coordinate.
+
+   Deleting the `default` then obliges a `NodeIdDecodeRecord` arm in `scalarLeaf`. That arm is
+   unreachable rather than missing: a bean member's `Scalar` never reaches `scalarExpression`,
+   because `valueShapeExpression` routes a `RecordInput` / `JavaBeanInput` to `compositeHelperCall`,
+   which only names the helper, and `InputBeanInstantiationEmitter` emits the decode off the
+   `CallSiteExtraction.FieldBinding` instead. So the arm throws, and the throw has two precedents
+   already in tree saying the same sentence: `ArgCallEmitter` and `ConditionGlueRenderer` both
+   reject `NodeIdDecodeRecord` as "an input-bean field leaf only". Writing a third is the stage
+   converting a silent default into three stated positions.
 2. **Site 4b, the discriminator.** The sealed `JoinPathResult`, the two-conjunct `DirectFk`
    precondition, the retirement of `LIFT_FAILURE_MARKER`, the per-rail consumer audit, and coverage
    at the carrier, glue and execution tiers. Exit: a junction chain lowers to a multi-hop
@@ -504,6 +528,10 @@ code-string matching on generated bodies is banned at every tier.
 * The `=== identity-carrying FKs` rejection section of
   `docs/manual/how-to/multi-hop-nodeid-filter.adoc`, which documents that gate to authors.
 * `NodeIdLeafResolver.JoinPathResult`'s nullable-slot shape, replaced by the sealed result.
+* `ValueShape.Scalar`'s "one of `CallSiteExtraction`'s four leaf arms ... the walker enforces that
+  restriction structurally", falsified on both halves: the population is five, and the walker's
+  `fieldBindingShape` bypasses its own `isLeaf` test to admit the fifth. Stage 1 replaces the
+  sentence with the seal.
 * Three statements of the old one-conjunct discriminator, in `NodeIdLeafResolver`'s own javadoc.
   All are falsified by a junction chain, whose terminal target-side columns *are* the node's key
   columns and which translates nothing; the arm is reached because no own-table tuple exists, not
