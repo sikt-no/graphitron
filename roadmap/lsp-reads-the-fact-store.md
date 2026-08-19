@@ -4229,3 +4229,10 @@ size rather than a state to switch on. And the projection-seam enforcer, named i
 but stops calling it transitional: its readers are the generator's own, and a consumer reading
 relations gets the equivalent guarantee from an exhaustive-partition meta-test over its own sealed
 vocabulary, which for the language server is `TriggerDispatchMatrixTest`.
+
+`DocSizeBudgetTest` decided how that last repointing was worded, and it was right to. The principles
+document was two words under its own 3,500-word cap, so the first draft of the change, a paragraph
+explaining the split, failed the build. The gate's instruction is to displace rather than accrete
+and to move a narrative to its audience's reference page, so the principles document names both
+gates in one parenthesis and `fact-model.adoc` carries the reasoning. Worth knowing at the gate: that
+document has no headroom left, and the next addition to it displaces something.

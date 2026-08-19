@@ -165,15 +165,12 @@ named thing didn't resolve" to a cross-product of missing/inconsistent-slot erro
 
 *Code generation is the narrowest view of the model, not the model itself.* Every consumer reads
 views over the one base; none owns a private model, and a view's coverage guarantee lives at its
-projection seam (`CatalogBuilder.projectFieldClassification` is the exemplar: an exhaustive switch a
-new permit breaks until the view covers it). Its readers are the generator's own now: the language
-server used to dispatch on the same projection and reads relations instead, so what guarantees its
-coverage is a gate over its own sealed vocabulary, `TriggerDispatchMatrixTest` over request triggers
-and surfaces. The drift smell at model scale is a consumer-side shadow taxonomy; the re-sourcing
+seam (`CatalogBuilder.projectFieldClassification` for a projection reader,
+`TriggerDispatchMatrixTest` for a relation reader: a new variant breaks the build until every view
+covers it). The drift smell at model scale is a consumer-side shadow taxonomy; the re-sourcing
 invariant is xref:fact-model.adoc[The fact model].
 
-*Enforced by:* the compile-checked projection switch at each view's seam, or an exhaustive-partition
-meta-test over the consumer's own sealed vocabulary where the consumer reads relations.
+*Enforced by:* the coverage gate at each seam.
 
 == Boundaries decode and encode; the interior is typed
 
