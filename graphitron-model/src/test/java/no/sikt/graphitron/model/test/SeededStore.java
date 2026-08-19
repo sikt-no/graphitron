@@ -18,6 +18,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
@@ -38,8 +40,10 @@ import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
@@ -472,6 +476,46 @@ public final class SeededStore {
             .execute();
     }
 
+    /**
+     * A {@code @node} application on an object type: node identity, with the type id left unstated.
+     * A case wanting the id states it with {@link #seedNodeWithTypeId}.
+     */
+    public static void seedNode(DSLContext dsl, String graphName, String typeName) {
+        seedNodeWithTypeId(dsl, graphName, typeName, null);
+    }
+
+    /** {@link #seedNode} with the {@code typeId:} the author pinned. */
+    public static void seedNodeWithTypeId(DSLContext dsl, String graphName, String typeName,
+                                          String typeId) {
+        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
+        dsl.insertInto(GRAPHITRON_NODE)
+            .set(GRAPHITRON_NODE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_NODE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_NODE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_NODE.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_NODE.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_NODE.SOURCE_LINE, 2)
+            .set(GRAPHITRON_NODE.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_NODE.TYPE_ID, typeId)
+            .execute();
+    }
+
+    /**
+     * One ordered entry of an {@code @node(keyColumns:)} list, as written. It resolves against no
+     * column: the pinned list is keyed by graph and type and needs no table to be stated, and a
+     * name the bound table does not have is a state a detection names rather than one this relation
+     * prevents.
+     */
+    public static void seedNodeKeyColumnRef(DSLContext dsl, String graphName, String typeName,
+                                            int position, String columnRef) {
+        dsl.insertInto(GRAPHITRON_NODE_KEY_COLUMN)
+            .set(GRAPHITRON_NODE_KEY_COLUMN.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME, typeName)
+            .set(GRAPHITRON_NODE_KEY_COLUMN.POSITION, position)
+            .set(GRAPHITRON_NODE_KEY_COLUMN.COLUMN_REF, columnRef)
+            .execute();
+    }
+
     /** A {@code @nodeId} application on a field: presence, plus the type reference as written. */
     public static void seedNodeId(DSLContext dsl, String graphName, String typeName, String fieldName) {
         dsl.insertInto(GRAPHITRON_FIELD_NODE_ID)
@@ -803,6 +847,32 @@ public final class SeededStore {
             .set(SQL_CONSTRAINT.CONSTRAINT_TYPE, constraintType)
             .set(SQL_CONSTRAINT.JOOQ_NAME, jooqName)
             .execute();
+    }
+
+    /**
+     * A table's primary key and the ordered columns under it, in one call: the constraint, the
+     * table's claim on it, and one {@code sql_constraint_column} row per name in written order. The
+     * columns must already exist, the constraint's own rows being anchored on them.
+     */
+    public static void seedPrimaryKey(DSLContext dsl, String sourceName, String tableSchema,
+                                      String tableName, String constraintName, String... columnNames) {
+        seedConstraint(dsl, sourceName, tableSchema, tableName, constraintName, "PRIMARY KEY", null);
+        dsl.insertInto(SQL_PRIMARY_KEY)
+            .set(SQL_PRIMARY_KEY.SOURCE_NAME, sourceName)
+            .set(SQL_PRIMARY_KEY.TABLE_SCHEMA, tableSchema)
+            .set(SQL_PRIMARY_KEY.TABLE_NAME, tableName)
+            .set(SQL_PRIMARY_KEY.CONSTRAINT_NAME, constraintName)
+            .execute();
+        for (int position = 0; position < columnNames.length; position++) {
+            dsl.insertInto(SQL_CONSTRAINT_COLUMN)
+                .set(SQL_CONSTRAINT_COLUMN.SOURCE_NAME, sourceName)
+                .set(SQL_CONSTRAINT_COLUMN.TABLE_SCHEMA, tableSchema)
+                .set(SQL_CONSTRAINT_COLUMN.TABLE_NAME, tableName)
+                .set(SQL_CONSTRAINT_COLUMN.CONSTRAINT_NAME, constraintName)
+                .set(SQL_CONSTRAINT_COLUMN.POSITION, position)
+                .set(SQL_CONSTRAINT_COLUMN.COLUMN_NAME, columnNames[position])
+                .execute();
+        }
     }
 
     /**
