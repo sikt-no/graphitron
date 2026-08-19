@@ -182,10 +182,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       both seeded in the module whose DDL declares them, several of the states a boundary case
  *       needs (a macro-rewritten type expression, a contested coordinate, a spelling two schemas
  *       both answer) being ones a fixture states in a line and a capture arranges in a schema;
- *       {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotTest} binds
- *       {@code intent_class_member_slot}, the member names a backing class offers, over a real
- *       classfile scan of its own fixtures rather than seeded census rows, because a rule that
- *       reads a class's declared form cannot be pinned against a fixture that declares its own;
+ *       {@code intent_class_member_slot}, the member names a backing class offers, carries its
+ *       reason in two places, because a rule reading a class's declared form is asked both what it
+ *       makes of a declaration and whether a compiler's own declarations reach it in that shape.
+ *       {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotScanTest} binds the second, in one
+ *       case, over a real classfile scan of three fixture classes whose declared form the test did
+ *       not write, while {@code no.sikt.graphitron.model.intent.ClassMemberSlotTest} binds the
+ *       first to a census stated row by row in the module whose DDL declares it: the two arms' own
+ *       owner key, through one class name declared by two classpath entries, the parameter
+ *       anti-join's descriptor, through a bean accessor overloaded with a parameterised twin, and
+ *       the record arm's gate, through a component under a class no compiler would pair it with;
  *       {@code no.sikt.graphitron.model.intent.ClassAssignableTest} binds
  *       {@code intent_class_assignable}, the closure over those declarations, to a census stated
  *       row by row, the chains a closure has to get right (one crossing classpath entries, one

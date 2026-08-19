@@ -10,7 +10,7 @@ package no.sikt.graphitron.rewrite.derive;
  * is evidence of which of the two the census reads.
  *
  * <p>Public and top-level because the classpath census skips anything else, and the census is
- * what {@link ClassMemberSlotTest} reads.
+ * what {@link ClassMemberSlotScanTest} reads.
  */
 public record TestSlotRecord(Integer filmId, String title, java.util.List<String> tags) {
 

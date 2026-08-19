@@ -108,8 +108,6 @@ class StoreFixtureGuardTest {
             Why.ORACLE, "the same family, plus bare-store gates over the model's own DDL"),
 
         // Pending: view algebra still reached through a capture.
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/ClassMemberSlotTest.java",
-            Why.PENDING_SEEDING, "member rows go down; the one real classfile scan stays on a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/SeparateFetchTest.java",
             Why.PENDING_SEEDING, "the separate-fetch view; the delivery differential stays a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java",

@@ -713,6 +713,50 @@ public final class SeededStore {
     }
 
     /**
+     * How a method's return type renders, for a case whose subject is what a reader displays rather
+     * than which classes the type names. Both {@code seedMethod} overloads leave the two columns at
+     * {@code Object}, which is coherent and says nothing; this states them, the method having been
+     * seeded already.
+     *
+     * <p>Both forms are arguments because a classfile carries them separately: the erasure is what a
+     * descriptor spells, and the declared form is what the source wrote, equal to the erasure
+     * wherever erasure loses nothing. A helper deriving one from the other would be deciding a
+     * compiler's question, and the pair is exactly what a case comparing the two is about.
+     *
+     * @param erased what {@code return_type} carries, the descriptor's own form with the package
+     *        dropped ({@code List})
+     * @param declared what {@code declared_return_type} carries, the source's form with the type
+     *        arguments kept ({@code List<String>})
+     */
+    public static void seedReturnForm(DSLContext dsl, String sourceName, String className,
+                                      String methodName, String descriptor,
+                                      String erased, String declared) {
+        dsl.update(JVM_METHOD)
+            .set(JVM_METHOD.RETURN_TYPE, erased)
+            .set(JVM_METHOD.DECLARED_RETURN_TYPE, declared)
+            .where(JVM_METHOD.SOURCE_NAME.eq(sourceName))
+            .and(JVM_METHOD.CLASS_NAME.eq(className))
+            .and(JVM_METHOD.METHOD_NAME.eq(methodName))
+            .and(JVM_METHOD.DESCRIPTOR.eq(descriptor))
+            .execute();
+    }
+
+    /**
+     * The same for a record component, on {@link #seedReturnForm}'s terms: {@code display_type} is
+     * the erasure and {@code declared_type} the source's form.
+     */
+    public static void seedComponentForm(DSLContext dsl, String sourceName, String className,
+                                         String componentName, String erased, String declared) {
+        dsl.update(JVM_RECORD_COMPONENT)
+            .set(JVM_RECORD_COMPONENT.DISPLAY_TYPE, erased)
+            .set(JVM_RECORD_COMPONENT.DECLARED_TYPE, declared)
+            .where(JVM_RECORD_COMPONENT.SOURCE_NAME.eq(sourceName))
+            .and(JVM_RECORD_COMPONENT.CLASS_NAME.eq(className))
+            .and(JVM_RECORD_COMPONENT.COMPONENT_NAME.eq(componentName))
+            .execute();
+    }
+
+    /**
      * One position of a declared return type at a variance the map form cannot state, the method
      * and its remaining positions having been seeded by {@link #seedMethod}. A case about variance
      * states this row for the position it is about and leaves the rest invariant.

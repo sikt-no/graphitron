@@ -57,8 +57,9 @@ class TypeBackingProjectionTest {
     /**
      * The shape names the backing class and nothing else. What the class offers a member name is a
      * fact about the class, so the components no longer ride the projection and the rule that reads
-     * them is pinned where it lives, over real classfiles, by
-     * {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotTest}.
+     * them is pinned where it lives, by
+     * {@code no.sikt.graphitron.model.intent.ClassMemberSlotTest} and, over real classfiles, by
+     * {@code no.sikt.graphitron.rewrite.derive.ClassMemberSlotScanTest}.
      */
     @Test
     void javaRecordTypeProjectsToRecordBackingNamingTheClass() {
