@@ -7,6 +7,13 @@
 -- into. Nothing generated from it is committed, and no persisted state of record exists, so
 -- editing this file and following the compiler is the whole schema-change procedure.
 --
+-- Deriving on read is the discipline, and a derivation this store cannot afford to re-evaluate
+-- gets read whole and paired on its key, never correlated per row. Do not reach for CREATE
+-- MATERIALIZED VIEW: no released H2 can carry one here, and a reduction that must be stored is
+-- an ordinary table or an explicitly LOCAL TEMPORARY one. The rule, the four H2 defects behind
+-- it and what a stored reduction may be built out of are in
+-- docs/architecture/explanation/fact-model.adoc under "Derived reads are views, not stored facts".
+--
 -- Conventions (the roadmap item that introduced the schema states them in full): snake_case
 -- throughout; natural, composite, identity-carrying keys; a FOREIGN KEY only where the walk
 -- writes the child while standing on the parent, never on a reference the author spells by
