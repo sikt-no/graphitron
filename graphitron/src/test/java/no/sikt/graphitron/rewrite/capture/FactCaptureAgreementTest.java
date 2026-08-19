@@ -122,10 +122,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       its reader's test
  *       ({@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the lookup arm
  *       to {@code LookupFacts.triggersFor} and the routine arm to its base relation's distinct
- *       coordinates; {@code no.sikt.graphitron.rewrite.derive.ColumnMatchClaimTest} binds the
- *       column-match view and the reduction over it to the classification walk's fall-through arm
- *       over the spec-by-example corpus, and the table resolution that arm stands on
- *       ({@code intent_bound_table}) through the claim's own table witness, with pins for the
+ *       coordinates; the column-match view carries its reason in two places, because the two
+ *       questions asked of it have different lifetimes.
+ *       {@code no.sikt.graphitron.rewrite.derive.ColumnMatchShadowTest} binds the view and the
+ *       reduction over it to the classification walk's fall-through arm over the spec-by-example
+ *       corpus, which is the half that retires when the walk does, while
+ *       {@code no.sikt.graphitron.model.intent.ColumnMatchClaimTest} binds what the view returns
+ *       given rows, and the table resolution it stands on ({@code intent_bound_table}) through the
+ *       claim's own table witness, to a catalog stated table by table in the module whose DDL
+ *       declares them: the two-tier name match with the tiers deliberately disagreeing, three
+ *       decoy tables each differing from the bound one in one part of the witness key, and the
  *       bindings a column claim cannot speak for;
  *       {@code no.sikt.graphitron.model.intent.ReferenceStepTargetTest} binds the spelling
  *       resolution the bindings themselves stand on ({@code intent_spelled_table}) and the

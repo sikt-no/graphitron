@@ -136,11 +136,14 @@ public final class SeededStore {
     /**
      * Membership: this graph read this source. The row every source-keyed relation is scoped
      * through, so a seeded catalog or census the graph does not claim is invisible to it.
+     * Idempotent, on {@link #seedSource}'s terms: a graph reading a source twice is one membership,
+     * and a case stating two bindings over one catalog is asking for the source once.
      */
     public static void seedGraphSource(DSLContext dsl, String graphName, String sourceName) {
         dsl.insertInto(STORE_GRAPH_SOURCE)
             .set(STORE_GRAPH_SOURCE.GRAPH_NAME, graphName)
             .set(STORE_GRAPH_SOURCE.SOURCE_NAME, sourceName)
+            .onDuplicateKeyIgnore()
             .execute();
     }
 
