@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.FactWriters.refreshJavaSources;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FILE;
@@ -69,8 +70,8 @@ class JavaSourceFactsTest {
         write(root, "com/example/Widgets.java", WIDGETS);
         write(root, "com/example/Gadgets.java", GADGETS);
 
-        try (var store = GraphitronModelStore.open()) {
-            var walk = refresh(store.dsl(), root);
+        try (var store = FactStores.inMemory()) {
+            var walk = refreshJavaSources(store.dsl(), List.of(root));
 
             assertThat(files(store.dsl()))
                 .as("one java_file row per source the walk read, each under the root it walked")
@@ -107,8 +108,8 @@ class JavaSourceFactsTest {
     void sameArityOverloadsAreSeparateRows(@TempDir Path root) throws IOException {
         write(root, "com/example/Widgets.java", WIDGETS);
 
-        try (var store = GraphitronModelStore.open()) {
-            refresh(store.dsl(), root);
+        try (var store = FactStores.inMemory()) {
+            refreshJavaSources(store.dsl(), List.of(root));
 
             assertThat(store.dsl()
                 .select(JAVA_METHOD_DECLARATION.ORDINAL, JAVA_METHOD_DECLARATION.JAVADOC)
@@ -131,13 +132,13 @@ class JavaSourceFactsTest {
     void anUnchangedFileIsNotRewritten(@TempDir Path root) throws IOException {
         write(root, "com/example/Gadgets.java", GADGETS);
 
-        try (var store = GraphitronModelStore.open()) {
-            refresh(store.dsl(), root);
+        try (var store = FactStores.inMemory()) {
+            refreshJavaSources(store.dsl(), List.of(root));
             store.dsl().update(JAVA_CLASS_DECLARATION)
                 .set(JAVA_CLASS_DECLARATION.JAVADOC, "tampered")
                 .execute();
 
-            refresh(store.dsl(), root);
+            refreshJavaSources(store.dsl(), List.of(root));
 
             assertThat(store.dsl().select(JAVA_CLASS_DECLARATION.JAVADOC)
                 .from(JAVA_CLASS_DECLARATION).fetchOne(0, String.class))
@@ -151,8 +152,8 @@ class JavaSourceFactsTest {
     void aChangedFileIsRewrittenWhole(@TempDir Path root) throws IOException {
         Path file = write(root, "com/example/Gadgets.java", GADGETS);
 
-        try (var store = GraphitronModelStore.open()) {
-            refresh(store.dsl(), root);
+        try (var store = FactStores.inMemory()) {
+            refreshJavaSources(store.dsl(), List.of(root));
             Files.writeString(file, """
                 package com.example;
                 public class Gadgets {
@@ -161,7 +162,7 @@ class JavaSourceFactsTest {
                 }
                 """);
 
-            refresh(store.dsl(), root);
+            refreshJavaSources(store.dsl(), List.of(root));
 
             assertThat(store.dsl()
                 .select(JAVA_METHOD_DECLARATION.METHOD_NAME, JAVA_METHOD_DECLARATION.JAVADOC)
@@ -185,16 +186,14 @@ class JavaSourceFactsTest {
         Path doomed = write(own, "com/example/Widgets.java", WIDGETS);
         write(sibling, "com/example/Gadgets.java", GADGETS);
 
-        try (var store = GraphitronModelStore.open()) {
-            new JavaSourceFacts(store.dsl())
-                .refresh(List.of(own, sibling), new SourceWalker().walkFiles(List.of(own, sibling)));
+        try (var store = FactStores.inMemory()) {
+            refreshJavaSources(store.dsl(), List.of(own, sibling));
             assertThat(files(store.dsl())).as("both roots' files, after a walk over both").hasSize(2);
 
             Files.delete(doomed);
             // Only the own root is walked this time, so the sibling's file is not in the walk's
             // set; it must survive on the strength of its root, not of having been seen.
-            new JavaSourceFacts(store.dsl())
-                .refresh(List.of(own), new SourceWalker().walkFiles(List.of(own)));
+            refreshJavaSources(store.dsl(), List.of(own));
 
             assertThat(files(store.dsl()))
                 .as("the deleted file is pruned and the unwalked root's file is not")
@@ -222,8 +221,8 @@ class JavaSourceFactsTest {
             class Twice { }
             """);
 
-        try (var store = GraphitronModelStore.open()) {
-            refresh(store.dsl(), root);
+        try (var store = FactStores.inMemory()) {
+            refreshJavaSources(store.dsl(), List.of(root));
 
             assertThat(store.dsl().select(JAVA_CLASS_DECLARATION.JAVADOC)
                 .from(JAVA_CLASS_DECLARATION)
@@ -232,12 +231,6 @@ class JavaSourceFactsTest {
                 .as("one row for the name, the first declaration's")
                 .containsExactly("The first.");
         }
-    }
-
-    private static List<SourceWalker.ParsedFile> refresh(DSLContext dsl, Path root) {
-        var walk = new SourceWalker().walkFiles(List.of(root));
-        new JavaSourceFacts(dsl).refresh(List.of(root), walk);
-        return walk;
     }
 
     private static List<Tuple> files(DSLContext dsl) {

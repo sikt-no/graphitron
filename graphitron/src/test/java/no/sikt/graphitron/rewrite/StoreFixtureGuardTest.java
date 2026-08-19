@@ -54,6 +54,10 @@ class StoreFixtureGuardTest {
      * The harnesses. Each opens a store because handing one out is what it is for, and each is
      * usable without the ones above it: a writer test never captures, a view test never runs a
      * crawler, and a crawler test never runs a build.
+     *
+     * <p>Two levels are deliberately absent, and for the same reason: {@link FactWriters} and
+     * {@link no.sikt.graphitron.model.test.SeededStore} put rows in a store the caller already
+     * holds, so they open nothing and this guard has no question to ask of them.
      */
     private static final List<Home> HOMES = List.of(
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/FactStores.java",
@@ -71,8 +75,6 @@ class StoreFixtureGuardTest {
             + "population as the subject"),
         PENDING_SEEDING("a relation's algebra, still reached through a crawler; its inputs are "
             + "stateable as rows, so its home is the seeding harness"),
-        PENDING_WRITER("drives a facts writer over an open store, which is a level of its own and "
-            + "not yet a shared one"),
         PENDING_MODULE_FLOOR("a module that has not yet taken the shared floor for the store's "
             + "lifetime and its fixture file");
 
@@ -111,26 +113,6 @@ class StoreFixtureGuardTest {
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingShadowTest.java",
             Why.PENDING_SEEDING, "walk agreement end to end, so it stays whole and takes a capture "
                 + "handle rather than a seed"),
-
-        // Pending: the facts writers, which are one population the tree still spells four ways.
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/JavaSourceFactsTest.java",
-            Why.PENDING_WRITER, "the java_ declaration family"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/compile/CompileFactsTest.java",
-            Why.PENDING_WRITER, "the javac round"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/diagnostics/DiagnosticFactsTest.java",
-            Why.PENDING_WRITER, "hand-rolls three writers, and drives capture itself besides"),
-        new Exempt("graphitron-maven-plugin/src/test/java/no/sikt/graphitron/rewrite/maven/DevMojoTest.java",
-            Why.PENDING_WRITER, "line for line what the compile-facts test does, in another module"),
-        new Exempt("graphitron-maven-plugin/src/test/java/no/sikt/graphitron/rewrite/maven/dev/"
-            + "CatalogRefreshTest.java",
-            Why.PENDING_WRITER, "the same, over the java-source writer"),
-        new Exempt("graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/RejectionSeverityCoverageTest.java",
-            Why.PENDING_WRITER, "spells its writer's fully qualified name inline, which is what a "
-                + "test does when the thing it needs has no home worth importing"),
-        new Exempt("graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/DiagnosticsToolCompileSourceTest.java",
-            Why.PENDING_WRITER, "the javac round again, downstream"),
-        new Exempt("graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/DiagnosticsAggregateTest.java",
-            Why.PENDING_WRITER, "three own-store cases beside its fixture-backed ones"),
 
         // Pending: the two downstream modules' own floors.
         new Exempt("graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/StoreFixture.java",
@@ -229,8 +211,9 @@ class StoreFixtureGuardTest {
             reaches states no crawler can produce, and cannot accidentally assert crawler behaviour.
 
               A facts writer putting rows in a table at its own cadence?
-                Drive the writer over a store from FactStores. Capture cadence and writer cadence \
-            are different facts about the store, so a captured fixture is the wrong shape for this.
+                Take the writer from FactWriters, over a store from FactStores. Capture cadence and \
+            writer cadence are different facts about the store, so a captured fixture is the wrong \
+            shape for this.
 
               A crawler, or agreement between a store-native relation and the walk?
                 Capture. CapturedStore hands you the fixture file, the graph identity and the walk, \

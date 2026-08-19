@@ -1,9 +1,8 @@
 package no.sikt.graphitron.mcp;
 
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
@@ -14,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.rewrite.FactWriters.compileFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -40,8 +40,8 @@ class DiagnosticsToolCompileSourceTest {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> diagnostics(List<CompileDiagnostic> compile, Map<String, Object> args) {
-        try (var store = GraphitronModelStore.open()) {
-            new CompileFacts(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp))
+        try (var store = FactStores.inMemory()) {
+            compileFacts(store.dsl(), GRAPH, tmp)
                 .write(new CompileRound(compile.stream().noneMatch(d -> "ERROR".equals(d.kind())), compile));
             McpSchema.CallToolResult result = DiagnosticsTool.diagnosticsResult(
                 new StoreHandle(store.dsl(), GRAPH), args);

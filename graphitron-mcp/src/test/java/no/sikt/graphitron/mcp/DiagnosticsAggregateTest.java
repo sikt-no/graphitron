@@ -2,12 +2,11 @@ package no.sikt.graphitron.mcp;
 
 import graphql.language.SourceLocation;
 import io.modelcontextprotocol.spec.McpSchema;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -165,14 +165,14 @@ class DiagnosticsAggregateTest {
 
     @Test
     void groupCardinalityStaysUnderTheStatedCapWithHonestElision() {
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             var loc = new SourceLocation(1, 1, "/s.graphqls");
             var errors = new ArrayList<ValidationError>();
             for (int i = 0; i < 250; i++) {
                 errors.add(ValidationError.forField("T.f" + i,
                     Rejection.unknownColumn("column could not be resolved", "c" + i, List.of()), loc));
             }
-            var handle = volumeHandle(store, errors);
+            var handle = volumeHandle(store.dsl(), errors);
 
             var args = Map.<String, Object>of("groupBy", List.of("attempt"), "limit", 10_000);
             var structured = structured(aggregate(handle, args));
@@ -188,9 +188,9 @@ class DiagnosticsAggregateTest {
 
     @Test
     void directivesGroupOnTheCanonicalSortedRenderSoClaimOrderCannotSplitAGroup() {
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             var loc = new SourceLocation(1, 1, "/s.graphqls");
-            var handle = volumeHandle(store, List.of(
+            var handle = volumeHandle(store.dsl(), List.of(
                 ValidationError.forType("A",
                     Rejection.directiveConflict(List.of("splitQuery", "routine"), "conflict"), loc),
                 ValidationError.forType("B",
@@ -206,8 +206,8 @@ class DiagnosticsAggregateTest {
 
     @Test
     void anUnknownDimensionIsRefusedWithTheFullVocabulary() {
-        try (var store = GraphitronModelStore.open()) {
-            var handle = volumeHandle(store, List.of());
+        try (var store = FactStores.inMemory()) {
+            var handle = volumeHandle(store.dsl(), List.of());
             var result = DiagnosticFacets.aggregateResult(handle, Map.of("groupBy", List.of("nope")));
             assertThat(result.isError()).isTrue();
             String message = firstLine(result);
@@ -228,10 +228,10 @@ class DiagnosticsAggregateTest {
 
     /** Writes {@code errors} through the production residue loader and hands back the read handle. */
     private StoreHandle volumeHandle(
-        GraphitronModelStore store, List<ValidationError> errors
+        DSLContext dsl, List<ValidationError> errors
     ) {
-        new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity("volume", tmp)).write(errors);
-        return new StoreHandle(store.dsl(), "volume");
+        rejectionFacts(dsl, "volume", tmp).write(errors);
+        return new StoreHandle(dsl, "volume");
     }
 
     @SuppressWarnings("unchecked")

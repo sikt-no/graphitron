@@ -149,6 +149,10 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | `FactStores` (`graphitron-model` test-jar)
 | `inMemory()` and `fileBacked(home)`, named rather than selected by a flag.
 
+| A facts writer putting rows in a table at its own cadence
+| `FactWriters` (`graphitron` test-jar)
+| The four shipped writers by name, over a store you opened from `FactStores` and a graph identity given as a name and a directory. A sibling of the capture harness rather than something under it: a writer test has no capture to run, and a captured fixture would have put rows in front of the assertion that the writer did not write.
+
 | A crawler, or agreement between a store-native relation and the classification walk
 | `CapturedStore` (`graphitron` test-jar)
 | A real capture over a fixture document, with the fixture file, the caller-supplied graph identity, and named arms saying what each capture's inputs are.

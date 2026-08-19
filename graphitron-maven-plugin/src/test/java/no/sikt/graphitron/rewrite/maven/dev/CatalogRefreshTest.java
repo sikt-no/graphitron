@@ -1,9 +1,7 @@
 package no.sikt.graphitron.rewrite.maven.dev;
 
 import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
-import no.sikt.graphitron.rewrite.capture.SourceWalker;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
@@ -20,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static no.sikt.graphitron.rewrite.FactWriters.refreshJavaSources;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -111,13 +110,11 @@ class CatalogRefreshTest {
             }
             """);
 
-        try (var store = GraphitronModelStore.open()) {
-            var facts = new JavaSourceFacts(store.dsl());
-            var walker = new SourceWalker();
+        try (var store = FactStores.inMemory()) {
             var fired = new CountDownLatch(1);
             Runnable refresher = () -> {
                 // The production path: one walk, one sink.
-                facts.refresh(List.of(srcDir), walker.walkFiles(List.of(srcDir)));
+                refreshJavaSources(store.dsl(), List.of(srcDir));
                 fired.countDown();
             };
 

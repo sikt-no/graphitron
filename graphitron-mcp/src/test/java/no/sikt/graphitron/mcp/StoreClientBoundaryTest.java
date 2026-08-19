@@ -43,11 +43,18 @@ class StoreClientBoundaryTest {
      * The reactor edges this module may declare, by artifact and scope. Compile scope is the store's
      * generated query surface; test scope is the capture fixture, which drives the real pipeline
      * against a jOOQ catalog because rows a test asserts on have to come from a real run.
+     *
+     * <p>A test-jar edge is keyed separately from the jar of the same artifact, because the two are
+     * different claims: one says what this module compiles against, the other says it takes its test
+     * fixtures from the shared harnesses rather than building its own. Keying on the artifact alone
+     * would let the second silently overwrite the first and pass.
      */
     private static final Map<String, String> ALLOWED_REACTOR_DEPENDENCIES = Map.of(
         "graphitron-model", "compile",
         "graphitron", "test",
-        "graphitron-sakila-db", "test");
+        "graphitron-sakila-db", "test",
+        "graphitron-model test-jar", "test",
+        "graphitron test-jar", "test");
 
     /** The language server's package: off limits in both trees, the module having no edge to it. */
     private static final String LSP_PACKAGE = "no.sikt.graphitron.lsp.";
@@ -164,15 +171,18 @@ class StoreClientBoundaryTest {
             String block = blocks.group(1);
             if (!"no.sikt".equals(element(block, "groupId"))) continue;
             String artifact = element(block, "artifactId");
+            String type = element(block, "type");
             String scope = element(block, "scope");
-            declared.put(artifact, scope == null ? "compile" : scope);
+            declared.put(type == null ? artifact : artifact + " " + type,
+                scope == null ? "compile" : scope);
         }
 
         assertThat(declared)
             .as("graphitron-mcp answers from the store and from what its host hands it, so the "
                 + "store's schema is the whole of what it compiles against. A new reactor edge is "
-                + "argued for here rather than noticed later; the test-scope pair is the capture "
-                + "fixture, a named affordance rather than a blanket exemption for test scope.")
+                + "argued for here rather than noticed later; the test-scope edges are the capture "
+                + "fixture and the shared test harnesses, each a named affordance rather than a "
+                + "blanket exemption for test scope.")
             .containsExactlyInAnyOrderEntriesOf(ALLOWED_REACTOR_DEPENDENCIES);
     }
 

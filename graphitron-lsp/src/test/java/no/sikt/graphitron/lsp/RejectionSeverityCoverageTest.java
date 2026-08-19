@@ -5,14 +5,13 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -50,9 +50,8 @@ class RejectionSeverityCoverageTest {
         var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var unmapped = new ArrayList<String>();
-        try (var store = GraphitronModelStore.open()) {
-            var facts = new RejectionFacts(store.dsl(),
-                new FactCapture.GraphIdentity(GRAPH, tmp));
+        try (var store = FactStores.inMemory()) {
+            var facts = rejectionFacts(store.dsl(), GRAPH, tmp);
             for (var permit : permits) {
                 var sample = sampleFor(permit);
                 if (sample == null) {
@@ -62,7 +61,7 @@ class RejectionSeverityCoverageTest {
                 List<Diagnostic> diags;
                 try {
                     facts.write(List.of(new ValidationError("Coord", sample, loc)));
-                    diags = replay(store, uri, file);
+                    diags = replay(store.dsl(), uri, file);
                 } catch (RuntimeException e) {
                     unmapped.add(permit.getName() + " (replay threw: " + e + ")");
                     continue;
@@ -79,10 +78,10 @@ class RejectionSeverityCoverageTest {
 
     /** The editor's read of what the build recorded, over the store this test writes into. */
     private static List<Diagnostic> replay(
-        GraphitronModelStore store, String uri, FileSnapshot file
+        DSLContext dsl, String uri, FileSnapshot file
     ) {
         return Diagnostics.compute(BundledVocabulary.get(), uri, file,
-            Optional.of(new StoreHandle(store.dsl(), GRAPH)));
+            Optional.of(new StoreHandle(dsl, GRAPH)));
     }
 
     /**
@@ -112,8 +111,8 @@ class RejectionSeverityCoverageTest {
             .as("the hierarchy declares codes, so this pins something")
             .isTrue();
 
-        try (var store = GraphitronModelStore.open()) {
-            var facts = new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp));
+        try (var store = FactStores.inMemory()) {
+            var facts = rejectionFacts(store.dsl(), GRAPH, tmp);
             for (var sample : samples) {
                 String declared = declaredLspCode(sample);
                 facts.write(List.of(new ValidationError("Coord", sample, loc)));
@@ -126,7 +125,7 @@ class RejectionSeverityCoverageTest {
                     .as("the residue lsp_code for %s", sample.getClass().getName())
                     .isEqualTo(declared);
 
-                var diags = replay(store, uri, file);
+                var diags = replay(store.dsl(), uri, file);
                 String onTheWire = diags.size() == 1 && diags.get(0).getCode() != null
                     ? diags.get(0).getCode().getLeft()
                     : null;

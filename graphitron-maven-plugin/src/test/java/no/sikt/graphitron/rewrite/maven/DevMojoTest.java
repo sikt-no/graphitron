@@ -1,10 +1,9 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.rewrite.FactWriters;
 import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
-import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
@@ -275,11 +274,10 @@ class DevMojoTest {
         // than assumed (the writer and the store-side readers share the session's live handle).
         // The clean round that follows is where "a prior failure is cleared" lives now that every
         // reader of a compile round reads this relation.
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             var mojo = new DevMojo();
             mojo.setLog(new CapturingLog());
-            mojo.compileFacts = new CompileFacts(store.dsl(),
-                new FactCapture.GraphIdentity("dev-session", basedir));
+            mojo.compileFacts = FactWriters.compileFacts(store.dsl(), "dev-session", basedir);
             var diagnostic = new CompileDiagnostic(
                 "file:///gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "compiler.err.cant.resolve",
                 "cannot find symbol");

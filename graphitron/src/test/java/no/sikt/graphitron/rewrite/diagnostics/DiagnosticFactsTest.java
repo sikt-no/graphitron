@@ -1,13 +1,12 @@
 package no.sikt.graphitron.rewrite.diagnostics;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
-import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomain;
@@ -38,6 +37,9 @@ import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
 import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
+import static no.sikt.graphitron.rewrite.FactWriters.buildWarningFacts;
+import static no.sikt.graphitron.rewrite.FactWriters.compileFacts;
+import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX_EDIT;
@@ -80,7 +82,7 @@ class DiagnosticFactsTest {
                 new PivotError.NonNullSlot("nn", "TranslatedTexts"), loc),
             new ValidationError(null, Rejection.invalidSchema("schema-wide"), null));
         withStore(dsl -> {
-            new RejectionFacts(dsl, graph()).write(errors);
+            rejectionFacts(dsl, GRAPH, tmp).write(errors);
 
             var rows = dsl.selectFrom(REJECTION_VALIDATION_ERROR)
                 .where(REJECTION_VALIDATION_ERROR.GRAPH_NAME.eq(GRAPH))
@@ -141,7 +143,7 @@ class DiagnosticFactsTest {
                 Rejection.directiveConflict(List.of("splitQuery", "routine"), "conflict"), loc),
             ValidationError.forField("Film.texts", Rejection.deferred("later"), loc));
         withStore(dsl -> {
-            new RejectionFacts(dsl, graph()).write(errors);
+            rejectionFacts(dsl, GRAPH, tmp).write(errors);
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH))
                 .orderBy(DIAGNOSTIC.COORDINATE)
@@ -182,7 +184,7 @@ class DiagnosticFactsTest {
             new BuildWarning.NoRule("advisory", loc),
             BuildWarning.LintFinding.of("whole-build finding", null, rule));
         withStore(dsl -> {
-            new BuildWarningFacts(dsl, graph()).write(warnings);
+            buildWarningFacts(dsl, GRAPH, tmp).write(warnings);
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH))
                 .orderBy(DIAGNOSTIC.MESSAGE)
@@ -227,7 +229,7 @@ class DiagnosticFactsTest {
                 java.util.Optional.of(fix)),
             BuildWarning.LintFinding.of("not fixable", new SourceLocation(6, 1, source), rule));
         withStore(dsl -> {
-            new BuildWarningFacts(dsl, graph()).write(warnings);
+            buildWarningFacts(dsl, GRAPH, tmp).write(warnings);
             var fixes = dsl.selectFrom(LINT_FINDING_FIX)
                 .where(LINT_FINDING_FIX.GRAPH_NAME.eq(GRAPH))
                 .fetch();
@@ -258,7 +260,7 @@ class DiagnosticFactsTest {
         var note = new CompileDiagnostic("file:///gen/A.java", 3, 1, "NOTE", null, "a note");
         var unlocated = new CompileDiagnostic("(no source)", -1, -1, "WARNING", null, "unchecked");
         withStore(dsl -> {
-            new CompileFacts(dsl, graph()).write(new CompileRound(false, List.of(located, note, unlocated)));
+            compileFacts(dsl, GRAPH, tmp).write(new CompileRound(false, List.of(located, note, unlocated)));
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("compile"))
                 .orderBy(DIAGNOSTIC.MESSAGE)
@@ -404,7 +406,7 @@ class DiagnosticFactsTest {
     }
 
     private void withStore(java.util.function.Consumer<DSLContext> body) {
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = FactStores.inMemory()) {
             body.accept(store.dsl());
         }
     }
