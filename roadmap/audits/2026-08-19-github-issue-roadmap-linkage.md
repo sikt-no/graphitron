@@ -190,11 +190,15 @@ separate task.
 
 Ordered so that the cheap, unblocked closures come first.
 
-- [ ] File a Backlog item: document the `@mutation` versus `@service` transaction
+- [x] File an item: document the `@mutation` versus `@service` transaction
       demarcation on the `@service` and error-channel pages (#530, docs half).
-- [ ] File a Backlog item: opt-in `@service(transactional:)`, cross-referenced to
+      Filed as R721 `service-transaction-demarcation-undocumented`, taken
+      straight to Spec, and linked from the issue.
+- [x] File an item: opt-in `@service(transactional:)`, cross-referenced to
       the docs item and to `roadmap/query-read-only-enforcement.md` (#530,
-      surface half).
+      surface half). Filed as R722 `service-opt-in-transaction-wrap`, taken
+      straight to Spec, and linked from the issue. Both await a Spec → Ready
+      sign-off from a different party.
 - [ ] File a Backlog item: static fan-out verdict for `@reference` paths
       traversing a 1:N hop, plus the `distinct` flag or blessed-view decision
       (#529). Name `path-element-surface-cleanup`,
