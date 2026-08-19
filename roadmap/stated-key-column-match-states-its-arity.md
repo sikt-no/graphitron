@@ -1,6 +1,6 @@
 ---
 id: R724
-title: "The store folds a stated key-column name as a hedge; make the match state its arity"
+title: "The stated key-column match spends its ambiguity silently; make it state its arity"
 status: Spec
 bucket: cleanup
 priority: 5
@@ -10,7 +10,7 @@ created: 2026-08-19
 last-updated: 2026-08-19
 ---
 
-# The store folds a stated key-column name as a hedge; make the match state its arity
+# The stated key-column match spends its ambiguity silently; make it state its arity
 
 One view in the fact schema still folds case per row. `intent_node_metadata_defect`, in its
 `KEY_COLUMN_UNRESOLVED` arm, matches `sql_column.jooq_name` and `sql_column.column_name` against
@@ -51,18 +51,30 @@ reference is not a catalog reading.
 An entry name is therefore a stated name, `sql_node_key_column.column_name` earns a `column_name_upper`
 companion under the ordinary rule, and no amendment to where folds are minted is needed.
 
-Both halves of the Backlog title are wrong as a result, and it is corrected in this revision. Both
-operands were not catalog-produced, and exactness is what the match falls back to rather than what it
-becomes.
+The Backlog title, "the store folds two catalog-produced names as a hedge; make the comparison exact",
+is wrong in both halves as a result: the operands are not both catalog-produced, and exactness is what
+the match falls back to rather than what it becomes. A third word went with them in this revision. The
+fold is not a hedge at all. A hedge is a fold with no crossing under it, which is R702's subject; this
+one bridges a spelled reference and a catalog reading and is the semantic the rule exists to serve. It
+stays, unconditionally. What is wrong is that the match spends an ambiguity without saying so, and the
+title and slug now name that instead.
 
-One doc hazard this creates has to be handled rather than discovered later. After the column lands,
-both operands of the match live in the `sql_` family, and three shipped comments
-(`sql_column.column_name_upper`, `sql_table.table_name_upper`, `sql_constraint.constraint_name_upper`)
-instruct the reader that a within-family comparison mints nothing and reaches a fold by joining the
-owning relation instead. A reader arriving at the new column with that rule in hand deletes it. The
-discriminator is not the family prefix but which corpus authored the spelling, and this family already
-holds facts about generated classes rather than SQL's own vocabulary, `sql_node_metadata` being under
-`sql_` because it shares a refresh unit with `sql_table` and not because a database produced it.
+One doc hazard this creates is handled in the Implementation below rather than discovered later.
+After the column lands, both operands of the match live in the `sql_` family, and seven shipped
+`_upper` comments carry the same sentence: "Two values of one family are compared exactly, and a
+comparison that does want a fold on both sides reaches this column by joining ... on its key rather
+than by having it forwarded through a derived view." They sit on `sql_table` (two), `sql_column`
+(two) and `sql_constraint` (three), which is every `_upper` column the `sql_` family has. A reader
+arriving at the new column with that rule in hand deletes it.
+
+The rule is wrong as stated rather than merely incomplete, and the word doing the damage is *family*.
+The discriminator was never the relation prefix: it is whether a value is a reading of the thing it
+names or a name spelled at it. Both operands here are `sql_` and one of them is a spelled reference,
+which is the split the missing foreign key already stands on. The family holds facts about generated
+Java classes beside facts a database produced, `sql_node_metadata` sitting under `sql_` because it
+shares a refresh unit with `sql_table` rather than because a database produced it. So the fix is to say
+*catalog readings* where those comments say *values of one family*: one phrase in seven places, after
+which the new column is obviously not an instance of the rule rather than an exception to be argued.
 
 Two further facts the design leans on. `FactSink.claim` keys its dedupe set on a plain `HashSet` of
 the key values, so `"Id"` and `"ID"` are two distinct `sql_column` rows and the store can hold the
@@ -105,23 +117,30 @@ some-row-matched-exactly test calls that resolved and hands the pick back to who
 first, which is precisely the failure this item exists to stop. Two counts express it; one flag
 cannot.
 
-The relation deliberately does not carry which spelling matched and deliberately does not reproduce
-`findColumn`'s Java-name-first precedence. That precedence is a rule for picking one column, and the
-only inputs on which it would change an answer are exactly the ones the arity columns declare
-malformed, so omitting it is total rather than deferred. That sentence belongs in the view comment; it
-is the load-bearing half of the relation's justification. It exposes no `_upper` column either, so the
-rule that a derived view never forwards a fold holds.
+The relation deliberately does not carry which spelling matched, and deliberately replaces
+`findColumn`'s Java-name-first precedence with exactness rather than reproducing it. What that costs
+has to be stated exactly, because the tempting claim is the wrong one. The two rules agree on every
+table whose column spellings, Java and SQL names taken together, are case-insensitively distinct:
+exactly one column can answer at all there, so both rules return it. They diverge only where two
+columns collide under the fold, which is the population this item exists for. They do *not* diverge
+only on the inputs the arity columns call malformed: a table where one column answers exactly and a
+second answers only folded has two candidates and one exact, resolves with no defect, and resolves to
+the exactly-spelled column where `findColumn` would have taken the Java-name match. That is a
+deliberate behaviour change on a colliding catalog rather than a divergence to apologise for, and the
+statement of it belongs in the view comment; it is the load-bearing half of the relation's
+justification. It exposes no `_upper` column either, so the rule that a derived view never forwards a
+fold holds.
 
 What earns the relation is not this one consumer, which would be the sanctioned CTE case. It is that
 the entry-to-column resolution is already spelled twice and forwarded a third time: the defect view's
-`EXISTS`, `JooqCatalog.findColumn`, and `intent_resolved_node_key_column.column_name`, whose comment
+`NOT EXISTS`, `JooqCatalog.findColumn`, and `intent_resolved_node_key_column.column_name`, whose comment
 explicitly declines to perform the match ("settled convention rather than this relation's rule") and
 forwards the stated spelling onward to `intent_resolved_node_key_projection` and an emitter that
 eventually needs a real column. Two spellings of one resolution agree exactly until one of them
 changes.
 
-*The gated arm.* `intent_node_metadata_defect`'s entry arm reads columns instead of counting: an entry
-resolves when `exact_candidates = 1`, or when `exact_candidates = 0 AND candidates = 1`.
+*The gated arm.* `intent_node_metadata_defect`'s entry arm stops reading columns and reads the counts:
+an entry resolves when `exact_candidates = 1`, or when `exact_candidates = 0 AND candidates = 1`.
 `KEY_COLUMN_UNRESOLVED` keeps its meaning exactly, no column answers at all.
 
 *The new defect value.* `KEY_COLUMN_CASE_AMBIGUOUS`, the complement: more than one exact candidate, or
@@ -135,35 +154,53 @@ That value changes what well-formed metadata means, and that has to be stated ra
 message refinement, because well-formedness has consumers. `intent_resolved_node_key_column`'s
 `JOOQ_METADATA` tier gates on a table having no defect row at all, so a case-ambiguous entry stops that
 tier resolving and falls through rather than resolving against a column picked by field order. That is
-the payoff, and it needs no edit to that view. R711 is Ready and builds `intent_inferred_node_type` on
-the same conjunction, so once it lands a case-ambiguous key column also stops the type being an inferred
-node. Both are the right answers and both are semantic changes this item owns.
+the payoff, and it needs no edit to that view. `intent_inferred_node_type` is on trunk as of this
+revision, R711 having landed it In Review, and stands on the same conjunction, so a case-ambiguous key
+column also stops the type being an inferred node. Both are the right answers and both are semantic
+changes this item owns.
 
 Neither consumer needs editing, and the reason is worth stating so nobody goes looking. Both gate on a
 table having no defect row at all, with no filter on which value, so a new value reaches both by
 construction. R711 also deliberately accepts two spellings of that conjunction rather than extracting
-it, which means the count of value-agnostic gates grows to two before this item lands and would keep
-growing. That is what makes the propagation worth a pinned case rather than an observation: a gate that
-inherits a new value silently is exactly the kind that nobody notices has changed.
+it, so the count of value-agnostic gates is already two and would keep growing. That is what makes the
+propagation worth a pinned case rather than an observation: a gate that inherits a new value silently
+is exactly the kind that nobody notices has changed.
 
 *The Java enforcer.* The store's verdict needs one or it is a fact with no teeth.
 `JooqCatalog.validateLookup` resolves entries through `findColumn`, which folds and takes `findFirst`
 over the reflective field order, so without a Java-side change the store would report a table
 malformed while the shipped generator quietly picks a column and emits against it. A store verdict the
-build does not enforce is the drift this project treats as a smell. The change is contained to the
-node-metadata call site: a lookup that applies exact-first and reports an ambiguous fold as a
-`Malformed` reason rather than picking, leaving `findColumn`'s other callers alone. Those other callers
-are R702's census and stay R702's, so this item still depends on nothing.
+build does not enforce is the drift this project treats as a smell.
+
+The enforcer mirrors the relation rather than inventing a second rule, which is what stops the two
+sides drifting apart the way the folded predicate already did. `validateLookup`'s `columnLookup`
+argument stops returning one column and starts returning every column that answers the name, and
+`validateLookup` computes the verdict from that list exactly as the defect arm computes it from the
+counts: one exact candidate wins, a single folded candidate wins where none is exact, anything else is
+`Malformed`. The list has the relation's grain, one entry per column and not per spelling, which falls
+out of walking the table's fields once. An `Optional` cannot carry this, and that is the real reason
+the signature moves rather than a convenience: the existing empty case already means no column answers
+and composes the sentence that says so, and telling an ambiguity apart from it is what stops that
+sentence being printed about a table whose columns do exist.
+
+`findColumn` is not touched and neither are its other callers. They carry the same silent pick, and
+that is R729, filed off this item's analysis. This item leaves one worked example of the rule rather
+than a sweep, and depends on nothing.
 
 ## Implementation
 
 * `graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`
 ** `sql_node_key_column` gains `column_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(column_name))`,
-   commented in the same terms as the eleven `_upper` columns already there, naming the crossing as
-   stated-name-meets-catalog-name.
+   null exactly where `column_name` is. Its comment takes the shape the twenty-nine `_upper` columns
+   across twelve relations already share (what the fold is for, that nothing writes it and nothing
+   can) and names this crossing as a spelled reference meeting a catalog reading, which is the
+   sentence that stops a reader deleting it as a within-family fold.
 ** `CREATE VIEW intent_stated_key_column_match` with the columns
    `(source_name, table_schema, table_name, position, column_name, case_exact, exact_candidates,
-   candidates)`, joining `sql_node_key_column` to `sql_column` on the table key and
+   candidates)`, the first four keying the entry and `column_name` being the *matched* column's SQL
+   name rather than the entry's stated spelling, which the column comment has to say outright since
+   the parent relation spells the other thing under that name. Joining `sql_node_key_column` to
+   `sql_column` on the table key and
    `(c.column_name_upper = k.column_name_upper OR c.jooq_name_upper = k.column_name_upper)`, guarded
    by `k.column_name IS NOT NULL`. `case_exact` is a `CASE WHEN ... THEN TRUE ELSE FALSE END` over
    `c.column_name = k.column_name OR c.jooq_name = k.column_name`, the established idiom for a
@@ -173,9 +210,12 @@ are R702's census and stay R702's, so this item still depends on nothing.
    `COUNT(CASE WHEN <exact> THEN 1 END)`. The view must be defined ahead of
    `intent_node_metadata_defect`, which reads it.
 ** The `KEY_COLUMN_UNRESOLVED` arm becomes a `NOT EXISTS` over the new relation, and a
-   `KEY_COLUMN_CASE_AMBIGUOUS` arm is added reading the two counts. The two arms are mutually
-   exclusive by construction, which keeps the no-short-circuit grain the view comment promises. The
-   four `UPPER` calls go.
+   `KEY_COLUMN_CASE_AMBIGUOUS` arm is added reading the two counts. Both arms keep the
+   `k.column_name IS NOT NULL` guard the entry arm carries today. The relation guards itself, so the
+   guard looks redundant and is not: an arm that dropped it would report a null entry unresolved
+   beside `KEY_COLUMN_ENTRY_NULL`, and `aTableExhibitingSeveralDefectsGetsARowForEachOfThem` is what
+   catches it. The two arms are mutually exclusive by construction, which keeps the no-short-circuit
+   grain the view comment promises. The four `UPPER` calls go.
 ** Comments. The new relation and its columns get theirs, including the sentence about declining
    `findColumn`'s precedence on purpose. `sql_node_key_column.column_name`'s comment currently ends
    "it matches the reading side: case-insensitively, against the generated Java name or the SQL name",
@@ -185,11 +225,21 @@ are R702's census and stay R702's, so this item still depends on nothing.
    in the same commit, and the honest replacement is that fidelity to the predecessor is evidence
    rather than a specification: the store diverges from `findColumn` on the collision case deliberately,
    and the Java change below is what stops that being a divergence at all.
+** The seven `sql_`-family `_upper` comments (`sql_table` two, `sql_column` two, `sql_constraint`
+   three) say "Two values of one family are compared exactly". Replace *values of one family* with
+   *catalog readings* in each. It is the same claim said accurately: those columns' comparisons are
+   between two readings, the new column's is not, and a reader who reaches the new column with the
+   corrected rule in hand keeps it instead of deleting it. The sentence's second half, that a
+   comparison wanting a fold on both sides joins the owning relation rather than having one forwarded,
+   is untouched and still true. The page these seven got the word from is edited below, so the schema
+   and the docs land the correction together.
 ** `intent_node_metadata_defect`'s `defect` comment enumerates "a closed vocabulary of ten" and its
-   `position` comment says "the eight that are about a whole constant". Both counts go stale. Rewrite
-   to enumerate without the number rather than bumping it: the schema already carries two arm counts
-   that disagree with each other, and a third is worse than none. A number belongs here only if a named
-   test pins it.
+   `position` comment says "the eight that are about a whole constant". One added arm stales both, off
+   one edit, which is the argument for dropping the numbers rather than bumping them: two
+   hand-maintained counts over one vocabulary, neither pinned by a test. Rewrite to enumerate without
+   the number. Where the schema does carry a count it either pins it or restates it from one place,
+   `intent_argmapping_pair`'s vocabulary of eight being cited by name at three other columns rather
+   than recounted; this view does neither, so the number is inventory.
 * `graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/FactWrites.java`: a
   `sqlNodeKeyColumn` write function naming the five writable columns, registered in the writers map.
   A relation carrying a computed column cannot go through the generic every-column arm, which is why
@@ -199,20 +249,39 @@ are R702's census and stay R702's, so this item still depends on nothing.
   name, so state it: `onDuplicateKeyIgnore`, matching `sqlColumn` beside it and the generic arm's
   behaviour for this relation today, `FactSink.claim` having already deduped the key.
 * `graphitron/src/main/java/no/sikt/graphitron/rewrite/JooqCatalog.java`: the node-metadata lookup
-  stops picking on an ambiguous fold. `validateLookup`'s `columnLookup` argument is where this lands, so
-  the change is a lookup that tries exact spellings first and reports an ambiguous fold as a `Malformed`
-  reason, wired in at `doLookup`'s call site only. `findColumn` itself and its eight other callers are
-  R702's census and are not touched here. The new reason string names the ambiguity, matching the store's
-  new defect value in meaning without either side citing the other.
+  stops picking on an ambiguous fold. `columnLookup` changes from
+  `Function<String, Optional<ColumnEntry>>` to a function returning every column that answers the
+  name; `validateLookup` derives the verdict from that list the way the defect arm derives it from the
+  counts; `doLookup` passes a private matcher over the standing table's fields, and is still the only
+  production call site touched. The ambiguity gets a new `Malformed` reason naming it, distinct from
+  the existing "does not belong to this table", which is the distinction the `Optional` could not
+  carry. It matches the store's new defect value in meaning without either side citing the other.
+  `findColumn` is untouched and so are its other callers; that residue is R729.
+  `validateNodeIdMetadata`'s signature moves with `columnLookup`'s, which reaches
+  `JooqCatalogNodeIdMetadataTest`'s nine call sites through the one `RESOLVE_ID_COLUMNS` constant they
+  share, so the test churn is that constant plus the new cases.
 * `docs/architecture/explanation/fact-model.adoc`, the fold-rule paragraph. Its last two sentences
   carve out this comparison as "the one comparison the rule declines to serve" and say "it goes away by
-  becoming exact rather than by being stored". Both become false, and the edit is a deletion rather than
-  a rewrite: the rule ends up with no exception at all, which is a strengthening of the page. The
-  paragraph's crossing statement also has to widen, from an author typing "a GraphQL or SDL identifier"
-  to any hand-authored spelling, since the new fold's authored side is a Java expression in a generated
-  or hand-written table class. Separately, the paragraph calls this the single surviving per-row fold,
-  which stops being true for a different reason: `intent_resolved_node_key_projection` landed after the
-  paragraph was written and carries two more. Say so and attribute them rather than dropping the count.
+  becoming exact rather than by being stored". Both become false and both are deleted: the reason the
+  page gives for declining this crossing is the reasoning the first section of this item refutes, so
+  the carve-out goes rather than being reworded. Two further corrections to the same paragraph. Its
+  crossing statement widens, from an author typing "a GraphQL or SDL identifier" to any hand-authored
+  spelling, since the new fold's authored side is a Java expression in a generated or hand-written
+  table class. And its second consequence, "a comparison between two values of one family mints
+  nothing", is where the seven column comments got the word: it becomes a statement about two catalog
+  readings, so the page and the comments carry the corrected rule in the same terms.
+* The same paragraph, and the reason the deletion above is not the end of it. The page promises "views
+  that hold no per-row case fold on any comparison the rule reaches", and treats the defect view as the
+  sole survivor. That stopped being true before this item is implemented: R668 landed
+  `intent_resolved_node_key_projection`, which folds `intent_resolved_node_key_column.column_name` per
+  row against `graphitron_argument_path_segment.segment_name_upper`, and did not touch this page. So
+  removing this item's survivor leaves the page asserting a clean sweep that is false, which is worse
+  than the carve-out it replaces. State the surviving site with the argument R668's own view comment
+  already gives, since that argument is derivable from the rule rather than an exception to it: a
+  three-tier pick has no one base relation whose `_upper` column it could reach, and the rule's second
+  consequence forbids forwarding a fold through a derived view, so a comparison against such a
+  relation is folded at the crossing or not at all. The wording of that site is R668's; not leaving
+  the paragraph false is this item's, being the item that edits it.
 
 Nothing generated needs regenerating by hand. The schema reference under
 `docs/architecture/reference/schema/` is rendered from the DDL and its comments by the docs module's
@@ -230,8 +299,11 @@ than shipped as a broken generated class.
   fold that exactly one column answers. Confirm this by running the class before touching it and
   after, not by reading the diff.
 * A colliding table where the entry matches one column exactly: two columns differing only by case,
-  the entry spelled as one of them. No defect, `candidates` two and `exact_candidates` one. This is the
-  case the item exists for, and the one the old arm got right by accident rather than by verdict.
+  the entry spelled as one of them. No defect, `candidates` two and `exact_candidates` one, and the
+  exactly-spelled column is the one row carrying `case_exact`, which is the column a tier reading this
+  relation takes. That last assertion is where the deliberate override of `findColumn`'s Java-name-first
+  precedence is pinned rather than only described. This is the case the item exists for, and the one the
+  old arm got right by accident rather than by verdict.
 * A colliding table where the entry matches neither exactly: `KEY_COLUMN_CASE_AMBIGUOUS` at that
   position, and no `KEY_COLUMN_UNRESOLVED` beside it, so the two arms are pinned as exclusive.
 * Two exact candidates: column A exact on its `jooq_name`, column B exact on its `column_name`, the
@@ -246,14 +318,17 @@ than shipped as a broken generated class.
 * A case pinning that a case-ambiguous entry suppresses `intent_resolved_node_key_column`'s
   `JOOQ_METADATA` tier, which is where the defect value earns its keep. Belongs in
   `ResolvedNodeKeyColumnTest` beside the tier's other cases rather than in this class.
-* The same for nodehood, once R711 has landed: a case-ambiguous key column takes the type out of
-  `intent_inferred_node_type`, beside that relation's own cases. Written if R711 is on trunk when this
-  item is implemented and skipped if it is not, which is a check the implementer makes rather than a
-  dependency; R711 is Ready and this is Spec, so the likely order is that it has landed. If it has not,
-  say so in the In Review hand-off rather than leaving the gap silent, and R711's own gate picks it up.
-* The Java side, beside `JooqCatalog`'s other `validateNodeIdMetadata` cases: an ambiguous fold reports
-  `Malformed` rather than resolving. That factoring already takes a synthetic column lookup, so the
-  collision is two entries in a map and needs no fixture class.
+* The same for nodehood: a case-ambiguous key column takes the type out of `intent_inferred_node_type`,
+  beside that relation's own cases. That relation is on trunk as of this revision, so the case is
+  written rather than conditional. Should R711 be reworked out from under it before this item is
+  implemented, the implementer says so in the In Review hand-off rather than leaving the gap silent.
+* The Java side, beside `JooqCatalogNodeIdMetadataTest`'s other `validateNodeIdMetadata` cases. Three,
+  matching the store's: an ambiguous fold reports `Malformed` with the new reason rather than resolving;
+  an exact candidate beside a folded one resolves to the exact column, which is where the Java and the
+  store agree on overriding `findColumn`'s precedence; and a name no column answers still reports the
+  existing "does not belong to this table" reason, pinning that the two messages stayed apart. The
+  helper already takes a synthetic column lookup, so a collision is two entries the stub hands back
+  together and needs no fixture class.
 
 All the store cases are seeded rows, not crawler fixtures. The class javadoc already argues why:
 reaching these states through a crawler would mean shipping a broken generated class into the fixture
@@ -270,12 +345,12 @@ If the exact-first decision turns out hard, what defers is that predicate plus t
 the Java enforcer, together, and what lands is the folded column, the pairing relation with both arity
 columns, and the entry arm rewritten to read it with today's semantics: a defect exactly when
 `candidates = 0`. That intermediate is coherent on its own terms. There is one spelling of the
-resolution instead of two, no vocabulary change, no consumer impact on the metadata tier or on R711,
-the arity is already stated so a collision is visible to anyone who looks, and the remaining work is a
-one-line predicate change plus its tests.
+resolution instead of two, no vocabulary change, no consumer impact on the metadata tier or on
+`intent_inferred_node_type`, the arity is already stated so a collision is visible to anyone who
+looks, and the remaining work is a one-line predicate change plus its tests.
 
-What must not be the fallback is landing the relation while leaving the defect view's own `EXISTS` in
-place. That would leave the fold spelled twice with nothing binding the two, which is the drift this
+What must not be the fallback is landing the relation while leaving the defect view's own `NOT EXISTS`
+in place. That would leave the fold spelled twice with nothing binding the two, which is the drift this
 item exists to remove, arriving by the back door.
 
 Deferring is a judgement about difficulty encountered, not a default. If it happens, the deferred half
@@ -298,8 +373,10 @@ not. Whether R668's tier takes that spelling is R668's call; this item's job is 
 and to stop the predicate existing twice.
 
 Ordering, and the obligation it puts on this item: R668 lands first and is partway there. Its
-segment-grain DDL work is on trunk already and left this arm untouched, all four `UPPER` calls still in
-place, so as of this revision nothing extra is owed. That can still change before R668 reaches Done. If
+segment-grain DDL, `intent_argmapping_binding_leaf`, `intent_resolved_node_key_projection` and
+`intent_argmapping_projection_defect` are all on trunk already and all left this arm untouched, four
+`UPPER` calls still in place, so as of this revision nothing extra is owed. That can still change
+before R668 reaches Done. If
 it ends up shipping a second copy of the folded predicate, this item converts both readers onto the
 relation rather than leaving one behind; the implementer re-reads the arm as it then stands rather than
 trusting this paragraph.
@@ -314,15 +391,25 @@ written against a stale copy of the arm.
   reader will pair them, so this item's view comment points at it rather than leaving the adjacency to
   look like an oversight.
 * A schema-wide census of case-colliding columns on `sql_column`, which would answer whether any real
-  consumer catalog exhibits the pathology at all and would serve R702's per-site reachability
+  consumer catalog exhibits the pathology at all and would serve R729's per-site reachability
   question. Deliberately not added here: the pairing relation already carries the witnesses for this
   view's own question, and a census with no reader today belongs with the item that needs it.
-* The two per-row `UPPER` calls in `intent_resolved_node_key_projection`, against
-  `graphitron_argument_path_segment.segment_name`. Not a hedge, an authored `argMapping` segment
-  meeting a catalog name, so they want folded columns under the ordinary rule. R668 owns them and its
-  body already says so.
+* The per-row fold in `intent_resolved_node_key_projection`, recorded as settled so nobody reopens it.
+  R668 landed the authored side as `graphitron_argument_path_segment.segment_name_upper` and left the
+  key-column side folded at the crossing on purpose, arguing it in that view's comment: the relation it
+  reads is a pick across three tiers with no one base relation to reach a generated column through.
+  This item's new column does not serve that site and must not be pointed at it, the value there being
+  whichever tier won rather than the stated entry name. What this item owes it is the page edit above,
+  nothing more.
+* R729, `findColumn`'s silent pick at its other seventeen call sites, filed off this item's analysis.
+  This item installs the rule at one of those sites because a store verdict about malformed metadata
+  needs an enforcer or it has no teeth; generalising it needs a per-site reachability call this item
+  has no reason to make.
 
-R702 is the Java-side sibling over the same hedge at nine call sites. Neither item depends on the
-other and the two must not settle opposite conventions. This item's convention, stated so R702 can
-agree or argue with it: exactness is what a fold falls back to, and an ambiguity a fold would have
-spent silently is a stated row.
+Two neighbouring items must not settle a convention opposite to this one, and they are not the same
+item as each other. R729 is the Java-side sibling over *this* crossing, a spelled name meeting a
+catalog reading, where the fold stays and only the silent pick goes. R702 is over the other one, two
+catalog readings compared under a fold that bridges nothing, where the fold itself goes. Neither is a
+dependency. This item's convention, stated so both can agree or argue with it: a fold is minted where
+a spelled reference meets a reading and nowhere else, exactness is what a fold falls back to when more
+than one thing answers, and an ambiguity a fold would have spent silently is a stated row.
