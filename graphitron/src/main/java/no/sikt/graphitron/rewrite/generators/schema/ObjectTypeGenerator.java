@@ -16,10 +16,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -84,7 +81,7 @@ public final class ObjectTypeGenerator {
     public static TypeSpec generateFor(GraphitronSchema schema, GraphQLSchema assembled,
                                        TypeUnitCommand.SchemaShapeUnit row, CodeBlock fetcherBody) {
         String name = row.typeName();
-        var graphqlType = graphqlTypeFor(schema.type(name), name, assembled);
+        var graphqlType = CarriesObjectForm.formOf(schema.type(name), name, assembled);
         return switch (row.form()) {
             case OBJECT -> {
                 if (!(graphqlType instanceof GraphQLObjectType obj)) {
@@ -138,22 +135,6 @@ public final class ObjectTypeGenerator {
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled) {
         return generate(schema, assembled, Map.of());
-    }
-
-    /**
-     * Resolves the graphql-java type form for a classified {@link GraphitronType} entry:
-     * synthesised variants carry their form directly, domain-classified variants look up
-     * via the assembled schema.
-     */
-    private static GraphQLNamedType graphqlTypeFor(GraphitronType variant, String name, GraphQLSchema assembled) {
-        if (variant instanceof ConnectionType ct) return ct.schemaType();
-        if (variant instanceof EdgeType et) return et.schemaType();
-        if (variant instanceof PageInfoType pi) return pi.schemaType();
-        if (variant instanceof GraphitronType.FacetsType ft) return ft.schemaType();
-        if (variant instanceof GraphitronType.FacetValueType fvt) return fvt.schemaType();
-        if (variant instanceof GraphitronType.NestingType pot) return pot.schemaType();
-        var t = assembled.getType(name);
-        return t instanceof GraphQLNamedType named ? named : null;
     }
 
     // ===== Object =====

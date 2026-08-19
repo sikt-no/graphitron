@@ -21,6 +21,7 @@ import graphql.util.TreeTransformerUtil;
 
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLInputObjectType;
+import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis.MintedName;
 import no.sikt.graphitron.rewrite.model.FacetNaming;
@@ -211,14 +212,22 @@ final class ConnectionPromoter {
      * tagged by promotion); otherwise a synthesised form carrying this carrier's
      * {@code shareable} flag and {@code @tag} applications is registered, and {@code register}
      * unions across carriers. Idempotent across repeated carriers either way.
+     *
+     * <p>Both arms route through {@link #registerSynthesised}, which derives the same
+     * {@link MintedName} either arm would state by hand (an SDL-declared {@code PageInfo} is by
+     * definition present in the assembled schema) and sweeps the registered form for the scalars it
+     * references. The declared arm needs that sweep as much as the synthesised one: an SDL
+     * {@code PageInfo} nothing authored references is registered here without ever being
+     * walk-reached, so its {@code Boolean} and {@code String} field scalars are not registered
+     * either.
      */
     private static void registerPageInfo(
             BuildContext ctx, ConnectionPromotion promotion,
             ConnectionSynthesisRelation.Builder relation) {
         if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType sdlPageInfo) {
             boolean shareable = sdlPageInfo.hasAppliedDirective("shareable");
-            ctx.typeRegistry.register("PageInfo", new PageInfoType("PageInfo", null, shareable, sdlPageInfo));
-            relation.addShared(new MintedName("PageInfo", PageInfoType.class, false));
+            relation.addShared(registerSynthesised(ctx, "PageInfo",
+                new PageInfoType("PageInfo", null, shareable, sdlPageInfo)));
         } else {
             relation.addShared(registerSynthesised(ctx, "PageInfo", new PageInfoType("PageInfo", null,
                 promotion.shareable(),
@@ -232,11 +241,55 @@ final class ConnectionPromoter {
      * the synthesised PageInfo, are absent; structural / SDL-declared names are present). The
      * post-walk rebuild reads the discriminator off the relation instead of re-probing the
      * schema, so exactly the absent set is added via {@code additionalType}.
+     *
+     * <p>Also demands registration of every scalar the registered form references, via
+     * {@link #demandReferencedScalars}. The parameter's intersection bound is what makes that
+     * single-sourced: an arm can only be registered here if it carries its graphql-java form
+     * ({@link CarriesObjectForm}), so a future synthesised surface referencing a new scalar demands
+     * it by construction instead of relying on someone remembering to extend a list.
      */
-    private static MintedName registerSynthesised(BuildContext ctx, String name, GraphitronType type) {
+    private static <T extends GraphitronType & CarriesObjectForm> MintedName registerSynthesised(
+            BuildContext ctx, String name, T type) {
         boolean absentFromAssembled = ctx.schema.getType(name) == null;
+        demandReferencedScalars(ctx, type.schemaType());
         ctx.typeRegistry.register(name, type);
         return new MintedName(name, type.getClass(), absentFromAssembled);
+    }
+
+    /**
+     * Demands a classification row for every scalar {@code form} references, so the emitted schema
+     * registers the scalars its own synthesised surfaces name. {@code Int} rides in on
+     * {@code Connection.totalCount} and {@code FacetValue.count}, {@code String} on
+     * {@code Edge.cursor} and {@code PageInfo.startCursor}, {@code Boolean} on
+     * {@code PageInfo.hasNextPage}; none of them need appear anywhere in the author's SDL.
+     *
+     * <p>Sweeps names, not instances. A minted form references its scalars as
+     * {@link GraphQLTypeReference}, an SDL-wrapped form (the declared-{@code PageInfo} arm) as real
+     * {@link graphql.schema.GraphQLScalarType} instances, and both unwrap to a
+     * {@link GraphQLNamedType}. Every named reference is offered without filtering:
+     * {@code TypeBuilder.ensureScalarRegistered} owns the which-names-are-scalars decision and
+     * no-ops on the rest, so this sweep carries no type-axis knowledge that could disagree with the
+     * classifier's.
+     *
+     * <p>The {@code first: Int} / {@code after: String} arguments {@link #rewriteCarrierField}
+     * mints at rebuild time are not swept here (they are not on any registered form), and need not
+     * be: both names are already demanded by the Connection and Edge forms above. Nothing in the
+     * code entails that overlap, which is why the emitted population is swept again as a build-time
+     * guard rather than left to this argument.
+     */
+    private static void demandReferencedScalars(BuildContext ctx, GraphQLObjectType form) {
+        if (form == null || ctx.typeBuilder == null) return;
+        for (var field : form.getFieldDefinitions()) {
+            demandNamedReference(ctx, field.getType());
+            for (var arg : field.getArguments()) {
+                demandNamedReference(ctx, arg.getType());
+            }
+        }
+    }
+
+    private static void demandNamedReference(BuildContext ctx, GraphQLType type) {
+        String name = BuildContext.referencedTypeName(type);
+        if (name != null) ctx.typeBuilder.ensureScalarRegistered(name);
     }
 
     /**

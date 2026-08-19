@@ -7,6 +7,7 @@ import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLFieldsContainer;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
@@ -23,6 +24,7 @@ import graphql.util.TraverserContext;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
+import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
@@ -291,6 +293,10 @@ public class GraphitronSchemaBuilder {
         var synthesisedConnectionTypes = resolveSynthesisedConnectionTypes(ctx, connectionSynthesis);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(
             ctx.schema, synthesisedConnectionTypes, connectionSynthesis);
+        // Ordering constraint, review-only prose: the reference-closure guard needs the rebuilt
+        // schema (it resolves the forms of names whose classification does not carry one) and must
+        // precede emission, so it sits here rather than beside its sibling guards below.
+        rejectUnregisteredScalarReferences(ctx, rebuiltAssembled);
         // Ordering constraint, review-only prose: runs after the walk's synthesis has registered
         // every minted name, so synth-vs-synth Connection-name clashes are visible; the relation
         // does not entail the ordering (the reduction reads the registry, not the relation). See
@@ -619,15 +625,9 @@ public class GraphitronSchemaBuilder {
         var absent = connectionSynthesis.absentMinted();
         var forms = new ArrayList<GraphQLObjectType>(absent.size());
         for (var minted : absent) {
-            GraphQLObjectType form = switch (ctx.typeRegistry.get(minted.name())) {
-                case ConnectionType ct -> ct.schemaType();
-                case EdgeType et -> et.schemaType();
-                case PageInfoType pi -> pi.schemaType();
-                case GraphitronType.FacetsType ft -> ft.schemaType();
-                case GraphitronType.FacetValueType fvt -> fvt.schemaType();
-                case null, default -> null;
-            };
-            if (form != null) forms.add(form);
+            if (ctx.typeRegistry.get(minted.name()) instanceof CarriesObjectForm carrier) {
+                forms.add(carrier.schemaType());
+            }
         }
         return List.copyOf(forms);
     }
@@ -685,6 +685,116 @@ public class GraphitronSchemaBuilder {
                     + "producer's returned record), or remove the field." + gateNote),
                 existing.location()));
         }
+    }
+
+    /**
+     * Reference closure over the scalar axis: every scalar name the generated schema class will
+     * reference must have a {@link GraphitronType.ScalarType} row to register it with. The
+     * one-directional sibling of {@link #rejectDanglingTypeReferences}, whose message already
+     * predicts this failure shape for SDL Object return types; registered-but-unreferenced stays
+     * legal, so the contract that the registered set follows the referenced set rather than the
+     * declared set is untouched.
+     *
+     * <p>Population: the schema-shape forms, which is precisely where the generator emits
+     * {@code GraphQLTypeReference.typeRef(<scalarName>)} ({@code ObjectTypeGenerator}'s and
+     * {@code InputTypeGenerator}'s type-ref rendering does not special-case scalars). Directive
+     * definitions and applied directives are deliberately not swept: their type slots go through
+     * {@code AppliedDirectiveEmitter.emitInputType}, which embeds the {@code graphql.Scalars}
+     * constant inline for a spec built-in and a placeholder for an unrecognised scalar, so they
+     * demand no {@code additionalType} registration at all. The forms come from the same
+     * {@link CarriesObjectForm#formOf} resolution the emitter renders from, over the rebuilt
+     * assembled schema, rather than from {@code Bundle.assembled()} as a whole: that schema is a
+     * strict superset of what is emitted (federation-injected {@code _}-prefixed types, strictly
+     * internal directive-support inputs, demoted names), so sweeping it would fail builds whose
+     * generated schema assembles fine.
+     *
+     * <p>Names starting with {@code _} are skipped on both sides, mirroring the generator's own
+     * registration filter: federation injects those types after {@code schemaBuilder.build()}.
+     *
+     * <p>Rejection arms. A referenced-but-unregistered scalar behind a synthesised surface is a
+     * <em>generator</em> defect, not an authoring mistake, so the diagnostic names the referencing
+     * coordinate and the missing scalar and says so plainly rather than borrowing the
+     * author-actionable "give X a binding" shape. A name that already carries an
+     * {@link UnclassifiedType} row is suppressed: that is the author-caused case
+     * ({@code classifyScalarType}'s rejected arms), it already has its own richer report, and the
+     * guard must not double-report it.
+     *
+     * <p>Package-private rather than private so the generator-defect arm is reachable from a test:
+     * once the demand sweep in {@code ConnectionPromoter} is in place no SDL fixture produces that
+     * arm, so the only way to exercise it is a hand-built model row.
+     */
+    static void rejectUnregisteredScalarReferences(BuildContext ctx, GraphQLSchema rebuiltAssembled) {
+        // The registered set is re-derived by the same filter GraphitronSchemaClassGenerator's
+        // scalar loop applies (ScalarType rows, minus the _-prefixed federation names). There is no
+        // registration command row to join against yet, so the two filters have to agree by
+        // inspection; the generator's loop carries the reciprocal note.
+        var registered = new LinkedHashSet<String>();
+        for (var entry : ctx.types.entrySet()) {
+            if (entry.getValue() instanceof GraphitronType.ScalarType && !entry.getKey().startsWith("_")) {
+                registered.add(entry.getKey());
+            }
+        }
+        var reported = new LinkedHashSet<String>();
+        for (var entry : ctx.types.entrySet()) {
+            String typeName = entry.getKey();
+            if (typeName.startsWith("_")) continue;
+            var variant = entry.getValue();
+            if (variant instanceof GraphitronType.ScalarType || variant instanceof UnclassifiedType) continue;
+            // Objects and interfaces alike carry fields with arguments; input objects carry field
+            // types only. Unions and enums reference no scalars, and fall out with no form arm.
+            var form = CarriesObjectForm.formOf(variant, typeName, rebuiltAssembled);
+            if (form instanceof GraphQLFieldsContainer fields) {
+                for (var field : fields.getFieldDefinitions()) {
+                    checkScalarReference(ctx, rebuiltAssembled, registered, reported,
+                        typeName + "." + field.getName(), field.getType());
+                    for (var arg : field.getArguments()) {
+                        checkScalarReference(ctx, rebuiltAssembled, registered, reported,
+                            typeName + "." + field.getName() + "(" + arg.getName() + ":)", arg.getType());
+                    }
+                }
+            } else if (form instanceof GraphQLInputObjectType input) {
+                for (var field : input.getFieldDefinitions()) {
+                    checkScalarReference(ctx, rebuiltAssembled, registered, reported,
+                        typeName + "." + field.getName(), field.getType());
+                }
+            }
+        }
+    }
+
+    /**
+     * Registers a diagnostic when {@code type}'s named base is a scalar with no registration row.
+     * At most one per missing scalar name ({@code reported} is the dedup): the fix is one
+     * registration, and every coordinate referencing it would otherwise repeat the same report.
+     *
+     * <p>Scalar-hood is read three ways because a referenced scalar need not be in the schema at
+     * all: an instance in the rebuilt schema settles it, a spec built-in name settles it without
+     * one (the reported bug's exact shape, {@code Int} named by a synthesised {@code typeRef} on a
+     * schema whose SDL never mentions it), and a federation-namespace name settles it for the
+     * scalars Graphitron synthesises at emit time. Anything else is not this guard's business:
+     * a dangling Object reference is {@link #rejectDanglingTypeReferences}' arm, and a name the
+     * rebuilt schema resolves to a composite is registered or diagnosed on the type axis.
+     */
+    private static void checkScalarReference(
+            BuildContext ctx, GraphQLSchema rebuiltAssembled, Set<String> registered,
+            Set<String> reported, String coordinate, GraphQLType type) {
+        String scalarName = referencedTypeName(type);
+        if (scalarName == null || scalarName.startsWith("_") || registered.contains(scalarName)) return;
+        boolean isScalar = rebuiltAssembled.getType(scalarName) instanceof GraphQLScalarType
+            || ScalarTypeResolver.isSpecBuiltIn(scalarName)
+            || ScalarTypeResolver.isFederationNamespaceScalar(scalarName);
+        if (!isScalar) return;
+        if (ctx.types.get(scalarName) instanceof UnclassifiedType) return;
+        if (!reported.add(scalarName)) return;
+        ctx.addDiagnostic(ValidationError.forType(scalarName,
+            Rejection.invalidSchema(
+                "scalar '" + scalarName + "' is referenced by '" + coordinate + "' in the schema "
+                + "Graphitron is about to emit, but no scalar registration was resolved for it, so "
+                + "the generated schema class would name it through a type reference with no "
+                + "matching additionalType and assembly would fail with \"type " + scalarName
+                + " not found in schema\". This is a generator defect rather than a schema-authoring "
+                + "mistake: the surface referencing the scalar is one Graphitron synthesised. "
+                + "Please report it."),
+            null));
     }
 
     /**

@@ -563,6 +563,27 @@ class BuildContext {
     }
 
     /**
+     * The name of the type {@code type} ultimately refers to, list and non-null wrappers peeled off,
+     * or {@code null} when the base is unnamed.
+     *
+     * <p>Sibling of {@link #baseTypeName(GraphQLFieldDefinition)} for the programmatically-built
+     * forms rather than assembled-schema ones: those name their children with
+     * {@link graphql.schema.GraphQLTypeReference}, which is a {@link GraphQLNamedType} but not a
+     * {@code GraphQLUnmodifiedType}, so {@code GraphQLTypeUtil.unwrapAll} throws a
+     * {@code ClassCastException} on its final cast. Unwrapping one layer at a time avoids that cast
+     * and treats a reference and a resolved type alike, which is the point: a sweep over a minted
+     * form wants the name, and whether the form carries the instance or a forward reference to it is
+     * an accident of how the form was built.
+     */
+    static String referencedTypeName(GraphQLType type) {
+        GraphQLType current = type;
+        while (GraphQLTypeUtil.isWrapped(current)) {
+            current = GraphQLTypeUtil.unwrapOne(current);
+        }
+        return current instanceof GraphQLNamedType named ? named.getName() : null;
+    }
+
+    /**
      * Converts a type name and wrapper into the correct {@link ReturnTypeRef} variant by
      * consulting the populated {@link #types} map.
      *

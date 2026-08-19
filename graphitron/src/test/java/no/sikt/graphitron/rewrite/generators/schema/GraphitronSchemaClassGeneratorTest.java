@@ -680,9 +680,12 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void scalarRegistration_unreferencedSpecBuiltInIsNotEmitted() {
-        // Only scalars the schema actually references are emitted. Graphql-java's implicit
-        // introspection / directive surface pulls in Int, Boolean, and ID for any schema, but
-        // Float has no implicit reference and is omitted when the SDL doesn't use it.
+        // Only scalars the schema actually references are emitted, and the reference need not be
+        // an authored one: the built-in directive definitions graphql-java always adds reference
+        // String (@deprecated(reason:)) and Boolean (@skip(if:)), and connection synthesis
+        // references Int, String and Boolean on the surfaces it mints. Float is referenced by
+        // nothing authored or synthesised here, so it is omitted. The contract is one-directional:
+        // the registered set follows the referenced set, never the declared set.
         var body = buildBody("type Query { x: String }");
         assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLString)");
         assertThat(body).doesNotContain(".additionalType(graphql.Scalars.GraphQLFloat)");

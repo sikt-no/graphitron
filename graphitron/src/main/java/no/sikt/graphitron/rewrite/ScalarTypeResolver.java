@@ -327,6 +327,26 @@ public final class ScalarTypeResolver {
     }
 
     /**
+     * The {@code graphql.Scalars} constant instance for one of the five spec built-ins, or
+     * {@code null} for any other name (and for the theoretical case of a built-in constant that
+     * fails {@link #checkConstant}, which {@link #resolveBuiltIn} reports as a typed rejection).
+     *
+     * <p>graphql-java's {@code SchemaGenerator} puts a built-in into the assembled schema only when
+     * the SDL, or one of the built-in directive definitions it always adds, references it, so a
+     * schema whose only {@code Int} usage is a surface Graphitron synthesises has no assembled
+     * {@code Int} instance at all. A caller that must produce a classification row for such a
+     * referenced built-in reads its instance here instead of the schema.
+     */
+    public static GraphQLScalarType specBuiltInInstance(String scalarName) {
+        BuiltIn entry = SPEC_BUILT_INS.get(scalarName);
+        if (entry == null) {
+            return null;
+        }
+        return checkConstant(SCALARS_FQN, entry.fieldName(), ScalarTypeResolver.class.getClassLoader())
+            .scalar();
+    }
+
+    /**
      * Verifies (without invoking the resolver) that an SDL name is a federation-namespace scalar
      * Graphitron synthesises at emit time. See {@link #FEDERATION_NAMESPACE_SCALARS} for the set
      * and {@link #resolveFederationNamespaceScalar(String)} for the resolution path.

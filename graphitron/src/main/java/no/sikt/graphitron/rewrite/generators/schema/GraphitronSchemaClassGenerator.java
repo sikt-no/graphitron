@@ -254,6 +254,11 @@ public final class GraphitronSchemaClassGenerator {
         // Synthesised scalars (federation-namespace names whose renamed forms have no constant
         // exposed on the federation-jvm public API) reach the builder through a per-scalar
         // factory method that constructs the GraphQLScalarType inline.
+        //
+        // This filter is the registered set GraphitronSchemaBuilder's reference-closure guard
+        // re-derives to check that every scalar the emitted forms reference lands here. Without a
+        // registration command row to join against, the two agree by inspection: change one and
+        // change the other.
         var scalarTypes = schema.types().values().stream()
             .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType)
             .map(t -> (no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType) t)

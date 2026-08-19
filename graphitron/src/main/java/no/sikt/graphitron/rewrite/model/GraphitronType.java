@@ -461,7 +461,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
 
     /**
      * A GraphQL enum type, recorded so {@code schema.types()} is complete for emission.
@@ -567,7 +567,7 @@ public sealed interface GraphitronType
         boolean shareable,
         List<FacetSpec> facets,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
 
     /**
      * A Relay edge object type — the inner wrapper whose fields are {@code cursor: String!} and
@@ -585,7 +585,7 @@ public sealed interface GraphitronType
         boolean itemNullable,
         boolean shareable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
 
     /**
      * The Relay {@code PageInfo} object type. Exactly one instance per schema; the classifier
@@ -601,7 +601,7 @@ public sealed interface GraphitronType
         SourceLocation location,
         boolean shareable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
 
     /**
      * The synthesised per-connection facets container, e.g.
@@ -623,7 +623,7 @@ public sealed interface GraphitronType
         SourceLocation location,
         String connectionName,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
 
     /**
      * A synthesised, cross-schema-reusable facet value type, e.g.
@@ -642,5 +642,5 @@ public sealed interface GraphitronType
         String valueTypeName,
         boolean valueNullable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType, EmitsPerTypeFile {}
+    ) implements GraphitronType, EmitsPerTypeFile, CarriesObjectForm {}
 }

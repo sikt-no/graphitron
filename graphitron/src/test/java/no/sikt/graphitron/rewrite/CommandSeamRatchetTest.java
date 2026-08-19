@@ -83,9 +83,13 @@ class CommandSeamRatchetTest {
      * the compile tier because a rows method calling an unemitted helper does not compile.
      * Raised 71 to 72 when that leaf's connection cardinality lifted: the connection-scatter
      * helper gate gained the same leaf read its list sibling already had, discoverable at the
-     * compile tier for the same reason.
+     * compile tier for the same reason. Lowered 72 to 69 when the render-side form resolution
+     * folded: the object generator's six-leaf {@code instanceof} chain over the form-carrying arms
+     * (three of them naming a leaf this scan counts) became one read of
+     * {@link no.sikt.graphitron.rewrite.model.CarriesObjectForm}, which the arms opt into, so the
+     * arm list is declared on the variants instead of restated at each consumer.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 72;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 69;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.

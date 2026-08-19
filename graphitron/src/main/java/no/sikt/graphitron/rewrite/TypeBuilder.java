@@ -1335,6 +1335,46 @@ class TypeBuilder {
     }
 
     /**
+     * Registers the {@link GraphitronType.ScalarType} row for {@code name} when {@code name} is a
+     * scalar and nothing has registered it yet.
+     *
+     * <p>The demand entry for a surface the generator synthesises rather than the author writing
+     * it. Registration is otherwise sourced from author-reachability (the classification walk
+     * classifies the scalars a reachable coordinate names), and the two sets diverge the moment a
+     * minted surface references a scalar the SDL never mentions: connection synthesis names
+     * {@code Int}, {@code String} and {@code Boolean} on its pagination shapes whatever the author
+     * wrote. The registered set is what {@code GraphitronSchemaClassGenerator} turns into
+     * {@code schemaBuilder.additionalType(...)} calls, so a missing row means the generated schema
+     * class names the scalar through a {@code typeRef} with nothing registering it and consumer
+     * assembly fails with "type Int not found in schema".
+     *
+     * <p>Two no-op arms make the call order irrelevant and the caller ignorant of the type axis:
+     * a name the registry already carries keeps its existing row (so the walk and a demand cannot
+     * produce two rows for one name), and a name that is not a scalar at all falls through (the
+     * caller sweeps every named reference on a minted form and lets this method decide, so an
+     * object type or a not-yet-minted connection name needs no filtering there).
+     *
+     * <p>Row construction goes through {@link #classifyScalarType}, the one producer, over the
+     * assembled schema's instance when it carries one. A spec built-in the assembled schema omits
+     * is classified from its {@code graphql.Scalars} constant instead; that instance has no SDL
+     * definition node, so the row's {@code location} is {@code null}, which is right on its own
+     * terms: the scalar has no authored site, and no single carrier referencing it is the
+     * actionable one.
+     */
+    void ensureScalarRegistered(String name) {
+        if (ctx.typeRegistry.contains(name)) {
+            return;
+        }
+        var instance = ctx.schema.getType(name) instanceof GraphQLScalarType declared
+            ? declared
+            : ScalarTypeResolver.specBuiltInInstance(name);
+        if (instance == null) {
+            return;
+        }
+        ctx.typeRegistry.register(name, classifyScalarType(instance));
+    }
+
+    /**
      * Projects a {@link ScalarResolution.Rejected} arm to a {@link Rejection} the validator
      * surfaces alongside the rest of the type-classification rejections. Each arm carries the
      * structured payload the per-arm LSP fix-it consumes; the prose here is the build-log surface

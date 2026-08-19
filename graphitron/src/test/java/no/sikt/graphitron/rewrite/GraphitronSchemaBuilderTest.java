@@ -5534,7 +5534,66 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((ScalarResolution.Synthesised) t.resolution()).sdlName()).isEqualTo("BigDecimal");
                 assertThat(t.resolution().javaType().toString())
                     .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.Money");
-            });
+            }),
+
+        CONNECTION_MINTED_BUILT_INS_REGISTER(
+            "@asConnection on a schema whose SDL names no built-in scalar → Int, String and Boolean "
+                + "still register: the minted pagination surface references them, and registration "
+                + "follows what the emitted schema references, not what the author wrote",
+            """
+            type Film { id: ID! }
+            type Query { films: [Film!]! @asConnection }
+            """,
+            schema -> {
+                // Int is the reported failure's scalar: it reaches the emitted schema only through
+                // the minted Connection's totalCount (and the minted `first` argument), so before
+                // the demand sweep the generated schema class named it with nothing registering it
+                // and consumer assembly failed with "type Int not found in schema".
+                assertThat(constantFieldOf(schema, "Int")).isEqualTo("GraphQLInt");
+                // String rides in on Edge.cursor / PageInfo.endCursor, Boolean on
+                // PageInfo.hasNextPage. Both are also reachable through the built-in directive
+                // definitions graphql-java always adds (@deprecated(reason: String),
+                // @skip(if: Boolean!)), which SchemaReachability seeds, so these two assert the
+                // property rather than a behaviour change.
+                assertThat(constantFieldOf(schema, "String")).isEqualTo("GraphQLString");
+                assertThat(constantFieldOf(schema, "Boolean")).isEqualTo("GraphQLBoolean");
+                // Float is referenced by nothing, authored or minted, and stays unregistered: the
+                // contract is one-directional, registered follows referenced, never declared.
+                assertThat(schema.type("Float")).isNull();
+            }),
+
+        DECLARED_PAGE_INFO_REGISTERS_ITS_OWN_SCALARS(
+            "an SDL-declared PageInfo nothing authored references → the scalars its fields name "
+                + "register too, even one no other coordinate reaches",
+            """
+            scalar Cursor @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+            type Film { id: ID! }
+            type PageInfo {
+                hasNextPage: Boolean!
+                hasPreviousPage: Boolean!
+                startCursor: Cursor
+                endCursor: Cursor
+            }
+            type Query { films: [Film!]! @asConnection }
+            """,
+            schema -> {
+                // Promotion registers the declared PageInfo verbatim instead of minting one, and
+                // nothing in the pre-promotion SDL references PageInfo (the carrier still returns
+                // [Film!]! during the walk), so this type is registered without ever being
+                // walk-reached and its field scalars have no other route into the model. 'Cursor'
+                // is reachable from no other coordinate, so it is the arm's witness.
+                assertThat(schema.type("Cursor")).isInstanceOf(ScalarType.class);
+                assertThat(constantFieldOf(schema, "Int")).isEqualTo("GraphQLInt");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(ScalarType.class, PageInfoType.class); }
+        };
+
+        /** The {@code graphql.Scalars} constant field the row for {@code name} resolved to. */
+        static String constantFieldOf(GraphitronSchema schema, String name) {
+            var row = (ScalarType) schema.type(name);
+            assertThat(row).as("no ScalarType row registered for '%s'", name).isNotNull();
+            return ((ScalarResolution.Resolved) row.resolution()).scalarConstantField();
+        }
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
