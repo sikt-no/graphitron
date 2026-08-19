@@ -1,7 +1,7 @@
 ---
 id: R711
 title: "Nodehood derives from two corpora instead of being decided in capture"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -251,8 +251,8 @@ arm and its over-approximating `@table`-plus-`implements Node` arm are replaced 
 `intent_node_type` arm, retiring the stopgap its javadoc names ("over-approximating node inference
 until the jOOQ node-metadata constants are captured"; they now are). The `graphitron_federation_key`
 arm stays and now reads authored keys alone, every synthesized-key carrier being a node type the new
-arm already seeds. The tightening narrows `intent_type_domain` by exactly the types whose table
-publishes no or malformed metadata, aligning the transcription with `SchemaReachability`'s seed scan,
+arm already seeds. The tightening narrows `intent_type_domain` by exactly the types whose binding is
+ambiguous or whose table publishes no or malformed metadata, aligning the transcription with `SchemaReachability`'s seed scan,
 which uses the same predicate; the domain shadow is the check on that alignment at implementation
 time.
 
@@ -286,6 +286,14 @@ membership shadow comparing `intent_node_type` against `NodeDeclaration.isNodeTy
 schema's object types. The shadow retires when the walk consumers re-source onto the store, which
 the out-of-scope list names as the follow-on. Beside these, the small pin holding the
 federation-link prefix literal to `FederationSpec.SPEC_PREFIX`.
+
+`intent_federation_key`'s grain is the authored relation's, `(graph_name, type_name, ordinal)`, with
+the synthesized arm projecting a `NULL` ordinal rather than inventing one. A `UNION ALL` therefore,
+not a `UNION`: the authored arm is already unique on its own key and the synthesized arm cannot
+collide with it by construction (its condition is that no authored `id` key exists), so deduplication
+would only mask the one case where the two arms could produce look-alike rows. Two authored
+`@key(fields: "id")` applications at distinct ordinals are both capturable and stay two rows, which is
+the authored arity the reduction owes its readers.
 
 `fact-model.adoc` gains the rule in its stratum section with this gate as the named enforcer. It is a
 third rule beside the two that section already carries, not a closure of either: the "Not
@@ -334,10 +342,15 @@ gets its first instance.
   and `intent_federation_key` register `DERIVED`, their anchors the tests named above.
   `graphitron_federation_key` and its children stay `CONTAINMENT`, and the arm becomes honest: until
   now it held synthesized rows under a containment claim about authored SDL.
-- Call sites that pass a real catalog beside a catalog-free `NodeDeclaration` today (the mcp
-  `StoreFixture`, `WarmStartRefreshTest`, the two shadow tests) change observable state only through
-  the derived views and the tightened domain; implementation verifies their assertions rather than
-  assuming them.
+- Call sites that pass a real catalog beside a catalog-free `NodeDeclaration` today change observable
+  state only through the derived views and the tightened domain; implementation verifies their
+  assertions rather than assuming them. The set is six files: the mcp `StoreFixture`, the lsp
+  `StoreFixture`, `WarmStartRefreshTest`, and the direct `FactCapture.capture` calls in
+  `FactCaptureAgreementTest`, `SeparateFetchTest` and `TypeBackingClassTest`. No shadow test is in it:
+  `TypeBackingShadowTest` pairs its catalog with a catalog-bearing predicate, and the other three
+  route through `CapturedStore.ofCatalog`, which pairs correctly. Missing one is not a live risk
+  either way, since dropping the parameter turns every call site into a compile error; the roster only
+  says which assertions get re-read rather than assumed.
 
 ## Sequencing
 
