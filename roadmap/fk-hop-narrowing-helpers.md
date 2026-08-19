@@ -7,7 +7,7 @@ priority: 6
 theme: classification-model
 depends-on: []
 created: 2026-07-15
-last-updated: 2026-07-15
+last-updated: 2026-08-19
 ---
 
 # Model-level isFkHop/pairsOf helpers for JoinStep narrowings
@@ -24,3 +24,13 @@ helper pair (natural home: `JoinStep` or a static on `On`) replaces the inline n
 exhaustive sealed-switch sites are proper dispatch and stay. `TestFixtures.isFkHop` already exists
 as a test-side copy of the predicate and should fold onto the model helper. Acceptance mirrors
 R431's: generated output byte-identical, the diff audited in isolation; full reactor green.
+
+Scope note (2026-08-19): R705 changes this item's census in two ways. It lifts the declared type
+of four path-carrying components (`ParsedPath.elements`, `BodyParam.RemoteColumnPredicate.joinPath`,
+and the `joinPath` components of `ArgumentRef.ScalarArg.ColumnBackedArg` and
+`InputField.ColumnBackedReferenceField`) from `List<JoinStep>` to `List<JoinStep.Hop>`, deleting
+the `instanceof JoinStep.Hop` half of the idiom on those paths, and it retires `FkHop` outright,
+whose `narrow` was one of the census's members. The census-wide type lift of the remaining
+components is not this item's scope either; this item stays a helper-pair consolidation over
+whatever narrowing sites survive. Re-count at pickup as already instructed above, after R705
+lands if it is in flight.

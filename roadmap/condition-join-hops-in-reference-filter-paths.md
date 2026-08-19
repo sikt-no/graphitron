@@ -36,8 +36,10 @@ authored predicate carries no such guarantee, is already settled the other way i
 changelog entry for the FK-target `@nodeId` filter work records that `EXISTS` is *"the semantically
 right shape rather than a convenient one: no row multiplication when the path is non-unique, and a
 NULL FK column fails the correlation instead of duplicating or dropping rows."* The `{key:}` form
-also does not constrain FK direction, so a reverse-FK hop in a filter path already produces
-`EXISTS`-over-many today. Foreign-key-ness is not buying uniqueness in filter position.
+also does not constrain FK direction (`synthesizeFkJoin` infers direction from which side of the
+key matches the source, and no filter gate checks it), so a reverse-FK hop in a filter path
+already classifies and emits `EXISTS`-over-many today by mechanism; no test pins that grain, so
+item 10 adds one. Foreign-key-ness is not buying uniqueness in filter position.
 
 What it does buy is two mechanical facts, and both are already available:
 
@@ -61,9 +63,13 @@ position. The generated SQL for the condition case is the developer's own predic
 
 ## Consumer motivation
 
-This is the last thing blocking a direct port of a v9 filter shape. Under v9 a `{condition:}` hop in
-filter position worked, so schemas expressed a filter reaching a joined table's columns without the
-join being a declared foreign key. Where the underlying relationship *is* conventionally a foreign
+This is the last thing blocking a direct port of a v9 filter shape. Under v9 a `{condition:}` hop
+in filter position was declarable: the frozen `legacy-directives.graphqls` snapshot permits
+`@reference` with a `condition:` element on arguments and input fields with no positional
+restriction. (The legacy generator left this tree, so whether the v9 runtime executed the shape
+correctly is not verifiable from here; the port-blocking claim rests on the declared surface.) So
+schemas expressed a filter reaching a joined table's columns without the join being a declared
+foreign key. Where the underlying relationship *is* conventionally a foreign
 key and merely undeclared, the right consumer fix is to declare it (a jOOQ `<syntheticObjects>`
 `<foreignKey>` entry, then swap the path to `{key:}`), and that is strictly better than lifting this
 restriction: it makes the relationship a catalog fact once instead of restating the predicate at
@@ -104,9 +110,10 @@ empty case that would remain after widening, `On.Lateral`, is unconstructable th
 `hop.targetTable()` with a throwing `On.Lateral` arm that mirrors
 `PathFragments.emitBackwardBridging`'s posture on shapes its callers cannot legally hold.
 `resolveColumnForReference`'s `Optional` then means exactly one thing, a missing column, and the
-two candidate-hint call sites drop their `.orElseGet(List::of)` fallbacks, so a mistyped column on
-a condition-hop terminal gets real candidate names in the rejection. Correct the stale javadoc
-sentence, "a condition-only step's target table is unknown at build time". All three callers
+two candidate-hint call sites drop their empty-list fallbacks (`.orElseGet(List::of)` in
+`BuildContext.classifyInputField`'s branch, `.orElse(List.of())` in the scalar-leaf branch), so a
+mistyped column on a condition-hop terminal gets real candidate names in the rejection. Correct
+the stale javadoc sentence, "a condition-only step's target table is unknown at build time". All three callers
 (`FieldBuilder`'s scalar-arg `@reference` branch, `BuildContext.classifyInputField`'s
 plain-`@reference` branch, and `FieldBuilder`'s output scalar-leaf branch) consume only the
 terminal table or column, never FK pairs, so no FK-only variant of the walk needs to survive.
@@ -134,8 +141,13 @@ parameter, which must be a concrete generated jOOQ table class"); the current "i
 wording would misname a terminal filter-site wildcard. Documented consequence in the manual:
 filter sites always resolve through the method signature, so a condition method used at a filter
 site needs concrete table parameter types where an output field's terminal hop tolerates
-`Table<?>`. `validateConditionParamTables` keeps firing unchanged; hop 0's origin table is the
-filter's own start table, which is always resolved at both sites.
+`Table<?>`. The collapse also shifts output-site behavior, stated here so the reviewer sees both
+sides: today a terminal condition hop whose return type lacks a `@table` binding AuthorErrors on
+the missing binding; under the collapsed rule it falls through to reflection and errors only when
+the method's second parameter is not a concrete generated table class. That is the intended
+improvement (the reflection answer is just as authoritative at an output terminal as at a filter
+site), not an accident of the collapse. `validateConditionParamTables` keeps firing unchanged;
+hop 0's origin table is the filter's own start table, which is always resolved at both sites.
 
 ### 3. Retire one rejection, restate the other
 
@@ -143,7 +155,9 @@ filter's own start table, which is always resolved at both sites.
 and the plain-`@reference` mirror block in
 `GraphitronSchemaValidator.validateInputColumnBackedReferenceField` is not merely removed but
 replaced by the widened acceptance: the pipeline cases of item 10 become the enforcer of the new
-contract.
+contract. Note for the reviewer: neither rejection message is exercised by any test today (no test
+in the tree asserts either message text), so the deletion removes untested code and item 10's cases
+are the first enforcement either surface gets, on either side of the flip.
 
 The sibling block in the same method, requiring an FK path for `@condition` on an FK-target
 `@nodeId` field, stays, but its footing changes and the plan says so explicitly: its rationale
@@ -171,9 +185,15 @@ The reach slot becomes a small path-grain carrier rather than a bare list: a
 `ReachPath(List<JoinStep.Hop> hops)` record whose compact constructor rejects a lateral hop once,
 at construction, replacing `FkHop.narrow`'s per-hop throw as the produce-time enforcer.
 `ColumnTerm.reach()` and `Predicate.Authored.reach()` carry it, and
-`ConditionGlueRenderer.declareReachAliases` keys its alias map on the named carrier instead of an
-identity-keyed raw `List`. This is deliberately not the rejected sealed per-hop vocabulary
-(`Keyed`/`Conditioned` arms): that shape carries nothing `JoinStep.Hop` + `On` cannot, and every
+`ConditionGlueRenderer.declareReachAliases` keys its alias map on the named carrier instead of a
+raw `List`. One semantic to preserve deliberately: the current map is an `IdentityHashMap` on
+purpose (its javadoc mints locals per reach *occurrence*, `reachIndex` per reach), and a record
+carrier is equals-keyed, so a plain `HashMap` on `ReachPath` would merge structurally equal
+reaches from different terms. Merging is safe for the generated SQL (each `EXISTS` is a
+self-contained subquery) but leaves dead locals and is a separate decision this item does not
+take; the map stays identity-keyed on the `ReachPath` instance.
+
+This is deliberately not the rejected sealed per-hop vocabulary (`Keyed`/`Conditioned` arms): that shape carries nothing `JoinStep.Hop` + `On` cannot, and every
 shared helper of item 5 would have to translate across it. One carrier, one check, and the hops
 stay `JoinStep.Hop` + `On`.
 
@@ -181,9 +201,13 @@ The same type lift extends to the model components this item's diff already rewr
 `ParsedPath.elements()`, `BodyParam.RemoteColumnPredicate.joinPath`, and the `joinPath` components
 of `ArgumentRef.ScalarArg.ColumnBackedArg` and `InputField.ColumnBackedReferenceField` declare
 `List<JoinStep.Hop>` instead of the sealed root (`JoinStep` permits only `Hop`, so the lift is
-mechanical), retiring the `instanceof JoinStep.Hop` narrowings on those paths. This shrinks R485's
-census rather than depending on it; components this diff does not touch keep the root type, and the
-census-wide lift stays R485's.
+mechanical), retiring the `instanceof JoinStep.Hop` narrowings on those paths.
+
+This shrinks the census R485 works over rather than depending on it, but note what R485 actually
+is: its own scope is a helper pair (`isFkHop`/`pairsOf`) consolidating the ~40 inline FK-hop
+narrowing idioms, not a type lift, and this diff both deletes a slice of those idioms and retires
+`FkHop`, whose narrowing was one of them. R485's body carries a scope note to that effect (added
+alongside this revision); components this diff does not touch keep the root type.
 
 The `FkTargetConditionFilter` arm of `ConditionCommands` (the `@nodeId` + `@condition` reach) keeps
 its FK-only guarantee upstream at item 3's restated validator deferral, not through the type
@@ -236,8 +260,12 @@ The unlock is more than a new emitter arm becoming reachable: it lets this carri
 `ParentCorrelation.OnParentJoin` where only `OnFkSlots` was reachable before, and the arm choice
 fixes both correlation topology and batch grain (the batch keys on the parent PK and the query
 anchors the parent table, per `parentKeyColumns()`). So the coverage owed is every consumer of
-`ParentCorrelation` on this carrier handling `OnParentJoin`, through the seam
-`ParentCorrelationArmTest` already provides per arm, not just the inline `ScalarSubselect` render.
+`ParentCorrelation` on this carrier handling `OnParentJoin`, not just the inline `ScalarSubselect`
+render. `ParentCorrelationArmTest` is not that seam: it pins the model type's own per-arm behavior
+(construction invariants, `parentKeyColumns()`), not consumer dispatch. The audit therefore walks
+the consumers directly and extends whichever emitter tests exercise them; the arm test grows a
+case only where a model-level fact (the batch grain of a predicate-hop `OnParentJoin`, say) is
+what needs pinning.
 If that audit surfaces a real emitter gap, the gap gets its own item and this arm gets a directed
 rejection instead; silent breakage is the only unacceptable outcome.
 
@@ -276,19 +304,25 @@ the existing execution fixtures.
 Per the testing rubric, pipeline beats unit beats execution where the assertion fits the tier:
 
 * **Pipeline** (`ReferenceFilterRemoteColumnPipelineTest`): `surface2_conditionJoinPath_isRejected`
-  flips to acceptance cases on both surfaces (scalar argument, input field), asserting the
+  is the only rejection pin either surface has today (the input-field surface has none). It flips
+  to acceptance, and the input-field surface gains its first cases alongside it, asserting the
   classified carrier and the generated `TypeSpec` shape (the `EXISTS` embedding the two-arg method
-  call). Add mixed-path cases in both orders (condition-then-key, key-then-condition) and truth-table
-  entries in `GraphitronSchemaBuilderTest` beside the existing output-side condition-hop rows.
+  call). These cases carry the contract rather than flipping existing pins; per item 3, the deleted
+  guards were never test-enforced. Add mixed-path cases in both orders (condition-then-key,
+  key-then-condition) and truth-table entries in `GraphitronSchemaBuilderTest` beside the existing
+  output-side condition-hop rows.
 * **Unit**: a validator case proving `validateInputColumnBackedReferenceField` accepts a
   condition-hop filter carrier, and a pinned case for item 3's restated FK-target `@nodeId`
-  deferral standing on its own now that its old emitter rationale is gone.
-  `ParentCorrelationArmTest` gains the `OnParentJoin`-on-scalar-leaf coverage of item 7.
+  deferral standing on its own now that its old emitter rationale is gone. Item 7's consumer audit
+  lands its coverage in the consumers' own tests per that item; `ParentCorrelationArmTest` grows a
+  case only for model-level facts.
 * **Execution** (`GraphQLQueryTest`, new fixtures beside `ReferencePathConditionFixtures` with
   concrete parameter types per item 2): a filter through a single terminal condition hop; a filter
   through an FK-then-condition bridge; assertions on `EXISTS` grain (no row multiplication when the
-  path matches many rows, no dropped parents on non-match). One case each for the scalar-leaf unlock
-  of item 7. Compilation-tier coverage rides the fixtures for free.
+  path matches many rows, no dropped parents on non-match). Also a filter through a
+  reverse-direction `{key:}` hop (parent reaching into its children's columns), pinning the
+  `EXISTS`-over-many grain the motivation section leans on, which no test proves today. One case
+  each for the scalar-leaf unlock of item 7. Compilation-tier coverage rides the fixtures for free.
 
 ## Non-goals
 
