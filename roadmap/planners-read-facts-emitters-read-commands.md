@@ -478,6 +478,14 @@ populations are enumerated under "The facts to plan against are available" above
   walk being drained from the consumer end instead, and it is dropped rather than deferred. It becomes
   relevant again only if some axis has to migrate its walk-side mint rather than its consumers, which
   no axis has needed yet.
+* **Recording committed rows into the store.** A run-record stratum (the plan's committed command
+  rows, the render's emitted-unit census) written *downward* at post-plan cadence on the `javac_`
+  model is adjacent work, filed as `roadmap/run-record-families-for-commands-and-emitted-units.md`.
+  This item's bans are about read direction and are not an argument against it: the store must not
+  serve plan-shaped views as planner *inputs*, and no tier may read a record family back upward,
+  but a record the plan writes after committing is neither. The per-family conversions here are
+  what make that record cheap (a producer that derives its rows by SQL writes them back in one more
+  statement), and it stays out of scope so the seam closes without growing a second deliverable.
 
 ## Relationship to other items
 
@@ -526,6 +534,14 @@ populations are enumerated under "The facts to plan against are available" above
   already captured and derived (the routine catalog facts, the chain terminus, the routine return
   binding, and the two name-match keying relations). R668's stage 5 asks to land after this step
   rather than beside it, and that constraint travels with it.
+* `roadmap/list-ordering-invariant-enforcement.md` (R677) plans to enforce the never-unsorted-list
+  invariant off the launcher relation's ordering slot, and lands after this item. Two constraints
+  travel to the launcher step: the `ResultShape` ordering slot is load-bearing for that enforcement,
+  so the row-identity gate covers exactly the column a later rule keys on, and the re-sourced
+  producer must not quietly change which coordinates take a launcher row at all, because that
+  population *is* that item's blind spot (the multitable polymorphic root takes no launcher row,
+  which slot-keyed enforcement cannot see; the cross-tier absence question belongs to the
+  run-record item above, not to this one).
 * The former decompose-`TypeFetcherGenerator` item (R7, see `roadmap/changelog.md`) asked how to
   break up that file and offered decomposing along the field taxonomy as its leading option. It was
   discarded in this item's favour: the file does not get decomposed along the leaves, it empties
