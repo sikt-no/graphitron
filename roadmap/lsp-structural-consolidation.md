@@ -1,13 +1,13 @@
 ---
 id: R347
 title: "Consolidate graphitron-lsp navigation, dispatch, and result-building"
-status: In Progress
+status: Spec
 bucket: architecture
 priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-19
-last-updated: 2026-08-06
+last-updated: 2026-08-19
 ---
 
 # Consolidate graphitron-lsp navigation, dispatch, and result-building
