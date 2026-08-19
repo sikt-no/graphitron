@@ -198,13 +198,12 @@ public class GraphQLRewriteGenerator {
 
     /**
      * What a successful regenerate produces beside the emitted code: the
-     * {@link CompletionData} catalog (jOOQ + classpath references + scalars),
-     * the {@link LspSchemaSnapshot.Built} projection of the parsed user schema's
-     * classifications, and the {@link ValidationReport} carrying every
+     * {@link CompletionData} catalog (jOOQ + classpath references + scalars) that capture takes its
+     * classpath census from, and the {@link ValidationReport} carrying every
      * {@link ValidationError} and {@link BuildWarning} the validator produces on the
-     * same {@code bundle.model()}. Same parse throughout; the dev goal swaps the
-     * artifacts onto the live workspace and writes the report's two pre-fuse lists to
-     * the store's diagnostics stratum, which is where the language server reads them.
+     * same {@code bundle.model()}. Same parse throughout; the dev goal writes the report's two
+     * pre-fuse lists to the store's diagnostics stratum, which is where the language server reads
+     * them.
      *
      * <p>The validator runs but never throws on its output: a half-edited
      * buffer with validation errors should still expose tables and scalars
