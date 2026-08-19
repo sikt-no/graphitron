@@ -2929,7 +2929,13 @@ arm either declared, `LspSchemaSnapshot` with `Built`, `Unavailable` and `unavai
 annotation, `ProjectionCoverageTest`, `ExemptionRegistry.LSP_PROJECTION` with
 `NO_PROJECTION_REQUIRED`, `PROJECTION_WALKER`, `projectionForCoveredLeaves` and `allModelLeaves`,
 and `ExemptionRegistry.corpusObligations`'s distinction from `obligations` now that the two agree.
-Two collisions the sweep
+Gone with the vocabulary's registry: `LspVocabulary.registry` with the `load()` and
+`load(overlay, sdl)` factories that built one, `LspVocabulary.unwrapToInputTypeName`,
+`LspVocabulary.findInputValue`, `LspVocabulary.deprecatedCoordinates`, `LspVocabulary.deprecationOf`
+and `LspVocabulary.LspStartupException`. Two names the sweep will hit that are retired only from the
+language server and not at all from the generator: `DeprecationRecognizer` still backs the
+`no-deprecated-directive-usage` lint rule, and `RewriteSchemaLoader` is still how every build finds
+its schema; the language server no longer calls either, and its tests still do. Two collisions the sweep
 will hit and should not act on, both of them the words meaning something else: `DirectiveShapeSmokeTest`
 names the SDL shape of `@service` and its siblings, the nested input under an outer argument, not the
 retired projection type; and `graphitron-sakila-example`'s federation tests say "directive shape"
@@ -4300,7 +4306,69 @@ annotation. Deleted outright: `FieldClassificationProjectionTest`, `TypeClassifi
 `LspSchemaSnapshotTest`, `ProjectionCoverageTest`, `ConflictedProjectionPipelineTest` and
 `ProjectionSnapshotComparator`.
 
-**The one this does not finish.** `graphitron-lsp` still depends on `graphitron`. Its main sources
-import five types, each accounted for above and none of them a projection, against 42 imports from
-`graphitron-model`; its tests import thirty. The pom edge stays until those five find another home,
-which is a smaller question than the one this item owned and is not answered here.
+## Settled at the gate: the runtime edge to the generator, and the vocabulary that was holding it open
+
+The census above found `graphitron-lsp`'s main sources reaching into `graphitron` for five types and
+called finding them another home a smaller question left open. It was smaller, but it was not
+separable: the item's headline is that the language server is a fact-store client, and a client that
+cannot be built without the generator on its compile classpath is not one. So the edge is cut here.
+
+Four of the five moved to `graphitron-model`, the module both tiers already read, each of them a
+spelling neither side owns: the source-name and document-URI trip in both directions, the split of a
+written constant reference on its last period, the sigil literals an author may write in place of a
+member name with the message that says where one is admitted, and the inferred-directive-argument
+table. Every old call site delegates, so nothing is duplicated and nothing is a second opinion.
+
+The fifth was the vocabulary, and it was the whole difficulty. `LspVocabulary` parsed the bundled
+`directives.graphqls` into a graphql-java `TypeDefinitionRegistry` and held it as a field, which is
+what made the language server need `RewriteSchemaLoader` to find the file and `DeprecationRecognizer`
+to read markers off the parse. That registry is a second reading of a document the store already
+holds: capture parses the bundled file like any other schema file, which is exactly why
+`SdlDescriptions` can answer what a coordinate means from `graphql_directive.description`.
+
+`DirectiveSurface` replaces it. Which directives are defined, what formal arguments each declares,
+and the input-object tree those arguments open onto, read out of `graphql_directive`,
+`graphql_directive_argument`, `graphql_type` and `graphql_field`. Wrapping is discarded on the way
+in, because `named_type` is what every consumer wanted and the store decoded it at capture, so the
+`unwrapToInputTypeName` walk over graphql-java `Type` nodes has nothing left to do.
+
+**Loaded whole, once, rather than queried per question.** This is the one shape constraint that was
+not obvious, and it comes from the diagnostics walk: that walk reads nothing by construction, which
+is what holds a whole recalculation to one statement per graph however many documents it spans and
+however many values each contains. Resolving a cursor to a coordinate is a question about the
+vocabulary rather than about the document, so the surface is held and the walk stays free.
+`ArgNameCompletions` keeps querying the same relations directly, a completion request being one
+cursor paying for one answer.
+
+**The vocabulary became state.** It used to be shape, read once at startup and never invalidated,
+which was true of a file shipped in the jar. A graph's captured directives are not that: an author
+who defines a directive of their own has changed the vocabulary, and the capture that read their
+definition is the event saying so. `Workspace` reads it when the store arrives and again on
+`markAllForRecalculation`, which is once per build rather than once per queued file. A session with
+no store gets `LspVocabulary.empty()` and resolves no cursor to any coordinate, which is the same
+silence every other store-backed surface answers with before the first build.
+
+That also retires a behaviour worth naming. The incumbent's bundled-versus-user split meant a
+directive an author defined had arguments and no input-object shape, so nothing nested inside one
+could be descended into. Both are rows now, so the descent is the same for both. This is less a
+feature added than a distinction the census cannot express.
+
+**The startup drift check moves to a test.** The constructor threw `LspStartupException` when an
+overlay coordinate failed to resolve, which was a sound trade while the vocabulary parsed a file
+shipped in the jar: the only way to fail was drift. Against a captured graph it has a second cause,
+the graph not having been captured yet, and taking the whole editor down for that is wrong.
+`DriftDetectionTest` asserts the same invariant where it belongs, over a capture of the shipped file,
+and an overlay entry the running session's graph does not back is inert rather than fatal.
+
+**Deprecation left with its consumer.** `deprecatedCoordinates` and `deprecationOf` were vocabulary
+methods that no request path ever called: nothing an editor shows is keyed on them, and their one
+reader is the test asserting that every registered quick-fix action targets a real marker. Both are
+questions about the file graphitron ships, so both moved to test support beside that assertion.
+Reading the file with graphql-java there is honest about something a store-shaped reader would have
+hidden: a `@deprecated` application on a directive definition's formal argument has no relation to
+land in, so two of the three shipped markers are rows and the third is not.
+
+**The edge, finally.** `graphitron` is `<scope>test</scope>` in `graphitron-lsp/pom.xml`, where the
+fixtures need it to stand a store up by running real capture rather than by inserting rows.
+graphql-java leaves the language server's compile classpath with it. What remains at compile scope is
+`graphitron-model`, lsp4j, tree-sitter and its natives, and slf4j.
