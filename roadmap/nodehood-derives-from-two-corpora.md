@@ -1,13 +1,13 @@
 ---
 id: R711
 title: "Nodehood derives from two corpora instead of being decided in capture"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # Nodehood derives from two corpora instead of being decided in capture
@@ -296,8 +296,8 @@ gets its first instance.
 The sibling item recording the stated node metadata has shipped (its entry is in
 `roadmap/changelog.md`): `sql_node_metadata`, `sql_node_key_column` and
 `intent_node_metadata_defect` exist and are exactly the join targets the inferred arm needs, so
-nothing blocks implementation. The naming item this file's `depends-on:` points at is In Review;
-this body is written in its vocabulary and needs nothing else from it. This item is the pilot for a
+nothing blocks implementation. The naming item that gave this body its stratum vocabulary has also
+shipped, which is why `depends-on:` is empty. This item is the pilot for a
 general rule (capture states, derivation expands) and not the rule itself: the other synthesis
 macro, `CONNECTION`, is nodehood-free and pure SDL, so it neither blocks this nor is fixed by it.
 
