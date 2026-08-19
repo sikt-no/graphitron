@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R732` | Recover the build wall clock, starting from what derived reads cost | In Progress | 2026-08-19 | [plan](build-time-recovery.md) |
+| `R732` | Recover the build wall clock, starting from what derived reads cost | In Review | 2026-08-19 | [plan](build-time-recovery.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Spec | 2026-08-19 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
@@ -562,7 +562,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### tooling
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
-- `R732` [**Recover the build wall clock, starting from what derived reads cost**](build-time-recovery.md) — In Progress, dx
+- `R732` [**Recover the build wall clock, starting from what derived reads cost**](build-time-recovery.md) — In Review, dx
 - `R733` [**Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured**](build-wall-clock-guardrail.md) — Backlog, dx, blocked by [build-time-recovery](build-time-recovery.md)
 - `R298` [**Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop**](rover-graphos-integration.md) — Backlog, feature, blocked by [oneof-augment-defeated-by-descriptions](oneof-augment-defeated-by-descriptions.md)
 - `R594` [**Snapshot axis keys are consistent across the snapshot-reporting MCP tools**](mcp-snapshot-axis-key-naming.md) — Backlog, cleanup
