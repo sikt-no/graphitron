@@ -4938,6 +4938,76 @@ COMMENT ON COLUMN intent_input_occurrence_override.override_type_name IS 'witnes
 COMMENT ON COLUMN intent_input_occurrence_override.override_field_name IS 'witness: the overriding site''s field name';
 COMMENT ON COLUMN intent_input_occurrence_override.override_argument_name IS 'witness: the overriding site''s argument name; NULL when the witness is a field-site condition (graphitron_field_condition''s key shape), non-NULL when it is the argument-site relation''s row';
 
+CREATE VIEW intent_argmapping_pair
+  (graph_name, site, use_site, type_name, field_name, argument_name, ordinal, step_position,
+   position, param_name, argument_path) AS
+SELECT p.graph_name, 'ROUTINE',
+       p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR),
+       p.type_name, p.field_name, CAST(NULL AS VARCHAR), p.ordinal, CAST(NULL AS INT),
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_routine_arg_mapping_pair p
+ UNION ALL
+SELECT p.graph_name, 'SERVICE',
+       p.type_name || '.' || p.field_name,
+       p.type_name, p.field_name, NULL, NULL, NULL,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_service_arg_mapping_pair p
+ UNION ALL
+SELECT p.graph_name, 'FIELD_CONDITION',
+       p.type_name || '.' || p.field_name,
+       p.type_name, p.field_name, NULL, NULL, NULL,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_field_condition_arg_mapping_pair p
+  JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
+ WHERE t.kind <> 'INPUT_OBJECT'
+ UNION ALL
+SELECT p.graph_name, 'INPUT_FIELD_CONDITION',
+       p.type_name || '.' || p.field_name,
+       p.type_name, p.field_name, NULL, NULL, NULL,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_field_condition_arg_mapping_pair p
+  JOIN graphql_type t ON t.graph_name = p.graph_name AND t.type_name = p.type_name
+ WHERE t.kind = 'INPUT_OBJECT'
+ UNION ALL
+SELECT p.graph_name, 'ARGUMENT_CONDITION',
+       p.type_name || '.' || p.field_name || '(' || p.argument_name || ')',
+       p.type_name, p.field_name, p.argument_name, NULL, NULL,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_argument_condition_arg_mapping_pair p
+ UNION ALL
+SELECT p.graph_name, 'FIELD_REFERENCE_STEP',
+       p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
+         || '[' || CAST(p.step_position AS VARCHAR) || ']',
+       p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_field_reference_step_arg_mapping_pair p
+ UNION ALL
+SELECT p.graph_name, 'ARGUMENT_REFERENCE_STEP',
+       p.type_name || '.' || p.field_name || '(' || p.argument_name || ')#'
+         || CAST(p.ordinal AS VARCHAR) || '[' || CAST(p.step_position AS VARCHAR) || ']',
+       p.type_name, p.field_name, p.argument_name, p.ordinal, p.step_position,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_argument_reference_step_arg_mapping_pair p
+ UNION ALL
+SELECT p.graph_name, 'REFERENCE_FOR_STEP',
+       p.type_name || '.' || p.field_name || '#' || CAST(p.ordinal AS VARCHAR)
+         || '[' || CAST(p.step_position AS VARCHAR) || ']',
+       p.type_name, p.field_name, NULL, p.ordinal, p.step_position,
+       p.position, p.param_name, p.argument_path
+  FROM graphitron_reference_for_step_arg_mapping_pair p;
+COMMENT ON VIEW intent_argmapping_pair IS 'Every argMapping pair any directive spells, in one shape: the seven pair relations of that family normalised onto the widest arm''s projection, with a site literal naming which one a row came from. Those relations are one shape only in their tail (position, param_name, argument_path); their use-site keys run from four columns to seven, so a reader over all of them either widens by hand or asks this. Naming it keeps the widening written once, which is the point: the arms are hand-written SELECTs over relations of differing key arity, a typo in one is exactly the drift a cross-site parity test exists to catch, and a second consumer re-spelling the union is how two readings of one population begin disagreeing. Every reader of a pair''s resolution therefore departs from here, and one needing an arm''s own extra key columns joins this relation on site plus the use-site key rather than parsing anything or re-assembling the union. Non-destructive by construction: it adds a discriminator and drops nothing, so an arm''s own relation stays where a reader of that site alone goes. Eight site values over seven relations, the field-condition relation being a shared coordinate whose owning type''s kind splits it into an output-field site and an input-field site with different heads and different emitters, which is how the capture side already tells those halves apart. The grain is the pair''s own with ordinal intact: @routine and @reference are repeatable and each application carries its own argMapping, so collapsing to one row per field coordinate would resolve one application''s paths and silently drop its siblings, which is the one move the nearest sibling view makes that this family must not.';
+COMMENT ON COLUMN intent_argmapping_pair.graph_name IS 'the owning graph''s partition, carried from every arm''s own relation';
+COMMENT ON COLUMN intent_argmapping_pair.site IS 'which SDL site spelled this pair, in a closed vocabulary of eight: ROUTINE, SERVICE, FIELD_CONDITION, INPUT_FIELD_CONDITION, ARGUMENT_CONDITION, FIELD_REFERENCE_STEP, ARGUMENT_REFERENCE_STEP, REFERENCE_FOR_STEP. Seven relations and eight values, the two condition sites sharing one. The column a consumer switches on, and the one a test pins so a case reaching an arm is a case naming it';
+COMMENT ON COLUMN intent_argmapping_pair.use_site IS 'the consuming coordinate serialized, in intent_input_occurrence_path''s own vocabulary extended by two forms: Type.field for a field-grain site with the argument in parentheses after it, then #<ordinal> for a repeatable application and [<step>] for a step position within one. With site and position this is the relation''s grain, and it is the coordinate a rejection about a pair has to be able to name, an author told to change a definition-keyed fact needing to know which use site is asking. Serialized rather than assembled at each reader because a message needs one string and the components differ by arm; those components are columns beside it, so nothing ever parses this';
+COMMENT ON COLUMN intent_argmapping_pair.type_name IS 'the spelling site''s owning type; with the field below, the coordinate all seven relations lead with and the one graphitron_argument_path_segment anchors on';
+COMMENT ON COLUMN intent_argmapping_pair.field_name IS 'the spelling site''s field name within the owning type. An input field on the INPUT_FIELD_CONDITION arm, an output field on every other';
+COMMENT ON COLUMN intent_argmapping_pair.argument_name IS 'the argument the site sits on, on the two argument-grain arms (ARGUMENT_CONDITION, ARGUMENT_REFERENCE_STEP); NULL on the other six, whose sites sit on a field. Determined by site rather than independent of it, which is what makes the nullness a stated rule instead of a missing value';
+COMMENT ON COLUMN intent_argmapping_pair.ordinal IS 'the owning application''s ordinal, on the four arms whose directive is repeatable (ROUTINE and the three step sites); NULL on SERVICE and the two condition sites, which are not repeatable and carry no ordinal';
+COMMENT ON COLUMN intent_argmapping_pair.step_position IS 'the owning step''s 0-based position within its application''s path, on the three step arms; NULL on the other five, which have no step';
+COMMENT ON COLUMN intent_argmapping_pair.position IS '0-based position of the pair within its own argMapping list, carried unchanged from every arm; part of the grain, so an author''s duplicate parameter survives here as it does in the base relations';
+COMMENT ON COLUMN intent_argmapping_pair.param_name IS 'the left side of the pair: the Java or routine parameter the path binds to';
+COMMENT ON COLUMN intent_argmapping_pair.argument_path IS 'the right side as written, spelled exactly as the arm''s own relation spells it, so a pair reaches its own segment decomposition by joining graphitron_argument_path_segment on the coordinate and this column';
+
 -- ==== Diagnostics stratum =========================================================
 -- Violations as facts: seven arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this stratum directly. The arms, and

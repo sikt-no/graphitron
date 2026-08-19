@@ -8,22 +8,36 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -503,6 +517,285 @@ public final class SeededStore {
             .set(GRAPHITRON_EXTERNAL_FIELD.CLASS_NAME, className)
             .set(GRAPHITRON_EXTERNAL_FIELD.METHOD, method)
             .execute();
+    }
+
+    // ===== argMapping pairs, one seeder per site =====
+
+    /**
+     * One pair of a {@code @routine}'s {@code argMapping}, with the application under it. The
+     * directive is repeatable, so the ordinal is the case's to state: it is half of what tells two
+     * applications' pairs apart.
+     */
+    public static void seedRoutineArgMappingPair(DSLContext dsl, String graphName, String typeName,
+                                                 String fieldName, int ordinal, int position,
+                                                 String paramName, String argumentPath) {
+        if (!dsl.fetchExists(GRAPHITRON_ROUTINE, GRAPHITRON_ROUTINE.GRAPH_NAME.eq(graphName)
+                .and(GRAPHITRON_ROUTINE.TYPE_NAME.eq(typeName))
+                .and(GRAPHITRON_ROUTINE.FIELD_NAME.eq(fieldName))
+                .and(GRAPHITRON_ROUTINE.ORDINAL.eq(ordinal)))) {
+            seedRoutine(dsl, graphName, typeName, fieldName, ordinal, "Routines.someRoutine", 2);
+        }
+        dsl.insertInto(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.ORDINAL, ordinal)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /** One pair of a {@code @service}'s {@code argMapping}, with the application under it. */
+    public static void seedServiceArgMappingPair(DSLContext dsl, String graphName, String typeName,
+                                                 String fieldName, int position, String paramName,
+                                                 String argumentPath) {
+        if (!dsl.fetchExists(GRAPHITRON_SERVICE, GRAPHITRON_SERVICE.GRAPH_NAME.eq(graphName)
+                .and(GRAPHITRON_SERVICE.TYPE_NAME.eq(typeName))
+                .and(GRAPHITRON_SERVICE.FIELD_NAME.eq(fieldName)))) {
+            seedService(dsl, graphName, typeName, fieldName, "no.example.Svc", "get");
+        }
+        dsl.insertInto(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_SERVICE_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /**
+     * One pair of a field-site {@code @condition}'s {@code argMapping}, with the application under
+     * it. The relation is a shared coordinate and the owning type's kind is what tells an
+     * output-field site from an input-field one, so a case seeds the type it means first: this
+     * helper does not seed one.
+     */
+    public static void seedFieldConditionArgMappingPair(DSLContext dsl, String graphName,
+                                                        String typeName, String fieldName,
+                                                        int position, String paramName,
+                                                        String argumentPath) {
+        if (!dsl.fetchExists(GRAPHITRON_FIELD_CONDITION,
+                GRAPHITRON_FIELD_CONDITION.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_FIELD_CONDITION.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_FIELD_CONDITION.FIELD_NAME.eq(fieldName)))) {
+            dsl.insertInto(GRAPHITRON_FIELD_CONDITION)
+                .set(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_FIELD_CONDITION.TYPE_NAME, typeName)
+                .set(GRAPHITRON_FIELD_CONDITION.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_FIELD_CONDITION.SOURCE_NAME, SEED_SOURCE)
+                .set(GRAPHITRON_FIELD_CONDITION.SOURCE_LINE, 2)
+                .set(GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN, 3)
+                .set(GRAPHITRON_FIELD_CONDITION.CLASS_NAME, "no.example.Cond")
+                .set(GRAPHITRON_FIELD_CONDITION.METHOD, "apply")
+                .set(GRAPHITRON_FIELD_CONDITION.OVERRIDE, false)
+                .execute();
+        }
+        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_FIELD_CONDITION_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /**
+     * One pair of an argument-site {@code @condition}'s {@code argMapping}, with the application and
+     * the argument it sits on under it.
+     */
+    public static void seedArgumentConditionArgMappingPair(DSLContext dsl, String graphName,
+                                                           String typeName, String fieldName,
+                                                           String argumentName, int position,
+                                                           String paramName, String argumentPath) {
+        if (!dsl.fetchExists(GRAPHQL_ARGUMENT, GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)
+                .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq(typeName))
+                .and(GRAPHQL_ARGUMENT.FIELD_NAME.eq(fieldName))
+                .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName)))) {
+            seedArgument(dsl, graphName, typeName, fieldName, argumentName, "String");
+        }
+        if (!dsl.fetchExists(GRAPHITRON_ARGUMENT_CONDITION,
+                GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME.eq(argumentName)))) {
+            dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME, typeName)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME, argumentName)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_NAME, SEED_SOURCE)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE, 2)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN, 3)
+                .set(GRAPHITRON_ARGUMENT_CONDITION.CLASS_NAME, "no.example.Cond")
+                .set(GRAPHITRON_ARGUMENT_CONDITION.METHOD, "apply")
+                .set(GRAPHITRON_ARGUMENT_CONDITION.OVERRIDE, false)
+                .execute();
+        }
+        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /**
+     * One pair of a field-site {@code @reference} step condition's {@code argMapping}, with the
+     * application and the step under it.
+     */
+    public static void seedFieldReferenceStepArgMappingPair(DSLContext dsl, String graphName,
+                                                            String typeName, String fieldName,
+                                                            int ordinal, int stepPosition,
+                                                            int position, String paramName,
+                                                            String argumentPath) {
+        if (!dsl.fetchExists(GRAPHITRON_FIELD_REFERENCE_STEP,
+                GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL.eq(ordinal))
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION.eq(stepPosition)))) {
+            seedFieldReference(dsl, graphName, typeName, fieldName, ordinal);
+            seedFieldReferenceStep(dsl, graphName, typeName, fieldName, ordinal, stepPosition,
+                null, null);
+        }
+        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.ORDINAL, ordinal)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /**
+     * One pair of an argument-site {@code @reference} step condition's {@code argMapping}, with the
+     * argument, the application and the step under it.
+     */
+    public static void seedArgumentReferenceStepArgMappingPair(DSLContext dsl, String graphName,
+                                                               String typeName, String fieldName,
+                                                               String argumentName, int ordinal,
+                                                               int stepPosition, int position,
+                                                               String paramName,
+                                                               String argumentPath) {
+        if (!dsl.fetchExists(GRAPHQL_ARGUMENT, GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)
+                .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq(typeName))
+                .and(GRAPHQL_ARGUMENT.FIELD_NAME.eq(fieldName))
+                .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName)))) {
+            seedArgument(dsl, graphName, typeName, fieldName, argumentName, "String");
+        }
+        if (!dsl.fetchExists(GRAPHITRON_ARGUMENT_REFERENCE_STEP,
+                GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME.eq(argumentName))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL.eq(ordinal))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION.eq(stepPosition)))) {
+            dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME, typeName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME, argumentName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL, ordinal)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_NAME, SEED_SOURCE)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE, 2)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN, 3)
+                .onDuplicateKeyIgnore()
+                .execute();
+            dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, stepPosition)
+                .execute();
+        }
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /**
+     * One pair of a {@code @referenceFor} step condition's {@code argMapping}, with the application
+     * and the step under it.
+     */
+    public static void seedReferenceForStepArgMappingPair(DSLContext dsl, String graphName,
+                                                          String typeName, String fieldName,
+                                                          int ordinal, int stepPosition,
+                                                          int position, String paramName,
+                                                          String argumentPath) {
+        if (!dsl.fetchExists(GRAPHITRON_REFERENCE_FOR_STEP,
+                GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP.ORDINAL.eq(ordinal))
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP.POSITION.eq(stepPosition)))) {
+            dsl.insertInto(GRAPHITRON_REFERENCE_FOR)
+                .set(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_REFERENCE_FOR.TYPE_NAME, typeName)
+                .set(GRAPHITRON_REFERENCE_FOR.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_REFERENCE_FOR.ORDINAL, ordinal)
+                .set(GRAPHITRON_REFERENCE_FOR.SOURCE_NAME, SEED_SOURCE)
+                .set(GRAPHITRON_REFERENCE_FOR.SOURCE_LINE, 2)
+                .set(GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN, 3)
+                .set(GRAPHITRON_REFERENCE_FOR.PARTICIPANT_TYPE_REF, "Other")
+                .onDuplicateKeyIgnore()
+                .execute();
+            dsl.insertInto(GRAPHITRON_REFERENCE_FOR_STEP)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP.TYPE_NAME, typeName)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP.ORDINAL, ordinal)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP.POSITION, stepPosition)
+                .execute();
+        }
+        dsl.insertInto(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.ORDINAL, ordinal)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.POSITION, position)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
+            .set(GRAPHITRON_REFERENCE_FOR_STEP_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
+            .execute();
+    }
+
+    /**
+     * The segment decomposition capture writes beside a pair, one row per dot-separated segment in
+     * written order. Stated by splitting the path the same way the lexer does, since the invariant
+     * the relation carries is that the segments in order rejoin the path exactly.
+     */
+    public static void seedArgumentPathSegments(DSLContext dsl, String graphName, String typeName,
+                                                String fieldName, String argumentPath) {
+        var segments = argumentPath.split("\\.", -1);
+        for (int position = 0; position < segments.length; position++) {
+            dsl.insertInto(GRAPHITRON_ARGUMENT_PATH_SEGMENT)
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.TYPE_NAME, typeName)
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.ARGUMENT_PATH, argumentPath)
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.POSITION, position)
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.SEGMENT_NAME, segments[position])
+                .onDuplicateKeyIgnore()
+                .execute();
+        }
     }
 
     /**
