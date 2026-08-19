@@ -511,8 +511,9 @@ is a residue rather than a join.
 
 Two earlier drafts coined a `table-anchored target` predicate here instead, folding four things into
 one hand-named concept: the target's kind, its binding arity, whether it carries `@discriminate`, and
-the connection element walk. `roadmap/lsp-reads-the-fact-store.md` retired exactly that shape at the
-classification label, and its reason transfers without translation. A name folding several
+the connection element walk. The language-server fact-store item (R638, since Done; its record is in
+`roadmap/changelog.md`) retired exactly that shape at the classification label, and its reason
+transfers without translation. A name folding several
 independent facts into one word makes a relation enumerate the combinations, which is the monolith
 the fact model exists to take apart, so the store publishes each fact and a reader joins the relation
 that owns the one it wants. Here the binding and its arity are `intent_resolved_type_binding`,
@@ -810,10 +811,13 @@ set acquiring an enforcer that is not another switch.**
   matches nothing from shipping as a vocabulary entry no coordinate can produce. That is the same
   vacuity this item's corpus bullet is about, and the per-trigger floors on `DeliveryFactPinTest` are
   the local precedent for spelling it as an assertion rather than trusting the corpus. And pin the
-  exemption overlap directly, as
-  `overlappingExemptionReadingsSurviveInTheRulesAndResolveByPrecedence` pins the sibling's: both rows
-  survive in the rule view and the reduction picks the declared winner. `Query.aggregated` is the
-  coordinate.
+  exemption overlap directly. The sibling pins it beside its DDL rather than in its shadow test, in
+  `DemandRuleTest` over seeded stores in `graphitron-model`:
+  `everyFieldExemptionArmAnswersWithItsOwnReason` holds both overlapping readings surviving as rows
+  in the rule view, and `demandBeatsExemptionAndTheFirstDeclaredArmWinsWithinASide` holds the
+  reduction picking the declared winner within a side. Copy the two assertions, not their home: this
+  item's pin reads the captured corpus store the shadow test already opens, `Query.aggregated` being
+  a shipped coordinate both exemption arms match, so no seeded store is needed to reach the overlap.
 * Corpus population for every arm the view declares. A shadow test over a corpus that does not
   exercise an arm is vacuous in exactly the way that item's review found `DeliveryFactPinTest` to be,
   so each declared rule needs a coordinate that reaches it. Three populations are missing today, all
@@ -967,16 +971,17 @@ had to derive from arm order.
   marked pair. What that item's landing does *not* change is this item's motivation: its own spec
   says so, deferring the negative-space defect here rather than restructuring the site, and the
   enumeration it left behind is now unreachable rather than merely fragile.
-* `roadmap/lsp-reads-the-fact-store.md` (R638, In Progress) owns `intent_field_separate_fetch`, the
-  sibling relation this item's own section places, and shipped `intent_type_backing_class`, the
-  backing closure the `RECORD_HANDED_PARENT` arm now reads. Two consequences, neither a dependency in
-  either direction. This item's only edit inside that view is the reciprocal comment sentence, which
-  cannot conflict with an arm change. And that item moves faster than this one's revisions: its
-  `RECORD_HANDED_PARENT` arm landed eighteen minutes after the previous revision of this spec, which
-  is why the sibling section now instructs a copy where it used to instruct a derivation. Re-read
-  that view at pickup rather than trusting the arm list transcribed here; the sibling section names
-  the five arms as of this revision, and the relationship this item declares (two relations, shared
-  literals, two deliberately opposite populations) is what survives another arm landing.
+* The language-server fact-store item (R638) has since reached Done; its file is retired and its
+  record lives in `roadmap/changelog.md`. It shipped the two relations this item leans on hardest:
+  `intent_field_separate_fetch`, the sibling relation this item's own section places, and
+  `intent_type_backing_class`, the backing closure the `RECORD_HANDED_PARENT` arm now reads. Its
+  landing dissolves the moving-target caveat an earlier revision carried (that item's
+  `RECORD_HANDED_PARENT` arm landed eighteen minutes after a revision of this spec, which is why the
+  sibling section instructs a copy where it used to instruct a derivation): the sibling view no
+  longer has an in-flight owner, so the reciprocal comment sentence edits a view nothing else is
+  moving. Re-read that view at pickup all the same; the sibling section names the five arms as of
+  this revision, and the relationship this item declares (two relations, shared literals, two
+  deliberately opposite populations) is what survives another arm landing.
 * `roadmap/split-query-marker-sweep.md` (R557, Backlog) wants a completeness enforcer for
   `@splitQuery`: every marker consumed, inert-by-construction, or rejected. Its spec proposes a
   total switch over the classified leaf. If delivery becomes a view, that sweep is an anti-join
