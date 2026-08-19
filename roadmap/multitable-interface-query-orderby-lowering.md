@@ -54,10 +54,15 @@ arm, which widens what the fix has to cover.
 **A build-time rejection is an acceptable outcome to the reporter, and they name the precedent.**
 They ask for ordering to work, "or, if multitable ordering is unsupported, an author-error at
 generate time like the one `@condition`-overloads produce, so the schema author finds out at build
-time rather than the client at runtime." That is worth taking seriously as a separable first
-increment: the lowering design below is genuinely hard, the rejection is a few lines in
-`validateQueryInterfaceField` / `validateQueryUnionField`, and shipping the rejection first turns a
-silent wrong answer into a located author error without pre-committing the harder design. It does
+time rather than the client at runtime." That fallback is real and worth shipping, and it is
+**not this item's to ship**. `roadmap/list-ordering-invariant-enforcement.md` (R677) already claims
+it under "The second half: declared orderings that cannot be lowered", states the rule generically,
+and says it can ship immediately and independently of everything else on that item. Keep it there.
+Writing a coordinate-local rejection into `validateQueryInterfaceField` /
+`validateQueryUnionField` here would fork a rule whose whole value is being one rule: the
+view-backed `@splitQuery` target in this same field report needs the identical verdict at a
+different coordinate. What this item owes R677 is the capability answer it rejects against, namely
+that these two arms cannot lower an ordering until this item lands. It does
 break schemas that currently compile, which is the tradeoff to weigh, and the schemas it breaks are
 the ones already getting wrong results.
 

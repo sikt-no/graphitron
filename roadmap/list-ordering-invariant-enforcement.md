@@ -7,7 +7,7 @@ priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-14
+last-updated: 2026-08-19
 ---
 
 # Enforce the never-unsorted-list invariant off the launcher relation ordering slot, where every leak site is visible
@@ -34,10 +34,27 @@ Five sites are known today:
   (`roadmap/routine-write-key-capture-unordered.md`).
 * Root query over a multitable interface or union: the arm carries no ordering component at all,
   so `@orderBy` and `@defaultOrder` are accepted and discarded and rows come back in participant
-  primary-key order (`roadmap/multitable-interface-query-orderby-lowering.md`).
+  primary-key order (`roadmap/multitable-interface-query-orderby-lowering.md`). `QueryInterfaceField`
+  and `QueryUnionField` declare no `orderBy` component, which is why they do not implement
+  `SqlGeneratingField` and why both ordering checks skip them: a paginated multitable root with no
+  ordering passes `validatePaginationRequiresOrdering`, the check written to reject exactly that
+  shape.
 
 Only the first produced `None`, and it is now enforced. The rest are invisible to the enforcer
 by construction, which is what this item is for.
+
+**One of those four sites is not in the launcher relation, so this item's premise does not cover
+it.** The title says the ordering slot is where every leak site is visible. That holds for three:
+the `@splitQuery` child, the `@lookupKey` child and the routine write path are all launcher rows
+with a `ResultShape`. The multitable polymorphic root is not. `LauncherCommands.verdictOf` anchors
+on the target-axis fact `TargetShape.Table`, and the multitable family carries `Interface` /
+`Union`, so it takes no launcher row at all; its javadoc states the exclusion directly, that "its
+UNION-ALL stage belongs to the polymorphic-emit family, roots and batched children alike".
+Re-sourcing off the launcher relation would therefore leave that site exactly as invisible as it is
+today, while the item's framing would read as having closed it. Whoever specs this has to either
+name a second source that covers the polymorphic-emit family, or narrow the claim to the launcher
+population and say plainly that the multitable root needs its own enforcement. Do not discover this
+after the re-sourcing is written.
 
 ## Why this is its own item
 
@@ -93,6 +110,22 @@ schemas that are legitimate once the per-site fixes land, so the two halves sequ
 - The point of re-sourcing is that the launcher relation makes the population observable without
   asking each coordinate to remember to declare itself. Any design that still needs a per-arm opt
   in has reproduced the current bug in a new place.
+- **The two halves read different signals, and only one of them is a launcher-relation question.**
+  Re-sourcing asks "did this list-shaped command arrive with an ordering", which the launcher
+  relation answers for the population it covers. The honesty rejection asks a different question:
+  "did the author declare an ordering at a coordinate whose classified arm cannot hold one". That
+  comparison is between an authored fact and an arm's capability, and it is decidable before any
+  command row exists. Treating the two as one mechanism is what would make the rejection wait on
+  the re-sourcing, which the Sequencing section above is explicit it must not do.
+- That makes the honesty half the same shape as the fan-out verdict in
+  `roadmap/reference-path-fanout-verdict.md`: a build-time verdict comparing what the author
+  declared against what the pipeline can honour, decidable from captured facts rather than from a
+  traversal. `graphitron_default_order` is already captured, so the rejection is plausibly a
+  store-derived rule in `rewrite/derive/` with `AuthoredClaimConflicts` as its precedent, not a new
+  arm in the validator switch. Worth pricing that way before defaulting to the validator, since the
+  validator is where the current gap comes from. One difference to keep straight: the fan-out
+  verdict is advisory, because a multiset may be what the author wanted, while this one is a hard
+  rejection, because nothing can honour the declaration. Same derivation, different severity.
 - `docs/manual` should say what the invariant guarantees and where it does not hold yet. Today the
   Sorting and polymorphic-query pages state no limitation, which is how the consumer arrived at a
   runtime surprise.
