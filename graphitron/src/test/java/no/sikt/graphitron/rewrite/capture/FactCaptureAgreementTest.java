@@ -124,10 +124,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       agreement is vacuous by construction; a semantic derivation (the {@code intent_} claim
  *       views and the demand stratum) registers with its own anchor instead, which lives with
  *       its reader's test
- *       ({@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the lookup arm
- *       to {@code LookupFacts.triggersFor} and the routine arm to its base relation's distinct
- *       coordinates; the column-match view carries its reason in two places, because the two
- *       questions asked of it have different lifetimes.
+ *       (the authored-claim views carry their reason in two places, because a rule reading what an
+ *       author wrote is asked both what it makes of a set of applications and whether real SDL
+ *       reaches it in that shape: {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest}
+ *       binds the lookup arm to {@code LookupFacts.triggersFor} over a real capture, while
+ *       {@code no.sikt.graphitron.model.intent.AuthoredClaimTest} binds each arm pair, its position
+ *       mask and its ordinal collapse to a census stated row by row in the module whose DDL
+ *       declares them; the column-match view carries its reason in two places for the same reason,
+ *       though the two questions asked of it have different lifetimes.
  *       {@code no.sikt.graphitron.rewrite.derive.ColumnMatchShadowTest} binds the view and the
  *       reduction over it to the classification walk's fall-through arm over the spec-by-example
  *       corpus, which is the half that retires when the walk does, while
@@ -239,7 +243,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the
  *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
  *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
- *       proved the cutover and retired with the Java reduction it shadowed). Later derivation
+ *       proved the cutover and retired with the Java reduction it shadowed, and the two claim
+ *       relations it reads are pinned given rows by
+ *       {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
  *   <li>{@link Arm#ORACLE} for relations an oracle writer owns, at the oracle's own cadence
  *       (javac writes after capture; the legacy classification walk's reach writes inside the

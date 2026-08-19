@@ -8,19 +8,26 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
@@ -243,18 +250,29 @@ public final class SeededStore {
      */
     public static void seedArgument(DSLContext dsl, String graphName, String typeName,
                                     String fieldName, String argumentName, String namedType) {
+        seedArgument(dsl, graphName, typeName, fieldName, argumentName, namedType, 0, 2);
+    }
+
+    /**
+     * The same argument at an ordinal and a line the case names. A field's arguments are a sequence
+     * and a relation picking one of several orders on that sequence, so a case about such a pick
+     * states both, the position being how the pick is read off the answer.
+     */
+    public static void seedArgument(DSLContext dsl, String graphName, String typeName,
+                                    String fieldName, String argumentName, String namedType,
+                                    int ordinal, int sourceLine) {
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
             .set(GRAPHQL_ARGUMENT.TYPE_NAME, typeName)
             .set(GRAPHQL_ARGUMENT.FIELD_NAME, fieldName)
             .set(GRAPHQL_ARGUMENT.ARGUMENT_NAME, argumentName)
-            .set(GRAPHQL_ARGUMENT.ORDINAL, 0)
+            .set(GRAPHQL_ARGUMENT.ORDINAL, ordinal)
             .set(GRAPHQL_ARGUMENT.TYPE_SDL, namedType)
             .set(GRAPHQL_ARGUMENT.NAMED_TYPE, namedType)
             .set(GRAPHQL_ARGUMENT.NON_NULL, false)
             .set(GRAPHQL_ARGUMENT.IS_LIST, false)
             .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_ARGUMENT.SOURCE_LINE, 2)
+            .set(GRAPHQL_ARGUMENT.SOURCE_LINE, sourceLine)
             .set(GRAPHQL_ARGUMENT.SOURCE_COLUMN, 3)
             .execute();
     }
@@ -449,6 +467,167 @@ public final class SeededStore {
             .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_EXTERNAL_FIELD.CLASS_NAME, className)
             .set(GRAPHITRON_EXTERNAL_FIELD.METHOD, method)
+            .execute();
+    }
+
+    /** A {@code @nodeId} application on a field: presence, plus the type reference as written. */
+    public static void seedNodeId(DSLContext dsl, String graphName, String typeName, String fieldName) {
+        dsl.insertInto(GRAPHITRON_FIELD_NODE_ID)
+            .set(GRAPHITRON_FIELD_NODE_ID.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_NODE_ID.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_NODE_ID.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * A {@code @mutation} application on a field: the verb as the author wrote it. The write target
+     * and the multi-row flag are left unstated, a relation reading them being a different subject
+     * from one reading that the field carries the directive at all.
+     */
+    public static void seedMutation(DSLContext dsl, String graphName, String typeName,
+                                    String fieldName, String operation) {
+        dsl.insertInto(GRAPHITRON_MUTATION)
+            .set(GRAPHITRON_MUTATION.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MUTATION.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MUTATION.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MUTATION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_MUTATION.SOURCE_LINE, 2)
+            .set(GRAPHITRON_MUTATION.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_MUTATION.OPERATION, operation)
+            .execute();
+    }
+
+    /** The first {@code @routine} application on a field, at the position the other helpers use. */
+    public static void seedRoutine(DSLContext dsl, String graphName, String typeName,
+                                   String fieldName, String routineRef) {
+        seedRoutine(dsl, graphName, typeName, fieldName, 0, routineRef, 2);
+    }
+
+    /**
+     * A {@code @routine} application at an ordinal the case names. The directive is repeatable and
+     * several relations collapse the stack to one row, so which ordinal a row carries and where it
+     * sits are what such a case asserts; both are arguments for that reason.
+     *
+     * @param ordinal the application's position in document order, as capture assigns it
+     * @param sourceLine this application's own line, so a collapse can be read off the position
+     */
+    public static void seedRoutine(DSLContext dsl, String graphName, String typeName,
+                                   String fieldName, int ordinal, String routineRef, int sourceLine) {
+        dsl.insertInto(GRAPHITRON_ROUTINE)
+            .set(GRAPHITRON_ROUTINE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ROUTINE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ROUTINE.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ROUTINE.ORDINAL, ordinal)
+            .set(GRAPHITRON_ROUTINE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ROUTINE.SOURCE_LINE, sourceLine)
+            .set(GRAPHITRON_ROUTINE.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ROUTINE.ROUTINE_REF, routineRef)
+            .set(GRAPHITRON_ROUTINE.ROUTINE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(routineRef))
+            .set(GRAPHITRON_ROUTINE.ROUTINE_REF_NAME_PART, QualifiedNameGrammar.namePart(routineRef))
+            .execute();
+    }
+
+    /**
+     * A {@code @lookupKey} application on an argument: the live site, a marker and nothing else.
+     * The argument is the case's to seed, its ordinal being what a relation picking one of several
+     * marked arguments orders on.
+     */
+    public static void seedArgumentLookupKey(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String argumentName) {
+        seedArgumentLookupKey(dsl, graphName, typeName, fieldName, argumentName, 2);
+    }
+
+    /**
+     * The same marker at a line the case names. A relation picking one of a field's several marked
+     * arguments answers with that argument's own position, so the position is how the pick is read.
+     */
+    public static void seedArgumentLookupKey(DSLContext dsl, String graphName, String typeName,
+                                             String fieldName, String argumentName, int sourceLine) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_LOOKUP_KEY)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.SOURCE_LINE, sourceLine)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * The same marker on an input-object field, which is the retired site. A relation seeding a
+     * closure from the input surface starts here, so a case about that closure states the marker on
+     * the input field rather than on the argument that reaches it.
+     */
+    public static void seedInputFieldLookupKey(DSLContext dsl, String graphName, String typeName,
+                                               String fieldName) {
+        dsl.insertInto(GRAPHITRON_FIELD_LOOKUP_KEY)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * The raw application itself: that a directive of this name was written on a field, with none of
+     * the decoding a semantic helper above stands for. The pair is what a fallback arm turns on, so
+     * a case about one states the raw row alone and a case about the anti-join states both.
+     */
+    public static void seedFieldDirective(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, String directiveName) {
+        seedFieldDirective(dsl, graphName, typeName, fieldName, directiveName, 0, 2);
+    }
+
+    /** {@link #seedFieldDirective} at an ordinal and a line the case names, on {@link #seedRoutine}'s terms. */
+    public static void seedFieldDirective(DSLContext dsl, String graphName, String typeName,
+                                          String fieldName, String directiveName, int ordinal,
+                                          int sourceLine) {
+        dsl.insertInto(GRAPHQL_FIELD_DIRECTIVE)
+            .set(GRAPHQL_FIELD_DIRECTIVE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME, typeName)
+            .set(GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME, fieldName)
+            .set(GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME, directiveName)
+            .set(GRAPHQL_FIELD_DIRECTIVE.ORDINAL, ordinal)
+            .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_LINE, sourceLine)
+            .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * {@link #seedFieldDirective} at the type grain, on the one declaration site this harness
+     * spells. The type is seeded as an object if the case has not seeded it as something else,
+     * {@link #seedDeclaredType} being idempotent.
+     */
+    public static void seedTypeDirective(DSLContext dsl, String graphName, String typeName,
+                                         String directiveName) {
+        seedTypeDirective(dsl, graphName, typeName, directiveName, 0, 1);
+    }
+
+    /**
+     * {@link #seedTypeDirective} at an ordinal and a line the case names. Two applications of one
+     * directive on one type is what a base declaration extended by a second site produces, and the
+     * ordinal is the order a relation collapsing them reads.
+     */
+    public static void seedTypeDirective(DSLContext dsl, String graphName, String typeName,
+                                         String directiveName, int ordinal, int sourceLine) {
+        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
+        dsl.insertInto(GRAPHQL_TYPE_DIRECTIVE)
+            .set(GRAPHQL_TYPE_DIRECTIVE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, typeName)
+            .set(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME, directiveName)
+            .set(GRAPHQL_TYPE_DIRECTIVE.ORDINAL, ordinal)
+            .set(GRAPHQL_TYPE_DIRECTIVE.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_TYPE_DIRECTIVE.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE, sourceLine)
+            .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_COLUMN, 3)
             .execute();
     }
 

@@ -112,9 +112,6 @@ class StoreFixtureGuardTest {
             Why.PENDING_SEEDING, "the separate-fetch view; the delivery differential stays a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java",
             Why.PENDING_SEEDING, "the backing views go down; the writer's own rows stay"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/AuthoredClaimConflictsTest.java",
-            Why.PENDING_SEEDING, "mostly walk agreement, so expect a small seeded half and the "
-                + "class to stay"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/DemandShadowTest.java",
             Why.PENDING_SEEDING, "the demand views go down; the corpus sweep stays a capture"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/InputOccurrenceShadowTest.java",

@@ -3,31 +3,24 @@ package no.sikt.graphitron.rewrite.derive;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.facts.GatheredFacts;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
+import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -39,16 +32,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code DERIVED} agreement anchor: every fixture's expectation is a hand-written message the
  * view does not produce, so the anchor never collapses into the view compared against a
  * projection of itself (the shadow that proved the flip retired with the Java reduction it
- * shadowed). Beside the migrated fixtures sit the agreement anchors that keep the claim-view
- * arms honest against their walk-side twins ({@code LookupFacts.triggersFor} for the lookup
- * arm, the distinct {@code graphitron_routine} coordinates for the routine arm), the
- * sibling-graph scoping guard, the domain gate's join pin, the undecoded presence-arm
- * fallbacks, and the classifier vocabulary round trip.
+ * shadowed). Beside the migrated fixtures sit the anchor that keeps the claim views' lookup arm
+ * honest against its walk-side twin ({@code LookupFacts.triggersFor}), the sibling-graph scoping
+ * guard, the domain gate's join pin, the undecoded presence-arm fallbacks, and the classifier
+ * vocabulary round trip.
+ *
+ * <p>What the two claim views return given rows is not asked here. That is the relations' own
+ * algebra, their arm pairs, their per-position masks and their ordinal collapses, and it lives in
+ * the module whose DDL declares them, in
+ * {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}, against a store seeded row by row.
+ * Every fixture below is a real capture of real SDL for the same reason the split was worth making:
+ * what stands here is that an author's schema reaches those relations in the shape the rule reads,
+ * and that the report a consumer meets is minted from what it finds.
  */
 @PipelineTier
 class AuthoredClaimConflictsTest {
 
-    private static final String GRAPH = "AuthoredClaimConflictsTest";
+    private static final String GRAPH = CapturedStore.GRAPH;
     private static final String SERVICE_STUB = "no.sikt.graphitron.rewrite.TestServiceStub";
     private static final String EXTERNAL_FIELD_STUB = "no.sikt.graphitron.rewrite.TestExternalFieldStub";
 
@@ -220,7 +220,7 @@ class AuthoredClaimConflictsTest {
             }
             type Query { film: Film }
             """.formatted(SERVICE_STUB);
-        withCapturedStore(sdl, dsl -> {
+        withCapturedStore(tmp, sdl, dsl -> {
             ClaimDomainRows.write(dsl, GRAPH, ClaimDomain.of(TestSchemaHelper.buildSchema(sdl)));
             assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations()).hasSize(1);
             ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of()));
@@ -242,19 +242,7 @@ class AuthoredClaimConflictsTest {
             type Film @table(name: "film") { title: String }
             type Query { film: Film }
             """;
-        Path siblingDir = tmp.resolve("sibling");
-        Path ownDir = tmp.resolve("own");
-        try (var store = GraphitronModelStore.open()) {
-            Path siblingFile = write(siblingDir, conflicted);
-            Path ownFile = write(ownDir, clean);
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("sibling", siblingDir),
-                FactCapture.SubjectConfig.none(),
-                RewriteSchemaLoader.load(List.of(SchemaSource.file(siblingFile))),
-                TestSchemaHelper.attribution(siblingFile));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
-                FactCapture.SubjectConfig.none(),
-                RewriteSchemaLoader.load(List.of(SchemaSource.file(ownFile))),
-                TestSchemaHelper.attribution(ownFile));
+        try (var store = CapturedStore.of(tmp, "own", clean).andGraph("sibling", conflicted)) {
             var overWide = ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted));
             ClaimDomainRows.write(store.dsl(), "own", overWide);
             ClaimDomainRows.write(store.dsl(), "sibling", overWide);
@@ -268,12 +256,19 @@ class AuthoredClaimConflictsTest {
 
     // ===== The undecoded presence arms =====
 
+    /**
+     * That a schema too broken to decode still reports its conflicts. {@code @mutation} without its
+     * required verb and {@code @routine} without its required name never assemble, so capture reads
+     * the raw registry and writes no semantic row; the claim views' presence arms keep the
+     * coordinates claiming and the violations arrive as they would from a decoded pair. The domain
+     * is hand-built because a schema this broken has no walked model to project one from.
+     *
+     * <p>What those arms return given such rows is the claim views' own question and is asked in
+     * {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}; what stands here is that a real
+     * capture of a real broken schema reaches that state and that the report is minted from it.
+     */
     @Test
-    void declinedDecodesStillClaimThroughThePresenceArms() {
-        // @mutation without its required typeName and @routine without its required name never
-        // assemble, but capture reads the raw registry, where the decode declines and writes no
-        // semantic row; the presence arms keep the coordinates claiming. The domain is hand-built
-        // because a schema this broken has no walked model to project one from.
+    void declinedDecodesStillConflictThroughThePresenceArms() {
         var sdl = """
             type Film @table(name: "film") { title: String }
             type Query {
@@ -283,15 +278,7 @@ class AuthoredClaimConflictsTest {
                 createFilm: Film @service(service: {className: "%s", method: "run"}) @mutation
             }
             """.formatted(SERVICE_STUB, SERVICE_STUB);
-        withCapturedStore(sdl, dsl -> {
-            var fallbackRows = dsl.select(INTENT_AUTHORED_FIELD_CLAIM.TYPE_NAME,
-                    INTENT_AUTHORED_FIELD_CLAIM.CLASSIFIER)
-                .from(INTENT_AUTHORED_FIELD_CLAIM)
-                .where(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME.eq(GRAPH),
-                    INTENT_AUTHORED_FIELD_CLAIM.DECODED.isFalse())
-                .fetch(r -> r.value1() + ":" + r.value2());
-            assertThat(fallbackRows).containsExactlyInAnyOrder("Query:ROUTINE", "Mutation:MUTATION");
-
+        withCapturedStore(tmp, sdl, dsl -> {
             ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of(
                 FieldCoordinates.coordinates("Query", "broken"),
                 FieldCoordinates.coordinates("Mutation", "createFilm"))));
@@ -448,7 +435,7 @@ class AuthoredClaimConflictsTest {
                 createFilm: Film @service(service: {className: "%s", method: "run"}) @mutation
             }
             """.formatted(SERVICE_STUB);
-        withCapturedStore(sdl, dsl -> {
+        withCapturedStore(tmp, sdl, dsl -> {
             ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of(
                 FieldCoordinates.coordinates("Mutation", "createFilm"))));
             var conflicts = AuthoredClaimConflicts.detect(dsl, GRAPH).fieldConflicts();
@@ -460,7 +447,7 @@ class AuthoredClaimConflictsTest {
         });
     }
 
-    // ===== Agreement anchors =====
+    // ===== The agreement anchor =====
 
     @Test
     void lookupArmAgreesWithTheWalkedTriggerPredicate() {
@@ -491,7 +478,7 @@ class AuthoredClaimConflictsTest {
             .collect(Collectors.toSet());
         assertThat(triggered).containsExactlyInAnyOrder("direct", "byInput", "byOuter", "byCycle");
 
-        withCapturedStore(sdl, dsl -> {
+        withCapturedStore(tmp, sdl, dsl -> {
             var claimed = dsl.selectDistinct(INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME)
                 .from(INTENT_AUTHORED_FIELD_CLAIM)
                 .where(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME.eq(GRAPH),
@@ -499,32 +486,6 @@ class AuthoredClaimConflictsTest {
                     INTENT_AUTHORED_FIELD_CLAIM.CLASSIFIER.eq("LOOKUP_KEY"))
                 .fetchSet(INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME);
             assertThat(claimed).isEqualTo(triggered);
-        });
-    }
-
-    @Test
-    void routineArmCollapsesTheOrdinalGrainToDistinctCoordinates() {
-        var sdl = """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                chain: [Film] @routine(name: "first_fn") @routine(name: "second_fn")
-                single: [Film] @routine(name: "only_fn")
-            }
-            """;
-        withCapturedStore(sdl, dsl -> {
-            var routineCoordinates = dsl.selectDistinct(GRAPHITRON_ROUTINE.TYPE_NAME, GRAPHITRON_ROUTINE.FIELD_NAME)
-                .from(GRAPHITRON_ROUTINE)
-                .where(GRAPHITRON_ROUTINE.GRAPH_NAME.eq(GRAPH))
-                .fetchSet(r -> r.value1() + "." + r.value2());
-            var claimRows = dsl.select(INTENT_AUTHORED_FIELD_CLAIM.TYPE_NAME, INTENT_AUTHORED_FIELD_CLAIM.FIELD_NAME)
-                .from(INTENT_AUTHORED_FIELD_CLAIM)
-                .where(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME.eq(GRAPH),
-                    INTENT_AUTHORED_FIELD_CLAIM.CLASSIFIER.eq("ROUTINE"))
-                .fetch(r -> r.value1() + "." + r.value2());
-            assertThat(claimRows)
-                .as("one claim row per coordinate, however many ordinals the repeatable directive stacked")
-                .containsExactlyInAnyOrderElementsOf(routineCoordinates)
-                .doesNotHaveDuplicates();
         });
     }
 
@@ -551,7 +512,7 @@ class AuthoredClaimConflictsTest {
                 createFilm: Film @mutation(typeName: INSERT)
             }
             """.formatted(EXTERNAL_FIELD_STUB, SERVICE_STUB);
-        withCapturedStore(sdl, dsl -> {
+        withCapturedStore(tmp, sdl, dsl -> {
             var decoded = EnumSet.noneOf(AuthoredClaim.class);
             dsl.selectDistinct(INTENT_AUTHORED_FIELD_CLAIM.CLASSIFIER).from(INTENT_AUTHORED_FIELD_CLAIM)
                 .where(INTENT_AUTHORED_FIELD_CLAIM.GRAPH_NAME.eq(GRAPH))
@@ -573,35 +534,10 @@ class AuthoredClaimConflictsTest {
     /** {@link #detectAgainstWalk}, keeping the whole typed {@code Detection} product. */
     private AuthoredClaimConflicts.Detection detectionAgainstWalk(String sdl) {
         var domain = ClaimDomain.of(TestSchemaHelper.buildSchema(sdl));
-        try (var store = GraphitronModelStore.open()) {
-            capture(store.dsl(), sdl);
+        try (var store = CapturedStore.of(tmp, sdl)) {
             ClaimDomainRows.write(store.dsl(), GRAPH, domain);
             return AuthoredClaimConflicts.detect(store.dsl(), GRAPH);
         }
     }
 
-    private void withCapturedStore(String sdl, java.util.function.Consumer<DSLContext> body) {
-        try (var store = GraphitronModelStore.open()) {
-            capture(store.dsl(), sdl);
-            body.accept(store.dsl());
-        }
-    }
-
-    private void capture(DSLContext dsl, String sdl) {
-        var schemaFile = write(tmp, sdl);
-        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-        FactCapture.capture(dsl, new FactCapture.GraphIdentity(GRAPH, tmp),
-            FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile));
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
-    }
 }
