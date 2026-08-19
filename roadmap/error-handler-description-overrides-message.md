@@ -7,7 +7,7 @@ priority: 4
 theme: error-channel
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-17
+last-updated: 2026-08-19
 ---
 
 # Surface the @error handler description: as the client-facing message instead of the raw exception message
@@ -201,8 +201,24 @@ channel-keyed ones are `SCREAMING_SNAKE` of an SDL outcome type name
 Two SDL type names cannot collide, but a payload class simple name and an `@error` type name can
 (a `com.example.NotAllowed` payload class alongside an `@error type NotAllowed` mints
 `NOT_ALLOWED` twice), and a duplicate field is invalid generated Java rather than a diagnostic.
-Either disambiguate the per-type names by construction (a suffix, or a nested holder class) or
-fail loudly on a clash; pick one in the plan rather than at the keyboard.
+Resolved: put the per-type constants in a nested holder, `ErrorMappings.ByType.FILM_LOOKUP_INVALID`,
+and have the channel-keyed constants concatenate from it. That is collision-free by construction
+rather than by a uniqueness argument, so it needs no clash check and no invented suffix, and it keeps
+the two grains visibly separate in one class instead of interleaving two keying schemes in one flat
+field list. A suffix convention would have to be defended against the next name source that joins the
+namespace; a holder does not.
+
+One membership invariant the concatenation rests on, stated so the implementer confirms it rather
+than discovers it: every `ErrorType` a channel's `mappedErrorTypes()` names must also appear in
+`schema.types()`, or a channel array names a `ByType` constant the per-type mint never emitted. The
+two populations come from different sources (`mappedErrorTypes()` resolves through the unpruned
+`ErrorIndex`; `schema.types()` is the reachability-pruned registry), and `ErrorIndex`'s own javadoc
+asserts they agree on the consulted domain because an `@error` member is queried only by a field that
+reaches it. That is the argument to check, and it is checkable: today's channel-keyed mint reads
+`mappedErrorTypes()` while `TypeUnitCommands.fetchersRows` reads `schema.types()`, so a divergence
+would already be visible as a fetchers class with no channel constant. If the invariant does not hold
+by construction, mint `ByType` over the union of both populations rather than weakening the
+derivation.
 
 *Opportunity, the author's call:* with content determined by type name, the channel constant's
 identity reduces to the ordered list of mapped `@error` type names, so the whole per-handler
@@ -210,7 +226,11 @@ fingerprint is redundant, not just its `description` field. `canonicalHash` coul
 list (or the pass could key on the list directly and drop the digest), and `sameHandlerShape`
 could compare name lists. That shrinks `handlerLine` and `HandlerKey` out of existence rather than
 editing four arms each, and it is the same edit site this move already opens. Not required for the
-defect; noted because move 3 is where it would be cheapest.
+defect; noted because move 3 is where it would be cheapest. If instead the fingerprint is kept and
+merely trimmed, converge both spellings on `ChannelRuleChecks.CriteriaKey`'s shape
+(variant, discriminator, `matches`), which is a third live spelling of the same fingerprint and is
+already exactly what `handlerLine` and `HandlerKey` reduce to once `description` drops out. Three
+spellings collapsing to one is the better end state than two.
 
 This changes emitted constant *names*: two channels that today differ only by author
 description get one shared bare constant where they previously got a bare name plus a
@@ -219,6 +239,13 @@ than a side effect. Nothing in the suite observes it today, though, which is the
 `MappingsConstantNameDedupTest` never varies `description`, so the change lands silently
 unless the pipeline assertion below is written for it.
 
+`ErrorMappingsClassGenerator`'s class javadoc has to be rewritten with the mint anyway, and it is
+stale before this item touches it: it states that a constant-name collision "currently produce[s] a
+hard error" and that "the hash-suffix dedup ... is a follow-up addition", which the inline comment
+twelve lines below it contradicts by naming `MappingsConstantNameDedup` as having already run. The
+"one constant per distinct fetcher channel" opening also stops being true under two grains. Rewrite
+the whole block rather than patching the sentence about grain, and say what each grain is keyed on.
+
 ### 4. Read the override at the message fetcher, reusing the one match spelling
 
 `<ErrorType>Fetchers.message(env)` walks its own type's `Mapping[]` in source order: the
@@ -226,6 +253,37 @@ first mapping that matches the source resolves the message from its `ClientMessa
 falling through to `getMessage()` when no mapping matches. The source object is never
 touched, so all four consumers above are unaffected and dispatch keeps its source-direct
 contract unchanged.
+
+**The mapping walk is an insertion into today's three-arm body, not a replacement for it.**
+`ErrorTypeFetcherClassGenerator#messageMethod` emits a `GraphQLError` arm, then a `Throwable` arm,
+over a `null` fall-through, and the first of those three is load-bearing for the VALIDATION path:
+`ConstraintViolations.toGraphQLError` puts `GraphQLError` instances in the errors slot, the
+`TypeResolver` ladder dispatches them on `src instanceof GraphQLError`, and graphql-java's
+`GraphQLError` is an interface that its implementations need not implement on a `Throwable`. So the
+walk cannot be the method's first act, and it cannot be reached with a non-`Throwable` source at all:
+`Mapping.match` takes a `Throwable`. Emit the `GraphQLError` arm unchanged and ahead of the walk, put
+the walk under the existing `src instanceof Throwable thr` arm, and keep the `null` fall-through.
+
+Move 2 is what makes that ordering free of a behaviour question rather than a precedence choice: a
+`VALIDATION` handler carries no `ClientMessage`, so a `GraphQLError` source has no authored override to
+lose by resolving ahead of the walk, and `buildMappingArrayInitializer` skips `ValidationHandler`, so
+a VALIDATION-only type's `ByType` array is empty and the walk would have fallen through anyway. The
+arm ordering matters for the type that mixes VALIDATION with a dispatch handler, where the source can
+be either shape.
+
+Named this explicitly because the suite cannot catch getting it wrong. No sakila fixture declares
+`{handler: VALIDATION}`, so no execution-tier test reaches the `GraphQLError` arm, and the banned
+code-string assertion is the only thing that would have pinned its presence. A rewrite that collapses
+the body to a walk plus `thr.getMessage()` ships a green build and a null `message:` on every
+validation error. See the coverage note below.
+
+The walk is per-type rather than channel-wide on purpose, and the difference is observable. Rule 8
+(`ChannelRuleChecks.checkDuplicateMatchCriteria`) rejects only *intra-variant* duplicates, so two
+`@error` types on one channel can both match one throwable through different variants; dispatch takes
+the channel's first match while the `TypeResolver` ladder picks the type by source class, and the two
+can name different types. Resolving the message against the type the ladder already selected keeps
+`message:` consistent with the `__typename` the client sees in the same selection set. A channel-wide
+walk would reintroduce the disagreement. Do not "fix" the walk into a channel-wide one.
 
 **This must reuse `ErrorRouter.Mapping`, not re-implement the predicates.** "Does handler H
 fire on throwable T" already has two spellings in the tree: the `Mapping.match` family, used
@@ -272,6 +330,22 @@ five-row table this move edits, so leaving them would make the move's own succes
   combined; both must match on the exception". Rule 3 in `parseErrorHandler` rejects a `DATABASE`
   entry carrying both outright ("cannot carry both 'sqlState' and 'code'"), so this promises the
   author a build that fails on the arrangement the page recommends.
+* Two "Constraints" bullets promise an ordering contract the dispatcher does not implement. "The
+  handler list is order-insensitive within a type" is false: `buildErrorType` preserves SDL order with
+  no sort, `buildMappingArrayInitializer` walks that order, and `ErrorRouter.dispatch` returns the
+  first match, so when two handlers both match one throwable, declaration order decides which
+  `@error` type the client gets. Rule 8 does not close the gap, because it rejects only *intra-variant*
+  duplicates and the page's own how-to says cross-variant overlap is intentional. The next bullet's
+  "with the more-specific match running first" is the same error stated as a guarantee: a
+  `matches:`-narrowed handler runs first only if the author declared it first. Nothing sorts by
+  specificity. Both should say what the tree does, which is declaration order, first match wins.
+
+That bullet pair is not a separate audit; it is the same table region, and its claims are load-bearing
+in the same way the `VALIDATION` row is. An author who trusts "order-insensitive" and declares the
+broad handler first gets a silently unreachable narrow one, which is exactly the class of silent
+no-op this item exists to close. The remaining `@error` claims on the page were checked and hold: Rule
+7 and Rule 8 are real (`ChannelRuleChecks`), and the how-to's statements about them are accurate, so
+nothing outside the sites listed here needs an edit.
 
 The `VALIDATION` row, the `DATABASE` default, and the combined-discriminator bullet matter more than
 the `handler` row: they promise an author a build that fails. The `handler` row reads as harmless
@@ -392,6 +466,16 @@ so that tier carries the acceptance.
 * Unit tier: the `ClientMessage` lift in `TypeBuilder`. No code-string assertion on the
   emitted `message()` body at any tier; that form is banned, and here it would re-create
   exactly the false confidence that let this ship.
+* Execution tier, the arm this item rewrites blind: no sakila fixture declares
+  `{handler: VALIDATION}`, so nothing at any tier reaches the `GraphQLError` arm of the emitted
+  `message()`. Move 4 rewrites the method that arm lives in and move 2 changes what a VALIDATION
+  entry may declare, so this item touches the validation path twice while it is unpinned, and the
+  banned assertion form is the only alternative pin. Add the fixture: a VALIDATION-marked `@error`
+  type on an existing sakila payload whose service method takes a constraint-annotated input, and a
+  query test asserting the violation's interpolated message arrives in the errors slot. That is the
+  regression guard for the arm ordering, and it is also what proves the "Settled questions" argument
+  (per-violation detail survives) against the running system rather than on paper. Deferring it is the
+  implementer's call to make explicitly in the plan, not by omission.
 
 ## Retired vocabulary
 
