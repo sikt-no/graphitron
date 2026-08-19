@@ -21,9 +21,10 @@ import java.util.Optional;
  * source of truth in {@code BuildContext} uses the same string literals.
  *
  * <p>What this table does <em>not</em> carry is where a resolved value is read from. That
- * differs per directive and is the consumer's own business: the LSP answers {@code @table}
- * from the fact store's binding relation and the other two from the classification
- * projections, and neither choice is a property of which argument inference fills in.
+ * differs per directive and is the consumer's own business: the LSP answers all three off the
+ * fact store, {@code @table} from the binding relation, {@code @field} from the resolved column
+ * claim or the class member slot, {@code @reference} from the foreign-key discovery, and none of
+ * those choices is a property of which argument inference fills in.
  */
 public final class InferredDirectiveArgs {
 

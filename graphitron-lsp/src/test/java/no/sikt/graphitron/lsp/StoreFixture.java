@@ -132,6 +132,20 @@ final class StoreFixture implements AutoCloseable {
         return new StoreFixture(store, GRAPH, file, directory);
     }
 
+    /**
+     * Captures two schema files into one graph. The shape for the cases where the answer has to come
+     * from a file other than the one the request is about: {@link #sourceName()} is the first file, so
+     * a test opens that document and asserts on what the second one declared.
+     */
+    static StoreFixture ofFiles(Path directory, String firstName, String firstSdl,
+                                String secondName, String secondSdl) {
+        Path first = write(directory, firstName, firstSdl);
+        Path second = write(directory, secondName, secondSdl);
+        var store = GraphitronModelStore.open();
+        capture(store, List.of(first, second), directory, GRAPH, List.of(), null);
+        return new StoreFixture(store, GRAPH, first, directory);
+    }
+
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<CompletionData.ExternalReference> classpath) {
         Path file = write(directory, graphName, sdl);
@@ -226,8 +240,15 @@ final class StoreFixture implements AutoCloseable {
 
     private static void capture(GraphitronModelStore store, Path file, Path directory, String graphName,
                                 List<CompletionData.ExternalReference> classpath, JooqCatalog jooq) {
-        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(file)));
-        var attribution = SchemaInputAttribution.build(List.of(SchemaInput.file(file)));
+        capture(store, List.of(file), directory, graphName, classpath, jooq);
+    }
+
+    private static void capture(GraphitronModelStore store, List<Path> files, Path directory,
+                                String graphName, List<CompletionData.ExternalReference> classpath,
+                                JooqCatalog jooq) {
+        var sources = files.stream().map(SchemaSource::file).toList();
+        var registry = RewriteSchemaLoader.load(sources);
+        var attribution = SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList());
         FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, directory),
             FactCapture.SubjectConfig.none(), registry, attribution, jooq, classpath,
             new NodeDeclaration(null));

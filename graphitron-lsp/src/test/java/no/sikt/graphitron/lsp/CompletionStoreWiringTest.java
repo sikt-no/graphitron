@@ -104,6 +104,50 @@ class CompletionStoreWiringTest {
             .isEmpty();
     }
 
+    /**
+     * A buffer that will not parse is not an obstacle to answering. Tree-sitter names the coordinate
+     * under the cursor out of a tree carrying an error, and the store supplies the list, whose one
+     * candidate is declared by a sibling file the author has not touched. Nothing about the open
+     * document's syntax reaches the query, which is the whole of the division of labour: the invalid
+     * buffer is the question rather than a reason to decline it.
+     */
+    @Test
+    void aBufferThatWillNotParseCompletesAgainstWhatTheOtherFileDeclares(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofFiles(tmp,
+                "queries", "type Query { x(id: ID): Int }\n",
+                "nodes", "type Film @node(typeId: \"Film\") { id: ID }\n");
+             var access = new StoreAccess(fixture.reader(), StoreFixture.GRAPH)) {
+
+            var workspace = new Workspace();
+            workspace.setStore(access);
+            String uri = ValidationReport.canonicalUri(fixture.sourceName());
+            String broken = """
+                extend type
+                type Query {
+                    x(id: ID @nodeId(typeName: "")): Int
+                }
+                """;
+            workspace.didOpen(uri, 1, broken);
+
+            assertThat(parsesCleanly(broken))
+                .as("the case is about a buffer the parser refuses; a well-formed one proves nothing")
+                .isFalse();
+
+            int line = 2;
+            var cursor = new Point(line, broken.split("\n")[line].indexOf("\"\"") + 1);
+
+            assertThat(completionAt(workspace, uri, broken, cursor)).extracting(CompletionItem::getLabel)
+                .as("the candidate is the sibling file's @node type, which this buffer never mentions")
+                .containsExactly("Film");
+        }
+    }
+
+    private static boolean parsesCleanly(String source) {
+        var parser = new Parser();
+        parser.setLanguage(GraphqlLanguage.get());
+        return !parser.parse(source).orElseThrow().getRootNode().hasError();
+    }
+
     private static List<String> classNames(StoreHandle handle) {
         var bytes = SOURCE.getBytes(StandardCharsets.UTF_8);
         Point cursor = new Point(0, SOURCE.indexOf('"') + 1);
