@@ -138,7 +138,12 @@ lifecycle as their subject (port-in-use, close semantics) and must keep their ow
 relation, with a before and after number. Deliberately last among the code slices, and the honest
 justification is reader latency in the dev loop, the LSP and the MCP server rather than build time.
 Populate from the view so the rule stays in one place, and write the population order explicitly
-rather than deriving it, since H2 offers no dependency catalog to derive it from.
+rather than deriving it, since H2 offers no dependency catalog to derive it from. Read
+`docs/architecture/explanation/fact-model.adoc` first: R732 lands the ruling there on what a reduction
+may be built out of on H2, which is an ordinary table or a `LOCAL TEMPORARY` one and never a
+materialized view, along with the trap that H2's bare `CREATE TEMPORARY TABLE` defaults to `GLOBAL`
+and its global temporary tables share rows across every attached session. This slice is that ruling's
+first consumer, so if the page does not yet carry it, R732 did not finish.
 
 **Also carried across, smaller than a slice.** R732 turns on class-level test parallelism in
 `graphitron` only, because that is the module the 170.5s to 117.1s number was taken in. Extending the
@@ -191,7 +196,11 @@ database.
 Worth knowing for anyone extending this to consumer schemas: PostgreSQL has what H2 lacks, `pg_matviews`
 naming materialized views with `ispopulated` and `definition`, and `pg_depend` joined to `pg_rewrite`
 yielding the dependency graph uniformly for views and materialized views. A consumer-side story could
-use them. The fact store cannot, for the reasons R732 records.
+use them. The fact store cannot, for reasons that live in
+`docs/architecture/explanation/fact-model.adoc`: R732's fourth deliverable moves the H2
+materialized-view ruling there precisely so this slice has something permanent to read, since R732's
+own file is deleted when it reaches Done. Read that page before designing the reduction; it also
+carries what a reduction may be built out of, which is not a materialized view.
 
 ## How to re-measure
 
