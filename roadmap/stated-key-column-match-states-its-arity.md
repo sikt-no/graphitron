@@ -240,9 +240,8 @@ than a sweep, and depends on nothing.
    rather than a specification: the store diverges from `findColumn` on the collision case deliberately,
    and the Java change below is what stops that being a divergence at all. On
    `intent_resolved_node_key_column.column_name` the edit is that one sentence only. R668 appended a
-   paragraph to that comment explaining why the column exposes no fold, a three-tier pick having no
-   base relation to reach one through, and it is correct, load-bearing and none of this item's
-   business.
+   paragraph to that comment explaining why the column exposes no fold, and is rewriting its reason
+   under R731; leave the paragraph alone either way, whichever wording is standing when this lands.
 ** The seven `sql_`-family `_upper` comments (`sql_table` two, `sql_column` two, `sql_constraint`
    three) say "Two values of one family are compared exactly". Replace *values of one family* with
    *catalog readings* in each. It is the same claim said accurately: those columns' comparisons are
@@ -294,12 +293,15 @@ than a sweep, and depends on nothing.
   `intent_resolved_node_key_projection`, which folds `intent_resolved_node_key_column.column_name` per
   row against `graphitron_argument_path_segment.segment_name_upper`, and did not touch this page. So
   removing this item's survivor leaves the page asserting a clean sweep that is false, which is worse
-  than the carve-out it replaces. State the surviving site with the argument R668's own view comment
-  already gives, since that argument is derivable from the rule rather than an exception to it: a
-  three-tier pick has no one base relation whose `_upper` column it could reach, and the rule's second
-  consequence forbids forwarding a fold through a derived view, so a comparison against such a
-  relation is folded at the crossing or not at all. The wording of that site is R668's; not leaving
-  the paragraph false is this item's, being the item that edits it.
+  than the carve-out it replaces. State the surviving site, and state it as an open question rather
+  than as a settled exception: the rule's second consequence forbids a derived view from exposing a
+  fold, and `intent_resolved_node_key_column` hands out a spelling rather than a resolved column, so a
+  consumer matching against it has nowhere to reach and folds at the crossing. Whether that relation
+  should hand out a spelling at all is R731's, and the page should say so. Do not write the reason as
+  a three-tier pick having no base relation to reach a fold through: `intent_spelled_table` reads arm
+  folds across as many arms without trouble, and R668 has withdrawn that wording from its own body.
+  The wording of the site is R668's; not leaving the paragraph false is this item's, being the item
+  that edits it.
 
 Nothing generated needs regenerating by hand. The schema reference under
 `docs/architecture/reference/schema/` is rendered from the DDL and its comments by the docs module's
@@ -414,13 +416,14 @@ written against a stale copy of the arm.
   consumer catalog exhibits the pathology at all and would serve R729's per-site reachability
   question. Deliberately not added here: the pairing relation already carries the witnesses for this
   view's own question, and a census with no reader today belongs with the item that needs it.
-* The per-row fold in `intent_resolved_node_key_projection`, recorded as settled so nobody reopens it.
-  R668 landed the authored side as `graphitron_argument_path_segment.segment_name_upper` and left the
-  key-column side folded at the crossing on purpose, arguing it in that view's comment: the relation it
-  reads is a pick across three tiers with no one base relation to reach a generated column through.
+* The per-row fold in `intent_resolved_node_key_projection`, which is R731's and not this item's.
+  R668 landed the authored side as `graphitron_argument_path_segment.segment_name_upper` and folded
+  the key-column side at the crossing, having shipped an `_upper` on the reduction and reverted it;
+  no view in this schema exposes one. R731 asks the layer below that, whether
+  `intent_resolved_node_key_column` should hand out a spelling rather than a resolved column at all.
   This item's new column does not serve that site and must not be pointed at it, the value there being
-  whichever tier won rather than the stated entry name. What this item owes it is the page edit above,
-  nothing more.
+  whichever tier won rather than the stated entry name; it is a precondition for one tier of R731 and
+  nothing more. What this item owes the site is the page edit above.
 * R729, `findColumn`'s silent pick at its other seventeen call sites, filed off this item's analysis.
   This item installs the rule at one of those sites because a store verdict about malformed metadata
   needs an enforcer or it has no teeth; generalising it needs a per-site reachability call this item

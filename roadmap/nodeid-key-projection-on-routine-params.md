@@ -157,7 +157,8 @@ such calls against `graphitron_argument_path_segment.segment_name`; whether they
 that column or go another way is this item's to settle before its own gate.
 `JooqCatalog.resolveColumn` still uses `equalsIgnoreCase`, so the docs can state the behaviour
 without announcing a rule. *Settled in stage 3: one fold, on the authored side, the key-column side
-being a three-tier pick no reader can join a base relation through. See that stage's note.* On the middle tier
+folded at the crossing because no view here exposes a fold and this reduction hands out a spelling.
+See that stage's note, and R731 for whether it should.* On the middle tier
 take the store's own twin rather than re-deriving it: `intent_node_metadata_defect`'s
 `KEY_COLUMN_UNRESOLVED` arm resolves a stated entry against `sql_column` under
 `UPPER(jooq_name) = UPPER(...) OR UPPER(column_name) = UPPER(...)`, two tiers of spelling and not
@@ -1127,16 +1128,27 @@ stage into a one-line note.
    get one, and the reason is a rule three shipped comments already state
    (`sql_column.column_name_upper`, `sql_table.table_name_upper`,
    `sql_constraint.constraint_name_upper`): a comparison wanting a fold on both sides reaches it by
-   joining the owning base relation on its key, never by having a derived view forward it. There is
-   no such base relation here. `intent_resolved_node_key_column` is a pick across three tiers, so
-   which relation holds the fold depends on which tier won, and exposing a `column_name_upper` on the
-   reduction, which is what this first shipped and then reverted, is forwarding in exactly the sense
-   the rule forbids. That side is therefore folded at the crossing, in
+   joining the owning base relation on its key, never by having a derived view forward it.
+   `intent_resolved_node_key_column` is a reduction, so the only way to hand its fold to a consumer is
+   to expose one on it, which is what this first shipped and then reverted: no view in this schema
+   exposes an `_upper` column, and this stage is not the place to become the first. That the relation
+   is a pick across three tiers is *not* the reason, and the earlier wording that gave it as one is
+   withdrawn: `intent_spelled_table` is a union across as many arms with no single owning relation
+   either, and it reads each arm's own stored fold internally without trouble. What that view does not
+   do is expose one, because what it hands out is a resolved table rather than a spelling. This
+   relation hands out a spelling, and whether that is the right payload is R731's question rather than
+   this stage's. That side is therefore folded at the crossing, in
    `intent_resolved_node_key_projection`, and that view is now the only place the match is spelled at
    all: stage 3's unknown-column arm states the defect as *the absence of a projection row* rather
    than repeating the predicate, which is a strictly better shape than the one first written and the
    reason the two cannot drift. `intent_resolved_node_key_column.column_name`'s comment now says why
    it exposes no fold, so the next reader does not mint one.
+
+   One correction owed on that comment, and it is this stage's to make rather than R731's. It
+   currently gives the three-tier pick as the reason no fold is reachable, which is the sentence
+   withdrawn above; the reason that survives is that no view exposes a fold and this relation hands
+   out a spelling rather than a resolved column. Rewrite it in those terms and point the adjacency at
+   R731 so a reader who wonders why finds the question rather than a closed door.
 
    Two neighbouring things were deliberately left alone. `intent_node_metadata_defect`'s
    `KEY_COLUMN_UNRESOLVED` arm keeps its four per-row `UPPER` calls, and
