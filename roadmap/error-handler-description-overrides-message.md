@@ -1,7 +1,7 @@
 ---
 id: R686
 title: "Surface the @error handler description: as the client-facing message instead of the raw exception message"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: error-channel

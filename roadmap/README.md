@@ -33,8 +33,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R715` | Capture decodes internal grammars into normalized relations | In Review | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R711` | Nodehood derives from two corpora instead of being decided in capture | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
-| `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Spec | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](error-handler-description-overrides-message.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
+| `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Ready | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](error-handler-description-overrides-message.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -441,7 +441,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
-- `R686` [**Surface the @error handler description: as the client-facing message instead of the raw exception message**](error-handler-description-overrides-message.md) — Spec, bug
+- `R686` [**Surface the @error handler description: as the client-facing message instead of the raw exception message**](error-handler-description-overrides-message.md) — Ready, bug
 - `R536` [**Retire the always-empty ErrorChannel.Mapped slots on the polymorphic and table-interface @service variants**](always-empty-service-channel-slots.md) — Backlog, cleanup
 - `R496` [**Pin MappingsConstantNameDedup.groupKey javadoc to the current three ErrorChannel arms**](mappings-constant-name-dedup-error-channel-arms.md) — Backlog, docs
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md) — Backlog, structural
