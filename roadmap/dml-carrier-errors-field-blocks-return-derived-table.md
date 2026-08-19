@@ -219,8 +219,11 @@ the one forced `switch` edit. Do not plan on the compiler enumerating the sites.
 
 That orphan-`@service` arm is the same predicate this section argues against re-spelling, one
 family over: it probes a scan in the classifier because the recognizer publishes no reason.
-Folding it onto the new arm is the obvious follow-up and deliberately out of scope here (it
-changes a live `@service` diagnostic's provenance and wants its own pins); file it if wanted.
+Folding it onto the new arm is deliberately out of scope here and filed as R725: the three scans
+disagree by construction (they differ on forbidden data-field directives), so for a `@service`
+payload the DML scan can admit first and this arm's admitting-scan field would name the wrong
+family for that site. Subsuming it needs a decision about how the recognizer publishes per-family
+facts, not a mechanical edit, and it changes a live `@service` diagnostic that carries its own pins.
 Because the arm is reachable from any of the three scans, it carries which scan admitted
 alongside the scan result, and the DML seat below forks wording only for a DML-scan admit
 (the seat's precondition, a non-`Reject` DML scan, makes that the live case) and otherwise
