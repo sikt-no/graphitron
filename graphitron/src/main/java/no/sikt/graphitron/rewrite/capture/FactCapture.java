@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.capture;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
@@ -176,10 +175,9 @@ public final class FactCapture {
      */
     public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
                            TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution,
-                           JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
-                           NodeDeclaration nodes) {
+                           JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         run(storeDirectory, graph, config, registry, SdlVerdicts.none(), attribution, jooq,
-            extensions, nodes);
+            extensions);
     }
 
     /**
@@ -190,10 +188,9 @@ public final class FactCapture {
     public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
                            TypeDefinitionRegistry registry, SdlVerdicts verdicts,
                            Map<String, SchemaInput> attribution,
-                           JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
-                           NodeDeclaration nodes) {
+                           JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq, extensions,
-            nodes, null);
+            null);
     }
 
     /**
@@ -214,10 +211,10 @@ public final class FactCapture {
                                                           Map<String, SchemaInput> attribution,
                                                           JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
-                                                          NodeDeclaration nodes, WalkReach reach) {
+                                                          WalkReach reach) {
         Objects.requireNonNull(reach, "reach");
         return runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq,
-            extensions, nodes, reach);
+            extensions, reach);
     }
 
     private static AuthoredClaimConflicts.Detection runInternal(Path storeDirectory, GraphIdentity graph,
@@ -225,18 +222,18 @@ public final class FactCapture {
                                                      TypeDefinitionRegistry registry, SdlVerdicts verdicts,
                                                      Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
-                                                     NodeDeclaration nodes, WalkReach reach) {
+                                                     WalkReach reach) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
                     capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
-                        extensions, nodes);
+                        extensions);
                     return detect(store.dsl(), graph, reach);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
                     if (captureWithRetry(store, graph, config, registry, verdicts, attribution, jooq,
-                            extensions, nodes)) {
+                            extensions)) {
                         return detect(store.dsl(), graph, reach);
                     }
                 }
@@ -244,7 +241,7 @@ public final class FactCapture {
         }
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
             capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
-                extensions, nodes);
+                extensions);
             return detect(store.dsl(), graph, reach);
         }
     }
@@ -276,18 +273,17 @@ public final class FactCapture {
                                             SubjectConfig config, TypeDefinitionRegistry registry,
                                             SdlVerdicts verdicts,
                                             Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                                            List<CompletionData.ExternalReference> extensions,
-                                            NodeDeclaration nodes) {
+                                            List<CompletionData.ExternalReference> extensions) {
         try {
             capture(store.dsl(), store.warm(), graph, config, registry, verdicts, attribution, jooq,
-                extensions, nodes);
+                extensions);
             return true;
         } catch (DataAccessException first) {
             LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
         }
         try {
             capture(store.dsl(), store.warm(), graph, config, registry, verdicts, attribution, jooq,
-                extensions, nodes);
+                extensions);
             return true;
         } catch (DataAccessException second) {
             LOG.warn("shared fact store write for graph '{}' failed twice in a row; this looks like a "
@@ -302,19 +298,21 @@ public final class FactCapture {
      * Fills {@code dsl}'s store from all three inputs. Separate from {@link #run} so a caller that
      * wants to query the result (the agreement and gate tests) can own the store's lifetime.
      *
+     * <p>{@code jooq} is the only catalog-shaped input, and nothing may add a second. The catalog
+     * reaches exactly one crawler, so no crawler's rows about one corpus can depend on another's
+     * contents; a second parameter carrying a catalog-derived value would reopen that channel while
+     * leaving the store's picture indistinguishable from a transcription. A rule over two corpora is
+     * a derivation over their captured facts instead, and
+     * {@code CaptureCorpusIsolationTest} is what holds the boundary.
+     *
      * @param jooq  the catalog to walk, or {@code null} for a caller with none in hand. The catalog
      *              itself rather than any consumer-shaped view over it, since a narrowing made for
      *              one reader would land here as a fact about the consumer's database.
-     * @param nodes the nodehood predicate macro expansion needs, since federation's key synthesis
-     *              fires on nodes and nodehood can be inferred from the catalog rather than
-     *              declared. A predicate built on a null catalog reduces it to {@code @node}
-     *              presence, which is what a caller with no catalog in hand should get.
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution,
-                               JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
-                               NodeDeclaration nodes) {
-        capture(dsl, false, graph, config, registry, SdlVerdicts.none(), attribution, jooq, extensions, nodes);
+                               JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
+        capture(dsl, false, graph, config, registry, SdlVerdicts.none(), attribution, jooq, extensions);
     }
 
     /**
@@ -330,20 +328,18 @@ public final class FactCapture {
     public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
                                SubjectConfig config, TypeDefinitionRegistry registry,
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                               List<CompletionData.ExternalReference> extensions,
-                               NodeDeclaration nodes) {
+                               List<CompletionData.ExternalReference> extensions) {
         capture(dsl, warm, graph, config, registry, SdlVerdicts.none(), attribution, jooq,
-            extensions, nodes);
+            extensions);
     }
 
     /** {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
-     * Map, JooqCatalog, List, NodeDeclaration)} with the stage verdicts a full read produced. */
+     * Map, JooqCatalog, List)} with the stage verdicts a full read produced. */
     public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
                                SubjectConfig config, TypeDefinitionRegistry registry,
                                SdlVerdicts verdicts,
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                               List<CompletionData.ExternalReference> extensions,
-                               NodeDeclaration nodes) {
+                               List<CompletionData.ExternalReference> extensions) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(verdicts, "verdicts");
@@ -356,7 +352,7 @@ public final class FactCapture {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
             ConfigurationFactCapture.capture(sink, config);
-            SdlFactCapture.capture(sink, registry, nodes, sources, attribution,
+            SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             SdlVerdictCapture.capture(sink, verdicts);
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
@@ -374,7 +370,7 @@ public final class FactCapture {
     /** SDL-only capture, for callers with no catalog in hand. */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution) {
-        capture(dsl, graph, config, registry, attribution, null, List.of(), new NodeDeclaration(null));
+        capture(dsl, graph, config, registry, attribution, null, List.of());
     }
 
     /**

@@ -190,8 +190,7 @@ class TypeBackingShadowTest {
             var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
                 FactCapture.SubjectConfig.none(), registry,
-                TestSchemaHelper.attribution(schemaFile), jooq, census(),
-                TestSchemaHelper.nodeDeclaration());
+                TestSchemaHelper.attribution(schemaFile), jooq, census());
             var bundle = TestSchemaHelper.buildBundle(sdl);
             TypeBackingClassRows.write(store.dsl(), GRAPH, TypeBackingClasses.of(bundle.model()));
             body.accept(store.dsl());

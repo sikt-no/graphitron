@@ -597,7 +597,7 @@ COMMENT ON COLUMN graphql_type_directive.graph_name IS 'the owning graph''s part
 COMMENT ON COLUMN graphql_type_directive.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphql_type_directive.directive_name IS 'the applied or defined directive name, without the leading @';
 COMMENT ON COLUMN graphql_type_directive.ordinal IS 'as on graphql_schema_directive; federation''s @key repeats here';
-COMMENT ON COLUMN graphql_type_directive.declaration_line IS 'the applying site (extensions apply type directives too); a synthesized @key hangs off the type''s causing authored site, per its own provenance relation below';
+COMMENT ON COLUMN graphql_type_directive.declaration_line IS 'the applying site (extensions apply type directives too). Every row here is a site the author wrote: no expansion applies a type directive, federation''s synthesized @key being a derivation (intent_synthesized_federation_key) rather than a row in this family';
 COMMENT ON COLUMN graphql_type_directive.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
 COMMENT ON COLUMN graphql_type_directive.source_name IS 'NOT NULL as on graphql_field: half of the site FK';
 COMMENT ON COLUMN graphql_type_directive.source_line IS 'source line, 1-based per the graphql-java convention';
@@ -2058,11 +2058,11 @@ CREATE TABLE graphitron_federation_key (
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
-COMMENT ON TABLE graphitron_federation_key IS 'Federation @key, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement).';
+COMMENT ON TABLE graphitron_federation_key IS 'Federation @key as the author wrote it, decoded for consumption (its verbatim twin lives in graphql_type_directive for re-emission; a gate query pins agreement). Authored applications alone, which is what this family''s charter says a decode is: the key federation synthesizes for a node type is a derivation over these rows and the node metadata, and it lives in intent_synthesized_federation_key. A reader wanting every key the emitted schema carries reads intent_federation_key, which unions the two.';
 COMMENT ON COLUMN graphitron_federation_key.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_federation_key.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_federation_key.ordinal IS '@key is repeatable; document order';
-COMMENT ON COLUMN graphitron_federation_key.source_name IS 'the applying declaration site; a synthesized key inherits the causing authored site of the same type, so the reference holds for it too';
+COMMENT ON COLUMN graphitron_federation_key.source_name IS 'the applying declaration site, which every row here has, the relation holding authored applications alone';
 COMMENT ON COLUMN graphitron_federation_key.declaration_line IS 'line of the contributing declaration site, keyed with source_name';
 COMMENT ON COLUMN graphitron_federation_key.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
 COMMENT ON COLUMN graphitron_federation_key.source_line IS 'source line, 1-based per the graphql-java convention';
@@ -2210,16 +2210,27 @@ COMMENT ON COLUMN graphitron_undecoded_argument.value_sdl IS 'the literal as wri
 
 
 -- ==== Macro synthesis provenance ==================================================
--- The expansion's own record: which graphql_ rows a macro added, and the written expression where
--- the macro rewrote it. Synthesized rows inherit the causing application's source position;
--- these relations are what say a position means "caused here" rather than "written here".
+-- The connection expansion's own record: which graphql_ rows it added, and the written expression
+-- where it rewrote one. Synthesized rows inherit the causing application's source position; these
+-- relations are what say a position means "caused here" rather than "written here".
 --
--- The macro domains are closed over the expansions capture can run, which is the expansions whose
--- contribution is a function of one carrier's own declaration. @asConnection qualifies: its element
--- type enters as a name and nothing reads the type that name resolves to. @asFacet does not, which
--- is why no FACET value appears here. Its container's shape reads through the carrier's arguments
--- into the filter input type's fields, so it is an aggregate over the whole schema rather than a
--- local expansion, and it belongs to a derived stratum reading these relations.
+-- Both residents are @asConnection's, and the family is closed at that. A macro qualifies to run in
+-- capture only when its contribution is a function of one carrier's own declaration, reading nothing
+-- outside the SDL corpus. @asConnection qualifies: its element type enters as a name and nothing
+-- reads the type that name resolves to. Two do not, for two different reasons. @asFacet reads
+-- through the carrier's arguments into the filter input type's fields, so it is an aggregate over
+-- the whole schema rather than a local expansion, which is why no FACET value appears here. And
+-- federation's key synthesis fires on nodehood, which conjoins the SDL claim with metadata a
+-- generated jOOQ class publishes: a second corpus, so the rule is a derivation
+-- (intent_synthesized_federation_key) and its rows are their own provenance, which is why no
+-- FEDERATION_KEY value appears here either and why this family holds no relation about @key.
+--
+-- What survives here is what a derived relation cannot hold. A macro that adds a declaration site
+-- adds it to graphql_type_declaration, because a minted type has to be a type every reader of the
+-- transcription sees; that addition is marked rather than excluded. And a macro that rewrites a
+-- captured value overwrites one, so the authored expression survives only in the relation that
+-- stashed it. Both are the cost of an expansion running inside the walk, and both are payable
+-- exactly because @asConnection reads one corpus.
 CREATE TABLE graphitron_type_declaration_synthesis (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -2232,9 +2243,9 @@ CREATE TABLE graphitron_type_declaration_synthesis (
   PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, type_name, source_name, source_line, source_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
-  CHECK (macro IN ('CONNECTION', 'FEDERATION'))
+  CHECK (macro IN ('CONNECTION'))
 );
-COMMENT ON TABLE graphitron_type_declaration_synthesis IS 'A declaration site was contributed by a macro rather than the author: a definition site when the macro creates the type (Connection, Edge, facet shapes, at merge_ordinal 0), an extension site when it adds members to an existing type (the Query fields federation adds from @link), and an empty extension site when a later carrier touches a shared machinery type (PageInfo), so carrier multiplicity is the site count. Synthesized element rows hang off these sites through the ordinary declaration reference, which is what marks additions without per-element provenance; a type is synthesized exactly when its merge_ordinal-0 site is.';
+COMMENT ON TABLE graphitron_type_declaration_synthesis IS 'A declaration site was contributed by a macro rather than the author: a definition site when the macro creates the type (Connection, Edge, facet shapes, at merge_ordinal 0), and an empty extension site when a later carrier touches a shared machinery type (PageInfo), so carrier multiplicity is the site count. Synthesized element rows hang off these sites through the ordinary declaration reference, which is what marks additions without per-element provenance; a type is synthesized exactly when its merge_ordinal-0 site is.';
 COMMENT ON COLUMN graphitron_type_declaration_synthesis.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_type_declaration_synthesis.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_type_declaration_synthesis.source_name IS 'the causing application''s position, which is the site''s identity';
@@ -2260,24 +2271,6 @@ COMMENT ON COLUMN graphitron_field_synthesis.type_name IS 'the GraphQL type this
 COMMENT ON COLUMN graphitron_field_synthesis.field_name IS 'the field name within the owning type';
 COMMENT ON COLUMN graphitron_field_synthesis.macro IS 'which expansion rewrote the type expression';
 COMMENT ON COLUMN graphitron_field_synthesis.authored_type_sdl IS 'the type expression as the author wrote it, pre-expansion';
-
-CREATE TABLE graphitron_type_directive_synthesis (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  macro          VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, directive_name, ordinal)
-    REFERENCES graphql_type_directive (graph_name, type_name, directive_name, ordinal),
-  CHECK (macro IN ('FEDERATION_KEY'))
-);
-COMMENT ON TABLE graphitron_type_directive_synthesis IS 'A type-level directive application was synthesized rather than authored (federation key synthesis; the application itself sits in graphql_type_directive and graphitron_federation_key like any other, and must re-emit, so provenance is this relation, not exclusion).';
-COMMENT ON COLUMN graphitron_type_directive_synthesis.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_type_directive_synthesis.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_type_directive_synthesis.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphitron_type_directive_synthesis.ordinal IS 'capture-assigned position in document order';
-COMMENT ON COLUMN graphitron_type_directive_synthesis.macro IS 'which expansion synthesized the application';
 
 
 -- ==== SQL catalog facts ===========================================================
@@ -3334,6 +3327,75 @@ COMMENT ON COLUMN intent_node_metadata_defect.table_name IS 'the table''s SQL na
 COMMENT ON COLUMN intent_node_metadata_defect.defect IS 'which defect, in a closed vocabulary of ten: TYPE_ID_NOT_DECLARED, TYPE_ID_NULL, TYPE_ID_WRONG_TYPE and TYPE_ID_EMPTY on the type-id constant; KEY_COLUMNS_NOT_DECLARED, KEY_COLUMNS_NULL, KEY_COLUMNS_WRONG_TYPE and KEY_COLUMNS_EMPTY on the key-columns constant; KEY_COLUMN_ENTRY_NULL and KEY_COLUMN_UNRESOLVED on one entry of it. The vocabulary is finer than the reflection probe it will eventually replace, which reports one message per constant however that constant went wrong: the store distinguishes the states because it holds the forms separately, and collapsing them here to match the probe would discard a distinction the rows already carry';
 COMMENT ON COLUMN intent_node_metadata_defect.position IS 'the offending entry''s index in the stated array, on the two per-entry defects; NULL on the eight that are about a whole constant, which is the stated absent bucket rather than a missing value';
 
+CREATE VIEW intent_inferred_node_type
+  (graph_name, type_name, table_source_name, table_schema, table_name) AS
+SELECT b.graph_name, b.type_name, b.table_source_name, b.table_schema, b.table_name
+  FROM intent_bound_table b
+  JOIN sql_node_metadata m
+    ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+   AND m.table_name = b.table_name
+ WHERE b.candidates = 1
+   AND EXISTS (SELECT 1 FROM graphql_implements i
+                WHERE i.graph_name = b.graph_name AND i.type_name = b.type_name
+                  AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM intent_node_metadata_defect d
+                    WHERE d.source_name = m.source_name
+                      AND d.table_schema = m.table_schema
+                      AND d.table_name = m.table_name);
+COMMENT ON VIEW intent_inferred_node_type IS 'A type nobody wrote @node on that is a node anyway: an @table binding, an implements Node, and a bound table whose generated class publishes well-formed node-identity metadata. The inferred half of nodehood, kept a relation of its own rather than a tagged arm of the membership reduction, per the provenance rule the schema applies throughout: authored and inferred values reached by independent rules live in separate relations coalesced by a view, and a tag column no reader forks on is inventory. What earns this one its place independently of that reduction is the witness columns, which say which table''s metadata made the type a node; a reader asking that question joins instead of re-deriving the binding. Well-formedness is the conjunction intent_node_metadata_defect''s own comment states, a metadata row with no defect rows for it, and not the anti-join alone: a table publishing nothing at all also has no defect rows, and that table is not a node. The membership is a cross-corpus join, which is the licensed shape for a derivation precisely because no crawler may perform one. Its binding is intent_bound_table, the @table arm alone, deliberately and not the intent_resolved_type_binding reduction the sibling spelling below stands on: nodehood demands a written @table, so a type whose only binding is a routine chain''s return is not a node however well-formed that table''s metadata is. Its sibling spelling is intent_resolved_node_key_column''s JOOQ_METADATA tier, which carries the same well-formed-metadata conjunction on that other stand; the duplication is stated rather than latent, so a reader who finds one finds the pair, and folding the conjunction into a relation of its own on sql_table''s key is the follow-on neither view performs on its own. Standing on intent_bound_table it inherits intent_spelled_table''s window function, so an outer predicate cannot prune it: a caller filtering on one type still resolves every spelling in the graph.';
+COMMENT ON COLUMN intent_inferred_node_type.graph_name IS 'the owning graph''s partition, carried from the binding';
+COMMENT ON COLUMN intent_inferred_node_type.type_name IS 'the type this row infers nodehood for; keyed with the graph, one row per inferred node type';
+COMMENT ON COLUMN intent_inferred_node_type.table_source_name IS 'the metadata-publishing table''s catalog partition, the first column of the sql_table key this row names; a witness, so the reader that asks which table made this a node joins rather than re-deriving the binding';
+COMMENT ON COLUMN intent_inferred_node_type.table_schema IS 'the metadata-publishing table''s SQL schema';
+COMMENT ON COLUMN intent_inferred_node_type.table_name IS 'the metadata-publishing table''s SQL name. With the two columns above this is sql_table''s full key, and the sql_node_metadata row this inference read sits on that same key';
+
+CREATE VIEW intent_node_type (graph_name, type_name) AS
+SELECT graph_name, type_name FROM graphitron_node
+ UNION
+SELECT graph_name, type_name FROM intent_inferred_node_type;
+COMMENT ON VIEW intent_node_type IS 'Which of a graph''s types are node types: the union of the authored @node population and the inferred one. The store''s answer to the question NodeDeclaration.isNodeType answers live, and the relation every reader of nodehood joins instead of restating the rule. A declaration-level answer, matching that predicate: @node without implements Node still reads as a node here, and rejecting that shape is the classifier''s job rather than this relation''s, since a membership relation that silently dropped a declared node would leave a detection with nothing to detect. The predicate''s declared-wins short-circuit needs no transcription: a UNION dedupes, so precedence dissolves along with the provenance column that would have asked for it, and a reader wanting to know which rule answered reads the arm, both arms being residents in their own right. Inference is a cross-corpus join and lands in the arm that performs it, which is what keeps the SDL crawlers writing rows about the SDL alone.';
+COMMENT ON COLUMN intent_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN intent_node_type.type_name IS 'the node type; keyed with the graph, one row per node type however many arms answered for it';
+
+CREATE VIEW intent_synthesized_federation_key
+  (graph_name, type_name, fields_sdl, resolvable) AS
+SELECT n.graph_name, n.type_name, 'id', TRUE
+  FROM intent_node_type n
+ WHERE EXISTS (SELECT 1 FROM graphitron_link l
+                WHERE l.graph_name = n.graph_name
+                  AND l.url LIKE 'https://specs.apollo.dev/federation/%')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_federation_key k
+                    WHERE k.graph_name = n.graph_name AND k.type_name = n.type_name
+                      AND 1 = (SELECT COUNT(*) FROM graphitron_federation_key_field f
+                                WHERE f.graph_name = k.graph_name
+                                  AND f.type_name = k.type_name AND f.ordinal = k.ordinal)
+                      AND 1 = (SELECT COUNT(*) FROM graphitron_federation_key_field_segment s
+                                WHERE s.graph_name = k.graph_name
+                                  AND s.type_name = k.type_name AND s.ordinal = k.ordinal)
+                      AND EXISTS (SELECT 1 FROM graphitron_federation_key_field_segment s
+                                   WHERE s.graph_name = k.graph_name
+                                     AND s.type_name = k.type_name AND s.ordinal = k.ordinal
+                                     AND s.segment_name = 'id'));
+COMMENT ON VIEW intent_synthesized_federation_key IS 'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, because federation needs the entity declaration visible in the emitted SDL and a node carries a globally-unique id by definition. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts, which is what puts it in this stratum rather than in the walk that used to run it. The three conditions are the live rule''s. The graph is federation-linked, which is a predicate over graphitron_link.url as graphitron_link''s own comment says, and the decode rather than the verbatim twin: reading the argument value out of graphql_schema_directive_arg would mean compensating for AST quoting, which is exactly the string surgery a decoded relation exists to retire. A url the author omitted is a null and matches nothing, which is the live predicate''s null guard falling out of the join. The type is a node, by intent_node_type. And no authored key already states the id contract, meaning no @key application on the type whose decode is exactly the single path id: one field row, one segment, and that segment named id. Positions are dense from zero in both children, so the two counts pin the shape without naming a position. That transcribes the live rule including its deliberate asymmetry, a malformed fields: argument decoding to no field rows and therefore not counting as the id key, so the misuse reaches its detection instead of suppressing synthesis on the strength of a parse failure; compound and other-field keys likewise do not count, being additional alternatives rather than the id contract. The rule''s constants appear here, in SQL, rather than in a comment each composing reader re-mints from: fields_sdl is the field-set literal the rule would have written and resolvable is true. The federation-spec prefix is a third spelling beside the two Java readers that share the constant, and is pinned to it by a named test rather than by a shared literal, a view being unable to bind a query parameter. This relation is its own provenance, which is what lets the synthesized application leave the transcription families entirely: nothing marks a synthesized row in graphql_type_directive because no synthesized row lands there.';
+COMMENT ON COLUMN intent_synthesized_federation_key.graph_name IS 'the owning graph''s partition, carried from the membership relation';
+COMMENT ON COLUMN intent_synthesized_federation_key.type_name IS 'the node type the key is synthesized for; keyed with the graph, one row per type that gets one';
+COMMENT ON COLUMN intent_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
+COMMENT ON COLUMN intent_synthesized_federation_key.resolvable IS 'the resolvable: the rule states, always true; the synthesized entity is resolvable by construction, an opt-out being something only an author can write';
+
+CREATE VIEW intent_federation_key
+  (graph_name, type_name, ordinal, fields_sdl, resolvable) AS
+SELECT graph_name, type_name, ordinal, fields_sdl, resolvable
+  FROM graphitron_federation_key
+ UNION ALL
+SELECT graph_name, type_name, CAST(NULL AS INT), fields_sdl, resolvable
+  FROM intent_synthesized_federation_key;
+COMMENT ON VIEW intent_federation_key IS 'Every @key a graph''s emitted schema carries, authored and synthesized alike: the composition two readers already ask for, the round trip that re-emits the applications and the agreement anchor that pins the derivation against the pipeline''s registry rewrite. A relation rather than a union each of them assembles for itself, on the rule that a composition with a second asker is a relation. The grain is the authored relation''s, with a NULL ordinal on the synthesized arm rather than an invented one: document order is a property of something the author wrote, and a derived row has no position in a document. UNION ALL and not UNION, deliberately. The authored arm is unique on its own key already and the synthesized arm cannot collide with it, its condition being that no authored id key exists, so deduplication could only ever fold together rows a reader wants told apart: two authored @key(fields: "id") applications at distinct ordinals are two rows here, which is the arity the authored relation states and this reduction owes its readers. Key grain only. The path and segment children stay authored-only until a reader asks for them composed, the synthesized arm''s single id path being recoverable from fields_sdl by the same rule that would have decoded it. A reader wanting a total order over both arms orders the authored rows by ordinal and appends the derived one, which is the ordering the composing query owns rather than one this relation invents.';
+COMMENT ON COLUMN intent_federation_key.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN intent_federation_key.type_name IS 'the type the key sits on';
+COMMENT ON COLUMN intent_federation_key.ordinal IS 'the authored application''s position in document order; NULL on a synthesized row, which is the stated absent bucket rather than a missing value, a derived row having no document position and the type''s declaration site being one join away';
+COMMENT ON COLUMN intent_federation_key.fields_sdl IS 'the field-set literal: as written on an authored row, and the rule''s own id on a synthesized one';
+COMMENT ON COLUMN intent_federation_key.resolvable IS 'as written on an authored row, NULL where the author omitted it; always true on a synthesized one';
+
 CREATE VIEW intent_field_reference_step_hop
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,
@@ -3620,7 +3682,7 @@ SELECT graph_name, type_name, position, column_name, tier
                    AND cc.constraint_name = pk.constraint_name
                  WHERE b.candidates = 1) arms) picked
  WHERE tier_rank = 1;
-COMMENT ON VIEW intent_resolved_node_key_column IS 'The ordered key columns a graph''s type encodes a node id from: what a @nodeId(typeName:) decode projects values into, and what an editor offers as completions after a node id opens. A reduction over the three populations that can answer, in first-tier-wins precedence, which is the resolution BuildContext.resolveTargetKeys makes with a live catalog in hand; naming it as a relation is what lets a second reader take the same answer instead of re-deriving it, the editor being that reader and the reason the view earns its place independently of any one consumer. The tiers carry ordered lists rather than independent facts per position, so the pick is by type and never by the (type, position) coordinate: one tier wins for a type and its whole list is taken. Splicing one tier''s column into another tier''s order is the transposition the resolution''s own reasoning warns about, an @node(keyColumns:) pinning an order the metadata does not share projecting columns against the order the decode returns values in, and a per-position pick is exactly how it would arrive. The pick is therefore DENSE_RANK over the tiers rather than intent_field_column_table''s ROW_NUMBER, which is the same window mechanism reading a tier rather than a row: ROW_NUMBER partitioned by the type would keep position zero and discard the rest of the winning list. An ambiguous binding resolves no key columns on the lower two tiers both. Each reaches a table through intent_resolved_type_binding, which carries candidates and declines to pick between a @table and a routine return that name different tables, and two candidate tables are two different key tuples: picking one would encode ids against a table the author never named. Only the pinned-SDL tier survives it, graphitron_node_key_column being keyed by graph and type and needing no table to answer. A type whose binding is ambiguous and whose keyColumns are unpinned therefore has no row, and naming that ambiguity is the detection stratum''s job rather than this relation''s. Absence means no tier answered, which is what the resolution reports as an error rather than a default. Whether a resolved name is a column the table actually has is deliberately not asked here: the pinned tier answers without a table at all, so a name that resolves against nothing is a row here and a detection elsewhere, on intent_node_metadata_defect''s terms for the tier it reads.';
+COMMENT ON VIEW intent_resolved_node_key_column IS 'The ordered key columns a graph''s type encodes a node id from: what a @nodeId(typeName:) decode projects values into, and what an editor offers as completions after a node id opens. A reduction over the three populations that can answer, in first-tier-wins precedence, which is the resolution BuildContext.resolveTargetKeys makes with a live catalog in hand; naming it as a relation is what lets a second reader take the same answer instead of re-deriving it, the editor being that reader and the reason the view earns its place independently of any one consumer. The tiers carry ordered lists rather than independent facts per position, so the pick is by type and never by the (type, position) coordinate: one tier wins for a type and its whole list is taken. Splicing one tier''s column into another tier''s order is the transposition the resolution''s own reasoning warns about, an @node(keyColumns:) pinning an order the metadata does not share projecting columns against the order the decode returns values in, and a per-position pick is exactly how it would arrive. The pick is therefore DENSE_RANK over the tiers rather than intent_field_column_table''s ROW_NUMBER, which is the same window mechanism reading a tier rather than a row: ROW_NUMBER partitioned by the type would keep position zero and discard the rest of the winning list. An ambiguous binding resolves no key columns on the lower two tiers both. Each reaches a table through intent_resolved_type_binding, which carries candidates and declines to pick between a @table and a routine return that name different tables, and two candidate tables are two different key tuples: picking one would encode ids against a table the author never named. Only the pinned-SDL tier survives it, graphitron_node_key_column being keyed by graph and type and needing no table to answer. A type whose binding is ambiguous and whose keyColumns are unpinned therefore has no row, and naming that ambiguity is the detection stratum''s job rather than this relation''s. Absence means no tier answered, which is what the resolution reports as an error rather than a default. Whether a resolved name is a column the table actually has is deliberately not asked here: the pinned tier answers without a table at all, so a name that resolves against nothing is a row here and a detection elsewhere, on intent_node_metadata_defect''s terms for the tier it reads. The JOOQ_METADATA tier''s sibling spelling is intent_inferred_node_type, which asks the same well-formed-stated-metadata question on a different stand, the @table binding alone rather than this reduction, for the reason that view''s comment gives; the two carry the conjunction twice and name each other so a reader who finds one finds the pair, and extracting it into a relation on sql_table''s own key is the follow-on neither performs unilaterally.';
 COMMENT ON COLUMN intent_resolved_node_key_column.graph_name IS 'the owning graph''s partition, carried from whichever tier answered';
 COMMENT ON COLUMN intent_resolved_node_key_column.type_name IS 'the graph type whose node key this row is one column of';
 COMMENT ON COLUMN intent_resolved_node_key_column.position IS '0-based position within the key, dense from zero, in the order the winning tier states; the order the encoded identity depends on, which is why the pick keeps a tier''s list whole';

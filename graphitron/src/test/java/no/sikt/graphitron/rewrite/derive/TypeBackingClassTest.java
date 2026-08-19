@@ -575,7 +575,7 @@ class TypeBackingClassTest {
         var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
         FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, root),
             FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-            jooq, census, new NodeDeclaration(null));
+            jooq, census);
     }
 
     private static Path write(Path directory, String sdl) {

@@ -123,14 +123,12 @@ public final class CapturedStore implements AutoCloseable {
      * Captures {@code sdl} against a generated jOOQ catalog: the shape for the arms whose answer
      * involves a table, a column or a key, none of which a schema alone declares.
      *
-     * <p>The catalog carries node inference with it, which is production's arrangement:
-     * {@link GraphQLRewriteGenerator} passes {@code new NodeDeclaration(jooq)} on both of its capture
-     * paths, so a table publishing node metadata makes its type a node whether or not {@code @node}
-     * is written. There is deliberately no inference-off catalog arm. Inference reaches capture at
-     * exactly one place, the federation-key expansion in the macro walk, so with no catalog to probe
-     * there is nothing to infer from and the bare arms above already are that state; an arm spelling
-     * it a second time would differ from its sibling in no observable way. What the axis does control
-     * where it is observable is pinned by {@code MacroCaptureTest}.
+     * <p>The catalog is capture's only catalog-shaped input, so there is no inference axis to arm.
+     * Nodehood is derived from the captured facts of both corpora rather than decided during the
+     * walk, so a bare arm above differs from this one only in whether the catalog facts are in the
+     * store to derive from; what the derivation makes of them is
+     * {@link no.sikt.graphitron.rewrite.derive.NodeTypeShadowTest}'s subject and not an axis a
+     * fixture arms.
      */
     public static CapturedStore ofCatalog(Path directory, String sdl, JooqCatalog jooq) {
         return ofCatalog(directory, GRAPH, sdl, jooq);
@@ -157,6 +155,11 @@ public final class CapturedStore implements AutoCloseable {
      * <p>The marked name is the whole of the claim: everything above takes a bare
      * {@link RewriteSchemaLoader#load} registry, so which registry a fixture derived its rows from is
      * what a {@code grep} for this name separates on.
+     *
+     * <p>The catalog reaches capture, so a rule reading both corpora answers here the way it answers
+     * in production. This arm used to capture no catalog while handing the walk a catalog-bearing
+     * nodehood predicate, which was the shape that let a fixture disagree with production about
+     * nodehood without any assertion noticing.
      */
     public static CapturedStore ofPipeline(Path directory, String sdl) {
         return ofPipeline(directory, sdl, null);
@@ -177,8 +180,8 @@ public final class CapturedStore implements AutoCloseable {
         var attributed = TestSchemaHelper.attributedRegistry(ctx);
         var store = FactStores.inMemory();
         FactCapture.capture(store.dsl(), graph(directory), FactCapture.SubjectConfig.none(),
-            attributed.preSynthesisRegistry(), SchemaInputAttribution.build(List.of(input)), null,
-            List.of(), TestSchemaHelper.nodeDeclaration(ctx));
+            attributed.preSynthesisRegistry(), SchemaInputAttribution.build(List.of(input)),
+            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
         return new CapturedStore(store, GRAPH, directory, file, attributed.preSynthesisRegistry(),
             attributed);
     }
@@ -261,8 +264,7 @@ public final class CapturedStore implements AutoCloseable {
                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                     List<CompletionData.ExternalReference> census, boolean warm) {
         FactCapture.capture(store.dsl(), warm, new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, attributionOfFile(file), jooq, census,
-            new NodeDeclaration(jooq));
+            FactCapture.SubjectConfig.none(), registry, attributionOfFile(file), jooq, census);
     }
 
     // ---------------------------------------------------------------------------------------

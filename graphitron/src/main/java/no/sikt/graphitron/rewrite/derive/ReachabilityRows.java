@@ -4,8 +4,6 @@ import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -13,6 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
+import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.notExists;
@@ -31,11 +30,15 @@ import static org.jooq.impl.DSL.val;
  * bound enforced so a non-monotone edit fails loudly instead of hanging a build.
  *
  * <p>The seeds transcribe {@link no.sikt.graphitron.rewrite.SchemaReachability}'s seed scan:
- * root operation bindings, {@code @node} types, {@code @table} types implementing {@code Node}
- * (over-approximating node inference until the jOOQ node-metadata constants are captured),
- * {@code @key} carriers, and the argument types of directive definitions that survive into the
- * emitted schema, where "survives" is everything outside {@link DeclaredDirectives#names()},
- * bound as a query parameter so the vocabulary lives in one place. The descent edges likewise
+ * root operation bindings, node types, authored {@code @key} carriers, and the argument types of
+ * directive definitions that survive into the emitted schema, where "survives" is everything
+ * outside {@link DeclaredDirectives#names()}, bound as a query parameter so the vocabulary lives in
+ * one place. Nodehood is read from {@code intent_node_type}, which is the same predicate that scan
+ * applies rather than an over-approximation of it: the derived relation conjoins the {@code @table}
+ * binding with well-formed node metadata on the bound table, so a {@code @table} type implementing
+ * {@code Node} over a table that publishes none is no longer seeded. Authored keys seed on their own
+ * arm, and a synthesized key needs none, every carrier of one being a node type the nodehood arm
+ * already seeds. The descent edges likewise
  * transcribe its child function: field targets and argument types of every reached
  * field-bearing type, union members, {@code implements} in the declaration direction from both
  * kinds, and the reverse interface-to-implementor edge narrowed to object implementors, each
@@ -67,16 +70,9 @@ public final class ReachabilityRows {
             select(GRAPHQL_ROOT_OPERATION.GRAPH_NAME, GRAPHQL_ROOT_OPERATION.TYPE_NAME)
                 .from(GRAPHQL_ROOT_OPERATION)
                 .where(GRAPHQL_ROOT_OPERATION.GRAPH_NAME.eq(graphName))
-            .union(select(GRAPHITRON_NODE.GRAPH_NAME, GRAPHITRON_NODE.TYPE_NAME)
-                .from(GRAPHITRON_NODE)
-                .where(GRAPHITRON_NODE.GRAPH_NAME.eq(graphName)))
-            .union(select(GRAPHITRON_TABLE.GRAPH_NAME, GRAPHITRON_TABLE.TYPE_NAME)
-                .from(GRAPHITRON_TABLE)
-                .where(GRAPHITRON_TABLE.GRAPH_NAME.eq(graphName))
-                .and(exists(selectOne().from(GRAPHQL_IMPLEMENTS)
-                    .where(GRAPHQL_IMPLEMENTS.GRAPH_NAME.eq(GRAPHITRON_TABLE.GRAPH_NAME))
-                    .and(GRAPHQL_IMPLEMENTS.TYPE_NAME.eq(GRAPHITRON_TABLE.TYPE_NAME))
-                    .and(GRAPHQL_IMPLEMENTS.INTERFACE_NAME.eq("Node")))))
+            .union(select(INTENT_NODE_TYPE.GRAPH_NAME, INTENT_NODE_TYPE.TYPE_NAME)
+                .from(INTENT_NODE_TYPE)
+                .where(INTENT_NODE_TYPE.GRAPH_NAME.eq(graphName)))
             .union(select(GRAPHITRON_FEDERATION_KEY.GRAPH_NAME, GRAPHITRON_FEDERATION_KEY.TYPE_NAME)
                 .from(GRAPHITRON_FEDERATION_KEY)
                 .where(GRAPHITRON_FEDERATION_KEY.GRAPH_NAME.eq(graphName)))

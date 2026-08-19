@@ -215,15 +215,14 @@ class PersistentStoreTest {
         Path original = Files.createDirectories(tmp.resolve("original"));
         FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, original),
             FactCapture.SubjectConfig.none(), CapturedStore.registryOf(original, SDL),
-            CapturedStore.attributionOf(original), null, List.of(), new NodeDeclaration(null));
+            CapturedStore.attributionOf(original), null, List.of());
         List<String> before = typeNames(directory);
 
         Path impostor = Files.createDirectories(tmp.resolve("impostor"));
         FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, impostor),
             FactCapture.SubjectConfig.none(),
             CapturedStore.registryOf(impostor, "type Query { other: Int }"),
-            CapturedStore.attributionOf(impostor), null, List.of(),
-            new NodeDeclaration(null));
+            CapturedStore.attributionOf(impostor), null, List.of());
 
         assertThat(typeNames(directory))
             .as("the recorded partition, byte-identical after the colliding run")
@@ -240,8 +239,7 @@ class PersistentStoreTest {
     @DisplayName("no home means an in-memory capture, not a file")
     void noHomeMeansInMemory(@TempDir Path tmp) {
         FactCapture.run(null, graph(tmp), FactCapture.SubjectConfig.none(),
-            CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null, List.of(),
-            new NodeDeclaration(null));
+            CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null, List.of());
         assertThat(Files.exists(tmp.resolve("graphitron-model")))
             .as("nothing was written for a caller with no home to give").isFalse();
     }
@@ -253,7 +251,7 @@ class PersistentStoreTest {
     private static void captureInto(Path directory, Path scratch) {
         FactCapture.run(directory, graph(scratch), FactCapture.SubjectConfig.none(),
             CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
-            List.of(), new NodeDeclaration(null));
+            List.of());
     }
 
     private static List<String> typeNames(Path directory) {

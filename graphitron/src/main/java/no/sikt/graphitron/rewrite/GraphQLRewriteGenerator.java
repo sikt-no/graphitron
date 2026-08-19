@@ -383,7 +383,6 @@ public class GraphQLRewriteGenerator {
     private AuthoredClaimConflicts.Detection captureFactsAndDetect(
             AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema,
             JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
-        var jooqNodes = new NodeDeclaration(jooq);
         return FactCapture.runWithDetections(ctx.storeDirectory(),
             graphIdentity(),
             subjectConfig(),
@@ -392,7 +391,6 @@ public class GraphQLRewriteGenerator {
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
-            jooqNodes,
             WalkReach.of(schema));
     }
 
@@ -411,8 +409,7 @@ public class GraphQLRewriteGenerator {
             verdicts,
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
-            CatalogBuilder.buildExternalReferences(ctx),
-            new NodeDeclaration(jooq));
+            CatalogBuilder.buildExternalReferences(ctx));
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */

@@ -1,66 +1,59 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import graphql.language.Argument;
-import graphql.language.BooleanValue;
 import graphql.language.Directive;
 import graphql.language.FieldDefinition;
 import graphql.language.ListType;
 import graphql.language.NonNullType;
-import graphql.language.ObjectTypeDefinition;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Type;
-import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
-import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.model.ConnectionNaming;
-import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 
 /**
- * Macro expansion inside the capture walk: the rows an expansion contributes, written through the
- * same doors an authored row goes through, plus the provenance that says an expansion put them
- * there.
+ * The {@code @asConnection} expansion inside the capture walk: the rows it contributes, written
+ * through the same doors an authored row goes through, plus the provenance that says an expansion
+ * put them there.
  *
  * <p>Capture reads the registry <em>before</em> the pipeline's synthesis rewrites, so an expansion
  * that only ran as a rewrite would leave the store describing a schema no consumer sees. Running it
  * here makes the expansion a derivation inside the capture walk: its rows go through capture's own
- * doors, and the provenance relations record what an expansion contributed. What that leaves
- * recoverable splits by kind. For rows an expansion <em>added</em>
- * ({@code graphitron_type_declaration_synthesis}, {@code graphitron_type_directive_synthesis}) the
- * transcription is the anti-join against the provenance. For the one row kind an expansion
- * <em>rewrote</em> ({@code graphitron_field_synthesis}) it is not: the expression the field was
- * written with survives only in that relation's own text column, and no anti-join recovers it.
+ * doors, and the provenance relations record what it contributed. What that leaves recoverable
+ * splits by kind. For the declaration sites it <em>adds</em>
+ * ({@code graphitron_type_declaration_synthesis}) the transcription is the anti-join against the
+ * provenance. For the field type it <em>rewrites</em> ({@code graphitron_field_synthesis}) it is
+ * not: the expression the field was written with survives only in that relation's own text column,
+ * and no anti-join recovers it.
  * While a rewrite
  * implementation of the same rule is still live for the legacy pipeline, the two are pinned to each
  * other by the agreement suite rather than by one calling the other; they run at different stages
  * over different representations, and a shared caller would invert the pipeline's ordering.
+ *
+ * <p>This is the one expansion that may run here, and the constraint is the reason rather than an
+ * accident of what got written: an expansion inside a crawler may read only the corpus that crawler
+ * is responsible for. {@code @asConnection} passes, its element type entering as a name that
+ * nothing here resolves. Federation's key synthesis does not, since nodehood conjoins the SDL claim
+ * with metadata a generated jOOQ class publishes, so that rule is a derivation over the captured
+ * facts of both corpora; see the fact model's stratum discipline in
+ * {@code docs/architecture/explanation/fact-model.adoc}.
  *
  * <p>Nothing here rejects. A macro whose precondition does not hold contributes no rows, exactly as
  * the rest of capture declines to throw on author input.
  */
 final class MacroCapture {
 
-    private static final String FEDERATION_KEY = "key";
-    private static final String KEY_FIELDS_ARG = "fields";
-    private static final String KEY_RESOLVABLE_ARG = "resolvable";
-    private static final String ID_FIELD = "id";
-    private static final String MACRO_FEDERATION_KEY = "FEDERATION_KEY";
     private static final String MACRO_CONNECTION = "CONNECTION";
     private static final String AS_CONNECTION = "asConnection";
     private static final String ARG_CONNECTION_NAME = "connectionName";
@@ -86,14 +79,10 @@ final class MacroCapture {
 
     private final FactSink sink;
     private final TypeDefinitionRegistry registry;
-    private final NodeDeclaration nodes;
-    private final SdlFactCapture sdl;
 
-    MacroCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes, SdlFactCapture sdl) {
+    MacroCapture(FactSink sink, TypeDefinitionRegistry registry) {
         this.sink = sink;
         this.registry = registry;
-        this.nodes = nodes;
-        this.sdl = sdl;
     }
 
     /** Carriers found during the walk, minted after it so a type's own rows are never interleaved. */
@@ -110,10 +99,8 @@ final class MacroCapture {
                            String edgeName, String elementTypeName, boolean itemNullable,
                            SourceLocation position) {}
 
-    void expand(Map<String, SdlFactCapture.SiteRef> baseSites,
-                Map<String, SdlFactCapture.ElementOrdinals> ordinals) {
+    void expand() {
         expandConnections();
-        expandFederationKeys(baseSites, ordinals);
     }
 
     /**
@@ -337,94 +324,5 @@ final class MacroCapture {
     private static SourceLocation position(Directive directive, FieldDefinition field) {
         SourceLocation own = directive.getSourceLocation();
         return own != null && own.getSourceName() != null ? own : field.getSourceLocation();
-    }
-
-    /**
-     * Federation's node-entity rule: a node type without an {@code @key(fields: "id")} of its own
-     * gets one, because federation needs the entity declaration visible in the emitted SDL and a
-     * node carries a globally-unique id by definition.
-     *
-     * <p>The synthesized application is an ordinary application. It transcribes into
-     * {@code graphql_type_directive} so the round trip re-emits it, decodes into
-     * {@code graphitron_federation_key} so a consumer reads it like an authored key, and is marked
-     * only by its provenance row. Its position is the type's declaration site: there is no authored
-     * application to point at, and the declaration is what an author would edit to change the
-     * outcome.
-     */
-    private void expandFederationKeys(Map<String, SdlFactCapture.SiteRef> baseSites,
-                                      Map<String, SdlFactCapture.ElementOrdinals> ordinals) {
-        if (!federationLinked()) {
-            return;
-        }
-        for (TypeDefinition<?> definition : registry.types().values()) {
-            if (!(definition instanceof ObjectTypeDefinition object)
-                || !nodes.isNodeType(object)
-                || hasIdKey(object)) {
-                continue;
-            }
-            SdlFactCapture.SiteRef site = baseSites.get(object.getName());
-            if (site == null) {
-                // The type's declaration quarantined as a duplicate, so there is no site to hang
-                // the application off. The detection is the story; adding a dangling row is not.
-                continue;
-            }
-            int ordinal = ordinals
-                .computeIfAbsent(object.getName(), ignored -> new SdlFactCapture.ElementOrdinals())
-                .nextTypeDirective(FEDERATION_KEY);
-            sdl.captureTypeDirective(site, idKeyDirective(), ordinal, site.location());
-
-            var row = sink.dsl().newRecord(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS);
-            row.setTypeName(object.getName());
-            row.setDirectiveName(FEDERATION_KEY);
-            row.setOrdinal(ordinal);
-            row.setMacro(MACRO_FEDERATION_KEY);
-            sink.add(row);
-        }
-    }
-
-    /** Whether any schema-level {@code @link} names the federation spec, at any version. */
-    private boolean federationLinked() {
-        return Stream.concat(
-                registry.schemaDefinition().map(schema -> schema.getDirectives("link").stream())
-                    .orElseGet(Stream::empty),
-                registry.getSchemaExtensionDefinitions().stream()
-                    .flatMap(extension -> extension.getDirectives("link").stream()))
-            .anyMatch(MacroCapture::isFederationLink);
-    }
-
-    private static boolean isFederationLink(Directive directive) {
-        Argument url = directive.getArgument("url");
-        return url != null
-            && url.getValue() instanceof StringValue value
-            && value.getValue() != null
-            && value.getValue().startsWith(FederationSpec.SPEC_PREFIX);
-    }
-
-    /**
-     * Whether the type already declares the id key, in which case synthesis stands down and an
-     * explicit {@code resolvable: false} keeps the type out of {@code _Entity}. Compound and
-     * other-field keys do not count: they are additional alternatives, not the id contract. A field
-     * set capture cannot read decodes to nothing, which is how a malformed {@code fields:} argument
-     * reaches its detection instead of suppressing synthesis on the strength of a parse failure.
-     */
-    private static boolean hasIdKey(ObjectTypeDefinition object) {
-        for (Directive directive : object.getDirectives(FEDERATION_KEY)) {
-            Argument fields = directive.getArgument(KEY_FIELDS_ARG);
-            if (fields == null || !(fields.getValue() instanceof StringValue value)) {
-                continue;
-            }
-            if (List.of(List.of(ID_FIELD)).equals(FieldSetGrammar.paths(value.getValue()))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static Directive idKeyDirective() {
-        return Directive.newDirective()
-            .name(FEDERATION_KEY)
-            .argument(Argument.newArgument(KEY_FIELDS_ARG, (Value<?>) new StringValue(ID_FIELD)).build())
-            .argument(Argument.newArgument(KEY_RESOLVABLE_ARG, (Value<?>) new BooleanValue(true)).build())
-            .build();
     }
 }

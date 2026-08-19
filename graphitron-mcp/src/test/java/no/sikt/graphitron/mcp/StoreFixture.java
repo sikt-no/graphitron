@@ -179,7 +179,7 @@ public final class StoreFixture implements AutoCloseable {
             new FactCapture.GraphIdentity(graphName, directory), FactCapture.SubjectConfig.none(),
             parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
             SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList()),
-            new JooqCatalog(JOOQ_PACKAGE), List.of(), new NodeDeclaration(null));
+            new JooqCatalog(JOOQ_PACKAGE), List.of());
     }
 
     /**
@@ -274,7 +274,7 @@ public final class StoreFixture implements AutoCloseable {
             new FactCapture.GraphIdentity(graph, directory), FactCapture.SubjectConfig.none(),
             registry, attribution,
             jooqPackage == null ? null : new JooqCatalog(jooqPackage),
-            classpath, new NodeDeclaration(null));
+            classpath);
     }
 
     private Path write(String graph, String sdl) {

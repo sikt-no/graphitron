@@ -191,8 +191,7 @@ final class StoreFixture implements AutoCloseable {
         FactCapture.capture(store.dsl(), false, new FactCapture.GraphIdentity(GRAPH, directory),
             FactCapture.SubjectConfig.none(), parse.registry(),
             new SdlVerdicts(parse.failures(), parse.registryErrors()),
-            SchemaInputAttribution.build(List.of(SchemaInput.file(file))), null, List.of(),
-            new NodeDeclaration(null));
+            SchemaInputAttribution.build(List.of(SchemaInput.file(file))), null, List.of());
         return new StoreFixture(store, GRAPH, file, directory);
     }
 
@@ -251,8 +250,7 @@ final class StoreFixture implements AutoCloseable {
         var registry = RewriteSchemaLoader.load(sources);
         var attribution = SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList());
         FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, attribution, jooq, classpath,
-            new NodeDeclaration(null));
+            FactCapture.SubjectConfig.none(), registry, attribution, jooq, classpath);
     }
 
     /**

@@ -51,7 +51,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DECLARATION_SYNTHESIS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_SITE;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
@@ -109,7 +110,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Registrations form a closed set of four arms, which is why there is no skip list:
  * <ul>
  *   <li>{@link Arm#CONTAINMENT} for the SDL side. Capture is total and {@code GraphitronSchema} is
- *       reachability-pruned, so the honest relation is that the store contains the model.</li>
+ *       reachability-pruned, so the honest relation is that the store contains the model. The claim
+ *       is now about authored SDL throughout: {@code graphitron_federation_key} held
+ *       macro-synthesized rows under it until federation's key rule became a derivation, so a
+ *       containment arm here says the store transcribes what the document declares and nothing
+ *       else.</li>
  *   <li>{@link Arm#EQUALITY} for the catalog and scanner censuses, which are the same walk reduced
  *       two ways. The {@code java_} family joins them with its anchors elsewhere, in
  *       {@code JavaSourceFactsTest}: it is written by neither capture nor a graph, so its
@@ -324,7 +329,7 @@ class FactCaptureAgreementTest {
             "graphitron_federation_key_field_segment", "graphitron_link",
             "graphitron_link_import", "graphitron_multitable_reference", "graphitron_record",
             "graphitron_undecoded_argument", "graphitron_type_declaration_synthesis",
-            "graphitron_field_synthesis", "graphitron_type_directive_synthesis")) {
+            "graphitron_field_synthesis")) {
             registrations.put(relation, Arm.CONTAINMENT);
         }
         for (String relation : List.of(
@@ -358,6 +363,10 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
+        registrations.put("intent_inferred_node_type", Arm.DERIVED);
+        registrations.put("intent_node_type", Arm.DERIVED);
+        registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
+        registrations.put("intent_federation_key", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
@@ -469,10 +478,11 @@ class FactCaptureAgreementTest {
         """;
 
     /**
-     * A federated slice with one of each outcome: an authored key alternative that synthesis still
-     * numbers after, a node with no key at all, and an authored id key that stands synthesis down.
-     * The {@code @link} is the author's; the {@code @key} declaration arrives through the pipeline's
-     * own federation import, which is the point of running this fixture through the pipeline.
+     * A federated slice with one of each outcome: an authored key alternative that the derivation
+     * still fires beside, a node with no key at all, and an authored id key that stands the
+     * derivation down. The {@code @link} is the author's; the {@code @key} declaration arrives
+     * through the pipeline's own federation import, which is the point of running this fixture
+     * through the pipeline.
      */
     private static final String FEDERATED_FIXTURE = """
         extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
@@ -575,27 +585,36 @@ class FactCaptureAgreementTest {
 
     /**
      * Federation's key synthesis has two live implementations: the registry rewrite the legacy
-     * pipeline's assembly runs, and the walk macro capture runs, at different stages over different
-     * representations. Neither can call the other without inverting the pipeline's ordering, so
-     * this anchor is what keeps them from drifting. It retires with the rewrite's last consumer.
+     * pipeline's assembly runs, and the derivation over the captured facts. They answer at different
+     * stages over different representations, and neither can call the other without inverting the
+     * pipeline's ordering, so this anchor is what keeps them from drifting. It retires with the
+     * rewrite's last consumer.
      *
      * <p>Both sides come out of one pipeline run rather than out of two registries the test
-     * assembles: the expectation is the registry the rewrite mutated, the comparison is the store
-     * filled from the handle production hands capture. That is what makes the reading position part
-     * of what this pins. Capture reading the mutated registry finds the keys already there, agrees
-     * on this set for the wrong reason, and shows it by minting no provenance, which is the second
-     * assertion.
+     * assembles: the expectation is the registry the rewrite mutated, and the comparison is
+     * {@code intent_federation_key} over the store filled from the handle production hands capture.
+     * One relation rather than a union the test assembles, which is what makes the comparison a
+     * reading of the schema's own composition instead of a second spelling of it.
+     *
+     * <p>The reading position is part of what this pins, and it matters more after the move than
+     * before: a synthesized key transcribed as an authored one now lands wrong in stratum one
+     * outright. What catches it is the derived membership. A capture that read the rewritten registry
+     * would land Film's and Language's {@code id} keys in {@code graphitron_federation_key} as
+     * authored rows; the derivation's no-authored-id-key condition would then decline on both, so the
+     * expected synthesized membership comes up empty while the first assertion still agrees. The
+     * second assertion is therefore what keeps the agreement from being reached by capture reading
+     * the wrong registry.
      */
     @Test
-    @DisplayName("synthesized federation keys agree with the registry rewrite's, off one pipeline run")
+    @DisplayName("derived federation keys agree with the registry rewrite's, off one pipeline run")
     void federationKeySynthesisAgreesWithTheRewrite(@TempDir Path tmp) {
         try (var store = CapturedStore.ofPipeline(tmp, FEDERATED_FIXTURE)) {
-            var captured = new LinkedHashSet<String>();
+            var composed = new LinkedHashSet<String>();
             store.dsl()
-                .select(GRAPHITRON_FEDERATION_KEY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY.FIELDS_SDL)
-                .from(GRAPHITRON_FEDERATION_KEY)
+                .select(INTENT_FEDERATION_KEY.TYPE_NAME, INTENT_FEDERATION_KEY.FIELDS_SDL)
+                .from(INTENT_FEDERATION_KEY)
                 .fetch()
-                .forEach(row -> captured.add(row.value1() + "|" + row.value2()));
+                .forEach(row -> composed.add(row.value1() + "|" + row.value2()));
 
             var expected = new LinkedHashSet<String>();
             for (TypeDefinition<?> definition : store.attributed().registry().types().values()) {
@@ -610,28 +629,17 @@ class FactCaptureAgreementTest {
                 }
             }
             assertThat(expected).as("the fixture federates nodes, so this pins something").isNotEmpty();
-            assertThat(captured).isEqualTo(expected);
+            assertThat(composed).isEqualTo(expected);
 
-            // A synthesis row marks a key the expansion added, so the transcription is the anti-join
-            // and the macro has to be what put these keys there. Film carries an alternative and
-            // Language carries nothing, so both are
-            // synthesized; Actor's authored id key stands synthesis down on both implementations.
+            // Film carries an alternative and Language carries nothing, so the derivation fires on
+            // both; Actor's authored id key stands it down on both implementations. A capture that
+            // read the post-rewrite registry would leave this set empty, the authored rows it landed
+            // declining the derivation on every type the rewrite had already keyed.
             assertThat(store.dsl()
-                .select(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.TYPE_NAME)
-                .from(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS)
-                .where(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.MACRO.eq("FEDERATION_KEY"))
-                .fetch(GRAPHITRON_TYPE_DIRECTIVE_SYNTHESIS.TYPE_NAME))
+                .select(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
+                .from(INTENT_SYNTHESIZED_FEDERATION_KEY)
+                .fetch(INTENT_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME))
                 .containsExactlyInAnyOrder("Film", "Language");
-
-            // A rewrite-built directive carries no source location, so a key captured off the
-            // rewritten registry would transcribe unlocated. The macro's inherits the declaration.
-            assertThat(store.dsl()
-                .select(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE)
-                .from(GRAPHQL_TYPE_DIRECTIVE)
-                .where(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME.eq("Language"))
-                .and(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME.eq("key"))
-                .fetch(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE))
-                .doesNotContainNull();
         }
     }
 
@@ -904,8 +912,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expectedTables = new LinkedHashMap<String, String>();
             int expectedColumns = 0;
@@ -941,8 +948,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -990,8 +996,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var metadata = store.dsl()
                 .select(SQL_NODE_METADATA.TABLE_SCHEMA, SQL_NODE_METADATA.TABLE_NAME,
@@ -1077,8 +1082,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expectedRoutines = new LinkedHashMap<String, String>();
             var expectedParameters = new LinkedHashSet<String>();
@@ -1157,8 +1161,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1197,8 +1200,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1244,8 +1246,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expectedTables = new LinkedHashMap<String, String>();
             var expectedRecords = new LinkedHashMap<String, String>();
@@ -1308,8 +1309,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashMap<String, String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1356,8 +1356,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1399,8 +1398,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1454,8 +1452,7 @@ class FactCaptureAgreementTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
             assertThat(store.dsl().fetchCount(SQL_PRIMARY_KEY))
                 .as("the catalog has primary keys, so this pins something")
                 .isPositive();
@@ -1487,8 +1484,7 @@ class FactCaptureAgreementTest {
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions,
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME, JVM_METHOD.DESCRIPTOR)
@@ -1521,8 +1517,7 @@ class FactCaptureAgreementTest {
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions,
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
 
             var captured = new LinkedHashSet<String>();
             store.dsl().select(JVM_CLASS_SUPERTYPE.CLASS_NAME, JVM_CLASS_SUPERTYPE.DECLARED_VIA,
@@ -1565,8 +1560,7 @@ class FactCaptureAgreementTest {
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions,
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
 
             var expectedReturns = new LinkedHashSet<String>();
             var expectedParameters = new LinkedHashSet<String>();
@@ -1692,8 +1686,7 @@ class FactCaptureAgreementTest {
         List<CompletionData.ExternalReference> extensions = CatalogBuilder.buildExternalReferences(ctx);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions,
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), null, extensions);
 
             var expected = new LinkedHashSet<>(extensions.stream()
                 .map(CompletionData.ExternalReference::sourceName).toList());
@@ -1737,8 +1730,7 @@ class FactCaptureAgreementTest {
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of(),
-                new NodeDeclaration(null));
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
 
             var expected = new LinkedHashSet<String>();
             for (var entry : jooq.allTableEntries()) {
@@ -1810,7 +1802,7 @@ class FactCaptureAgreementTest {
             var aRegistry = CapturedStore.registryOf(aDir, FIXTURE);
             FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("a", aDir),
                 FactCapture.SubjectConfig.none(), aRegistry, CapturedStore.attributionOf(aDir),
-                jooq, extensions, new NodeDeclaration(null));
+                jooq, extensions);
 
             var expectedA = new LinkedHashSet<>(sdlSourceNames(aRegistry));
             for (var entry : jooq.allTableEntries()) {
@@ -1909,7 +1901,7 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), true, own, FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
                 CapturedStore.attributionOf(ownDir),
-                null, List.of(), new NodeDeclaration(null));
+                null, List.of());
             assertThat(javacPartition(store, "own"))
                 .as("the captured graph's javac partition, after its own warm capture")
                 .isEmpty();
@@ -1993,7 +1985,7 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), true, own, FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
                 CapturedStore.attributionOf(ownDir),
-                null, List.of(), new NodeDeclaration(null));
+                null, List.of());
             assertThat(walkReachPartition(store, "own"))
                 .as("the captured graph's walk-reach partition, after its own warm capture")
                 .isEmpty();
@@ -2095,7 +2087,7 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), true, own, FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
                 CapturedStore.attributionOf(ownDir),
-                null, List.of(), new NodeDeclaration(null));
+                null, List.of());
             assertThat(diagnosticsPartition(store, "own"))
                 .as("the captured graph's loaded diagnostics partitions, after its own warm capture")
                 .isEmpty();
@@ -2141,7 +2133,7 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), false, graph, FactCapture.SubjectConfig.none(),
                 read.registry(), verdicts,
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-                null, List.of(), new NodeDeclaration(null));
+                null, List.of());
 
             var syntaxRows = store.dsl().selectFrom(GRAPHQL_SYNTAX_ERROR)
                 .where(GRAPHQL_SYNTAX_ERROR.GRAPH_NAME.eq("own")).fetch();
@@ -2206,7 +2198,7 @@ class FactCaptureAgreementTest {
             FactCapture.capture(store.dsl(), true, own, FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
                 CapturedStore.attributionOf(ownDir),
-                null, List.of(), new NodeDeclaration(null));
+                null, List.of());
             assertThat(sdlVerdictPartition(store, "own"))
                 .as("the captured graph's SDL verdict partitions, after a clean warm capture")
                 .isEmpty();
@@ -2230,7 +2222,7 @@ class FactCaptureAgreementTest {
         FactCapture.capture(store.dsl(), false, graph, FactCapture.SubjectConfig.none(),
             read.registry(), verdicts,
             SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-            null, List.of(), new NodeDeclaration(null));
+            null, List.of());
     }
 
     /** The graph's SDL verdict rows across both relations, rendered stably. */

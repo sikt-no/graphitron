@@ -308,6 +308,11 @@ gets its first instance.
 
 ## Test migration
 
+- The six federation cases land in a new `FederationKeyDerivationTest` beside `MacroCaptureTest`
+  rather than staying in it. One deviation from the plan, and a small one: the item rewrites
+  `MacroCapture`'s javadoc to say the class handles `CONNECTION` alone, so a test class named for the
+  macro keeping six cases about a derivation would contradict the change in the same commit. The
+  cases are re-aimed exactly as below; only their file changed.
 - `MacroCaptureTest`'s six federation cases re-aim at the derived relation: membership for the
   synthesized case, absence for the authored-id-key stand-down (including the `resolvable: false`
   opt-out) and for the unlinked-graph case, and the two-arm catalog test
@@ -387,6 +392,30 @@ macro, `CONNECTION`, is nodehood-free and pure SDL, so it neither blocks this no
   spelling of nodehood and binds the pair with the membership shadow above; retiring the Java
   spelling is the follow-on that closes it, and the shadow retires with it.
 - Splitting the capture transaction per crawler.
+
+## What landed
+
+The names, so a reviewer reads the tree rather than the plan:
+
+- DDL: `intent_inferred_node_type`, `intent_node_type`, `intent_synthesized_federation_key`,
+  `intent_federation_key`. `graphitron_type_directive_synthesis` dropped;
+  `graphitron_type_declaration_synthesis`'s `CHECK` narrowed to `CONNECTION`. Comment sweep on
+  `graphql_type_directive.declaration_line`, `graphitron_federation_key`'s table comment and
+  `source_name`, the "Macro synthesis provenance" family header, and the sibling-spelling
+  cross-reference on `intent_resolved_node_key_column`.
+- Capture: `MacroCapture` keeps `expandConnections` and nothing federation-shaped;
+  `SdlFactCapture.baseSites` gone with the ordinal-taking `captureTypeDirective` overload;
+  `NodeDeclaration` off `FactCapture.run`, `runWithDetections` and every `capture` overload, off
+  `SdlFactCapture.capture` and off `MacroCapture`'s constructor.
+- Readers: `ReachabilityRows.seed`'s two nodehood arms replaced by one `intent_node_type` arm.
+- Anchors: `NodeTypeTest` and `FederationKeyTest` (seeded, `graphitron-model`),
+  `NodeTypeShadowTest` and `FederationLinkPrefixPinTest` (`graphitron`),
+  `CaptureCorpusIsolationTest` (the differential gate), `FederationKeyDerivationTest` (the re-aimed
+  capture cases). `SeededStore` gains `seedImplements`, `seedLink` and `seedFederationKey`.
+- Docs: the cross-corpus rule and its enforcer in `fact-model.adoc`, its disclosed-gap paragraph
+  amended to name the covered subclass, the macro-inversion sentences amended to the surviving half,
+  the schema-change paragraph given its first instance, and the expansion sentence in
+  `pipeline-overview.adoc` narrowed to `@asConnection`.
 
 ## Retired vocabulary
 

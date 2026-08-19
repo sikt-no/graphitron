@@ -641,8 +641,7 @@ class FactSchemaGateTest {
             // through the ownership-scoped clear with no both-arms upsert subtlety to get wrong.
             FactCapture.capture(store.dsl(), true, new FactCapture.GraphIdentity("a", aDir),
                 FactCapture.SubjectConfig.none(), CapturedStore.registryOf(aDir, FIXTURE),
-                CapturedStore.attributionOf(aDir), null, java.util.List.of(),
-                new no.sikt.graphitron.rewrite.NodeDeclaration(null));
+                CapturedStore.attributionOf(aDir), null, java.util.List.of());
             assertThat(store.dsl().select(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME)
                 .from(STORE_GRAPH_SUPERGRAPH).fetch(0, String.class))
                 .as("a pom that drops the element leaves no row on the next capture")

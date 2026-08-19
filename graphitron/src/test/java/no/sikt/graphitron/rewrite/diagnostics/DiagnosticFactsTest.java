@@ -357,7 +357,7 @@ class DiagnosticFactsTest {
             FactCapture.capture(dsl, false, graph(), FactCapture.SubjectConfig.none(),
                 read.registry(), verdicts,
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-                null, List.of(), new NodeDeclaration(null));
+                null, List.of());
 
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))

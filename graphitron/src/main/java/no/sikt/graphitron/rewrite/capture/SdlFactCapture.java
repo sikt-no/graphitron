@@ -103,15 +103,12 @@ public final class SdlFactCapture {
     private final FactSink sink;
     private final TypeDefinitionRegistry registry;
     private final GraphitronFactCapture decode;
-    private final NodeDeclaration nodes;
 
     /**
-     * The merge-ordinal-0 declaration site of each type, and its running element ordinals. Both
-     * outlive the walk because macro expansion runs after it and contributes to the same types:
-     * a synthesized application hangs off the causing authored site and numbers after the authored
-     * applications, neither of which it could work out on its own.
+     * Each type's running element ordinals. Type-wide rather than per-site because a repeatable type
+     * directive applied once on a base declaration and once on an extension has to number 0 and 1
+     * instead of colliding at 0, so the counter has to outlive the site that opened it.
      */
-    private final Map<String, SiteRef> baseSites = new LinkedHashMap<>();
     private final Map<String, ElementOrdinals> ordinalsByType = new LinkedHashMap<>();
 
     private final MacroCapture macros;
@@ -135,41 +132,40 @@ public final class SdlFactCapture {
      */
     private final Set<String> refusedSources;
 
-    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
+    private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry,
                            ClasspathSources sources, Map<String, SchemaInput> attribution,
                            Set<String> refusedSources) {
         this.sink = sink;
         this.registry = registry;
         this.decode = new GraphitronFactCapture(sink);
-        this.nodes = nodes;
-        this.macros = new MacroCapture(sink, registry, nodes, this);
+        this.macros = new MacroCapture(sink, registry);
         this.sources = sources;
         this.attribution = attribution;
         this.refusedSources = refusedSources;
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
+    static void capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution) {
-        capture(sink, registry, nodes, sources, attribution, Set.of());
+        capture(sink, registry, sources, attribution, Set.of());
     }
 
     /**
-     * {@link #capture(FactSink, TypeDefinitionRegistry, NodeDeclaration, ClasspathSources, Map)}
+     * {@link #capture(FactSink, TypeDefinitionRegistry, ClasspathSources, Map)}
      * plus the sources the parser refused, which the walk has no other way to learn about: a
      * refused source contributes no declaration, so nothing in the registry points back at it.
      */
-    static void capture(FactSink sink, TypeDefinitionRegistry registry, NodeDeclaration nodes,
+    static void capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution,
                         Set<String> refusedSources) {
-        new SdlFactCapture(sink, registry, nodes, sources, attribution, refusedSources).run();
+        new SdlFactCapture(sink, registry, sources, attribution, refusedSources).run();
     }
 
     private void run() {
         captureDirectiveDefinitions();
         captureSchema();
         captureTypes();
-        macros.expand(baseSites, ordinalsByType);
+        macros.expand();
         captureSources();
     }
 
@@ -464,8 +460,7 @@ public final class SdlFactCapture {
         /**
          * Last-used application ordinal per type-level directive name. Type-wide rather than
          * per-site because the key it feeds is, so a repeatable directive applied once on the base
-         * and once on an extension numbers 0 and 1 instead of colliding at 0. Macro expansion reads
-         * the same counter to place a synthesized application after every authored one.
+         * and once on an extension numbers 0 and 1 instead of colliding at 0.
          */
         final Map<String, Integer> typeDirective = new LinkedHashMap<>();
 
@@ -492,7 +487,6 @@ public final class SdlFactCapture {
         sink.add(record);
 
         var siteRef = new SiteRef(typeName, location);
-        baseSites.putIfAbsent(typeName, siteRef);
         captureTypeDirectives(siteRef, site.definition().getDirectives(), ordinals);
 
         switch (site.definition()) {
@@ -681,18 +675,12 @@ public final class SdlFactCapture {
 
     private void captureTypeDirectives(SiteRef site, List<Directive> directives, ElementOrdinals ordinals) {
         for (Directive directive : directives) {
-            captureTypeDirective(site, directive, ordinals.nextTypeDirective(directive.getName()),
-                directive.getSourceLocation());
+            captureTypeDirective(site, directive, ordinals.nextTypeDirective(directive.getName()));
         }
     }
 
-    /**
-     * One type-level application, at a caller-supplied position. An authored application passes its
-     * own location; a macro-synthesized one passes the site's, which is the position an author can
-     * actually edit. The rows are otherwise identical, so provenance lives in its own relation
-     * rather than in a flag here.
-     */
-    void captureTypeDirective(SiteRef site, Directive directive, int ordinal, SourceLocation own) {
+    /** One authored type-level application, at the position the author wrote it. */
+    private void captureTypeDirective(SiteRef site, Directive directive, int ordinal) {
         decode.captureTypeDirective(site, directive, ordinal);
         if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE, site.typeName(), directive.getName(), ordinal)) {
             quarantine("DIRECTIVE_APPLICATION", site.typeName() + " @" + directive.getName(), directive);
@@ -705,7 +693,7 @@ public final class SdlFactCapture {
         record.setDeclarationLine(site.location().getLine());
         record.setDeclarationColumn(site.location().getColumn());
         record.setSourceName(site.location().getSourceName());
-        setOwnPosition(own, record::setSourceLine, record::setSourceColumn);
+        setOwnPosition(directive.getSourceLocation(), record::setSourceLine, record::setSourceColumn);
         sink.add(record);
         for (var argument : directive.getArguments()) {
             if (!sink.claim(GRAPHQL_TYPE_DIRECTIVE_ARG,

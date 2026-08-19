@@ -92,7 +92,7 @@ class WarmStartRefreshTest {
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
-                references, new NodeDeclaration(null));
+                references);
             cold = census(store.dsl());
         }
         try (var warm = GraphitronModelStore.openAt(directory)) {
@@ -178,8 +178,7 @@ class WarmStartRefreshTest {
         Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
         FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
             FactCapture.SubjectConfig.none(), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
-            CapturedStore.attributionOf(siblingDir), null, List.of(),
-            new NodeDeclaration(null));
+            CapturedStore.attributionOf(siblingDir), null, List.of());
 
         capture(directory, tmp, List.of());
         capture(directory, tmp, List.of());
@@ -207,8 +206,7 @@ class WarmStartRefreshTest {
             List.of(".graphqls"));
         FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
             FactCapture.SubjectConfig.of(recipe), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
-            CapturedStore.attributionOf(siblingDir), null, List.of(),
-            new NodeDeclaration(null));
+            CapturedStore.attributionOf(siblingDir), null, List.of());
         Record siblingRow = graphRow(directory, "sibling");
 
         capture(directory, tmp, List.of());
@@ -230,8 +228,7 @@ class WarmStartRefreshTest {
             List.of(".graphqls"));
         FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
             FactCapture.SubjectConfig.of(revised), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
-            CapturedStore.attributionOf(siblingDir), null, List.of(),
-            new NodeDeclaration(null));
+            CapturedStore.attributionOf(siblingDir), null, List.of());
         try (var store = GraphitronModelStore.openAt(directory)) {
             assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE)
                 .from(STORE_GRAPH_SCHEMA_INPUT)
@@ -268,7 +265,7 @@ class WarmStartRefreshTest {
             List.of(".graphqls"));
         FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, tmp),
             FactCapture.SubjectConfig.of(recipe), CapturedStore.registryOf(tmp, SDL),
-            CapturedStore.attributionOf(tmp), null, List.of(), new NodeDeclaration(null));
+            CapturedStore.attributionOf(tmp), null, List.of());
 
         // The remembered recipe, decoded from the graph's persisted rows alone: what a freshness
         // reader with no build of the owning module has in hand. Read through the production
@@ -310,11 +307,11 @@ class WarmStartRefreshTest {
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), false, graph(tmp), FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp),
-                jooq, List.of(), new NodeDeclaration(null));
+                jooq, List.of());
 
             assertThatCode(() -> FactCapture.capture(store.dsl(), true, graph(tmp),
                 FactCapture.SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
-                CapturedStore.attributionOf(tmp), jooq, List.of(), new NodeDeclaration(null)))
+                CapturedStore.attributionOf(tmp), jooq, List.of()))
                 .as("a warm refresh over a catalog whose foreign keys cross package partitions")
                 .doesNotThrowAnyException();
 
@@ -337,7 +334,7 @@ class WarmStartRefreshTest {
                                 List<CompletionData.ExternalReference> references) {
         FactCapture.run(directory, graph(scratch), FactCapture.SubjectConfig.none(),
             CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
-            references, new NodeDeclaration(null));
+            references);
     }
 
     private static Record graphRow(Path directory, String graphName) {
