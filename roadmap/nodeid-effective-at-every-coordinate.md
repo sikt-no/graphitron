@@ -71,7 +71,7 @@ for site 1 and found equally inert.
 
 An `@error` type's extra fields are read off the matched exception through an accessor. An `ID`
 field carrying `@nodeId(typeName:)` classifies as a plain
-`GraphitronField.RecordReadField` with a `DefaultRead` locator: the accessor's value is emitted
+`ChildField.RecordReadField` with a `DefaultRead` locator: the accessor's value is emitted
 verbatim, and the directive contributes nothing. The consumer's exception constructor therefore
 takes an already-encoded string, and the encoding happens in hand-written code:
 
@@ -114,7 +114,7 @@ rejection is a discriminator stating one of its two conjuncts, not a missing emi
 
 ## What already ships, so the Spec does not rebuild it
 
-* **The wire format is generated and public.** `NodeIdEncoder` lands in `<outputPackage>.schema`
+* **The wire format is generated and public.** `NodeIdEncoder` lands in `<outputPackage>.util`
   whenever any type carries `@node`, as a final class with a private constructor and public
   static `encode<TypeName>(k1, ..., kN)` / `decode<TypeName>(String)` per node type, plus
   `peekTypeId(String)`. Hand-rolled base64 in consumer code is never necessary, only inconvenient.
@@ -290,9 +290,13 @@ The destination question above has three candidate answers, and this item should
 does not fork a surface another item is mid-flight on.
 
 * **Key-column projection.** The author names one key column as a trailing path segment, so the
-  slot receives one value and the SDL says which. This is what R668 is building; its resolution
-  views have shipped and its final stage lands the `@service` site along with `@routine` and
-  output-field `@condition`.
+  slot receives one value and the SDL says which. This is R668's, and most of it has now landed:
+  the resolution views, the rejection family and the carrier move shipped, and the `@routine` site
+  emits and executes. The `@service` emitter is the piece still outstanding, and it is a named
+  empty slot rather than an open question: `ArgmappingProjectionDefects.EMITTING_SITES` holds
+  `ROUTINE`, `FIELD_CONDITION` and `ARGUMENT_CONDITION`, with `SERVICE` stated in its javadoc as
+  joining when its emitter lands. Until then a projection authored at a `@service` site defers
+  honestly rather than emitting nothing.
 * **Whole-record binding.** Give the parameter a generated `*Record`. This works today for the two
   record-shaped destinations, and R668's spec holds it out as a separate capability for a scalar
   `@service` parameter.
@@ -319,6 +323,15 @@ definition-keyed at the slot's own coordinate. Those relations exist and are key
 `(graph, type, field)`, both carrying `node_type_ref` and a source position. That is where the
 author's cursor sits, and it is the coordinate the message must name.
 
+**Site 1's rejection is terminal, not transitional, and the difference is worth stating.** "Inherit
+the projection" reads as though R668 finishing dissolves this arm, and it does not. R668's
+`@service` emitter, when it lands, serves a `@service` argument that carries an authored
+`argMapping` naming a key column. Site 1 is the argument that carries no `argMapping` at all, so it
+produces no pair row before that emitter and none after it; nothing in R668's remaining scope
+reaches it. The arm stands until someone mints a spelling that binds at a bare argument, which is a
+capability neither item has. Site 2 is the same shape one level in. Site 3 is the one arm this item
+does dissolve, at stage 5.
+
 ### The rejection is one derived detection, not a branch per site
 
 Sites 1, 2 and 3 all need the same sentence said at three coordinates. The shape that says it once
@@ -331,10 +344,48 @@ extend the transitional walk during the strangler window, and would hand the LSP
 context nothing: the editor would still show green on a directive the build rejects.
 
 So: a derived view anti-joining the two `@nodeId` relations against the consuming populations, read
-by a small projector into located `ValidationError`s, the way `AuthoredClaimConflicts` reads
-`intent_authored_claim_conflict` today. One rule, three surfaces. The later emission work at each
-site then *shrinks the view's population* rather than requiring a branch to be deleted from two walk
-classes, which is the property that makes this item's own stages compose instead of collide.
+by a small projector into located `ValidationError`s. One rule, three surfaces. The later emission
+work at each site then *shrinks the view's population* rather than requiring a branch to be deleted
+from two walk classes, which is the property that makes this item's own stages compose instead of
+collide.
+
+**The precedent to follow is `ArgmappingProjectionDefects`, not `AuthoredClaimConflicts`.** R668's
+stage 3 has shipped, and it built this exact machine one directive over:
+`intent_argmapping_projection_defect`, a view whose arms are chosen by a closed `verdict`
+discriminator, decoded by `ArgmappingProjectionDefects` in `rewrite/derive` into located
+`ValidationError`s, carried into the error stream by `StoreDetections`. That record has one
+component per detection family, so this item's contribution is a third component rather than new
+plumbing. Its `BARE_NODE_ID` arm is this item's own sentence at a different destination: "binds a
+`@nodeId` and names no key column, so the encoded node id would reach the database verbatim". An
+earlier draft of this plan named `AuthoredClaimConflicts` because it was the only projector in the
+tree; the sibling is a closer fit on every axis, and one more besides. `intent_authored_claim_conflict`
+is the model's only reader of `walk_claim_domain_type` / `walk_claim_domain_field`, a family whose
+own header states the criterion that drains it. The argMapping relations read `graphitron_`, `sql_`
+and `intent_` only. Following the sibling inherits that property instead of arguing for it.
+
+**Two verdict classes, and which arm gets which is a property of the site.** R668's projector
+splits its arms on a question this item asks too: is the defect the author's or the generator's.
+Sites 1 and 2 are the author's. The directive cannot bind at that slot, a spelling that does bind
+exists, and the message names it, so those arms are `Rejection.structural`. Site 3 is the
+generator's. The request is coherent, nothing about it is a mistake, and the only reason it does not
+work is that no emitter has been written, so that arm is `Rejection.Deferred` until stage 5 removes
+it. This is R668's own division, which `ArgmappingProjectionDefects`'s javadoc draws in the same
+words ("a fact about this codebase and not about the schema") and whose deferred arms "shrink as
+emitters land rather than being deleted". Adopting it costs nothing here and buys the ordering property the stage list claims:
+stage 4 may ship before stage 5 without ever telling an author that a coherent request is their
+error.
+
+**The detection is capture-total and deliberately ungated by walk reach.** Worth stating because the
+model holds exactly one family that spells "the classification walk visited this coordinate", the
+two membership grains named above, and a scoping question left silent has one wrong answer
+available. The conflict detection needs its
+domain gate because an ungated version would move its accept line onto coordinates the legacy
+detector never reached. This detection has no predecessor at these three coordinates, so there is no
+accept line to reproduce, and its population is authored `@nodeId` applications, which capture
+records totally with no reachability pruning. An author who wrote the directive is owed the answer
+whether or not the walk reaches that type. The consequence, stated rather than discovered: the walk
+is narrower than capture, so the detection fires at coordinates the classifier never visits,
+tombstones included. That is correct. The directive binds nothing there either.
 
 ### Site 3: one per-field carrier on `ErrorType`, carrying the wire direction
 
@@ -438,10 +489,14 @@ replacement.
    pin it has never had. Exit: an author who writes the reverse filter without a `@reference` is
    told what to write. Independent of every other stage and the smallest thing in the item.
 4. **The ineffective-`@nodeId` detection.** The derived view and its projector, covering sites 1, 2
-   and 3 at once. Exit: the reported schemas fail the build with a message naming the slot and a
-   spelling that works, and the same fact is available to the LSP and the MCP context rather than
-   living inside two walk classes. Gated on R668's stage 3 wording being settled, which is the one
-   cross-item dependency here.
+   and 3 at once, as a third component on `StoreDetections` beside the two families already there.
+   Exit: the reported schemas fail the build, sites 1 and 2 with a `Rejection.structural` naming the
+   slot and a spelling that works, site 3 with a `Rejection.Deferred` naming the slot and saying the
+   encode is not written yet; and the same fact is available to the LSP and the MCP context rather
+   than living inside two walk classes. The message vocabulary converges with
+   `ArgmappingProjectionDefects.rejectionOf`, which is shipped text to read rather than a wording to
+   negotiate. R668's stage 3 has landed, so the one cross-item gate this stage used to carry is
+   discharged; what remains is convergence with a live surface.
 5. **Site 3, the encode.** The `ErrorType` carrier unification, the classification arm, the
    registration swap, and the composite-arity rejection. Exit: an `@error` field carrying
    `@nodeId(typeName:)` returns an encoded node ID and the reporter's hand-written encoder call
@@ -467,7 +522,12 @@ semantics claim at the execution tier.
   Each of the four write rails refusing a `Remote`-bound junction carrier, asserting the text that
   rail actually produces (this is the consumer audit expressed as a test). The
   ineffective-`@nodeId` detection firing at each of the three slots and staying silent where the
-  directive does bind. The site-3 classification arm and its composite-arity rejection.
+  directive does bind, with the site-1/2 arms asserting a `Rejection.structural` and the site-3 arm
+  a `Rejection.Deferred`. The boundary against R668 pinned as a pair: two `@service` arguments
+  carrying `@nodeId`, one with an authored `argMapping` and one without, each drawing exactly one
+  message and from a different family. That partition is argued in Risks and is cheap to hold
+  honest, the two items being the only producers on either side of it. The site-3 classification arm
+  and its composite-arity rejection.
 * **Compilation tier.** Rides `graphitron-sakila-example`. `film_category` already exists in the
   sakila schema and is the natural junction fixture, so this may cost SDL only rather than
   `init.sql` changes.
@@ -496,8 +556,19 @@ code-string matching on generated bodies is banned at every tier.
   segment, this item's on a slot with no pair row at all, so no single slot draws both. The risk is
   that an author moving between the two spellings meets two different messages for one condition,
   which is the same complaint R668's own plan raises about the two existing "cannot infer a node
-  type here" texts. One vocabulary, minted once, is the mitigation, and it is why stage 4 is gated
-  on R668's wording being settled rather than merely on its code landing.
+  type here" texts. One vocabulary, minted once, is the mitigation. That vocabulary now exists:
+  R668's stage 3 shipped six verdicts and their prose in `ArgmappingProjectionDefects.rejectionOf`,
+  so this stage converges on read text rather than waiting on a wording, and the partition has a
+  test in the Tests section rather than only an argument here.
+* **Stage 4 breaks schemas that build today.** The mirror of the site-4b risk above, and it
+  deserves its own line rather than living inside the decision that produces it. At all three sites
+  the current behaviour is a silent pass: the build succeeds and the raw string flows through. After
+  stage 4 those same schemas fail. This project has no warning severity to soften it, a
+  `ValidationError` carrying a `Rejection` and nothing weaker, so "tell the author" and "fail the
+  build" are one act here. That is the intended outcome and the reporter's first ask, but it is a
+  breaking change for existing consumers and the changelog entry has to say so in those words. The
+  `Deferred` arm at site 3 is what keeps the break honest: it fails while naming the gap as ours,
+  and stage 5 removes it.
 * **A carrier named for the reporter's subject would inherit the question's shape.** The item is
   scoped by subject deliberately, and the corresponding hazard is producing a model type to match:
   a `NodeIdBinding` or `NodeIdEffective` spanning four sites would take its grain from "whatever the
@@ -541,6 +612,12 @@ code-string matching on generated bodies is banned at every tier.
   differ from `T`'s key columns", which appears twice, in the seal's arm list and in the record's
   own javadoc with its "SQL has to convert a decoded key into an FK-column value" gloss; and
   `TranslatedFk`'s `@param joinPath single-hop FK path from the containing table to T.table()`.
+* `CallSiteCompaction`'s statement of its own carrier population, "Carried by the column-backed
+  output carriers (`ChildField.ColumnBackedField`, `ChildField.ColumnBackedReferenceField`)". Stage
+  5 hangs the same slot on an accessor-backed read, which is a third carrier and not a column-backed
+  one. The neighbouring sentence about arity goes with it: it justifies the arity-1 claim by "the
+  carriers' constructor invariant", and the new carrier is not one of those carriers, so stage 5
+  states where the `@error` arity is refused instead.
 
 `CONDITION_STEP_MARKER` is deliberately *not* retired here, and neither is the rejection it anchors;
 see the gate decision under Design. The Done-gate sweep should read a surviving `CONDITION_STEP_MARKER`
@@ -561,11 +638,17 @@ carrier assertions, and stage 2 expresses it there.
 
 ## Relationship to other items
 
-* **R668** (`nodeid-key-projection-on-routine-params`, In Progress) is the nearest neighbour and
+* **R668** (`nodeid-key-projection-on-routine-params`, In Review) is the nearest neighbour and
   overlaps sites 1 and 2 partially. It makes a node type's key columns nameable as a trailing
-  `argMapping` path segment and its final stage lands the `@routine`, `@service` and output-field
-  `@condition` sites together, and it already carries the bare-form rejection this item's second
-  question asks about. The overlap is bounded in a way that matters: R668's surface is the
+  `argMapping` path segment. **Most of it has landed**, which changes what this item inherits and
+  what it still has to build. Shipped: the resolution views, the rejection family
+  (`intent_argmapping_projection_defect` plus `ArgmappingProjectionDefects`, six verdicts across
+  three `Rejection` channels), the carrier move, and the `@routine` emitter with its execution
+  round trip. Outstanding: the `@service` and output-field `@condition` emitters, which defer
+  honestly meanwhile. So this item's stage 4 inherits a live projector to converge on, and its
+  sites 1 and 2 inherit a `@service` projection that is named but not yet wired. It already carries
+  the bare-form rejection this item's second question asks about. The overlap is bounded in a way
+  that matters: R668's surface is the
   `argMapping` right-hand side, and the store's pair relations record the mapping *as written*, so
   a `@service` argument with no authored `argMapping` produces no pair row and is reached by
   neither R668's projection nor R668's rejection. That is exactly the reported shape. R668 also
@@ -574,13 +657,13 @@ carrier assertions, and stage 2 expresses it there.
   and R668 agrees in its own body.** Its plan says the bare-form rejection "closes it at the
   `argMapping` sites only", and that a general "declared and unconsumed" warning "belongs in its own
   item if anyone wants it". Stage 4 is that item. So neither this item's projection nor its
-  rejection duplicates R668's; the only edge between them is stage 4's gate on R668's stage-3
-  wording, which is about one shared vocabulary rather than about code landing.
+  rejection duplicates R668's.
 
-  That gate stays out of `depends-on:`. The field means "must ship first" and renders as *blocked
-  by*, which would be false here: stages 1 through 3 land with R668 untouched, and stage 4 waits on
-  a wording rather than an artefact. Recorded here so the next reader does not re-raise it as a
-  missing edge.
+  The one edge between them used to be stage 4's gate on R668's stage-3 wording. **That gate is
+  discharged**: stage 3 shipped, vocabulary included, and stage 4 now reads live text instead of
+  waiting on a decision. Nothing replaces it, and `depends-on:` stays empty. The field means "must
+  ship first" and renders as *blocked by*, which was already false and is now doubly so. Recorded
+  here so the next reader does not re-raise it as a missing edge.
 * **R57** (Done, see `roadmap/changelog.md`) shipped the single-hop translated-FK `EXISTS` and
   filed multi-hop translated paths as deferred. Site 4's junction case is that deferral. Its
   reasoning that `EXISTS` is the semantically right shape rather than a convenient one, because a
