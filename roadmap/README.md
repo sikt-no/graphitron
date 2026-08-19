@@ -30,9 +30,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection | In Progress | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
 | `R672` | Register every built-in scalar the emitted schema references, not just the ones the SDL uses | In Review | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](register-referenced-builtin-scalars.md) |
-| `R711` | Nodehood derives from two corpora instead of being decided in capture | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
+| `R711` | Nodehood derives from two corpora instead of being decided in capture | Ready | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](nodehood-derives-from-two-corpora.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Ready | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](error-handler-description-overrides-message.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -299,7 +299,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
-- `R711` [**Nodehood derives from two corpora instead of being decided in capture**](nodehood-derives-from-two-corpora.md) — Spec, architecture
+- `R711` [**Nodehood derives from two corpora instead of being decided in capture**](nodehood-derives-from-two-corpora.md) — Ready, architecture
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
 - `R337` [**Surface input-field projections honestly on the lowered coordinate**](input-nesting-projection-classification.md) — Backlog, architecture
 - `R653` [**The extension ordinal records JVM iteration order and calls it a position**](schema-extension-ordinal-is-iteration-order.md) — Backlog, architecture

@@ -1,7 +1,7 @@
 ---
 id: R711
 title: "Nodehood derives from two corpora instead of being decided in capture"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
