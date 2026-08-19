@@ -136,8 +136,15 @@ message refinement, because well-formedness has consumers. `intent_resolved_node
 `JOOQ_METADATA` tier gates on a table having no defect row at all, so a case-ambiguous entry stops that
 tier resolving and falls through rather than resolving against a column picked by field order. That is
 the payoff, and it needs no edit to that view. R711 is Ready and builds `intent_inferred_node_type` on
-the same conjunction, so once it lands this value also narrows which types are nodes. Both are the right
-answers and both are semantic changes this item owns.
+the same conjunction, so once it lands a case-ambiguous key column also stops the type being an inferred
+node. Both are the right answers and both are semantic changes this item owns.
+
+Neither consumer needs editing, and the reason is worth stating so nobody goes looking. Both gate on a
+table having no defect row at all, with no filter on which value, so a new value reaches both by
+construction. R711 also deliberately accepts two spellings of that conjunction rather than extracting
+it, which means the count of value-agnostic gates grows to two before this item lands and would keep
+growing. That is what makes the propagation worth a pinned case rather than an observation: a gate that
+inherits a new value silently is exactly the kind that nobody notices has changed.
 
 *The Java enforcer.* The store's verdict needs one or it is a fact with no teeth.
 `JooqCatalog.validateLookup` resolves entries through `findColumn`, which folds and takes `findFirst`
@@ -239,6 +246,11 @@ than shipped as a broken generated class.
 * A case pinning that a case-ambiguous entry suppresses `intent_resolved_node_key_column`'s
   `JOOQ_METADATA` tier, which is where the defect value earns its keep. Belongs in
   `ResolvedNodeKeyColumnTest` beside the tier's other cases rather than in this class.
+* The same for nodehood, once R711 has landed: a case-ambiguous key column takes the type out of
+  `intent_inferred_node_type`, beside that relation's own cases. Written if R711 is on trunk when this
+  item is implemented and skipped if it is not, which is a check the implementer makes rather than a
+  dependency; R711 is Ready and this is Spec, so the likely order is that it has landed. If it has not,
+  say so in the In Review hand-off rather than leaving the gap silent, and R711's own gate picks it up.
 * The Java side, beside `JooqCatalog`'s other `validateNodeIdMetadata` cases: an ambiguous fold reports
   `Malformed` rather than resolving. That factoring already takes a synthetic column lookup, so the
   collision is two entries in a map and needs no fixture class.
