@@ -26,8 +26,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | In Progress | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
-| `R712` | Name the three strata, and retire authored versus effective | In Progress | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](three-strata-capture-derive-query.md) |
 | `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | In Review | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
+| `R712` | Name the three strata, and retire authored versus effective | In Review | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](three-strata-capture-derive-query.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Spec | 2026-08-17 | [plan](error-handler-description-overrides-message.md) |
 | `R710` | The jOOQ crawler records node metadata as stated, not as validated | In Progress | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](jooq-node-metadata-as-stated-facts.md) |
@@ -529,7 +529,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R596` [**Cross-file xref paths naming deleted plan pages publish as 404 links**](dangling-plan-page-xref-paths.md) — Backlog, cleanup
 - `R592` [**Document the lint rules as a manual reference page**](lint-rule-reference-page.md) — Backlog, dx
 - `R604` [**LeafCoverageReport carries a private escapeAdocCell duplicating Main's**](roadmap-tool-adoc-cell-escape-dedup.md) — Backlog, cleanup
-- `R712` [**Name the three strata, and retire authored versus effective**](three-strata-capture-derive-query.md) — In Progress, architecture
+- `R712` [**Name the three strata, and retire authored versus effective**](three-strata-capture-derive-query.md) — In Review, architecture
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R600` [**Retire the roadmap markdown-to-AsciiDoc translator by authoring plans in AsciiDoc**](roadmap-plans-authored-as-asciidoc.md) — Backlog, cleanup
 - `R635` [**The schema drift guard covers the prefix-less relations too**](schema-drift-guard-covers-prefixless-relations.md) — Backlog, cleanup

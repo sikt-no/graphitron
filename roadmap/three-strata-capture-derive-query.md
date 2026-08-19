@@ -1,7 +1,7 @@
 ---
 id: R712
 title: "Name the three strata, and retire authored versus effective"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: docs
