@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: [delivery-verdict-derives-from-the-store]
 created: 2026-08-14
-last-updated: 2026-08-16
+last-updated: 2026-08-19
 ---
 
 # Planners read facts, emitters read commands: close the seam on both tiers
@@ -23,17 +23,22 @@ That sentence is the functional-core / imperative-shell topology the development
 planners are the core, pure derivation from typed facts to command rows, and `render` is the shell
 that encodes those rows outward. `roadmap/audits/2026-07-26-fcis-command-layer-distance.md`
 measured the tree's distance from that ideal; the emit-path share of closing it is this item, and
-closing it is what dissolves the leaf zoo for the generator, because the plan and the emitters are
-the zoo's largest remaining consumers.
+closing it is what dissolves the leaf zoo for the generator, because with the language server and
+the MCP re-sourced the plan and the emitters are the zoo's last remaining consumers of size.
 
 This item owns getting there, on both tiers.
 
 ## Problem
 
 Every store migration that has landed so far moved a *reader*. The authored-claim conflict detection
-reads the claim views, the `diagnostic` surface serves the diagnostics stratum, and the language
-server has re-sourced completion, hover and goto-definition arm by arm. All of them answer questions.
-None of them emit code.
+reads the claim views, and the `diagnostic` surface serves the diagnostics stratum. Since this item
+was filed, both external clients finished shedding the zoo: `graphitron-mcp` answers every tool from
+the store and compiles against nothing in the reactor but `graphitron-model` plus jOOQ, with
+`StoreClientBoundaryTest` forbidding the classification taxonomies by name (R642, Done, see
+`roadmap/changelog.md`); and the language server, having re-sourced completion, hover,
+goto-definition, inlay hints and diagnostics arm by arm, retired its last generator-side read when
+the routine call surface became a relation and `Workspace` stopped holding a build snapshot at all.
+All of them answer questions. None of them emit code.
 
 The emit half is still made entirely from the leaf model, at both of its tiers. `EmitPlan.produce`
 takes a `GraphitronSchema` and joins its facts into the six command relations the run will render,
@@ -73,7 +78,7 @@ produced from the store. That is the planner half, and it is the larger of the t
 on both tiers. Its own javadoc states the terminal condition in as many words: the generators-side
 counts "ratchet down to zero", and the plan-side count is "expected to rise while producers are fed
 by leaf dispatch and to ratchet back to zero when the fact-visitor engine re-sources them". Live
-pins at filing:
+pins, re-measured 2026-08-19:
 
 [cols="3,1,4"]
 |===
@@ -84,17 +89,23 @@ pins at filing:
 | emitters: entry points in `generators/` still taking the whole schema
 
 | `GENERATOR_LEAF_INSTANCEOF_SITES`
-| 69
+| 72
 | emitters: `instanceof` sites in `generators/` naming a leaf of the seven hierarchies
 
 | `GENERATOR_LEAF_CASE_PATTERNS`
-| 60
+| 62
 | emitters: the same for `case` patterns
 
 | `PLAN_LEAF_REFERENCES`
-| 125
+| 128
 | planners: leaf references in `plan/`, the pin that legitimately rose before it falls
 |===
+
+Since filing (2026-08-16, at 18/69/60/125) every leaf-counting pin has *risen*: the routine carrier
+and the discriminated interface child's batched half each landed as a new leaf with its own dispatch
+sites, which the never-raise rule reads as new coverage rather than a boundary move. That is the
+flat-line argument in live data, one notch worse: while nobody owns the drain, feature work grows
+the zoo faster than incidental migration shrinks it.
 
 All four go to zero. That is most of the item stated numerically; the residue the pins cannot see
 (a leaf taken as a parameter and never dispatched on) is what the guard extension in "The closer"
@@ -215,7 +226,10 @@ projection question of the claim views, the launcher producer asks the launcher 
 neither goes through a shared shape even where the SQL comes out similar. What producers share is
 the store's relations and derived views, never the query. The LSP migration stated this rule at the
 grain it applies and it transfers verbatim: "What they share is the relations, not the query"
-(`roadmap/lsp-reads-the-fact-store.md`, the catalog-shaped completion arms).
+(`roadmap/lsp-reads-the-fact-store.md`, the catalog-shaped completion arms). The rule has since been
+filed as store-wide doctrine on its own item (`roadmap/consumers-share-relations-not-queries.md`),
+so this section is an application, not this item's invention; if the two ever read differently, the
+doctrine item wins.
 
 Duplicated query text across producers is the accepted cost, and it is cheap: the store schema is
 the contract, so two producers reading the same view stay correct independently, while a shared
@@ -229,6 +243,57 @@ glue key is the plan's own foreign keys, command referencing command, not a stor
 between producers; the dependency order in the Scope section stays. And the scoping predicate
 `StoreHandle.reads` stays shared, because it is the store's own contract for reaching source-keyed
 families, not a consumer-shaped read.
+
+## One statement per grain: the N+1 lesson lands before the first producer
+
+Both finished migrations fell into the same trap on the way in, and both wrote the correction down,
+so this item gets to inherit the rule instead of rediscovering it. The LSP's readers were each built
+to own exactly one relation, which is right about facts, and nothing said where *composition* lives,
+so it fell to Java one loop at a time: a hover cost four to seven statements with an N+1 in the
+middle, and the overlay pass cost up to three statements per directive node. The durable fix was one
+statement per capability, composed with `MULTISET`, and a counted test. The MCP paid the same
+tuition in seconds: two derived views read as correlated subqueries under a per-field projection
+cost twenty-four seconds where reading each view whole cost milliseconds, and the backing-class
+closure's per-request recursive form measured 369 seconds before it moved to a capture-cadence
+materialization. The corrections graduated to `docs/architecture/explanation/fact-model.adoc`
+(the one-projection-per-grain paragraph, the window-function/recursive-view rule) and to
+`roadmap/views-carry-keys-not-payloads.md`; this section is what they instruct the planner half to
+do, stated here because the trap is exactly the shape of the code being converted.
+
+* **A producer's read grain is the relation it derives, never the row.** Every producer being
+  converted is today a dispatch loop over coordinates, so the path of least resistance is a store
+  query per coordinate inside that loop, the walk's shape transcribed into N+1 SQL and called a
+  migration. The converted form drives one statement (or a few, one per independent question) from
+  the view that defines row existence, over the whole schema at once, and derives every row of its
+  relation from that read. The plan runs at build cadence over every coordinate, so the per-row
+  multiplier here is larger than any editor surface's, not smaller; the MCP's numbers are what an
+  H2 round trip per coordinate costs at exactly this scale.
+* **Nested payloads ride the driving statement as `MULTISET`.** Command rows are structured
+  (`LauncherCommand` carries nested sealed payloads), and relationally that is a row plus child
+  relations. jOOQ supports the shape well: `MULTISET` nests the child rows under the parent through
+  the key the relations already declare, `Records.mapping` lands each level on the record it
+  already has, and H2 serves the nesting via JSON aggregation. The alternative, several statements
+  at several grains reassembled with accumulators in Java, is a relational join written by hand;
+  fact-model.adoc names its failure modes (invented grouping keys, consistency argued rather than
+  held, product row counts over JDBC) and they bind here as written. `MULTISET` belongs in the
+  producer's `SELECT`, never in the store's DDL: a view carries keys and its own products, a
+  projection denormalizes, and asking the store for a plan-shaped view is the same mistake as the
+  shared-reader layer the previous section bans.
+* **Deep derived views are read once and paired on their key.** A view carrying a window function
+  or a recursive term cannot be pruned by an outer predicate, so correlating it per driving row
+  pays its whole evaluation once per row; read it whole, filtered to the population, and join it in.
+  The per-coordinate classification views the planner half reads are precisely this species.
+* **Materialization is a measured escalation, not a default.** The MCP moved one closure to capture
+  cadence after measuring the recursive form; everything else stayed views. A producer that finds a
+  read slow says so with a number before anything moves cadence.
+* **The pin is a counted test, not a benchmark.** The LSP's enforcement is
+  `DeclarationHoverStatementCountTest`: an execute listener asserting statement counts, no timing,
+  no fixture scale, because the N+1 was invisible to every behavioural assertion (a fan-out into
+  round trips returns exactly the rows one statement does, just slower). Each converted producer
+  lands the same instrument in the same commit: a statement-count pin at producer grain, asserting
+  the count is a function of the producer's arms and never of the corpus. A count that grows with
+  the schema is the defect the pin exists to refuse, and no other gate in the Coverage section can
+  see it.
 
 ## The facts to plan against are available
 
@@ -343,6 +408,13 @@ in the same commit that extends the guard over the package each pin measures: a 
 guard makes unraisable is a second mechanism for one invariant, and two mechanisms for one
 invariant drift apart.
 
+Prove each extended dial non-vacuous at the gate, the way the MCP's boundary guard was proven at
+its Done review: plant a forbidden leaf reference, watch the build fail, remove it. A guard that
+has never fired is a claim, not a gate, and the precedent for what an unproven needle misses is
+live: the MCP guard shipped scanning one package prefix of the five the generator publishes
+(filed as `roadmap/mcp-boundary-guard-generator-package-coverage.md`), which naming the forbidden
+hierarchies and packages explicitly, then probing them, avoids.
+
 ### Sequencing between the halves: planner leads, per family
 
 Settled: the planner half leads per family, not globally. A family's command relation becomes
@@ -379,6 +451,11 @@ populations are enumerated under "The facts to plan against are available" above
 * **The closure invariant is the safety net and must not be weakened.** A converted producer that
   commits a row no renderer emits, or drops one a renderer needs, fails the fold. Keep that gate loud
   during the migration rather than relaxing it per increment.
+* **The mechanical conversion is the N+1.** Each producer is today a per-coordinate dispatch loop,
+  so transcribing it read by read yields a store query per coordinate that passes every row-identity
+  and output-identity gate while multiplying round trips by the corpus. "One statement per grain"
+  above is the rule and the statement-count pin is the only instrument that sees the defect; the
+  reviewer of each planner-half increment checks the count the way they check row identity.
 * **The accessor census reads as an implementation plan.** The path of least resistance for whoever
   converts producer number two is to extract producer number one's store reads into a shared
   helper, and each extraction after that looks more natural than the last. "Planners share
@@ -393,8 +470,9 @@ populations are enumerated under "The facts to plan against are available" above
 ## Out of scope
 
 * **The classification walk itself.** It keeps producing the leaf model for its remaining consumers.
-  This item removes the plan and the emitters from that list; the validator and the LSP projection are
-  other items' work.
+  This item removes the plan and the emitters from that list; the validator is other items' work,
+  and the LSP projection read is already gone (the classifier still derives the projection for its
+  own tests, but no language-server read of it remains).
 * **Reordering capture ahead of the walk.** The plan runs after capture already. An earlier plan for
   the planner half proposed the reorder plus a store-reading classifier; that was scaffolding for a
   walk being drained from the consumer end instead, and it is dropped rather than deferred. It becomes
@@ -410,8 +488,19 @@ populations are enumerated under "The facts to plan against are available" above
 * `roadmap/lsp-reads-the-fact-store.md` is the shape to copy: one item, many increments, each arm
   landing on its own commit with what it settled written down. It also owns `StoreHandle`, which the
   planner half's producers take. Not a declared dependency: the earlier edge existed because both
-  restructured `buildOutput`, and this item no longer touches the pipeline order. Its cutover still
-  matters as intelligence, being the first store-side projection of classification in the tree.
+  restructured `buildOutput`, and this item no longer touches the pipeline order. Since this item
+  was filed the LSP retired its last generator-side read: the routine call surface became
+  `intent_field_routine_method`, and `Workspace` stopped holding a build snapshot at all. Its two
+  read-shape corrections (one statement per capability; a projection composes with `MULTISET`, a
+  view never embeds payloads) are the direct inputs to the one-statement-per-grain section above.
+* R642 (`catalog-facts-readers-move-to-the-store`, Done, see `roadmap/changelog.md`) is the
+  finished store-client precedent on the other flank: `graphitron-mcp` answers every tool from the
+  store, and `StoreClientBoundaryTest` forbids the classification taxonomies by name. Beyond the
+  measurements the read-shape section cites, two gate lessons travel: the boundary guard was proven
+  non-vacuous at the Done review by planting a generator reference and watching the build fail,
+  which "The closer" copies; and its needle still covered one generator package of five, filed as
+  `roadmap/mcp-boundary-guard-generator-package-coverage.md`, which is why the extended dials name
+  the hierarchies and packages explicitly.
 * `roadmap/coordinate-lowers-to-datafetcher-queryparts.md` owns the drain: the facts that replace
   the leaves, and the method graph the emit lowers onto. This item is a slice of it, the slice whose
   consumers emit code, and it is independently schedulable while carrying its own `depends-on` edge.
@@ -469,6 +558,10 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
   emitted sources and runs them against PostgreSQL, so a command row that changed shows up as
   behaviour, not just as a diff. `GeneratorDeterminismTest` and `IdempotentWriterTest` cover ordering.
 * **The fold's closure invariant** stays as-is and is the per-increment backstop.
+* **A statement-count pin per converted producer**, on the `DeclarationHoverStatementCountTest`
+  model: an execute-listener count at producer grain, asserting the read count is a function of the
+  producer's arms rather than of the corpus, landing in the same commit as the conversion. Row
+  identity and output identity cannot see an N+1; this is the gate that can.
 * **The registered agreement anchor** for every new relation, through `FactCaptureAgreementTest`'s
   mechanical driver, which has no skip list, so a relation added for this item cannot arrive
   unchecked.
@@ -491,3 +584,11 @@ actually needed reads a leaf directly and nothing forbids that. The two halves w
 items on the reasoning that the planner half was blocked on facts that did not exist yet; measuring
 the DDL showed the expensive population had landed and only four relation-shaped folds were missing,
 so they merged at the owner's direction, the planner half's body absorbed whole rather than restated.
+
+Updated 2026-08-19, at the owner's direction, because the survey's trajectory has completed: the MCP
+migration reached Done (R642) and the LSP retired its last generator-side read, so "the drain is
+working from the consumer end" is no longer a forecast, and the emit path is the last unmigrated
+consumer of size. The same pass re-measured the ratchet pins (all four had risen), folded the
+finished migrations' read-shape lessons into the one-statement-per-grain section and its
+statement-count pin, adopted the guard non-vacuity check from R642's Done gate, and repointed the
+relations-not-queries rule at the doctrine item that has since been filed for it.
