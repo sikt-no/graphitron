@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # Delivery verdict derives from the store, not from a hand-maintained negative-space switch
@@ -86,7 +86,7 @@ a switch instead of as a view over keyed relations.
 ## What the shape would be
 
 `intent_field_delivery_rule (graph_name, type_name, field_name, rule)` as a union of positive arms,
-one per trigger; `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` for
+one per trigger; `intent_field_delivery_exemption_rule (graph_name, type_name, field_name, reason)` for
 the negatives that are stated rather than absent; and `intent_resolved_field_delivery (graph_name,
 type_name, field_name, verdict, rule)` as the reduction under a declared precedence. Most `INLINE`
 is the complement, the absence of any arm, rather than an enumerated set of shapes somebody has to
@@ -103,7 +103,12 @@ worth stating rather than discovering: `intent_delivery_container` already spend
 sense, the Java container classes the declared-type peel descends. The `_field_` infix is what keeps
 them apart, and it is load-bearing rather than decorative, so all three relations carry it; a reader
 meeting `intent_field_delivery_*` beside `intent_delivery_container` should be able to tell from the
-key alone that one is about coordinates and the other about classes. And **the authored grain here is the
+key alone that one is about coordinates and the other about classes. The `_rule` suffix rides on both
+rule views for the same reason and against an earlier draft's bare
+`intent_field_delivery_exemption`: the sibling pair reads as one stratum because
+`intent_field_demand_rule` and `intent_field_exemption_rule` share the suffix, and dropping it on the
+negative half would spend the recognisability the paragraph is arguing for. The `reason` column keeps
+its own name there, as the sibling's does. And **the authored grain here is the
 coordinate**, unlike the sibling's, whose rule views are type-keyed on the stated ground that "every
 rule shipped so far is a property of the parent type". Delivery's are not: every batching arm reads a
 marker or a target on the field itself. The one exception is the root exemption, which is authored on
@@ -206,7 +211,11 @@ Four instructions follow for whoever writes the DDL.
   which the arity filter removes here, and a `@table` interface child at either cardinality, which
   the `DISCRIMINATED_TARGET` exemption and the fan-in arm answer between them. Both are populations
   this item had already reasoned to independently, which is corroboration that the two relations are
-  reading one fact.
+  reading one fact. One clause is *not* copied, and the arms section is where it is settled: both of
+  the sibling's joins name `intent_bound_table` where delivery's name `intent_resolved_type_binding`,
+  because the sibling holds the `@table` population deliberately for a parent-side question delivery
+  does not ask and delivery's own walk-side predicate follows a `@routine` chain's return binding.
+  That is the one place the transcription instruction does not govern.
 * **Say the relationship in both view comments.** A reader meeting two coordinate-grained rule views
   that share two literals and disagree on two populations needs to be told, at each of them, that the
   disagreement is the design. This item owns the comment on its own three views; amending
@@ -311,8 +320,10 @@ a capture project, and it survives a relation-by-relation check, but only a chec
 inventory is wider than a first read suggests, and picking the relation whose *name* matches an arm's
 vocabulary is how three successive drafts got an entry wrong. The arms need
 `graphitron_split_query`, `graphitron_tenant_fan_out`,
-`graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (through
-`intent_bound_table`, see below), `graphitron_service`, `intent_type_backing_class` (the record-handed
+`graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (raw for the
+discriminated presence test; for a *binding* the arms read `intent_resolved_type_binding`, which is a
+fourth entry a draft got wrong the same way and the arms section settles), `graphitron_service`,
+`intent_type_backing_class` (the record-handed
 arm, and the entry the third draft got wrong; the second predicate below is where that is
 established), `graphql_field.is_list`, `graphql_type.kind`,
 `graphql_implements`, `graphql_union_member`, `graphql_root_operation` (the root exemption arm,
@@ -377,10 +388,11 @@ deleted, so a later revision that widens the projection cannot silently pick the
 structurally-connection-wrapped discriminated child is a `DeliveryResidue` entry, not an arm
 clause.** Teaching the fan-in arm to resolve the element only when the element is discriminated
 would transcribe a disagreement among the walk's own three helpers into SQL, which is the move this
-item already declines for the renamed root; the residue's removal criterion is the walk giving
-`anyTableBoundParticipant` the same `ConnectionType` arm its two siblings carry. No corpus
-coordinate is one, per the connection bullet in the Implementation section, so nothing observes the
-gap today either way.
+item already declines for the renamed root. That entry is not this shape's own: it is the
+structurally-declared connection wrapper the arms section states once for every arm, reached here
+from the participant side, and its removal criterion is stated there. No corpus coordinate is one,
+per the connection bullet in the Implementation section, so nothing observes the gap today either
+way.
 
 The arm itself, then. Its store-side gate is that the target is an interface or union,
 list-valued, with at least one table-bound participant: `graphql_implements` /
@@ -438,7 +450,9 @@ holds more exactly, and loses a population on the way: `intent_type_backing`'s t
 table to have a generated record class, so a `@table` parent whose table reports `org.jooq.Record`
 is absent from that arm and is not table-handed by it, while its binding is a fact all the same. The
 shipped arm anti-joins `intent_bound_table` for exactly that reason and says so; this arm reads
-`intent_type_backing_class` and does the same.
+`intent_type_backing_class` and does the same, over `intent_resolved_type_binding` rather than over
+the sibling's narrower relation, per the arms section's binding paragraph. What transfers is the
+choice of a binding relation over the coalesced backing view, not which binding relation.
 
 One residue survives and it is the one already named: the pivot-slot record parent, whose source is
 the pivot subselect's graphitron-built jOOQ record, so no class backs it on either arm.
@@ -478,9 +492,12 @@ against. Precedence runs down the table: every exemption arm beats every rule ar
 side the first matching arm names the row.
 
 One fact is shared, and it is worth naming once as a relation rather than as a coined predicate:
-**the target's bound table**, `intent_bound_table` with `candidates = 1`, a connection-shaped target
-resolving its element first and binding through that. Three rule arms read it; the fan-in arm does
-not, its target being polymorphic rather than table-bound.
+**the target's bound table**, `intent_resolved_type_binding` with `candidates = 1`, joined on the
+coordinate's authored named type with no element resolution of its own. Three rule arms read it; the
+fan-in arm does not, its target being polymorphic rather than table-bound. Both halves of that
+sentence are corrections a review made against a shipped witness, and each has its own paragraph
+below: the relation is the resolution rather than `intent_bound_table`, and the connection element
+is a residue rather than a join.
 
 Two earlier drafts coined a `table-anchored target` predicate here instead, folding four things into
 one hand-named concept: the target's kind, its binding arity, whether it carries `@discriminate`, and
@@ -488,8 +505,57 @@ the connection element walk. `roadmap/lsp-reads-the-fact-store.md` retired exact
 classification label, and its reason transfers without translation. A name folding several
 independent facts into one word makes a relation enumerate the combinations, which is the monolith
 the fact model exists to take apart, so the store publishes each fact and a reader joins the relation
-that owns the one it wants. Here the binding arity is `intent_bound_table`, `@discriminate` is the
-exemption arm below, and the other two are not facts about the target at all.
+that owns the one it wants. Here the binding and its arity are `intent_resolved_type_binding`,
+`@discriminate` is the exemption arm below, the connection element is the residue below, and the
+target's kind is not a fact about the target's binding at all.
+
+**The binding is the resolution, not the authored directive, and a shipped coordinate says so.**
+The three rule arms mirror `singleTableBackedVerdict`, which reads the type registry rather than the
+`@table` population, and `GraphitronSchemaBuilder` registers `TypeBuilder.routineReturnVerdict` as a
+`GraphitronType.TableType` for a type bound by what a `@routine` chain returns with no `@table`
+written. `intent_bound_table` is `graphitron_table`-derived and carries no such row;
+`intent_resolved_type_binding` coalesces it with `intent_routine_return_binding`, recounts
+`candidates` over the union, ships registered `Arm.DERIVED`, and its own comment names it as the
+relation for which table stands for a type against `intent_bound_table`'s narrower question of what
+the author wrote `@table` for. The witness is in the sakila example rather than hypothetical:
+`Actor.filmsSplit(minLength: Int!): [ActorFilm!] @splitQuery @routine(...)`, a marked non-root child
+on a `@table` parent whose target `ActorFilm` deliberately carries no `@table`, because restating the
+routine's name is the second spelling the return binding exists to remove. The walk mints
+`Batched(Authored)` there; an arm reading `intent_bound_table` reports `INLINE`.
+
+`intent_field_separate_fetch` holds both its joins on the `@table` population, and that hold does not
+transfer. Its comment states the reason and the reason is parent-side: whether a type standing for a
+routine result is a table row or a producer-handed row is the record-handed precedence question that
+arm exists to state, so substituting the relation would settle it in passing. Delivery's three arms
+read the binding on the *target*, where there is no such question and where the walk has already
+answered by registering the return-bound type as table-backed. The parent-side anti-join in the
+`RECORD_HANDED_PARENT` arm takes the resolution too, for the same mirroring reason rather than
+against the sibling: `mint` reads `ChildField.sourceShape`, a routine-result parent hands its children
+`SourceShape.Table`, and anti-joining the resolution is what reproduces that. The two relations
+therefore disagree about one coordinate by design, which the reciprocal comment sentence this item
+already owes both views is the place to say.
+
+The `DISCRIMINATED_TARGET` arm keeps its raw `graphitron_table` join, which is a presence test rather
+than a binding: what the walk reads there is that the interface carries the marker at all, and an
+interface is not a routine's return type.
+
+**No arm resolves a connection's element, and the wrapper is one residue across all of them.** An
+earlier revision folded an element walk into the shared fact, which contradicted the instruction to
+copy `intent_field_separate_fetch`'s arm verbatim: that arm joins the binding on `f.named_type` and
+its comment lists the connection wrapper as an absent population rather than a departure, no relation
+naming a connection's element type. The contradiction resolves in the sibling's favour once the
+population is split. For an `@asConnection` carrier the authored expression *is* the bare list, which
+`mint` and capture both read, so the named type is already the element and no walk is wanted. Only a
+*structurally declared* connection puts a wrapper between the coordinate and its element, and there
+the walk's helpers resolve it (`singleTableBackedVerdict` and `discriminatedInterfaceTarget` each
+carry a `ConnectionType` arm reading `elementTypeName`) while the store has no relation that can. So
+the arms join the authored named type, and the structurally-declared wrapper is a single
+`DeliveryResidue` entry spanning every arm whose walk-side predicate unwraps one: the three binding
+arms through `singleTableBackedVerdict`, and the discriminated child through
+`discriminatedInterfaceTarget`. Its removal criterion is the store gaining a connection-element
+relation, which is the same absence the sibling's comment already records, so the two relations
+close it together. This subsumes the fan-in section's separately stated wrapper residue, which is the
+same population reached from the other side.
 
 **`@discriminate` is a row, not an anti-join, and that is where the hardcoded `false` actually
 lands.** The negative-side section above already declined the anti-join shape for `@service`, on the
@@ -536,15 +602,15 @@ would have answered it silently.
 
 | `RECORD_HANDED_PARENT`
 | the parent is an object the backing closure grounds on a class and its own type binds no table, and the target binds one table. `intent_field_separate_fetch`'s arm of this name is the gate; copy it and add the arity filter
-| `intent_type_backing_class` on the parent at `graphql_type.kind = 'OBJECT'`, anti-joined against `intent_bound_table` on the parent, joined to `intent_bound_table` at `candidates = 1` on the target
+| `intent_type_backing_class` on the parent at `graphql_type.kind = 'OBJECT'`, anti-joined against `intent_resolved_type_binding` on the parent, joined to `intent_resolved_type_binding` at `candidates = 1` on the target. Both joins take the resolution rather than the sibling's `intent_bound_table`, per the binding paragraph above
 
 | `SPLIT_QUERY`
 | `@splitQuery` on the coordinate, and either the target binds one table or the coordinate carries `@pivot`
-| `graphitron_split_query`, `graphitron_pivot`
+| `graphitron_split_query`, `graphitron_pivot`, `intent_resolved_type_binding` at `candidates = 1` on the target
 
 | `TENANT_FAN_OUT`
 | `@tenantFanOut` on the coordinate, the target binds one table, and the coordinate carries no `@routine`
-| `graphitron_tenant_fan_out`, `graphitron_routine`
+| `graphitron_tenant_fan_out`, `graphitron_routine`, `intent_resolved_type_binding` at `candidates = 1` on the target
 |===
 
 Two things the table shows that the prose could not. The two authored readings carry their own
@@ -617,7 +683,7 @@ set acquiring an enforcer that is not another switch.**
 
 * The three views in the DDL, in the demand stratum's shape:
   `intent_field_delivery_rule (graph_name, type_name, field_name, rule)` as a `UNION` of one arm per
-  trigger, `intent_field_delivery_exemption (graph_name, type_name, field_name, reason)` with the
+  trigger, `intent_field_delivery_exemption_rule (graph_name, type_name, field_name, reason)` with the
   three arms established above, and `intent_resolved_field_delivery (graph_name, type_name,
   field_name, verdict, rule)` as the reduction. Seven arms in total, and the table above is the
   checklist: four rule arms, one literal each, three exemption arms. The closed vocabularies are
@@ -628,7 +694,7 @@ set acquiring an enforcer that is not another switch.**
 * Amend `intent_field_separate_fetch`'s view comment to name this stratum as its sibling, stating the
   two shared literals and the two populations the pair deliberately answers in opposite directions.
   The reciprocal sentence belongs in `intent_field_delivery_rule`'s and
-  `intent_field_delivery_exemption`'s comments. Per the sibling section above, this is the whole of
+  `intent_field_delivery_exemption_rule`'s comments. Per the sibling section above, this is the whole of
   that view's involvement: its rows are not read, its arms are not moved, and its
   class-backed-parent gap stays with whoever owns it.
 * The reduction's precedence runs exemption before rule, which is the opposite of the demand
@@ -642,14 +708,16 @@ set acquiring an enforcer that is not another switch.**
   reduction uses. `DeliveryFactRelation`'s domain is the flat classified index and explicitly
   excludes a nesting type's fields; the comparison has to be over one domain or it is measuring the
   boundary rather than the rule.
-* Reach a type's table binding through `intent_bound_table` rather than joining `graphitron_table`
-  raw. That view already resolves the reference as written through `intent_spelled_table` and
-  already ships as a registered `Arm.DERIVED` relation, and it makes binding ambiguity rows instead
-  of a silent pick: two candidate tables are two rows, so an arm that needs a settled binding states
-  `candidates = 1` the way the column-match classifier does. A raw join re-spells a resolution the
-  store owns. The same view is the `RECORD_HANDED_PARENT` arm's parent-side anti-join, unfiltered
-  there because what makes a parent a table row is that it is bound at all, per the sibling
-  instruction above. This governs the three rule arms that need a *binding*, and not the
+* Reach a type's table binding through `intent_resolved_type_binding` rather than through
+  `intent_bound_table` or a raw `graphitron_table` join, per the binding paragraph above: the walk's
+  predicate follows a `@routine` chain's return binding and the `@table` population alone does not
+  carry it, with `Actor.filmsSplit` in the sakila example as the live disagreement. The resolution
+  ships as a registered `Arm.DERIVED` relation over the same six columns, recounts `candidates` over
+  the union, and makes binding ambiguity rows instead of a silent pick: two candidate tables are two
+  rows, so an arm that needs a settled binding states `candidates = 1` the way the column-match
+  classifier does. The same view is the `RECORD_HANDED_PARENT` arm's parent-side anti-join, unfiltered
+  there because what makes a parent a table row is that it is bound at all. This governs the three
+  rule arms that need a *binding*, and not the
   `DISCRIMINATED_TARGET` arm, whose `graphitron_table` join is a presence test: what the walk reads
   there is that the interface carries the marker at all, so routing that arm through the binding view
   would drop an ambiguously-spelled discriminated interface out of the exemption and hand it back to
@@ -658,11 +726,9 @@ set acquiring an enforcer that is not another switch.**
   express, each with a stated removal criterion. Predicted from reading, to confirm at
   implementation: the nesting-field domain boundary above, and any arm whose predicate depends on
   classifier-internal route resolution (`resolveChildPolymorphicJoinPaths`) rather than on a
-  captured fact. The structurally-connection-wrapped discriminated child is the one the fan-in
-  section settles, and it is a residue rather than a candidate: the walk mints
-  `Batched(PolymorphicFanIn)` there through `discriminatedInterfaceTarget`'s `ConnectionType` arm
-  while `anyTableBoundParticipant` has no such arm, so the store reports `INLINE` and the removal
-  criterion is the walk's third helper gaining the wrapper reading its two siblings already have.
+  captured fact. The structurally declared connection wrapper is the one the arms section settles,
+  and it is a residue rather than a candidate: one entry across every arm whose walk-side predicate
+  unwraps a connection, its removal criterion the store gaining a connection-element relation.
   The one predicate-driven residue *candidate* is the pivot-slot record parent, the
   single member of the record-handed population neither backing arm witnesses, its source being a
   graphitron-built record that no class stands for. Confirm that one before writing it: the arm it
@@ -679,6 +745,19 @@ set acquiring an enforcer that is not another switch.**
   removal criterion is the walk keying on the binding, rather than narrowing the arm to the three
   names, which would transcribe the walk's defect into the store. The joined-table
   participant is explicitly *not* a residue candidate, per the fan-in trace above.
+* **Every residue this item declares needs a shape that populates it, and two of them have none
+  today.** The non-empty rule in the shadow bullet below is not satisfiable by a residue whose
+  population the corpus cannot reach, so each such residue owes a fixture beside the shadow test in
+  the same place the `@tenantFanOut` and connection-child fixtures live. The renamed root is the
+  first: no corpus example spells a `schema` block, and `DemandShadowTest`'s
+  `renamedSubscriptionRootFieldsAreDemandedWhereTheWalkSkipsThem` is directly copyable, its
+  `schema { query: Query, subscription: Feed }` fixture asserting the pinned population non-empty in
+  exactly the shape this rule needs. The structurally declared connection wrapper is the second, and
+  its fixture is the connection-child coordinate the corpus bullet below already names: authored
+  against an SDL connection type rather than through `@asConnection`, it witnesses the residue rather
+  than an arm, which is what that bullet means by the fixture being a deliverable. An earlier
+  revision said this population was carried by its residue's non-empty assertion *instead of* a
+  fixture, which cannot be true of the same assertion.
 * `DeliveryShadowTest` in `DemandShadowTest`'s mould, registered in `FactCaptureAgreementTest` under
   `Arm.DERIVED` for all three views. Per that test's stated residue discipline: equality outside the
   named residues, each disagreement direction pinned against a store-derived population rather than
@@ -754,10 +833,24 @@ set acquiring an enforcer that is not another switch.**
     too**, on the `@tenantFanOut` bullet's terms and in the same home, beside the test rather than in
     the corpus: a child declared against an SDL connection type over a plain `@table` element and
     marked `@splitQuery`, which is the coordinate that puts the structural predicate and the
-    `SPLIT_QUERY` arm's connection reading under the shadow at once. Its sibling shape, the same
-    child over a `@table @discriminate` element, is the residue the fan-in section states rather than
-    a fixture to author: the walk's three helpers disagree there, so a fixture would pin the
-    disagreement rather than the rule, and the residue's non-empty assertion is what carries it.
+    `SPLIT_QUERY` arm's connection reading under the shadow at once. What it witnesses is the
+    wrapper *residue* rather than an arm, per the residue bullet above: the store has no relation
+    naming a connection's element, so the coordinate is where the two sides are pinned to disagree
+    and the non-empty assertion needs a shape to stand on. The same fixture carries the sibling
+    shape, the same child over a `@table @discriminate` element, which reaches the residue through
+    `discriminatedInterfaceTarget` instead of `singleTableBackedVerdict`; one fixture, two
+    coordinates, one residue.
+  * **The routine-return-bound target reaches no arm either, and it is the population the binding
+    correction turns on.** `ClassifiedCorpus`'s routine read example is `Query.tilganger` in
+    `routine-table-valued-read`, a root whose target `Tilgang` restates `@table` for the same table
+    the routine names; the two mutation routine examples are roots as well. So every corpus
+    coordinate that could exercise the binding is either exempted before the rule arms run or carries
+    an authored `@table` that makes `intent_bound_table` and `intent_resolved_type_binding`
+    indistinguishable, and an arm reading the narrower relation ships green. The shipped
+    disagreement lives one module over, at `Actor.filmsSplit` in the sakila example, which no shadow
+    test sweeps. So the third fixture is a marked non-root child on a `@table` parent whose target is
+    bound only by a `@routine` chain's return, in the same beside-the-test home as the other two,
+    and it is what makes the corrected relation observable rather than merely argued.
 
 ## The exit criterion, and the successor
 

@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R638` | The LSP is a fact-store client | In Progress | 2026-08-18 <sub>created 2026-08-12</sub> | [plan](lsp-reads-the-fact-store.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | Spec | 2026-08-18 | [plan](store-contention-fails-fast.md) |
 | `R668` | Decode @nodeId leaves bound to @routine parameters via argMapping key-column projection <sub>blocked by: [jooq-node-metadata-as-stated-facts](jooq-node-metadata-as-stated-facts.md)</sub> | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](nodeid-key-projection-on-routine-params.md) |
-| `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
+| `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R712` | Name the three strata, and retire authored versus effective | Spec | 2026-08-18 | [plan](three-strata-capture-derive-query.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
