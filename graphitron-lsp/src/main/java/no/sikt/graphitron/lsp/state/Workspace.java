@@ -243,11 +243,11 @@ public final class Workspace {
     }
 
     /**
-     * The classifier's projection of the last build, swapped on
-     * every successful generator pass through {@link #setBuildOutput}. Stays
-     * {@link LspSchemaSnapshot.Unavailable} until the first build succeeds;
-     * demotes to {@link LspSchemaSnapshot.Built.Previous} on subsequent
-     * parse failures so consumers can distinguish fresh-vs-stale info.
+     * The classifier's projection of the last build, swapped on every successful generator pass
+     * through {@link #setBuildOutput}. Stays {@link LspSchemaSnapshot.Unavailable} until the first
+     * build succeeds and holds the last successful projection after that: a failed pass leaves it
+     * alone rather than marking it stale, staleness having had no reader left once the build's own
+     * findings moved to the store.
      */
     public LspSchemaSnapshot snapshot() {
         return snapshot;
@@ -307,9 +307,9 @@ public final class Workspace {
     /**
      * Success-path swap, one recalculation. Used by both the schema-save trigger and the classpath
      * trigger, the latter so a build's classpath-dependent verdicts surface on the next
-     * {@code mvn compile} without waiting for a schema save. The producer ships only
-     * {@link LspSchemaSnapshot.Built.Current}; freshness demotion happens through
-     * {@link #demoteSnapshot()} when a later parse fails.
+     * {@code mvn compile} without waiting for a schema save. A failed pass calls nothing here: what
+     * it has to say about the schema it wrote to the store, and this projection stays as the last
+     * successful pass left it.
      *
      * <p>The build's own errors and warnings do not ride along: capture writes them to the store's
      * diagnostics stratum on the same round, and the language server reads them there. The artifacts
@@ -319,23 +319,6 @@ public final class Workspace {
     public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts) {
         this.snapshot = artifacts.snapshot();
         markAllForRecalculation();
-    }
-
-    /**
-     * Failure path: the latest parse threw, but a prior parse had succeeded.
-     * Demote {@link LspSchemaSnapshot.Built.Current} to
-     * {@link LspSchemaSnapshot.Built.Previous} so consumers see "stale"
-     * rather than "fresh". No-op on {@link LspSchemaSnapshot.Unavailable}
-     * (no prior success to demote) and on {@link LspSchemaSnapshot.Built.Previous}
-     * (already stale).
-     */
-    public void demoteSnapshot() {
-        var current = this.snapshot;
-        if (current instanceof LspSchemaSnapshot.Built.Current c) {
-            this.snapshot = new LspSchemaSnapshot.Built.Previous(
-                c.fieldClassificationsByCoord(), c.typeClassificationsByName());
-            markAllForRecalculation();
-        }
     }
 
     /**
@@ -369,9 +352,9 @@ public final class Workspace {
     }
 
     /**
-     * Funnel for every {@code toRecalculate} write reachable from the six
+     * Funnel for every {@code toRecalculate} write reachable from the five
      * public mutators ({@link #didOpen}, {@link #didChange},
-     * {@link #didClose}, {@link #setBuildOutput}, {@link #demoteSnapshot},
+     * {@link #didClose}, {@link #setBuildOutput},
      * {@link #markAllForRecalculation}). The mutation runs under
      * {@code lock} so the queue stays consistent with the file map; the
      * listener fires after lock release so a heavy

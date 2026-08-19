@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +26,7 @@ public final class ProjectionSnapshotComparator {
     private ProjectionSnapshotComparator() {}
 
     /** Returns the differences from {@code before} to {@code after}, or an empty list if equal. */
-    public static List<String> diff(Current before, Current after) {
+    public static List<String> diff(Built before, Built after) {
         var out = new ArrayList<String>();
         diffMaps("field-classification", before.fieldClassificationsByCoord(), after.fieldClassificationsByCoord(), out);
         diffMaps("type-classification", before.typeClassificationsByName(), after.typeClassificationsByName(), out);

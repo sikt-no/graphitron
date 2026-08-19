@@ -190,7 +190,7 @@ class WorkspaceTest {
         ws.setBuildOutput(
             new GraphQLRewriteGenerator.BuildArtifacts(
                 CompletionData.empty(),
-                new LspSchemaSnapshot.Built.Current()));
+                new LspSchemaSnapshot.Built()));
 
         assertThat(ws.drainRecalculate())
             .containsExactlyInAnyOrder("file:///a.graphqls", "file:///b.graphqls");
@@ -200,14 +200,13 @@ class WorkspaceTest {
     @MethodSource("publicQueueMutators")
     void everyPublicQueueMutatingMethodFiresTheListener(String name, Consumer<Workspace> mutator) {
         var ws = new Workspace();
-        // Pre-seed: one open file, a Built.Current snapshot so demoteSnapshot
-        // transitions (rather than no-ops) and setBuildOutput has a well-formed
-        // BuildArtifacts to swap into.
+        // Pre-seed: one open file, and a build behind the session so setBuildOutput has a
+        // well-formed BuildArtifacts to swap into.
         ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
         ws.setBuildOutput(
             new GraphQLRewriteGenerator.BuildArtifacts(
                 CompletionData.empty(),
-                new LspSchemaSnapshot.Built.Current()));
+                new LspSchemaSnapshot.Built()));
         ws.drainRecalculate();
         var fires = new AtomicInteger();
         ws.setRecalculateListener(fires::incrementAndGet);
@@ -232,9 +231,7 @@ class WorkspaceTest {
                 (Consumer<Workspace>) ws -> ws.setBuildOutput(
                     new GraphQLRewriteGenerator.BuildArtifacts(
                         CompletionData.empty(),
-                        new LspSchemaSnapshot.Built.Current()))),
-            Arguments.of("demoteSnapshot",
-                (Consumer<Workspace>) Workspace::demoteSnapshot),
+                        new LspSchemaSnapshot.Built()))),
             Arguments.of("markAllForRecalculation",
                 (Consumer<Workspace>) Workspace::markAllForRecalculation));
     }
@@ -263,47 +260,12 @@ class WorkspaceTest {
         assertThat(ws.drainRecalculate()).isEmpty();
     }
 
-    @ParameterizedTest(name = "no-op from {0}")
-    @MethodSource("noOpDemoteStartingStates")
-    void demoteSnapshotOnNoOpDoesNotFireListener(String name, LspSchemaSnapshot startingState) {
-        var ws = new Workspace();
-        ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
-        if (startingState instanceof LspSchemaSnapshot.Built.Previous) {
-            // Drive the workspace through Current -> Previous via the public
-            // path so the starting state is reached without reflection.
-            ws.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(
-                    CompletionData.empty(),
-                    new LspSchemaSnapshot.Built.Current()));
-            ws.demoteSnapshot();
-            assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Built.Previous.class);
-        } else {
-            assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
-        }
-        ws.drainRecalculate();
-        var fires = new AtomicInteger();
-        ws.setRecalculateListener(fires::incrementAndGet);
-
-        ws.demoteSnapshot();
-
-        assertThat(fires.get())
-            .as("demoteSnapshot starting from %s should not fire the listener", name)
-            .isZero();
-    }
-
-    static Stream<Arguments> noOpDemoteStartingStates() {
-        return Stream.of(
-            Arguments.of("Unavailable", new LspSchemaSnapshot.Unavailable()),
-            Arguments.of("Built.Previous",
-                new LspSchemaSnapshot.Built.Previous()));
-    }
-
     @Test
     void setBuildOutputSwapsTheSnapshotIn() {
         var ws = new Workspace();
         assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current();
+        var snapshot = new LspSchemaSnapshot.Built();
 
         ws.setBuildOutput(new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), snapshot));
 

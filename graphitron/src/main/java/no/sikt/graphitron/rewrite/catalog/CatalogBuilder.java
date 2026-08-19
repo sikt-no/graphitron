@@ -78,7 +78,7 @@ public final class CatalogBuilder {
      * callers are the classifier's own tests, the production pipeline passing the conflicts through
      * the overload below.
      */
-    public static LspSchemaSnapshot.Built.Current buildSnapshot(
+    public static LspSchemaSnapshot.Built buildSnapshot(
         TypeDefinitionRegistry registry, GraphitronSchema schema
     ) {
         return buildSnapshot(registry, schema, List.of());
@@ -93,7 +93,7 @@ public final class CatalogBuilder {
      * gate makes that true; this states it as the overlay's contract), so the map's documented
      * domain never widens.
      */
-    public static LspSchemaSnapshot.Built.Current buildSnapshot(
+    public static LspSchemaSnapshot.Built buildSnapshot(
         TypeDefinitionRegistry registry, GraphitronSchema schema,
         List<AuthoredClaimConflicts.FieldVerdict.Conflict> fieldConflicts
     ) {
@@ -103,7 +103,7 @@ public final class CatalogBuilder {
         var typeClassifications = (schema == null)
             ? Map.<String, TypeClassification>of()
             : projectTypeClassifications(schema, registry, fieldClassifications);
-        return new LspSchemaSnapshot.Built.Current(fieldClassifications, typeClassifications);
+        return new LspSchemaSnapshot.Built(fieldClassifications, typeClassifications);
     }
 
     /**

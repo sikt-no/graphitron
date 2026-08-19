@@ -55,7 +55,7 @@ class CatalogRefreshTest {
         var fired = new CountDownLatch(1);
         // The swapped snapshot is identified by being this instance, the assertion below reading
         // the reference rather than any content: what the case is about is the swap, not the round.
-        var rebuilt = new LspSchemaSnapshot.Built.Current();
+        var rebuilt = new LspSchemaSnapshot.Built();
 
         Runnable rebuilder = () -> {
             workspace.setBuildOutput(

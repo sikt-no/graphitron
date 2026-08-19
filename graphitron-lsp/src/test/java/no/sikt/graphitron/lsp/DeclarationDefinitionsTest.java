@@ -451,7 +451,7 @@ class DeclarationDefinitionsTest {
     private static LspSchemaSnapshot snapshot() {
         Map<String, FieldClassification> classifications = Map.of(
             "Query.viaMethod", new FieldClassification.RoutineBacked("film", SVC_FQN, "viaMethod"));
-        return new LspSchemaSnapshot.Built.Current(classifications, Map.of());
+        return new LspSchemaSnapshot.Built(classifications, Map.of());
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {

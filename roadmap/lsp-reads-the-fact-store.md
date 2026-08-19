@@ -108,7 +108,8 @@ the only part that sees unsaved content at all.
 **The store answers everything else**, for the whole workspace: completion lists, hover bodies,
 definition targets, hint values, diagnostic judgements. The incumbent already leans this way; a
 source survey found no tree-sitter syntax diagnostics and no tree-sitter workspace scan to retire
-(trees exist only for open buffers, and syntax validity ships via the `ValidationReport` replay).
+(trees exist only for open buffers, and syntax validity ships as rows: the parser's own refusal is a
+verdict the store carries, which the diagnostics replay reads).
 But it exceeds
 the line in three places this item pulls back: `IntraSchemaDefinitions` treats every open buffer's
 tree as authoritative over the projection, `WorkspaceFile` re-derives a declared/referenced type
@@ -547,9 +548,9 @@ declaration-location maps, and the source-position index the workspace held besi
 directive surface followed, reader first: diagnostics judges a directive against
 `graphql_directive` and `graphql_directive_argument` now, and the projection retired in the same
 session. Then the replay of a build's own errors moved, reading the `diagnostic` view rather than
-the report object the workspace held, and the freshness axis it gated on now has no reader at all. What
-the snapshot carries beyond the site above is therefore nothing anything asks about, which is the
-next slice.
+the report object the workspace held, and the freshness axis it gated on retired with it, in the same
+session. What the snapshot carries beyond the site above is the availability axis that site reads
+through.
 
 ## Resolved questions
 
@@ -2912,10 +2913,10 @@ because the reverse happens often enough to be worth checking for.
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
-`CatalogFacts`, `LspSchemaSnapshot`, the `Built.Current` / `Built.Previous` freshness seal,
-`typeDefinitionLocations`, `CatalogBuilder`'s projection pass, `DevMojo`'s keep-previous-and-demote
-path (`demoteSnapshot`, `markAllForRecalculation`), `refreshTypeIndex`, `declaredTypes` and
-`dependsOnDeclarations`. Gone already:
+`CatalogFacts`, `LspSchemaSnapshot`, `typeDefinitionLocations`, `CatalogBuilder`'s projection pass,
+`refreshTypeIndex`, `declaredTypes` and `dependsOnDeclarations`. Gone already:
+`Workspace.validationReport` with `setBuildOutput`'s report parameter, the language server reading a
+build's own findings from the store's `diagnostic` view;
 `LspVocabulary.descriptionOf`, `Workspace.resolveDirective`, the whole of `Descriptions`
 (`ofTable`, `ofColumn`, `classJavadoc`), `Definitions.methodLocation`, and
 `FieldClassification.lspColumnDispatch` with the sealed `LspColumnDispatch` its three column readers
@@ -2931,9 +2932,10 @@ follows when diagnostics moves. `typeDefinitionLocations` is gone outright, alon
 and `putTypeLocation`: goto's intra-schema arm was its only reader, it reads the declaration sites now,
 and the comment naming the MCP schema view as a second reader was describing a reader that had already
 left. The
-`Built.Current` / `Built.Previous` seal has one language-server reader left, the diagnostics replay,
-the code-action branch having stopped asking the snapshot about freshness and started asking the store
-about this document's text. `TypeBackingClass.contested` is gone as well, along with
+`Built.Current` / `Built.Previous` seal is gone outright, along with `Workspace.demoteSnapshot` and
+the dev goal's three calls to it: the diagnostics replay was its last reader, and the replay reads a
+build's own findings from the store now. `Built` is one record, and what a failed pass leaves behind
+is the last good projection rather than a demoted one. `TypeBackingClass.contested` is gone as well, along with
 `ClaimFacts.ofType`'s classifier parameter: the type hover was the only caller of either, and its
 block reads the conflict relation as one arm of a single statement now, with `TypeBackingClass.resolve`
 deciding whether that arm's arity is an answer. Diagnostics' own per-value readers went the same way:
@@ -3983,3 +3985,29 @@ its two ends. The severity meta-test's premise changes with it. It pinned that t
 covered every rejection permit; there is no such switch, so it pins that every permit survives the
 round trip, and its sibling pins that a leaf's declared code reaches the wire through the one decode
 site the loader now owns.
+
+## Settled while building: the freshness axis had no reader once the replay left
+
+The projection was sealed over two axes. Availability, whether a build has produced one at all, is
+still read: the declaration surface asks it for the one thing no relation carries. Freshness, whether
+the projection reflects the latest parse or the last one before a regression, was read by exactly one
+consumer, and that consumer moved to the store in the slice above. This retires the axis rather than
+leaving it to be maintained on nobody's behalf.
+
+**What goes.** The `Built.Current` / `Built.Previous` permits collapse into one `Built` record,
+`Workspace.demoteSnapshot()` retires, and the dev goal's three failure arms stop calling it. What each
+of them still does is republish diagnostics, which is now the whole of their effect on the workspace,
+and it is more useful than it was: the read that refused wrote its own verdict on the way through, so
+the republish is what puts the parse error in front of the author.
+
+**A demotion was never what "stale" meant to a reader.** The demoted projection carried exactly the
+maps the current one did; what changed was a consumer's willingness to speak. Every consumer that used
+to hold back now reads the store, where the same question is answered by what the graph last captured,
+so the axis was already carrying no information by the time this removed it. The javadoc says that in
+place of describing a distinction the type no longer draws.
+
+**Two cases retire and one changes its name.** The workspace's demotion cases (that demoting fires the
+recalculation listener once, and that demoting a snapshot that cannot be demoted fires nothing) had no
+subject left. The snapshot's own unit test loses the case asserting the two permits look up
+identically, there being one permit. Hover's case that a column hover ignores the projection kept its
+subject and lost its stale-versus-current framing, which the type can no longer express.

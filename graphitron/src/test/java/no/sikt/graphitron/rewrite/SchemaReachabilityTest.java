@@ -165,7 +165,7 @@ class SchemaReachabilityTest {
             .anyMatch(line -> line.contains("Actor.lastName"));
     }
 
-    private static no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current snapshotOf(String sdl) {
+    private static no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built snapshotOf(String sdl) {
         return CatalogBuilder.buildSnapshot(
             TestSchemaHelper.parseRegistryWithPrelude(sdl), TestSchemaHelper.buildSchema(sdl));
     }

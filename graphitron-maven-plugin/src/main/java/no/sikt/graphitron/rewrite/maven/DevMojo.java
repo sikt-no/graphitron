@@ -261,12 +261,12 @@ public class DevMojo extends AbstractRewriteMojo {
         // carry two transactions: the language server's reads and an MCP tool's would otherwise
         // serialize behind each other for no better cause than sharing a socket.
         this.mcpStore = sessionStore.reader();
-        if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
+        if (initial.snapshot() instanceof LspSchemaSnapshot.Built built) {
             // The facts before the swap: the swap enqueues every open file for recalculation, and a
             // recalculation replays what this round wrote about them.
             writeReportFacts(initial.walkErrors(), initial.warnings());
             workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current));
+                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), built));
         }
         // Build the debounce and save-listener before bindServer so DevServer
         // can hand the listener to each editor-facing GraphitronLanguageServer.
@@ -608,12 +608,11 @@ public class DevMojo extends AbstractRewriteMojo {
                             + root + ": " + e.getMessage());
                     }
                 }
-                // The schema may have changed which scalars are declared
-                // or which directives the user has authored, so refresh
-                // both projections (catalog + snapshot) from the freshly
-                // parsed bundle, atomically. On parse failure, demote the
-                // snapshot to Built.Previous so consumers see "stale"
-                // rather than punishing the user for the broken parse.
+                // The schema may have changed which scalars are declared or which directives the
+                // user has authored, so refresh the projection from the freshly parsed bundle. A
+                // failed parse leaves it as the last good pass left it and republishes diagnostics:
+                // the read that refused wrote its own verdict to the store on the way through, and
+                // that verdict is what the author needs to see.
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
@@ -621,13 +620,11 @@ public class DevMojo extends AbstractRewriteMojo {
                 } catch (RuntimeException e) {
                     getLog().warn("graphitron:dev: catalog refresh after save failed; "
                         + "keeping previous: " + e.getMessage());
-                    workspace.demoteSnapshot();
                     workspace.markAllForRecalculation();
                 }
             });
         } catch (MojoExecutionException e) {
             getLog().error("graphitron:dev: failed to rebuild context", e);
-            workspace.demoteSnapshot();
             workspace.markAllForRecalculation();
         }
     }
@@ -652,13 +649,11 @@ public class DevMojo extends AbstractRewriteMojo {
                         reportCompile(workspace, outcome, "recompile (consumer classpath change)");
                     }
                 } catch (RuntimeException e) {
-                    // Bad schema mid-edit: keep the previous catalog so completions
-                    // do not silently disappear, demote snapshot to Built.Previous so
-                    // freshness-aware consumers silence themselves. The next save
-                    // will re-trigger.
+                    // Bad schema mid-edit: keep the previous catalog so completions do not
+                    // silently disappear, and republish diagnostics, the refused read having
+                    // written its own verdict. The next save will re-trigger.
                     getLog().warn("graphitron:dev: catalog rebuild failed; keeping previous: "
                         + e.getMessage());
-                    workspace.demoteSnapshot();
                     workspace.markAllForRecalculation();
                 }
             });
@@ -689,8 +684,8 @@ public class DevMojo extends AbstractRewriteMojo {
 
     /**
      * Carrier for {@link #buildOutputQuietly}'s output. {@code snapshot} is {@link LspSchemaSnapshot}
-     * rather than {@link LspSchemaSnapshot.Built.Current} because the failure path returns
-     * {@link LspSchemaSnapshot.Unavailable}; the success path narrows back to {@code Built.Current}
+     * rather than {@link LspSchemaSnapshot.Built} because the failure path returns
+     * {@link LspSchemaSnapshot.Unavailable}; the success path narrows back to {@code Built}
      * via an {@code instanceof} check at the call site before constructing
      * {@link GraphQLRewriteGenerator.BuildArtifacts}. The two lists are the diagnostics-stratum
      * loaders' input, published only on the success path: a failed build writes nothing, so the store

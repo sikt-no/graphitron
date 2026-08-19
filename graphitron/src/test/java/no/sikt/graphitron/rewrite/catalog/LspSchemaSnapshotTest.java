@@ -11,8 +11,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Invariant pinning for {@link LspSchemaSnapshot}. Sealed-switch exhaustiveness is enforced by
- * {@code javac}, not by tests; the cases here cover the classification lookups and the
- * unmodifiable defensive copy both leaf permits make at construction.
+ * {@code javac}, not by tests; the cases here cover the classification lookups and the unmodifiable
+ * defensive copy the built permit makes at construction.
  */
 @UnitTier
 class LspSchemaSnapshotTest {
@@ -27,8 +27,8 @@ class LspSchemaSnapshotTest {
     }
 
     @Test
-    void builtCurrentFieldLookupIsCaseSensitive() {
-        var snapshot = new LspSchemaSnapshot.Built.Current(
+    void builtFieldLookupIsCaseSensitive() {
+        var snapshot = new LspSchemaSnapshot.Built(
             Map.of("Query.film", CLASSIFICATION), Map.of());
 
         assertThat(snapshot.fieldClassification("Query", "film")).contains(CLASSIFICATION);
@@ -37,17 +37,8 @@ class LspSchemaSnapshotTest {
     }
 
     @Test
-    void builtPreviousFieldLookupBehavesIdentically() {
-        var snapshot = new LspSchemaSnapshot.Built.Previous(
-            Map.of("Query.film", CLASSIFICATION), Map.of());
-
-        assertThat(snapshot.fieldClassification("Query", "film")).contains(CLASSIFICATION);
-        assertThat(snapshot.fieldClassification("Query", "Film")).isEmpty();
-    }
-
-    @Test
     void builtClassificationsAreUnmodifiable() {
-        var snapshot = new LspSchemaSnapshot.Built.Current(
+        var snapshot = new LspSchemaSnapshot.Built(
             Map.of("Query.film", CLASSIFICATION), Map.of());
 
         assertThatThrownBy(() ->
@@ -56,10 +47,10 @@ class LspSchemaSnapshotTest {
     }
 
     @Test
-    void builtCurrentDefensivelyCopiesItsClassificationMaps() {
+    void builtDefensivelyCopiesItsClassificationMaps() {
         var mutable = new LinkedHashMap<String, FieldClassification>();
         mutable.put("Query.film", CLASSIFICATION);
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of());
+        var snapshot = new LspSchemaSnapshot.Built(mutable, Map.of());
 
         mutable.clear();
 

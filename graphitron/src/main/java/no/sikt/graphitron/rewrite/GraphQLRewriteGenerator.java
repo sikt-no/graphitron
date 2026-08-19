@@ -198,14 +198,14 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Triple the LSP needs on every successful regenerate: the
+     * What a successful regenerate produces beside the emitted code: the
      * {@link CompletionData} catalog (jOOQ + classpath references + scalars),
-     * the {@link LspSchemaSnapshot.Built.Current} projection of the parsed
-     * user schema's directive surface, and the {@link ValidationReport}
-     * carrying every {@link ValidationError} and {@link BuildWarning} the
-     * validator produces on the same {@code bundle.model()}. Same parse,
-     * three projections; the dev goal swaps all of them atomically through
-     * {@code Workspace.setBuildOutput}.
+     * the {@link LspSchemaSnapshot.Built} projection of the parsed user schema's
+     * classifications, and the {@link ValidationReport} carrying every
+     * {@link ValidationError} and {@link BuildWarning} the validator produces on the
+     * same {@code bundle.model()}. Same parse throughout; the dev goal swaps the
+     * artifacts onto the live workspace and writes the report's two pre-fuse lists to
+     * the store's diagnostics stratum, which is where the language server reads them.
      *
      * <p>The validator runs but never throws on its output: a half-edited
      * buffer with validation errors should still expose tables and scalars
@@ -251,13 +251,13 @@ public class GraphQLRewriteGenerator {
                               List<ValidationError> walkErrors, List<BuildWarning> warnings) {}
 
     /**
-     * Classification-stage products: the LSP {@link CompletionData} catalog and the
-     * directive-projection snapshot. Both are build-derived in one pass and swapped onto the live
-     * {@code Workspace} together.
+     * Classification-stage products: the LSP {@link CompletionData} catalog and the classification
+     * projection. Both are build-derived in one pass and swapped onto the live {@code Workspace}
+     * together.
      */
     public record BuildArtifacts(
         CompletionData catalog,
-        LspSchemaSnapshot.Built.Current snapshot
+        LspSchemaSnapshot.Built snapshot
     ) {}
 
     /**

@@ -212,22 +212,20 @@ class HoversTest {
     }
 
     /**
-     * The column arm no longer consults the snapshot, so the stale-prefers-over-silence rule it used
-     * to stand on has nothing to arbitrate here: a stale projection, a current one and none at all
-     * are one answer, because what the enclosing type resolves against is a read. The rule itself
-     * survives at the declaration-name arm, which is the last of hover's readers of the projection.
+     * The column arm does not consult the projection at all, so a session with a build behind it and
+     * one with none are one answer here: what the enclosing type resolves against is a read. The
+     * projection survives at the declaration-name arm, which is the last of hover's readers of it.
      */
     @Test
-    void columnHoverIgnoresTheSnapshotEntirely() {
+    void columnHoverIgnoresTheProjectionEntirely() {
         var file = file("""
             type Film @table(name: "film") {
                 bar: Int @field(name: "title")
             }
             """);
         var pos = pointAt(file, 1, "title");
-        var stale = new LspSchemaSnapshot.Built.Previous();
-
-        assertThat(markdownAt(file, stale, pos)).contains("**Column** `title` on `film`");
+        assertThat(markdownAt(file, new LspSchemaSnapshot.Built(), pos))
+            .contains("**Column** `title` on `film`");
         assertThat(markdownAt(file, LspSchemaSnapshot.unavailable(), pos))
             .contains("**Column** `title` on `film`");
     }
@@ -276,8 +274,8 @@ class HoversTest {
      * against and what it then offers are both the store's, so a case about either can only be weakened
      * by handing the surface a shape to fall back on.
      */
-    private static LspSchemaSnapshot.Built.Current noProjection() {
-        return new LspSchemaSnapshot.Built.Current();
+    private static LspSchemaSnapshot.Built noProjection() {
+        return new LspSchemaSnapshot.Built();
     }
 
     @Test

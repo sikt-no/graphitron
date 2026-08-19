@@ -91,7 +91,7 @@ class BuildTriggerPublishesDiagnosticsTest {
     private static GraphQLRewriteGenerator.BuildArtifacts buildArtifacts() {
         return new GraphQLRewriteGenerator.BuildArtifacts(
             CompletionData.empty(),
-            new LspSchemaSnapshot.Built.Current());
+            new LspSchemaSnapshot.Built());
     }
 
     private static final class RecordingClient implements LanguageClient {
