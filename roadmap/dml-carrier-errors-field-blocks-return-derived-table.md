@@ -85,23 +85,24 @@ The reporter concluded the gap was UPDATE-specific, because an identical wrapper
 `@mutation(typeName: INSERT)` passed validation in the same build. Reproduced against trunk,
 the failure is verb-agnostic: INSERT and UPDATE both reject with the same message, and both
 classify clean once the payload's `errors` field is removed or `@mutation(table:)` is
-supplied. The verb asymmetry the reporter observed is therefore unexplained and worth
-chasing at Spec, since it suggests a second difference in their schema that this account does
-not cover.
+supplied. The verb asymmetry the reporter observed is therefore unexplained by this account,
+which means a second difference in their schema that it does not cover. "Verb-asymmetry chase"
+below bounds how far to pursue that.
 
 ## Scope
 
 * Give the DML mutation grounding the same post-index ordering `groundRoutineCarriers()` has,
   so a carrier payload's errors field is recognised on the grounding pass and the write target
-  return-derives. Whether that is a third pass, a reordering of `resolveAll()`, or making
-  `ErrorIndex` available earlier is the Spec's call; the `lookAheadMemo.clear()` at the end of
-  `prepareForWalk` exists because grounding-time verdicts must not stick, and any reordering has
-  to keep that property.
-* Decide whether the scalar arm's "not yet supported; use ID or a @table type" wording can
-  detect this case at all. Once the ordering is fixed it stops firing for this shape, but the
-  same message fires whenever a payload fails to ground for any reason, and it names the return
+  return-derives. The Design section settles this as a fold into the existing post-index pass
+  rather than a third pass or an earlier `ErrorIndex`. The binding constraint either way: the
+  `lookAheadMemo.clear()` at the end of `prepareForWalk` exists because grounding-time verdicts
+  must not stick, and the reordering has to keep that property.
+* Replace the scalar arm's "not yet supported; use ID or a @table type" wording for the carrier
+  shapes it misdescribes. Once the ordering is fixed that message stops firing for this shape,
+  but it still fires whenever a payload fails to ground for any reason, and it names the return
   type rather than the missing write target. `validateReturnType` already has precedent for
-  a targeted diagnostic here in `diagnoseForbiddenCarrierDirective`.
+  a targeted diagnostic here in `diagnoseForbiddenCarrierDirective`; the Design section takes
+  the fact from the recognizer instead of re-deriving it in the validator.
 
 ## Workaround for consumers today
 
@@ -185,8 +186,8 @@ detection never reads the `ErrorIndex` (`groundServicePayloadBinding` and
 `singleNonTableObjectDataField` exclude errors-shaped fields structurally, via the
 must-be-a-GraphQL-Object check), and `groundServiceField` also grounds result- and
 input-axis observations that must feed the fold, so it cannot move wholesale and has no bug
-forcing a split. The `groundEmittedCarriers` javadoc records this asymmetry so the next
-reader doesn't "complete" the migration by moving it.
+forcing a split. The renamed pass's javadoc records this asymmetry so the next reader doesn't
+"complete" the migration by moving it.
 
 ### Diagnostic: publish the ungrounded-carrier fact once, in the recognizer
 
@@ -201,11 +202,11 @@ already computes exactly this fact (scan `Admit` + empty `dmlEmittedBinding` is 
 of the same predicate is the two-consumers-one-derivation smell.
 
 Instead, widen the recognizer so it publishes *why*: split an ungrounded-carrier arm out of
-`CarrierBinding.NotACarrier` (carrying the admitting scan's `DmlElementKind`), and have
-`validateReturnType`'s scalar arm switch over that instead of re-scanning.
+`CarrierBinding.NotACarrier` (carrying the admitting scan's result, see "what the arm carries"
+below), and have `validateReturnType`'s scalar arm switch over that instead of re-scanning.
 
 Split it *inside* `NotACarrier`, not beside it. Make `NotACarrier` a sealed interface over two
-arms (a plain arm, and an ungrounded-carrier arm carrying the element kind) rather than adding
+arms (a plain arm, and an ungrounded-carrier arm carrying the scan result) rather than adding
 a fourth sibling to `CarrierBinding`. Every reader of the coarse question still wants the
 answer "not a producer-backed carrier" for an ungrounded carrier, and only one of the five
 existing read sites is a switch the compiler would force:
@@ -232,18 +233,20 @@ disagree by construction (they differ on forbidden data-field directives), so fo
 payload the DML scan can admit first and this arm's admitting-scan field would name the wrong
 family for that site. Subsuming it needs a decision about how the recognizer publishes per-family
 facts, not a mechanical edit, and it changes a live `@service` diagnostic that carries its own pins.
-Because the arm is reachable from any of the three scans, it carries which scan admitted
-alongside the scan result. More than one scan can admit the same payload, so the recorded family
-is the first that admits in `carrierBinding`'s existing DML → routine → `@service` order; that is
-the order the method already runs and it needs no rule of its own. The DML seat below forks
-wording only for a DML-scan admit
-(the seat's precondition, a non-`Reject` DML scan, makes that the live case) and otherwise
-keeps the generic write-target message.
 
-Carry the whole `DmlPayloadScan.Admit`, not a bare `DmlElementKind`. `IdElement` is a
-no-component record and `Table` carries only the element type name, so neither can name the
-offending data field, which the `IdElement` wording below wants; `Admit.dataField()` is the only
-source for it.
+#### What the arm carries
+
+Two components, because the arm is reachable from any of the three scans:
+
+* **The whole `DmlPayloadScan.Admit`**, not a bare `DmlElementKind`. `IdElement` is a
+  no-component record and `Table` carries only the element type name, so neither can name the
+  offending data field, which the `IdElement` wording below wants; `Admit.dataField()` is the
+  only source for it.
+* **Which scan admitted.** More than one scan can admit the same payload, so the recorded family
+  is the first that admits in `carrierBinding`'s existing DML → routine → `@service` order; that
+  is the order the method already runs, so it needs no rule of its own. The DML seat below forks
+  wording only for a DML-scan admit (the seat's precondition, a non-`Reject` DML scan, makes that
+  the live case) and otherwise keeps the generic write-target message.
 
 The wording forks on the element kind, because the three populations need different advice.
 For each population this arm is the only diagnostic *when the payload does not ground*, which
@@ -254,15 +257,29 @@ record-element or ID-element payload that names its table on `@mutation(table:)`
 still classifies as a `ResultReturnType`, and still hits those rejections. Do not read them as
 newly dead code.
 
-* `Table` element: a genuine missing write target; steer to `@mutation(table:)` (and, where
-  the shared precedence returned `WriteTableRef.UnknownTable`, the existing unknown-table
-  wording already fires at the classify-time resolvers).
+* `Table` element: no write target was grounded; name it on `@mutation(table:)`, which is the
+  usual fix. State it that way rather than asserting the target is missing, for the reason below
+  (and where the shared precedence returned `WriteTableRef.UnknownTable`, the existing
+  unknown-table wording already fires at the classify-time resolvers).
 * `RecordElement`: needs an `@service` producer, not a table name.
 * `IdElement` on INSERT / UPDATE: the PK-echo permit is DELETE-only; a table name does not
   fix it.
 
-Residual silent-skip cases with no recognizable element story (an unloadable record class)
-keep a generic write-target message rather than the misleading "not yet supported" text.
+The `Table` bucket is the one that does not map cleanly to a single cause, so word it with that
+in mind. `groundDmlMutationField` silently skips for several reasons past the write-target
+lookup, and at least one of them leaves a payload whose data field is `@table`-element and whose
+table resolved fine: an unloadable jOOQ record class (its `Class.forName` arm). That payload
+arrives at this seat indistinguishable from a genuinely target-less one, because neither the
+element kind nor the scan records why grounding stopped, and neither classify-time write-target
+resolver reloads the record class, so nothing upstream catches it first. "Name the table on
+`@mutation(table:)`" is inert advice there: the table is already nameable.
+
+The bullet above takes the cheap way out: cause-neutral wording that holds for both, costing
+nothing. The better diagnostic is to have the arm carry *why* grounding stopped, which is the
+same "publish the fact once, in the producer" move this section already makes one level up. That
+is larger than this item and is R725's neighbour rather than its own obvious shape, so it belongs
+in a filed item, not in this one. Either way the thing to avoid is wording that asserts a missing
+write target on a bucket that has more than one cause.
 
 ### Verb-asymmetry chase (bounded)
 
@@ -286,19 +303,19 @@ both verbs. No further work unless the fixed build still rejects their real sche
   grounding), add the DML loop ahead of the routine loop. The precondition name is also the
   accurate one for what the pass already holds: its routine loop runs `groundRoutineReturnType`
   beside `groundRoutineMutationField`, and a routine read field's return binding is not a carrier
-  grounding, so no family-accurate name was available even before the DML loop arrives. Javadoc
-  reworked to cover both
-  families and to carry the deliberate `ServiceEmitted` exception (its result-axis half must
-  feed the fold, and its carrier detection is `ErrorIndex`-free by construction), so the
-  next reader doesn't "complete" the migration by moving it.
+  grounding, so no family-accurate name was available even before the DML loop arrives. Rework
+  the javadoc to cover both families and to carry the deliberate `ServiceEmitted` exception (its
+  result-axis half must feed the fold, and its carrier detection is `ErrorIndex`-free by
+  construction), so the next reader doesn't "complete" the migration by moving it.
 * `TypeBuilder.lookAheadVerdict` / `prepareForWalk`: replace the trailing
   `lookAheadMemo.clear()` with a memo write-gate on a fixed-point flag; update the pass
   comment above the grounding call.
 * `TypeBuilder.carrierBinding`: split the ungrounded-carrier arm out of
   `CarrierBinding.NotACarrier`, as a sealed subtype so the coarse `instanceof NotACarrier`
-  question keeps its answer. Walk all five read sites by hand (the four listed in the Design
-  section plus `carrierVerdict`'s `switch`) and confirm each keeps today's behaviour; only the
-  `switch` breaks at compile time.
+  question keeps its answer. The arm carries the whole `DmlPayloadScan.Admit` plus which of the
+  three scans admitted, per "What the arm carries" above. Walk all five read sites by hand (the
+  four listed in the Design section plus `carrierVerdict`'s `switch`) and confirm each keeps
+  today's behaviour; only the `switch` breaks at compile time.
 * `MutationInputResolver.validateReturnType`: the scalar arm's new case switches over the
   recognizer's published fact, wording forked per element kind as above. The method is static
   over `(ReturnTypeRef, DmlKind, boolean, BuildContext)`, so it reaches the recognizer through
@@ -365,8 +382,11 @@ Pipeline tier, in `SingleRecordPayloadPipelineTest`:
   carrier shape" remains, so the fix is a split, not a deletion. The added fixture above needs
   the replacement clause, since it passes `tableArg` on a payload that now return-derives
   perfectly well: the third reason is covering the explicit argument itself.
-* Pin each population of the new ungrounded-carrier diagnostic, since it is now the sole
-  message for these shapes: a `Table`-element carrier that cannot ground (write-target
-  steer), a record-element carrier without `@service` (producer steer), and an ID-element
-  carrier on INSERT without `@mutation(table:)` (DELETE-only permit steer). None of them may
-  fall through to "not yet supported".
+* Pin each population of the new ungrounded-carrier diagnostic, since for a payload that does
+  not ground it is the sole message for these shapes: a `Table`-element carrier that cannot
+  ground (write-target steer), a record-element carrier without `@service` (producer steer),
+  and an ID-element carrier on INSERT without `@mutation(table:)` (DELETE-only permit steer).
+  None of them may fall through to "not yet supported". Pin the counterpart too, one fixture
+  is enough: the same record-element payload *with* `@mutation(table:)` still grounds and still
+  gets the per-verb record-element rejection, which is what keeps that live rejection from
+  being deleted as dead code later.
