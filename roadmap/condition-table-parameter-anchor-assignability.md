@@ -5,9 +5,9 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: codegen-correctness
-depends-on: []
+depends-on: [condition-method-overload-selection]
 created: 2026-08-13
-last-updated: 2026-08-13
+last-updated: 2026-08-19
 ---
 
 # Enforce @condition table-parameter assignability against the anchor table
@@ -32,3 +32,9 @@ needs defining per arm, and per slot within the two-table arm, before a check ca
 `@externalField` item introduces the comparison shape (erased assignability against the class the
 emitted signature is rendered from, plus a parameterised `Table<R>` layer against the record type);
 this item's work is deciding what each slot's expected table is, not inventing the comparison.
+
+The anchor definition is now fixed by the R675 spec (`roadmap/condition-method-overload-selection.md`,
+"Anchor definition handed to R647"): per emit-site arm and per slot, with the multitable arm anchoring
+each participant's table per branch. Under R675's overload admission, the check here becomes per-anchor
+applicability across the admitted declaration set (at least one declaration whose table slot accepts
+that anchor), with most-specific selection left to javac.

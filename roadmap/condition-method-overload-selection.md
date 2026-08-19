@@ -42,53 +42,75 @@ Reported at https://github.com/sikt-no/graphitron/issues/525 (first half; the `@
 
 ---
 
-## Decision: confirm `Table<?>` as the terminus
+## Decision: admit overload sets that agree on the binding shape; javac dispatches
 
-Option 2 wins. `@condition` keeps naming exactly one method; per-participant overload dispatch (option 1) is declined. The gap this item closes is signposting, not resolution: the rejection message tells the author to rename or remove overloads when it should also tell them the intended form, and no documentation at the multitable coordinate says one `Table<?>` method serves every branch.
+Neither Backlog option ships as written. The resolution is a third shape, surfaced during the principles consultation and verified against the emitters: `pickMethod` stays name-keyed and coordinate-invariant, but the `@condition` reflect path (`reflectTableMethod`, the single entry for all four coordinates: argument-level, field-level, input-field, path-step) stops treating "more than one declaration" as ambiguous by itself. It judges the *binding shape* instead, because that is the only thing the model actually consumes from the reflection.
 
-### Why not per-participant dispatch
+The load-bearing fact, verified in all three emission paths: the author-declared type of a `Table`-assignable parameter never appears in emitted code. `ConditionGlueRenderer.buildGlueMethod` types the glue's `table` parameter from the coordinate (`row.table().tableClass()`) and `authoredCall` passes that local straight through; `ArgCallEmitter`'s `ParamSource.Table` arm yields the caller's `tableExpression`; `PathFragments.emitTwoArgMethodCall` passes the two alias locals. So the call site the generator emits is identical for every member of an overload set that agrees on everything except its table slots, and the consumer's javac performs overload selection there, exactly as it already does for the single concrete-parameter form the fixtures use (`Condition c(Address address, ...)`).
 
-1. **The seam-filter precedent does not transfer.** `SeamFilter.SESSION_HOOK` exists because jOOQ's generated `Routines` classes force same-named overloads on the author; a selector was the only way to reference an executing routine at all. A `@condition` class is the author's own code: nothing forces the overload set, and the single-method form is expressible today. An exception to name-keyed resolution needs the session-hook level of necessity, and this case does not have it.
-2. **Resolution would stop being coordinate-invariant.** `reflectTableMethod` is table-blind, and input-field `@condition` resolution (`BuildContext.buildInputFieldCondition`) runs at the input-type coordinate with no table in scope at all; an input type is reusable across queries. Threading a participant table into method resolution restructures input classification for every consumer to serve one coordinate, and the same overload set referenced from a single-table coordinate would still reject, so the author-facing rule would vary by where the directive sits.
-3. **The dispatch semantics have no clean answer.** Overloads covering two of three participants, a mixed set (one `Table<?>` declaration beside concrete ones), and assignability ties each need an authored rule plus its own rejection arm; every rule is invisible-at-the-SDL behaviour an author has to learn. The in-language alternative below needs none of that.
-4. **The typed-columns loss is recoverable in author code.** Inside one `Table<?>` method, `table.field(FILM.NAVN)` is fully typed (`Field<String>`, matched by name against the branch alias) and returns null on a branch whose table lacks the column, so a null-probe chain dispatches per participant with typed column constants. Where the whole concrete table is wanted, `table instanceof Film f` narrowing recovers it (Java 16+, safe for consumers on the 17 floor); the branch emitter passes each participant's concretely-typed stage-1 alias, so the runtime class is the generated table class. Dispatch written this way is visible in the author's own code instead of resolved invisibly by a generator rule.
+The rule: same-named declarations are admitted as one `@condition` target when they agree position-by-position on the binding shape: each parameter position is either `Table`-assignable in every declaration, or identical in name and declared type in every declaration; all declarations are static and agree on the return type. Any declaration then serves as the reflected representative (its table-slot declared types are carried but emission-inert). Declarations that disagree on the binding shape reject as `ReflectionError.AmbiguousMethod`, which narrows to its true meaning: not "the name is shared" but "the shared name does not denote one call shape".
 
-What would reopen option 1: author demand where in-method narrowing is genuinely insufficient, e.g. a participant set large enough that a null-probe chain is unmaintainable, or condition libraries shared across schemas that cannot name graphitron participants. File a new item citing this section if that materialises; the partial-coverage semantics decided there must cover the three corners in point 3.
+What this buys, with no new resolution machinery:
+
+- **The reporter's overload set works, with typed columns.** `navn(Film, String)` / `navn(Forestilling, String)` / `navn(Arrangement, String)` agree on the binding shape; each branch's glue passes its concretely-typed stage-1 alias and javac picks the participant's declaration.
+- **Partial coverage is consumer javac, which is already the documented contract.** Overloads covering two of three participants leave the third branch's call site with no applicable declaration; that is precisely the behaviour `FieldBuilder.lowerParticipantFilters`' javadoc states for a concrete parameter today ("a concrete participant-table parameter surfaces a mismatched branch at the consumer's javac").
+- **Mixed sets and ties are javac's most-specific rule, not a graphitron rule.** A `Table<?>` declaration beside concrete ones acts as the fallback branch; nothing invisible-at-the-SDL is invented.
+- **Resolution stays coordinate-invariant.** The shape judgement is table-blind, so input-field `@condition` (`BuildContext.buildInputFieldCondition`, which has no table in scope) resolves unchanged, and no participant table threads into input classification.
+
+### Why not the Backlog options
+
+**Option 1 (participant-table-typed selector in `pickMethod`)** threads a coordinate into the one resolution point that is deliberately coordinate-blind, restructures input classification (input types are reusable across queries and resolve with no table in scope), and has to author semantics for partial coverage, mixed sets, and assignability ties that javac already owns. The seam-filter precedent does not transfer: `SeamFilter.SESSION_HOOK` exists because jOOQ's generated `Routines` classes force same-named overloads on the author; a `@condition` class is the author's own code.
+
+**Option 2 (confirm `Table<?>` as the terminus)** erases type information at exactly the boundary the adapter/composer principle says not to: the glue parameter is already concretely typed, so the generated side of the pair carries the type and the terminus decision would discard it, with the documented recovery being runtime rediscovery (`instanceof` narrowing, or a `table.field(...)` probe that is null on the wrong branch and throws at request time on `.eq`). That is the DSL-runtime surprise the pair rule exists to prevent. The `Table<?>` single-method form stays fully supported and documented; it is just not the *only* expressible form.
 
 ## Deliverables
 
-Three deltas, one commit-sized item.
+### 1. Binding-shape admission in `reflectTableMethod`
 
-### 1. Signpost in the rejection message
+`ServiceCatalog.reflectTableMethod` receives every same-named declaration (a new `pickMethod` outcome or a sibling entry that returns the candidate list; `pickMethod`'s zero/one/many-by-name contract for the `@service`, `@externalField`, and session-hook paths is untouched) and applies the shape rule above:
 
-`ReflectionError.AmbiguousMethod` gains the intended-form hint on the `@condition` path: after "rename or remove overloads so exactly one method named 'x' exists", append prose to the effect of "a @condition names exactly one method; a single method with a Table<?> parameter serves every table it is applied against, including every participant of a multitable interface or union". Constraints:
+- Agreement admits: reflect the binding shape from any representative. The existing per-parameter work (`checkConditionOverrideTargets`, `inferBindingsByType`, the `-parameters` warning, `ParamSource` classification) runs on the representative and is identical across the set by construction.
+- Disagreement rejects as `AmbiguousMethod`.
+- The representative's table-slot declared type is carried on the `MethodRef.Param` as today; the implementation must keep it emission-inert (it already is: `MethodRef`'s extraction accessors throw on `ParamSource.Table`, `ServiceMethodCallWalker` skips it, and the emitters substitute coordinate-typed expressions). If some future consumer starts reading it, the representative choice becomes visible; leave a pointer to this invariant at the admission site.
 
-- The arm identity and `lspCode()` (`graphitron.reflect.ambiguous-method`) stay stable; this is a message-level change.
-- The hint must not render on the `@service` / `@externalField` / session-hook paths, where a `Table<?>` parameter is wrong or meaningless advice. `reflectTableMethod` is the single entry for every `@condition` coordinate (argument-level, field-level, input-field, path-step), so the discriminator exists there. Preferred shape: an optional hint component on the `AmbiguousMethod` record (rendered only when present), populated by `reflectTableMethod` when re-wrapping the pick rejection, leaving `pickMethod` itself untouched. The implementer may instead pass a caller-context input to `pickMethod` if re-wrapping proves awkward; either way the shared no-hint rendering is byte-identical to today's message.
-- `typed-rejection.adoc`'s `AmbiguousMethod` sentence gets the one-line update (the arm's own paragraph; no new permit, so `SealedHierarchyDocCoverageTest` is unaffected).
+### 2. `AmbiguousMethod` carries the candidates as data, not prose
 
-### 2. Documentation at the multitable coordinate
+Per the rejection contract (rejections are facts rendered into views, never prose composed at the detection site), the message improvement is structural:
 
-- `docs/manual/how-to/add-custom-conditions.adoc`: a new section on filtering multitable interfaces/unions. Content: the directive resolves one method; the branch emitter calls it once per participant against that branch's alias; the `Table<?>` first parameter is the form that serves every branch; the typed-column recovery patterns (null-probe via `table.field(<static column constant>)`, `instanceof` narrowing for the whole table); a concrete participant-table parameter compiles only when every branch matches, so on a multitable field it fails the consumer's javac for the mismatched branches, which is the intended guard, not a bug.
+- `AmbiguousMethod` gains the rendered candidate signatures (the `ServiceCatalog.renderSignature` form the seam arms already carry), replacing or augmenting `candidateArities`. Any consumer, including the LSP, can then see the overload set the author actually wrote without parsing prose.
+- The `@condition`-path rejection (shape disagreement) renders its own guidance from that data: which positions disagree, and that overloads may differ only in their table slots (or collapse to a single `Table<?>` method). If path-specific wording is needed, the blessed shape is a typed discriminant threaded as an explicit input the way `SeamFilter` is, with `message()` switching on it (the `InvalidSchema.CaseFoldCollision.Origin` precedent); not a nullable pre-rendered hint slot.
+- Arm identity and `lspCode()` (`graphitron.reflect.ambiguous-method`) stay stable. Drift-guards to touch: the `AmbiguousMethod` sentence in `typed-rejection.adoc`, `RejectionSeverityCoverageTest.sampleFor`, and the `RejectionResidueDrainageTest` roster if the component set changes.
+
+### 3. Documentation at the multitable coordinate
+
+- `docs/manual/how-to/add-custom-conditions.adoc`: a new section on filtering multitable interfaces/unions, presenting both forms. The overload-set form: one declaration per participant, differing only in the table parameter; the branch emitter calls the shared name once per participant against that branch's concretely-typed alias, and the consumer's javac picks the declaration; a participant with no applicable declaration fails the consumer's compile, which is the intended guard for partial coverage. The single-method form: a `Table<?>` parameter serves every branch; the null-probe pattern `table.field(FILM.NAVN)` is typed and returns null on a branch whose table lacks the column, so the section must say in the same breath that an unguarded `.eq(...)` on that null throws at request time and that `DSL.noCondition()` is the escape for a non-matching branch; `instanceof` narrowing (Java 16+, safe on the consumer 17 floor) recovers the whole concrete table.
 - `docs/manual/how-to/polymorphic-types.adoc`: the multitable section gains a short "Filtering" pointer to the new section (the reporter arrived at polymorphic types first and found nothing about filters there).
-- `docs/manual/reference/directives/condition.adoc`: state the one-method rule (overloads reject) and cross-reference the how-to section for the multitable form.
+- `docs/manual/reference/directives/condition.adoc`: state the admission rule (overloads are legal exactly when they agree on the binding shape; disagreement rejects) and cross-reference the how-to section.
 
-### 3. Coordinate-parity pipeline test
+### 4. Tests
 
-A pipeline-tier test (per `docs/architecture/how-to/testing.adoc`; `GraphitronSchemaBuilderTest` neighbourhood, which already drives `TestConditionStub`) pinning that an overloaded `@condition` method produces the typed `ReflectionError.AmbiguousMethod` rejection at both the query-field coordinate and the input-field coordinate:
+Pipeline tier (per `docs/architecture/how-to/testing.adoc`; the `GraphitronSchemaBuilderTest` neighbourhood already drives `TestConditionStub`), asserting typed arms, not message substrings (the same delta changes the message, so prose assertions would couple the pin to text under edit):
 
-- Fixture: an overloaded pair on `TestConditionStub` (or a dedicated stub class if the shared stub's javadoc contract resists overloads), e.g. two declarations of `overloadedCondition(Table<?>, String)` / `overloadedCondition(Table<?>, Integer)`.
-- Assert the rejection is `ReflectionError.AmbiguousMethod` (typed, not message-matched) at each coordinate, and that the `@condition`-path message carries the deliverable-1 hint.
-- This discharges the Backlog note's claim check: the report said the query-field coordinate accepts overloads; code reading says both coordinates route through the same null-filter `pickMethod`, and this test is the executable form of that reading. If writing the test disproves the reading (the coordinates really differ), stop: that difference is a defect, and this item's shape changes; reopen to Spec.
+- **Admission**: an overload set agreeing modulo table slots classifies clean at the query-field and input-field coordinates, and the reflected `ConditionFilter` is the same either way. Fixture: overloads on `TestConditionStub` or a dedicated stub.
+- **Rejection parity**: a shape-disagreeing overload set produces `ReflectionError.AmbiguousMethod` at both coordinates (the typed-arm assertion mirrors `ServiceRootFetcherPipelineTest.serviceOnOverloadedMethod_surfacesAsTypedAmbiguousMethod`). This discharges the Backlog note's claim check: the report said the query-field coordinate accepts overloads while the input-field coordinate rejects; both route through the same resolution point, and this pair is the executable form of that reading. If writing it disproves the reading, stop and reopen to Spec.
+- **Dispatch proof**: the reporter's scenario end-to-end: a multitable interface query with a filter input whose `@condition` names a per-participant overload set, proving each branch calls its own declaration. The execution tier is the natural home (the emitted dispatch is javac plus runtime behaviour); the compilation tier (`graphitron-sakila-example`) additionally proves a mixed set (`Table<?>` fallback beside a concrete declaration) compiles.
+- Honesty note: coordinate-invariance itself is enforced by `reflectTableMethod` being the sole `@condition` resolution entry over `pickMethod`'s single name-filter; the pipeline pair above is a regression sample over that invariant, not the invariant's enforcer. A structural check (no second `getDeclaredMethods()` name filter in main sources) is deliberately out of scope.
+
+### 5. Anchor definition handed to R647
+
+R647 (`condition-table-parameter-anchor-assignability`) needs "the anchor table" defined before it can check anything. This item fixes that definition: the anchor is per emit-site arm and per slot (the coordinate's table for the single-table arms, each participant's table per branch for the multitable arm, source and target per slot for the path-step arm), and under overload admission R647's check statement is per-anchor applicability: at least one declaration of the set whose table slot accepts that anchor, with most-specific selection left to javac. R647's item body carries a pointer to this section (added with this spec).
 
 ## Out of scope
 
-- Any change to `pickMethod`'s resolution semantics: zero/one/many by name, seam filter only on the session-hook path, all unchanged.
+- Any resolution change for `@service`, `@externalField`, or the session-hook path: zero/one/many by name, seam filter where it applies, all unchanged.
+- R647's actual assignability check (this item defines the anchor; that item builds the check).
+- A structural enforcer for the single-resolution-point invariant (named in deliverable 4).
 - The `@nodeId` half of issue 525 (its own item).
 - Relaying the outcome to the reporter on issue 525 happens when this ships, but the issue reply itself is not a gate for Done.
 
 ## Acceptance
 
-- Overloaded `@condition` at query-field and input-field coordinates both reject with `AmbiguousMethod`, message carrying the intended-form hint; non-`@condition` overload rejections render byte-identically to today.
-- The three documentation coordinates above name the `Table<?>` form and the typed-column recovery patterns.
+- The reporter's per-participant overload set classifies, compiles, and dispatches per branch on a multitable interface filter; a shape-disagreeing set rejects with the typed `AmbiguousMethod` at every `@condition` coordinate, message rendered from candidate-signature data.
+- Non-`@condition` overload rejections keep their arm and code; their message may improve (signatures instead of arities) but their admission behaviour is unchanged.
+- The three documentation coordinates present both forms, including the null-probe failure mode and the `DSL.noCondition()` escape.
 - Full `mvn install -Plocal-db` green.
