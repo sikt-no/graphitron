@@ -4164,9 +4164,9 @@ collector for an entry. A query over the claim stratum cannot replace it, becaus
 which arguments inference fills in, not what any of them resolves to.
 
 **The line counts, said plainly.** `graphitron-lsp` main is 14,196 lines across 80 files against the
-9,119 recorded when the item was filed, with 15,824 more in its tests. `rewrite/catalog` is 3,031
+9,119 recorded when the item was filed, with 15,824 more in its tests. `rewrite/catalog` is 3,032
 against 4,008, and the seam inside it, the package less `ClasspathScanner` and with `SourceWalker`
-moved out to `rewrite/capture`, is 2,492 against 3,232. The store's DDL is 5,246 lines, 3,171 of them
+moved out to `rewrite/capture`, is 2,493 against 3,232. The store's DDL is 5,246 lines, 3,171 of them
 base tables and 1,906 the 41 `intent_` views the derived stratum is made of. Attribution is coarser
 than those figures look: the module took other items' work over the same period, and the clone they
 were measured in does not reach back to the baseline commit, so these are the totals now against the
