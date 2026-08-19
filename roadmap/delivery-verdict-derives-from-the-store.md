@@ -424,7 +424,8 @@ record-handed population, and it is a *seed set* rather than the population.
 `ChildField.sourceShape` states what the trigger reads: a projection of the *parent type's backing*,
 `Record` exactly when the parent hands a domain record rather than a catalog row. The store states
 that directly, as of 2026-08-16. `intent_type_backing` answers what class stands for a type, over
-two arms: `BOUND_TABLE`, the `@table` binding read through the table's generated record, and
+two arms: `BOUND_TABLE`, the resolved table binding read through the table's generated record, which
+reads `intent_resolved_type_binding` and not the `@table` population alone, and
 `BACKING_CLOSURE`, which is `intent_type_backing_class`, the reachability of
 `intent_field_accessor_hop`'s edges from the producer-grounded seeds. Those seeds are
 `intent_type_backing_seed`, which stands on the same ground `PRODUCER_PAYLOAD` does, a producer's
@@ -587,7 +588,15 @@ INTERFACE` while `TypeBuilder` mints a `TableInterfaceType` only when an interfa
 `@discriminate` as well, so an interface carrying `@table` alone binds a table the rule arms will
 read while `mint` sends it to the polymorphic arm and returns `Inline`. Whether that mask is a rule
 or an artefact of switch order is a real question; a residue asks it, where a hand-written exclusion
-would have answered it silently.
+would have answered it silently. Two narrowings belong in that entry, both read off `mint` rather
+than assumed. Only the *single-valued* coordinate disagrees: at list cardinality the walk's
+polymorphic arm and the store's `POLYMORPHIC_FAN_IN` arm fire on the same table-bound participants
+and report the same literal. And the single-valued half disagrees only where a rule arm fires at
+all, which is a marker on the coordinate or a record-handed parent; with neither, both sides say
+`INLINE` and there is nothing to pin. So the shape that populates the residue is a single-valued
+`@table`-alone interface child under `@splitQuery`, and the corpus carries none: every `@table`
+interface in `ClassifiedCorpus` carries `@discriminate` beside it. This is therefore the third
+residue owing a fixture, per the Implementation section.
 
 [cols="2,4,2"]
 |===
@@ -748,13 +757,20 @@ set acquiring an enforcer that is not another switch.**
   accessor-reached class-backed parent, which was a residue for as long as this item planned to copy
   the producer-payload arm and stopped being one when the arm moved to `intent_type_backing_class`. The
   renamed root is
-  the last, per the root-exemption bullet above: the exemption arm reads the binding and the walk
+  next, per the root-exemption bullet above: the exemption arm reads the binding and the walk
   reads the literal names, so a graph spelling `schema { query: MyQuery }` exempts store-side at
   coordinates the walk never routes through `classifyRootField` at all. Carry it as a residue whose
   removal criterion is the walk keying on the binding, rather than narrowing the arm to the three
-  names, which would transcribe the walk's defect into the store. The joined-table
+  names, which would transcribe the walk's defect into the store. And the `@table`-alone interface
+  child is the last, per the polymorphic-mask paragraph in the arms section: the interface binds a
+  table the rule arms read while `mint` routes it to the polymorphic arm and returns `Inline`, so a
+  single-valued such child under a marker or a record-handed parent disagrees. Its removal criterion
+  is the walk gaining a table-backed reading of a `@table` interface that carries no
+  `@discriminate`, which is the question the residue exists to ask rather than one this item
+  answers; narrow the entry to single cardinality, the list half agreeing on `POLYMORPHIC_FAN_IN`
+  through both sides' polymorphic arms. The joined-table
   participant is explicitly *not* a residue candidate, per the fan-in trace above.
-* **Every residue this item declares needs a shape that populates it, and two of them have none
+* **Every residue this item declares needs a shape that populates it, and three of them have none
   today.** The non-empty rule in the shadow bullet below is not satisfiable by a residue whose
   population the corpus cannot reach, so each such residue owes a fixture beside the shadow test in
   the same place the `@tenantFanOut` and connection-child fixtures live. The renamed root is the
@@ -766,7 +782,14 @@ set acquiring an enforcer that is not another switch.**
   against an SDL connection type rather than through `@asConnection`, it witnesses the residue rather
   than an arm, which is what that bullet means by the fixture being a deliverable. An earlier
   revision said this population was carried by its residue's non-empty assertion *instead of* a
-  fixture, which cannot be true of the same assertion.
+  fixture, which cannot be true of the same assertion. The `@table`-alone interface child is the
+  third, and it is the cheapest of the three: an interface carrying `@table` and no `@discriminate`
+  over `@table` participants, returned single-valued from a `@table` parent under `@splitQuery`.
+  Nothing in `ClassifiedCorpus` is one, every `@table` interface there carrying `@discriminate`
+  beside it, and nothing beside a shadow test is either; the shape is authorable and reaches
+  `GraphitronType.InterfaceType` with no rejection, `TypeBuilder`'s interface arm falling through to
+  the plain build when only one of the two markers is present. It can ride the same beside-the-test
+  fixture as the connection child rather than needing a file of its own.
 * `DeliveryShadowTest` in `DemandShadowTest`'s mould, registered in `FactCaptureAgreementTest` under
   `Arm.DERIVED` for all three views. Per that test's stated residue discipline: equality outside the
   named residues, each disagreement direction pinned against a store-derived population rather than
@@ -1019,8 +1042,9 @@ above settles that the spelling is deliberately shared and the closed sets stay 
 ## Coverage
 
 The shipped derived views each carry a hand-written anchor test the view cannot produce by
-construction (`AuthoredClaimConflictsTest`, `ColumnMatchClaimTest`, `DemandShadowTest`,
-`InputOccurrenceShadowTest`, `SeparateFetchTest` in `rewrite/derive`), plus `Arm.DERIVED` registration in
+construction (`AuthoredClaimConflictsTest`, `DemandShadowTest`, `InputOccurrenceShadowTest` and
+`SeparateFetchTest` in `rewrite/derive`, with `ColumnMatchClaimTest` beside the DDL in
+`graphitron-model` instead), plus `Arm.DERIVED` registration in
 `FactCaptureAgreementTest`, whose driver fails both on an unregistered relation and on a
 registration the DDL no longer declares. This item follows that pattern rather than inventing one.
 The two additions specific to it are in the Implementation section above: the domain join that
