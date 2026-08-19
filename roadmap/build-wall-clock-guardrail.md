@@ -5,7 +5,7 @@ status: Backlog
 bucket: dx
 priority: 3
 theme: tooling
-depends-on: [build-time-recovery]
+depends-on: []
 created: 2026-08-19
 last-updated: 2026-08-19
 ---
