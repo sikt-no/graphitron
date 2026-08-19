@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.inlay.InlayHints;
-import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
+import no.sikt.graphitron.model.grammar.InferredDirectiveArgs;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -5,6 +5,7 @@ import graphql.schema.GraphQLDirectiveContainer;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 
 import java.util.Optional;
 
@@ -23,8 +24,12 @@ import java.util.Optional;
  */
 public final class FieldSourceSigil {
 
-    /** Sigil literal. Authors write this exact value in {@code @field(name:)} to bind the SDL field to {@code env.getSource()}. */
-    public static final String UPSTREAM_ROOT_LITERAL = "$source";
+    /**
+     * Sigil literal. Authors write this exact value in {@code @field(name:)} to bind the SDL field
+     * to {@code env.getSource()}. Spelled once, in {@link FieldSourceSigilGrammar}, because the
+     * language server recognises the same value while the author is still typing it.
+     */
+    public static final String UPSTREAM_ROOT_LITERAL = FieldSourceSigilGrammar.UPSTREAM_ROOT;
 
     /**
      * Sigil literal. On an errors-shaped field of a payload-returning mutation type,
@@ -32,7 +37,7 @@ public final class FieldSourceSigil {
      * bypassing the accessor-then-localContext fallback that fires for an unannotated
      * {@code errors}-named field.
      */
-    public static final String LOCAL_CONTEXT_LITERAL = "$errors";
+    public static final String LOCAL_CONTEXT_LITERAL = FieldSourceSigilGrammar.LOCAL_CONTEXT;
 
     private FieldSourceSigil() {}
 
@@ -106,9 +111,7 @@ public final class FieldSourceSigil {
      * unknown-column rejection).
      */
     public static String sourceSigilNotDefinedHereMessage() {
-        return "'" + UPSTREAM_ROOT_LITERAL + "' is not defined at this site; "
-            + "it is only valid on the data field of a payload type returned by a "
-            + "@service-backed mutation.";
+        return FieldSourceSigilGrammar.notDefinedHereMessage();
     }
 
     /**

@@ -9,7 +9,7 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
-import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
+import no.sikt.graphitron.model.grammar.InferredDirectiveArgs;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.InlayHintKind;

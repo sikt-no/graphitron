@@ -12,6 +12,7 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -123,7 +124,7 @@ public final class FieldCompletions {
 
     private static CompletionItem sourceSigilItem(CompletionContext context) {
         return CompletionItems.replacing(
-            no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL,
+            FieldSourceSigilGrammar.UPSTREAM_ROOT,
             CompletionItemKind.Keyword, context.replaceRange(),
             "Root-value sigil — bind to the upstream Java value as a whole");
     }

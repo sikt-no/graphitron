@@ -15,7 +15,8 @@ import no.sikt.graphitron.lsp.facts.ClassMemberSlots;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.ScalarTypeResolver;
+import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
+import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -597,7 +598,7 @@ public final class Diagnostics {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
-        if (no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL.equals(memberName)) {
+        if (FieldSourceSigilGrammar.isUpstreamRoot(memberName)) {
             questions.sigilSite(typeName.get(), fieldName);
             findings.add(new Finding.SourceSigil(rangeOf(file, valueNode), typeName.get(), fieldName));
             return;
@@ -642,8 +643,8 @@ public final class Diagnostics {
      *
      * <p>Field-level validation ({@code FieldNotFound}, {@code NotAScalarType},
      * {@code CoercingErased}) requires reflection on the actual class and lives in the
-     * build-tier {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}; the LSP surfaces those
-     * errors via the build pipeline's diagnostics, not inline.
+     * build-tier resolver; the LSP surfaces those errors via the build pipeline's diagnostics,
+     * not inline.
      */
     private static void collectScalarType(
         Node valueNode, FileSnapshot file, List<Finding> findings,
@@ -651,13 +652,13 @@ public final class Diagnostics {
     ) {
         String fqn = value(valueNode, file);
         if (fqn.isEmpty()) return;
-        switch (ScalarTypeResolver.parseDirectiveValue(fqn)) {
-            case ScalarTypeResolver.ParsedDirectiveValue.Malformed m ->
+        switch (ConstantReferenceGrammar.split(fqn)) {
+            case ConstantReferenceGrammar.Reference.Malformed m ->
                 out.add(diagnostic(file, valueNode,
                     "Invalid scalar reference '" + m.value() + "'. Expected a fully-qualified "
                     + "field reference of the form 'fully.qualified.Class.FIELD' pointing at a "
                     + "public static final GraphQLScalarType."));
-            case ScalarTypeResolver.ParsedDirectiveValue.Parsed p -> {
+            case ConstantReferenceGrammar.Reference.Parsed p -> {
                 questions.className(p.classFqn());
                 findings.add(new Finding.ScalarClassName(rangeOf(file, valueNode), p.classFqn()));
             }
@@ -747,7 +748,7 @@ public final class Diagnostics {
             case Finding.SourceSigil(var range, var typeName, var fieldName) -> {
                 if (answers.sourceSigilSite(typeName, fieldName) == DiagnosticFacts.Resolution.UNKNOWN) {
                     out.add(diagnostic(range, DiagnosticSeverity.Error,
-                        no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
+                        FieldSourceSigilGrammar.notDefinedHereMessage()));
                 }
             }
             case Finding.ArgMappingValue value -> judgeArgMapping(answers, source, value, out);

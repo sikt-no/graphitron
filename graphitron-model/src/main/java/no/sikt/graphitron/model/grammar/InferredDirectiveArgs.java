@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.catalog;
+package no.sikt.graphitron.model.grammar;
 
 import java.util.List;
 import java.util.Optional;

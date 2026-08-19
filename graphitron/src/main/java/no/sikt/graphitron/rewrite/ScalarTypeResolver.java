@@ -14,6 +14,7 @@ import java.lang.reflect.Type;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 
 /**
  * Resolves a GraphQL scalar to its Java type + {@code GraphQLScalarType} constant via reflection.
@@ -360,14 +361,14 @@ public final class ScalarTypeResolver {
     /**
      * Resolves a {@code @scalarType(scalar:)} directive value. The value is a fully-qualified
      * Java reference to a {@code public static final GraphQLScalarType} field; the resolver
-     * splits at the last {@code .} via {@link #parseDirectiveValue(String)} and delegates to
+     * splits at the last {@code .} via {@link ConstantReferenceGrammar#split} and delegates to
      * {@link #resolveFromConstantFqn(String, String, ClassLoader)}.
      *
      * <p>A value with no usable dot (e.g. just {@code "Scalars"}, or a trailing {@code "."})
-     * parses to {@link ParsedDirectiveValue.Malformed} and maps to
+     * parses to {@link ConstantReferenceGrammar.Reference.Malformed} and maps to
      * {@link ScalarResolution.Rejected.ClassNotFound} pointing at the value as written: the value
      * failed to name a class, and {@code ClassNotFound} is the rejection arm that says so. The
-     * shape rule itself lives on {@link #parseDirectiveValue(String)}, the one place both this
+     * shape rule itself lives on {@link ConstantReferenceGrammar#split}, the one place both this
      * resolver and the LSP diagnostic read it from. A value with a usable dot that names a
      * missing class or field surfaces the appropriate downstream rejection arm.
      */
@@ -384,41 +385,14 @@ public final class ScalarTypeResolver {
      * declared name rather than the constant's name.
      */
     public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, String sdlName, ClassLoader loader) {
-        return switch (parseDirectiveValue(scalarFqn)) {
-            case ParsedDirectiveValue.Malformed m ->
+        return switch (ConstantReferenceGrammar.split(scalarFqn)) {
+            case ConstantReferenceGrammar.Reference.Malformed m ->
                 new ScalarResolution.Rejected.ClassNotFound(m.value());
-            case ParsedDirectiveValue.Parsed p ->
+            case ConstantReferenceGrammar.Reference.Parsed p ->
                 resolveFromConstantFqn(p.classFqn(), p.fieldName(), sdlName, loader);
         };
     }
 
-    /**
-     * Parses a {@code @scalarType(scalar:)} directive value into its class-FQN + field-name
-     * components, or surfaces a {@link ParsedDirectiveValue.Malformed} arm naming the original
-     * value when the shape is wrong (no dot, leading dot, trailing dot).
-     *
-     * <p>Lets the LSP validate the shape without constructing a classloader. Both the LSP
-     * diagnostic and {@link #resolveFromDirectiveValue} switch on the same sealed result, so the
-     * shape rule lives in one place.
-     */
-    public static ParsedDirectiveValue parseDirectiveValue(String scalarFqn) {
-        int dot = scalarFqn.lastIndexOf('.');
-        if (dot <= 0 || dot == scalarFqn.length() - 1) {
-            return new ParsedDirectiveValue.Malformed(scalarFqn);
-        }
-        return new ParsedDirectiveValue.Parsed(scalarFqn.substring(0, dot), scalarFqn.substring(dot + 1));
-    }
-
-    /**
-     * Outcome of parsing a {@code @scalarType(scalar:)} value into its class-FQN + field-name
-     * components. The {@link Malformed} arm carries the value as written; the {@link Parsed}
-     * arm carries the split components ready for {@link #resolveFromConstantFqn} or a downstream
-     * catalog lookup.
-     */
-    public sealed interface ParsedDirectiveValue {
-        record Parsed(String classFqn, String fieldName) implements ParsedDirectiveValue {}
-        record Malformed(String value) implements ParsedDirectiveValue {}
-    }
 
     /**
      * The Java type recovered for a spec built-in, or {@code null} for non-built-ins. A

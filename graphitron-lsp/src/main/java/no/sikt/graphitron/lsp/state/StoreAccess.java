@@ -2,12 +2,10 @@ package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.SourceGraph;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.DSLContext;
 
-import java.net.URI;
-import java.nio.file.FileSystemNotFoundException;
-import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -110,22 +108,12 @@ public final class StoreAccess implements AutoCloseable {
     }
 
     /**
-     * The store's name for the document at {@code uri}. Capture writes a schema file's
-     * {@code source_name} as the absolute normalized path it read, which is what
-     * {@code SchemaSource.File} renders and what {@code ValidationReport.canonicalUri} turns into a
-     * URI; this is that trip backwards, so an editor's URI and a captured row meet on one spelling.
-     * A URI naming no local file (an untitled buffer, a non-file scheme) resolves to no source name,
-     * and the store has nothing to say about content that is not on disk.
+     * The store's name for the document at {@code uri}. Delegates to {@link SourceUri}, which owns
+     * both directions of the trip in the module that declares the columns they meet on, so an
+     * editor's URI and a captured row cannot drift apart on one side's spelling.
      */
     public static Optional<String> sourceNameOf(String uri) {
-        if (uri == null || !uri.startsWith("file:")) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(Path.of(URI.create(uri)).toAbsolutePath().normalize().toString());
-        } catch (IllegalArgumentException | FileSystemNotFoundException e) {
-            return Optional.empty();
-        }
+        return SourceUri.sourceNameOf(uri);
     }
 
     /** Releases the reader. The store itself belongs to the session's writer, never to this. */

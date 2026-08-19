@@ -2,8 +2,8 @@ package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.model.read.SourceStamp;
+import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.ValidationReport;
 
 import java.util.List;
 
@@ -87,7 +87,7 @@ public final class LintFixes {
             .on(LINT_FINDING_FIX_EDIT.GRAPH_NAME.eq(LINT_FINDING_FIX.GRAPH_NAME))
             .and(LINT_FINDING_FIX_EDIT.FINDING_ORDINAL.eq(LINT_FINDING_FIX.FINDING_ORDINAL))
             .where(LINT_FINDING_FIX.GRAPH_NAME.eq(store.graphName()))
-            .and(LINT_FINDING.FILE.eq(ValidationReport.canonicalUri(sourceName)))
+            .and(LINT_FINDING.FILE.eq(SourceUri.of(sourceName)))
             .and(LINT_FINDING.SOURCE_LINE.isNotNull())
             .orderBy(LINT_FINDING_FIX.FINDING_ORDINAL, LINT_FINDING_FIX_EDIT.POSITION)
             .fetch();

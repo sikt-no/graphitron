@@ -33,7 +33,7 @@ import static org.jooq.impl.DSL.when;
  * well as any library's, with no coupling to
  * {@code graphql-java-extended-scalars}. Every suggestion is a well-formed
  * {@code class.field} reference as
- * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver.ParsedDirectiveValue}
+ * {@link no.sikt.graphitron.model.grammar.ConstantReferenceGrammar}
  * defines the shape, so a completed value never rejects as malformed at
  * codegen. The walk sees the field type, not its runtime value; a suggested
  * constant may still fail to bind (null at codegen, erased {@code Coercing}),
