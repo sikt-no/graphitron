@@ -216,8 +216,17 @@ Ordered so that the cheap, unblocked closures come first.
       schema and are wrong every time, so the predicate became per-intermediate
       pair coverage instead. Measured at 0 findings on the example, which also
       means the corpus owes a fixture that witnesses the rule firing.
-- [ ] Add the #523 field-report citation to R382, whose half of the issue is the
-      one the reporter led with.
+- [x] Add the #523 field-report citation to R382, whose half of the issue is the
+      one the reporter led with. Added, and it changed two things about the item.
+      Its problem statement had the mechanism wrong: it said `operation()`
+      hardcodes `OrderBySpec.None()`, when in fact `QueryInterfaceField` and
+      `QueryUnionField` declare no `orderBy` component at all and so do not
+      implement `SqlGeneratingField`. That is also why nothing rejects the field,
+      since both cross-cutting ordering checks are gated on that interface, so a
+      paginated multitable root with no ordering passes the very check written to
+      reject it. And the report asks for a build-time author error as an
+      acceptable alternative to lowering, which gives the item a cheap first
+      increment it did not have.
 - [ ] Comment on #523 with the three plan links and which half each owns.
 - [x] Comment on #529 and #530 with their plan links once filed, and on #529 ask
       whether the reporter wants it relabelled as an enhancement, which they
