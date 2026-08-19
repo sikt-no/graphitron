@@ -128,8 +128,10 @@ of the verdict the fact base already computes: `intent_field_reference_step_targ
 carries `fk_on_from` per path element ("TRUE when the departing table declares the
 foreign key; the element's direction"), so the rule is a predicate over rows that
 exist rather than a new catalog traversal, and `sql_constraint.constraint_type`
-plus `sql_constraint_column` sharpen it to exclude 1:1 reverse hops the reporter's
-own heuristic would have flagged. The nearest neighbours are all adjacent rather
+plus `sql_constraint_column` supply the coverage test the predicate turns on. (The
+sharpening proposed here first, excluding 1:1 reverse hops, was measured wrong at
+Spec time; R723 carries the corrected rule and the numbers.) The nearest
+neighbours are all adjacent rather
 than overlapping, and are named in the item so the next reader does not re-derive
 the search:
 
@@ -206,10 +208,14 @@ Ordered so that the cheap, unblocked closures come first.
       surface half). Filed as R722 `service-opt-in-transaction-wrap`, taken
       straight to Spec, and linked from the issue. Both await a Spec → Ready
       sign-off from a different party.
-- [x] File a Backlog item: static fan-out verdict for `@reference` paths
-      traversing a 1:N hop (#529). Filed as R723 `reference-path-fanout-verdict`,
-      with the neighbours named and the `distinct` flag left to R235, and linked
-      from the issue.
+- [x] File an item: static fan-out verdict for `@reference` paths traversing a
+      1:N hop (#529). Filed as R723 `reference-path-fanout-verdict`, linked from
+      the issue, and since taken to Spec. The spec pass changed the rule: both
+      the reporter's formulation and the sharpened one this audit first proposed
+      fire on all six `film -> film_actor -> actor` coordinates in the example
+      schema and are wrong every time, so the predicate became per-intermediate
+      pair coverage instead. Measured at 0 findings on the example, which also
+      means the corpus owes a fixture that witnesses the rule firing.
 - [ ] Add the #523 field-report citation to R382, whose half of the issue is the
       one the reporter led with.
 - [ ] Comment on #523 with the three plan links and which half each owns.
