@@ -13,7 +13,7 @@ last-updated: 2026-08-19
 # The javadoc reference gate reaches test sources, and the capture-API residue it missed
 
 The reactor has a build gate whose whole purpose is to stop a `{@link}` from naming a symbol that no
-longer exists. It cannot see test sources. This item fixes the eight sites that proved it, then closes
+longer exists. It cannot see test sources. This item fixes the seven sites that proved it, then closes
 the gap that let them ship.
 
 Two facts make the gap worth an item rather than a sweep. The gate is the reason this project prefers
@@ -27,9 +27,9 @@ trusts a green build learns nothing.
 
 R711 removed a nodehood predicate parameter from every capture entry point, because deciding nodehood
 needs the jOOQ catalog and a crawler answering for the SDL corpus may not read it. The removal is
-complete in the code that runs. Eight files still name the parameter in prose or in an import.
+complete in the code that runs. Seven files still name the parameter in prose or in an import.
 
-Seven carry an `import no.sikt.graphitron.rewrite.NodeDeclaration;` with no other mention of the type
+Six carry an `import no.sikt.graphitron.rewrite.NodeDeclaration;` with no other mention of the type
 in the file, so the import is dead:
 
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/SdlFactCapture.java:25`
@@ -37,21 +37,26 @@ in the file, so the import is dead:
 - `graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/StoreFixture.java:7`
 - `graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java:25`
 - `graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/PersistentStoreTest.java:5`
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java:5`
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/diagnostics/DiagnosticFactsTest.java:36`
+- `graphitron/src/test/java/no/sikt/graphitron/rewrite/diagnostics/DiagnosticFactsTest.java:35`
 
-The eighth is the one that motivates the rest.
+Two neighbours are not on that list and must not be swept with it.
+`graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/NodeTypeShadowTest.java:5` carries the
+same import and uses the type four times, and
+`graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java` never names
+the type at all; its line 5 is a live `CompletionData` import.
+
+The seventh is the one that motivates the rest.
 `graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/WarmStartRefreshTest.java:296` documents
 `aWarmRefreshOverAMultiPackageCatalogCompletes` with a `{@link}` whose target is a
 `FactCapture#capture` overload ending `..., Map, JooqCatalog, List, NodeDeclaration)`. No such overload
 exists. That file needs two edits, the link and then the import it was the last reader of.
 
 Note which of the two problems has an enforcer and which does not. A dead import is not a javadoc
-reference issue, so no configuration of the existing gate would ever have flagged the seven; nothing
-in this build catches an unused import at all. Only the eighth site is a gate escape. Sweeping the
-seven is hygiene the same commit can afford, not evidence about the gate.
+reference issue, so no configuration of the existing gate would ever have flagged the six; nothing
+in this build catches an unused import at all. Only the seventh site is a gate escape. Sweeping the
+six is hygiene the same commit can afford, not evidence about the gate.
 
-## Why nothing caught the eighth
+## Why nothing caught the seventh
 
 The gate lives in the root pom as the `check-link-references` execution of `maven-javadoc-plugin`,
 bound to `verify`, running doclint's `reference` group with `failOnError` left at its default so a
@@ -92,9 +97,10 @@ directly over each module's test tree with `-Xdoclint:reference -private`, main 
 bytecode:
 
 - `graphitron`: 479 test files, 11 dangling references
-- `graphitron-lsp` (77 files), `graphitron-mcp` (31), `graphitron-model` (26), `graphitron-javapoet`
+- `graphitron-lsp` (77 files), `graphitron-mcp` (31), `graphitron-model` (28), `graphitron-javapoet`
   (23), `graphitron-maven-plugin` (16): clean
-- the remaining modules have no test tree
+- `roadmap-tool` (19 files) and `graphitron-sakila-example` (82) were not measured, because both set
+  `maven.javadoc.skip` in their own pom and stay opted out; the remaining modules have no test tree
 
 One of the eleven is this item's own. The other ten are pre-existing, and they sort into four kinds,
 every one a single-line edit:
@@ -105,7 +111,7 @@ every one a single-line edit:
   unimported spelling fails. Fix: add the import.
 - **A target that was deleted.** `RecordFieldAccessorValidationTest` is named twice and no file of
   that name exists; `GraphQLRewriteGenerator#run()` names a method the class does not declare.
-- **Signature drift**, which is the eighth site above.
+- **Signature drift**, which is the seventh site above.
 - **Prose that leaked inside the braces.**
   `{@link no.sikt.graphitron.rewrite.generators.the renderer's multiset arm}` is a typo rather than a
   reference.
@@ -124,7 +130,7 @@ Two slices. The first is independent of the second and can land alone.
 
 ### Slice one: sweep the residue
 
-Delete the seven dead imports. Correct `WarmStartRefreshTest`'s link to the current `capture`
+Delete the six dead imports. Correct `WarmStartRefreshTest`'s link to the current `capture`
 signature and drop the import it no longer needs. Nothing else changes, no assertion moves, and the
 verification is that the reactor stays green.
 
@@ -161,7 +167,7 @@ one, rather than in a public helper.
 
 ## Out of scope
 
-- Unused imports as a class of defect. Nothing in this build catches one, and the seven swept here are
+- Unused imports as a class of defect. Nothing in this build catches one, and the six swept here are
   swept because they are in hand rather than because a rule found them. A general enforcer is its own
   item and would want a linter rather than a javadoc gate.
 - The main-source gate's `show` level. Private main members sit below it today, which is a real hole a
