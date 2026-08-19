@@ -29,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | In Review | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Spec | 2026-08-17 | [plan](error-handler-description-overrides-message.md) |
-| `R710` | The jOOQ crawler records node metadata as stated, not as validated | Ready | 2026-08-18 | [plan](jooq-node-metadata-as-stated-facts.md) |
+| `R710` | The jOOQ crawler records node metadata as stated, not as validated | In Progress | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](jooq-node-metadata-as-stated-facts.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-17 | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -305,7 +305,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R337` [**Surface input-field projections honestly on the lowered coordinate**](input-nesting-projection-classification.md) — Backlog, architecture
 - `R653` [**The extension ordinal records JVM iteration order and calls it a position**](schema-extension-ordinal-is-iteration-order.md) — Backlog, architecture
 - `R606` [**The facets container derives from the store rather than minting at capture**](facets-container-derives-from-the-store.md) — Backlog, architecture
-- `R710` [**The jOOQ crawler records node metadata as stated, not as validated**](jooq-node-metadata-as-stated-facts.md) — Ready, architecture
+- `R710` [**The jOOQ crawler records node metadata as stated, not as validated**](jooq-node-metadata-as-stated-facts.md) — In Progress, architecture
 - `R652` [**The stamp comment still asks the retired resolution question**](store-source-stamp-comment-follows-the-arm.md) — Backlog, architecture
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt

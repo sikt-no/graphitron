@@ -1,13 +1,13 @@
 ---
 id: R710
 title: "The jOOQ crawler records node metadata as stated, not as validated"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-08-18
+last-updated: 2026-08-19
 ---
 
 # The jOOQ crawler records node metadata as stated, not as validated
