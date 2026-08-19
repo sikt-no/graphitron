@@ -126,14 +126,15 @@ than two: the reconciled `NodeType`, the table's own generator metadata, then `@
 catalog primary key. `graphitron_node_key_column (graph_name, type_name, position, column_ref)`
 holds the pinned list in written order; the primary-key fallback is `sql_primary_key` joined
 through `sql_constraint_column` for the ordered columns, reached from the node type through
-`intent_resolved_type_binding`; and the middle tier is
-`roadmap/jooq-node-metadata-as-stated-facts.md` (R710)'s to capture. The reconciliation is a view
+`intent_resolved_type_binding`; and the middle tier is `sql_node_metadata` with its ordered
+`sql_node_key_column` entries, which R710 has shipped. The reconciliation is a view
 and it is the item's spine (see "The resolution is a view over facts").
 
 Two things about that middle tier follow from R710 recording the metadata **as stated** rather than
 as validated, and neither is a detail. Its rows carry a form vocabulary
-(`STRING` / `NULL` / `OTHER` / `ABSENT` on the type id, `FIELD_ARRAY` and the same three on the key
-columns), a row exists whenever the class declares either constant, and a key-column entry may name
+(`type_id_form` in `STRING` / `NULL` / `OTHER` / `ABSENT`, `key_columns_form` in `FIELD_ARRAY` and the
+same three), a row exists whenever the class declares either constant, and a key-column entry's
+`column_name` may name
 a column the table does not have. So this tier reads *well-formed* rows, which is an anti-join
 against R710's own well-formedness derivation, `intent_node_metadata_defect`, and not a direct read
 of the base relation. Take the conjunction that view's comment insists on rather than the anti-join
@@ -147,7 +148,13 @@ back door.
 The spelling is the SQL column name, because that is what `@node(keyColumns:)` itself is a list of,
 and matching is case-insensitive. That is inherited rather than introduced: `intent_spelled_table`
 and `intent_column_match_claim` both compare under `UPPER()`, and `JooqCatalog.resolveColumn` uses
-`equalsIgnoreCase`, so the docs can state the behaviour without announcing a rule.
+`equalsIgnoreCase`, so the docs can state the behaviour without announcing a rule. On the middle tier
+take the store's own twin rather than re-deriving it: `intent_node_metadata_defect`'s
+`KEY_COLUMN_UNRESOLVED` arm resolves a stated entry against `sql_column` under
+`UPPER(jooq_name) = UPPER(...) OR UPPER(column_name) = UPPER(...)`, two tiers of spelling and not
+just the SQL one, which is `findColumn`'s rule. The tier's own resolution has to agree with the arm
+that decides the row is well-formed, so it is the same predicate or the two can disagree about which
+entries resolved.
 
 `@nodeId` without `typeName:` is rejected at this position. `NodeIdLeafResolver.inferTypeName`
 infers a bare `@nodeId`'s target from the *containing table*, and a routine parameter has no
@@ -326,7 +333,7 @@ type in the middle arm's population, which is the metadata-carrying table with n
 `NodeType`. `graphitron_node`'s comment already anticipates this: "the SDL-versus-jOOQ-metadata
 precedence rules are detections". So the reduction is three arms with a `tier` column naming which
 one answered, in `intent_resolved_field_claim`'s shape, and the middle arm reads the facts R710
-captures rather than the reflective read `resolveTargetKeys` makes today.
+captured rather than the reflective read `resolveTargetKeys` makes today.
 
 The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suffix at the front):
 
@@ -341,13 +348,18 @@ The views, in the stratum's naming (`intent_resolved_*` for a reduction, the suf
   another tier's order. That is exactly the transposition `resolveTargetKeys`' own comment warns
   about, "a `@node(keyColumns:)` that pins a different order than the metadata would project
   columns transposed against the order its own decode helper returns values in". One tier wins for
-  a type and its whole list is taken. **An ambiguous binding resolves no key columns**, because the
-  third tier reaches the primary key through `intent_resolved_type_binding` and that relation
-  carries `candidates` without a precedence: two candidate tables are two different key tuples, and
-  picking one would encode ids against a table the author never named. The tier is silent there and
+  a type and its whole list is taken. **An ambiguous binding resolves no key columns**, on the
+  **lower two tiers both**, which is a correction R710's landed shape forces. Both reach a table
+  through `intent_resolved_type_binding`, and that relation carries `candidates` without a
+  precedence: two candidate tables are two different key tuples, and picking one would encode ids
+  against a table the author never named. The third tier reaches the primary key that way, and so
+  does the middle one, because R710 keys its rows on the catalog's own key
+  (`source_name, table_schema, table_name`) with no graph partition at all, so getting from a graph's
+  type to the metadata a class published *is* the binding question. Both tiers are silent there and
   the detection stratum names the ambiguity, on the same reasoning that makes every other
-  unresolvable shape in this item a stated row rather than a gap. The first two tiers are unaffected,
-  a `NodeType` and a metadata-carrying table each naming their own table.
+  unresolvable shape in this item a stated row rather than a gap. Only the pinned-SDL tier survives
+  an ambiguous binding, `graphitron_node_key_column` being keyed by graph and type and needing no
+  table to answer.
 * **`intent_argmapping_binding_leaf`.** The keying over `intent_input_occurrence_path` described
   above, unioned across the **seven** `*_arg_mapping_pair` relations
   (`graphitron_routine`, `graphitron_service`, `graphitron_field_condition`,
@@ -513,7 +525,7 @@ arm keyed on the `site` column, naming the sites that emit, and it shrinks as si
 
 ### The catalog facts this reads, and who captured them
 
-**Both populations this item once planned to capture belong to other items, and one has landed.**
+**Both populations this item once planned to capture belong to other items, and both have landed.**
 The section this replaces argued for capturing the routine call surface and the jOOQ node metadata
 here, on the ground that both are unreachable outside the codegen classloader and so a run that
 does not capture them cannot answer the question afterwards. That argument held; what changed is
@@ -549,14 +561,13 @@ recommended, omitted rather than shipped always-null, because the database's own
 as jOOQ's camelCase transform and the SQL types only as anonymous bind placeholders behind a
 protected `TableImpl` field.
 
-**Landed on trunk, in R710's capture slice, while R710 itself is still `In Progress`.** The jOOQ node
-metadata, the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
+**Shipped, in R710** (`jooq-node-metadata-as-stated-facts`, Done, see `roadmap/changelog.md`). The
+jOOQ node metadata, the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
 `JooqCatalog.nodeIdMetadata` reflects on today, is now `sql_node_metadata` plus an ordered
 `sql_node_key_column` child, recorded *as stated* rather than as validated, with
 `intent_node_metadata_defect` beside them as the well-formedness derivation. That is the middle tier
-of the key-column resolution, and it was the last capture this item was waiting on. Confirm the rows
-against R710's own state at pickup rather than assuming they are final, R710 not having reached Done.
-The as-stated shape is
+of the key-column resolution, and it was the last capture this item was waiting on. Nothing reads
+those rows yet; this item is their first reader. The as-stated shape is
 a better fact than the reflective read it replaces, and it is why the tier joins a well-formedness
 derivation rather than the base relation (see "What the key-column segment names").
 
@@ -651,7 +662,7 @@ level up, not an implementation detail.
 
 The store grows on one stratum only, which is the change R704 and R710 make to this item.
 
-**No base relations.** The routine call surface landed with R704 and the node metadata is R710's,
+**No base relations.** The routine call surface landed with R704 and the node metadata with R710,
 per "The catalog facts this reads". Nothing here writes a row.
 
 **Derived relations:** the three resolution views plus the detection views, all `intent_`, all
@@ -672,8 +683,8 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
 
 ## Implementation
 
-* **No base-relation work and no capture work.** The routine call surface is R704's, landed; the
-  node metadata is R710's, pending. This item reads both.
+* **No base-relation work and no capture work.** The routine call surface is R704's and the node
+  metadata is R710's; both have shipped. This item reads them.
 * **Views**, house style per `intent_bound_table` (declared column list, full comment coverage,
   closed vocabularies as `CHECK` or as stated column comments), and structurally per
   `intent_field_column_table`, the sibling path-resolution view whose `disposition` / `basis` shape
@@ -684,8 +695,8 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   literal per union arm, `disposition` plus `basis`, unconsumed-segment count), and
   `intent_resolved_node_key_projection`, plus the detection views for the rejections including
   the site-keyed `deferred` arm. The key-column view reads `intent_resolved_type_binding` for its
-  third tier and R710's well-formedness derivation for its middle one, so neither the `@table`
-  population nor a raw as-stated row is read directly.
+  third tier, `intent_node_metadata_defect` for its middle one, and the binding for both, so neither
+  the `@table` population nor a raw as-stated row is read directly.
 * **Typed products** in `rewrite/derive`, in `AuthoredClaimConflicts`' shape: records built from
   query rows, decoding a closed verdict vocabulary into `Rejection` arms. The only new Java types
   the item introduces.
@@ -719,10 +730,13 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
 
 ## Tests
 
-* **No capture tests.** Both populations are pinned by the items that capture them: R704's
-  agreement test already asserts the routine parameters are the database's own names rather than
-  `arg0`, and R710 carries the node-metadata twins. What this item pins on the catalog side is what
-  its own views make of those rows.
+* **No capture tests.** Both populations are pinned by the items that captured them, and both of
+  those tests exist rather than being owed: R704's
+  agreement test asserts the routine parameters are the database's own names rather than
+  `arg0`, and R710 shipped its two relations in `FactCaptureAgreementTest`'s equality arm with the
+  defect view as derived, the form-to-nullability correspondences as `CHECK` constraints, and an
+  assertion comparing the store's per-table verdict against the live probe's. What this item pins on
+  the catalog side is what its own views make of those rows.
 * **View-level tests** in the `ColumnMatchClaimTest` / `DemandShadowTest` mould, one per view, and
   for the binding-leaf view specifically in `FieldColumnTableTest`'s, which is the closest match in
   the tree: a path-resolution view with silences, anchored case by case (twenty-three of them today,
@@ -734,7 +748,9 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   read helper; the analogue here is per pair-row key, since this view keeps `ordinal` rather than
   collapsing it.
   `intent_resolved_node_key_column` needs a case where `intent_resolved_type_binding` answers with
-  `candidates = 2`, pinning the tier silent rather than picking, which is reachable now that a type
+  `candidates = 2`, pinning **both table-reaching tiers** silent rather than picking, and the pinned-SDL
+  tier still answering at the same coordinate, which is what separates "no table to read" from "no key
+  columns". That population is reachable now that a type
   can be bound by a `@table` and by a routine return at once. It also needs all three tiers
   populated, not two, plus a composite-key
   type (`bar` in the `nodeidfixture` catalog is the one `NodeIdPipelineTest` already uses), and a
@@ -793,15 +809,17 @@ catalog walk and unrecoverable afterwards"), and it is the argument R704 and R71
   likely to want its own item if the schedule tightens. Lifting it out is fine; threading the
   projection through a `MutationField` leaf to avoid it is not, because that re-creates the
   emitter-reads-the-leaf coupling this item exists to stop relying on.
-* **The spine reads a relation another item is still editing.** `graphitron_argument_path_segment`
-  is R715's, `In Progress`, and its coordinate key (the part this item joins on) is already in the
-  tree. What is still moving there is that family's comment prose, so the exposure is a comment
-  conflict rather than a shape one.
-* **The capture half is now other items' schedules.** R704's is landed, so that half is a read
-  against relations that exist. R710's capture has now landed too, so the middle tier's source is in
-  the tree; what remains is that R710 is `In Progress` rather than Done, so its rows can still move
-  under a reader. The residual risk is schedule rather than shape, and cheap to absorb either way,
-  being one tier's source.
+* **The spine reads a relation another item still owns.** `graphitron_argument_path_segment` is
+  R715's. Its delivery, including the coordinate key this item joins on, is in the tree; R715 sits at
+  `Ready` after an In Review reopen over its own stale accounting. What is still moving there is that
+  family's comment prose, so the exposure is a comment conflict rather than a shape one.
+* **The capture half is discharged.** Both halves shipped as other items, R704's routine call surface
+  and R710's node metadata, so every catalog relation this item reads exists and the schedule risk
+  this bullet used to carry is gone. What replaces it is smaller and worth keeping: this item is the
+  first reader of R710's rows, so any disagreement between the as-stated relations and what the live
+  probe answers surfaces here first rather than in the item that wrote them. R710 shipped an
+  agreement assertion comparing the store's per-table verdict against the probe's, which is the thing
+  to re-run rather than re-derive if the middle tier ever answers surprisingly.
 * **`intent_resolved_type_binding` can answer with two candidates**, and this item's response is
   silence plus a detection rather than a pick. That is the right answer but it is a new population
   to reach in fixtures: a type bound by both a `@table` and a routine return, which did not exist
@@ -910,22 +928,33 @@ Draft of the `routine.adoc` subsection:
   from a pair row at all: the relation used to be interned by path text for the whole graph, so a
   segment set had no owner and could only be joined on a bare string. It now keys
   `(graph_name, type_name, field_name, argument_path, position)` with a foreign key to `graphql_field`,
-  which is the join the binding-leaf arms use. R715 is `In Progress` and still editing that family's
-  comments, so the two items share a comment surface: this item restates `argument_path` on the seven
-  pair relations, R715 rewrites the segment relation's own. Coordinate on those, not on the key, which
-  is already in the tree. The relationship is otherwise one-way: nothing here changes anything R715
+  which is the join the binding-leaf arms use. R715's delivery is in the tree; the item itself went
+  back to `Ready` from In Review over stale accounting in its own prose, not over the relations. So
+  the shape is settled and what the two items share is a comment surface: this item restates
+  `argument_path` on the seven pair relations, R715 rewrites the segment relation's own. Coordinate on
+  those, not on the key. The relationship is otherwise one-way: nothing here changes anything R715
   owns, and R715's own reading of the redundancy trade ("a consumer needing the exact owner joins the
   pair relation on `(type_name, field_name, argument_path)`") is exactly what this item does with it.
-* `roadmap/jooq-node-metadata-as-stated-facts.md` (R710) owns what was stage 1's remainder, the
-  `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
-  as `sql_node_metadata` plus an ordered `sql_node_key_column` child, and it has stopped being a
-  blocker: the crawler slice and the `intent_node_metadata_defect` derivation are both on trunk, with
-  R710 itself still `In Progress` on the rest. Two things to carry into stage
-  2 rather than discover in it. It records the metadata **as stated**, with a form vocabulary and a
-  row whenever either constant is declared, so the key-column view's middle tier reads well-formed
-  rows through that derivation rather than the base relation. And R710 chose the relation name
-  this plan had sketched for its own child, which is a naming collision resolved in R710's favour
-  before either was written; nothing here should reintroduce it.
+* R710 (`jooq-node-metadata-as-stated-facts`, Done, see `roadmap/changelog.md`) owned what was
+  stage 1's remainder, the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` statics
+  as `sql_node_metadata` plus an ordered `sql_node_key_column` child, and it has shipped, so this item
+  is no longer blocked by anything. Four things it delivered that stage 2 should read rather than
+  rediscover. It records the metadata **as stated**, with a form vocabulary per constant and a
+  row whenever either is declared, so the key-column view's middle tier reads well-formed
+  rows through `intent_node_metadata_defect` rather than the base relation, taking the conjunction
+  (a metadata row with zero defect rows) and not the anti-join alone. Its `KEY_COLUMN_UNRESOLVED` arm
+  fixes the entry-resolution predicate the middle tier has to share. Its rows are keyed on the
+  catalog's own key with no graph partition, which is what puts the middle tier behind
+  `intent_resolved_type_binding` alongside the third rather than beside the first. And it chose the
+  relation name this plan had sketched for its own child, a naming collision resolved in R710's favour
+  before either was written; nothing here should reintroduce it. Nothing reads the rows yet, R710
+  having shipped facts with their reader deliberately left to arrive later, and this item is it.
+* `roadmap/nodehood-derives-from-two-corpora.md` (R711) is the other item R710's facts were captured
+  for, and it is a different question: whether a type *is* a node, joined SDL claim to jOOQ metadata
+  so the federation-key macro stops reading a live catalog from inside capture. This item's
+  `intent_resolved_node_key_column` is not that derivation and does not wait on it: nodehood is a
+  predicate, the key-column view is an ordered list with a tier precedence, and neither subsumes the
+  other. They will be two readers of one relation, which is the ordinary shape here.
 * `roadmap/planners-read-facts-emitters-read-commands.md` (R682) inherited R704's slice 13 outright:
   re-sourcing `LauncherCommands.routineRow` off facts, as the read-side worked example of driving
   the plan tier onto the store. That is the method stage 5 joins the projection into, so the
@@ -996,11 +1025,10 @@ can query, a rejection the build emits, a refactor that holds output identical, 
 so there is something to verify between them. The plan tracks what is next by collapsing a shipped
 stage into a one-line note.
 
-1. **Capture.** *Not this item's, on either half, and both halves are now in the tree.* The routine
-   call surface landed with R704 slice 7; the node metadata landed with R710's capture slice, R710
-   itself still being `In Progress`. Stage 2 is the first stage and nothing gates its start any more.
-   Its middle tier reads R710's rows, so re-read that item's state at pickup; the binding-leaf view
-   and the projection reduction join no catalog fact at all, so neither ever depended on it.
+1. **Capture.** *Not this item's, on either half, and both halves have shipped.* The routine
+   call surface landed with R704 slice 7; the node metadata with R710, now Done. Stage 2 is the first
+   stage and nothing gates its start: every relation it reads exists, and the binding-leaf view and
+   the projection reduction join no catalog fact at all, so neither ever depended on either.
 2. **Resolution views.** `intent_resolved_node_key_column` (three tiers), the binding-leaf keying
    over `intent_input_occurrence_path` (four arms), and the projection reduction. Exit: each view
    pinned against hand-written expectations, every tier and all eight `site` values reached by a
