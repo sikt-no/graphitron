@@ -4060,6 +4060,45 @@ COMMENT ON COLUMN intent_field_producer_method.method_name IS 'the resolved meth
 COMMENT ON COLUMN intent_field_producer_method.descriptor IS 'the resolved method''s raw JVM descriptor, jvm_method''s overload discriminator and the whole of what tells two rows of one reference apart. The column a reader carries forward to reach the method''s parameters and the classes its declared return type names';
 COMMENT ON COLUMN intent_field_producer_method.candidates IS 'how many census methods this reference matches, this row being one of them; 1 on an unambiguous reference. Partitioned by the reference and not by the coordinate, so a field carrying both directives does not report one arm''s overloads as the other''s. Two overloads and one class declared by two classpath entries both raise it, which is one fact from a reader''s side: the reference names more than one method. Stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms, whether a reference is unique being what decides the reading';
 
+CREATE VIEW intent_field_routine_method
+  (graph_name, type_name, field_name, ordinal,
+   source_name, table_schema, routine_name, class_name, method_name, parameters, candidates) AS
+SELECT graph_name, type_name, field_name, ordinal,
+       source_name, table_schema, routine_name, class_name, method_name, parameters, candidates
+  FROM (SELECT r.graph_name, r.type_name, r.field_name, r.ordinal,
+               sr.source_name, sr.table_schema, sr.routine_name,
+               sr.routines_class_fqn AS class_name, sr.routines_method_name AS method_name,
+               COALESCE(p.parameters, 0) AS parameters,
+               CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.type_name,
+                                                r.field_name, r.ordinal) AS INT) AS candidates
+          FROM graphitron_routine r
+          JOIN intent_spelled_table sp
+            ON sp.graph_name = r.graph_name AND sp.spelling = r.routine_ref
+          JOIN sql_routine sr
+            ON sr.source_name = sp.table_source_name
+           AND sr.table_schema = sp.table_schema
+           AND sr.routine_name = sp.table_name
+          LEFT JOIN (SELECT source_name, table_schema, routine_name,
+                            CAST(COUNT(*) AS INT) AS parameters
+                       FROM sql_routine_parameter
+                      GROUP BY source_name, table_schema, routine_name) p
+            ON p.source_name = sr.source_name
+           AND p.table_schema = sr.table_schema
+           AND p.routine_name = sr.routine_name
+         WHERE sr.routines_class_fqn IS NOT NULL) resolved;
+COMMENT ON VIEW intent_field_routine_method IS 'The generated call surface a @routine application names: graphitron_routine resolved through intent_spelled_table and onto sql_routine, one row per call surface the application matches. The sibling of intent_field_producer_method, and the same shape for the same reason: an authored coordinate reaching into a census is a use-keyed resolution over a source-keyed relation, and it states the resolution alone. How a written name meets the catalog is the spelling view''s rule, stated once there; that a @routine(name:) resolves under it is that view''s own claim, jOOQ modelling a function result as a catalog table. Keyed on the application rather than the field, because @routine is repeatable and the ordinal is what tells two applications on one field apart, in the written order the table chain interleaves them in. No table_type filter: a spelling naming a stored table resolves on the spelling view and then matches no row here, so the join says "not a callable" without restating what sql_table.table_type means. Absence has three causes and the joins separate them: no spelled-table row means the name matched no catalog object at all, a spelled-table row with no routine row means the object it matched is not callable, and a routine whose generated model exposes no call surface is excluded here, because this relation is the call surface and naming a class that does not exist would be a worse answer than naming nothing. Ambiguity is rows and never a decline, as on intent_bound_table.';
+COMMENT ON COLUMN intent_field_routine_method.graph_name IS 'the owning graph''s partition, carried from graphitron_routine';
+COMMENT ON COLUMN intent_field_routine_method.type_name IS 'the applying field''s owning type';
+COMMENT ON COLUMN intent_field_routine_method.field_name IS 'the applying field''s name within the owning type';
+COMMENT ON COLUMN intent_field_routine_method.ordinal IS 'the @routine application''s own ordinal, carried from graphitron_routine; the fourth key part, because a field may carry several applications and each resolves on its own';
+COMMENT ON COLUMN intent_field_routine_method.source_name IS 'the resolved routine''s catalog partition, the first column of the sql_routine key this row names; the partition the graph reached through the spelling view''s own scoping';
+COMMENT ON COLUMN intent_field_routine_method.table_schema IS 'the resolved routine''s SQL schema; what tells two candidates of one spelling apart';
+COMMENT ON COLUMN intent_field_routine_method.routine_name IS 'the resolved routine''s SQL name. With the two columns above this is sql_routine''s full key';
+COMMENT ON COLUMN intent_field_routine_method.class_name IS 'the generated Routines class carrying the call surface, from sql_routine.routines_class_fqn. Never null: a routine the generated model exposes none for has no row here at all';
+COMMENT ON COLUMN intent_field_routine_method.method_name IS 'the Routines-class method an emitted FROM clause calls, from sql_routine.routines_method_name. Never null, on class_name''s terms, the two being null together in the census';
+COMMENT ON COLUMN intent_field_routine_method.parameters IS 'how many IN parameters that method takes: the count of sql_routine_parameter rows for the routine, which is the call surface''s arity. A fact about the generated method, so it is the answer whether or not the consumer''s generated sources were ever scanned as a classpath entry, which they ordinarily are not. 0 is an honest arity here and not a fallback, a routine with no parameters and one whose surface the model does not expose being separated by the row''s existence rather than by this column';
+COMMENT ON COLUMN intent_field_routine_method.candidates IS 'how many call surfaces this one application resolves to, this row being one of them; 1 on an unambiguous one. Partitioned by the application, as intent_field_producer_method partitions by the reference, and stated as a column on intent_bound_table.candidates'' terms: whether the resolution is unique is what decides the reading';
+
 CREATE VIEW intent_delivery_container (container_class, element_index, multiplies) AS VALUES
   ('java.util.List', '0', TRUE),
   ('java.util.Set', '0', TRUE),

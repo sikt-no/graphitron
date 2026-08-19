@@ -4,7 +4,6 @@ import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.hover.DeclarationHovers;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,11 +50,14 @@ class DeclarationHoverOverlayParityTest {
     private static final String FIXTURE_POJO = "no.sikt.graphitron.lsp.fixtures.R157FilmPojo";
     private static final String FIXTURE_JOOQ_RECORD =
         "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord";
+    /** The generated convenience class a {@code @routine} field's call surface lives on. */
+    private static final String ROUTINES_CLASS = "no.sikt.graphitron.rewrite.test.jooq.Routines";
 
     /**
      * One graph covering every arm both halves have: a type bound to a table, a type a producer grounds
      * on a record, one it grounds on a bean, one it grounds on the row type of a table, a field whose
-     * own {@code @service} names a method, and one type per Java declaration the overlay cases describe.
+     * own {@code @service} names a method, one whose {@code @routine} names a generated call, and one
+     * type per Java declaration the overlay cases describe.
      * Each backing is a producer return the census carries, so no assertion below rests on a shape only
      * a hand-built store could have, and every declaration an overlay reads is reachable from a
      * coordinate an author could put a cursor on.
@@ -71,6 +73,7 @@ class DeclarationHoverOverlayParityTest {
             custom: CustomView @service(service: {className: "%3$s", method: "makeCustom"})
             person: PersonView @service(service: {className: "%3$s", method: "makePerson"})
             bean: BeanView @service(service: {className: "%3$s", method: "makeBean"})
+            called: Called
         }
         type Film @table(name: "film") {
             title: String
@@ -81,6 +84,7 @@ class DeclarationHoverOverlayParityTest {
         type FilmPojoView { title: String }
         type FilmRow { title: String }
         type Priced { price: Int @service(service: {className: "%2$s", method: "price"}) }
+        type Called { films: Film @routine(name: "films_for_actor") }
         type CustomView { anything: String }
         type PersonView { firstName: String }
         type BeanView { firstName: String }
@@ -127,6 +131,10 @@ class DeclarationHoverOverlayParityTest {
             // the arity read off the census, taking precedence over the parent's scope.
             assertThat(target(store, member("Priced", "price")))
                 .isEqualTo(new DeclTarget.SourceMethod(SERVICE_CLASS, "price", 1));
+            // A @routine field resolves the same way, out of the catalog census rather than the class
+            // one: the generated call its FROM clause makes, and that call's own parameter count.
+            assertThat(target(store, member("Called", "films")))
+                .isEqualTo(new DeclTarget.SourceMethod(ROUTINES_CLASS, "filmsForActor", 2));
             // Unknown column / unknown member / no scope all yield no target.
             assertThat(target(store, member("Film", "no_such_column")))
                 .isInstanceOf(DeclTarget.None.class);
@@ -251,6 +259,7 @@ class DeclarationHoverOverlayParityTest {
             assertThat(overlay(store, type("Actor"))).isEmpty();
             assertThat(overlay(store, type("PersonView"))).isEmpty();
             assertThat(overlay(store, member("Priced", "price"))).isEmpty();
+            assertThat(overlay(store, member("Called", "films"))).isEmpty();
         }
     }
 
@@ -287,7 +296,8 @@ class DeclarationHoverOverlayParityTest {
             for (DeclarationFacts.Coord coord : List.of(
                 type("CustomView"),
                 member("BeanView", "firstName"),
-                member("Priced", "price")
+                member("Priced", "price"),
+                member("Called", "films")
             )) {
                 // One parsed declaration behind both: goto jumps AND hover overlays.
                 var found = resolve(store, coord);
@@ -358,14 +368,12 @@ class DeclarationHoverOverlayParityTest {
     private record Resolved(DeclTarget target, DeclarationFacts.Rows rows) {}
 
     /**
-     * One statement, then the resolution over what it brought back, with no build behind it. Every
-     * case goes through here, so nothing below can read a substrate the shipped surfaces do not.
+     * One statement, then the resolution over what it brought back. Every case goes through here, so
+     * nothing below can read a substrate the shipped surfaces do not.
      */
     private static Resolved resolve(StoreFixture store, DeclarationFacts.Coord coord) {
-        var handle = store.handle();
-        var projected = DeclTarget.projectedMethod(coord, LspSchemaSnapshot.unavailable());
-        var rows = DeclarationFacts.of(handle, coord, projected);
-        return new Resolved(DeclTarget.of(coord, rows, projected), rows);
+        var rows = DeclarationFacts.of(store.handle(), coord);
+        return new Resolved(DeclTarget.of(coord, rows), rows);
     }
 
     private static DeclTarget target(StoreFixture store, DeclarationFacts.Coord coord) {
@@ -434,6 +442,13 @@ class DeclarationHoverOverlayParityTest {
             public class PriceService {
                 /** Prices one film. */
                 public Object price(Object table) { return null; }
+            }
+            """);
+        store.withJavaSource(root, ROUTINES_CLASS, """
+            /** Every routine in the schema. */
+            public class Routines {
+                /** Films an actor appeared in. */
+                public static Object filmsForActor(Object a, Object b) { return null; }
             }
             """);
         return filmFqn;

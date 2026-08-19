@@ -1,7 +1,5 @@
 package no.sikt.graphitron.lsp.state;
 
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.trace.LspTrace;
@@ -24,10 +22,9 @@ import java.util.function.Function;
  *
  * <p>Thread-safe: lsp4j dispatches notifications and requests on a worker
  * pool; mutating operations and the recalculation queue are serialised
- * through {@code lock}. Each per-round reference is {@code volatile} so a
- * build-output swap (driven by the {@code .class}-watcher in
- * {@code DevMojo}) is observable on the next request without taking the
- * file lock.
+ * through {@code lock}. The session-scoped references are {@code volatile}
+ * so a store handle or a configuration swap is observable on the next
+ * request without taking the file lock.
  *
  * <p>Diagnostics ride the capture cadence rather than the keystroke, so the
  * queue fills from two events only: a file being opened, which has nothing
@@ -42,14 +39,13 @@ public final class Workspace {
     private final Map<String, WorkspaceFile> files = new LinkedHashMap<>();
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
-    private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
     // The session's read access to the fact store, set once by whoever started the session and
-    // null when nobody did. Not a projection swapped per round like the fields above: the store
-    // is written by capture on its own cadence and read live, so there is nothing here to
-    // refresh. A session without one answers store-backed requests absent, which is what a bare
-    // Launcher outside a build has always done.
+    // null when nobody did. Nothing here is swapped per generator round: the store is written by
+    // capture on its own cadence and read live, so there is nothing to refresh. A session without
+    // one answers store-backed requests absent, which is what a bare Launcher outside a build has
+    // always done.
     private volatile StoreAccess store;
 
     public Workspace() {
@@ -236,17 +232,6 @@ public final class Workspace {
     }
 
     /**
-     * The classifier's projection of the last build, swapped on every successful generator pass
-     * through {@link #setBuildOutput}. Stays {@link LspSchemaSnapshot.Unavailable} until the first
-     * build succeeds and holds the last successful projection after that: a failed pass leaves it
-     * alone rather than marking it stale, staleness having had no reader left once the build's own
-     * findings moved to the store.
-     */
-    public LspSchemaSnapshot snapshot() {
-        return snapshot;
-    }
-
-    /**
      * The LSP's directive vocabulary, parsed once at startup from the
      * bundled {@code directives.graphqls} and immutable thereafter. The
      * registry is shape, not state; there is no setter.
@@ -277,26 +262,11 @@ public final class Workspace {
     }
 
     /**
-     * Success-path swap, one recalculation. Used by both the schema-save trigger and the classpath
-     * trigger, the latter so a build's classpath-dependent verdicts surface on the next
-     * {@code mvn compile} without waiting for a schema save. A failed pass calls nothing here: what
-     * it has to say about the schema it wrote to the store, and this projection stays as the last
-     * successful pass left it.
-     *
-     * <p>The build's own errors and warnings do not ride along: capture writes them to the store's
-     * diagnostics stratum on the same round, and the language server reads them there. The artifacts
-     * also carry the build's {@code CompletionData} catalog, which no language-server surface reads
-     * any more; the dev goal logs its census counts from its own copy.
-     */
-    public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts) {
-        this.snapshot = artifacts.snapshot();
-        markAllForRecalculation();
-    }
-
-    /**
-     * Enqueue every open file for diagnostic recalculation. Used by the
-     * dev goal when the generator runs (the source tree changed even
-     * though no individual buffer did) and internally on catalog swaps.
+     * Enqueue every open file for diagnostic recalculation. Used by the dev goal when the generator
+     * runs, the source tree having changed even though no individual buffer did. That is the whole
+     * of what a completed build now does to this workspace: every surface reads the store, so a
+     * round changes what they answer by changing what the store holds, and this is the signal that
+     * it did.
      */
     public void markAllForRecalculation() {
         enqueueAndNotify(() -> files.keySet().forEach(this::enqueue));
@@ -318,9 +288,9 @@ public final class Workspace {
     }
 
     /**
-     * Funnel for every {@code toRecalculate} write reachable from the three
-     * public mutators that touch the queue ({@link #didOpen},
-     * {@link #setBuildOutput}, {@link #markAllForRecalculation}). The
+     * Funnel for every {@code toRecalculate} write reachable from the two
+     * public mutators that touch the queue ({@link #didOpen} and
+     * {@link #markAllForRecalculation}). The
      * mutation runs under {@code lock} so the queue stays consistent with the
      * file map; the listener fires after lock release so a heavy
      * {@code publishDiagnosticsForRecalculate} on the lsp4j thread does

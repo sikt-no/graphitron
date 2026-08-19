@@ -7,8 +7,6 @@ import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -17,7 +15,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,6 +49,8 @@ class DeclarationDefinitionsTest {
     private static final String POJO_FQN = "com.example.FilmPojo";
     private static final String STD_FQN = "com.example.FilmRecord";
     private static final String SVC_FQN = "com.example.FilmService";
+    /** The generated convenience class a {@code @routine} field's call surface lives on. */
+    private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.Routines";
 
     /**
      * The captured graph, which is what says what each buffer's type resolves against: one
@@ -59,12 +58,12 @@ class DeclarationDefinitionsTest {
      * subject of every case is still the {@code .java} files, but the scope a coordinate resolves in is
      * the store's answer now, so a schema saying so has to exist.
      *
-     * <p>The producer-backed coordinates are captured here rather than posted into the projection,
-     * which is what the resolution reads for them: {@code price} and {@code discount} name their
-     * method through {@code @service}, and {@code computed} through {@code @externalField} with a
-     * method name that deliberately differs from the field's, so a case answering it cannot be an echo
-     * of the coordinate. {@code viaMethod} is the exception and stays in the projection, no relation
-     * carrying a routine's generated call surface.
+     * <p>Every method-backed coordinate is captured here, which is what the resolution reads for them:
+     * {@code price} and {@code discount} name their method through {@code @service}, {@code computed}
+     * through {@code @externalField} with a method name that deliberately differs from the field's, so
+     * a case answering it cannot be an echo of the coordinate, and {@code viaRoutine} through
+     * {@code @routine}, whose call surface the catalog census resolves out of the fixture module's own
+     * generated model.
      */
     private static final String CAPTURED_SDL = """
         type Query {
@@ -75,6 +74,7 @@ class DeclarationDefinitionsTest {
             price: Int @service(service: {className: "%1$s", method: "price"})
             greeted: Int @service(service: {className: "%1$s", method: "greet"})
             twinned: Int @service(service: {className: "%1$s", method: "twin"})
+            viaRoutine: FilmTable @routine(name: "films_for_actor")
         }
         type FilmTable @table(name: "film") {
             title: String
@@ -97,10 +97,10 @@ class DeclarationDefinitionsTest {
     private static final int PRICE_LINE = 2;
     private static final int DISCOUNT_LINE = 3;
     private static final int COMPUTED_LINE = 4;
-    private static final int ROUTINE_LINE = 5;
-    private static final int GREET0_LINE = 6;
-    private static final int GREET2_LINE = 7;
-    private static final int TWIN_FIRST_LINE = 8;
+    private static final int GREET0_LINE = 5;
+    private static final int GREET2_LINE = 6;
+    private static final int TWIN_FIRST_LINE = 7;
+    private static final int ROUTINE_CALL_LINE = 3;
 
     /** The generated table class the census recorded, read back rather than spelled out. */
     private static String filmFqn;
@@ -139,11 +139,18 @@ class DeclarationDefinitionsTest {
                 public Object price(Object ctx) { return null; }
                 public Object discount(Object ctx) { return null; }
                 public Object computeCol(Object ctx) { return null; }
-                public Object viaMethod(Object ctx) { return null; }
                 public Object greet() { return null; }
                 public Object greet(Object a, Object b) { return null; }
                 public Object twin(Object a) { return null; }
                 public Object twin(String b) { return null; }
+            }
+            """);
+        // jOOQ generates several overloads per routine and the census names one of them by its
+        // arity, so the two are laid out here for the resolution to choose between.
+        store.withJavaSource(sourceRoot, ROUTINES_FQN, """
+            public class Routines {
+                public static Object filmsForActor(Object a) { return null; }
+                public static Object filmsForActor(Object a, Object b) { return null; }
             }
             """);
     }
@@ -191,7 +198,7 @@ class DeclarationDefinitionsTest {
         // non-jump, the same contract as the jOOQ half.
         var file = file("type FilmRecord { firstName: String }");
         assertThat(DeclarationDefinitions.compute(
-            file, bare.handle(), snapshot(), pointAt(file, 0, "FilmRecord")))
+            file, bare.handle(), pointAt(file, 0, "FilmRecord")))
             .isEmpty();
     }
 
@@ -303,11 +310,19 @@ class DeclarationDefinitionsTest {
         assertThat(compute(file, pointAt(file, 0, "contested"))).isEmpty();
     }
 
+    /**
+     * A {@code @routine} field jumps to the generated call its emitted FROM clause makes, and it
+     * picks the overload by the arity the census holds for that routine. Two parameters here, which
+     * the routine's own parameter list says and no classpath entry does: the consumer's generated
+     * sources are not ordinarily scanned, so a count over the class census would answer 0 and land
+     * on the wrong overload.
+     */
     @Test
-    void routineBackedFieldNameJumpsToMethod() {
-        var file = file("type Query { viaMethod: Int }");
-        var loc = compute(file, pointAt(file, 0, "viaMethod")).orElseThrow();
-        assertThat(loc.getRange().getStart().getLine()).isEqualTo(ROUTINE_LINE);
+    void routineBackedFieldNameJumpsToTheGeneratedCall() {
+        var file = file("type Query { viaRoutine: FilmTable }");
+        var loc = compute(file, pointAt(file, 0, "viaRoutine")).orElseThrow();
+        assertThat(loc.getUri()).endsWith("Routines.java");
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(ROUTINE_CALL_LINE);
     }
 
     @Test
@@ -342,7 +357,7 @@ class DeclarationDefinitionsTest {
         // the same contract as the other backing arms.
         var file = file("type Query { price: Int }");
         assertThat(DeclarationDefinitions.compute(
-            file, bare.handle(), snapshot(), pointAt(file, 0, "price")))
+            file, bare.handle(), pointAt(file, 0, "price")))
             .isEmpty();
     }
 
@@ -369,39 +384,17 @@ class DeclarationDefinitionsTest {
     }
 
     @Test
-    void anUnavailableSnapshotStillJumps() {
-        // What a coordinate resolves against and where the declaration is are both the store's, so a
-        // session that captured but never generated navigates like one that did.
-        var file = file("type FilmRecord { firstName: String }");
-        var loc = DeclarationDefinitions.compute(
-            file, store.handle(), LspSchemaSnapshot.unavailable(),
-            pointAt(file, 0, "FilmRecord")).orElseThrow();
-        assertThat(loc.getUri()).endsWith("FilmDto.java");
-    }
-
-    @Test
-    void aRoutineBackedFieldIsWhatAnUnavailableSnapshotCosts() {
-        // The one arm no relation carries. With no build behind it the field falls through to what the
-        // parent type's scope offers, which on a root operation type is nothing.
-        var file = file("type Query { viaMethod: Int }");
-        assertThat(DeclarationDefinitions.compute(
-            file, store.handle(), LspSchemaSnapshot.unavailable(),
-            pointAt(file, 0, "viaMethod")))
-            .isEmpty();
-    }
-
-    @Test
     void aSessionWithNoStoreAccessJumpsNowhere() {
         // The positions live in the store, so a language server nobody handed store access to has
         // nowhere to jump from, and says so once rather than per arm.
         var file = file("type FilmRecord { firstName: String }");
         assertThat(DeclarationDefinitions.compute(
-            file, Optional.empty(), snapshot(), pointAt(file, 0, "FilmRecord")))
+            file, Optional.empty(), pointAt(file, 0, "FilmRecord")))
             .isEmpty();
     }
 
     private static Optional<Location> compute(FileSnapshot file, Point pos) {
-        return DeclarationDefinitions.compute(file, store.handle(), snapshot(), pos);
+        return DeclarationDefinitions.compute(file, store.handle(), pos);
     }
 
     /**
@@ -417,7 +410,7 @@ class DeclarationDefinitionsTest {
 
     /**
      * The classpath census half: which names are references, and with what members. The record's
-     * component and the POJO's accessor are what a member name resolves through; the service's four
+     * component and the POJO's accessor are what a member name resolves through; the service's three
      * one-argument methods are the arities a method-backed field resolves at, and its three factories
      * are what ground the captured graph's three class-scoped types. {@code greet} and {@code twin} are
      * deliberately absent, so the cases that name them exercise the arity-0 fallback on a method the
@@ -436,22 +429,9 @@ class DeclarationDefinitionsTest {
                 StoreFixture.method("price", "Field", oneArg),
                 StoreFixture.method("discount", "Field", oneArg),
                 StoreFixture.method("computeCol", "Field", oneArg),
-                StoreFixture.method("viaMethod", "Film", oneArg),
                 StoreFixture.producing("makeDto", RECORD_FQN),
                 StoreFixture.producing("makePojo", POJO_FQN),
                 StoreFixture.producing("makeStd", STD_FQN))));
-    }
-
-    /**
-     * The projection, carrying the one question the declaration-name resolution still puts to it: the
-     * generated call surface a {@code @routine} field binds to. No backing and no producer method,
-     * both being the store's; a routine's class is jOOQ's {@code Routines} and its method that class's
-     * generated call, and the catalog census holds no routine family to derive either from.
-     */
-    private static LspSchemaSnapshot snapshot() {
-        Map<String, FieldClassification> classifications = Map.of(
-            "Query.viaMethod", new FieldClassification.RoutineBacked("film", SVC_FQN, "viaMethod"));
-        return new LspSchemaSnapshot.Built(classifications, Map.of());
     }
 
     private static Point pointAt(FileSnapshot file, int line, String token) {

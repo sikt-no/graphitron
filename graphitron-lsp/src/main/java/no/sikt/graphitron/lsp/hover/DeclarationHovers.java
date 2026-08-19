@@ -12,7 +12,6 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
@@ -56,10 +55,10 @@ import java.util.function.Function;
  * exhaustive, mirroring goto's, so a new backing permit breaks both at compile time.
  *
  * <p>Both blocks are arms of one statement rather than two reads issued in order, which is what lets
- * the overlay render with no build behind it: what it needs is {@link DeclarationFacts}, and the only
- * thing a completed build still buys either surface is a {@code @routine} field's generated call
- * surface. Goto reads the same rows for the same declaration's position, so neither surface can be
- * answering about a state of the source the other has not seen.
+ * the overlay render with no build behind it: what it needs is {@link DeclarationFacts}, and a
+ * completed build buys neither surface anything either one of them reads. Goto reads the same rows
+ * for the same declaration's position, so neither surface can be answering about a state of the
+ * source the other has not seen.
  */
 public final class DeclarationHovers {
 
@@ -77,8 +76,7 @@ public final class DeclarationHovers {
      * than half a popup.
      */
     public static Optional<Hover> compute(
-        FileSnapshot file, Optional<StoreHandle> store,
-        LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, Optional<StoreHandle> store, Point pos
     ) {
         if (file == null || file.tree() == null) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
@@ -89,14 +87,13 @@ public final class DeclarationHovers {
         var hoverDecl = toDeclarationHover(declaration);
         var block = classificationBlock(handle, hoverDecl);
         var coord = DeclTarget.coordinateOf(declaration, file.source());
-        var projected = DeclTarget.projectedMethod(coord, snapshot);
-        var binding = DeclarationFacts.arms(handle, coord, projected);
+        var binding = DeclarationFacts.arms(handle, coord);
         var fields = new ArrayList<Field<?>>(block.arms());
         fields.addAll(binding.fields());
         var row = handle.dsl().select(fields).fetchOne();
         String classification = block.render().apply(row);
         var rows = binding.read(row);
-        String overlay = overlay(DeclTarget.of(coord, rows, projected), rows);
+        String overlay = overlay(DeclTarget.of(coord, rows), rows);
         if (classification == null && overlay.isEmpty()) return Optional.empty();
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
     }

@@ -4,7 +4,6 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.hover.DeclarationHovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -289,7 +288,7 @@ class ClassificationHoverTest {
             }
             """);
         assertThat(DeclarationHovers.compute(
-            file, Optional.empty(), LspSchemaSnapshot.unavailable(), new Point(0, "type Fi".length())))
+            file, Optional.empty(), new Point(0, "type Fi".length())))
             .isEmpty();
     }
 
@@ -318,7 +317,7 @@ class ClassificationHoverTest {
 
     private static Optional<String> hover(FileSnapshot file, int line, int column) {
         return DeclarationHovers.compute(
-                file, Optional.of(store.handle()), LspSchemaSnapshot.unavailable(), new Point(line, column))
+                file, Optional.of(store.handle()), new Point(line, column))
             .map(h -> h.getContents().getRight().getValue());
     }
 

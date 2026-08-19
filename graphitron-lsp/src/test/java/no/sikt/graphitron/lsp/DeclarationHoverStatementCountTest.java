@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.hover.DeclarationHovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.jooq.ExecuteContext;
 import org.jooq.ExecuteListener;
 import org.jooq.impl.DSL;
@@ -45,8 +44,8 @@ class DeclarationHoverStatementCountTest {
     /**
      * One coordinate per shape the count must hold for: a plain column match, a coordinate two
      * directives both claim, a field claimed by nothing that still carries a join path and a
-     * round-trip rule, a claimed type, a type no claim names that a producer's return backs, and a
-     * type two producers back differently.
+     * round-trip rule, a field whose {@code @routine} names a generated call, a claimed type, a type
+     * no claim names that a producer's return backs, and a type two producers back differently.
      */
     private static final String SDL = """
         type Query {
@@ -54,6 +53,7 @@ class DeclarationHoverStatementCountTest {
             card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
             left: Contested @service(service: {className: "%1$s", method: "makeFilmRecord"})
             right: Contested @service(service: {className: "%1$s", method: "makeFilmPojo"})
+            called: [Film] @routine(name: "films_for_actor")
         }
 
         type FilmCard {
@@ -126,6 +126,18 @@ class DeclarationHoverStatementCountTest {
             }
             """);
         assertThat(statementsForHoverAt(file, 1, "    langua".length())).isEqualTo(1);
+    }
+
+    @Test
+    void aRoutineBackedFieldCostsOneStatement() {
+        // The coordinate whose resolution used to arrive from outside the statement: it is a subquery
+        // in the same select now, so the overlay describing a generated call still costs one.
+        var file = file("""
+            type Query {
+                called: [Film]
+            }
+            """);
+        assertThat(statementsForHoverAt(file, 1, "    calle".length())).isEqualTo(1);
     }
 
     @Test
@@ -225,7 +237,7 @@ class DeclarationHoverStatementCountTest {
 
     private static Optional<String> hover(StoreHandle handle, FileSnapshot file, int line, int column) {
         return DeclarationHovers.compute(
-                file, Optional.of(handle), LspSchemaSnapshot.unavailable(), new Point(line, column))
+                file, Optional.of(handle), new Point(line, column))
             .map(h -> h.getContents().getRight().getValue());
     }
 

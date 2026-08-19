@@ -7,7 +7,6 @@ import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Location;
 
 import java.util.Optional;
@@ -47,27 +46,20 @@ public final class DeclarationDefinitions {
     private DeclarationDefinitions() {}
 
     public static Optional<Location> compute(
-        FileSnapshot file, Optional<StoreHandle> store,
-        LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, Optional<StoreHandle> store, Point pos
     ) {
-        return store.flatMap(handle -> compute(file, handle, snapshot, pos));
+        return store.flatMap(handle -> compute(file, handle, pos));
     }
 
-    public static Optional<Location> compute(
-        FileSnapshot file, StoreHandle store,
-        LspSchemaSnapshot snapshot, Point pos
-    ) {
+    public static Optional<Location> compute(FileSnapshot file, StoreHandle store, Point pos) {
         if (file == null || file.tree() == null) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        // No snapshot gate: the resolution and the position behind it are one statement over the
-        // store's own relations, so a session that has captured but never generated jumps like any
-        // other. What a completed build still buys is the one arm no relation carries, a @routine
-        // field's generated call surface.
+        // The resolution and the position behind it are one statement over the store's own
+        // relations, so a session that has captured but never generated jumps like any other.
         var coord = DeclTarget.coordinateOf(declOpt.get(), file.source());
-        var projected = DeclTarget.projectedMethod(coord, snapshot);
-        var rows = DeclarationFacts.of(store, coord, projected);
-        return locate(DeclTarget.of(coord, rows, projected), rows);
+        var rows = DeclarationFacts.of(store, coord);
+        return locate(DeclTarget.of(coord, rows), rows);
     }
 
     /**

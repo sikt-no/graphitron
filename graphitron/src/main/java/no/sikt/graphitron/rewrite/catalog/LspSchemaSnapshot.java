@@ -5,21 +5,20 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Projection of the parsed user schema's classifications, shipped through the dev pipeline to the
- * LSP as a side-channel. What the language server still reads here is one coordinate's worth: which
- * Java method a method-backed field binds to. Every other surface asks the fact store, and the
- * directive surface this once carried is a query over the captured definitions now.
+ * Projection of the parsed user schema's classifications, produced by a generator pass. No language
+ * server surface reads it: every one of them asks the fact store, the last coordinate to move being
+ * the generated call surface a {@code @routine} field binds to, which the catalog census carries.
+ * The dev goal reads the availability arm alone, as its signal that a round classified.
  *
- * <p>The classification maps outlive that reader as the classifier's own assertion surface in the
- * generator's tests.
+ * <p>The classification maps outlive that reader twice over: inside the classifier, where the type
+ * projection is derived from the field one, and in the generator's tests, where they are the
+ * classifier's own assertion surface.
  *
  * <p>Sealed over one axis, which is availability: whether the build pipeline has produced a
  * projection yet. A freshness axis stood beside it, separating the latest successful parse from the
  * last one before a regression, and it retired with its only reader. Nothing distinguishes a
  * projection built two edits ago from one built now, because what a stale projection was silencing
  * is read from the store now, where a document reports what the graph last captured.
- *
- * <p>{@code Workspace} owns the lifecycle and the volatile reference.
  */
 public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable, LspSchemaSnapshot.Built {
 

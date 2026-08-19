@@ -261,12 +261,11 @@ public class DevMojo extends AbstractRewriteMojo {
         // carry two transactions: the language server's reads and an MCP tool's would otherwise
         // serialize behind each other for no better cause than sharing a socket.
         this.mcpStore = sessionStore.reader();
-        if (initial.snapshot() instanceof LspSchemaSnapshot.Built built) {
-            // The facts before the swap: the swap enqueues every open file for recalculation, and a
-            // recalculation replays what this round wrote about them.
+        if (initial.snapshot() instanceof LspSchemaSnapshot.Built) {
+            // The round classified, so it has findings worth replaying. The facts go in before the
+            // enqueue: a recalculation replays what this round wrote about each open file.
             writeReportFacts(initial.walkErrors(), initial.warnings());
-            workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), built));
+            workspace.markAllForRecalculation();
         }
         // Build the debounce and save-listener before bindServer so DevServer
         // can hand the listener to each editor-facing GraphitronLanguageServer.
@@ -616,7 +615,7 @@ public class DevMojo extends AbstractRewriteMojo {
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
-                    workspace.setBuildOutput(output.artifacts());
+                    workspace.markAllForRecalculation();
                 } catch (RuntimeException e) {
                     getLog().warn("graphitron:dev: catalog refresh after save failed; "
                         + "keeping previous: " + e.getMessage());
@@ -636,7 +635,7 @@ public class DevMojo extends AbstractRewriteMojo {
                 try {
                     var output = new GraphQLRewriteGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
-                    workspace.setBuildOutput(output.artifacts());
+                    workspace.markAllForRecalculation();
                     var catalog = output.artifacts().catalog();
                     getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
                         + " tables, " + catalog.types().size() + " scalars)");

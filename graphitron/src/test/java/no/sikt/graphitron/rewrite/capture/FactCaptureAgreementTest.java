@@ -209,6 +209,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       against being names and nothing else; half its cases pin what the resolution refuses to
  *       decide (an overloaded name is rows and an arity, never a pick) and two pin what survives it,
  *       a reference the census matched nothing for still being a reference;
+ *       {@code no.sikt.graphitron.model.intent.FieldRoutineMethodTest} binds
+ *       {@code intent_field_routine_method}, the generated call surface a {@code @routine}
+ *       application resolves to, in the same module and on the same terms: a spelling and a census
+ *       are names, so a fixture states both sides and half its cases pin the three causes of absence
+ *       apart (a name matching no catalog object, one matching a stored table rather than a
+ *       callable, and a callable the generated model exposes no call surface for);
  *       {@code no.sikt.graphitron.model.intent.AccessorHopTest} binds the five relations an
  *       accessor hop is built from ({@code intent_delivery_container}, {@code intent_declared_type_ref},
  *       {@code intent_declared_type_element}, {@code intent_class_member_element} and
@@ -352,6 +358,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_class_assignable", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
+        registrations.put("intent_field_routine_method", Arm.DERIVED);
         registrations.put("intent_delivery_container", Arm.DERIVED);
         registrations.put("intent_declared_type_ref", Arm.DERIVED);
         registrations.put("intent_declared_type_element", Arm.DERIVED);

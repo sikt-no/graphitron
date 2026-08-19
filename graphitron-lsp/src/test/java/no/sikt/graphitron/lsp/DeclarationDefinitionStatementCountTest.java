@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.jooq.ExecuteContext;
 import org.jooq.ExecuteListener;
 import org.jooq.impl.DSL;
@@ -43,13 +42,15 @@ class DeclarationDefinitionStatementCountTest {
 
     /**
      * One coordinate per shape the count must hold for: a type bound to a table, a column on it, a type
-     * a producer's return backs, a member on that type, and a field whose own {@code @service} names a
-     * method the census holds.
+     * a producer's return backs, a member on that type, a field whose own {@code @service} names a
+     * method the census holds, and one whose {@code @routine} names a generated call the catalog
+     * census holds.
      */
     private static final String SDL = """
         type Query {
             films: [Film]
             card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
+            called: [Film] @routine(name: "films_for_actor")
         }
 
         type Film @table(name: "film") {
@@ -68,6 +69,7 @@ class DeclarationDefinitionStatementCountTest {
     private static StoreFixture store;
 
     private static final String FIXTURE_RECORD = "no.sikt.graphitron.lsp.fixtures.R157FilmRecord";
+    private static final String ROUTINES_FQN = "no.sikt.graphitron.rewrite.test.jooq.Routines";
 
     @BeforeAll
     static void capture() {
@@ -87,6 +89,11 @@ class DeclarationDefinitionStatementCountTest {
         store.withJavaSource(tmp, FIXTURE_SERVICE, """
             public class R157Service {
                 public Object makeFilmRecord() { return null; }
+            }
+            """);
+        store.withJavaSource(tmp, ROUTINES_FQN, """
+            public class Routines {
+                public static Object filmsForActor(Object a, Object b) { return null; }
             }
             """);
     }
@@ -140,6 +147,21 @@ class DeclarationDefinitionStatementCountTest {
         assertThat(statementsForJumpAt(file, 1, "    ratin".length())).isEqualTo(1);
     }
 
+    /**
+     * The coordinate whose resolution used to arrive from outside the statement: the pair a
+     * {@code @routine} field binds to is a subquery in the same select as everything else, so
+     * naming it, positioning it and counting its parameters together still cost one.
+     */
+    @Test
+    void aRoutineBackedFieldCostsOneStatement() {
+        var file = file("""
+            type Query {
+                called: [Film]
+            }
+            """);
+        assertThat(statementsForJumpAt(file, 1, "    calle".length())).isEqualTo(1);
+    }
+
     @Test
     void aDeclarationTheStoreKnowsNothingAboutCostsOneStatement() {
         // Absence is an answer, and it is the same statement: nothing here may fall back to probing
@@ -181,8 +203,7 @@ class DeclarationDefinitionStatementCountTest {
     private static java.util.Optional<org.eclipse.lsp4j.Location> jump(
         StoreHandle handle, FileSnapshot file, int line, int column
     ) {
-        return DeclarationDefinitions.compute(
-            file, handle, LspSchemaSnapshot.unavailable(), new Point(line, column));
+        return DeclarationDefinitions.compute(file, handle, new Point(line, column));
     }
 
     private static FileSnapshot file(String source) {

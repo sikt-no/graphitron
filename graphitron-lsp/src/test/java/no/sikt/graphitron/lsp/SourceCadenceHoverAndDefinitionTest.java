@@ -4,10 +4,8 @@ import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,7 +61,6 @@ class SourceCadenceHoverAndDefinitionTest {
                 }
             }
             """);
-        var workspace = new Workspace();
 
         var file = file("""
             type Query {
@@ -75,7 +72,7 @@ class SourceCadenceHoverAndDefinitionTest {
         try (var store = priceServiceStore(srcRoot)) {
             // Hover surfaces the method Javadoc the parse read into the store's java-source family;
             // the classpath census it joins to carries none by design.
-            assertThat(hoverText(workspace, store, file, methodPos))
+            assertThat(hoverText(store, file, methodPos))
                 .contains("Looks up a price for a film.");
 
             // Goto-definition jumps to the same method declaration in the same file.
@@ -109,12 +106,11 @@ class SourceCadenceHoverAndDefinitionTest {
                     public final Object ACTOR_ID = null;
                 }
                 """);
-            var workspace = new Workspace();
 
             // Hover's description is the generated class's Javadoc, reached from the store's
             // catalog census through the FQN into its java-source family; the database declares no
             // comment on actor, so a parse is the only thing that can have supplied it.
-            assertThat(hoverText(workspace, store, file, tablePos)).contains("The actor table.");
+            assertThat(hoverText(store, file, tablePos)).contains("The actor table.");
 
             var loc = Definitions.compute(LspVocabulary.load(), file, store.handle(), tablePos)
                 .orElseThrow();
@@ -133,9 +129,6 @@ class SourceCadenceHoverAndDefinitionTest {
                 public Object price(Object table) { return null; }
             }
             """);
-        var workspace = new Workspace();
-        var snapshotBefore = workspace.snapshot();
-
         var file = file("""
             type Query {
                 films: Int @service(service: {className: "com.example.PriceService", method: "price"})
@@ -146,7 +139,7 @@ class SourceCadenceHoverAndDefinitionTest {
         try (var store = priceServiceStore(srcRoot)) {
             int lineBefore = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
                 .orElseThrow().getRange().getStart().getLine();
-            assertThat(hoverText(workspace, store, file, methodPos)).contains("First doc.");
+            assertThat(hoverText(store, file, methodPos)).contains("First doc.");
 
             // Edit the source: new Javadoc, and the method shifts down two lines.
             Files.writeString(source, """
@@ -161,12 +154,9 @@ class SourceCadenceHoverAndDefinitionTest {
             Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(
                 Files.getLastModifiedTime(source).toMillis() + 5000));
 
-            // The edited file is re-read, and nothing else is; no generator pass ran, which the
-            // workspace states by still holding the build output it held before.
+            // The edited file is re-read and nothing else is. No generator pass runs here and none
+            // could: this test holds a store and a parse, and every surface it exercises reads them.
             store.refreshJavaSources(srcRoot);
-            assertThat(workspace.snapshot())
-                .as("source-cadence refresh must not run a generator pass")
-                .isSameAs(snapshotBefore);
 
             int lineAfter = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
                 .orElseThrow().getRange().getStart().getLine();
@@ -174,7 +164,7 @@ class SourceCadenceHoverAndDefinitionTest {
             // Hover and goto move together off one edit: the new doc comment and the new line come
             // out of one re-read of the file, so the two cannot disagree about the declaration.
             assertThat(lineAfter).isGreaterThan(lineBefore);
-            assertThat(hoverText(workspace, store, file, methodPos)).contains("Second doc, moved down.");
+            assertThat(hoverText(store, file, methodPos)).contains("Second doc, moved down.");
         }
     }
 
@@ -201,17 +191,11 @@ class SourceCadenceHoverAndDefinitionTest {
                     public final Object FIRST_NAME = null;
                 }
                 """);
-            var workspace = new Workspace();
             // Which declaration the type name binds to is the store's answer off the captured
-            // binding, so the projection this arm still takes carries nothing.
-            var snapshot = new LspSchemaSnapshot.Built();
+            // binding, and so is everything either surface then says about it.
+            assertThat(hoverText(store, file, namePos, true)).contains("The actor table.");
 
-            assertThat(hoverText(workspace, store, file, namePos, snapshot, true))
-                .contains("The actor table.");
-
-            var loc = DeclarationDefinitions
-                .compute(file, store.handle(), snapshot, namePos)
-                .orElseThrow();
+            var loc = DeclarationDefinitions.compute(file, store.handle(), namePos).orElseThrow();
             assertThat(loc.getUri()).endsWith("Actor.java");
             assertThat(loc.getRange().getStart().getLine()).isEqualTo(2);
         }
@@ -229,18 +213,15 @@ class SourceCadenceHoverAndDefinitionTest {
         return store;
     }
 
-    private static String hoverText(
-        Workspace workspace, StoreFixture store, FileSnapshot file, Point pos
-    ) {
-        return hoverText(workspace, store, file, pos, workspace.snapshot(), false);
+    private static String hoverText(StoreFixture store, FileSnapshot file, Point pos) {
+        return hoverText(store, file, pos, false);
     }
 
     private static String hoverText(
-        Workspace workspace, StoreFixture store, FileSnapshot file, Point pos,
-        LspSchemaSnapshot snapshot, boolean declarationNames
+        StoreFixture store, FileSnapshot file, Point pos, boolean declarationNames
     ) {
         return Hovers.compute(LspVocabulary.load(), file,
-            Optional.of(store.handle()), snapshot, pos, declarationNames)
+            Optional.of(store.handle()), pos, declarationNames)
             .orElseThrow().getContents().getRight().getValue();
     }
 

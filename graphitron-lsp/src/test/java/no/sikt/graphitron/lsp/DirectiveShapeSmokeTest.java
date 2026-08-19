@@ -11,7 +11,6 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import io.github.treesitter.jtreesitter.Parser;
@@ -147,7 +146,7 @@ class DirectiveShapeSmokeTest {
         // the docstring that answers instead is a captured row like every other fact here.
         try (var store = storeWith("com.example.FooDto", null)) {
             var hover = Hovers.compute(WorkspaceFileTestSupport.snapshot(source),
-                Optional.of(store.handle()), LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
+                Optional.of(store.handle()), cursor).orElseThrow();
 
             var md = hover.getContents().getRight().getValue();
             assertThat(md).doesNotContain("**Class**");

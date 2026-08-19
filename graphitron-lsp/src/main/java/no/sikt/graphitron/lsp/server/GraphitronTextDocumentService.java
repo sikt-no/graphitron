@@ -200,8 +200,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                         return workspace.answering(uri, store ->
                             Definitions.compute(workspace.vocabulary(), file, store, pos)
                                 .or(() -> IntraSchemaDefinitions.compute(workspace, store, uri, pos))
-                                .or(() -> DeclarationDefinitions.compute(
-                                    file, store, workspace.snapshot(), pos)))
+                                .or(() -> DeclarationDefinitions.compute(file, store, pos)))
                             .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                             .orElseGet(() -> Either.forLeft(List.of()));
                     });
@@ -242,8 +241,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                     // assembled from two snapshots could name a class from before a capture and
                     // describe it from after.
                     return workspace.answering(uri, store ->
-                        Hovers.compute(workspace.vocabulary(), file, store,
-                            workspace.snapshot(), pos,
+                        Hovers.compute(workspace.vocabulary(), file, store, pos,
                             workspace.inlayHintConfig().hoverClassification())).orElse(null);
                 });
             }

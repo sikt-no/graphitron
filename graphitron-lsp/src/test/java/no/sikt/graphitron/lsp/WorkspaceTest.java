@@ -1,8 +1,5 @@
 package no.sikt.graphitron.lsp;
 
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.Position;
@@ -171,16 +168,13 @@ class WorkspaceTest {
     }
 
     @Test
-    void setBuildOutputEnqueuesAllOpenFiles() {
+    void aBuildEnqueuesAllOpenFiles() {
         var ws = new Workspace();
         ws.didOpen("file:///a.graphqls", 1, "type A { x: Int }\n");
         ws.didOpen("file:///b.graphqls", 1, "type B { y: Int }\n");
         ws.drainRecalculate();
 
-        ws.setBuildOutput(
-            new GraphQLRewriteGenerator.BuildArtifacts(
-                CompletionData.empty(),
-                new LspSchemaSnapshot.Built()));
+        ws.markAllForRecalculation();
 
         assertThat(ws.drainRecalculate())
             .containsExactlyInAnyOrder("file:///a.graphqls", "file:///b.graphqls");
@@ -190,13 +184,8 @@ class WorkspaceTest {
     @MethodSource("publicQueueMutators")
     void everyQueueMutatingMethodFiresTheListener(String name, Consumer<Workspace> mutator) {
         var ws = new Workspace();
-        // Pre-seed: one open file, and a build behind the session so setBuildOutput has a
-        // well-formed BuildArtifacts to swap into.
+        // Pre-seed: one open file, already drained, so each mutator's own fire is what is counted.
         ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
-        ws.setBuildOutput(
-            new GraphQLRewriteGenerator.BuildArtifacts(
-                CompletionData.empty(),
-                new LspSchemaSnapshot.Built()));
         ws.drainRecalculate();
         var fires = new AtomicInteger();
         ws.setRecalculateListener(fires::incrementAndGet);
@@ -212,11 +201,6 @@ class WorkspaceTest {
         return Stream.of(
             Arguments.of("didOpen",
                 (Consumer<Workspace>) ws -> ws.didOpen("file:///b.graphqls", 1, "type Bar { y: Int }\n")),
-            Arguments.of("setBuildOutput",
-                (Consumer<Workspace>) ws -> ws.setBuildOutput(
-                    new GraphQLRewriteGenerator.BuildArtifacts(
-                        CompletionData.empty(),
-                        new LspSchemaSnapshot.Built()))),
             Arguments.of("markAllForRecalculation",
                 (Consumer<Workspace>) Workspace::markAllForRecalculation));
     }
@@ -268,17 +252,5 @@ class WorkspaceTest {
         // drain, the second drain only sees what was actually added since.
         assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
         assertThat(ws.drainRecalculate()).isEmpty();
-    }
-
-    @Test
-    void setBuildOutputSwapsTheSnapshotIn() {
-        var ws = new Workspace();
-        assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
-
-        var snapshot = new LspSchemaSnapshot.Built();
-
-        ws.setBuildOutput(new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), snapshot));
-
-        assertThat(ws.snapshot()).isSameAs(snapshot);
     }
 }

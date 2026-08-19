@@ -4,8 +4,6 @@ import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.lsp.facts.DeclarationFacts;
 import no.sikt.graphitron.lsp.facts.FieldProducerMethods;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
-import no.sikt.graphitron.rewrite.catalog.FieldClassification;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 
 import java.util.Optional;
 
@@ -29,10 +27,8 @@ import java.util.Optional;
  * <p>What a coordinate resolves against is {@link TypeMemberScope}'s, shared with
  * completion, hover's coordinate arm and the field-member diagnostic. Which Java method a
  * method-backed field binds to is {@link FieldProducerMethods}', for {@code @service} and
- * {@code @externalField}. One question is left with the classification projection and it is
- * {@code @routine}'s: the generated call surface a routine read or write binds to, which is a
- * derivation over jOOQ's routine codegen that no relation carries. The projection is therefore
- * optional here, and every arm but that one resolves with no build behind it.
+ * {@code @externalField}, and the catalog census's own, for the generated call surface a
+ * {@code @routine} read or write binds to. Every arm resolves with no build behind it.
  */
 public sealed interface DeclTarget {
 
@@ -86,42 +82,14 @@ public sealed interface DeclTarget {
     }
 
     /**
-     * The method the classification projection says the coordinate binds to, which is the one binding
-     * no relation carries: a {@code @routine} field's generated call surface. Read before the statement
-     * rather than after it, the projection being a value the session already holds, so the store can
-     * still answer the arity behind it and position its declaration alongside every other candidate.
-     *
-     * <p>Empty at a type coordinate, empty with no build behind the session, and empty for every other
-     * classification, each of which either names a producer the store answers for or binds no developer
-     * method at all. {@code memberName} is the SDL field name here: a routine-backed field carries no
-     * {@code @field(name:)} override (that override redirects a column or accessor binding, a different
-     * classification), so it is the coordinate the projection is keyed by.
+     * Resolves the declaration a coordinate binds to over rows a caller already holds. Nothing here
+     * reads anything: a consumer that fetched {@link DeclarationFacts} for this coordinate has paid
+     * for the whole resolution already.
      */
-    static DeclarationFacts.ProjectedMethod projectedMethod(
-        DeclarationFacts.Coord coord, LspSchemaSnapshot snapshot
-    ) {
-        if (!(coord instanceof DeclarationFacts.Coord.Member member)) return null;
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return null;
-        return built.fieldClassification(member.typeName(), member.memberName())
-            .filter(FieldClassification.RoutineBacked.class::isInstance)
-            .map(FieldClassification.RoutineBacked.class::cast)
-            .map(routine -> new DeclarationFacts.ProjectedMethod(
-                routine.methodClassName(), routine.methodName()))
-            .orElse(null);
-    }
-
-    /**
-     * Resolves the declaration a coordinate binds to over rows a caller already holds, plus the one
-     * method the projection named. Nothing here reads anything: a consumer that fetched
-     * {@link DeclarationFacts} for this coordinate has paid for the whole resolution already.
-     */
-    static DeclTarget of(
-        DeclarationFacts.Coord coord, DeclarationFacts.Rows rows,
-        DeclarationFacts.ProjectedMethod projected
-    ) {
+    static DeclTarget of(DeclarationFacts.Coord coord, DeclarationFacts.Rows rows) {
         return switch (coord) {
             case DeclarationFacts.Coord.Type ignored -> ofType(rows);
-            case DeclarationFacts.Coord.Member ignored -> ofField(rows, projected);
+            case DeclarationFacts.Coord.Member ignored -> ofField(rows);
         };
     }
 
@@ -152,9 +120,7 @@ public sealed interface DeclTarget {
      * which the catalog census already answers about. So the degrade was standing in for absent
      * facts rather than naming a declaration a field binds to.
      */
-    static DeclTarget ofField(
-        DeclarationFacts.Rows rows, DeclarationFacts.ProjectedMethod projected
-    ) {
+    static DeclTarget ofField(DeclarationFacts.Rows rows) {
         // A method-backed field (@service / @externalField / @routine) is
         // bound to its Java method, not to a column on the parent's table, so the
         // producer takes precedence over the parent's scope below.
@@ -163,11 +129,10 @@ public sealed interface DeclTarget {
             var producer = produced.get();
             return new SourceMethod(producer.fqClassName(), producer.methodName(), producer.arity());
         }
-        // The projected method is the @routine arm, and it is the last thing keeping the projection on
-        // this surface. With no build behind the session it names nothing and the parent's scope answers.
-        if (projected != null) {
-            return new SourceMethod(
-                projected.className(), projected.methodName(), rows.projectedArity());
+        var routine = rows.routineMethod();
+        if (routine.isPresent()) {
+            var call = routine.get();
+            return new SourceMethod(call.className(), call.methodName(), call.arity());
         }
         var scope = rows.scope();
         if (scope.isEmpty()) return new None();

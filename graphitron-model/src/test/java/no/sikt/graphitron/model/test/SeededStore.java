@@ -41,6 +41,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
@@ -669,6 +671,45 @@ public final class SeededStore {
             .set(SQL_TABLE.JOOQ_NAME, tableName.toUpperCase(Locale.ROOT))
             .set(SQL_TABLE.CLASS_FQN, sourceName + ".tables." + tableName)
             .set(SQL_TABLE.RECORD_CLASS_FQN, sourceName + ".tables.records." + tableName + "Record")
+            .execute();
+    }
+
+    /**
+     * The callable behind a catalog object, with the generated call surface an emitted FROM clause
+     * calls. Named for the catalog rather than for the directive, {@link #seedRoutine} being the
+     * {@code @routine} application that names one of these. Both generated names are nullable
+     * together in the census, so the overload below states the shape where the model exposes none.
+     */
+    public static void seedCatalogRoutine(DSLContext dsl, String sourceName, String tableSchema,
+                                          String routineName, String routinesClassFqn,
+                                          String methodName) {
+        seedSchema(dsl, sourceName, tableSchema);
+        dsl.insertInto(SQL_ROUTINE)
+            .set(SQL_ROUTINE.SOURCE_NAME, sourceName)
+            .set(SQL_ROUTINE.TABLE_SCHEMA, tableSchema)
+            .set(SQL_ROUTINE.ROUTINE_NAME, routineName)
+            .set(SQL_ROUTINE.ROUTINE_TYPE, "FUNCTION")
+            .set(SQL_ROUTINE.ROUTINES_CLASS_FQN, routinesClassFqn)
+            .set(SQL_ROUTINE.ROUTINES_METHOD_NAME, methodName)
+            .execute();
+    }
+
+    /** The same row with no call surface, which is the two generated names null together. */
+    public static void seedCatalogRoutine(DSLContext dsl, String sourceName, String tableSchema,
+                                          String routineName) {
+        seedCatalogRoutine(dsl, sourceName, tableSchema, routineName, null, null);
+    }
+
+    /** One IN parameter of a routine's call surface, at its 0-based position. */
+    public static void seedRoutineParameter(DSLContext dsl, String sourceName, String tableSchema,
+                                            String routineName, int position, String jooqName) {
+        dsl.insertInto(SQL_ROUTINE_PARAMETER)
+            .set(SQL_ROUTINE_PARAMETER.SOURCE_NAME, sourceName)
+            .set(SQL_ROUTINE_PARAMETER.TABLE_SCHEMA, tableSchema)
+            .set(SQL_ROUTINE_PARAMETER.ROUTINE_NAME, routineName)
+            .set(SQL_ROUTINE_PARAMETER.POSITION, position)
+            .set(SQL_ROUTINE_PARAMETER.JOOQ_NAME, jooqName)
+            .set(SQL_ROUTINE_PARAMETER.BINDING_TYPE, "java.lang.Integer")
             .execute();
     }
 

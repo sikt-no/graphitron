@@ -3,7 +3,6 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupKind;
 import org.junit.jupiter.api.AfterAll;
@@ -212,30 +211,11 @@ class HoversTest {
     }
 
     /**
-     * The column arm does not consult the projection at all, so a session with a build behind it and
-     * one with none are one answer here: what the enclosing type resolves against is a read. The
-     * projection survives at the declaration-name arm, which is the last of hover's readers of it.
-     */
-    @Test
-    void columnHoverIgnoresTheProjectionEntirely() {
-        var file = file("""
-            type Film @table(name: "film") {
-                bar: Int @field(name: "title")
-            }
-            """);
-        var pos = pointAt(file, 1, "title");
-        assertThat(markdownAt(file, new LspSchemaSnapshot.Built(), pos))
-            .contains("**Column** `title` on `film`");
-        assertThat(markdownAt(file, LspSchemaSnapshot.unavailable(), pos))
-            .contains("**Column** `title` on `film`");
-    }
-
-    /**
      * That the parent resolves against a class, and which one, comes from the store: a producer in the
      * captured graph grounds {@code FilmCard} on the fixture record, with no SDL directive saying so,
      * so the member hover resolves without an applied {@code @record}. What the class offers comes from
      * the census, so the rendered type is the one a compiler recorded for the component rather than one
-     * this fixture chose, and the projection passed in says nothing at all.
+     * this fixture chose.
      */
     @Test
     void fieldHoverOnRecordBackingShowsComponentMetadata() {
@@ -245,9 +225,8 @@ class HoversTest {
             }
             """);
         var pos = pointAt(file, 1, "title");
-        var snapshot = noProjection();
 
-        var md = markdownAt(file, snapshot, pos);
+        var md = markdownAt(file, pos);
 
         assertThat(md).contains("**title**").contains("`String`");
     }
@@ -255,7 +234,7 @@ class HoversTest {
     /**
      * Without a store the member hover renders nothing, which is the same posture every other
      * census-backed arm takes: both the binding and the class's members are facts, and a surface
-     * with no access to the facts declines rather than guessing from the projection.
+     * with no access to the facts declines rather than guessing.
      */
     @Test
     void fieldHoverOnRecordBackingIsSilentWithoutAStore() {
@@ -266,16 +245,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        assertThat(hoverWithoutStore(file, noProjection(), pos)).isEmpty();
-    }
-
-    /**
-     * A projection carrying nothing, which is what the member arm needs from one: what a type resolves
-     * against and what it then offers are both the store's, so a case about either can only be weakened
-     * by handing the surface a shape to fall back on.
-     */
-    private static LspSchemaSnapshot.Built noProjection() {
-        return new LspSchemaSnapshot.Built();
+        assertThat(hoverWithoutStore(file, pos)).isEmpty();
     }
 
     @Test
@@ -371,7 +341,7 @@ class HoversTest {
             """);
         var pos = new Point(0, "type Foo @t".length());
 
-        assertThat(hoverWithoutStore(file, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(hoverWithoutStore(file, pos)).isEmpty();
         assertThat(markdownAt(file, pos)).isNotBlank();
     }
 
@@ -422,8 +392,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "FilmService");
 
-        var md = Hovers.compute(file, Optional.of(store.handleFor(OTHER_GRAPH)),
-            LspSchemaSnapshot.unavailable(), pos).orElseThrow()
+        var md = Hovers.compute(file, Optional.of(store.handleFor(OTHER_GRAPH)), pos).orElseThrow()
             .getContents().getRight().getValue();
         assertThat(md).doesNotContain("**Class**");
         assertThat(md).isNotBlank();
@@ -830,24 +799,16 @@ class HoversTest {
     }
 
     /**
-     * Hover with no store at all, which is what a document whose graph was never captured gets. Every
-     * arm reading facts answers nothing here; what can still speak is the member-slot hover, whose
-     * subject is the classification snapshot.
+     * Hover with no store at all, which is what a document whose graph was never captured gets.
+     * Every arm reads facts, so nothing here has anything to answer with.
      */
-    private static Optional<Hover> hoverWithoutStore(
-        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
-    ) {
-        return Hovers.compute(file, Optional.empty(), snapshot, pos);
+    private static Optional<Hover> hoverWithoutStore(FileSnapshot file, Point pos) {
+        return Hovers.compute(file, Optional.empty(), pos);
     }
 
-    /** Hover against the captured facts, with no classification snapshot behind it. */
+    /** Hover against the captured facts, which is everything hover reads. */
     private static Optional<Hover> hoverAt(FileSnapshot file, Point pos) {
-        return hoverAt(file, LspSchemaSnapshot.unavailable(), pos);
-    }
-
-    /** Hover against the captured facts and a classification snapshot: the column arms need both. */
-    private static Optional<Hover> hoverAt(FileSnapshot file, LspSchemaSnapshot snapshot, Point pos) {
-        return Hovers.compute(file, Optional.of(store.handle()), snapshot, pos);
+        return Hovers.compute(file, Optional.of(store.handle()), pos);
     }
 
     /**
@@ -857,26 +818,18 @@ class HoversTest {
      */
     private static Optional<Hover> capturedHover(String sdl, FileSnapshot file, Point pos) {
         try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
-            return Hovers.compute(
-                file, Optional.of(fixture.handle()), LspSchemaSnapshot.unavailable(), pos);
+            return Hovers.compute(file, Optional.of(fixture.handle()), pos);
         }
     }
 
     /** The markdown of a hover that must exist. */
     private static String markdownAt(FileSnapshot file, Point pos) {
-        return hoverAt(file, LspSchemaSnapshot.unavailable(), pos).orElseThrow()
-            .getContents().getRight().getValue();
-    }
-
-    /** The markdown of a hover that must exist, against a classification snapshot. */
-    private static String markdownAt(FileSnapshot file, LspSchemaSnapshot snapshot, Point pos) {
-        return hoverAt(file, snapshot, pos).orElseThrow().getContents().getRight().getValue();
+        return hoverAt(file, pos).orElseThrow().getContents().getRight().getValue();
     }
 
     /** The markdown of a hover that must exist, against a fixture other than the shared one. */
     private static String markdownOf(StoreFixture fixture, FileSnapshot file, Point pos) {
-        return Hovers.compute(file, Optional.of(fixture.handle()),
-            LspSchemaSnapshot.unavailable(), pos).orElseThrow()
+        return Hovers.compute(file, Optional.of(fixture.handle()), pos).orElseThrow()
             .getContents().getRight().getValue();
     }
 }

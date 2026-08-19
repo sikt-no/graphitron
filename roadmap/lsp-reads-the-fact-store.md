@@ -532,15 +532,13 @@ recalculation bookkeeping it aimed retired with the keystroke cadence (see the d
 paragraph above), and the source index (`refreshSourceIndex`, `sourceIndex`) retired with the
 java-source family, settled below: the LSP walks nothing.
 
-**What still reads the projection.** One site, the residue of the inventory rather than a separate
-concern. Naming it here because "every feature moves" is checkable only against a list of what has
+**What still read the projection.** Two sites, the residue of the inventory rather than separate
+concerns. Naming them here because "every feature moves" is checkable only against a list of what has
 not.
 
-* `DeclTarget` asks for the field classification at a coordinate, and asks it now only about
-  `@routine`: the generated call surface a routine read or write binds to, which no relation carries.
-  R709 is what closes it. The `@service` and `@externalField` arms moved to the store, settled below,
-  and the read that is left happens before the statement rather than inside it, so it costs the
-  surfaces nothing but the fact itself.
+* `DeclTarget` asked for the field classification at a coordinate, and asked it last only about
+  `@routine`: the generated call surface a routine read or write binds to. That surface is a relation
+  now, and the arm is a subquery in the statement it used to arrive beside; settled below.
 
 The second site was `FieldCompletions`'s source-sigil predicate, and it is settled below: the
 completion and the diagnostic beside it read `intent_carrier_data_field`, and the carrier projection
@@ -2915,8 +2913,15 @@ because the reverse happens often enough to be worth checking for.
 ## Retired vocabulary
 
 Provisional until the cutover lands; the Done-gate sweep greps for these. `CompletionData`,
-`CatalogFacts`, `LspSchemaSnapshot`, `typeDefinitionLocations`, and `CatalogBuilder`'s projection
-pass. Gone already: the keystroke cadence's whole apparatus, which is
+`CatalogFacts`, and `CatalogBuilder`'s projection pass. Gone already: every language-server read of
+`LspSchemaSnapshot`, which is `DeclTarget.projectedMethod`, `DeclTarget.of`'s and
+`DeclarationFacts`'s `ProjectedMethod` parameter, the record itself, `DeclarationFacts.Rows`'s
+`projectedArity` with the `jvm_method_parameter` arm behind it, and the snapshot parameter on
+`DeclarationDefinitions.compute`, `DeclarationHovers.compute` and `Hovers.compute`; with them
+`Workspace.snapshot` and `Workspace.setBuildOutput`, a completed build's whole effect on the
+workspace being the enqueue `markAllForRecalculation` already names. The projection stays where it is
+produced, the classifier deriving its type projection from its field one. Also gone already: the
+keystroke cadence's whole apparatus, which is
 `WorkspaceFile.refreshTypeIndex` with the `declaredTypes` and `dependsOnDeclarations` sets it
 maintained, `Workspace.enqueueTouched` with its `intersects`, and the `TypeNames` class that fed
 them (`extract`, the `Extracted` record, and the tree-sitter query behind both; the class is gone,
@@ -3564,11 +3569,11 @@ name, and the resolution falls through to what the parent type's scope offers, w
 unclaimed field gets. This is a rule, so it is pinned rather than left to be inferred from the
 implementation.
 
-**One arm stays with the projection, and it is `@routine`.** What a routine field binds to is a method
-on the jOOQ `Routines` class that codegen produced, and neither the class nor the method name is
-derivable from the store: `graphitron_routine.routine_ref` holds the routine's name in the database, and
-the step to its generated Java name is jOOQ's own. The catalog census has no routine family at all. R709
-is filed for that capture, and it is the last thing standing between this surface and the projection.
+**One arm stayed with the projection at this point, and it was `@routine`.** What a routine field binds
+to is a method on the jOOQ `Routines` class that codegen produced, and at this point neither the class
+nor the method name was derivable from the store: `graphitron_routine.routine_ref` holds the routine's
+name in the database, and the step to its generated Java name is jOOQ's own. The catalog census had no
+routine family at all. It has one now, and the final slice below is where that arm moves.
 
 **The snapshot gate on the declaration surfaces survives this slice, and it changed meaning.** It used
 to stand for what the resolution could answer; it now stands for what the resolution costs. Removing it
@@ -3601,14 +3606,14 @@ rows in hand. That is the trade the inlay projection already states as rows in a
 round trip, and at a single coordinate the candidate set is small: the classes a type could be backed
 by, the tables it could be bound to, the columns and members its own name reaches.
 
-**The `@routine` arm looked like it forced a second statement, and the fix was to read it earlier.**
-That arm's identity comes from the classification projection, so the statement's own arms cannot admit
-either the class or the method, and the arity behind it was a read of the classpath census keyed on
-what the projection said. Reading the projection *before* building the statement dissolves both: it is
-a value the session already holds, so naming the pair up front costs nothing, and once it is named the
-arity and the parsed declaration are arms like any other. So even the one coordinate the store cannot
-name on its own is one statement. R709 still stands, and what is left of its case is the modelling one
-rather than a cost.
+**The `@routine` arm looked like it forced a second statement, and the fix at this point was to read it
+earlier.** That arm's identity came from the classification projection, so the statement's own arms
+could admit neither the class nor the method, and the arity behind it was a read of the classpath
+census keyed on what the projection said. Reading the projection *before* building the statement
+dissolved both: it is a value the session already holds, so naming the pair up front cost nothing, and
+once it was named the arity and the parsed declaration were arms like any other. So even the one
+coordinate the store could not name on its own was one statement. What stayed open was the modelling
+question rather than a cost, and the final slice below closes it.
 
 **The claim block is handed to the caller as arms rather than fetched.** The hover asks the claim
 relations and the binding relations in the same breath; both sets are keyed on the same coordinate and
@@ -3705,15 +3710,15 @@ therefore render a path an author had written, at a coordinate where a second `@
 carried no `path:` argument of its own. That is not a case worth keeping: the overlay's contract is that
 it shows what the buffer does not say, and the authored path is in the buffer one directive to the left.
 
-**What remains on this item.** `FieldCompletions`'s source-sigil predicate over `siteContext`, and
-`DeclTarget`'s `@routine` identity, which R709 closes. Both are named above and neither is an inlay
-concern.
+**What remained on this item at this point.** `FieldCompletions`'s source-sigil predicate over
+`siteContext`, and `DeclTarget`'s `@routine` identity. Both are named above, neither is an inlay
+concern, and each is closed by a slice below.
 
 ## Settled while building: a carrier is what a mutation returns, and the sigil's admit was wider than its own message
 
 The `$source` sigil's two surfaces asked the projection one question: is this coordinate the data
 field of a carrier payload. `intent_carrier_data_field` answers it now, and the projection retired
-with them, which leaves `DeclTarget`'s `@routine` identity as the last thing on this item reading a
+with them, which left `DeclTarget`'s `@routine` identity as the last thing on this item reading a
 generator pass's output.
 
 **Carrier-ness comes from the producing field, and that is the load-bearing part.** A payload type
@@ -3804,9 +3809,9 @@ generator pass; with no catalog on the workspace they say it of the build output
 what they meant. The rest of the churn is arity: the snapshot record lost two components, so every
 fixture constructing one lost two arguments.
 
-**What is left on this item.** `DeclTarget`'s `@routine` identity, which R709 closes, and the
-diagnostics residues on their own clocks (the directive surface, the validator replay's freshness
-gate). One thing worth recording for whoever picks up the catalog itself: `CompletionData`'s table,
+**What was left on this item at this point.** `DeclTarget`'s `@routine` identity, closed by the final
+slice below, and the diagnostics residues on their own clocks (the directive surface, the validator
+replay's freshness gate). One thing worth recording for whoever picks up the catalog itself: `CompletionData`'s table,
 reference and scalar censuses now have no reader but two `DevMojo` log lines, while its
 `externalReferences` census is a live input to capture. Retiring the catalog is therefore a question
 about what the dev goal reports, not about what the language server reads.
@@ -4063,3 +4068,61 @@ between rounds publishes nothing and the next round clears the squiggle anyway. 
 own tests, the two cross-file cases become one case that the strongest edit the fan-out existed for,
 renaming a declaration another open file references, enqueues nothing, and the listener test splits
 in two: the mutators that fire it, and the mutators that change a buffer without changing an answer.
+
+## Settled while building: the call surface is a relation, so the projection has no reader and the workspace stops holding one
+
+The last coordinate reading a generator pass's output was `DeclTarget`'s `@routine` identity: the
+generated call a routine read or write binds to. A separate item was filed to capture the routine
+family and close it. The capture landed ahead of that item, inside the one that needed the same facts
+for a read surface, so the closing half rides here rather than waiting behind a gate of its own, and
+the epic finishes instead of leaving a residue.
+
+**What the census already held.** `sql_routine`, keyed like `sql_table` and carrying the generated
+`Routines` class and the value-parameter method an emitted FROM clause calls, and
+`sql_routine_parameter`, that method's IN parameters in order. Both are read off the resolved
+`Table<?>` inside the codegen scope, through the same reflection the classifier uses, so the pair the
+relation holds is the pair the projection was carrying. `intent_spelled_table`'s population already
+included `@routine(name:)`, on the ground that jOOQ models a function result as a catalog table and
+the spelling rule does not vary by site.
+
+**So the resolution is a join, and it is stated once.** `intent_field_routine_method` takes
+`graphitron_routine` through the spelling view onto `sql_routine`: the sibling of
+`intent_field_producer_method` and the same shape, a use-keyed resolution over a source-keyed census.
+Keyed on the application rather than the field, `@routine` being repeatable. No `table_type` filter,
+because a spelling naming a stored table resolves on the spelling view and then matches no callable,
+which says "not a callable" without restating what `sql_table.table_type` means. Absence has three
+causes and the joins separate them: a name matching no catalog object, a name matching an object that
+cannot be called, and a callable whose generated model exposes no call surface, which is excluded
+because this relation *is* the call surface.
+
+**It is a subquery and not a value, and that is the part the earlier plan had wrong.** The slice
+above settled that the projection is read before the statement rather than inside it, and read that
+as evidence the store read would substitute at one call site. The ordering is exactly what a store
+read cannot inherit: the pair being a value in hand is what let `candidateClasses` and
+`candidateMethodNames` widen themselves with a literal, and what let the arity arm key on one. Fetch
+the pair first and the request costs two statements, which the two count enforcers pin at one. So the
+identity becomes a subquery over the new relation in the same statement, the arity arm becomes an arm
+over it returning the pair and its arity together, and `DeclarationFacts.ProjectedMethod` retires as
+an input rather than being fed from somewhere else.
+
+**The arity gets better rather than merely relocating.** It was a count over `jvm_method_parameter`
+for the projected pair, and that arm's own javadoc recorded what it usually returned: 0, the
+consumer's generated sources not ordinarily being a scanned classpath entry. The routine's parameter
+list answers without the generated class having been scanned at all, so the overload pick is correct
+in the ordinary session rather than falling back to the name-level match. The fixture makes that
+visible: two `filmsForActor` overloads on disk, and the jump lands on the two-parameter one.
+
+**With no reader, the projection leaves the workspace entirely.** `DeclTarget.projectedMethod` goes,
+`DeclTarget.of` loses its projection parameter, and both consumers lose the `LspSchemaSnapshot`
+argument they passed only to produce one, which takes it off `Hovers` and then off the document
+service. `Workspace.snapshot` and its accessor follow, and `setBuildOutput` with them: with nothing
+to swap, what a completed build does to the workspace is enqueue every open file, which
+`markAllForRecalculation` already is and already says. The dev goal calls that instead. The
+projection itself stays where it is produced, the classifier deriving its type projection from its
+field one and the generator's tests asserting on both; what ends is any language-server read of it.
+
+**Two dev-loop cases were proving "no generator pass ran" by object identity, and now prove it by the
+queue.** Both held the workspace's snapshot reference across a source-cadence refresh and asserted it
+was the same instance. The queue is the better witness and the one that survives: a round enqueues
+every open file, so an open file whose queue entry has been drained and stays drained is the pin, and
+it fails if a pass runs where none should.

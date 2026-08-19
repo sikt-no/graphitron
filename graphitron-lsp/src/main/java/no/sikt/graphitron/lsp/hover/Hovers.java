@@ -20,7 +20,6 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
@@ -57,11 +56,10 @@ import static org.jooq.impl.DSL.selectCount;
  * <p>Every arm reads the fact store, the declaration-name arm around the coordinate dispatch
  * included: the classpath census and the java-source family for the arms that answer about Java, the
  * catalog census for those that answer about the database, and the graph's own {@code @node}
- * declarations for one more. The declaration-name arm's classification block is the claim stratum's,
- * so it renders with no generator pass behind it; what still comes from the projection is one
- * question inside the description overlay beneath it, which resolves a declaration through
- * {@link no.sikt.graphitron.lsp.parsing.DeclTarget} and so asks the snapshot which method a
- * method-backed field binds to.
+ * declarations for one more. The declaration-name arm's classification block is the claim stratum's
+ * and the description overlay beneath it resolves through
+ * {@link no.sikt.graphitron.lsp.parsing.DeclTarget}, so the whole popup renders with no generator
+ * pass behind it.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
  * the SDL-docstring hover, and so do the two name tokens the coordinate walk does not key: the
@@ -75,14 +73,14 @@ public final class Hovers {
     private Hovers() {}
 
     /**
-     * Every arm this entry point can reach reads either the store or the classification snapshot, so
-     * it takes no projection. The bundled vocabulary is the only one in scope today; the workspace's
-     * vocabulary is wired through {@code GraphitronTextDocumentService}.
+     * Every arm this entry point can reach reads the store, so it takes no projection. The bundled
+     * vocabulary is the only one in scope today; the workspace's vocabulary is wired through
+     * {@code GraphitronTextDocumentService}.
      */
     public static Optional<Hover> compute(
-        FileSnapshot file, Optional<StoreHandle> store, LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, Optional<StoreHandle> store, Point pos
     ) {
-        return compute(LspVocabulary.load(), file, store, snapshot, pos, false);
+        return compute(LspVocabulary.load(), file, store, pos, false);
     }
 
     /**
@@ -99,7 +97,7 @@ public final class Hovers {
      */
     public static Optional<Hover> compute(
         LspVocabulary vocabulary, FileSnapshot file,
-        Optional<StoreHandle> store, LspSchemaSnapshot snapshot,
+        Optional<StoreHandle> store,
         Point pos, boolean classificationHoverEnabled
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
@@ -109,7 +107,7 @@ public final class Hovers {
             // The store resolves which declaration the coordinate binds to and describes
             // it, and the description lands beneath the classification block.
             if (classificationHoverEnabled) {
-                return DeclarationHovers.compute(file, store, snapshot, pos);
+                return DeclarationHovers.compute(file, store, pos);
             }
             return Optional.empty();
         }
@@ -167,8 +165,7 @@ public final class Hovers {
 
     /**
      * Every coordinate arm reads the store and nothing else, the column arm included now that what
-     * a type's members resolve against is a read rather than a permit. The snapshot reaches hover
-     * only through the declaration-name arm, which this dispatch does not key.
+     * a type's members resolve against is a read rather than a permit.
      */
     private static Optional<Hover> richerHover(
         LspVocabulary vocabulary, SchemaCoordinate coord,

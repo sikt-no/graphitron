@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-16 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
-| `R709` | The routine call surface resolves from the census, and the LSP's last projection arm retires | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](catalog-routine-facts.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | Ready | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -469,7 +468,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R638` [**The LSP is a fact-store client**](lsp-reads-the-fact-store.md) — In Progress, architecture
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R578` [**Raise the LSP unknown-input-field diagnostic to Error severity**](unknown-input-field-diagnostic-severity.md) — Backlog, cleanup
-- `R709` [**The routine call surface resolves from the census, and the LSP's last projection arm retires**](catalog-routine-facts.md) — Spec, architecture
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature

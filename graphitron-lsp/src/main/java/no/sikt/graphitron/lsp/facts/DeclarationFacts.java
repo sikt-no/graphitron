@@ -21,12 +21,12 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_REFERENCE;
+import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -36,7 +36,6 @@ import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
 import static org.jooq.impl.DSL.selectDistinct;
-import static org.jooq.impl.DSL.val;
 
 /**
  * Everything the two declaration surfaces ask the store about one SDL coordinate, in one statement.
@@ -62,14 +61,6 @@ import static org.jooq.impl.DSL.val;
  * it is what lets a request that resolves a binding and then describes it stay one statement. The
  * candidate population is small at a single coordinate: the classes a type could be backed by, the
  * tables it could be bound to, and, at the field grain, the columns and members its own name reaches.
- *
- * <h2>What is not here</h2>
- *
- * <p>One identity: the generated call surface a {@code @routine} field binds to, which no relation
- * carries and the classification projection does. A caller reads it off the projection first and hands
- * it in as a {@link ProjectedMethod}, which costs nothing (the projection is a value the session holds)
- * and lets every remaining question about it, its arity and where it is declared, be an arm here. So the
- * statement stays one even for the coordinate the store cannot name on its own.
  */
 public final class DeclarationFacts {
 
@@ -106,18 +97,6 @@ public final class DeclarationFacts {
         }
     }
 
-    /**
-     * A method a coordinate binds to that no relation names, handed in by the caller that does hold it.
-     * Today that is exactly one thing: the generated call surface a {@code @routine} field binds to,
-     * which the classification projection carries and the catalog census has no routine family for.
-     *
-     * <p>It is an input rather than an arm because the projection is a value a session already holds,
-     * so reading it costs nothing and can happen before the statement is built. That ordering is what
-     * keeps the arm from costing a round trip of its own: with the pair named up front, this projection
-     * answers the arity behind it and positions its declaration alongside every other candidate.
-     */
-    public record ProjectedMethod(String className, String methodName) {}
-
     // ===== The rows the arms return =====
 
     /** One table a coordinate's type could resolve against, with what the census says about it. */
@@ -141,6 +120,14 @@ public final class DeclarationFacts {
     public record SlotRow(
         String className, String slotName, String accessorMethodName, ClassMemberSlots.Origin origin
     ) {}
+
+    /**
+     * One generated call surface a {@code @routine} application on the coordinate resolves to: the
+     * {@code Routines} class, the method an emitted FROM clause calls, and that method's arity. All
+     * three come from the catalog census, so the arity is the generated method's own rather than a
+     * count over classpath entries that ordinarily do not include the consumer's jOOQ output.
+     */
+    public record RoutineMethod(String className, String methodName, int arity) {}
 
     /**
      * One parsed class declaration: its doc comment, and where the parse positioned it. A declaration
@@ -173,11 +160,11 @@ public final class DeclarationFacts {
         List<RedirectRow> redirects,
         List<ColumnRow> columns,
         List<FieldProducerMethods.Reference> producers,
+        List<RoutineMethod> routineMethods,
         List<SlotRow> slots,
         List<ClassRow> classDeclarations,
         List<FieldRow> fieldDeclarations,
-        List<MethodRow> methodDeclarations,
-        List<Integer> projectedArities
+        List<MethodRow> methodDeclarations
     ) {
 
         /** What member names written inside the type resolve against, by the scope reader's own rules. */
@@ -199,6 +186,16 @@ public final class DeclarationFacts {
         /** The method the coordinate's producer reference names, by that reader's own refusal rule. */
         public Optional<FieldProducerMethods.Producer> producer() {
             return FieldProducerMethods.resolve(producers);
+        }
+
+        /**
+         * The call surface the coordinate's {@code @routine} binds to, which is the first application
+         * in written order and, within one application, the first candidate in schema order. Picking
+         * the first is what every other resolution here does with an ambiguous population: which one
+         * was meant is a resolution question, and a single declaration target cannot hold both.
+         */
+        public Optional<RoutineMethod> routineMethod() {
+            return routineMethods.stream().findFirst();
         }
 
         /** What the census says about one of the tables in scope, which is where its class comes from. */
@@ -294,17 +291,6 @@ public final class DeclarationFacts {
             return byArity;
         }
 
-        /**
-         * The parameter count of the first overload the census holds of the projected method, and 0
-         * where it holds none. First in the census's own order, which is by descriptor, so an
-         * arity-overloaded name resolves the same way on every read; 0 is what the consumers' name-level
-         * fallback covers, and it is also the answer where the generated sources are not on the scanned
-         * classpath, which is the ordinary state for a jOOQ {@code Routines} class.
-         */
-        public int projectedArity() {
-            return projectedArities.isEmpty() ? 0 : projectedArities.getFirst();
-        }
-
         private Stream<TableRow> tables() {
             return Stream.concat(
                 boundTables.stream(), redirects.stream().map(RedirectRow::table));
@@ -335,14 +321,14 @@ public final class DeclarationFacts {
         private final Field<List<RedirectRow>> redirects;
         private final Field<List<ColumnRow>> columns;
         private final Field<List<FieldProducerMethods.Reference>> producers;
+        private final Field<List<RoutineMethod>> routineMethods;
         private final Field<List<SlotRow>> slots;
         private final Field<List<ClassRow>> classDeclarations;
         private final Field<List<FieldRow>> fieldDeclarations;
         private final Field<List<MethodRow>> methodDeclarations;
-        private final Field<List<Integer>> projectedArities;
 
-        private Arms(StoreHandle store, Coord coord, ProjectedMethod projected) {
-            var classes = candidateClasses(store, coord, projected);
+        private Arms(StoreHandle store, Coord coord) {
+            var classes = candidateClasses(store, coord);
             boundTables = named(boundTableArm(store, coord), "bound_tables");
             backingSeeds = named(backingArm(store, coord, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
                 INTENT_TYPE_BACKING_SEED.CLASS_NAME, INTENT_TYPE_BACKING_SEED.GRAPH_NAME),
@@ -353,25 +339,24 @@ public final class DeclarationFacts {
             redirects = named(redirectArm(store, coord), "redirects");
             columns = named(columnArm(store, coord), "columns");
             producers = named(producerArm(store, coord), "producers");
+            routineMethods = named(routineMethodArm(store, coord), "routine_methods");
             slots = named(slotArm(store, coord), "slots");
             classDeclarations = named(classDeclarationArm(classes), "class_declarations");
             fieldDeclarations = named(fieldDeclarationArm(store, coord, classes), "field_declarations");
-            methodDeclarations = named(methodDeclarationArm(store, coord, projected, classes),
+            methodDeclarations = named(methodDeclarationArm(store, coord, classes),
                 "method_declarations");
-            projectedArities = named(projectedArityArm(store, projected), "projected_arities");
         }
 
         /**
          * The arms, for a caller assembling them into a select of its own. An arm the grain has no
          * question for is absent rather than present and empty: a type name binds no member, so the
-         * field-grain arms would be reading a relation to be told what the grain already says, and the
-         * arity arm has nothing to ask about unless a projected method was named.
+         * field-grain arms would be reading a relation to be told what the grain already says.
          */
         public List<Field<?>> fields() {
             var fields = new ArrayList<Field<?>>();
             for (Field<?> arm : new Field<?>[] {boundTables, backingSeeds, backingReached, redirects,
-                columns, producers, slots, classDeclarations, fieldDeclarations, methodDeclarations,
-                projectedArities}) {
+                columns, producers, routineMethods, slots, classDeclarations, fieldDeclarations,
+                methodDeclarations}) {
                 if (arm != null) fields.add(arm);
             }
             return fields;
@@ -381,9 +366,8 @@ public final class DeclarationFacts {
         public Rows read(Record row) {
             return new Rows(row.get(boundTables), row.get(backingSeeds), row.get(backingReached),
                 row.get(redirects), rowsOf(row, columns), rowsOf(row, producers),
-                rowsOf(row, slots), row.get(classDeclarations),
-                rowsOf(row, fieldDeclarations), rowsOf(row, methodDeclarations),
-                rowsOf(row, projectedArities));
+                rowsOf(row, routineMethods), rowsOf(row, slots), row.get(classDeclarations),
+                rowsOf(row, fieldDeclarations), rowsOf(row, methodDeclarations));
         }
 
         private static <T> List<T> rowsOf(Record row, Field<List<T>> arm) {
@@ -397,19 +381,14 @@ public final class DeclarationFacts {
     }
 
     /** The arms of one coordinate's read, for a caller composing them with questions of its own. */
-    public static Arms arms(StoreHandle store, Coord coord, ProjectedMethod projected) {
-        return new Arms(store, coord, projected);
+    public static Arms arms(StoreHandle store, Coord coord) {
+        return new Arms(store, coord);
     }
 
     /** One coordinate's populations, in one statement, for a caller asking nothing else. */
-    public static Rows of(StoreHandle store, Coord coord, ProjectedMethod projected) {
-        var arms = arms(store, coord, projected);
-        return arms.read(store.dsl().select(arms.fields()).fetchOne());
-    }
-
-    /** The same, for a coordinate no projected method was named at. */
     public static Rows of(StoreHandle store, Coord coord) {
-        return of(store, coord, null);
+        var arms = arms(store, coord);
+        return arms.read(store.dsl().select(arms.fields()).fetchOne());
     }
 
     // ===== The arms =====
@@ -602,7 +581,7 @@ public final class DeclarationFacts {
      * rows rather than in the filter.
      */
     private static Field<List<MethodRow>> methodDeclarationArm(
-        StoreHandle store, Coord coord, ProjectedMethod projected, Select<Record1<String>> classes
+        StoreHandle store, Coord coord, Select<Record1<String>> classes
     ) {
         if (coord.memberName() == null) return null;
         return multiset(select(JAVA_METHOD_DECLARATION.CLASS_NAME, JAVA_METHOD_DECLARATION.METHOD_NAME,
@@ -611,8 +590,7 @@ public final class DeclarationFacts {
                 JAVA_METHOD_DECLARATION.SOURCE_COLUMN)
             .from(JAVA_METHOD_DECLARATION)
             .where(JAVA_METHOD_DECLARATION.CLASS_NAME.in(classes))
-            .and(JAVA_METHOD_DECLARATION.METHOD_NAME.in(
-                candidateMethodNames(store, coord, projected)))
+            .and(JAVA_METHOD_DECLARATION.METHOD_NAME.in(candidateMethodNames(store, coord)))
             .orderBy(JAVA_METHOD_DECLARATION.FILE, JAVA_METHOD_DECLARATION.ORDINAL))
             .convertFrom(rows -> rows.map(row -> new MethodRow(row.value1(), row.value2(),
                 row.value3(), text(row.value4()),
@@ -620,46 +598,32 @@ public final class DeclarationFacts {
     }
 
     /**
-     * The arities the census holds for a projected method, in descriptor order. An arm rather than a
-     * read of {@code ClasspathMethods} because the pair is known before the statement is built, so the
-     * one thing the store can say about a method it did not name costs no round trip.
+     * The call surfaces the coordinate's {@code @routine} applications resolve to, in written order
+     * and then in schema order within one application. The class, the method and the arity all come
+     * from the one relation, so the pair a routine-backed field binds to is a row like every other and
+     * nothing has to be handed in from outside the statement.
      */
-    private static Field<List<Integer>> projectedArityArm(StoreHandle store, ProjectedMethod projected) {
-        if (projected == null) return null;
-        var arity = field(selectCount()
-            .from(JVM_METHOD_PARAMETER)
-            .where(JVM_METHOD_PARAMETER.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME))
-            .and(JVM_METHOD_PARAMETER.CLASS_NAME.eq(JVM_METHOD.CLASS_NAME))
-            .and(JVM_METHOD_PARAMETER.METHOD_NAME.eq(JVM_METHOD.METHOD_NAME))
-            .and(JVM_METHOD_PARAMETER.DESCRIPTOR.eq(JVM_METHOD.DESCRIPTOR)));
-        return multiset(select(arity)
-            .from(JVM_METHOD)
-            .where(store.reads(JVM_METHOD.SOURCE_NAME))
-            .and(JVM_METHOD.CLASS_NAME.eq(projected.className()))
-            .and(JVM_METHOD.METHOD_NAME.eq(projected.methodName()))
-            .orderBy(JVM_METHOD.DESCRIPTOR))
-            .convertFrom(rows -> rows.map(Record1::value1));
+    private static Field<List<RoutineMethod>> routineMethodArm(StoreHandle store, Coord coord) {
+        if (coord.memberName() == null) return null;
+        return multiset(select(INTENT_FIELD_ROUTINE_METHOD.CLASS_NAME,
+                INTENT_FIELD_ROUTINE_METHOD.METHOD_NAME, INTENT_FIELD_ROUTINE_METHOD.PARAMETERS)
+            .from(INTENT_FIELD_ROUTINE_METHOD)
+            .where(routineCoordinate(store, coord))
+            .orderBy(INTENT_FIELD_ROUTINE_METHOD.ORDINAL, INTENT_FIELD_ROUTINE_METHOD.TABLE_SCHEMA,
+                INTENT_FIELD_ROUTINE_METHOD.ROUTINE_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(RoutineMethod::new)));
     }
 
     // ===== The candidate populations the java-source arms are admitted by =====
 
     /**
      * Every class the coordinate could resolve to: a candidate table's generated class, a candidate
-     * backing class, a class a candidate backing is the record of, at the field grain the class a
-     * producer reference names, and the projected method's class where one was named. A union rather
-     * than a list of arms because the three java-source arms ask about a class name and not about the
-     * relation that nominated it.
+     * backing class, a class a candidate backing is the record of, and at the field grain the class a
+     * producer reference names and the {@code Routines} class a {@code @routine} application resolves
+     * to. A union rather than a list of arms because the three java-source arms ask about a class name
+     * and not about the relation that nominated it.
      */
-    private static Select<Record1<String>> candidateClasses(
-        StoreHandle store, Coord coord, ProjectedMethod projected
-    ) {
-        var classes = relationNamedClasses(store, coord);
-        return projected == null
-            ? classes
-            : classes.union(select(val(projected.className())));
-    }
-
-    private static Select<Record1<String>> relationNamedClasses(StoreHandle store, Coord coord) {
+    private static Select<Record1<String>> candidateClasses(StoreHandle store, Coord coord) {
         var classes = select(SQL_TABLE.CLASS_FQN)
             .from(INTENT_BOUND_TABLE)
             .join(SQL_TABLE).on(tableKeyOf(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME,
@@ -679,7 +643,10 @@ public final class DeclarationFacts {
             .from(INTENT_FIELD_PRODUCER_REFERENCE)
             .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
                 INTENT_FIELD_PRODUCER_REFERENCE.TYPE_NAME.eq(coord.typeName()),
-                INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName()))));
+                INTENT_FIELD_PRODUCER_REFERENCE.FIELD_NAME.eq(coord.memberName()))))
+            .union(select(INTENT_FIELD_ROUTINE_METHOD.CLASS_NAME)
+                .from(INTENT_FIELD_ROUTINE_METHOD)
+                .where(routineCoordinate(store, coord)));
     }
 
     /** Both backing populations, which is what a class-keyed arm asks about without choosing between them. */
@@ -709,16 +676,10 @@ public final class DeclarationFacts {
 
     /**
      * Every method name the coordinate could bind to: what a producer reference spells, the accessor a
-     * candidate backing class offers under the member name, and the projected method's own name.
+     * candidate backing class offers under the member name, and the generated call a {@code @routine}
+     * application resolves to.
      */
-    private static Select<Record1<String>> candidateMethodNames(
-        StoreHandle store, Coord coord, ProjectedMethod projected
-    ) {
-        var names = relationNamedMethods(store, coord);
-        return projected == null ? names : names.union(select(val(projected.methodName())));
-    }
-
-    private static Select<Record1<String>> relationNamedMethods(StoreHandle store, Coord coord) {
+    private static Select<Record1<String>> candidateMethodNames(StoreHandle store, Coord coord) {
         return select(INTENT_FIELD_PRODUCER_REFERENCE.METHOD_NAME)
             .from(INTENT_FIELD_PRODUCER_REFERENCE)
             .where(coordinate(INTENT_FIELD_PRODUCER_REFERENCE.GRAPH_NAME.eq(store.graphName()),
@@ -728,7 +689,10 @@ public final class DeclarationFacts {
                 .from(INTENT_CLASS_MEMBER_SLOT)
                 .where(store.reads(INTENT_CLASS_MEMBER_SLOT.SOURCE_NAME))
                 .and(INTENT_CLASS_MEMBER_SLOT.SLOT_NAME.eq(coord.memberName()))
-                .and(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME.in(backingCandidates(store, coord))));
+                .and(INTENT_CLASS_MEMBER_SLOT.CLASS_NAME.in(backingCandidates(store, coord))))
+            .union(select(INTENT_FIELD_ROUTINE_METHOD.METHOD_NAME)
+                .from(INTENT_FIELD_ROUTINE_METHOD)
+                .where(routineCoordinate(store, coord)));
     }
 
     /**
@@ -773,6 +737,13 @@ public final class DeclarationFacts {
     /** The three-part coordinate every field-grain read here is keyed on. */
     private static Condition coordinate(Condition graph, Condition type, Condition field) {
         return graph.and(type).and(field);
+    }
+
+    /** That coordinate on the routine relation, whose fourth key part the field grain does not name. */
+    private static Condition routineCoordinate(StoreHandle store, Coord coord) {
+        return coordinate(INTENT_FIELD_ROUTINE_METHOD.GRAPH_NAME.eq(store.graphName()),
+            INTENT_FIELD_ROUTINE_METHOD.TYPE_NAME.eq(coord.typeName()),
+            INTENT_FIELD_ROUTINE_METHOD.FIELD_NAME.eq(coord.memberName()));
     }
 
     private static String text(String value) {

@@ -2,11 +2,8 @@ package no.sikt.graphitron.rewrite.maven.dev;
 
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.capture.SourceWalker;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
@@ -31,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * workspace-swap chain end-to-end (minus the rewrite-generator step,
  * which {@code CatalogBuilderTest} covers in isolation). Validates that
  * a single {@code .class} write triggers the suffix-filtered watcher
- * and that the resulting build output is observable through {@link Workspace}.
+ * and that the resulting round reaches the {@link Workspace}.
  */
 class CatalogRefreshTest {
 
@@ -48,18 +45,18 @@ class CatalogRefreshTest {
     }
 
     @Test
-    void classFileWriteRefreshesTheWorkspaceBuildOutput(@TempDir Path classesDir) throws Exception {
+    void classFileWriteReachesTheWorkspace(@TempDir Path classesDir) throws Exception {
         var workspace = new Workspace();
-        assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
+        // One open file, its open-time enqueue already drained, so what the queue holds afterwards
+        // is what the rebuild put there. The queue is the whole of what a round does to the
+        // workspace now: every surface reads the store, so a round changes what they answer by
+        // changing what the store holds, and this says the workspace was told.
+        workspace.didOpen("file:///a.graphqls", 1, "type A { x: Int }\n");
+        workspace.drainRecalculate();
 
         var fired = new CountDownLatch(1);
-        // The swapped snapshot is identified by being this instance, the assertion below reading
-        // the reference rather than any content: what the case is about is the swap, not the round.
-        var rebuilt = new LspSchemaSnapshot.Built();
-
         Runnable rebuilder = () -> {
-            workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(CompletionData.empty(), rebuilt));
+            workspace.markAllForRecalculation();
             fired.countDown();
         };
 
@@ -72,9 +69,7 @@ class CatalogRefreshTest {
             .as("rebuilder must fire on .class write")
             .isTrue();
 
-        // The swap is observable through the workspace's volatile snapshot
-        // ref without taking the file lock.
-        assertThat(workspace.snapshot()).isSameAs(rebuilt);
+        assertThat(workspace.drainRecalculate()).containsExactly("file:///a.graphqls");
     }
 
     @Test
@@ -100,11 +95,12 @@ class CatalogRefreshTest {
     @Test
     void javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass(@TempDir Path srcDir) throws Exception {
         // Source cadence, at the store layer: a .java edit writes the java_ family, with no
-        // generator round in between. The workspace's build output must stay untouched (no
-        // buildOutput swap), which is what makes the pin about the cadence rather than about a
-        // build having happened to run.
+        // generator round in between. An open file whose queue entry has been drained is what says
+        // so: a round enqueues every open file, so an empty queue afterwards is the pin about the
+        // cadence rather than about a build having happened to run.
         var workspace = new Workspace();
-        assertThat(workspace.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
+        workspace.didOpen("file:///a.graphqls", 1, "type A { x: Int }\n");
+        workspace.drainRecalculate();
 
         Path javaFile = srcDir.resolve("com/example/PriceService.java");
         Files.createDirectories(javaFile.getParent());
@@ -139,9 +135,9 @@ class CatalogRefreshTest {
                 .from(JAVA_CLASS_DECLARATION).fetch(0, String.class))
                 .as("the declaration is a store row on the source cadence")
                 .containsExactly("com.example.PriceService");
-            assertThat(workspace.snapshot())
+            assertThat(workspace.drainRecalculate())
                 .as("a source-cadence refresh must not run a generator pass")
-                .isInstanceOf(LspSchemaSnapshot.Unavailable.class);
+                .isEmpty();
         }
     }
 
