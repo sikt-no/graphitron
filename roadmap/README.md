@@ -25,9 +25,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R715` | Capture decodes internal grammars into normalized relations | Ready | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](decodes-normalize-internal-grammars.md) |
-| `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | Ready | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R680` | Give each layer its own fact-store test harness, test each thing where it lives, and drop the rest <sub>blocked by: [lsp-reads-the-fact-store](lsp-reads-the-fact-store.md)</sub> | In Progress | 2026-08-18 <sub>created 2026-08-14</sub> | [plan](fact-store-test-harness-consolidation.md) |
+| `R693` | Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336 | In Review | 2026-08-19 <sub>created 2026-08-17</sub> | [plan](flatten-grouping-input-onto-service-bean.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | Spec | 2026-08-17 | [plan](error-handler-description-overrides-message.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-17 | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
@@ -396,7 +396,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R693` [**Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336**](flatten-grouping-input-onto-service-bean.md) — Ready, feature
+- `R693` [**Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336**](flatten-grouping-input-onto-service-bean.md) — In Review, feature
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
 - `R674` [**Reconcile @service record projection: a monomorphic record return passes through while the polymorphic route auto-fetches by PK**](service-record-return-pk-autofetch.md) — Backlog, bug

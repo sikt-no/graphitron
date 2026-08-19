@@ -1,7 +1,7 @@
 ---
 id: R693
 title: "Flatten a nested grouping input onto a consumer bean at @service, the member-axis sibling of R336"
-status: Ready
+status: In Review
 bucket: feature
 priority: 3
 theme: service
@@ -723,6 +723,37 @@ is required, and no main-source behaviour is in scope on this pass.
 
 One clause in one test-file javadoc. The changelog entry stays unwritten for the Done gate, as
 before.
+
+## Third pass: the clause now names the enforcer that exists
+
+Written at the third In Progress → In Review handoff. One clause in one test-file javadoc, as the gate
+above asked, and nothing else. No main-source change, no test-behaviour change.
+
+`InputBeanGroupingPipelineTest`'s class javadoc no longer routes the reader to a lint that was never
+written. The last clause now names the enforcer the second pass chose on its merits: the
+`-Xlint:all -Werror` compile of the emitted tree in `graphitron-sakila-example`, with the
+`FilmReviewGrouped` fixture as what keeps a singular nested-bean member inside that gate's reach, and
+with `{@link}`s to `InputBeanInstantiationEmitter#buildSingularHelper` /
+`#buildPluralHelper` plus the fixture's own javadoc as where the rule is stated. All three of the
+paragraph's pointers now resolve, which is what the second-pass section claimed for them.
+
+Two details worth the reviewer's eye, both deliberate:
+
+* The clause is also reworded from "no emitted cast may be unchecked" to what the gate actually
+  enforces: that an emitted narrowing reaches a wire map through an `instanceof` pattern rather than an
+  unchecked cast. The blunter phrasing is what invited the redundant lint in the first place, since
+  the emitted tree legitimately contains dozens of concretized `Map` casts under method-level
+  `@SuppressWarnings`, and a reader holding the reader-facing sentence to the letter would find those
+  and think the rule was broken.
+* The `{@link}`s use the unparameterized form, matching the `ArgCallEmitter` precedent at its line
+  238, rather than spelling an overload signature. Both helpers are overloaded, and naming one arity
+  would imply the rule applies to that arity only.
+
+**Verification.** `mvn install -Plocal-db` green across all fourteen modules. `graphitron` at 3653
+tests with `InputBeanGroupingPipelineTest` 16/16, `graphitron-sakila-example` at 798. Both counts
+differ from the second pass's because trunk moved under this item between the passes, not because
+anything here added or removed a test; this pass changes no assertion. The changelog entry stays
+unwritten for the Done gate, as before.
 
 ## Coordination with adjacent items
 

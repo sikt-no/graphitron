@@ -30,7 +30,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ordering is a compile error when violated, so the depth-2 group in the {@code graphitron-sakila-example}
  * schema is its assertion; the absent-group-yields-null contract is pinned by the round-trip in
  * {@code GraphQLQueryTest.submitGroupedReview_flattensTheGroupOntoTheBean}; and the hygiene rule that
- * no emitted cast may be unchecked is a lint over every emitted file in {@code GeneratedSourcesLintTest}.
+ * an emitted narrowing reaches a wire map through an {@code instanceof} pattern rather than an
+ * unchecked cast is enforced by the {@code -Xlint:all -Werror} compile of the emitted tree in
+ * {@code graphitron-sakila-example}, whose {@code FilmReviewGrouped} fixture keeps a singular
+ * nested-bean member inside that gate's reach. The rule is stated on
+ * {@link InputBeanInstantiationEmitter#buildSingularHelper} and
+ * {@link InputBeanInstantiationEmitter#buildPluralHelper}, and in that fixture's own javadoc.
  */
 @PipelineTier
 class InputBeanGroupingPipelineTest {
