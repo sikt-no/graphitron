@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
@@ -27,9 +28,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
@@ -299,6 +302,32 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_SYNTHESIS.FIELD_NAME, fieldName)
             .set(GRAPHITRON_FIELD_SYNTHESIS.MACRO, macro)
             .set(GRAPHITRON_FIELD_SYNTHESIS.AUTHORED_TYPE_SDL, authoredTypeSdl)
+            .execute();
+    }
+
+    /**
+     * A schema block's binding of one operation to a type. The type is seeded as an object if the
+     * case has not seeded it, on {@link #seedDeclaredType}'s idempotent terms, so a case whose
+     * subject is a root bound to something that is not an object states that kind first.
+     *
+     * <p>The binding and the conventional name are separable here in a way SDL makes easy to
+     * conflate: a type named {@code Query} that nothing binds, and a root binding onto a type named
+     * anything else, are both ordinary rows, and a relation that reads the name where it means to
+     * read the binding answers differently on the two.
+     *
+     * @param operation {@code QUERY}, {@code MUTATION} or {@code SUBSCRIPTION}; the DDL accepts no
+     *                  other value
+     */
+    public static void seedRootOperation(DSLContext dsl, String graphName, String operation,
+                                         String typeName) {
+        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
+        dsl.insertInto(GRAPHQL_ROOT_OPERATION)
+            .set(GRAPHQL_ROOT_OPERATION.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ROOT_OPERATION.OPERATION, operation)
+            .set(GRAPHQL_ROOT_OPERATION.TYPE_NAME, typeName)
+            .set(GRAPHQL_ROOT_OPERATION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_ROOT_OPERATION.SOURCE_LINE, 1)
+            .set(GRAPHQL_ROOT_OPERATION.SOURCE_COLUMN, 1)
             .execute();
     }
 
@@ -617,6 +646,23 @@ public final class SeededStore {
             .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_LINE, 2)
             .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * A connection marker on a field: that the author asked for the pagination expansion here. The
+     * page size and the connection's chosen name are left unstated, a relation reading either being
+     * a different subject from one reading that the promotion fires at all.
+     */
+    public static void seedConnection(DSLContext dsl, String graphName, String typeName,
+                                      String fieldName) {
+        dsl.insertInto(GRAPHITRON_CONNECTION)
+            .set(GRAPHITRON_CONNECTION.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_CONNECTION.TYPE_NAME, typeName)
+            .set(GRAPHITRON_CONNECTION.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_CONNECTION.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_CONNECTION.SOURCE_LINE, 2)
+            .set(GRAPHITRON_CONNECTION.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1144,6 +1190,25 @@ public final class SeededStore {
         dsl.insertInto(WALK_CLAIM_DOMAIN_TYPE)
             .set(WALK_CLAIM_DOMAIN_TYPE.GRAPH_NAME, graphName)
             .set(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME, typeName)
+            .execute();
+    }
+
+    // ===== The derivations' own tables =====
+
+    /**
+     * One member of the classification domain. A materialization rather than a view, because the
+     * closure it holds is over a type graph that has cycles, so a relation gated on domain
+     * membership reads rows some writer put there and a case about that gate states them.
+     *
+     * <p>Which types the writer would have reached is a different question with a different home:
+     * seeding a member the seeds could not have reached, or leaving out one they would have, is how
+     * a case tells a gate on this relation apart from a gate on anything the members happen to
+     * carry.
+     */
+    public static void seedTypeDomain(DSLContext dsl, String graphName, String typeName) {
+        dsl.insertInto(INTENT_TYPE_DOMAIN)
+            .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
+            .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)
             .execute();
     }
 }

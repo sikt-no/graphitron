@@ -240,9 +240,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against {@code walk_type_backing_class} on both axes, over public fixture
  *       classes both sides can see;
- *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain, the demand
- *       and exemption rules and their resolved reductions to the walked registries via
- *       {@code ClaimDomain}, residues named and disagreement directions pinned;
+ *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain and the
+ *       resolved reductions to the walked registries via {@code ClaimDomain} over a real capture
+ *       of every corpus example, residues named and disagreement directions pinned, with
+ *       {@code no.sikt.graphitron.model.intent.DemandRuleTest} carrying the other half of that
+ *       reason: each rule arm, each position mask, the machinery arm's structural recognition and
+ *       both reductions' precedence, pinned against a census stated row by row in the module
+ *       whose DDL declares them;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
  *       occurrence-path pair and the enclosing-override view to a structural reference
  *       enumeration and to the walk's use-keyed cascade verdicts;

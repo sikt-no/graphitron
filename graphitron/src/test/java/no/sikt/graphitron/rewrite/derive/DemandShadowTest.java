@@ -1,29 +1,21 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
@@ -31,8 +23,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_DEMAND_RULE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_EXEMPTION_RULE;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -53,11 +43,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * bindings (the renamed-root hole); registered-but-undemanded rows only under the reflection
  * residue. The targeted fixtures then assert each pinned population non-empty on the schema
  * shapes that create it, so the pins cannot go vacuous.
+ *
+ * <p>What the demand relations return given rows is not asked here. That is their own algebra,
+ * their arms, their position masks, their structural recognitions and the precedence their
+ * reductions apply, and it lives in the module whose DDL declares them, in
+ * {@code no.sikt.graphitron.model.intent.DemandRuleTest}, against a store seeded row by row. Every
+ * fixture below is a real capture of real SDL for the reason the split was worth making: what
+ * stands here is that an author's schema reaches those relations in the shape the rules read, and
+ * that where the answer differs from the walk's, the difference is one of the named populations
+ * rather than a drift.
  */
 @PipelineTier
 class DemandShadowTest {
 
-    private static final String GRAPH = "DemandShadowTest";
+    private static final String GRAPH = CapturedStore.GRAPH;
 
     private static final Set<String> CONVENTIONAL_ROOTS = Set.of("Query", "Mutation", "Subscription");
     private static final Set<String> SPEC_BUILT_IN_SCALARS = Set.of("String", "Int", "Float", "Boolean", "ID");
@@ -90,29 +89,14 @@ class DemandShadowTest {
      * everything the sweep produced.
      */
     @Test
-    void demandShadowAgreesWithTheWalkedRegistriesOverTheCorpus() throws IOException {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+    void demandShadowAgreesWithTheWalkedRegistriesOverTheCorpus() {
         var nodes = TestSchemaHelper.nodeDeclaration();
         int comparedFields = 0;
         var seenVerdicts = new LinkedHashSet<String>();
         var seenRules = new LinkedHashSet<String>();
-        try (var store = GraphitronModelStore.open()) {
+        try (var store = captureCorpus()) {
             for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
-                // The Relay Node interface is appended when absent so the captured document
-                // matches the one the walk parses (TestSchemaHelper injects it there).
-                String full = ClassifiedDsl.PRELUDE + "\n" + example.sdl();
-                if (!full.contains("interface Node")) {
-                    full += "\ninterface Node { id: ID! }\n";
-                }
-                Path dir = Files.createDirectories(tmp.resolve(example.id()));
-                var schemaFile = write(dir, full);
-                var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-                FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(example.id(), dir),
-                    FactCapture.SubjectConfig.none(), registry,
-                    TestSchemaHelper.attribution(schemaFile), jooq, List.of(), nodes);
-
-                var bundle = TestSchemaHelper.buildBundle(full);
+                var bundle = TestSchemaHelper.buildBundle(preluded(example));
                 var legacy = ClaimDomain.of(bundle.model());
                 var residue = DemandResidue.of(bundle.model());
 
@@ -242,17 +226,17 @@ class DemandShadowTest {
             type Query { ping: String }
             type Feed { tick: String }
             """;
-        withCapturedStore(sdl, dsl -> {
-            assertThat(fetchResolvedField(dsl, "Feed", "tick"))
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
+            assertThat(fetchResolvedField(store.dsl(), "Feed", "tick"))
                 .isEqualTo("DEMANDED:ROOT_OPERATION");
             var walked = TestSchemaHelper.buildSchema(sdl);
             assertThat(walked.fields().containsKey(FieldCoordinates.coordinates("Feed", "tick")))
                 .as("the legacy walk never classifies the renamed root's fields")
                 .isFalse();
-            assertThat(pinnedExcessParents(dsl, GRAPH))
+            assertThat(pinnedExcessParents(store.dsl(), GRAPH))
                 .as("the non-conventional-root pin is derivable from the store and non-empty")
                 .contains("Feed");
-        });
+        }
     }
 
     /**
@@ -272,18 +256,18 @@ class DemandShadowTest {
               deleteFilm(in: FilmRef!): DeleteFilmPayload @mutation(typeName: DELETE)
             }
             """;
-        withCapturedStore(failing, dsl -> {
-            assertThat(fetchResolvedField(dsl, "DeleteFilmPayload", "film"))
+        try (var store = CapturedStore.ofCatalog(tmp, failing, jooq())) {
+            assertThat(fetchResolvedField(store.dsl(), "DeleteFilmPayload", "film"))
                 .isEqualTo("DEMANDED:PRODUCER_PAYLOAD");
             var walked = TestSchemaHelper.buildSchema(failing);
             assertThat(walked.fields()
                     .containsKey(FieldCoordinates.coordinates("DeleteFilmPayload", "film")))
                 .as("the walk loses the data field's verdict on the non-repaid path")
                 .isFalse();
-            assertThat(pinnedExcessParents(dsl, GRAPH))
+            assertThat(pinnedExcessParents(store.dsl(), GRAPH))
                 .as("the DML-payload pin is derivable from the store and non-empty")
                 .contains("DeleteFilmPayload");
-        });
+        }
         var succeeding = """
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
             input FilmActorRef { id: ID! @nodeId }
@@ -294,70 +278,15 @@ class DemandShadowTest {
                 @mutation(typeName: DELETE, table: "film_actor")
             }
             """;
-        withCapturedStore(succeeding, dsl -> {
-            assertThat(fetchResolvedField(dsl, "DeletedPayload", "deletedId"))
+        try (var store = CapturedStore.ofCatalog(tmp, succeeding, jooq())) {
+            assertThat(fetchResolvedField(store.dsl(), "DeletedPayload", "deletedId"))
                 .isEqualTo("DEMANDED:PRODUCER_PAYLOAD");
             var walked = TestSchemaHelper.buildSchema(succeeding);
             assertThat(walked.fields()
                     .containsKey(FieldCoordinates.coordinates("DeletedPayload", "deletedId")))
                 .as("the IdElement repayment registers the data field, so the sides agree")
                 .isTrue();
-        });
-    }
-
-    /**
-     * The exemption arms stay unmasked: a structural connection type is also a directiveless
-     * object, both rule rows survive, and the reduction picks the more specific reading. The
-     * interface arm resolves the census's largest population as exempt rows.
-     */
-    @Test
-    void overlappingExemptionReadingsSurviveInTheRulesAndResolveByPrecedence() {
-        var sdl = """
-            type Query { films: FilmConnection, media: MediaItem }
-            type FilmConnection { edges: [FilmEdge], pageInfo: PageInfo }
-            type FilmEdge { node: Film, cursor: String }
-            type PageInfo { hasNextPage: Boolean! }
-            interface MediaItem { title: String }
-            type Film implements MediaItem @table(name: "film") { title: String }
-            """;
-        withCapturedStore(sdl, dsl -> {
-            var reasons = dsl.select(INTENT_FIELD_EXEMPTION_RULE.REASON)
-                .from(INTENT_FIELD_EXEMPTION_RULE)
-                .where(INTENT_FIELD_EXEMPTION_RULE.GRAPH_NAME.eq(GRAPH))
-                .and(INTENT_FIELD_EXEMPTION_RULE.TYPE_NAME.eq("FilmConnection"))
-                .fetch(org.jooq.Record1::value1);
-            assertThat(reasons)
-                .as("both readings of the connection type survive unmasked")
-                .containsExactlyInAnyOrder("CONNECTION_MACHINERY", "NESTING_TARGET");
-            assertThat(fetchResolvedField(dsl, "FilmConnection", "edges"))
-                .isEqualTo("EXEMPT:CONNECTION_MACHINERY");
-            assertThat(fetchResolvedField(dsl, "FilmEdge", "node"))
-                .isEqualTo("EXEMPT:CONNECTION_MACHINERY");
-            assertThat(fetchResolvedField(dsl, "PageInfo", "hasNextPage"))
-                .isEqualTo("EXEMPT:CONNECTION_MACHINERY");
-            assertThat(fetchResolvedField(dsl, "MediaItem", "title"))
-                .isEqualTo("EXEMPT:INTERFACE_TYPE");
-            assertThat(fetchResolvedField(dsl, "Film", "title"))
-                .isEqualTo("DEMANDED:TABLE_TYPE");
-        });
-    }
-
-    /** The demand rules are total over the domain's plain objects: the catch-all complements them. */
-    @Test
-    void directivelessObjectResolvesThroughTheCatchAll() {
-        var sdl = """
-            type Query { film: Film }
-            type Film @table(name: "film") { details: FilmDetails }
-            type FilmDetails { note: String }
-            """;
-        withCapturedStore(sdl, dsl -> {
-            assertThat(fetchResolvedField(dsl, "FilmDetails", "note"))
-                .isEqualTo("EXEMPT:NESTING_TARGET");
-            assertThat(dsl.fetchCount(INTENT_FIELD_DEMAND_RULE,
-                INTENT_FIELD_DEMAND_RULE.GRAPH_NAME.eq(GRAPH)
-                    .and(INTENT_FIELD_DEMAND_RULE.TYPE_NAME.eq("FilmDetails"))))
-                .isZero();
-        });
+        }
     }
 
     // ===== Helpers =====
@@ -459,27 +388,35 @@ class DemandShadowTest {
         return coordinate.substring(0, coordinate.indexOf('.'));
     }
 
-    private void withCapturedStore(String sdl, java.util.function.Consumer<DSLContext> body) {
-        var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            var schemaFile = write(tmp, sdl);
-            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
-                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-                jooq, List.of(), TestSchemaHelper.nodeDeclaration());
-            body.accept(store.dsl());
+    /**
+     * Every corpus example captured as its own graph into one store, which is what lets the sweep
+     * read the partition dimension as part of what it asserts. The catalog carries node inference
+     * with it, production's arrangement and the one whose over-approximation the domain equality
+     * above is the enforcer for.
+     */
+    private CapturedStore captureCorpus() {
+        var jooq = jooq();
+        CapturedStore store = null;
+        for (ClassifiedCorpus.Example example : ClassifiedCorpus.examples()) {
+            store = store == null
+                ? CapturedStore.ofCatalog(tmp, example.id(), preluded(example), jooq)
+                : store.andCatalogGraph(example.id(), preluded(example), jooq);
         }
+        return store;
     }
 
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
+    /**
+     * A corpus example's SDL as the walk sees it. The Relay Node interface is appended when absent
+     * so the captured document matches the one the walk parses, {@link TestSchemaHelper} injecting
+     * it there.
+     */
+    private static String preluded(ClassifiedCorpus.Example example) {
+        String full = ClassifiedDsl.PRELUDE + "\n" + example.sdl();
+        return full.contains("interface Node") ? full : full + "\ninterface Node { id: ID! }\n";
+    }
+
+    private static JooqCatalog jooq() {
+        var ctx = testContext();
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 }
