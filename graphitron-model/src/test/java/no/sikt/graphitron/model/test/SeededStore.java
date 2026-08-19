@@ -39,7 +39,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
@@ -49,6 +51,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
@@ -405,6 +408,39 @@ public final class SeededStore {
             .set(GRAPHITRON_ERROR.DECLARATION_COLUMN, SEED_COLUMN)
             .set(GRAPHITRON_ERROR.SOURCE_LINE, 1)
             .set(GRAPHITRON_ERROR.SOURCE_COLUMN, 20)
+            .execute();
+    }
+
+    /**
+     * A {@code @splitQuery} application on a field: presence, the marker carrying no argument. The
+     * field has to exist already, the application being keyed by the coordinate.
+     */
+    public static void seedSplitQuery(DSLContext dsl, String graphName, String typeName,
+                                      String fieldName) {
+        dsl.insertInto(GRAPHITRON_SPLIT_QUERY)
+            .set(GRAPHITRON_SPLIT_QUERY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SPLIT_QUERY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SPLIT_QUERY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_SPLIT_QUERY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_SPLIT_QUERY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_SPLIT_QUERY.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * A {@code @tenantFanOut} application on a field, on {@link #seedSplitQuery}'s terms. The two
+     * markers are separate relations rather than one flagged row, so a relation reading both
+     * answers with the marker it matched and a case about that reading seeds them apart.
+     */
+    public static void seedTenantFanOut(DSLContext dsl, String graphName, String typeName,
+                                        String fieldName) {
+        dsl.insertInto(GRAPHITRON_TENANT_FAN_OUT)
+            .set(GRAPHITRON_TENANT_FAN_OUT.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_TENANT_FAN_OUT.TYPE_NAME, typeName)
+            .set(GRAPHITRON_TENANT_FAN_OUT.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_TENANT_FAN_OUT.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_TENANT_FAN_OUT.SOURCE_LINE, 2)
+            .set(GRAPHITRON_TENANT_FAN_OUT.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1646,6 +1682,26 @@ public final class SeededStore {
         dsl.insertInto(INTENT_TYPE_DOMAIN)
             .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
             .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)
+            .execute();
+    }
+
+    /**
+     * A type backed by a class, on {@link #seedTypeDomain}'s terms: another closure over a cyclic
+     * type graph, so it is a materialization and a relation reading it reads rows a writer put
+     * there. The type is seeded as an object unless the case already gave it a kind, an input
+     * object being backed here too and the difference mattering to a reader that guards on kind.
+     *
+     * <p>Which class a producer would actually have delivered is not this helper's question. A row
+     * naming a class no census declares is the ordinary case, since what backs a type is a name the
+     * closure carried and not an entry anything has to hold.
+     */
+    public static void seedTypeBackingClass(DSLContext dsl, String graphName, String typeName,
+                                            String className) {
+        seedType(dsl, graphName, typeName, "OBJECT");
+        dsl.insertInto(INTENT_TYPE_BACKING_CLASS)
+            .set(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME, graphName)
+            .set(INTENT_TYPE_BACKING_CLASS.TYPE_NAME, typeName)
+            .set(INTENT_TYPE_BACKING_CLASS.CLASS_NAME, className)
             .execute();
     }
 }

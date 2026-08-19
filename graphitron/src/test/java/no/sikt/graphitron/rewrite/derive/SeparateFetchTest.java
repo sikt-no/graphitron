@@ -1,23 +1,16 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.facts.GatheredFacts;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -30,23 +23,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The registered agreement anchor for {@code intent_field_separate_fetch}: which fields are fetched
  * by a statement of their own rather than projected out of the enclosing SELECT.
  *
- * <p>The two marker arms are bound to the walk's own gathered delivery relation
- * ({@code GatheredFacts.delivery}), which is the independent evaluation of the same question: the
- * visitor reads the directive applications off the assembled schema, the view reads the captured
- * rows, and the two must name the same coordinates. The service and root arms have no walk-side
- * relation to bind to (the split they describe is a property of the emitted fetcher rather than a
- * gathered marker), so they are pinned against the authored coordinates directly. The record-handed
- * arm has no authored coordinate either, its whole content being what a producer's Java signature
- * implies, so it is pinned against the shapes a captured census puts in the store.
+ * <p>The subject here is the capture side of that relation, and it is two questions. The first is
+ * agreement: the two marker arms are bound to the walk's own gathered delivery relation
+ * ({@link GatheredFacts#delivery()}), which is the independent evaluation of the same question, the
+ * visitor reading the directive applications off the assembled schema while the view reads the
+ * captured rows. The second is reach: the record-handed arm stands on a closure a derivation writer
+ * materializes rather than on anything an author wrote, so a fixture pins that a producer's return,
+ * scanned as a census and closed over by that writer, arrives as rows the arm actually joins to.
  *
- * <p>Cases that pin <em>absence</em> carry their weight here: a field whose value comes out of its
- * parent's row is the population this relation exists to exclude, and the boundary is the claim.
+ * <p>What the relation returns given rows is not asked here. Each arm's own population, the
+ * boundary the record-handed one draws around a parent both populations answer, the parent's kind
+ * guard, and the arity a coordinate several rules reach carries are the view's algebra, and they
+ * live in the module whose DDL declares it, in
+ * {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest}, against a store seeded row by row.
+ * The absence cases carry their weight there for the same reason: a field whose value comes out of
+ * its parent's row is the population this relation exists to exclude, and stating that boundary
+ * takes rows rather than a schema.
  */
 @PipelineTier
 class SeparateFetchTest {
 
     @TempDir
     Path tmp;
+
+    private static final String GRAPH = CapturedStore.GRAPH;
+    private static final String PRODUCER = "app.Producer";
 
     /**
      * The marker arms against the walk's delivery gather. Both markers on one schema, plus fields
@@ -64,7 +65,8 @@ class SeparateFetchTest {
             }
             type Query { films: [Film!]! }
             """;
-        withCapturedStore(sdl, dsl -> {
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
+            var dsl = store.dsl();
             var gathered = gather(sdl);
             assertThat(gathered.delivery().rows())
                 .as("the fixture authors both markers, so neither arm is vacuous")
@@ -79,165 +81,45 @@ class SeparateFetchTest {
                     .filter(r -> r.tenantFanOut())
                     .map(r -> r.parentTypeName() + "." + r.fieldName())
                     .toList());
-        });
+        }
     }
 
     /**
-     * The non-root {@code @service} contract: the service fetches independently of the parent's
-     * SELECT, which is why the split is required there rather than optional.
+     * The implicit split's reach: the one arm no author writes a marker for, and the one standing on
+     * a relation a writer materializes rather than on a directive application. {@code Payload} is
+     * grounded on the class a producer hands back, so nothing arrives for its fields to be projected
+     * out of, and the child that names a {@code @table} type is a trip of its own.
+     *
+     * <p>The closure row is the subject rather than the scenery. Read here off a captured census, it
+     * is the thing that keeps the seeded half's arm from joining to a relation that nothing in a
+     * real pipeline populates in the shape it reads.
      */
     @Test
-    void aNonRootServiceFieldIsFetchedIndependently() {
-        withCapturedStore("""
-            type Film @table(name: "film") {
-                rating: String @service(service: {className: "%s", method: "get"})
-            }
-            type Query { films: [Film!]! }
-            """.formatted(SERVICE_STUB),
-            dsl -> assertThat(rulesFor(dsl, "Film", "rating")).containsExactly("SERVICE"));
-    }
-
-    /**
-     * A root {@code @service} field is a root field, not a second service split: the root arm
-     * already says its fetch is its own, and the service arm is masked there rather than adding a
-     * second reason for the same thing.
-     */
-    @Test
-    void aRootServiceFieldIsNamedOnceByTheRootArm() {
-        withCapturedStore("""
-            type Film @table(name: "film") { title: String }
+    void aProducerHandedParentReachesTheArmThroughTheClosureAWriterDerived() {
+        String sdl = """
             type Query {
-                films: [Film!]! @service(service: {className: "%s", method: "get"})
+                payload: Payload @service(service: {className: "%s", method: "make"})
             }
-            """.formatted(SERVICE_STUB),
-            dsl -> assertThat(rulesFor(dsl, "Query", "films")).containsExactly("ROOT_OPERATION"));
-    }
-
-    /** Every field of a bound root type, whether or not anything else reaches it. */
-    @Test
-    void everyRootFieldIsItsOwnEntryPoint() {
-        withCapturedStore("""
+            type Payload {
+                name: String
+                film: Film
+            }
             type Film @table(name: "film") { title: String }
-            type Query { films: [Film!]! }
-            type Mutation { touch(id: ID!): ID @mutation(typeName: DELETE, table: "film") }
-            """, dsl -> {
-            assertThat(rulesFor(dsl, "Query", "films")).containsExactly("ROOT_OPERATION");
-            assertThat(rulesFor(dsl, "Mutation", "touch")).containsExactly("ROOT_OPERATION");
-        });
-    }
-
-    /**
-     * A coordinate several rules reach is several rows. The arity is the answer, so no rule wins a
-     * precedence contest this view would have to hold an opinion about.
-     */
-    @Test
-    void aCoordinateSeveralRulesReachIsSeveralRows() {
-        withCapturedStore("""
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                languages: [Language!]! @splitQuery
-                    @service(service: {className: "%s", method: "get"})
-            }
-            type Query { films: [Film!]! }
-            """.formatted(SERVICE_STUB),
-            dsl -> assertThat(rulesFor(dsl, "Film", "languages"))
-                .containsExactlyInAnyOrder("SERVICE", "SPLIT_QUERY"));
-    }
-
-    /**
-     * A column projected out of the parent's own row contributes nothing. That absence is the
-     * relation's central claim about cost, and the population it excludes is most of a schema.
-     */
-    @Test
-    void aColumnOfTheParentsOwnRowContributesNoRow() {
-        withCapturedStore("""
-            type Film @table(name: "film") { title: String }
-            type Query { films: [Film!]! }
-            """, dsl -> assertThat(rulesFor(dsl, "Film", "title")).isEmpty());
-    }
-
-    /**
-     * A table-typed child with no marker is inlined into the parent's statement, and contributes
-     * nothing. The pair with the marker case above is what makes the marker arms load-bearing.
-     */
-    @Test
-    void anInlinedChildReferenceContributesNoRow() {
-        withCapturedStore("""
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Query { films: [Film!]! }
-            """, dsl -> assertThat(rulesFor(dsl, "Film", "language")).isEmpty());
-    }
-
-    // ===== The record-handed parent =====
-
-    /**
-     * The implicit split, the one arm no author writes a marker for. {@code Payload} is grounded on
-     * a class a producer hands back, so nothing arrives for its fields to be projected out of, and
-     * the child that names a {@code @table} type is a trip of its own.
-     */
-    @Test
-    void aTableTypedChildOfARecordHandedParentIsFetchedSeparately() {
-        withBackedStore(dsl ->
-            assertThat(rulesFor(dsl, "Payload", "film")).containsExactly("RECORD_HANDED_PARENT"));
-    }
-
-    /**
-     * The arm's other side, on the same parent, which is what keeps it from being a claim about
-     * class-backed parents as such: a scalar is read off the member it came with, and a child whose
-     * own type is bound to no table is another object in the same handed graph. Neither costs a
-     * trip, and the parent they share does.
-     */
-    @Test
-    void aChildOfARecordHandedParentNamingNoTableContributesNoRow() {
-        withBackedStore(dsl -> {
-            assertThat(rulesFor(dsl, "Payload", "name")).isEmpty();
-            assertThat(rulesFor(dsl, "Payload", "plain")).isEmpty();
-        });
-    }
-
-    /**
-     * A parent both populations answer is read as a table row. {@code Film} carries {@code @table}
-     * and the closure also reaches it through the handed record's own member, so its table-typed
-     * child would split if the arm read the closure alone. The walk resolves that pair by reading
-     * the binding and never consulting the class; the anti-join is that precedence transcribed,
-     * which is why the disagreement stays observable on {@code intent_type_backing_conflict}
-     * instead of being folded in here.
-     */
-    @Test
-    void aParentBothPopulationsBackIsReadAsATableRow() {
-        withBackedStore(dsl -> {
+            """.formatted(PRODUCER);
+        try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl, jooq(), handedCensus())) {
+            var dsl = store.dsl();
             assertThat(dsl.select(INTENT_TYPE_BACKING_CLASS.CLASS_NAME)
                 .from(INTENT_TYPE_BACKING_CLASS)
                 .where(INTENT_TYPE_BACKING_CLASS.GRAPH_NAME.eq(GRAPH))
-                .and(INTENT_TYPE_BACKING_CLASS.TYPE_NAME.eq("Film"))
+                .and(INTENT_TYPE_BACKING_CLASS.TYPE_NAME.eq("Payload"))
                 .fetch(0, String.class))
-                .as("the premise: without a closure row the silence below would be vacuous")
-                .containsExactly("app.FilmRow");
-            assertThat(rulesFor(dsl, "Film", "language")).isEmpty();
-            assertThat(rulesFor(dsl, "Film", "title")).isEmpty();
-        });
-    }
-
-    /** The graph partition: one workspace's graphs do not read each other's rules. */
-    @Test
-    void aSiblingGraphReadsNone() {
-        withCapturedStore("""
-            type Film @table(name: "film") { title: String }
-            type Query { films: [Film!]! }
-            """, dsl -> {
-            assertThat(rulesFor(dsl, "Query", "films")).isNotEmpty();
-            assertThat(dsl.fetchCount(INTENT_FIELD_SEPARATE_FETCH,
-                INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq("other"))).isZero();
-        });
+                .as("the premise: the closure the arm joins to is a writer's row, not a fixture's")
+                .containsExactly("app.PayloadDto");
+            assertThat(rulesFor(dsl, "Payload", "film")).containsExactly("RECORD_HANDED_PARENT");
+        }
     }
 
     // ===== Helpers =====
-
-    private static final String GRAPH = "SeparateFetchTest";
-    private static final String SERVICE_STUB = "no.sikt.graphitron.rewrite.TestServiceStub";
 
     /** The coordinates one rule reaches, as {@code Type.field}. */
     private static List<String> rules(DSLContext dsl, String rule) {
@@ -265,73 +147,24 @@ class SeparateFetchTest {
             (s, v) -> SchemaReachability.walk(s, nodes, v));
     }
 
-    private void withCapturedStore(String sdl, java.util.function.Consumer<DSLContext> body) {
-        withCapturedStore(sdl, List.of(), body);
-    }
-
-    private void withCapturedStore(String sdl, List<CompletionData.ExternalReference> census,
-                                   java.util.function.Consumer<DSLContext> body) {
+    private static JooqCatalog jooq() {
         var ctx = testContext();
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = GraphitronModelStore.open()) {
-            var schemaFile = write(tmp, sdl);
-            var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(schemaFile)));
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(GRAPH, tmp),
-                FactCapture.SubjectConfig.none(), registry, TestSchemaHelper.attribution(schemaFile),
-                jooq, census, new NodeDeclaration(null));
-            body.accept(store.dsl());
-        }
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 
-    // ===== The record-handed fixture =====
-
     /**
-     * One producer handing back a class, and under it the three shapes the arm has to tell apart: a
-     * child bound to a table, a child bound to none, and a scalar. {@code Film} carries
-     * {@code @table} and is also reached off the handed record's own member, so the fixture holds
-     * the contested parent too.
+     * The census the closure grounds on: the producer's return, and the members the reached record
+     * declares. Hand-built rather than scanned, the split every derivation test over the census
+     * makes and for its reason: a census row is a name, a descriptor and a decomposed declared type,
+     * which is all these rules read.
      */
-    private static final String BACKED_SDL = """
-        type Query {
-            payload: Payload @service(service: {className: "app.Producer", method: "make"})
-        }
-        type Payload {
-            name: String
-            film: Film
-            plain: Plain
-        }
-        type Film @table(name: "film") {
-            title: String
-            language: Language
-        }
-        type Language @table(name: "language") { name: String }
-        type Plain { id: ID }
-        """;
-
-    /**
-     * The census the closure grounds on: the producer's return, and the members the reached records
-     * declare. Hand-built rather than scanned, the split every derivation test over the census makes
-     * and for its reason: a census row is a name, a descriptor and a decomposed declared type, which
-     * is all these rules read.
-     */
-    private static List<CompletionData.ExternalReference> backedCensus() {
+    private static List<CompletionData.ExternalReference> handedCensus() {
         String entry = "app/target/classes";
         return List.of(
-            reference(entry, "app.Producer",
-                method("make", "()Lapp/PayloadDto;", ref("app.PayloadDto"))),
+            reference(entry, PRODUCER, method("make", "()Lapp/PayloadDto;", ref("app.PayloadDto"))),
             record(entry, "app.PayloadDto",
                 component("name", ref("java.lang.String")),
-                component("film", ref("app.FilmRow")),
-                component("plain", ref("app.PlainRow"))),
-            record(entry, "app.FilmRow",
-                component("title", ref("java.lang.String")),
-                component("language", ref("app.LangRow"))),
-            record(entry, "app.LangRow", component("name", ref("java.lang.String"))),
-            record(entry, "app.PlainRow", component("id", ref("java.lang.String"))));
-    }
-
-    private void withBackedStore(java.util.function.Consumer<DSLContext> body) {
-        withCapturedStore(BACKED_SDL, backedCensus(), body);
+                component("film", ref("app.FilmRow"))));
     }
 
     private static CompletionData.ExternalReference reference(
@@ -360,16 +193,5 @@ class SeparateFetchTest {
     /** The qualified name a declared type mentions at its own root, which is what the peel reads. */
     private static CompletionData.TypeRef ref(String referencedClass) {
         return new CompletionData.TypeRef("", referencedClass, "NONE");
-    }
-
-    private static Path write(Path directory, String sdl) {
-        Path file = directory.resolve("fixture.graphqls");
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(file, sdl);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return file;
     }
 }

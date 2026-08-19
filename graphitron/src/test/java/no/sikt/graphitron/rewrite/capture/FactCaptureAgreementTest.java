@@ -253,6 +253,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code no.sikt.graphitron.model.intent.InputOccurrenceOverrideTest} carrying what the view
  *       makes of it: the three enclosing sites as their own arms, the boundary a step draws around
  *       what is below it, and the order the nearest witness is picked in;
+ *       {@code no.sikt.graphitron.rewrite.derive.SeparateFetchTest} binds
+ *       {@code intent_field_separate_fetch}'s two marker arms to the walk's own gathered delivery
+ *       relation over a real capture, and pins the record-handed arm reaching a closure a
+ *       derivation writer materialized from a captured census, with
+ *       {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest} carrying what the view makes
+ *       of those rows: each of the five rules as its own arm, the two boundaries the record-handed
+ *       one draws, and the arity a coordinate several rules reach carries against the single row a
+ *       rule reaching one coordinate twice still answers with;
  *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the
  *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
  *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
