@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 3
 theme: routine
-depends-on: [jooq-node-metadata-as-stated-facts]
+depends-on: []
 created: 2026-08-14
 last-updated: 2026-08-19
 ---
