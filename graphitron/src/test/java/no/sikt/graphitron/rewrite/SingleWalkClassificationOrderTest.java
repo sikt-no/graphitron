@@ -5,6 +5,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -32,8 +33,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Unique type names ({@code TypeA} / {@code TypeB}) isolate this build's records from any other
  * classification co-resident in the same JVM fork; the {@code @table} names are real catalog tables with a
  * single FK between them so the nested field classifies cleanly.
+ *
+ * <p>That name-uniqueness answers which records are this test's, and {@code @Isolated} answers a
+ * different question: this class rebinds the emitter's process-global writer through
+ * {@link ClassificationTrace#resetForTesting}, so under concurrent classes a sibling would write
+ * through a stream this teardown closed, or emit into this test's temp file. Reading an ordered log
+ * also wants no interleaving from a sibling that happens to share a type name.
  */
 @PipelineTier
+@Isolated("rebinds ClassificationTrace's process-global writer")
 class SingleWalkClassificationOrderTest {
 
     @TempDir

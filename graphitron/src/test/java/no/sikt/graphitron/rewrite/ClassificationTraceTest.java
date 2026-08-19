@@ -5,6 +5,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,8 +18,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Smoke test for the JSONL trace emitter. Drives one operation per arm
  * (classify / enrich / demote / synthesize) and asserts the documented
  * field set is present, with line-per-record framing and proper escaping.
+ *
+ * <p>{@code @Isolated} because its subject is the emitter's process-global binding, not a graph.
+ * {@link ClassificationTrace#resetForTesting} closes and rebinds the one writer every classifying
+ * thread emits through, so with classes running concurrently a sibling that captured the writer
+ * before a close here writes after it and dies on a closed stream, and a sibling classifying during
+ * the rebind has its records land in this test's temp file. Neither is a hazard the emitter's
+ * {@code synchronized} write can address: the write is atomic, the binding is what moves.
  */
 @UnitTier
+@Isolated("rebinds ClassificationTrace's process-global writer")
 class ClassificationTraceTest {
 
     @TempDir
