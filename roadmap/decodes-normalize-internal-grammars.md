@@ -1,7 +1,7 @@
 ---
 id: R715
 title: "Capture decodes internal grammars into normalized relations"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: classification-model
