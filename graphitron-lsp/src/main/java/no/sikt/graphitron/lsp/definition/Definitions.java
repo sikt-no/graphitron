@@ -76,13 +76,12 @@ public final class Definitions {
     private Definitions() {}
 
     /**
-     * Back-compatible overload that loads the bundled vocabulary; the
-     * service-half binding arm uses the canonical overlay. Production callers
-     * pass the workspace vocabulary through
+     * Back-compatible overload that loads the vocabulary from this document's own graph. Production
+     * callers pass the workspace's, which is loaded once per session rather than per request, through
      * {@link #compute(LspVocabulary, FileSnapshot, StoreHandle, Point)}.
      */
     public static Optional<Location> compute(FileSnapshot file, StoreHandle store, Point pos) {
-        return compute(LspVocabulary.load(), file, store, pos);
+        return compute(LspVocabulary.load(store), file, store, pos);
     }
 
     /**

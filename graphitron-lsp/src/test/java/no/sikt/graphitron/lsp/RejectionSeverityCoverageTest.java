@@ -81,7 +81,7 @@ class RejectionSeverityCoverageTest {
     private static List<Diagnostic> replay(
         GraphitronModelStore store, String uri, FileSnapshot file
     ) {
-        return Diagnostics.compute(LspVocabulary.load(), uri, file,
+        return Diagnostics.compute(BundledVocabulary.get(), uri, file,
             Optional.of(new StoreHandle(store.dsl(), GRAPH)));
     }
 

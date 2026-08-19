@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class LspVocabularyLocateAtTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
     @Test
     void stringValueLeaf_replaceRangeStripsSingleQuoteDelimiters() {

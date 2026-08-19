@@ -229,7 +229,7 @@ class R157PipelineTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        var vocab = LspVocabulary.load();
+        var vocab = BundledVocabulary.get();
         var locOpt = vocab.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
@@ -243,7 +243,7 @@ class R157PipelineTest {
     private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {
         var file = WorkspaceFileTestSupport.snapshot(source);
         try (var store = storeOver(artefacts)) {
-            return Diagnostics.compute(LspVocabulary.load(), "", file, Optional.of(store.handle()));
+            return Diagnostics.compute(BundledVocabulary.get(), "", file, Optional.of(store.handle()));
         }
     }
 

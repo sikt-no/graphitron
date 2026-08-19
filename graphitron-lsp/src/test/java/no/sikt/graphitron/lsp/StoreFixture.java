@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuildWarning;
@@ -348,6 +349,15 @@ final class StoreFixture implements AutoCloseable {
     void withValidationErrors(List<ValidationError> errors) {
         new RejectionFacts(store.dsl(), new FactCapture.GraphIdentity(graphName, directory))
             .write(errors);
+    }
+
+    /**
+     * The directive vocabulary this fixture's graph declares, which for every fixture includes
+     * graphitron's own bundled definitions: capture parses them alongside whatever schema it is
+     * given. A test whose subject is not the vocabulary reads {@link BundledVocabulary} instead.
+     */
+    LspVocabulary vocabulary() {
+        return LspVocabulary.load(handle());
     }
 
     /** A reader of this store, for the cases whose subject is the read boundary rather than a query. */

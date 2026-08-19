@@ -60,7 +60,7 @@ class LintSuppressionDiagnosticsParityTest {
         // The dev round's own sequence: a real build, its findings loaded into the store, and the
         // editor reading them back from there rather than from a report object.
         try (var fixture = StoreFixture.ofBuild(tmp, SDL, lintConfig)) {
-            return Diagnostics.compute(LspVocabulary.load(),
+            return Diagnostics.compute(BundledVocabulary.get(),
                 ValidationReport.canonicalUri(fixture.sourceName()),
                 WorkspaceFileTestSupport.snapshot(SDL), Optional.of(fixture.handle()));
         }

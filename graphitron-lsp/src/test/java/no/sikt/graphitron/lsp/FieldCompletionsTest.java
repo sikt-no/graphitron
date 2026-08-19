@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FieldCompletionsTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
     /** The census's producer, whose return types ground the class-backed cases' own SDL. */
     private static final String SERVICE_FIXTURE = "no.sikt.graphitron.lsp.fixtures.R157Service";

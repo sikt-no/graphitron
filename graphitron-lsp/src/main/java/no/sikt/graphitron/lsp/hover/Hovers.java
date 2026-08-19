@@ -73,14 +73,15 @@ public final class Hovers {
     private Hovers() {}
 
     /**
-     * Every arm this entry point can reach reads the store, so it takes no projection. The bundled
-     * vocabulary is the only one in scope today; the workspace's vocabulary is wired through
-     * {@code GraphitronTextDocumentService}.
+     * Every arm this entry point can reach reads the store, so it takes no projection. The vocabulary
+     * comes from this document's own graph, or is empty where there is no store to read one from; the
+     * workspace's, loaded once per session, is wired through {@code GraphitronTextDocumentService}.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, Optional<StoreHandle> store, Point pos
     ) {
-        return compute(LspVocabulary.load(), file, store, pos, false);
+        var vocabulary = store.map(LspVocabulary::load).orElseGet(LspVocabulary::empty);
+        return compute(vocabulary, file, store, pos, false);
     }
 
     /**

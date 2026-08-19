@@ -38,7 +38,7 @@ public final class Workspace {
     private final Object lock = new Object();
     private final Map<String, WorkspaceFile> files = new LinkedHashMap<>();
     private final List<String> toRecalculate = new ArrayList<>();
-    private final LspVocabulary vocabulary;
+    private volatile LspVocabulary vocabulary;
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
     // The session's read access to the fact store, set once by whoever started the session and
@@ -49,7 +49,7 @@ public final class Workspace {
     private volatile StoreAccess store;
 
     public Workspace() {
-        this(LspVocabulary.load());
+        this(LspVocabulary.empty());
     }
 
     public Workspace(LspVocabulary vocabulary) {
@@ -169,9 +169,16 @@ public final class Workspace {
     /**
      * Hands this session its read access to the fact store, and takes over closing it. Called once
      * by whoever started the session and holds the store the session writes through.
+     *
+     * <p>Loads the directive vocabulary in the same breath, because this is the first moment there is
+     * anything to load it from. Until then the session has an empty one and resolves no cursor to any
+     * coordinate, which is what a session before its first build could say in any case.
      */
     public void setStore(StoreAccess store) {
         this.store = store;
+        this.vocabulary = store == null
+            ? LspVocabulary.empty()
+            : store.readingSessionGraph(LspVocabulary::load);
     }
 
     /**
@@ -232,9 +239,10 @@ public final class Workspace {
     }
 
     /**
-     * The LSP's directive vocabulary, parsed once at startup from the
-     * bundled {@code directives.graphqls} and immutable thereafter. The
-     * registry is shape, not state; there is no setter.
+     * The LSP's directive vocabulary, read from the session's graph when the store arrives and again
+     * after every build. State rather than shape, which it became when it stopped being a parse of a
+     * file shipped in the jar: an author who defines a directive of their own has changed it, and the
+     * capture that read their definition is the event that says so.
      */
     public LspVocabulary vocabulary() {
         return vocabulary;
@@ -267,8 +275,16 @@ public final class Workspace {
      * of what a completed build now does to this workspace: every surface reads the store, so a
      * round changes what they answer by changing what the store holds, and this is the signal that
      * it did.
+     *
+     * <p>The directive vocabulary is re-read first, being one of the things the round may have
+     * changed. It is read once here rather than per queued file: the vocabulary is the graph's, and a
+     * drain of forty documents is one build's worth of it.
      */
     public void markAllForRecalculation() {
+        StoreAccess access = store;
+        if (access != null) {
+            vocabulary = access.readingSessionGraph(LspVocabulary::load);
+        }
         enqueueAndNotify(() -> files.keySet().forEach(this::enqueue));
     }
 

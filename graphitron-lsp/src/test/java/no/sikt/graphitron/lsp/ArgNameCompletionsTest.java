@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ArgNameCompletionsTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
     /**
      * Two directives an author declared, one taking a scalar and one an input object, so the nested

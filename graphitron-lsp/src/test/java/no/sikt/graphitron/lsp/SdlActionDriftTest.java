@@ -2,11 +2,11 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.code_action.SdlAction;
 import no.sikt.graphitron.lsp.code_action.SdlActions;
-import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,17 +30,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SdlActionDriftTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final Set<SchemaCoordinate> DEPRECATED = SdlDeprecations.shipped();
 
     @Test
     void atLandingTimeCanonicalSetIsExact() {
-        assertThat(VOCAB.deprecatedCoordinates()).containsExactlyInAnyOrder(
+        assertThat(DEPRECATED).containsExactlyInAnyOrder(
             new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
             new SchemaCoordinate.Directive("index"),
             // @record's docstring carries the @deprecated marker, keeping the deprecation
-            // convention uniform (hover / deprecatedCoordinates). No migration action is
-            // registered: its removal is offered by the redundant-record advisory's
-            // build-side fix, and a deprecation without an action is fine.
+            // convention uniform. No migration action is registered: its removal is offered by
+            // the redundant-record advisory's build-side fix, and a deprecation without an
+            // action is fine.
             new SchemaCoordinate.Directive("record")
         );
     }
@@ -53,7 +53,7 @@ class SdlActionDriftTest {
         }
 
         var stale = allActionTargets.stream()
-            .filter(t -> !VOCAB.deprecatedCoordinates().contains(t))
+            .filter(t -> !DEPRECATED.contains(t))
             .collect(Collectors.toSet());
 
         assertThat(stale)

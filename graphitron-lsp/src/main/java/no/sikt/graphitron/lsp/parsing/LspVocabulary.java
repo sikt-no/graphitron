@@ -1,19 +1,10 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import graphql.language.DirectiveDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InputValueDefinition;
-import graphql.language.ListType;
-import graphql.language.NonNullType;
-import graphql.language.Type;
-import graphql.language.TypeName;
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.facts.DirectiveSurface;
 import no.sikt.graphitron.lsp.trace.LspTrace;
-import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.read.StoreHandle;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ENUM_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
@@ -30,80 +21,65 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * The LSP's directive vocabulary, keyed by GraphQL schema coordinates.
- * Composed of a hand-coded {@link Behavior} overlay and the parsed
- * {@link TypeDefinitionRegistry} of the bundled {@code directives.graphqls}.
+ * The LSP's directive vocabulary, keyed by GraphQL schema coordinates. Composed of a hand-coded
+ * {@link Behavior} overlay and the graph's own {@link DirectiveSurface}.
  *
- * <p>The parsed registry contributes the full directive surface: every
- * directive, every arg, every input type and field, which is what makes a
- * cursor position resolvable to a coordinate. The overlay declares semantics
- * ("complete this as a class name", "validate this against the catalog's
- * table set") only for the subset the LSP knows how to act on. Filing
- * semantics for a new directive is an additive overlay entry; the parse
- * already exposes the coordinate.
+ * <p>The surface contributes the shape: every directive, every argument, every input type and field,
+ * which is what makes a cursor position resolvable to a coordinate. The overlay declares semantics
+ * ("complete this as a class name", "validate this against the catalog's table set") only for the
+ * subset the LSP knows how to act on. Filing semantics for a new directive is an additive overlay
+ * entry; the surface already exposes the coordinate.
  *
- * <p>What the registry no longer answers is what a coordinate <em>means</em>
- * in prose. Descriptions are rows: capture parses the bundled SDL like any
- * other schema file, so a docstring is read from the store through
- * {@code SdlDescriptions} and the bundled definitions are not a second
- * source beside it.
+ * <p><b>Everything here comes from the store.</b> The language server parses one thing, the buffer
+ * the author is editing, with tree-sitter, and reads everything else as rows. The vocabulary was the
+ * last holdout: it kept a graphql-java {@code TypeDefinitionRegistry} of graphitron's bundled
+ * {@code directives.graphqls} and resolved coordinates against that. Capture parses the bundled file
+ * like any other schema file, so the registry was a second reading of a document the store already
+ * held, and two readings of one document are two opinions about it. What a coordinate means in prose
+ * is a row too, read through {@link no.sikt.graphitron.lsp.facts.SdlDescriptions}.
  *
- * <p><b>Structural invariant.</b> Every coordinate in the overlay must
- * resolve against the parsed registry. The constructor enforces this and
- * throws {@link LspStartupException} on any unresolved coordinate;
- * directive drift becomes a loud startup failure before any IDE session
- * ever runs.
+ * <p>Held rather than re-read, on {@link DirectiveSurface}'s terms: the diagnostics walk resolves
+ * coordinates while reading nothing, so the surface is loaded once and carried. A vocabulary built
+ * from {@link DirectiveSurface#empty()} answers no coordinate at all, which is what a session with
+ * no store has to say about a document.
  *
- * <p>The vocabulary is read once at LSP startup and never invalidated.
- * The bundled SDL ships with the LSP jar; it is shape, not state.
+ * <p>The overlay is not checked against the surface here. Every coordinate it names must resolve, but
+ * that is a claim about the SDL graphitron ships rather than about whichever graph a session happens
+ * to have open, so it is asserted by a test that captures the shipped file and reads the surface
+ * back. A running session that finds an overlay coordinate missing has an uncaptured or partial
+ * graph, and refusing to start over that would take the editor down for a condition the next capture
+ * fixes.
  */
 public record LspVocabulary(
     Map<SchemaCoordinate, Behavior> overlay,
-    TypeDefinitionRegistry registry
+    DirectiveSurface surface
 ) {
 
     public LspVocabulary {
         overlay = Map.copyOf(overlay);
-        for (var coord : overlay.keySet()) {
-            if (!resolves(coord, registry)) {
-                throw new LspStartupException(
-                    "Schema coordinate " + coord + " does not resolve against "
-                        + "directives.graphqls. Either update the overlay or "
-                        + "check directive surface.");
-            }
-        }
     }
 
-    /**
-     * Production factory: parses the bundled {@code directives.graphqls}
-     * and applies the canonical overlay declared at
-     * {@link CanonicalOverlay#overlay()}.
-     */
-    public static LspVocabulary load() {
-        return load(CanonicalOverlay.overlay());
+    /** The canonical overlay over {@code store}'s graph, which is what a session runs on. */
+    public static LspVocabulary load(StoreHandle store) {
+        return load(CanonicalOverlay.overlay(), store);
     }
 
-    /**
-     * Test / dev factory: parses the bundled SDL and applies a caller-supplied
-     * overlay. The structural invariant fires on construction.
-     */
-    public static LspVocabulary load(Map<SchemaCoordinate, Behavior> overlay) {
-        // Traced because this is not as cheap as its call sites assume: it reparses the
-        // bundled SDL and re-validates every overlay coordinate against the result. A trace
-        // showing one of these per request identifies a hot path that should be holding the
-        // workspace's cached instance instead.
+    /** The same, with a caller-supplied overlay, for the tests whose subject is the overlay itself. */
+    public static LspVocabulary load(Map<SchemaCoordinate, Behavior> overlay, StoreHandle store) {
+        // Traced because this is not as cheap as its call sites assume: it reads the graph's whole
+        // directive surface. A trace showing one of these per request identifies a hot path that
+        // should be holding the workspace's cached instance instead.
         try (var _ = LspTrace.span("vocabulary.load")) {
-            return new LspVocabulary(overlay, parseDirectivesSdl());
+            return new LspVocabulary(overlay, DirectiveSurface.load(store));
         }
     }
 
     /**
-     * Parses an arbitrary SDL fixture instead of the bundled resource.
-     * Used by unit tests that want to assert vocabulary behavior against
-     * a synthetic directive surface.
+     * The vocabulary of a session with no store: the canonical overlay over an empty surface, which
+     * resolves no cursor to any coordinate.
      */
-    public static LspVocabulary load(Map<SchemaCoordinate, Behavior> overlay, String sdl) {
-        return new LspVocabulary(overlay, new SchemaParser().parse(sdl));
+    public static LspVocabulary empty() {
+        return new LspVocabulary(CanonicalOverlay.overlay(), DirectiveSurface.empty());
     }
 
     /**
@@ -230,19 +206,15 @@ public record LspVocabulary(
      */
     public List<Leaf> leafCoordinates(Directives.Directive directive, byte[] source) {
         String directiveName = Nodes.text(directive.nameNode(), source);
-        var dirDef = registry.getDirectiveDefinition(directiveName);
-        if (dirDef.isEmpty()) return List.of();
+        if (!surface.declaresDirective(directiveName)) return List.of();
         var out = new ArrayList<Leaf>();
         for (var arg : directive.arguments()) {
             String argName = Nodes.text(arg.key(), source);
-            var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
-            if (argDef.isEmpty()) continue;
+            var argType = surface.argumentNamedType(directiveName, argName);
+            if (argType.isEmpty()) continue;
             var argCoord = new SchemaCoordinate.DirectiveArg(directiveName, argName);
             emitLeaf(argCoord, arg.value(), out);
-            String argType = unwrapToInputTypeName(argDef.get().getType());
-            if (argType != null) {
-                descendLeaves(arg.value(), argType, source, out);
-            }
+            descendLeaves(arg.value(), argType.get(), source, out);
         }
         return out;
     }
@@ -256,16 +228,10 @@ public record LspVocabulary(
                 String fieldName = Nodes.text(nameNode, source);
                 var fieldCoord = new SchemaCoordinate.InputField(currentType, fieldName);
                 emitLeaf(fieldCoord, valueNode, out);
-                var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
-                if (inputType != null) {
-                    var fieldDef = findInputValue(inputType.getInputValueDefinitions(), fieldName);
-                    if (fieldDef.isPresent()) {
-                        String nextType = unwrapToInputTypeName(fieldDef.get().getType());
-                        if (nextType != null) {
-                            descendLeaves(valueNode, nextType, source, out);
-                            return;
-                        }
-                    }
+                var nextType = surface.inputFieldNamedType(currentType, fieldName);
+                if (nextType.isPresent()) {
+                    descendLeaves(valueNode, nextType.get(), source, out);
+                    return;
                 }
             }
             return;
@@ -400,8 +366,7 @@ public record LspVocabulary(
         byte[] source
     ) {
         String directiveName = Nodes.text(directive.nameNode(), source);
-        var dirDef = registry.getDirectiveDefinition(directiveName);
-        if (dirDef.isEmpty()) {
+        if (!surface.declaresDirective(directiveName)) {
             return Optional.empty();
         }
         Directives.Argument enclosing = null;
@@ -424,21 +389,16 @@ public record LspVocabulary(
         if (fieldChain.isEmpty()) {
             coord = new SchemaCoordinate.DirectiveArg(directiveName, argName);
         } else {
-            var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
-            if (argDef.isEmpty()) return Optional.empty();
-            String currentType = unwrapToInputTypeName(argDef.get().getType());
-            if (currentType == null) return Optional.empty();
+            var argType = surface.argumentNamedType(directiveName, argName);
+            if (argType.isEmpty()) return Optional.empty();
+            String currentType = argType.get();
 
             // Walk every level except the leaf; the leaf's name plus the
             // enclosing input type is the coordinate.
             for (int i = 0; i < fieldChain.size() - 1; i++) {
-                var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
-                if (inputType == null) return Optional.empty();
-                var stepField = findInputValue(inputType.getInputValueDefinitions(), fieldChain.get(i));
-                if (stepField.isEmpty()) return Optional.empty();
-                String next = unwrapToInputTypeName(stepField.get().getType());
-                if (next == null) return Optional.empty();
-                currentType = next;
+                var next = surface.inputFieldNamedType(currentType, fieldChain.get(i));
+                if (next.isEmpty()) return Optional.empty();
+                currentType = next.get();
             }
             coord = new SchemaCoordinate.InputField(
                 currentType, fieldChain.get(fieldChain.size() - 1));
@@ -496,129 +456,6 @@ public record LspVocabulary(
         }
         for (int i = 0; i < node.getChildCount(); i++) {
             descend(node.getChild(i).orElse(null), pos, source, out);
-        }
-    }
-
-    /**
-     * Unwraps {@code !} and {@code []} wrappers to expose the base
-     * {@link TypeName}. Returns null if the type does not bottom out at
-     * a named type (which never happens for valid SDL).
-     */
-    public static String unwrapToInputTypeName(Type<?> type) {
-        Type<?> current = type;
-        while (current != null) {
-            if (current instanceof TypeName tn) return tn.getName();
-            if (current instanceof NonNullType nn) {
-                current = nn.getType();
-                continue;
-            }
-            if (current instanceof ListType lt) {
-                current = lt.getType();
-                continue;
-            }
-            return null;
-        }
-        return null;
-    }
-
-    /**
-     * Returns every coordinate the parsed registry marks deprecated, in
-     * either the native {@code @deprecated(reason:)} form (member-level)
-     * or the docstring {@code @deprecated} convention (whole-directive).
-     *
-     * <p>Walks the directive surface twice: every directive plus its args
-     * for native deprecations and docstring conventions, every input type
-     * plus its fields for native deprecations. Used by
-     * {@code SdlActionDriftTest} to assert that {@link
-     * no.sikt.graphitron.lsp.code_action.SdlActions} stays in sync with
-     * the SDL: every action targets a real marker, every marker is
-     * covered by an action or the manual-migration allow-list.
-     */
-    public java.util.Set<SchemaCoordinate> deprecatedCoordinates() {
-        var out = new java.util.LinkedHashSet<SchemaCoordinate>();
-        for (var directive : registry.getDirectiveDefinitions().values()) {
-            var dCoord = new SchemaCoordinate.Directive(directive.getName());
-            if (deprecationOf(dCoord).isPresent()) {
-                out.add(dCoord);
-            }
-            for (var arg : directive.getInputValueDefinitions()) {
-                var aCoord = new SchemaCoordinate.DirectiveArg(directive.getName(), arg.getName());
-                if (deprecationOf(aCoord).isPresent()) {
-                    out.add(aCoord);
-                }
-            }
-        }
-        for (var inputType : registry.getTypes(InputObjectTypeDefinition.class)) {
-            for (var field : inputType.getInputValueDefinitions()) {
-                var fCoord = new SchemaCoordinate.InputField(inputType.getName(), field.getName());
-                if (deprecationOf(fCoord).isPresent()) {
-                    out.add(fCoord);
-                }
-            }
-        }
-        return out;
-    }
-
-    /**
-     * Returns deprecation info for {@code coord}, in either the native
-     * {@code @deprecated(reason:)} form (member-level) or the docstring
-     * {@code @deprecated} convention (whole-directive). Empty if the
-     * coordinate is not deprecated.
-     */
-    public Optional<DeprecationRecognizer.DeprecationInfo> deprecationOf(SchemaCoordinate coord) {
-        var recognizer = new DeprecationRecognizer(registry);
-        return switch (coord) {
-            case SchemaCoordinate.Directive d -> recognizer.directiveDeprecation(d.name());
-            case SchemaCoordinate.DirectiveArg da -> recognizer.directiveArgDeprecation(da.directive(), da.arg());
-            case SchemaCoordinate.InputField f -> recognizer.inputFieldDeprecation(f.type(), f.field());
-            case SchemaCoordinate.InputType ignored -> Optional.empty();
-        };
-    }
-
-    /**
-     * Linear lookup for {@link InputValueDefinition} by name in a list. Used by {@code Diagnostics}
-     * (unknown-arg + required-arg validation) and {@code ArgNameCompletions} (arg-name completion);
-     * delegates to {@link DeprecationRecognizer#findInputValue} so the loop is single-sourced.
-     */
-    public static Optional<InputValueDefinition> findInputValue(
-        java.util.List<InputValueDefinition> values, String name) {
-        return DeprecationRecognizer.findInputValue(values, name);
-    }
-
-    private static boolean resolves(SchemaCoordinate coord, TypeDefinitionRegistry registry) {
-        return switch (coord) {
-            case SchemaCoordinate.Directive d ->
-                registry.getDirectiveDefinitions().containsKey(d.name());
-            case SchemaCoordinate.DirectiveArg da ->
-                registry.getDirectiveDefinition(da.directive())
-                    .map(DirectiveDefinition::getInputValueDefinitions)
-                    .map(args -> args.stream().anyMatch(a -> a.getName().equals(da.arg())))
-                    .orElse(false);
-            case SchemaCoordinate.InputType t ->
-                registry.getTypeOrNull(t.name(), InputObjectTypeDefinition.class) != null;
-            case SchemaCoordinate.InputField f ->
-                Optional.ofNullable(registry.getTypeOrNull(f.type(), InputObjectTypeDefinition.class))
-                    .map(InputObjectTypeDefinition::getInputValueDefinitions)
-                    .map(fs -> fs.stream().anyMatch(v -> v.getName().equals(f.field())))
-                    .orElse(false);
-        };
-    }
-
-    private static TypeDefinitionRegistry parseDirectivesSdl() {
-        return new SchemaParser().parse(RewriteSchemaLoader.directivesSdl());
-    }
-
-    /**
-     * Thrown from the {@link LspVocabulary} constructor when an overlay
-     * coordinate fails to resolve against the parsed registry. Directive
-     * drift becomes a loud startup failure rather than a silent
-     * unknown-directive at request time.
-     */
-    public static final class LspStartupException extends RuntimeException {
-        private static final long serialVersionUID = 1L;
-
-        public LspStartupException(String message) {
-            super(message);
         }
     }
 

@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TableCompletionsTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
     private static final String SDL = "type Query { placeholder: Int }\n";
 

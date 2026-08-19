@@ -175,7 +175,7 @@ class DiagnosticsStatementCountTest {
         // whatever the classpath holds.
         var counted = new AtomicInteger();
         var out = Diagnostics.compute(
-            LspVocabulary.load(), "file:///x.graphqls", file(WRONG_SDL), Optional.empty());
+            BundledVocabulary.get(), "file:///x.graphqls", file(WRONG_SDL), Optional.empty());
         assertThat(out).isEmpty();
         assertThat(counted.get()).isZero();
     }
@@ -185,7 +185,7 @@ class DiagnosticsStatementCountTest {
         // The unit of work is the drain, not the file. A recalculation walks every queued document
         // first, so the whole set's questions are known before any of them is resolved, and twenty
         // files about one graph are twenty near-identical statements only if nobody unions them.
-        var batch = new Diagnostics.Batch(LspVocabulary.load());
+        var batch = new Diagnostics.Batch(BundledVocabulary.get());
         for (int i = 0; i < 20; i++) {
             batch.add("file:///f" + i + ".graphqls", file(fields(5)));
         }
@@ -200,7 +200,7 @@ class DiagnosticsStatementCountTest {
     void aDrainSpanningTwoGraphsCostsOneStatementPerGraph() {
         // The questions are keyed on a graph, so the floor is one statement per graph the drain
         // touched rather than a flat one. A session's files need not all belong to one capture.
-        var batch = new Diagnostics.Batch(LspVocabulary.load());
+        var batch = new Diagnostics.Batch(BundledVocabulary.get());
         batch.add("file:///a.graphqls", file(fields(5)));
         batch.add("file:///b.graphqls", file(fields(5)));
         var counted = new AtomicInteger();
@@ -213,7 +213,7 @@ class DiagnosticsStatementCountTest {
 
     @Test
     void aDrainOfFilesTheStoreAnswersForNoneOfCostsNoStatement() {
-        var batch = new Diagnostics.Batch(LspVocabulary.load());
+        var batch = new Diagnostics.Batch(BundledVocabulary.get());
         batch.add("file:///a.graphqls", file(fields(5)));
         var counted = new AtomicInteger();
         counting(counted);
@@ -246,7 +246,7 @@ class DiagnosticsStatementCountTest {
 
     private static List<Diagnostic> diagnose(StoreHandle handle, String source) {
         return Diagnostics.compute(
-            LspVocabulary.load(), "file:///x.graphqls", file(source), Optional.of(handle));
+            BundledVocabulary.get(), "file:///x.graphqls", file(source), Optional.of(handle));
     }
 
     /** The fixture's own store, seen through a handle that counts the statements it executes. */

@@ -1267,12 +1267,12 @@ class DiagnosticsTest {
     private static List<org.eclipse.lsp4j.Diagnostic> compute(
         FileSnapshot file, StoreFixture store
     ) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file, Optional.of(store.handle()));
+        return Diagnostics.compute(BundledVocabulary.get(), "", file, Optional.of(store.handle()));
     }
 
     /** The same walk with no store at all, which is what a session before its first build sees. */
     private static List<org.eclipse.lsp4j.Diagnostic> computeWithoutStore(FileSnapshot file) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file);
+        return Diagnostics.compute(BundledVocabulary.get(), "", file);
     }
 
     /**
@@ -1282,7 +1282,7 @@ class DiagnosticsTest {
      */
     private List<org.eclipse.lsp4j.Diagnostic> computeCaptured(String sdl) {
         try (var fixture = StoreFixture.ofCatalog(tmp, sdl)) {
-            return Diagnostics.compute(LspVocabulary.load(), "", file(sdl),
+            return Diagnostics.compute(BundledVocabulary.get(), "", file(sdl),
                 Optional.of(fixture.handle()));
         }
     }

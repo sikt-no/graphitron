@@ -76,7 +76,7 @@ class SourceCadenceHoverAndDefinitionTest {
                 .contains("Looks up a price for a film.");
 
             // Goto-definition jumps to the same method declaration in the same file.
-            var loc = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
+            var loc = Definitions.compute(BundledVocabulary.get(), file, store.handle(), methodPos)
                 .orElseThrow();
             assertThat(loc.getUri()).endsWith("PriceService.java");
             // The method is declared on the 6th line (0-based line 5) of the source above.
@@ -112,7 +112,7 @@ class SourceCadenceHoverAndDefinitionTest {
             // comment on actor, so a parse is the only thing that can have supplied it.
             assertThat(hoverText(store, file, tablePos)).contains("The actor table.");
 
-            var loc = Definitions.compute(LspVocabulary.load(), file, store.handle(), tablePos)
+            var loc = Definitions.compute(BundledVocabulary.get(), file, store.handle(), tablePos)
                 .orElseThrow();
             assertThat(loc.getUri()).endsWith("Actor.java");
             // The class is declared on line 3 (0-based line 2).
@@ -137,7 +137,7 @@ class SourceCadenceHoverAndDefinitionTest {
         var methodPos = pointAt(file, 1, "price\"");
 
         try (var store = priceServiceStore(srcRoot)) {
-            int lineBefore = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
+            int lineBefore = Definitions.compute(BundledVocabulary.get(), file, store.handle(), methodPos)
                 .orElseThrow().getRange().getStart().getLine();
             assertThat(hoverText(store, file, methodPos)).contains("First doc.");
 
@@ -158,7 +158,7 @@ class SourceCadenceHoverAndDefinitionTest {
             // could: this test holds a store and a parse, and every surface it exercises reads them.
             store.refreshJavaSources(srcRoot);
 
-            int lineAfter = Definitions.compute(LspVocabulary.load(), file, store.handle(), methodPos)
+            int lineAfter = Definitions.compute(BundledVocabulary.get(), file, store.handle(), methodPos)
                 .orElseThrow().getRange().getStart().getLine();
 
             // Hover and goto move together off one edit: the new doc comment and the new line come
@@ -220,7 +220,7 @@ class SourceCadenceHoverAndDefinitionTest {
     private static String hoverText(
         StoreFixture store, FileSnapshot file, Point pos, boolean declarationNames
     ) {
-        return Hovers.compute(LspVocabulary.load(), file,
+        return Hovers.compute(BundledVocabulary.get(), file,
             Optional.of(store.handle()), pos, declarationNames)
             .orElseThrow().getContents().getRight().getValue();
     }

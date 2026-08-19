@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
@@ -250,7 +249,9 @@ public class DevMojo extends AbstractRewriteMojo {
         // belongs to whoever compiles it rather than to a graph.
         this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl());
 
-        var workspace = new Workspace(LspVocabulary.load());
+        // Vocabulary-less until the store arrives on the next line: the directive vocabulary is
+        // read out of the session's graph now, so there is nothing to hand the constructor.
+        var workspace = new Workspace();
         // The editor's read access to the store, a connection of its own rather than a share of the
         // writer's: LSP requests arrive concurrently while a capture round holds this handle. The
         // reader lives with the workspace and is closed with it in cleanup().

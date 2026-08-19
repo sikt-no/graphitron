@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ArgMappingCompletionsTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
     private static final String CLASS = "com.example.PriceService";
 

@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class CompletionStoreWiringTest {
 
-    private static final LspVocabulary VOCAB = LspVocabulary.load();
+    private static final LspVocabulary VOCAB = BundledVocabulary.get();
 
     /** A cursor inside {@code @service}'s empty className value, the class-name arm's trigger. */
     private static final String SOURCE =

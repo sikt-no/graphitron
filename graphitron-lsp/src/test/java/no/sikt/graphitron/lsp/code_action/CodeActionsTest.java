@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.code_action;
 
 import io.github.treesitter.jtreesitter.Node;
+import no.sikt.graphitron.lsp.BundledVocabulary;
 import no.sikt.graphitron.lsp.code_action.SdlAction.RewriteResult;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -225,7 +226,7 @@ class CodeActionsTest {
         new SchemaCoordinate.DirectiveArg("asConnection", "connectionName");
 
     private static Stream<Node> detectConnectionNames(FileSnapshot file) {
-        var vocab = LspVocabulary.load();
+        var vocab = BundledVocabulary.get();
         var matches = new ArrayList<Node>();
         for (var directive : Directives.findAll(file.tree().getRootNode())) {
             for (var leaf : vocab.leafCoordinates(directive, file.source())) {

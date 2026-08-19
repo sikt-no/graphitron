@@ -194,7 +194,7 @@ public final class Diagnostics {
     }
 
     public static List<Diagnostic> compute(String uri, FileSnapshot file) {
-        return compute(LspVocabulary.load(), uri, file);
+        return compute(LspVocabulary.empty(), uri, file);
     }
 
     /**
@@ -825,10 +825,9 @@ public final class Diagnostics {
 
     /**
      * Validates {@code @nodeId(typeName: "X")}: the named type must exist in the catalog and must carry
-     * {@code @node}. Mirrors the two classifier rejections that
-     * {@link no.sikt.graphitron.rewrite.FieldBuilder} produces for the same coordinate:
-     * {@code Rejection.unknownTypeName} when no such type exists, {@code Rejection.structural} when the
-     * type exists without {@code @node}.
+     * {@code @node}. Mirrors the two classifier rejections the generator's own field builder produces
+     * for the same coordinate: {@code Rejection.unknownTypeName} when no such type exists,
+     * {@code Rejection.structural} when the type exists without {@code @node}.
      *
      * <p>Graph-keyed, so the scope is the relation's own {@code graph_name} rather than a membership
      * join, as the completion arm on the same coordinate has it: a {@code @node} declaration is a fact

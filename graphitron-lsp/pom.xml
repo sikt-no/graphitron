@@ -32,10 +32,18 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!--
+          Test scope only. The language server parses the buffer under the cursor with tree-sitter and
+          reads everything else out of the fact store, so nothing it ships needs the generator; what
+          still needs it is the fixtures, which stand a store up by running real capture rather than by
+          inserting rows. Compile scope here would let a request-path class reach a generator type
+          again without anyone noticing.
+        -->
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <dependency>

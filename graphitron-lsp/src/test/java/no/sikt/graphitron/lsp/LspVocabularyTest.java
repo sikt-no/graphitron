@@ -6,44 +6,68 @@ import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer.DeprecationInfo;
-import no.sikt.graphitron.lsp.parsing.LspVocabulary.LspStartupException;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Pins {@link LspVocabulary}'s startup invariants and the deprecation-info
- * surface. The structural guarantee asserted by
- * {@link #structuralInvariant_failsStartupWhenOverlayCoordinateDoesNotResolve}
- * is load-bearing: the LSP cannot start with an overlay that names a
- * coordinate the parsed registry does not declare. Directive drift surfaces
- * here as a startup failure rather than a silent unknown-directive at request
- * time.
+ * What the vocabulary binds, and where a directive's shape comes from.
+ *
+ * <p>The overlay is a hand-written table and the shape is the graph's own capture, so this pairs a
+ * caller-supplied overlay with a fixture whose SDL declares the coordinates it names. Whether the
+ * overlay graphitron ships agrees with the SDL graphitron ships is {@link DriftDetectionTest}'s
+ * question; this one is about the two halves fitting together at all.
+ *
+ * <p>The fixture declares directives of an author's own rather than graphitron's, which is the point:
+ * the shape comes from whatever the graph captured, so a directive nobody at Sikt wrote resolves the
+ * same way {@code @table} does.
  */
 class LspVocabularyTest {
 
     private static final String FIXTURE_SDL = """
-        directive @demo(name: String!) on OBJECT
+        type Query { placeholder: Int }
 
-        "Marker for the soon-to-be-removed @retired form. @deprecated use @demo(name:) instead"
+        directive @demo(name: String!, ref: DemoRef) on OBJECT
+
+        "Marker for the soon-to-be-removed @retired form."
         directive @retired on OBJECT
 
         input DemoRef {
-            "stays"
             className: String
-            name: String @deprecated(reason: "replaced by className")
+            nested: DemoNested
+        }
+
+        input DemoNested {
+            deep: String
         }
         """;
 
+    @TempDir
+    static Path tmp;
+
+    private static StoreFixture store;
+
+    @BeforeAll
+    static void capture() {
+        store = StoreFixture.of(tmp, FIXTURE_SDL);
+    }
+
+    @AfterAll
+    static void closeStore() {
+        store.close();
+    }
+
     @Test
-    void load_acceptsOverlayPointingAtRegisteredCoordinates() {
+    void behaviorIsBoundAtEveryCoordinateTheOverlayNames() {
         var overlay = Map.<SchemaCoordinate, Behavior>of(
             new SchemaCoordinate.DirectiveArg("demo", "name"),
                 new Behavior.CatalogTableBinding(),
@@ -51,7 +75,7 @@ class LspVocabularyTest {
                 new Behavior.ClassNameBinding()
         );
 
-        var vocab = LspVocabulary.load(overlay, FIXTURE_SDL);
+        var vocab = LspVocabulary.load(overlay, store.handle());
 
         assertThat(vocab.behaviorAt(new SchemaCoordinate.DirectiveArg("demo", "name")))
             .containsInstanceOf(Behavior.CatalogTableBinding.class);
@@ -59,80 +83,32 @@ class LspVocabularyTest {
             .containsInstanceOf(Behavior.ClassNameBinding.class);
     }
 
+    /**
+     * An overlay entry the graph does not back is inert rather than fatal. The vocabulary used to
+     * refuse to be built at all in this case, which was tenable while it parsed a file shipped in the
+     * jar; a graph that has not been captured yet would now take the whole editor down with it.
+     * Whether the shipped overlay and the shipped SDL agree is asserted where that is the subject.
+     */
     @Test
-    void structuralInvariant_failsStartupWhenOverlayCoordinateDoesNotResolve() {
+    void anOverlayCoordinateTheGraphDoesNotDeclareBindsNothingAndBreaksNothing() {
         var fictional = new SchemaCoordinate.DirectiveArg("notADirective", "nope");
         var overlay = Map.<SchemaCoordinate, Behavior>of(fictional, new Behavior.CatalogTableBinding());
 
-        assertThatThrownBy(() -> LspVocabulary.load(overlay, FIXTURE_SDL))
-            .isInstanceOf(LspStartupException.class)
-            .hasMessageContaining("@notADirective(nope:)")
-            .hasMessageContaining("does not resolve");
+        var vocab = LspVocabulary.load(overlay, store.handle());
+
+        assertThat(vocab.overlay()).containsKey(fictional);
+        assertThat(vocab.surface().declaresDirective("notADirective")).isFalse();
     }
 
+    /** A cursor inside a directive the graph never captured keys no coordinate. */
     @Test
-    void structuralInvariant_failsForUnknownDirective() {
-        var overlay = Map.<SchemaCoordinate, Behavior>of(
-            new SchemaCoordinate.Directive("nope"), new Behavior.CatalogTableBinding()
-        );
+    void aVocabularyWithNoSurfaceResolvesNothing() {
+        var empty = LspVocabulary.empty();
+        String source = """
+            type Foo @demo(name: "x") { id: ID }
+            """;
 
-        assertThatThrownBy(() -> LspVocabulary.load(overlay, FIXTURE_SDL))
-            .isInstanceOf(LspStartupException.class)
-            .hasMessageContaining("@nope");
-    }
-
-    @Test
-    void structuralInvariant_failsForUnknownInputType() {
-        var overlay = Map.<SchemaCoordinate, Behavior>of(
-            new SchemaCoordinate.InputType("Missing"), new Behavior.CatalogTableBinding()
-        );
-
-        assertThatThrownBy(() -> LspVocabulary.load(overlay, FIXTURE_SDL))
-            .isInstanceOf(LspStartupException.class)
-            .hasMessageContaining("Missing");
-    }
-
-    @Test
-    void structuralInvariant_failsForUnknownInputField() {
-        var overlay = Map.<SchemaCoordinate, Behavior>of(
-            new SchemaCoordinate.InputField("DemoRef", "missingField"), new Behavior.ClassNameBinding()
-        );
-
-        assertThatThrownBy(() -> LspVocabulary.load(overlay, FIXTURE_SDL))
-            .isInstanceOf(LspStartupException.class)
-            .hasMessageContaining("DemoRef.missingField");
-    }
-
-    @Test
-    void deprecationOf_nativeShape_returnsReasonStringForInputField() {
-        var vocab = LspVocabulary.load(Map.of(), FIXTURE_SDL);
-
-        var info = vocab.deprecationOf(new SchemaCoordinate.InputField("DemoRef", "name"))
-            .orElseThrow();
-
-        assertThat(info.shape()).isEqualTo(DeprecationInfo.Shape.NATIVE);
-        assertThat(info.reason()).isEqualTo("replaced by className");
-    }
-
-    @Test
-    void deprecationOf_docstringShape_returnsDescriptionForWholeDirective() {
-        var vocab = LspVocabulary.load(Map.of(), FIXTURE_SDL);
-
-        var info = vocab.deprecationOf(new SchemaCoordinate.Directive("retired"))
-            .orElseThrow();
-
-        assertThat(info.shape()).isEqualTo(DeprecationInfo.Shape.DOCSTRING);
-        assertThat(info.reason()).contains("@deprecated");
-    }
-
-    @Test
-    void deprecationOf_returnsEmptyForUndeprecatedCoordinate() {
-        var vocab = LspVocabulary.load(Map.of(), FIXTURE_SDL);
-
-        assertThat(vocab.deprecationOf(new SchemaCoordinate.InputField("DemoRef", "className")))
-            .isEmpty();
-        assertThat(vocab.deprecationOf(new SchemaCoordinate.Directive("demo")))
-            .isEmpty();
+        assertThat(leavesForDirective(empty, source, "@demo")).isEmpty();
     }
 
     /**
@@ -152,7 +128,7 @@ class LspVocabularyTest {
             }
             """;
 
-        var leaves = leavesForDirective(source, "@node");
+        var leaves = leavesForDirective(BundledVocabulary.get(), source, "@node");
 
         var nodeArgLeaves = leaves.stream()
             .filter(l -> l.coord() instanceof SchemaCoordinate.DirectiveArg da
@@ -169,8 +145,21 @@ class LspVocabularyTest {
             .allMatch(l -> !"list_value".equals(l.valueNode().getType()));
     }
 
+    /** The descent follows the captured input-object tree however deep an author nests a literal. */
+    @Test
+    void leafCoordinatesDescendTheCapturedInputObjectTree() {
+        String source = """
+            type Foo @demo(ref: {nested: {deep: "x"}}) { id: ID }
+            """;
+
+        var leaves = leavesForDirective(LspVocabulary.load(store.handle()), source, "@demo");
+
+        assertThat(leaves).extracting(LspVocabulary.Leaf::coord)
+            .contains(new SchemaCoordinate.InputField("DemoNested", "deep"));
+    }
+
     private static java.util.List<LspVocabulary.Leaf> leavesForDirective(
-        String source, String directiveTokenStart
+        LspVocabulary vocabulary, String source, String directiveTokenStart
     ) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
@@ -180,8 +169,7 @@ class LspVocabularyTest {
         var pos = pointAt(source, idx + directiveTokenStart.length() - 1);
         var directive = Directives.findContaining(tree.getRootNode(), pos)
             .orElseThrow(() -> new AssertionError("no directive at " + pos));
-        return LspVocabulary.load()
-            .leafCoordinates(directive, source.getBytes(StandardCharsets.UTF_8));
+        return vocabulary.leafCoordinates(directive, source.getBytes(StandardCharsets.UTF_8));
     }
 
     private static Point pointAt(String source, int offset) {

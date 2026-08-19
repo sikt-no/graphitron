@@ -169,7 +169,7 @@ class ValidatorDiagnosticsTest {
     void withNoStoreNothingIsReplayed() {
         // A session before its first build, which is also a bare launcher outside one: no store, so
         // no verdict to replay and nothing to show for one.
-        assertThat(Diagnostics.compute(LspVocabulary.load(), "file:///tmp/schema.graphqls", file(SDL)))
+        assertThat(Diagnostics.compute(BundledVocabulary.get(), "file:///tmp/schema.graphqls", file(SDL)))
             .isEmpty();
     }
 
@@ -282,7 +282,7 @@ class ValidatorDiagnosticsTest {
 
     /** The buffer under test, opened at the URI the fixture's own schema file has. */
     private static List<Diagnostic> replay(StoreFixture fixture, FileSnapshot file) {
-        return Diagnostics.compute(LspVocabulary.load(),
+        return Diagnostics.compute(BundledVocabulary.get(),
             ValidationReport.canonicalUri(fixture.sourceName()), file, Optional.of(fixture.handle()));
     }
 

@@ -55,7 +55,7 @@ class ArgMappingDiagnosticsTest {
             + "argMapping: \"" + argMapping + "\"}) }\n";
         var file = WorkspaceFileTestSupport.snapshot(source);
         try (var store = StoreFixture.ofClasspath(tmp, census)) {
-            return Diagnostics.compute(LspVocabulary.load(), "", file,
+            return Diagnostics.compute(BundledVocabulary.get(), "", file,
                 Optional.of(store.handle()));
         }
     }

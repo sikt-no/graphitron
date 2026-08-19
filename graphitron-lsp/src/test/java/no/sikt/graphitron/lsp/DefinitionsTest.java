@@ -216,7 +216,7 @@ class DefinitionsTest {
         // language server nobody handed store access to declines once rather than per arm.
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
-        assertThat(Definitions.compute(LspVocabulary.load(), file, Optional.empty(), pos)).isEmpty();
+        assertThat(Definitions.compute(BundledVocabulary.get(), file, Optional.empty(), pos)).isEmpty();
     }
 
     // ---- Service half: class-name / method-name binding directives ----

@@ -86,6 +86,16 @@ public final class StoreAccess implements AutoCloseable {
     }
 
     /**
+     * Runs {@code read} against this session's own graph, inside one read transaction and without
+     * resolving any document first. The door for the questions that are about the session rather than
+     * about a file an editor has open: the directive vocabulary is the shipped case, being one
+     * capture's answer that every document in the session is then judged against.
+     */
+    public <R> R readingSessionGraph(Function<StoreHandle, R> read) {
+        return reader.read(dsl -> read.apply(new StoreHandle(dsl, graphName)));
+    }
+
+    /**
      * Resolves a document to the handle that answers for it. Valid only inside the
      * {@link #answeringAll} call it arrived in: a handle used after its transaction has ended is a read
      * that can tear against a capture.

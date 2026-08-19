@@ -152,6 +152,6 @@ class FixtureCatalogTest {
 
 
     private static List<Diagnostic> diagnose(no.sikt.graphitron.lsp.state.FileSnapshot file) {
-        return Diagnostics.compute(LspVocabulary.load(), "", file, Optional.of(store.handle()));
+        return Diagnostics.compute(BundledVocabulary.get(), "", file, Optional.of(store.handle()));
     }
 }
