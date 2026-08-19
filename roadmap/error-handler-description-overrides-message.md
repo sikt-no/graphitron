@@ -155,21 +155,28 @@ honouring or ignoring is under "Settled questions" below.
 
 `description:` is authored at the `@error` type's handler entry, so it is definition-keyed.
 The existing `Mapping[]` constants are keyed on `ErrorChannel.mappingsConstantName()`, a
-use-site coordinate naming which fetcher's payload. Reading a definition-keyed value off a
-use-keyed constant is what forces the overlap, and the confusion is already producing an
-artifact: `description` sits in the *channel dedup identity*, so two channels with identical
-dispatch behaviour but different author descriptions are split into separate constants even
-though `description` does not participate in dispatch at all.
+use-site coordinate naming which fetcher's payload. Move 4 needs the value at
+`<ErrorType>Fetchers`, a class minted per `@error` type, so reading a definition-keyed value
+off a use-keyed constant is what forces the overlap. That mismatch is the whole argument for
+this move; the `description` field's presence in the dedup identity is a separate,
+consequence-free redundancy, and it is worth saying why, because the obvious story about it
+is wrong.
 
-That identity is spelled twice, and only one of the two spellings produces the split.
-`MappingsConstantNameDedup.handlerLine` appends `description` to each handler's fingerprint
-line, `canonicalHash` digests those lines, and a differing digest is what mints the
-`_A1B2C3D4` suffix that splits the constant name. `ErrorMappingsClassGenerator.HandlerKey`
-carries `description` too, but only feeds `sameHandlerShape`, an internal sanity check run
-across channels that already share a name. Dropping `description` from `HandlerKey` alone
-changes nothing an author can see; the dedup pass is the site that has to change, and the
-two have to stay in agreement or `sameHandlerShape` starts throwing its internal-bug
-`IllegalStateException`.
+The identity is spelled twice. `MappingsConstantNameDedup.handlerLine` appends `description`
+to each handler's fingerprint line and `canonicalHash` digests those lines, the digest being
+what mints the `_A1B2C3D4` suffix. `ErrorMappingsClassGenerator.HandlerKey` carries
+`description` too, but feeds only `sameHandlerShape`, an internal sanity check run across
+channels that already share a name. Neither carries any author-visible weight: both lines
+also carry `et.name()`, and `BuildContext.detectErrorsFieldShape` resolves every union member
+through `ErrorIndex.forName`, a name-keyed map, so an `@error` type name determines its
+entire handler list, descriptions included. Two channels whose fingerprints differ only in
+`description` therefore cannot be constructed, and dropping the field from either spelling
+cannot change a digest, a suffix, or an emitted constant name. Do not plan around a dedup
+artifact here; there is none to remove.
+
+Move 1 forces both spellings to be edited regardless, since `ValidationHandler` loses the
+component they read. Drop `description` from both, and keep them in agreement or
+`sameHandlerShape` starts throwing its internal-bug `IllegalStateException`.
 
 Mint one `Mapping[]` per `@error` type instead, and derive each channel constant as the
 ordered concatenation of the per-type arrays it maps. `ErrorChannel.mappedErrorTypes()`
@@ -222,7 +229,10 @@ derivation.
 
 *Opportunity, the author's call:* with content determined by type name, the channel constant's
 identity reduces to the ordered list of mapped `@error` type names, so the whole per-handler
-fingerprint is redundant, not just its `description` field. `canonicalHash` could digest the name
+fingerprint is redundant, not just its `description` field. That reduction holds in the tree
+today, not only after this move: it is the same `ErrorIndex.forName` fact the paragraphs above
+rest on, so the collapse can be taken with the same confidence as the `description` drop.
+`canonicalHash` could digest the name
 list (or the pass could key on the list directly and drop the digest), and `sameHandlerShape`
 could compare name lists. That shrinks `handlerLine` and `HandlerKey` out of existence rather than
 editing four arms each, and it is the same edit site this move already opens. Not required for the
@@ -232,12 +242,12 @@ merely trimmed, converge both spellings on `ChannelRuleChecks.CriteriaKey`'s sha
 already exactly what `handlerLine` and `HandlerKey` reduce to once `description` drops out. Three
 spellings collapsing to one is the better end state than two.
 
-This changes emitted constant *names*: two channels that today differ only by author
-description get one shared bare constant where they previously got a bare name plus a
-hash-suffixed sibling. That is the artifact being removed, so the rename is the fix rather
-than a side effect. Nothing in the suite observes it today, though, which is the point:
-`MappingsConstantNameDedupTest` never varies `description`, so the change lands silently
-unless the pipeline assertion below is written for it.
+No emitted constant *name* changes. The channel constants keep the names
+`MappingsConstantNameDedup` mints for them today, per the argument above; what changes is
+their *initializers*, from array literals to concatenations of `ByType` constants, alongside
+the new holder. `MappingsConstantNameDedupTest` should stay green untouched, and a red one
+means the `description` drop was not the no-op argued here. If that happens, re-derive the
+argument rather than updating the fixture to match.
 
 `ErrorMappingsClassGenerator`'s class javadoc has to be rewritten with the mint anyway, and it is
 stale before this item touches it: it states that a constant-name collision "currently produce[s] a
@@ -253,6 +263,14 @@ first mapping that matches the source resolves the message from its `ClientMessa
 falling through to `getMessage()` when no mapping matches. The source object is never
 touched, so all four consumers above are unaffected and dispatch keeps its source-direct
 contract unchanged.
+
+The emitted walk is an unrolled per-index chain, not a `for` loop over the array. This is
+where move 1 cashes out and it is easy to lose: a loop has one body, so it could only pick
+between the authored string and `getMessage()` with a runtime test on the mapping, which is
+exactly the `description != null` guard move 1 exists to keep out of generated code. Emitting
+one `if (ARR[i].match(thr)) return <resolved>;` per handler lets each arm's statement be
+chosen at build time from that handler's `ClientMessage`, with the `return thr.getMessage();`
+fall-through after the chain. An empty array emits the fall-through alone.
 
 **The mapping walk is an insertion into today's three-arm body, not a replacement for it.**
 `ErrorTypeFetcherClassGenerator#messageMethod` emits a `GraphQLError` arm, then a `Throwable` arm,
@@ -296,10 +314,14 @@ back to `Object.class` on a malformed class name, while `buildErrorPolymorphicRe
 `ClassName.bestGuess` bare and throws on the same input. A read-side override that grew its
 own predicate would be a third spelling.
 
-Also mint `ErrorRouter` and `ErrorMappings` through `GeneratedUnits.singleton(SUB_SCHEMA, ...)`
-while here. `ErrorTypeFetcherClassGenerator` needs to name `ErrorRouter.Mapping`, and
-hand-spelling `outputPackage + ".schema"` there would add one more copy of a formula already
-open-coded at 37 sites across `graphitron/src/main`, six of them in the error family alone
+Consume the already-minted unit refs for `ErrorRouter` and `ErrorMappings` while here; do not
+add a second mint. `EmitPlan` already registers both through
+`GeneratedUnits.singleton(GeneratedUnits.SUB_SCHEMA, ...)`, but that `UnitRef` decides only
+where the file lands: every generator that needs to *name* one of these classes gets handed a
+bare `outputPackage` and re-derives the package itself. `ErrorTypeFetcherClassGenerator` needs
+to name `ErrorRouter.Mapping`, and hand-spelling `outputPackage + ".schema"` there would add
+one more copy of a formula already open-coded at 37 sites across `graphitron/src/main`, six of
+them in the error family alone
 (`ErrorRouterClassGenerator.noChannelRouterCall` and the `clientException` lookup below it,
 `ErrorMappingsClassGenerator.generate`, and `ChannelCatchArmEmitter`'s `errorRouterClass` /
 `errorMappingsClass` / `errorListClass`). Minting removes the error family's copies rather than
@@ -385,8 +407,9 @@ it changes the diff and the test list either way, and the item's own Problem sec
 accessor having no reader. Move 1 rules out the runtime `description != null` test, so the fetcher
 resolves each arm at build time, and the question is where the resolved `Static` string comes from:
 
-1. *Read the mapping.* Emit `return ErrorMappings.FILM_LOOKUP_INVALID[0].description();` for a
-   `Static` arm and `return thr.getMessage();` for `FromSource`. No runtime test (the arm chose the
+1. *Read the mapping.* Emit `return ErrorMappings.ByType.FILM_LOOKUP_INVALID[0].description();`
+   for a `Static` arm and `return thr.getMessage();` for `FromSource` (the `ByType` holder is move
+   3's resolved spelling). No runtime test (the arm chose the
    statement), the string stays interned once in the mappings constant, the accessor the Problem
    section calls unread becomes read, and `ErrorRouterClassGeneratorTest`'s three
    `description`-naming assertions stay green (the `Mapping` method set and `ExceptionMapping`'s
@@ -445,10 +468,13 @@ so that tier carries the acceptance.
   test is the regression guard that the extra-field read still goes to the live exception.
 * Pipeline tier: the VALIDATION rejection (an `UnclassifiedType` carrying the `@error type
   rejected: ...` structural rejection, asserted the way the four sibling rules on that arm
-  are), the per-type/per-channel `Mapping[]` composition (that a channel array equals the
-  concatenation of its types' arrays in declaration order), and that two channels differing
-  only by author description now share one constant instead of splitting into a bare name
-  plus a hash-suffixed sibling.
+  are); the per-type/per-channel `Mapping[]` composition (that a channel array equals the
+  concatenation of its types' arrays in declaration order); and that an `@error` type no
+  channel maps still gets a `ByType` constant, so its fetchers class names something that
+  exists. The last one is the case move 3's membership paragraph exists for, and it is the one
+  a channel-keyed mint gets wrong as invalid generated Java rather than as a diagnostic. There
+  is deliberately no assertion here about `description` changing a constant name; move 3
+  argues that no such change is constructible.
 * Pipeline tier, an inversion rather than an addition: `GraphitronSchemaBuilderTest`'s
   `ErrorTypeCase.VALIDATION_LIFTS_TO_VALIDATION_HANDLER` feeds
   `{handler: VALIDATION, description: "input invalid"}` and asserts today that it lifts cleanly and
