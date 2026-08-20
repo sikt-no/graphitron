@@ -333,6 +333,42 @@ between producers; the dependency order in the Scope section stays. And the scop
 `StoreHandle.reads` stays shared, because it is the store's own contract for reaching source-keyed
 families, not a consumer-shaped read.
 
+## Where a producer's SQL lives: `plan/` owns it, `derive/` shrinks
+
+Two converted read paths already disagree about where store-reading code sits, and at one producer
+converted out of eight the fork is cheap to settle and expensive to inherit. The key-projection
+read lives in `rewrite/derive` (`ResolvedKeyProjections`, `StoreNodeTables`) with
+`plan/KeyProjectionCommands` a pure shape transform beside it; this item's positive dial for
+`plan/` (in "The closer") instead expects producers to query the store directly. Settled: **the
+producer's own run-scoped derivation queries live beside the producer in `plan/`.** The
+discriminator is the one "What the store must provide" already states, extended to package
+geography: a fact about the schema is store material, so Java that assembles one is a missing view
+wearing a jacket and gets pushed into the DDL rather than parked in `derive/`; a derivation of
+what this run emits is the producer's own `SELECT` and lives with the producer. `rewrite/derive`
+keeps what is neither: the store detections (`AuthoredClaimConflicts`,
+`ArgmappingProjectionDefects`) and the transitional walk-shadow writers already scheduled to
+retire. Under that rule `StoreNodeTables` and `ResolvedKeyProjections` get revisited by the
+increment that fixes their read shape (named in the planner half): their content is schema-grain
+fact assembly, so most of it becomes views.
+
+Two consequences are named now because the dial would otherwise discover them late:
+
+* **`StoreHandle` is the read handle, and bare `org.jooq.DSLContext` is deliberately not in the
+  dial.** `StoreHandle`'s own javadoc states the invariant and its failure mode: one type for
+  every consumer, because two handles are two conventions and nothing then makes a query site
+  take the one its module's rows were written under. A positional `(DSLContext, graphName)` pair
+  is that second convention, already in two files, and nothing fails when a producer forgets the
+  `reads(...)` scoping on a source-keyed family; the answer just silently folds in another
+  source's rows. Admitting `StoreHandle` and not `DSLContext` converts the store's scoping
+  contract from a habit into a package-boundary rule, and it is the cheapest instrument the
+  planner half carries. The routine-write reads need it immediately:
+  `intent_name_matched_key_pair` is catalog-keyed, with no `graph_name` column at all.
+* **Rows carry FQN strings; `render` lifts them.** `StoreNodeTables` today mints javapoet
+  `ClassName`s from captured FQNs, and moved as-is into `plan/` that would put javapoet inside
+  the plan's dial and falsify the Risks bullet that says the plan refuses to hold javapoet types.
+  The boundary stays as stated: a command row carries the captured string, and the lift to a
+  javapoet type happens in the shell, where the emit library is already the package's business.
+
 ## One statement per grain: the N+1 lesson lands before the first producer
 
 Both finished migrations fell into the same trap on the way in, and both wrote the correction down,
@@ -404,16 +440,23 @@ do, stated here because the trap is exactly the shape of the code being converte
 The planner half was previously sequenced behind the fact population it needed. That blocker has
 largely cleared, and the distinction matters because it decides what remains:
 
-* **The expensive population is there.** The per-coordinate classification stratum
+* **The expensive population is there, with one deliberate hole at exactly the mutation root.**
+  The per-coordinate classification stratum
   (`intent_authored_field_claim`, `intent_resolved_field_claim`, `intent_authored_type_claim`, and
   the demand and exemption rules beside them) is captured and derived, and the language server
   already reads it arm by arm. That was the population the planner half was waiting on and the
-  reason it wanted a worked example first. The example shipped.
-* **What remains is plumbing, not modelling.** Four relation-shaped folds have no home in the store
-  yet: operation members, connection synthesis, tenant bindings, and delivery. None needs a new
-  rule. Each was already built as a relation in the model and needs a view over captured facts (or,
-  where a view cannot state it, a capture-cadence writer), which is the cheapest kind of work in
-  this programme.
+  reason it wanted a worked example first. The example shipped. One mask in that stratum matters
+  to the emit path specifically: `intent_authored_field_claim`'s ROUTINE arm excludes `Mutation`
+  and `Subscription` coordinates by design (a mutation root's `@routine` is the walk's own typed
+  deferral, never a conflict slot, the view's own comment says), so `intent_resolved_field_claim`
+  is structurally empty at every coordinate a mutation-family producer is a relation over. The
+  verdicts those producers need are not late; they were never in the claim stratum's charter, and
+  each mutation family's availability check has to look for them elsewhere.
+* **For the launcher stratum, what remains is plumbing.** Four relation-shaped folds have no home
+  in the store yet: operation members, connection synthesis, tenant bindings, and delivery. None
+  needs a new rule. Each was already built as a relation in the model and needs a view over
+  captured facts (or, where a view cannot state it, a capture-cadence writer), which is the
+  cheapest kind of work in this programme.
 * **All four folds are on the same footing, delivery included.** Delivery briefly had its own item
   (R666, discarded 2026-08-20, see `roadmap/changelog.md`), which specified the view plus a shadow
   test and a residue record while flipping no production read. That shape made the walk the oracle
@@ -423,9 +466,22 @@ largely cleared, and the distinction matters because it decides what remains:
   no `DeliveryResidue`. The discarded item's design analysis (the seven-arm table, the four
   predicate warnings about which relation each arm joins) survives in git history and is the
   starting point for whoever writes the delivery view, read as analysis rather than as contract.
+* **Availability is a per-family measurement, not a standing fact, and slice one's measurement
+  found three gaps.** The routine-write family's relation-availability check has been run
+  (2026-08-20, against trunk `abaa666`; findings carried in the slice-one section). The four
+  legacies R704 left are genuinely in place, and three producer inputs have no relation stating
+  them: the seat verdict at the mutation coordinate (the mask above), the chain's ordered hop
+  interior (only the terminus is a relation; the walk lives in recursive CTEs inside
+  `intent_field_chain_terminus`), and the error channel (its carrier-field detection exists only
+  as a CTE inside `intent_carrier_data_field`). The store's own comments acknowledge the first:
+  `intent_routine_return_binding` excludes the payload-carrier seat "because the store holds no
+  carrier fact yet". So the check is real work with three possible findings per fact: a relation
+  exists; a relation exists as a CTE inside another view and gets promoted (the fact model's
+  second-reader rule); or a relation is missing and is the slice's first deliverable.
 
-The practical consequence: nothing blocks. Every half of this item is a sequencing problem rather
-than a modelling problem, which is why one item owns them.
+The practical consequence: nothing blocks globally, but the earlier "every half is a sequencing
+problem rather than a modelling problem" overstated it and is withdrawn. The launcher folds are
+transcription; the mutation families open with a modelling step, and slice one prices it.
 
 ## Scope
 
@@ -476,7 +532,19 @@ and they sit at opposite ends of the work:
   Takes no `GraphitronSchema`, reads store-derived `ResolvedKeyProjections`, emits through
   `ProjectedKeyReads` / `ProjectedKeyHost`. Its shape is what every step below repeats: read the
   relation, transform the shape, no lookup and no throw. Read its commit before starting the next
-  producer.
+  producer, for the silhouette and not for the read shape: the producer is the target (a pure
+  shape transform with no schema), but its read side predates this item's rules and breaks three
+  of them. `StoreNodeTables.read` issues per-row follow-up statements (the N+1 the
+  one-statement-per-grain section forbids), the readers take a bare `(DSLContext, graphName)`
+  pair rather than `StoreHandle` (nothing under `graphitron/src/main` uses `StoreHandle` today;
+  only the LSP does), and no `MULTISET` store read exists anywhere in the repo yet, so the
+  composition this item mandates is unproven in this tree until slice one proves it. There is
+  also a case fold duplicated across `StoreNodeTables.keyColumns` and
+  `ResolvedKeyProjections.projectionOf`, the two-spellings-of-one-resolution defect the fact
+  model names; the fix is a view yielding the catalog column's exact spelling at the
+  projection's own grain, which also collapses the N+1 into the driving statement's join.
+  Bringing this producer's read side up to the rules is a named increment of the planner half,
+  after slice one has set the shape.
 * **Inside the fetcher family, not beside it: routine writes** (`RoutineWriteCommands`, 134 lines,
   11 sites). Not converted: `produce(GraphitronSchema, String)` still takes the schema, with a
   `produceWithoutSchema` overload beside it, the same transitional pair `LauncherCommands` carries.
@@ -485,9 +553,9 @@ and they sit at opposite ends of the work:
   the other item (R668) is Done, its stage landed the *emitter* half, and nothing in this item's own
   ordering schedules the producer. The tree settles it, and settles it in this producer's favour:
   `TypeFetcherGenerator` owns one of the two production-path inversion sites through
-  `RoutineWriteCommands.produceWithoutSchema`, the renderer is already in `render`, and the facts
-  are already captured, which is what makes this family slice one rather than an exception to the
-  order. See "Slice one" below.
+  `RoutineWriteCommands.produceWithoutSchema`, the renderer is already in `render`, and most of
+  its facts are captured (the three that are not are slice one's opening deliverables), which is
+  what makes this family slice one rather than an exception to the order. See "Slice one" below.
 
 The six in between. Line and site counts read off trunk `7f2ff35`, the sites counted under
 `CommandSeamRatchetTest`'s own rule so they sum to `PLAN_LEAF_REFERENCES` (3 + 29 + 17 + 48 + 29 + 1,
@@ -564,35 +632,119 @@ rather than projected. A horizontal first step (convert the cheapest producer, m
 only the half of the recipe that is already proven by `KeyProjectionCommands`, and would leave the
 emitter cutover, the guard and the instruments unexercised until far too late to change course.
 
-The routine-write family is that vertical, and it is unusually ready:
+The routine-write family is that vertical. An earlier draft called it "unusually ready" on the
+strength of a relation-availability check it had not yet run; the check has now been run
+(2026-08-20, against trunk `abaa666`), and its findings replace the optimism. The four legacies
+R704 left are genuinely in place, the emitter seam is as good as claimed, and three of the
+producer's inputs have no relation stating them, so slice one opens with a modelling step, not a
+plumbing step. The strategy's own escape hatch (the missing relation is slice one's first
+deliverable) applies three times over. In order:
 
-* **Store.** Its facts are already captured and derived. R704 left the routine catalog facts, the
-  chain terminus, the routine return binding and the two name-match keying relations in place when
-  it handed this step over, so slice one begins with a relation-availability check rather than a
-  modelling project. If that check finds a gap, the missing relation is slice one's first
-  deliverable and the fact model is where it lands.
-* **Planner.** `RoutineWriteCommands` is 134 lines and 11 dispatch sites, takes no command relation,
-  and its membership is a total two-arm switch over the two routine-write leaves. Small enough to
-  convert in one sitting, real enough to exercise one-statement-per-grain.
-* **Emitter.** `renderRoutineWrite` already looks its row up with `rowFor` and already delegates the
-  body to `render`. What it still does is read the leaf for the coordinate's tenancy binding through
-  `TenantDslEmitter`, which is the whole of that file's single dispatch site. So this one slice
-  retires a tail file the emitter half wanted done early, and the two orderings that used to
-  disagree converge here instead of competing.
-* **Inversion.** It deletes `RoutineWriteCommands.produceWithoutSchema`, one of the two production
-  inversion sites, proving on the smallest possible case that the coupling dissolves as claimed
-  above.
-* **Render.** `RoutineWriteFetcherRenderer` already exists and already renders from the row.
-* **Instruments.** The statement-count pin lands here first, `PLAN_LEAF_REFERENCES` drops by the
-  slice's 11 plus the tenancy site, and the emitters' positive dial gets a dry run on one file
-  before it is asked to cover a package.
+* **Store, first deliverable: promote the chain walk.** `RoutineChain` needs the ordered resolved
+  hop sequence with each hop's join shape, and today only the *terminus* is a relation: the walk
+  lives in recursive CTEs inside `intent_field_chain_terminus`, whose own comment already asks
+  for this promotion ("the chain arm that view is missing should read this relation rather than
+  grow a second copy of the walk"). Land a hop relation keyed `(graph, type, field, seq)`, one
+  row asserting that the chain's nth node is this table, reached from the previous node this
+  way, the join basis carried in the closed vocabulary `intent_field_reference_step_hop` already
+  uses (`via`, `constraint_name`, `fk_on_from`) so the command's `On` arm is a decode rather
+  than a re-derivation, and hop 0's join shape a column rather than a constructor throw.
+  `intent_field_chain_terminus` then becomes a selection over it, mirroring the shipped
+  step-hop/step-target split, so the recursive term keeps exactly one home. Do not add a second
+  walk beside the first; that is the two-spellings-of-one-resolution defect the fact model names.
+* **Store, second deliverable: the error channel.** No relation states which coordinate has an
+  error channel, its arm, or which field of a carrier is the errors channel (the last exists
+  only as the `errors_field` CTE inside `intent_carrier_data_field`; this slice is its second
+  reader, so the promotion rule fires). The relation lands at the coordinate's own grain, total
+  over `@error`-carrying coordinates, and carries the *inputs* to the channel: the payload class
+  the channel routes through and the ordered mapped `@error` types. It must **not** carry
+  `mappingsConstantName`: that is a minted generated identifier, and a column holding it makes
+  the store a second mint of a naming formula, the exact drift the minted-name exception under
+  the validator half exists to prevent. The formula's one home is `GeneratedUnits`, and the mint
+  currently sitting in the walk (`FieldBuilder`'s screaming-snake fold) moves there in this
+  slice rather than getting copied.
+* **Store, third deliverable: the seat verdict, as a reduction and not a membership view.** No
+  relation states which seat a mutation field's `@routine` occupies, and none can be derived
+  from the claim stratum, which masks mutation roots by design. The wrong fix is a
+  "routine-write membership" view: that names the producer's question, fails the fact model's
+  one-sentence check, and absorbs the classifier's whole cascade (root-head rule, multi-node
+  deferral, Connection refusal, hop-0 shape rule, carrier scan, terminus rules) as a procedure
+  behind a relation. The right fix is the `intent_resolved_type_binding` shape: a *reduction
+  over sibling relations*, most of which exist (the carrier arm is largely
+  `intent_carrier_data_field` at `family='ROUTINE'` joined with `intent_carrier_routine_hop`;
+  the chain arm reads the new hop relation), with a closed verdict vocabulary whose refusal arms
+  carry message, location and severity. **The refusal arms land in the DDL with the relation,
+  even though slice one reads only the emitting arms.** That is the slice's validator-tier
+  deliverable: the admit and refuse halves of one predicate get one home from the start, instead
+  of the admit half in SQL and the refuse half still in `FieldBuilder` with nothing binding
+  them. The validator half's later routine-write check then reads rows that already exist. A
+  smaller slice one omits *reading* the refusal arms; it does not omit stating them.
+* **Command vocabulary: the tenancy acquisition axis, decided once for two families.** The one
+  leaf read left in `renderRoutineWrite` is the coordinate's `TenantBinding`, resolved through
+  `TenantDslEmitter` into two `CodeBlock` fragments the shell injects into
+  `RoutineWriteFetcherRenderer.render`, whose own comment marks the injection as
+  classification-side emission a command must not hold, which is the sentence this slice
+  revises. Two shapes are refused before the right one. Widening `TenantStrategy` is out:
+  that type is the *fan-out* axis, and its javadoc records the measurement that keeps it
+  independent of acquisition (fusing the axes makes the fanned batched child unrepresentable or
+  mints the cross-product arm). A routine-write-local carrier is also out: the same injected
+  fragment feeds `BatchedRowsFragments`, `ReentryRowsFragments` and `ServiceRowsFragments`, so a
+  family-local vocabulary gives one axis two spellings inside one programme. The right shape is
+  a sealed *acquisition* carrier in `command/` (untenanted, argument-bound carrying its slot
+  reads, the inherited-family reads), designed to serve the launcher family and the
+  routine-write family alike, with the run-grain fact (is this build multi-tenant at all) riding
+  the relation rather than every row, per `CarrierDsl`'s own stated rule. The
+  `TenantBinding`-to-arms derivation gets one home in the producer, copying the rule
+  `LauncherCommands.tenancyOf` already states for the fan-out axis. Slice one rewires only
+  `RoutineWriteFetcherRenderer`, which drops its two `CodeBlock` parameters; the other three
+  fragment hosts follow with their own families.
+* **Command vocabulary: take the type lift the hop relation pays for.** `RoutineWriteCommand`
+  today carries the walk's `RoutineChain` as a component, guarded by two compact-constructor
+  throws and read back out through three casts. Rebuilding that carrier out of store rows just
+  so the row can keep holding it would preserve the casts and the throws for nothing. With the
+  hop relation landed, the row declares the narrowed shape directly: ordered hops at their own
+  grain plus the anchor slots as components, the hop-0 invariant held by the store fact rather
+  than asserted at construction. `RoutineChain` then retires with the walk instead of surviving
+  as a value record the command still depends on.
+* **Planner.** `RoutineWriteCommands.produce` takes the `StoreHandle`, the generator's first
+  `StoreHandle` use (see "Where a producer's SQL lives"), reads one statement per grain with the
+  hops riding `MULTISET`, and lands the statement-count pin in the same commit. It stays small:
+  134 lines and 11 dispatch sites today, no command-relation parameter.
+* **Emitter.** `renderRoutineWrite` reduces to a coordinate-plus-relation lookup; the
+  acquisition arms render in `render/`, beside `BatchedRowsFragments`' existing fork on the
+  fan-out axis. One claim from the earlier draft is withdrawn: `TenantDslEmitter` is not a tail
+  file this slice retires. Its single counted dispatch site (the `TenantBinding` switch) serves
+  roughly forty call sites across `TypeFetcherGenerator`, `MultiTablePolymorphicEmitter` and
+  three other emitters, so slice one retires this *family's* read of it, and the file itself
+  retires with the fetcher family's cutover.
+* **Inversion.** It deletes `RoutineWriteCommands.produceWithoutSchema`, one of the two
+  production inversion sites, by threading the plan's one relation into the nesting-reached
+  fallback and the test-facing overload; `rowFor` returning empty is the whole behaviour there,
+  because a nesting-reached type's children are never mutation roots. The membership predicate
+  the overload existed to keep out of the generator moves into the store with the seat verdict.
+* **Render.** `RoutineWriteFetcherRenderer` already exists, already renders from the row, and
+  its javadoc already claims the endpoint state (takes no schema and no field leaf); the slice
+  makes the claim true by removing the two injected fragments.
+* **Instruments, with the arithmetic corrected.** The statement-count pin lands here first.
+  `PLAN_LEAF_REFERENCES` drops by exactly the producer's 11; the earlier draft also claimed "the
+  tenancy site", which was wrong twice over: the `TenantBinding` switch survives for its other
+  callers, and the two `case` arms dispatching *to* `renderRoutineWrite` are counted generator
+  pins that stay until the field switch itself goes with the fetcher family. The generator-side
+  pins are expected to move barely or not at all in slice one, and a reviewer reading them as
+  the slice's progress metric is reading the wrong dial: the slice's numeric story is plan-side
+  minus 11, one new statement-count pin, and three new relations under the agreement anchor and
+  the naming check. The emitters' positive dial still gets its dry run on one file before it is
+  asked to cover a package.
 
 **Then stop.** Slice one ends at a written reflection, not at the next producer, and the reflection
 is a deliverable with the same weight as the code. It answers, with numbers from the slice rather
 than estimates: what did one vertical cost in wall clock and in review; how many statements does a
 converted producer actually issue and did the grain rule hold; did output stay byte-identical or did
-a walk bug surface, and which; was a fact missing after all, and how long did landing it take; is
-`rowFor` the right emitter-side seam or did the cutover want something else. Multiply the answers by
+a walk bug surface, and which; per relation landed, was it a reduction over existing relations or a
+new derivation, and how much of its cost was the refusal arms rather than the admit arm, because
+the remaining families are unusually well covered on some arms and unusually thin on others and a
+single aggregate figure would mispredict in both directions; is `rowFor` the right emitter-side
+seam or did the cutover want something else. Multiply the answers by
 the families remaining and the programme either has a credible shape or it does not.
 
 The reflection may reorder everything after it, and is expected to. Nothing below slice one is a
@@ -623,8 +775,12 @@ trunk `7f2ff35` under the pins' own rule, it totals 131 and reconciles exactly: 
 **Five** files carry all 131, 125 of them in the fetcher family: `TypeFetcherGenerator` 83,
 `FetcherEmitter` 30, `FetcherRegistrationsEmitter` 12. The tail is `GeneratorUtils` 5 (all on
 `GraphitronType`'s result-type arms; one result-Java-type fact on a command row retires them
-together) and `TenantDslEmitter` 1 (the tenancy dial is already command-shaped as
-`TenantStrategy`/`CarrierDsl` for migrated hosts).
+together) and `TenantDslEmitter` 1. That last count is honest and misleading at once: the one
+counted site is the `TenantBinding` switch, and it serves roughly forty call sites across five
+emitters, so the file is not a tail to knock off early. The fan-out half of the tenancy dial is
+already command-shaped as `TenantStrategy`/`CarrierDsl` for migrated hosts; the acquisition half
+becomes command-shaped starting with slice one, and the file retires with the fetcher family when
+its last caller moves.
 
 The re-take moved two things, and neither moves the order. `ObjectTypeGenerator` is off the list
 entirely: its three sites were a six-leaf `instanceof` chain over the form-carrying arms, and the
@@ -640,8 +796,9 @@ The other 52 files in the package have no leaf dispatch; most of them are member
 by `TypeUnitCommand` and `GlobalCommand` rows over fixed-text or carrier-driven bodies, and they are
 the guard extension's concern rather than a migration's.
 
-So the order: the two tail families first (the object generator having been the third until its
-form-carrying arms folded), because each is an afternoon and retires its sites whole; then the
+So the order: the one true tail first, `GeneratorUtils` (the object generator having folded
+already, and `TenantDslEmitter` having turned out not to be a tail: its switch retires last, with
+its last caller), because it is an afternoon and retires its sites whole; then the
 fetcher family, which is the item's real weight and subsumes what remains of the launchers. "The launcher family is done" was true at the body tier only: the rows methods render
 through `RootLauncherRenderer` and its fragments, but `TypeFetcherGenerator` still emits the
 `DataFetcher` entry points that wrap them, drains the per-class scatter helpers
@@ -807,7 +964,8 @@ Extend `PackageImportDirectionTest` over both packages once they are empty of le
 each the same *positive* dial `render` already has: an enumerated allow-list of what the package
 may import, everything else a finding, the closure pinned by reflection the way
 `borrowDialComponentClosureIsPinned` does it. `render` keeps its restriction to commands plus the
-named pure-data refs; `plan` gets store reads (`StoreHandle` and the generated store tables) plus
+named pure-data refs; `plan` gets store reads (`StoreHandle` and the generated store tables,
+deliberately not bare `org.jooq.DSLContext`; see "Where a producer's SQL lives") plus
 the command vocabulary it produces. A deny-list of the seven leaf hierarchies is explicitly the
 wrong shape: an eighth hierarchy, a relocated leaf, or a leaf taken as a parameter and never
 dispatched on all pass it, which is the same blindness the pins have. The positive dial also makes
@@ -1023,7 +1181,9 @@ derivation lives.
   about fifteen lines, and `LauncherRelationClosureTest` plus `CommandSeamRatchetTest`'s
   `PLAN_LEAF_REFERENCES` counter are a live oracle for it. R704 left the facts it would join
   already captured and derived (the routine catalog facts, the chain terminus, the routine return
-  binding, and the two name-match keying relations). R668's stage 5 asked to land after this step
+  binding, and the two name-match keying relations). Slice one's availability check confirmed all
+  four legacies in place and found the three gaps beside them; the slice-one section carries the
+  findings. R668's stage 5 asked to land after this step
   rather than beside it, and now that R668 has shipped the constraint is this item's alone.
 * `roadmap/list-ordering-invariant-enforcement.md` (R677) plans to enforce the never-unsorted-list
   invariant off the launcher relation's ordering slot, and lands after this item. Two constraints
@@ -1044,6 +1204,9 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
 
 * `EmitPlan.produce`'s `GraphitronSchema` parameter, and the `Bundle` components it threads
   (`federationLink`, `usesOneOf`).
+* With slice one: `RoutineWriteCommands.produceWithoutSchema`, the two tenancy `CodeBlock`
+  parameters on `RoutineWriteFetcherRenderer.render`, and `RoutineChain` as a
+  `RoutineWriteCommand` component (the type itself retires with the walk).
 * Whichever post-walk folds lose their last reader as their relation moves store-side:
   `OperationMemberRelation`, `ConnectionSynthesisRelation`, `TenantBindingIndex`,
   `DeliveryFactRelation`, `NestingReach`, `JoinedTableReprojection`. Each retires only when the plan
@@ -1216,3 +1379,34 @@ densest dispatch. And the taxonomy is 72 leaves across the seven hierarchies by
 
 Nothing in the architecture, the strategy, the four success criteria, or the sequencing changed. The
 Spec review this body owes an independent reader is still owed, and this pass does not discharge it.
+
+Measured again 2026-08-20, at the owner's direction, by the session planning slice one's pickup,
+and this pass replaced slice one's optimism with findings. The relation-availability check the
+slice was to open with has been run (against trunk `abaa666`, with a principles-architect pass on
+the resulting design) and does not come up clean: three producer inputs have no relation (the seat
+verdict, which the claim stratum masks at mutation roots by design; the chain's ordered hop
+interior, which lives in recursive CTEs inside the terminus view; the error channel, whose
+carrier-field detection is a CTE with this slice as its second reader), and the DDL's own comments
+acknowledge the first. The slice-one section was rewritten around the three store deliverables,
+the principles pass shaping each: the seat verdict lands as a reduction over sibling relations
+with its refusal arms in the DDL from the start, not as a membership view with the classifier's
+cascade behind it; the hop relation lands as a promotion of the terminus view's own CTEs, never a
+second walk; the error-channel relation carries the naming formula's inputs and never the minted
+constant, whose one home moves to `GeneratedUnits` in the same slice. The same pass settled two
+structural forks the first conversion had left open, each at two occurrences before it got
+expensive: a producer's run-scoped SQL lives in `plan/` beside the producer, with `StoreHandle`
+and not bare `DSLContext` in the dial ("Where a producer's SQL lives" is new); and the tenancy
+acquisition axis becomes one sealed command carrier serving the launcher and routine-write
+families alike, rather than a widened `TenantStrategy` (the fan-out axis, kept independent on its
+own recorded measurement) or a family-local mint (one axis, two spellings). Four factual claims
+were corrected: the key-projection exemplar's read side is itself N+1-shaped and predates the
+rules, so it is copied for its silhouette only and a named increment brings it up to them;
+`TenantDslEmitter` is not a tail file, its one counted switch serving roughly forty call sites, so
+it retires with the fetcher family; slice one's pin arithmetic dropped the phantom "plus the
+tenancy site", the generator-side pins being expected to barely move in the slice; and "what
+remains is plumbing, not modelling" was withdrawn in favour of a per-family availability
+measurement. The reflection gained the question whose answer actually generalizes to the remaining
+families: per relation, reduction versus new derivation, and admit-arm versus refusal-arm cost.
+Slice one also gained its missing validator tier, as the verdict relation's refusal arms. Nothing
+in the architecture, the strategy, or the four success criteria changed, and the Spec review this
+body owes an independent reader is still owed.
