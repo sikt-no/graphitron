@@ -1,7 +1,7 @@
 ---
 id: R760
 title: "The assignability closure does not terminate on a real census"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: dev-loop
@@ -201,10 +201,13 @@ partition means and re-attaching by class name folds two entries' hierarchies to
   the `intent_class_assignable` registration and the class-javadoc paragraph that names
   `ClassAssignableTest` as its anchor.
 * Delete `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/ClassAssignableTest.java`.
-  Its seven cases pin a relation that no longer exists. Nothing in it needs relocating:
-  `seedSupertype` and the census helpers stay for the scanner-side tests, and the cross-entry,
+  Its seven cases pin a relation that no longer exists. No case needs relocating: the cross-entry,
   chain-terminus and converging-chain shapes it states are the shapes the reinstatement guidance
-  above hands to the next author.
+  above hands to the next author. `SeededStore.seedSupertype` is left with no caller, this test
+  being its only one; what covers `jvm_class_supertype` on the scanner side is
+  `FactCaptureAgreementTest.jvmSupertypeCensusEqualsTheScanner`, which reads a real capture rather
+  than a seeded row. Leave the seeder in place: the edges it writes are still captured, and R762
+  retires the seeder with the capture if it takes the depth cut.
 * `docs/architecture/explanation/fact-model.adoc`: rewrite the recursive-view paragraph. Its general
   rule is right and is the reason the paragraph exists ("the argument for a recursive view is about
   the rows the relation can contain"), and its worked example is now a wrong verdict about a
