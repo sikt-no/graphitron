@@ -16,13 +16,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Spec | 2026-08-19 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
+| `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | Spec | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | Spec | 2026-08-18 | [plan](store-contention-fails-fast.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
-| `R728` | The @nodeId crossing is a store relation, and every coordinate that cannot cross fails the build | Spec | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R742` | The determinism ratchet pays for four full-fixture generator runs and needs two | Spec | 2026-08-20 | [plan](determinism-ratchet-run-count.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
@@ -385,9 +385,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
+- `R728` [**@nodeId encode and decode become store relations, and an instruction the generator drops fails the build**](nodeid-effective-at-every-coordinate.md) — Spec, feature
 - `R673` [**A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId**](nodeid-arg-dispatches-on-typeid.md) — Spec, bug
 - `R676` [**A @nodeId filter input on a multitable query cannot state a per-participant join path**](nodeid-filter-per-participant-paths.md) — Spec, bug
-- `R728` [**The @nodeId crossing is a store relation, and every coordinate that cannot cross fails the build**](nodeid-effective-at-every-coordinate.md) — Spec, feature
 - `R726` [**Bare @nodeId inference on a multitable filter can answer differently per participant with no diagnostic**](nodeid-bare-inference-per-participant-divergence.md) — Backlog, bug
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt

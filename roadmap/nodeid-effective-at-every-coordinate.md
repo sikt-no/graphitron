@@ -1,6 +1,6 @@
 ---
 id: R728
-title: "The @nodeId crossing is a store relation, and every coordinate that cannot cross fails the build"
+title: "@nodeId encode and decode become store relations, and an instruction the generator drops fails the build"
 status: Spec
 bucket: feature
 priority: 3
@@ -10,132 +10,165 @@ created: 2026-08-19
 last-updated: 2026-08-20
 ---
 
-# The @nodeId crossing is a store relation, and every coordinate that cannot cross fails the build
+# @nodeId encode and decode become store relations, and an instruction the generator drops fails the build
 
-`@nodeId` names an opaque wire format: the base64 `(typeId, key columns)` node id. The development
-principles already say what a directive naming an opaque wire format asks the generator for
-(`docs/architecture/explanation/development-principles.adoc`, "Boundaries decode and encode; the
-interior is typed"):
+`@nodeId` is an instruction. The manual states it in one sentence
+(`docs/manual/reference/directives/nodeId.adoc`): "The site axis decides direction: on a
+`FIELD_DEFINITION` the directive *encodes* the parent's primary-key columns into the opaque ID; on
+`INPUT_FIELD_DEFINITION` and `ARGUMENT_DEFINITION` it *decodes* the ID back to typed key columns at
+the carrier."
 
-> Opaque wire formats (Relay NodeId base64 strings, Relay cursor strings, federation `_Any`
-> representations) decode at the DataFetcher boundary into typed column tuples; the projection layer
-> encodes back into wire format only at the same boundary.
+So there are two states, not three. Either a slot carries the instruction, explicitly or by one of
+the rules below, and the generator owes an encode or a decode; or it does not, and there is nothing
+for the generator to do. Nothing else needs saying, and this item introduces no vocabulary for it:
+encode and decode are the words the manual uses and the words the code already carries in
+`CallSiteCompaction.NodeIdEncodeKeys`, `CallSiteExtraction.NodeIdDecodeKeys` and the generated
+`encode<TypeName>` / `decode<TypeName>` helpers.
 
-Call that conversion a **crossing**. Decode on the way in, at an argument or an input field; encode
-on the way out, at an output field. Where the crossing happens the author writes the directive and
-never sees the base64. Where it does not, the author writes the same directive, the build says
-nothing, and the raw string flows through to consumer code that takes it apart by hand. The same
-principle names that second outcome as a smell in the same breath: "a bypass around classified
-information the boundary already carries."
+The bug is the third state the generator actually has today, which is being given the instruction and
+dropping it. The author writes the directive, the build says nothing, and the raw base64 flows through
+to consumer code that takes it apart by hand. The development principles name that outcome as a smell
+in their own terms (`docs/architecture/explanation/development-principles.adoc`, "Boundaries decode
+and encode; the interior is typed"): "a bypass around classified information the boundary already
+carries."
 
-A field report against 10.0.0-RC32 named four coordinates where the second thing happens. This item
-does not take that list on trust. It makes the crossing a fact, which turns "does `@nodeId` mean the
-same thing everywhere" from a claim into a query, and then answers every coordinate the query finds.
-The census turns out to be wider than the report in one direction and narrower in another: the
+A field report against 10.0.0-RC32 named four coordinates where it happens. This item does not take
+that list on trust. It makes the instruction and its resolution facts, which turns "does `@nodeId`
+mean the same thing everywhere" from a claim into a query, and then answers every coordinate the
+query finds. The census is wider than the report in one direction and narrower in another: the
 reported `@error` case is one arm of four that share its cause, and one reported case already works
 and needs only a message and a page.
 
-There is no coordinate where a crossing-free `@nodeId` is wanted. Three candidates were tested and
-none survives. A documentation marker ("this ID is a `PlasstildelingV2`") is the bypass the principle
-names, and the type system plus the manual already do that job. A forward declaration written before
-its destination exists wants the build to fail, which is the signal. And an interface declaration
-site does not exist as a pattern: SDL directive applications are per-declaration with no interface
-inheritance, while a `@table` interface is itself table-bound and crosses like any bound type, so an
-author who wrote `@nodeId` only on the interface field has made a mistake worth reporting. The rule
-is therefore total and unconditional, which is what lets the detection be an anti-join rather than a
-list of cases.
+There is no coordinate where a dropped instruction is wanted, so the rule is total and
+unconditional. Three candidates were tested and none survives. A documentation marker ("this ID is a
+`PlasstildelingV2`") is the bypass the principle names, and the type system plus the manual already
+do that job. A forward declaration written before its destination exists wants the build to fail,
+which is the signal. And an interface declaration site does not exist as a pattern: SDL directive
+applications are per-declaration with no interface inheritance, while a `@table` interface is itself
+table-bound and encodes like any bound type, so an author who wrote `@nodeId` only on the interface
+field has made a mistake worth reporting.
 
-## What a crossing needs, and why it is a coordinate fact
+## Where the instruction comes from
 
-Two facts meet at a crossing, and both are already in the store.
+The instruction has three forms, and the manual documents all three. Getting the population right
+matters more than anything else in this plan, because the detection is "instructed and not carried
+out" and an instruction the population misses is a coordinate that stays silent.
 
-The first is what the directive *means*, and it is one join. `@nodeId(typeName: T)` plus the graph
-name reaches `intent_resolved_node_key_column`, keyed `(graph_name, type_name, position,
-column_name, tier)`. That relation is the wire format's other end: T's key columns, in order, with
-the tier that answered for them.
+* **Explicit.** `@nodeId(typeName: T)`. Captured as a row in `graphitron_field_node_id` on
+  `(graph_name, type_name, field_name)`, which covers output fields and input fields alike, or in
+  `graphitron_argument_node_id` on `(graph_name, type_name, field_name, argument_name)`. Both carry
+  `node_type_ref` as the author wrote it and a source position.
+* **Bare.** `@nodeId` with no `typeName:`, which is the same captured row with `node_type_ref` NULL,
+  the relation's own comment already reading that NULL as "inference when NULL is a derivation". The
+  manual gives inference exactly two rules: (a) on a non-`@reference` object field, the containing
+  type is itself a `@node`; (b) on a `@reference` field or jOOQ-record input field, exactly one
+  `@node` type binds to the same target table. Rule (b) "is the only place the backing table decides
+  anything", an explicit `typeName:` taking the `typeId` and key columns from the named type's own
+  `@node` instead, which is what keeps several node types over one table from making a named leaf
+  ambiguous.
+* **Name-carried, with no directive at all.** Two documented cases, one per direction. A node type's
+  own `id:` field is "a node ID by construction", and `typeName:` is *rejected* there because the
+  containing type has already answered. And a slot *named* for the target's own `id` decodes without
+  the directive: `id` on an input consumed against a node-backed table, or on an argument of a field
+  returning a node type. "The name is what carries it, so a differently-named slot (`ids`,
+  `customerId`) still needs the directive; graphitron does not guess at plurals or suffixes."
 
-The second is the *coordinate*. `@nodeId` is declared
-`on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION`, and capture keys all three
-already: `graphitron_field_node_id` on `(graph_name, type_name, field_name)` covers output fields and
-input fields alike, and `graphitron_argument_node_id` on
-`(graph_name, type_name, field_name, argument_name)` covers arguments. Both carry `node_type_ref` as
-the author wrote it and a source position.
+The third form has no row in either `@nodeId` relation, so the population is not simply those two
+relations. It is a derivation over them plus the name-carried rule, which the store can state:
+`graphql_field` and `graphql_argument` carry the slot's name, and `intent_node_type` with
+`intent_resolved_type_binding` carry which types are node-backed and over which table. Where the
+target table backs more than one node type the build already fails and asks for `typeName:`, and a
+directive-less slot colliding with a real column of the same name is already an error at every
+coordinate, so the two ambiguity cases the name-carried rule could raise are answered before this
+item starts.
 
-Neither fact is a classifier reading, and that is the design. The classifier knows nothing here the
-store cannot: it *resolves* these same two facts in Java, separately per coordinate kind, which is
-exactly why the coordinate kinds it never grew an arm for are silent instead of reported. Asking the
-classifier which coordinates bind would be asking the thing whose gaps are the bug.
+What the instruction *means* is then one further join: the node type plus the graph name reaches
+`intent_resolved_node_key_column`, keyed `(graph_name, type_name, position, column_name, tier)`. That
+relation is the opaque format's other end, T's key columns in order with the tier that answered.
+
+None of this is a classifier reading, and that is the design. The classifier knows nothing here the
+store cannot: it resolves these same facts in Java, separately per coordinate kind, which is exactly
+why the coordinate kinds it never grew an arm for are silent instead of reported. Asking the
+classifier which coordinates carry out the instruction would be asking the thing whose gaps are the
+bug.
 
 ## Design
 
-### The crossing is a relation
+### The resolution is two relations, one per direction
 
-`intent_node_id_crossing` states, for one authored `@nodeId` application at one consuming coordinate,
-what the crossing is. An application with no row crosses nothing, which is the whole of the
+`intent_node_id_decode` and `intent_node_id_encode` state how one instruction is carried out. An
+instruction with no row in its own direction's relation was dropped, which is the whole of the
 detection; no verdict vocabulary is needed to say it. That absence-means-it-locally reading is the
 model's established idiom, argued in `intent_argmapping_segment_binding`'s own comment: a coordinate
 that has a segment and no row there "means exactly one thing, it means it locally, and no verdict
 vocabulary is needed to say it".
 
-**Grain: the application and its use site.** An argument application and an output-field application
-are their own use site. An input-field application's use sites come from
-`intent_input_occurrence_path`, whose `(root_type_name, root_field_name, root_argument_name)` is
-exactly the consuming coordinate, whose every prefix is a row, and whose steps are ordinal-decomposed
-in `intent_input_occurrence_path_step` so no reader parses the serialized key.
+**Two relations rather than one with a direction column**, because the two directions genuinely
+answer different questions and sharing a row shape would make half the columns nullable by kind.
+Decode has a destination that receives a tuple, and where that destination is a table it also has a
+column correspondence and possibly a join path. Encode has a source that produces one, and never has
+either. `intent_input_occurrence_path_step` states the same discipline for its own shape, that it is
+"homogeneous over input-field steps only ... so no column here is nullable by kind". Direction is
+never a column: it follows from the coordinate kind, `graphql_type.kind` on the owning type plus
+which relation answered.
 
-The use-site grain is load-bearing rather than tidy. One input type may be consumed where the
-crossing works and where it cannot, so a verdict keyed on the application alone would have to pick
-one answer for two consumers. `ArgmappingProjectionDefects` already argues this for its own
-messages, that "one input type can be consumed where inference works and where it cannot, and an
-author told to add `typeName:` needs to know which consumer is asking". The same reasoning fixes the
-grain here, and the message names the use site for the same reason.
+**Grain: the instruction and its use site.** An argument and an output field are their own use site.
+An input field's use sites come from `intent_input_occurrence_path`, whose
+`(root_type_name, root_field_name, root_argument_name)` is exactly the consuming coordinate, whose
+every prefix is a row, and whose steps are ordinal-decomposed in
+`intent_input_occurrence_path_step` so no reader parses the serialized key.
+
+The use-site grain is load-bearing rather than tidy. One input type may be consumed where the decode
+resolves and where it cannot, so a verdict keyed on the instruction alone would have to pick one
+answer for two consumers. `ArgmappingProjectionDefects` already argues this for its own messages,
+that "one input type can be consumed where inference works and where it cannot, and an author told to
+add `typeName:` needs to know which consumer is asking". The same reasoning fixes the grain here, and
+the message names the use site for the same reason.
 
 It also settles a question the previous draft answered with policy. An input field on an input type
 nothing reaches produces no occurrence path, so no use site, so no row and no verdict. That is not a
-reachability gate and it is not an exemption: the crossing question is "what receives or produces
-the key tuple here", and with no consuming coordinate there is nothing to ask it about. The earlier
-draft argued instead for a detection deliberately ungated by walk reach, reasoning over
-`walk_claim_domain_type` / `walk_claim_domain_field`. That reasoning is retired: those two relations
-are draining (R743), and this rule never needed them.
+reachability gate and it is not an exemption: a decode is "these values go here", and with no
+consuming coordinate there is no here. The earlier draft argued instead for a detection deliberately
+ungated by walk reach, reasoning over `walk_claim_domain_type` / `walk_claim_domain_field`. That
+reasoning is retired: those two relations are draining (R743), and this rule never needed them.
 
-**Direction** is `DECODE` at an argument or input field, `ENCODE` at an output field. It follows from
-the coordinate kind, which is `graphql_type.kind` on the owning type plus which of the two authored
-relations answered, so it is read rather than decided.
+**`intent_node_id_decode`** carries the coordinate, the use site, the resolved node type, and the
+destination that receives the decoded tuple. Four destinations, a closed vocabulary:
 
-**Destination** is the closed vocabulary of what receives or produces the tuple. Six values, and
-between them they are what `@nodeId` means:
+* `OWN_TABLE_COLUMNS`. The decoded keys land on a column tuple of the row's own table: same-table
+  identity, a foreign key's child columns, or the tuple an identity-carrying chain lifts back to. The
+  predicate binds locally with no join.
+* `TARGET_TABLE_COLUMNS`. No own-table tuple exists, so the predicate binds the node type's own key
+  columns on its own table inside a correlated `EXISTS`.
+* `JOOQ_RECORD`. A generated `*Record`: a `@service` method parameter, or a record-typed member of a
+  consumer bean. A record holds a tuple, which is why these two work today.
+* `NAMED_KEY_COLUMN`. The author named one key column as a trailing `argMapping` segment, so one
+  value reaches one slot and the SDL says which. R668's capability.
 
-* `OWN_TABLE_COLUMNS` (decode). The coordinate resolves against a table and the decoded keys land on
-  a column tuple of the row's own table: same-table identity, or a foreign key's child columns, or
-  the tuple an identity-carrying chain lifts back to. The predicate binds locally with no join.
-* `TARGET_TABLE_COLUMNS` (decode). No own-table tuple exists, so the predicate binds the node type's
-  own key columns on its own table inside a correlated `EXISTS`.
-* `JOOQ_RECORD` (decode). The destination is a generated `*Record`: a `@service` method parameter, or
-  a record-typed member of a consumer bean. A record holds a tuple, which is why these two work
-  today.
-* `NAMED_KEY_COLUMN` (decode). The author named one key column as a trailing `argMapping` segment, so
-  one value reaches one slot and the SDL says which. R668's capability.
-* `PROJECTED_COLUMNS` (encode). The field's value is a column tuple in scope and the encode wraps it
-  at the SELECT-side projection.
-* `READ_VALUE` (encode). The field's value is *read* rather than projected, through an accessor, a
-  by-name record read, a typed column off a record, or graphql-java's own property machinery, and the
-  encode applies to what the read yields. New with this item; see "The encode gap is the whole read
-  family" below.
-
-**Two ordinal-keyed children**, following the parent-plus-steps shape
+**Two ordinal-keyed children on the decode relation**, following the parent-plus-steps shape
 `intent_input_occurrence_path` / `_step` already uses:
 
-* `intent_node_id_crossing_column`, one row per key position, carrying the node type's key column at
+* `intent_node_id_decode_column`, one row per key position, carrying the node type's key column at
   that position and the local column it lifts to on the row's own table, `NULL` where no lift exists.
-* `intent_node_id_crossing_hop`, one row per foreign-key hop from the coordinate's own table to the
+* `intent_node_id_decode_hop`, one row per foreign-key hop from the coordinate's own table to the
   node type's table, in authored order.
 
 Those two children are why the destination vocabulary can be flat. `OWN_TABLE_COLUMNS` is every
 position having a local column; `TARGET_TABLE_COLUMNS` is none of them having one. Which is the whole
 of site 4b, as the next section explains.
 
+**`intent_node_id_encode`** carries the coordinate, the resolved node type, and the source that
+produces the tuple. Two sources:
+
+* `PROJECTED_COLUMNS`. The field's value is a column tuple in scope and the encode wraps it at the
+  SELECT-side projection. Everything that encodes today.
+* `READ_VALUE`. The field's value is *read* rather than projected, through an accessor, a by-name
+  record read, a typed column off a record, or graphql-java's own property machinery, and the encode
+  applies to what the read yields. New with this item; see "The dropped encode is the whole read
+  family" below.
+
 **`NodeIdLeafResolver` becomes a reader.** It resolves these facts in Java today. After this item the
-relation resolves them and the classifier reads the rows, which is R682's direction
+relations resolve them and the classifier reads the rows, which is R682's direction
 (`roadmap/planners-read-facts-emitters-read-commands.md`: planners read facts) arriving early for one
 directive rather than being retrofitted onto a Java sealed hierarchy a release later.
 
@@ -151,7 +184,7 @@ implementer's, per relation, on that precedent.
 argument-site `@reference` path has no equivalent, over
 `graphitron_argument_reference_step`. R723 named authoring those sibling views as the prerequisite it
 was declining to take on. This item takes it on, because a `@nodeId` filter path is an argument-site
-path and the hop child above cannot be populated without it.
+path and the decode hop child above cannot be populated without it.
 
 ### Site 4b dissolves into the relation rather than being refactored
 
@@ -170,7 +203,7 @@ checks one, because `validateLift` runs earlier and rejects rather than recordin
 exists. `TranslatedFk`, whose whole premise is "no own-table tuple, bind on the target inside an
 `EXISTS`", is therefore unreachable for a multi-hop path.
 
-In the relation those are two columns. A crossing whose `intent_node_id_crossing_column` rows all
+In the relation those are two columns. A decode whose `intent_node_id_decode_column` rows all
 carry a local column is `OWN_TABLE_COLUMNS`; one whose rows carry none is `TARGET_TABLE_COLUMNS`; and
 the junction chain is the second because the lift walk contributes no local column, not because
 anything rejects it. There is no sealed result to invent, no discriminator to state twice, and
@@ -227,7 +260,7 @@ throw. Widening it is R705's work, which retires `FkHop`, `FkHop.narrow` and `na
 So a condition hop keeps its own rejection through this item, and R705 inherits the relation rather
 than co-authoring it.
 
-### The encode gap is the whole read family, not the `@error` type
+### The dropped encode is the whole read family, not the `@error` type
 
 The report named an `@error` type's extra field: an `ID` carrying `@nodeId(typeName:)` whose value
 reaches the consumer already encoded by hand, because `FieldBuilder.classifyChildFieldOnErrorType`
@@ -316,8 +349,8 @@ every scalar to `CallSiteExtraction.Direct`. It cannot see `@nodeId` even in pri
 `java.lang.String title = (java.lang.String) raw.get("title");` inside the `create<Bean>` helper. That
 is the shape the reporter reached for as the workaround for site 1 and found equally inert.
 
-The two shapes that do cross are exactly the two whose destination holds a tuple, which is the
-`JOOQ_RECORD` destination above: a `@service` parameter typed as a generated `*Record`, and a
+The two shapes that do carry the decode out are exactly the two whose destination holds a tuple,
+which is the `JOOQ_RECORD` destination above: a `@service` parameter typed as a generated `*Record`, and a
 record-typed member of a consumer bean. `InputBeanResolver` shows the asymmetry directly. Its
 `buildJooqRecordLeaf` reads `@nodeId` on a record-typed bean member and rejects a missing `typeName:`
 there; `collectJooqBindings` and `buildRecordKeyDecode` do the same on the record-param axis; and
@@ -326,7 +359,7 @@ not an oversight about the directive. It is an unanswered question about the des
 
 **One decision is open, and it is the only one in this plan.** Where the named node type has exactly
 one key column, nothing about which value goes in the slot is ambiguous: the decode yields one value
-and the parameter takes it. So these two coordinates could *cross* rather than refuse, with the
+and the parameter takes it. So the decode at these two coordinates could resolve rather than be refused, with the
 `NAMED_KEY_COLUMN` destination reached by inference instead of by an authored trailing segment, and
 only a composite key left to refuse with a message naming the arity. That would serve the reporter's
 case without them respelling anything.
@@ -343,7 +376,7 @@ unless the arity happens to be one".
 
 Until that is settled this section is written to the refusing answer, and stage 5's arms are
 `Rejection.structural` accordingly. If auto-projection is chosen, these two coordinates move out of
-stage 5 into stage 2 as an inference arm on the crossing relation, stage 5 keeps only the
+stage 5 into stage 2 as an inference arm on the decode relation, stage 5 keeps only the
 composite-arity refusal at them, and `BARE_NODE_ID`'s own text needs the same edit.
 
 ## Stages
@@ -357,11 +390,12 @@ replacement.
    argument-site `@reference` path's hops and terminal target are readable from the store, agreeing
    with the field-site views' answers on the same path shape. R723 named this as its own prerequisite
    and gains it.
-2. **`intent_node_id_crossing` and its two children.** The relation, the use-site grain over
-   `intent_input_occurrence_path`, the six-value destination vocabulary, the key-column child with
-   its lift, and the hop child. `NodeIdLeafResolver` becomes a reader of the rows rather than the
-   resolver of the facts. Exit: every `@nodeId` shape that generates today has a crossing row naming
-   the destination it actually uses, and the tree's existing `@nodeId` behaviour suite stays green
+2. **The instruction population and the two resolution relations.** The population first, all three
+   forms of the instruction including the name-carried one that has no captured row; then both
+   relations, the use-site grain over `intent_input_occurrence_path`, the four decode destinations and
+   two encode sources, and the decode relation's key-column child with its lift plus its hop child. `NodeIdLeafResolver` becomes a reader of the rows rather than the
+   resolver of the facts. Exit: every `@nodeId` shape that generates today has a row naming the
+   destination or source it actually uses, and the tree's existing `@nodeId` behaviour suite stays green
    without modification.
 3. **The junction chain.** With the relation in place this is the absence of a rejection rather than
    an addition: `validateLift` stops rejecting and its absent lift becomes absent local columns, so
@@ -374,12 +408,12 @@ replacement.
    `@nodeId(typeName:)` returns an encoded node id and the reporter's hand-written encoder call sites
    can go; the same holds at the accessor, by-name and typed-column read arms; a composite-key node
    type at a read coordinate is refused with a message naming the count.
-5. **The ineffective-`@nodeId` detection.** The anti-join of the two authored relations against the
-   crossing relation, read by a projector into located `ValidationError`s as a further component on
+5. **The dropped-instruction detection.** The anti-join of the instruction population against the
+   two resolution relations, read by a projector into located `ValidationError`s as a further component on
    `StoreDetections` beside the two detection families already there (`AuthoredClaimConflicts` and
    `ArgmappingProjectionDefects`; `ResolvedKeyProjections` is the record's third component and not a
    detection family). Every arm is `Rejection.structural`: by this stage the coordinates that could
-   cross do, so the ones that remain are destinations that hold one value where a tuple is needed, and
+   resolve do, so the ones that remain are destinations that hold one value where a tuple is needed, and
    no emitter reconciles that. Exit: the reported schemas fail the build with a message naming the
    slot, the use site, and a spelling that works; and the same fact is available to the LSP and the
    MCP context rather than living inside two walk classes. The message vocabulary converges with
@@ -399,7 +433,7 @@ model: how a fact is sourced is not a behaviour, and a test that knows is a test
 R682 moves the sourcing.
 
 The strongest guard is already installed and costs nothing. The tree's existing `@nodeId` suite is the
-accept set: if the crossing relation fails to enumerate a crossing that works today, a currently-green
+accept set: if a resolution relation fails to enumerate a shape that works today, a currently-green
 pipeline or execution test goes red, because the build now rejects a schema that used to generate.
 That is what makes a total census safe to attempt.
 
@@ -407,7 +441,7 @@ That is what makes a total census safe to attempt.
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
   write rails refusing a remote-bound junction carrier, asserting the text that rail actually
   produces, as cases in `TranslatedFkTargetRailGatesPipelineTest`. The detection firing at the
-  destinations that hold one value and staying silent everywhere a crossing exists. The read-family
+  destinations that hold one value and staying silent everywhere the instruction resolves. The read-family
   encode at each of the four read arms, and the composite-arity refusal. The boundary against R668
   pinned as a pair: two `@service` arguments carrying `@nodeId`, one with an authored `argMapping` and
   one without, each drawing exactly one message and from a different family.
@@ -432,10 +466,10 @@ code-string matching on generated bodies is banned at every tier.
 
 ## Risks
 
-* **A crossing the relation fails to enumerate fails a schema that works.** This is the cost of going
+* **A resolution the relations fail to enumerate fails a schema that works.** This is the cost of going
   total and it is the item's main risk. It is bounded rather than open: the tree's existing `@nodeId`
-  behaviour suite is the accept set, so a missed crossing is a red test during stage 2 and not a
-  shipped false rejection. What the guard cannot cover is a crossing shape no fixture exercises, which
+  behaviour suite is the accept set, so a missed resolution is a red test during stage 2 and not a
+  shipped false rejection. What the guard cannot cover is a shape no fixture exercises, which
   is why stage 2's exit condition is stated over the suite rather than over a count.
 * **Stage 5 breaks schemas that build today.** At the coordinates that remain, the current behaviour
   is a silent pass: the build succeeds and the raw string flows through. Afterwards those schemas
@@ -461,7 +495,7 @@ code-string matching on generated bodies is banned at every tier.
   item scoped by subject is producing a model type to match: a `NodeIdBinding` or `NodeIdEffective`
   spanning coordinates would take its grain from "whatever the sites needed". The check is the one the
   fact model prescribes: every stage must be able to say what it asserts without naming the reporter
-  or this item. Nothing in the design needs such a type, the crossing relation being named for the
+  or this item. Nothing in the design needs such a type, the two relations being named for the
   mechanism, and the review should treat one appearing as a signal the grain slipped.
 * **This item lands ahead of R682 on a mechanism R682 will touch.** Deliberate. Doing it narrow means
   someone rewrites a Java sealed result a release later when the planners move to facts. The exposure
@@ -471,7 +505,8 @@ code-string matching on generated bodies is banned at every tier.
 ## User documentation
 
 * `docs/manual/reference/directives/nodeId.adoc` gains the coordinate table this item is really about:
-  where `@nodeId` crosses, what it crosses to, and what happens where it cannot. The destination
+  where `@nodeId` encodes and decodes, what it resolves against, and what happens where it cannot.
+  The destination
   vocabulary is the table's own spine.
 * `docs/manual/how-to/multi-hop-nodeid-filter.adoc` gains the junction shape as a worked example,
   loses its `=== identity-carrying FKs` rejection section, and loses the false single-hop claim.
@@ -502,7 +537,7 @@ code-string matching on generated bodies is banned at every tier.
   carriers (`ChildField.ColumnBackedField`, `ChildField.ColumnBackedReferenceField`)". The read
   carrier is a third and is not column-backed. The neighbouring sentence about arity goes with it: it
   justifies the arity-1 claim by "the carriers' constructor invariant", and the read carrier is not one
-  of those carriers, so the refusal is stated in the crossing relation instead.
+  of those carriers, so the refusal is stated in the encode relation instead.
 * The previous draft's own claim that the detection is "capture-total and deliberately ungated by walk
   reach", along with its reasoning over `walk_claim_domain_type` / `walk_claim_domain_field`. The
   use-site grain answers the question those relations were being consulted about, and R743 is draining
@@ -522,7 +557,7 @@ The retirement sweep has one coordination point beyond the tree.
 constraint its path grammar inherits, so its author has to be told the constraint moved rather than
 disappeared. The `@LoadBearingClassifierCheck` mechanism the original lift work paired with that marker
 no longer exists (R237 retired the annotations and their audit wholesale), so there is no annotation
-obligation; the surviving structural pin is the crossing relation plus the pipeline-tier behaviour, and
+obligation; the surviving structural pin is the decode relation plus the pipeline-tier behaviour, and
 stage 3 expresses it there.
 
 ## Relationship to other items
@@ -530,7 +565,8 @@ stage 3 expresses it there.
 * **R682** (`planners-read-facts-emitters-read-commands`, Spec) is the architecture this item works
   inside. Its sentence is that capture writes facts, the walk's sealed leaves dissolve into those
   facts, planners read facts and produce commands, and emitters render commands. Making the `@nodeId`
-  crossing a relation and turning `NodeIdLeafResolver` into a reader is that sentence applied to one
+  encode and decode relations and turning `NodeIdLeafResolver` into a reader is that sentence applied
+  to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
 * **R743** (`intent-views-stop-reading-walk-relations`, Backlog) settles the question the previous draft
@@ -561,7 +597,7 @@ stage 3 expresses it there.
   inherits.
 * **R705** (`condition-join-hops-in-reference-filter-paths`, Spec) is R57's sibling deferral for the
   other rejected hop kind. The two are adjacent in the classifier and far apart in the emitter: both
-  gates express themselves through the crossing relation, but only the lift gate can relax without the
+  gates express themselves through the decode relation, but only the lift gate can relax without the
   reach carrier being widened first, and that widening is R705's own work (retiring `FkHop`,
   `FkHop.narrow` and `ConditionCommands.narrowPath`). R705 does not relax the marker either: its
   targets are the plain-`@reference` filter rejections in
