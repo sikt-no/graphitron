@@ -569,7 +569,7 @@ stage 3 expresses it there.
   to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
-* **R743** (`intent-views-stop-reading-walk-relations`, Backlog) settles the question the previous draft
+* **R743** (`sdl-fact-gatherer-staged-pipeline`, Backlog) settles the question the previous draft
   of this item argued at length. Its staged SDL gatherer puts coordinate facts in stage 4 and
   reachability facts in stage 5, and it drains `walk_claim_domain_type` /
   `walk_claim_domain_field`. This item reads neither, so nothing here blocks or waits on it; recorded
