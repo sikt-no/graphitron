@@ -54,12 +54,14 @@ Neither dependency reflects a real need of the tool:
 
 The payoff is proportionate on both sides of the cut. For the tool: cold use in
 seconds, pure-Java everywhere a JVM runs, and a dependency list (snakeyaml)
-that makes the module's actual shape visible. For the reactor: the docs module
-stops declaring a `provided` dependency on `roadmap-tool` whose half-job is
-forcing build order, and instead declares the true relationship, that it
-consumes `graphitron-model`'s schema renderer. Nothing user-visible changes:
-same CLI commands, same skills, same gate coverage at the same build phases,
-same docs site.
+that makes the module's actual shape visible. For the reactor: the docs
+module's dependency on `graphitron-model` becomes a declared, true
+relationship (it consumes the model's schema renderer) instead of an edge
+reached implicitly through the tool. The docs module keeps a `provided`
+dependency on `roadmap-tool` for `render-roadmap-adoc` and `check-adoc-xrefs`,
+which is fine: that edge names code docs really runs. Nothing user-visible
+changes: same CLI commands, same skills, same gate coverage at the same build
+phases, same docs site.
 
 ## Design
 
@@ -74,36 +76,84 @@ class. The store classes are already on that module's test classpath, so the
 exec execution in `roadmap-tool/pom.xml`, the `Main` dispatch arm, and the
 exit-code-versus-exception dance are deleted rather than moved.
 
-Accepted behavior change: as a test the gate is skipped under `-Pquick` and
-`-DskipTests`, where the exec execution ran unconditionally. This matches how
-the repo already treats its other guards (`RoadmapReferenceGuardTest` has the
-same property), and CI's full build still gates trunk. The failure message must
-keep naming the offending pages and identifiers verbatim.
+Owned behavior change: the exec execution survives `-Pquick` and `-DskipTests`
+(exec executions are untouched by `maven.test.skip`), so today this gate is
+*stronger* than every sibling guard. The move demotes it to the common class.
+We read that as removing an accidental inconsistency rather than losing a
+decided strength: the gate was stronger by habitat, not by decision, and
+nothing distinguishes schema-identifier drift from roadmap-citation drift,
+which already tolerates `-Pquick`. CI's full build still gates trunk. The move
+also buys two compensations worth having: feedback moves from near the end of
+the reactor (`roadmap-tool` `verify`) to near its start (`graphitron-model`
+tests), so a DDL rename fails minutes earlier, and the store boot rides the
+module's own test harness instead of a cold open.
+
+Carry-over requirements: the exec version's three vacuity floors (missing
+authored tree, zero pages scanned, empty identifier universe) survive as
+assertions, plus a scanned-count floor per the `RoadmapReferenceGuardTest`
+pattern, since the test reaches `docs/architecture/` by walking to the repo
+root. That walk mints a third copy of the repo-root locator (beside
+`GuardScope.locateRepoRoot()` in `graphitron` and the one in `roadmap-tool`);
+acknowledged, and small enough to live with. The failure message must keep
+naming the offending pages and identifiers verbatim. The check now runs on
+every model test run instead of once per reactor build; the cost is a docs-tree
+walk plus a harness store boot, and is negligible.
 
 ### 2. `render-schema-reference` becomes a `graphitron-model` class
 
 The renderer cannot be a test: it produces site pages into the Asciidoctor
 staging tree and must run when tests are skipped. Move `SchemaReferencePages`
-(and `SchemaReferencePagesTest`) into `graphitron-model` with a small `main`
-entry point. The docs pom keeps the same execution slot, phase
-(`process-resources`, base build), arguments, and staging output; the diff is
-one `mainClass` line and swapping the `provided` dependency from
-`graphitron-roadmap-tool` to `graphitron-model`. The renderer's non-vacuity
-floors (empty catalog, relation on no page, blank comment text) move unchanged
-and keep gating `-P!docs` builds. `check-adoc-xrefs` continues to verify
-authored links into the generated pages against the staged tree, unaffected.
+(and `SchemaReferencePagesTest`) into `graphitron-model`'s main source tree
+with a small `main` entry point. The docs pom keeps the same execution slot,
+phase (`process-resources`, base build), arguments, and staging output; the
+diff is one `mainClass` line and adding a `provided` dependency on
+`graphitron-model` (the `roadmap-tool` one stays for the roadmap staging
+steps). The renderer's non-vacuity floors (empty catalog, relation on no page,
+blank comment text) move unchanged and keep gating `-P!docs` builds.
+`check-adoc-xrefs` continues to verify authored links into the generated pages
+against the staged tree, unaffected.
+
+Main scope is a deliberate charter call, not a default. The tension is real:
+`modules.adoc` charters `graphitron-model` as the DDL, its generated compile
+surface, and the H2 bootstrap, and a docs renderer is a view landing in the
+model's jar. Three facts decide it anyway. The renderer's input contract
+already lives in this module: `CommentRenderabilityGateTest` holds the accepted
+comment subset the renderer interpolates verbatim, and the move co-locates
+producer and contract instead of binding them through prose across a module
+seam. `ModelCodegenDriver` is the standing precedent for a build tool in this
+module's main tree; the module's pom defends against dependency pollution, not
+class pollution, and the renderer adds classes only. And the alternative homes
+fail concretely: a test-jar home is *not viable* because `-Pquick` sets
+`maven.test.skip=true`, which skips test compilation, leaving the docs
+`process-resources` execution with no artifact exactly in the build that must
+still render; docs itself is pom-packaged with no compile surface.
+
+Doc touchpoints the move implies: the `modules.adoc` rows for both
+`graphitron-model` and `roadmap-tool`, and the generated page header, which
+currently reads "Generated by `graphitron-roadmap-tool` render-schema-reference"
+and would rot on day one.
 
 ### 3. The coverage reports drop DuckDB
 
 `LeafCoverageReport` and `SourceCoverageReport` replace engine-side ingestion
-with Java-side parsing: each JSONL trace line parses with snakeyaml (already a
-dependency; YAML 1.2 is a JSON superset), the JaCoCo CSV parses with a
-header-plus-values reader (its values contain no quoted separators), and the
-group-bys move to Java streams over records. `TierVocabulary` already carries
-the tier ordering as a comparator; its SQL-generating half retires. Rendered
-output must be byte-identical for identical inputs, which the existing
-verify-mode drift check (`leaf-coverage --verify`) pins for the committed
-report.
+with Java-side parsing: each JSONL trace line parses in Java, the JaCoCo CSV
+parses with a header-plus-values reader (its values contain no quoted
+separators), and the group-bys move to Java streams over records.
+`TierVocabulary` already carries the tier ordering as a comparator; its
+SQL-generating half retires, leaving the comparator as the ordering's sole
+carrier. Rendered output must be byte-identical for identical inputs, which
+the existing verify-mode drift check (`leaf-coverage --verify`) pins for the
+committed report.
+
+JSONL parser choice is the implementer's, with one enforcer either way: the
+pinned `org.yaml:snakeyaml` is a YAML **1.1** processor (the 1.2
+JSON-superset claim belongs to `snakeyaml-engine`, a different artifact), and
+1.1 scalar resolution has traps for unquoted values that read as booleans or
+numbers (`on`, `no`, `007`). Either use snakeyaml guarded by a test that
+parses what the trace writer actually emits, adversarial scalars included, or
+write the ~20-line JSON tokenizer and pin it with the same test. The reader
+re-derives the trace format independently either way, exactly as
+`read_json_auto` did, so no new writer/reader seam appears.
 
 ### Seam details
 
@@ -111,12 +161,23 @@ report.
   consumers; the moved renderer throws `graphitron-model`'s own equivalent (or
   `IllegalStateException` with the same messages), and the meta-test asserts
   instead of throwing.
-- `InertSpans` splits along its two halves. The renderer uses only the
-  monospace-emit cluster (`monospace` and what it calls); the drift check uses
-  only the scanning cluster (`BlockContext`, `maskInert`). Each move takes its
-  cluster with its tests; the full class stays in `roadmap-tool` for the other
-  renderers and checks. The halves do not share state, so this is extraction,
-  not duplication of one mechanism.
+- `InertSpans` is the sharpest seam in the design, and "take a copy" is not
+  the last word, because the class's own javadoc pins the invariant a copy
+  breaks: the inert span forms and the recognizer that reads them back live in
+  one place so emitters and the checks policing them cannot drift. The copy
+  seam would land exactly across a live producer/consumer pair: the model-side
+  renderer *emits* spans into staging that roadmap-tool's `check-adoc-xrefs`
+  *masks* when checking that same tree. Resolution, in two parts. The
+  model-side emitter is a floor, not a fork: everything `SchemaReferencePages`
+  emits through `monospace()` is store-identifier-shaped except the check
+  clauses, so the moved emitter carries only the plus form and fails the build
+  on content `plusFormFits` rejects, dropping the pass-macro machinery
+  entirely; drift-by-divergence collapses to drift-by-omission with an
+  enforcer. The drift check's scanning needs (`maskInert`, `BlockContext`) do
+  move as a copy, and that copy gets the repo's standard enforcer for a fact
+  stated twice: a meta-test asserting the copied member bodies stay
+  byte-identical to `roadmap-tool`'s originals. The full `InertSpans` stays in
+  `roadmap-tool` for its other renderers and checks.
 - `roadmap-tool/pom.xml` drops the `graphitron-model` and `duckdb_jdbc`
   declarations once their consumers are gone. No remaining source line in the
   module touches H2, jOOQ, or DuckDB (verified: zero such imports; DuckDB was
@@ -158,3 +219,8 @@ report.
 - **Replace DuckDB with H2 in the coverage reports**: works, but keeps an SQL
   engine for group-bys over thousands of rows and adds H2 as a new direct
   dependency of the tool.
+- **A small model-adjacent tooling module hosting renderer, drift check, and
+  one shared `InertSpans`**: dissolves the charter tension and the copy seam
+  in one move, but costs a new reactor module and its row in every module
+  enumeration for two classes and a helper; the floor-plus-meta-test
+  resolution above buys the same safety without the module.
