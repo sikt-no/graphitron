@@ -1,7 +1,7 @@
 ---
 id: R742
 title: "The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
