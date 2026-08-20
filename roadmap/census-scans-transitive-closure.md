@@ -208,6 +208,21 @@ The narrower point inside it is still true and is not a reason to revisit: readi
 class buys about 30%, because decompression rather than parsing is the cost. That is an argument for
 this item's width cut, not against it.
 
+**R762 proposes a third option this rejection does not reach, and a Spec pass here should reconcile
+them rather than leaving both standing.** The alternative rejected above keeps almost nothing per
+class, scalar constants only, so it drops class *names* and the rejection above is right that this
+fails completion. R762 keeps every class name and drops only what sits *beneath* one, which this
+rejection's own argument permits: nothing below a class name is ever asked before that name exists.
+Measured, every read of the seven member-level relations pins a class name already written in the
+document, those relations are 97% of the census, and one class's members resolve from the classfile
+in about 0.1 ms.
+
+Two corrections to the paragraph above follow from that, and both are narrow. The 30% figure governs
+the *scan*, where bytes must be inflated whatever is kept; it does not govern the *write*, which is
+the larger cost here (roughly 1.6 s per execution against the 648 ms scan) and which scales with rows
+rather than with bytes inflated. And the two cuts compose rather than competing: this item stops
+opening transitive jars at all, R762 stops storing members from the jars that are opened.
+
 ## One classified list, not two lists
 
 The obvious implementation is to leave `AbstractRewriteMojo.resolveCompileClasspath` whole and add a

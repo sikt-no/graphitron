@@ -139,6 +139,14 @@ entry boundary, which is the ordinary shape rather than an edge case, and
   motivating consumer, which no code performs yet. Deleting it and reinstating it with its first
   real consumer is a legitimate outcome and possibly the better one; the rewrite above is what to
   land if it stays.
+* **Whether `jvm_class_supertype` should be captured, which is the same question from the other
+  end.** That relation has no reader in production either: this view is its only consumer, and the
+  view's comment says the dependency runs that way round, the closure being "the whole reason
+  `jvm_class_supertype` records what it records". So the chain is dead end to end, 8,817 rows written
+  on every capture for a view nothing reads and which could not serve a reader anyway. Deleting the
+  view without settling the relation would leave the capture cost with nothing at all behind it.
+  R762 carries the row counts and treats this as its own half of the same question; settle the two
+  together.
 * **Whether the fixture scale is the actual defect.** A derived relation whose only test runs at a
   scale three orders of magnitude below production is a testing gap, not just a bug. Whatever the
   verdict on the view, decide whether a census-scale pin belongs somewhere for the relations derived

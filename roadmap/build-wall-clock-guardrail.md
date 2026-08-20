@@ -319,6 +319,17 @@ with a validated rewrite. It costs no wall clock today precisely because nothing
 not a slice of this item; it is on this list only so that a later pass measuring the census does not
 rediscover it as a mystery hang.
 
+Pushing the same question one level further did find a write-side lever, filed as R762, and it is
+larger than anything left on this list. Anchored is not the same as shallow: the reads being anchored
+to a written class name is exactly what makes the *depth* of the census optional. Two of the nine
+`jvm_` relations carry the enumerative load at 11,851 rows, the other seven are 405,374 rows and
+97% of the census, and every read of those seven pins a class name that is already in the document.
+One class's members resolve from the classfile in about 0.1 ms, so the depth is a storage choice.
+Against the 8.1 seconds of `jvm_` writes above, and on a measured row-to-time proportionality, that
+is where the census's contribution to build wall clock actually sits. It belongs to R762 and R685
+rather than here, and it wants an end-to-end measurement after the change rather than a projection
+from the proportionality.
+
 ### What this pass leaves for whoever specs the item
 
 The first two are the cheapest things on this list by a wide margin, neither needs the third and
