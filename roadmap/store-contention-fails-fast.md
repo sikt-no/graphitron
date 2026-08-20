@@ -1,7 +1,7 @@
 ---
 id: R706
 title: "A build that meets a held fact store fails fast and says so"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: dev-loop
