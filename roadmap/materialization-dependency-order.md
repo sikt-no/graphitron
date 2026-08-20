@@ -243,6 +243,12 @@ adds none. A scratch store can `CREATE` ordinary tables and views and `INSERT` r
 * a registered cycle failing, with the cycle named;
 * a row-free relation refreshing in exactly today's alphabetical order.
 
+One case sits outside the synthetic tier, recorded at the head of this item: the
+`FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` fixture gains a registration whose view
+reads another registration's target, the shape `intent_resolved_type_binding` will land with, so the
+pipeline gate exercises the sort on real store machinery and fails on the concrete error above
+before the sort exists.
+
 If a fixture reaches for temporary tables, say `LOCAL` explicitly; H2's bare
 `CREATE TEMPORARY TABLE` defaults to `GLOBAL`, which shares rows across attached sessions.
 
