@@ -3853,22 +3853,23 @@ SELECT graph_name, type_name, field_name, argument_name, basis,
                  PARTITION BY arms.graph_name, arms.type_name, arms.field_name,
                               arms.argument_name
                  ORDER BY arms.precedence) AS rung
-          FROM (SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+          FROM (SELECT sc.graph_name, sc.type_name, sc.field_name, sc.argument_name,
                        'NAMED_TYPE_TABLE' AS basis, bt.table_source_name, bt.table_schema,
                        bt.table_name, 0 AS precedence
-                  FROM graphql_argument a
-                  JOIN graphql_field f
-                    ON f.graph_name = a.graph_name AND f.type_name = a.type_name
-                   AND f.field_name = a.field_name
-                  LEFT JOIN graphitron_field_synthesis fs
-                    ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
-                   AND fs.field_name = f.field_name
+                  FROM (SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
+                               COALESCE(
+                                 REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''),
+                                         '!', ''),
+                                 f.named_type) AS named_type
+                          FROM graphql_argument a
+                          JOIN graphql_field f
+                            ON f.graph_name = a.graph_name AND f.type_name = a.type_name
+                           AND f.field_name = a.field_name
+                          LEFT JOIN graphitron_field_synthesis fs
+                            ON fs.graph_name = f.graph_name AND fs.type_name = f.type_name
+                           AND fs.field_name = f.field_name) sc
                   JOIN intent_resolved_type_binding bt
-                    ON bt.graph_name = f.graph_name
-                   AND bt.type_name = COALESCE(
-                         REPLACE(REPLACE(REPLACE(fs.authored_type_sdl, '[', ''), ']', ''),
-                                 '!', ''),
-                         f.named_type)
+                    ON bt.graph_name = sc.graph_name AND bt.type_name = sc.named_type
                    AND bt.candidates = 1
                 UNION ALL
                 SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
@@ -3882,7 +3883,7 @@ SELECT graph_name, type_name, field_name, argument_name, basis,
                     ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
                    AND sp.candidates = 1) arms) picked
  WHERE rung = 1;
-COMMENT ON VIEW intent_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path departs from. The argument-site counterpart of the reading intent_field_column_scope makes at a field site, and a separate relation for the same reason that pair is separate from the captured directives, the resolution being a precedence over two populations rather than a fact either one states. Two rungs, in the order the classifier applies them, first answer wins. The field''s named type''s own binding is the ordinary case, read through graphitron_field_synthesis so a connection field navigates as its element type rather than as its edge wrapper, which is intent_field_column_scope''s own named-type rule and is spelled the same way here on purpose. Below it a @mutation(table:) spelling, which is what answers where the field returns a payload type nothing binds: a delete surface returns a scalar or a status type and its arguments still bind against the table the mutation names. The rungs are a precedence and not a union, because a mutation whose payload type is itself bound has both and the named type is the one the classifier reads; DENSE_RANK over the rungs rather than ROW_NUMBER, so a winning rung keeps every row it answered with and an ambiguity stays visible as rows instead of being resolved by window order. Both rungs demand an unambiguous binding, on intent_field_reference_discovery''s terms: a table this argument''s content binds against is a table a predicate is emitted on, and two candidate tables are two different predicates, so a pair that is not certain is not the pair the classifier would have had in hand. A field whose named type binds nothing and which carries no @mutation therefore has no row here, and that absence is the ordinary case for every argument that is not column-shaped at all. Nothing here says the argument''s content is column-shaped: this relation answers where it would bind if it is, and which arguments carry such content is each consumer''s own question.';
+COMMENT ON VIEW intent_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path departs from. The argument-site counterpart of the reading intent_field_column_scope makes at a field site, and a separate relation for the same reason that pair is separate from the captured directives, the resolution being a precedence over two populations rather than a fact either one states. Two rungs, in the order the classifier applies them, first answer wins. The field''s named type''s own binding is the ordinary case, read through graphitron_field_synthesis so a connection field navigates as its element type rather than as its edge wrapper, which is intent_field_column_scope''s own named-type rule and is spelled the same way here on purpose. Below it a @mutation(table:) spelling, which is what answers where the field returns a payload type nothing binds: a delete surface returns a scalar or a status type and its arguments still bind against the table the mutation names. The rungs are a precedence and not a union, because a mutation whose payload type is itself bound has both and the named type is the one the classifier reads; DENSE_RANK over the rungs rather than ROW_NUMBER, so a winning rung keeps every row it answered with and an ambiguity stays visible as rows instead of being resolved by window order. Both rungs demand an unambiguous binding, on intent_field_reference_discovery''s terms: a table this argument''s content binds against is a table a predicate is emitted on, and two candidate tables are two different predicates, so a pair that is not certain is not the pair the classifier would have had in hand. A field whose named type binds nothing and which carries no @mutation therefore has no row here, and that absence is the ordinary case for every argument that is not column-shaped at all. Nothing here says the argument''s content is column-shaped: this relation answers where it would bind if it is, and which arguments carry such content is each consumer''s own question. The upper rung''s inner derived table is load-bearing rather than a formatting choice, and collapsing it back into one join is a two-orders-of-magnitude regression rather than a simplification. What that rung resolves the binding against is a written expression and not a column, the author''s own type spelling with its wrappers stripped where a macro rewrote the field''s type; joining a derived relation on an expression instead of on a column is what makes H2 evaluate that relation once per driving row rather than once, the binding is a union under a window function so once per row is not cheap, and this rung drives from every argument in the graph. Projecting the expression as a column first and joining the binding on that column is the same rows for a fraction of the work. Two other places in this schema strip the same wrappers and do join the binding the direct way; both are cheap only because a chain terminus and a field''s own scope drive orders of magnitude fewer rows than every argument does, which makes them a hazard to be aware of rather than a shape to copy here.';
 COMMENT ON COLUMN intent_argument_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_argument on both rungs';
 COMMENT ON COLUMN intent_argument_scope_table.type_name IS 'the type owning the field the argument sits on';
 COMMENT ON COLUMN intent_argument_scope_table.field_name IS 'the field the argument sits on';

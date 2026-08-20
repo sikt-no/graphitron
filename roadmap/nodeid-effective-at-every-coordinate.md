@@ -290,14 +290,60 @@ where the first build-time reader lands, so that is when the cost arrives whethe
 registered, and the registration is reverted only so trunk stays fast in the meantime.
 
 **Making the instruction population cheap is therefore a prerequisite of stage 2c rather than a
-follow-on.** The static metric is not what to optimise against, and the reason is in the stack: the
-cost is not breadth of naming, it is that the argument-site and field-site reference-target views are
-recursive CTEs, which H2 evaluates whole and cannot push a predicate into, and `slot_table` drives
-them with a correlated `MAX(position)` subquery per row. Two readings follow. The static metric
-counts namings and is blind to a recursive relation being unprunable, so a low number there is not
-evidence of a cheap read; and the reduction wanted here is to stop naming the recursive views under
-a correlated predicate, not to reduce how often they are named. What replaces it is the next
-increment's question rather than something to guess at here.
+follow-on.** The static metric is not what to optimise against: it counts namings, and a naming's
+cost is not a property of how many there are.
+
+**Measured against the sakila schema, and the first diagnosis was wrong.** Reading the thread dump of
+a killed build was guesswork, and what it guessed was that the recursive reference-target views were
+the term, unprunable because H2 evaluates a recursive CTE whole. A probe that captures the sakila
+example's own 4082-line schema against the sakila catalog and times each relation in isolation says
+otherwise:
+
+[cols="1,1,1,1",options="header"]
+|===
+| relation | rows | before | after
+
+| `intent_field_reference_step_target` | 62 | 0.08 s | 0.07 s
+| `intent_argument_scope_table` | 157 | 19.9 s | 0.13 s
+| `intent_argument_reference_step_target` | 3 | 19.2 s | 0.09 s
+| `intent_node_id_instruction` | 69 | 79.1 s | 0.40 s
+|===
+
+The field-site recursive walk is free. The argument-site one costs what its seed costs, and its seed
+is `intent_argument_scope_table`, which this stage added. The instruction population costs four
+times that, because four of its arms name the scope relation. Nothing in the measurement is about
+recursion, and no correlated `MAX(position)` subquery appears in it.
+
+What the 19.9 seconds is: the scope relation's upper rung resolves `intent_resolved_type_binding`
+against the field's authored named type, which is a written expression rather than a column, being
+the author's type spelling with its wrappers stripped where a macro rewrote it. **Joining a derived
+relation on an expression rather than on a column makes H2 evaluate that relation once per driving
+row instead of once.** The binding is a union under a window function, so once per row costs about
+20 ms, and this rung drives from every argument in the graph. Projecting the expression as a column
+in an inner derived table and joining the binding on that column is the same 147 rows for 0.10 s, a
+factor of about 200. That is the fix, and it is four lines.
+
+Three controls rule the alternatives out, each measured on the same fixture. Joining the binding on
+`f.named_type` directly, wrappers and macro ignored, is 0.08 s, which locates the cost in the
+expression and not in the population size. Materializing the binding in a `WITH` clause first is
+still 19.6 s, H2 inlining a non-recursive `WITH`, so this is not view inlining and no relation
+extracted for tidiness would have helped. And routing the expression through `graphql_type` before
+joining the binding on its column, which is how the two other places in this schema that strip the
+same wrappers happen to spell it, is 19.6 s and no fix at all.
+
+That last control is the finding worth keeping past this item. Those two sites,
+`intent_routine_return_binding` and `intent_field_column_scope`'s named-type rule, carry the same
+hazard and are cheap only because a chain terminus and a field's own scope drive orders of magnitude
+fewer rows than every argument does. Their spelling is safe by accident of population size, not by
+construction, and it is the third copy of one wrapper-stripping rule that a relation should state
+once. Filed as its own Backlog item rather than widened into this one.
+
+Two consequences for the stages below. The instruction population evaluates in 0.40 s against a real
+schema, so stage 2c's first build-time reader arrives at a relation that is already cheap, and
+nothing here needs materializing: the registration stays reverted because it is unnecessary now, not
+because it is deferred. And the static metric keeps its stated standing, which is lower than this
+item gave it a paragraph ago: 2528 namings of a relation that answers in 0.4 s is not a problem, and
+83 namings of one that answered in 20 s was. The metric ranks breadth. Cost is measured.
 
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
