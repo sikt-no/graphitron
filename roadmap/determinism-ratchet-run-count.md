@@ -435,7 +435,11 @@ The profile afterwards is healthy rather than merely smaller: H2 falls from 97% 
 four store reads from 88% to about 48%, and the largest single remaining item is the store's own DDL
 boot at 9%. No dominant pathology is left.
 
-**Route B: flatten the six-arm union into one pass.** The defect view's five `binding_leaf`-driven
+**Route B: flatten the six-arm union into one pass.** (Re-priced after the reductions: the five
+`binding_leaf` arms now contribute 210 of the defect view's 765 instantiations, so flattening saves
+4 x 42 = 168, or 22%. The percentage barely moved but the base did, and 22% of a store read that is
+no longer the dominant cost of a four-second run is a simplification's worth of value rather than a
+performance item's. Still worth doing on its own merits, and no longer worth sequencing for speed.) The defect view's five `binding_leaf`-driven
 arms differ only in predicate and verdict literal, so one pass with a `CASE` verdict and a left join
 to the segment relation would collapse them. It changes no read semantics and needs no freshness
 reasoning, which makes it tempting. The decomposition table prices it: at most 4 × 150 = 600 of 2066
@@ -626,6 +630,19 @@ already uses:
   `everyRelationLeadsWithItsPartitionDimension` applies and requires checking that each registered
   view's rows are uniquely keyed.
 
+### What landed, against what was planned
+
+The run count is the one place the plan and the outcome differ, and the difference is deliberate.
+Deliverable 4 takes the class to three runs by sharing one canonical tree; deliverable 5 adds the
+clean-removal case, which needs a run of its own. Together they leave the count at four and take the
+clauses covered from two to three, which is the trade the item argued for when it said the shared
+tree is what makes the third case affordable. The class is 18.13s rather than the 15.46s it would be
+without the new case, against 229.0s on trunk, and the javadoc no longer claims coverage the class
+does not have.
+
+Deliverables 6 and 7 were both re-measured rather than done, which is what this item asked of them.
+Their sections above carry the numbers and the reasoning.
+
 ### Deliverables, in the order the numbers argue for
 
 Steps 1 and 2 are the paving; 3 onward are what the paving makes cheap. The simplification table near
@@ -682,6 +699,18 @@ Order it after the reductions rather than before: 4.5s is 19% of a 21.0s run and
 of a 5.2s one, and the merged query is the kind of change whose value should be re-measured against
 the shape it will actually ship into.
 
+**Re-measured after the reductions landed, and the answer is not to do it.** The same probe, a
+redundant third read of the view added to `detect`, now costs **0.49s per run** against the 8.1s it
+cost before: the class goes from 18.13s to 20.10s over four runs. The view is 284 instantiations now
+rather than the 518 it reached through `intent_argmapping_pair`, and the run it sits in is about four
+seconds rather than twenty-one. So merging the two reads would buy roughly half a second per run, and
+would pay for it with a wide intermediate row that two classes in two files pick apart in Java. That
+is a worse trade than the duplicate read, and the duplicate stays. The measurement is the deliverable
+here, not the merge.
+
+The `Files.mismatch` half of the same deliverable did land, on the grounds the item gives for it: it
+is a failure-message change and not a performance one.
+
 ### What the changes come to together
 
 Every row measured on one 4 vCPU sandbox. "Class green" means this class's own two tests passed;
@@ -697,6 +726,7 @@ number is quotable as landed.
 | R733 + the two reductions | 4 | **20.66s** | 5.2s | **red: 13 classes** |
 | all three | 3 | about 16s, projected | 5.2s | not run |
 | landed: the two registrations, on trunk | 4 | **15.46s** | 3.9s | **green** |
+| landed: plus the clean-removal case | 4 | **18.13s** | 4.5s | **green** |
 
 The landed row is the mechanism and both registrations as they shipped, with the fixture work in the
 same step, measured on a full green `mvn install -Plocal-db`. It beats the prototype's 20.66s because
