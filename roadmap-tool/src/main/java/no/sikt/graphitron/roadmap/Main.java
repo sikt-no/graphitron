@@ -119,6 +119,11 @@ public final class Main {
             if (rc != 0) System.exit(rc);
             return;
         }
+        if ("report-inline-multiplicity".equals(mode)) {
+            int rc = InlineMultiplicityCheck.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
         if ("check-module-enumeration".equals(mode)) {
             int rc = ModuleEnumerationCheck.run(sliceArgs(args, 1));
             if (rc != 0) System.exit(rc);

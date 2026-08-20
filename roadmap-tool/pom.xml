@@ -155,6 +155,22 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <!-- Report how many relation instantiations one read of each derived view
+                             expands to, computed from the DDL alone. H2 inlines a view wherever it
+                             is named and eliminates no common subexpression, so the cost of a
+                             deeply-named relation is invisible at every call site and visible only
+                             here. Reports rather than gates: the metric over-approximates, counting
+                             textual references without knowing which arms a predicate prunes, so a
+                             ceiling tight enough to be useful would also be wrong. A materialized
+                             relation drops out by construction, its canonical name being a table. -->
+                        <id>report-inline-multiplicity</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>report-inline-multiplicity ${project.basedir}/..</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <!-- Fail the build if a document enumerating the reactor's modules has fallen
                              behind the root pom's <modules> block. Adding a module changes nothing any
                              build step reads, so both CLAUDE.md and the module reference page silently
