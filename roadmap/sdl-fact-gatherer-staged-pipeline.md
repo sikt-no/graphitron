@@ -371,6 +371,54 @@ Each is the requirement acting as the specification; none ships unnoticed.
   header rewrite, and R714's census table landing in the architecture docs rather than surviving
   only in a discarded item.
 
+## Implementation finding: stage 4's availability cliff has no retention
+
+Landed so far: the gate deletion (the conflict relation total, per-consumer populations, the two
+`walk_` membership grains and `ClaimDomainRows` deleted, `WalkReach` dissolved into
+`ClassifiedRun`), stage 3 as the gatherer's own stage with the `ASSEMBLY` verdict moved to the
+pre-synthesis registry, and stage 5 as a rooted traversal replacing `ReachabilityRows`. Stage 4 is
+blocked on a decision the spec's stage-4 section cannot make, because its mitigation turns out to be
+structurally unavailable.
+
+The problem is the FK web inside the `graphql_` family. `graphql_type_declaration` references
+`graphql_type`, and `graphql_field` references both `graphql_type` and the declaration site it hangs
+off; the element relations are the same shape. So the composed half and the written half cannot sit
+on two clocks:
+
+* Retaining the previous composed generation while the sites are rewritten makes the *delete* of a
+  moved site row violate a retained `graphql_field` row's foreign key.
+* Retaining `graphql_type` while `graphql_type_declaration` is rewritten leaves a newly declared
+  type's site row with no parent.
+
+Retention therefore needs those foreign keys dropped, which is the guarantee the fact model prizes
+most in its largest family. Without retention, the composed relations are empty whenever assembly
+refuses, and that is the one thing the model's own law forbids: a single dangling type reference
+mid-edit would blank `graphql_field` and the whole `graphitron_` decode family, which is exactly the
+"one freshly broken file blanks every fact about every file beside it" failure `SdlVerdicts` names.
+This is not hypothetical for the editor path: the dev loop's catalog refresh already captures on a
+refused read *specifically* so the author keeps answers while the buffer is broken.
+
+Three ways out, for the owner to choose between:
+
+1. **Composed half on its own clock, no cross-clock foreign keys.** Keeps the producer change and
+   the editor's answers; costs the structural FK guarantee across the `graphql_` family, with the
+   `walk_` family's cross-clock precedent as the argument that it is a known shape rather than a new
+   one.
+2. **Keep the coordinate-keyed relations written.** The per-site union capture already computes is
+   the composed set on every schema that assembles, and a duplicated coordinate's verdict is already
+   a recorded `ASSEMBLY` fact, so what stage 4 buys is already had while what it costs is the census
+   behind the cliff. Under this option R714's absorption needs revisiting: its deliverable becomes
+   the verdict correction (landed) plus whatever composition genuinely adds beyond a view.
+3. **One clock for the whole family.** Assembly refuses, nothing in `graphql_` is rewritten, and the
+   verdict relations say why. Rejected here rather than offered: it contradicts stage 1's own claim
+   that an assembly refusal cannot cost the per-site declaration facts.
+
+Still owed with stage 4 whichever way it goes: the introspection-population decision, the ordinal
+stability fixtures, the duplicate quarantine's producer, the deletion of capture's extension merge
+and first-wins claim path, and R714's census table landing in the architecture docs. The
+composed-versus-written split as implemented is written into `fact-model.adoc` already, stating the
+split the code actually has rather than the one stage 4 would introduce.
+
 ## Provenance
 
 Filed 2026-08-20 from the owner's direction: the `walk_` family is going away as it stands, the
