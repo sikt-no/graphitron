@@ -1,7 +1,7 @@
 ---
 id: R759
 title: "No stored column spells a file as a URI, so no store boot compiles Java"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: tooling
