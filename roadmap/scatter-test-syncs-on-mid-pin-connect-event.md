@@ -56,17 +56,25 @@ closed, and never reused. Only the test's synchronization point is wrong.
 
 ## Reproduction
 
-Sleeping for 400ms inside the fake's connect-phase `prepareStatement` for one tenant widens the
-gap and fails the interrupt test on every run, with the event list showing the worker's own
-`abort:A` landing before the `clear()`:
+Sleep 400ms inside the fake connection's connect-phase `prepareStatement` for tenant A, placed
+*after* the `events.add` rather than before it. Placement is what makes the probe deterministic:
+recording the event first releases the test's poll immediately, so the interrupt lands while the
+worker is still parked inside `prepareStatement`, with its whole post-connect path (hook `execute`,
+`DSLContext` build, provider swap, `computeIfAbsent` return, post-check) still ahead of it. The
+interrupt test then fails on every run, and the surviving assertion shows the worker's own abort
+having consumed the entry before `releaseAll` could:
 
 ```
-DEBUG before clear: [getConnection:A, getConnection:B, connect:B, connect:A, abort:A]
-DEBUG after releaseAll: []
+releaseAll produced ["abort:B"], could not find ["abort:A"]
 ```
+
+`abort:A` is missing because worker A self-aborted before the `events.clear()`; B, which passed its
+post-check before the interrupt, is still in the map, so `releaseAll` aborts it normally. One of the
+two expected aborts survives, which is the shape the CI failure reported.
 
 The delay is a diagnostic, not a proposed test fixture: it is how the interleaving was pinned
-down, and it is the check the implementer re-runs to confirm the fix closes it.
+down, and it is the check the implementer re-runs to confirm the fix closes it. With the probe
+still active, the latch below turns the every-run failure into a pass.
 
 ---
 
@@ -130,6 +138,11 @@ them assert the same contract on a sound clock rather than a lucky one. Verifica
 reproduction above: with the artificial mount delay injected, both tests fail before the change
 and pass after it. Then the class runs clean without the delay.
 
+The Spec review ran that gate rather than reasoning about it. Under the probe both tests fail
+every run on the missing `abort:A`; with the latches applied each passes three runs out of three
+with the probe still active; and the class is 9/9 green with the probe removed. The implementer
+should reproduce this rather than trust it, but the plan is known to work as written.
+
 A guard that fails any test polling `events` as a synchronization primitive was considered and is
 not worth its weight at two call sites, both of which this item removes.
 
@@ -148,7 +161,17 @@ not worth its weight at two call sites, both of which this item removes.
 
 * Any change to `ConnectionRuntimeClassGenerator` or the emitted carrier. The runtime is correct
   as it stands and this item must not be read as licence to touch it.
-* The other seven tests in the class. `straggler_releaseAllAbortsItsConnection_...` reaches the
-  same quarantine state through the join deadline rather than an event poll, and its workers are
-  provably inside the per-tenant body long before the deadline fires.
+* The other seven tests in the class, with one honest caveat recorded below.
+* The `straggler_releaseAllAbortsItsConnection_...` margin. That test reaches the same quarantine
+  state through the join deadline rather than an event poll, and it carries the *same* defect this
+  item fixes, protected only by a wider margin: raising the probe above to 900ms so the pin outlasts
+  the 800ms deadline fails it with the identical missing-`abort:A` shape. What protects it in
+  practice is 800ms of in-memory fake JDBC with jOOQ's static init already warmed in `@BeforeAll`,
+  which is a timing margin and not the control-flow proof the latch gives the two tests above. It
+  stays out of scope because no equivalent fix is available here: when the deadline fires the
+  dispatch thread is blocked inside `scatter`, so the test has nowhere to await a latch from, and
+  making it deterministic means restructuring what the test drives rather than how it synchronizes.
+  Left as is, deliberately and with the reason written down; worth its own item if CI ever shows it.
+  `scatter_joinDeadline_...` shares the margin but not the exposure, since it asserts on the
+  `TimedOut` outcome and never on abort events.
 * The `execution`-tier and pipeline coverage of fan-out. This is a unit-tier synchronization fix.
