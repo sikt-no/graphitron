@@ -187,8 +187,8 @@ directive rather than being retrofitted onto a Java sealed hierarchy a release l
 by hand.** The lift is a positional-subset check between adjacent hops, and computing the lifted tuple
 walks the chain back from the terminal hop. Where that has no safe recursive H2 view form it lands as
 a materialized relation, which `intent_input_occurrence_path` and `intent_type_domain` both already do
-and both state in their own comments. What has changed since those two is that R742, now In Progress, mints a
-registry for it: `meta_materialize`, a constrained table carrying one row per registration, the source
+and both state in their own comments. What has changed since those two is that R742, now In Review with the
+registry landed, mints one for it: `meta_materialize`, a constrained table carrying one row per registration, the source
 view under a `_live` suffix and the target table under the canonical name every existing reader already
 uses, plus a required `reason` that is where the materialization doctrine lives. One materializer in
 `graphitron-model` empties each target and refills it from its source on the capture cadence. Anything
@@ -201,15 +201,21 @@ says so if it arrives.
 ### The derivation depth is a design constraint, not an afterthought
 
 R742 measured the precedent this item follows and the number is the reason to read it first. One read
-of `intent_argmapping_projection_defect` expands to **2066 relation instantiations** and 24.5 seconds,
-because H2 inlines a view wherever it is named and does no common-subexpression elimination, so
-multiplicities compound down a tree eight levels deep over seventeen distinct views. Two of its
-findings are instructive here, and R742's own decomposition says which of the two binds harder.
+of `intent_argmapping_projection_defect` expanded to **2066 relation instantiations** and 24.5
+seconds, because H2 inlines a view wherever it is named and does no common-subexpression elimination,
+so multiplicities compound down a tree eight levels deep over seventeen distinct views. Those are
+R742's figures from before its own reductions landed, and it has since taken that read to 0.72s by
+materializing two of the relations underneath it, so the absolute numbers below are the diagnosis and
+not the tree's current cost. What carries over is the multiplier, which is a property of the shape
+and survives any reduction under it. Two of R742's findings are instructive here, and its own
+decomposition says which of the two binds harder.
 
 **A deep relation named more than once dominates, and this item names one twice by nature.** R742
 prices each direct child of the defect view as `times named x (subtree + 1)`, and the largest single
 contribution is **1038** from just two references to `intent_argmapping_key_column_candidate`, whose
-subtree is 518. Two namings, half the read. This item joins `intent_resolved_node_key_column` twice by
+subtree was 518 then and is 284 now that `intent_argmapping_pair` is materialized underneath it. Two
+namings, half the read, and still the dominant term after the reduction: the second naming is what
+costs, whatever the subtree shrinks to. This item joins `intent_resolved_node_key_column` twice by
 nature, once for the key columns and once for the arity count, which is exactly that shape. It is also
 windowed, carrying a `DENSE_RANK() OVER` for its tier precedence, so a window sees its whole partition
 whatever predicate a reader applies outside and no rewrite restores pushdown. The remedy the fact
@@ -681,6 +687,18 @@ a null payload and no committed row.
   weaker, so "tell the author" and "fail the build" are one act. The mitigation available is the
   message: it names the column, the type it binds as, and the type the slot declares, so the fix is
   mechanical wherever it fires.
+* **Where the type gate cannot fire, that same consumer changes behaviour silently.** The refusal
+  above needs a disagreement to report, and a node type keyed on a text or UUID column agrees with
+  the `String` slot a hand decode was written for. That consumer draws nothing: their parameter starts
+  receiving the decoded key where it used to receive base64, and their own decode call fails at
+  runtime instead. The encode direction is the mirror image, a hand-encoded `String` read being
+  encoded a second time. Neither is distinguishable by type, because "a key value that happens to be
+  a string" and "a node id" are one Java type, which is the ambiguity this whole item exists to take
+  out of the type system and put in the directive. So there is no gate to add here and the mitigation
+  is the changelog entry, which has to name this case beside the refusing one: the migration is to
+  delete the hand decode or encode, and only a consumer whose key column is numeric gets told so by
+  the build. Stating it is what keeps the item's own promise honest, a numeric key column being where
+  the reporter's case sits and not the whole population.
 * **The site-4b relaxation widens what classifies.** Schemas that fail the build today start
   generating, which is the point, but a schema whose author wrote a junction path expecting the
   rejection now gets an `EXISTS` over a fan-out. R723 is the item that says "this path multiplies" out
@@ -718,6 +736,15 @@ a null payload and no committed row.
   Constraints list gains the two preconditions at a single-valued slot, and its `argMapping` bullet
   loses the claim that binding a `@nodeId` leaf without opening it "sends the encoded id to the
   database verbatim", which the arity rule makes false for a single-key node type.
+* `docs/manual/reference/directives/routine.adoc` states that same requirement twice and is the page
+  `nodeId.adoc` cross-references as documenting the rule in full, so both statements move with it.
+  The `[[node-id-key-projection]]` section's first build error reads "Binding a `@nodeId` without
+  opening it. `pOrganisasjonskode: input.organisasjonId` would hand the routine the base64 string";
+  the Constraints bullet reads "Binding the leaf itself would send the encoded node id to the
+  database verbatim". Both stay true for a composite key and become false at arity 1, so this is the
+  same edit as `BARE_NODE_ID`'s text and lands in the same stage. Missing it would leave the
+  mechanism's canonical page asserting a rejection the build no longer makes, with `nodeId.adoc`
+  pointing the reader at it.
 * `docs/manual/how-to/multi-hop-nodeid-filter.adoc` gains the junction shape as a worked example,
   loses its `=== identity-carrying FKs` rejection section, and loses the false single-hop claim.
 * `docs/manual/reference/directives/error.adoc` gains the `@nodeId` extra-field case.
@@ -781,7 +808,7 @@ stage 3 expresses it there.
   to one
   directive, ahead of R682 rather than against it. Worth telling that item's author, because the
   `@nodeId` decode and encode facts are one fewer thing its planner rewrite has to source.
-* **R742** (`determinism-ratchet-run-count`, In Progress) is why this item states its own derivation depth.
+* **R742** (`determinism-ratchet-run-count`, In Review) is why this item states its own derivation depth.
   It measured the precedent this plan follows, `intent_argmapping_projection_defect`, at 2066 relation
   instantiations and 24.5 seconds for one read, and diagnosed the cause as H2 inlining views with no
   common-subexpression elimination over a tree eight levels deep across seventeen views. Two of its
