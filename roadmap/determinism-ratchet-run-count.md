@@ -20,16 +20,18 @@ four times, and each of those runs costs 57 seconds.
 Both halves of that sentence are wrong and this item fixes both.
 
 * **Lever one, what a run costs.** A run is 97% the fact store re-evaluating its own derived
-  relations. The deepest of them expands to 2149 relation instantiations per read, because H2 inlines
+  relations. The deepest of them expands to 2066 relation instantiations per read, because H2 inlines
   every view reference and eliminates no common subexpression. Reducing two relations takes the
   hottest read from 24.5s to 0.72s.
 * **Lever two, how many runs there are.** The contract the class guards needs two runs at most, and
   the class performs four. The fourth buys a populated directory the first method already produced.
 
-They are independent and they compound. **Measured together: 229.0s to 20.66s**, on this class's own
-two tests. Read the per-row reactor state in the table below before quoting that figure: the run that
-produced it left thirteen `graphitron-model` classes failing, because the fixture work this item
-specs was not part of the prototype that measured it.
+They are independent and they compound, but no single run has measured both. **Lever one alone takes
+the class from 229.0s to 20.66s**, at four runs, with R733's two changes underneath it. Lever two is
+absent from that figure; all three together project to about 16s and nobody has run that
+configuration. And the run that produced 20.66s left thirteen `graphitron-model` classes failing,
+because the fixture work this item specs was not part of the prototype that measured it. The summary
+table below carries the per-row reactor state; quote from there rather than from this paragraph.
 
 The generator's cost is not this test's problem alone, which is why lever one matters more than the
 arithmetic here suggests: the same reads run in every consumer's build, six times per reactor build,
@@ -54,8 +56,9 @@ front of you before the evidence, because it changes what you are being asked to
 derive-on-read, right as a default, is wrong for a relation that a deep derivation names dozens of
 times, and that materialising on the capture cadence is the mechanism that fixes it. What they do not
 settle is how far that goes: how many relations end up registered, whether ordering becomes load
-bearing soon or never, whether any refresh ever wants to be incremental or partitioned, or whether the
-doctrine eventually swallows `intent_type_domain`'s hand-written Java derivation too. Waiting until
+bearing soon or never, whether a refresh ever wants to be incremental rather than a full re-derive of
+the graph's partition, or whether the doctrine eventually swallows the four hand-written Java
+derivations too. Waiting until
 those are known means either shipping nothing or shipping two bespoke reductions and discovering the
 mechanism later, from a worse position.
 
@@ -67,8 +70,7 @@ safe now, and cheap to revisit".
 
 | Simplified here | Correct today because | Revisited by |
 |---|---|---|
-| `meta_materialize` has two columns and no order | neither registered view is in the other's dependency closure; both closures are base tables only | R746, strictly additive |
-| Refresh empties and refills the whole relation | the view spans every graph, so no `WHERE` is needed and no sibling graph is disturbed | nothing yet; trigger is a store holding enough graphs for the re-derivation to show |
+| `meta_materialize` records no ordering | neither registered view is in the other's dependency closure; both closures are base tables only | R746, strictly additive |
 | Two relations registered | they are the two the profile named; the rest is guesswork until measured | deliverable 3, the multiplicity check |
 | The multiplicity check reports, does not gate | the ceiling is unknown and a wrong one is worse than none | itself, once a few registrations give the ceiling a basis |
 | `intent_type_domain` stays outside the mechanism | it has no view for a registry to point at, so including it is a rewrite rather than a registration | open question below |
@@ -76,10 +78,11 @@ safe now, and cheap to revisit".
 | Four generator runs become three, not two | two needs a production seam whose value drops once a run is cheap | the fork section below |
 
 **What makes it a safe step rather than a bet.** The mechanism lands with zero rows registered, so
-step one changes no behaviour and can be reviewed on its design alone. Views keep their names, so no
-reader is touched. A target's rows equal its view's rows by construction and a gate pins it, so no
-answer changes anywhere. And every simplification in the table is additive to undo: ordering adds a
-relation, a partitioned refresh is a per-registration property, more relations are more rows.
+step one changes no behaviour and can be reviewed on its design alone. No reader is edited, because
+the canonical name a reader already uses is the one the target takes. A target's rows equal its
+view's rows by construction and a gate pins it, so no answer changes anywhere. And every
+simplification in the table is additive to undo: ordering adds a relation, more relations are more
+rows.
 
 **Two things are not cheap to reverse, and they are the parts to review hardest.** The fixture's
 derivation boundary changes the shape of thirteen test classes, and the doctrine paragraphs change
@@ -108,7 +111,7 @@ Two test classes cover these, at two different breadths:
 | Class | Tier | Schema | Tests | Cost | Clauses covered |
 |---|---|---|---|---|---|
 | `IdempotentWriterTest` | unit | trivial two-type SDL | 6 | 4.3s | all three, as writer mechanics |
-| `GeneratorDeterminismTest` | cross-cutting | the full fixture, 4024 lines, 215 type definitions | 2 | 229.0s | determinism, minimal-change writes |
+| `GeneratorDeterminismTest` | cross-cutting | the full fixture, 4082 lines, 215 type definitions | 2 | 229.0s | determinism, minimal-change writes |
 
 The division is sound and each class says so in its own javadoc: the writer's mechanics do not
 depend on emitter breadth, so they are pinned cheaply on a two-type SDL, while the cross-cutting
@@ -125,6 +128,11 @@ third case (which the run-count reduction below makes affordable, since a clean-
 populated tree and a re-run, and this item produces a shared populated tree anyway), or correct the
 javadoc to claim the two clauses it holds. What is not defensible is leaving a javadoc that asserts
 coverage the class does not have, since the next reader takes it at its word.
+
+The recommendation is to add the case. Once the run-count work has produced one canonical populated
+tree, a clean-removal case is that tree plus a single run over a schema with a type removed, which by
+then costs about five seconds; and a clause pinned only against a two-type SDL, where an orphan sweep
+has almost nothing to sweep and no chance to sweep the wrong thing, is the weakest of the three.
 
 ## Lever one: what a run costs
 
@@ -166,7 +174,7 @@ percent.
 | `ArgmappingProjectionDefects.unemittableProjections` | 18.6% | `intent_resolved_node_key_projection` |
 | `ResolvedKeyProjections.read` | 18.6% | `intent_resolved_node_key_projection`, again |
 | `StoreNodeTables.bindings` | 12.6% | `intent_resolved_node_type_id` joined to `intent_resolved_type_binding` |
-| `GraphitronModelStore.create` | 1.8% | the store's own DDL, 140 tables and 56 views per run |
+| `GraphitronModelStore.create` | 1.8% | the store's own DDL, 140 tables and 59 views per run |
 | javapoet emission | 0.6% | |
 | schema parse | 0.4% | |
 | everything else | under 0.4% each | |
@@ -177,11 +185,12 @@ register. Everything below is therefore about the four store reads.
 
 ### Why those four reads are slow
 
-H2 inlines a view wherever it is named and performs no common-subexpression elimination. The
-`intent_` stratum is twenty-two views deep, so multiplicities compound down the tree: a view named
-four times is evaluated far more than four times.
+H2 inlines a view wherever it is named and performs no common-subexpression elimination, so
+multiplicities compound down a tree: a view named four times is evaluated far more than four times.
+`intent_argmapping_projection_defect` nests views eight levels deep and reaches seventeen distinct
+views, which is enough for the compounding to run away.
 
-Reading `intent_argmapping_projection_defect` once expands to **2149 relation instantiations**.
+Reading it once expands to **2066 relation instantiations**.
 Inside that single query `intent_argmapping_pair` appears **55 times** and `intent_spelled_table`
 **39 times**. It scans about 2.57 million rows to return a handful of defects.
 
@@ -219,19 +228,22 @@ It ranked the two relations worth reducing before any of them were measured.
 | `intent_bound_table` | 8 |
 | `intent_argmapping_binding_leaf` | 7 |
 
-And where the 2149 come from, which prices what a rewrite could buy:
+And where the 2066 come from, which prices what a rewrite could buy:
 
 | Direct child of the defect view | Times named | Subtree size | Contribution |
 |---|---|---|---|
-| `intent_argmapping_key_column_candidate` | 2 | 518 | 1036 |
-| `intent_argmapping_binding_leaf` | 5 | 149 | 745 |
-| `intent_argmapping_bound_parameter_type` | 1 | 157 | 157 |
-| `intent_argmapping_pair` | 6 | 18 | 108 |
-| `diagnostic` | 1 | 42 | 42 |
-| `intent_authored_claim_conflict` | 1 | 34 | 34 |
+| `intent_argmapping_key_column_candidate` | 2 | 518 | 1038 |
+| `intent_argmapping_binding_leaf` | 5 | 149 | 750 |
+| `intent_argmapping_bound_parameter_type` | 1 | 157 | 158 |
+| `intent_argmapping_pair` | 6 | 18 | 114 |
 
 The five and six are the view's six `UNION ALL` arms, each re-joining the same driving relations with
 a different `WHERE` and a different verdict literal.
+
+The metric is a textual count over `CREATE VIEW` bodies, so it must strip `--` line comments as well
+as `COMMENT ON` statements before counting; a first pass that stripped only the latter attributed the
+schema's prose section headers to the relation whose block preceded them, inflating this total by 83
+and inventing two direct children. The check that lands should carry that as a test.
 
 **That metric should become a build gate.** It is the answer to the "every invariant has an enforcer"
 gap R733 names for the derived-read rules: a `roadmap-tool` check in the family of
@@ -244,37 +256,77 @@ rather than a tight one.
 
 ### Two routes, and the trade is not close
 
-**Route A: a registered materialization mechanism, and two relations registered into it.** The view
-stays exactly as it is, keeping its name and its rule. What is added is a registry of views that
-should be materialized after the crawl, and one mechanism that reads the registry and does it.
+**Route A: a registered materialization mechanism, and two relations registered into it.**
 
-* **The registry is `meta_materialize (view_name, table_name)`**, authored rows in a `meta_` view,
-  which is how this schema already describes itself: `meta_family`, `meta_prefixless_relation` and
-  `meta_relation_family` are all `VALUES` views, "authored as constant rows stated as views, so the
-  description is versioned with the DDL it describes and can never be refreshed apart from it". Two
-  columns and nothing else.
-* **The materializer lives in `graphitron-model`**, the module whose DDL declares the relations. It
-  iterates `meta_materialize` and, per row, empties the target and refills it from the view:
-  `DELETE FROM <table_name>` then `INSERT INTO <table_name> SELECT * FROM <view_name>`. It is called
-  by the generator's capture pass, the dev loop, the language server, the MCP server, and the seeded
-  test fixture. One entry point, so no caller invents its own behaviour and none holds a relation
-  list a later registration could invalidate.
+A registration produces **three relations**, and stating them as DDL settles the question everything
+else in this item hangs off. Taking `intent_argmapping_pair`:
+
+```sql
+-- Before: one view, named from eleven FROM/JOIN sites in other view bodies.
+CREATE VIEW intent_argmapping_pair (graph_name, site, ...) AS SELECT ... ;
+
+-- After: the rule keeps its text verbatim and gives up the canonical name.
+CREATE VIEW intent_argmapping_pair_live (graph_name, site, ...) AS SELECT ... ;
+-- The canonical name becomes a table of the same shape. Every existing reader now hits this.
+CREATE TABLE intent_argmapping_pair (graph_name VARCHAR NOT NULL, site VARCHAR NOT NULL, ...);
+-- And one authored row wires them together.
+--   meta_materialize: ('intent_argmapping_pair_live', 'intent_argmapping_pair', '<reason>')
+```
+
+**The canonical name moving to the table is the whole mechanism, not an implementation detail.** The
+cost being attacked is inline expansion inside *other view bodies*: `intent_argmapping_pair` is named
+from eleven `FROM`/`JOIN` sites in the DDL and from no Java at all. Populating a table under a
+different name would leave every one of those bodies naming the view and would buy nothing. Readers
+are untouched precisely because the name they already use is the one the target takes, and the rule
+is still stated exactly once, in a view, under a name that says what it is.
+
+This is also why `ArgmappingPairTest` failed in the prototype. It reads `INTENT_ARGMAPPING_PAIR`
+directly, which is now a table, which nothing had populated. Under the alternative reading, where the
+view kept the canonical name and consumers were repointed, that test would read the untouched view
+and could not fail. The observed failure is the evidence for this shape.
+
+* **The registry is `meta_materialize (view_name, table_name, reason)`**, authored rows in a `meta_`
+  view. `meta_family` and `meta_prefixless_relation` are `VALUES` views of exactly this kind, and
+  `meta_prefixless_relation` carries a `reason` column for the same purpose: the doctrine below moves
+  "why this is not simply a view" out of a table comment and into a registration, so the registration
+  has to be able to say it. `meta_relation_family` beside them is not a `VALUES` view but the census
+  that closes those rows against `INFORMATION_SCHEMA`, which is the shape this registry's gates take.
+* **The materializer lives in `graphitron-model`.** That is forced rather than preferred:
+  `SeededStore` is in `graphitron-model`'s test sources and cannot reach `graphitron`, where the
+  existing derivation writers live, and the fixture has to call the same entry point everything else
+  calls or the whole argument below collapses.
 * **Two relations are registered by this item**, `intent_argmapping_pair` and `intent_spelled_table`,
   and the mechanism is what makes the third and fourth cheap.
+
+**The refresh is per graph, inside the capture transaction, and there is already a place for it.**
+`FactCapture.capture` ends with a block whose comment names the stratum this item is joining:
+
+```java
+sink.flush();
+// The capture-cadence derivation stratum: materialized derivations re-derive from
+// the flushed rows inside the same transaction, so they are current exactly when
+// the partition they derive from is.
+ReachabilityRows.derive(txDsl, graph.name());
+InputOccurrencePaths.derive(txDsl, graph.name());
+TypeBackingRows.derive(txDsl, graph.name());
+```
+
+The materializer is a fourth line there, on the same `txDsl` and the same `graph.name()`. Three
+consequences follow and none of them is optional. The refresh runs **inside the capture transaction**,
+so no reader ever observes an emptied target. It is scoped **per graph**,
+`DELETE FROM <table_name> WHERE graph_name = ?` then
+`INSERT INTO <table_name> SELECT * FROM <view_name> WHERE graph_name = ?`, because a capture of one
+graph has no business rewriting a sibling's rows and the comment above states that as the stratum's
+invariant. And the materializer decides which of those two forms to use by whether the target carries
+a `graph_name` column, which a graph-keyed relation must anyway to satisfy the anchor gate below; a
+relation with no graph in its key (`intent_class_member_slot` is the existing one) refreshes whole.
 
 **Do not write `CASCADE` on that delete.** H2 accepts a bare identifier as a table alias in
 `DELETE FROM t <alias>`, so `DELETE FROM target CASCADE` parses, silently aliases the table to
 `CASCADE`, and cascades nothing. On H2 2.4.240 `TRUNCATE TABLE t CASCADE` is a syntax error, and
 plain `TRUNCATE TABLE t` is refused outright for a table any foreign key references. A plain
-`DELETE FROM <table_name>` is correct and sufficient here, nothing holding a foreign key onto a
-materialized target. Worth recording rather than rediscovering: the keyword reads as protection and
-supplies none.
-
-**The refresh is whole-relation, not graph-partitioned.** The view covers every graph the store
-holds, so emptying and refilling re-derives all of them and needs no `WHERE`. Simpler than a
-partitioned refresh and the right default; the cost is that capturing one graph re-derives every
-graph's rows, which is a trade to revisit only if a workspace's store holds enough graphs for it to
-show.
+`DELETE` is correct and sufficient here, nothing holding a foreign key onto a materialized target.
+Worth recording rather than rediscovering: the keyword reads as protection and supplies none.
 
 **Ordering is deliberately out of scope, and safe to leave out for these two.** A target populated
 from a view that reads *another* target must be refreshed after it, and `meta_materialize` as
@@ -289,9 +341,15 @@ it rather than leave it as an argument. What keeps the two names from becoming t
 population is that a reader picking the slow name is a performance bug and nothing else, and the
 multiplicity check below is what finds it.
 
-`fact-model.adoc` sanctions the mechanism and the store already has four written `intent_` tables,
-with `ReachabilityRows.write` as the delete-by-graph-then-insert cadence. It does not sanction the
-*justification*, which is the reviewable part and has its own section below.
+`fact-model.adoc` sanctions the mechanism and the store already has four written `intent_` tables
+behind three writers: `intent_type_domain` (`ReachabilityRows.derive`),
+`intent_type_backing_class` (`TypeBackingRows.derive`), and `intent_input_occurrence_path` with its
+step sibling (`InputOccurrencePaths.derive`). `ClaimDomainRows.write` and
+`TypeBackingClassRows.write` are the delete-then-insert shape to copy. Do not lean on
+`ReachabilityRows` as the precedent: R743 retires it outright.
+
+What `fact-model.adoc` does not sanction is the *justification*, which is the reviewable part and has
+its own section below.
 
 Measured, with `intent_argmapping_pair` and `intent_spelled_table` reduced, on top of R733's two
 changes. The reactor column is the part to read first, and it is why the deliverables below put the
@@ -314,8 +372,8 @@ boot at 9%. No dominant pathology is left.
 **Route B: flatten the six-arm union into one pass.** The defect view's five `binding_leaf`-driven
 arms differ only in predicate and verdict literal, so one pass with a `CASE` verdict and a left join
 to the segment relation would collapse them. It changes no read semantics and needs no freshness
-reasoning, which makes it tempting. The decomposition table prices it: at most 4 × 149 = 596 of 2149
-instantiations, about 28%, leaving the 1036 the two `key_column_candidate` references contribute.
+reasoning, which makes it tempting. The decomposition table prices it: at most 4 × 150 = 600 of 2066
+instantiations, about 29%, leaving the 1038 the two `key_column_candidate` references contribute.
 Worth doing as a simplification on its own merits; not an alternative to Route A.
 
 Take Route A. Route B is a follow-on.
@@ -349,10 +407,14 @@ this is one missing concept in a fixture, not thirteen broken tests.
 This is the one part of the design with no evidence behind it, and a reviewer should treat it as the
 item's main risk: the prototype demonstrated the breakage and did not fix it, so "one line per class"
 is a reading of the code rather than a thing anyone has done. The
-seam already exists: every one of the thirteen classes reads through a per-class helper (`rows(dsl)`,
-`only(dsl)`, `rowFor(dsl, ...)`), thirty read sites in total. Route those through `SeededStore`,
-which calls the same `graphitron-model` materializer every other caller calls, and the thirteen
-classes change by one line each and by nothing else, ever again. Registering a fourth or a fifth
+seam is thirty-seven read sites across the thirteen classes. Route those through `SeededStore`, which
+calls the same `graphitron-model` materializer every other caller calls, and no test names a
+materialized relation again. The sizing is not "one line each": only five classes funnel through a
+uniform `rows`/`only`/`rowFor` shape, the rest use per-relation helper names (`backings` and
+`allBackings` in `TypeBackingTest`, `rules` and `rulesFor` and `allRules` in `SeparateFetchRuleTest`,
+`inferred` and `nodeTypes` in `NodeTypeTest`), several carry four or more helpers, and
+`ColumnMatchClaimTest` reads inline inside test bodies with no helper at all. The design conclusion
+is unchanged and the count is what an implementer plans against. Registering a fourth or a fifth
 relation later costs the fixture nothing, because the fixture calls the mechanism rather than naming
 relations. Sizing the work as "thirty refresh calls the tests now have to remember" is the version
 that keeps the coupling and pays for it repeatedly; it was the earlier reading here and it was wrong.
@@ -407,12 +469,14 @@ the doctrine is written down rather than assumed.
   no longer per-table prose and no longer "cannot": it is a registration, and the charter should say
   so.
 
-The incumbent's shape also differs, and the registry is what reconciles them rather than leaving two
-variants side by side. `intent_type_domain` is computed in Java by `ReachabilityRows` and written;
-there is no view stating its rule, so there is nothing for a registry to point at. Whether it stays
-outside the mechanism, keeping its Java derivation and its own comment, or acquires a view and joins
-the registry, is a decision this item should take explicitly rather than leave to whoever notices the
-asymmetry next.
+The incumbents' shape also differs, and the registry is what reconciles them rather than leaving two
+variants side by side. This is four relations and three writers, not one: `intent_type_domain`,
+`intent_type_backing_class`, `intent_input_occurrence_path` and its step sibling are all computed in
+Java and written, with no view stating the rule, so there is nothing for a registry to point at.
+Whether they stay outside the mechanism, keeping their Java derivations and their own comments, or
+acquire views and join the registry, is a decision this item should take explicitly rather than leave
+to whoever notices the asymmetry next. `ReachabilityRows` is the one that answers itself: R743 retires
+it, so `intent_type_domain` should not be rewritten here.
 
 ### Gates the change has to clear, none of them optional
 
@@ -429,12 +493,28 @@ Four beyond the compile, and the item should not discover them one build at a ti
   `intent_type_domain`". Each new reduction joins that sentence and that registration.
 * **`CommentRenderabilityGateTest` and `SchemaReferencePagesTest`.** The comment text has to render,
   not merely exist.
+* **`FactSchemaGateTest.everyGraphKeyedRelationReachesTheAnchor`.** Every non-view relation carrying
+  `graph_name` needs a foreign-key path to `store_graph` that itself threads `graph_name`. Both
+  registered views carry `graph_name`, so both targets do, so both need that key. This is the gate the
+  prototype's bare `CREATE TABLE` would have tripped had the run reached it.
+* **`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`**, if a target carries a primary
+  key. Whether it should is an unstated decision in its own right: `INSERT INTO target SELECT * FROM
+  view` needs the view's rows to be uniquely keyed for a primary key to exist at all, and neither
+  registered view has been checked for that. Check before deciding, and record the answer either way.
+
+One gate that looks like it should fail and does not, worth stating so nobody re-litigates it:
+`aRunWritesOnlyUnderItsOwnGraph` compares a sorted content snapshot of a sibling graph's partition
+across a run. A per-graph refresh leaves that partition untouched, so it passes by construction; even
+a whole-relation refresh would have passed it, being deterministic, which is precisely why the
+argument for partitioning is the stratum's own invariant rather than this gate.
 
 The registry earns gates of its own, and they are the reason to prefer it over per-relation writers.
 Each is a closure of authored intent against observed schema, the shape `meta_relation_family`
 already uses:
 
 * every registered view exists, and every target table exists with a column list matching its view;
+* every registration carries a non-empty `reason`, which is what the doctrine change below trades the
+  per-table comment for;
 * every target's rows equal its view's rows on a settled store, which is the equality the whole
   design rests on and the one thing no amount of prose can substitute for;
 * nothing outside the registry is a materialized `intent_` relation, which is what stops the next
@@ -446,8 +526,10 @@ already uses:
   five more above eight. Reduce on measured need, and record what was left unreduced as a decision
   rather than an omission.
 * **The gate's ceiling**, and whether the multiplicity check reports or fails on first landing.
-* **How a target is named.** `meta_materialize` states the pair, so no convention is forced. A
-  convention would still help a reader recognise a target on sight; decide whether to have one.
+* **The `_live` suffix.** `meta_materialize` states the pair, so no convention is forced, but the
+  view is the relation being renamed and it should read as the on-demand one. `_live` is the
+  proposal; anything that does not read as "stale" or "old" works. Whether a gate gets to assume the
+  convention is a separate question, and the answer is probably not, the registry being the authority.
 * **Readers that arrive without a capture.** The language server and the MCP server open the store
   directly. They are already callers of the materializer in this design, but "call it on open" and
   "assume a capture ran" are different contracts, and the second one needs the "absence needs a
@@ -456,7 +538,10 @@ already uses:
   build in parallel under `-T 1C`. Partition-by-graph makes concurrent refresh safe on the face of
   it, but a warm start that skips capture because nothing changed must leave targets valid rather
   than empty, and `WarmStartRefreshTest` and `PersistentStoreTest` are where that gets pinned.
-* **Whether `intent_type_domain` joins the mechanism**, per the doctrinal section above.
+* **Whether the four Java-derived tables join the mechanism**, per the doctrinal section above.
+* **Whether a target carries a primary key**, which decides whether
+  `everyRelationLeadsWithItsPartitionDimension` applies and requires checking that each registered
+  view's rows are uniquely keyed.
 
 ### Deliverables, in the order the numbers argue for
 
@@ -469,8 +554,10 @@ version lives.
    Lands with zero rows registered and changes no timing, which is what makes it reviewable on its
    design rather than on its numbers.
 2. **The two registrations**, `intent_argmapping_pair` and `intent_spelled_table`, plus the LSP and
-   MCP call sites. This is the 229.0s to 20.66s, and by this point it is two rows of authored data
-   rather than a schema change.
+   MCP call sites and the fixture's derivation boundary. Each registration is a view rename, a
+   `CREATE TABLE` with the key the anchor gate requires, and one registry row; not two rows of
+   authored data, which an earlier draft of this item claimed. This is the 229.0s to 20.66s, and the
+   fixture work belongs in this step rather than after it, since without it the step lands red.
 3. **The multiplicity check**, reporting only, so the third and fourth registrations are chosen from
    data rather than from this item's table.
 4. **The run-count reduction**, four runs to three. Worth doing because a test should not perform

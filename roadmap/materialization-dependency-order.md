@@ -12,10 +12,10 @@ last-updated: 2026-08-20
 
 # Order the materialization registry, so a target may be derived from another target
 
-R742 lands `meta_materialize (view_name, table_name)` and a `graphitron-model` method that iterates
-it, emptying each target and refilling it from its view. The registry has two columns and the
-materializer has no notion of order, which is correct for what R742 registers and is not correct in
-general.
+R742 lands `meta_materialize (view_name, table_name, reason)` and a `graphitron-model` method that
+iterates it, refreshing each target from its view inside the capture transaction and scoped to the
+graph being captured. The registry records no ordering, which is correct for what R742 registers and
+is not correct in general.
 
 This item adds the order. It is strictly additive: no relation R742 registers changes, no reader
 changes, and a registry with no ordering information keeps behaving exactly as it does today.
@@ -27,8 +27,9 @@ sequence; what follows here is only this step.
 
 ## Why R742 could leave it out, stated so this item knows what it is fixing
 
-A materialized target is refilled by `INSERT INTO <table_name> SELECT * FROM <view_name>`. If that
-view reads *another* target, then the answer depends on whether the other target was refreshed first,
+A materialized target is refilled by
+`INSERT INTO <table_name> SELECT * FROM <view_name> WHERE graph_name = ?`. If that view reads
+*another* target, then the answer depends on whether the other target was refreshed first,
 and an unordered materializer will populate one of them from stale or empty rows. Nothing about the
 mechanism prevents this; R742 is safe because of a property of the two rows it registers, not because
 of a property of the design.
@@ -73,9 +74,10 @@ already uses:
 * **What a cycle means.** Between *views* a cycle is impossible, H2 rejecting a recursive view
   definition, so a cycle in the registry is a registration error rather than a schema property. That
   makes failing on it straightforward, and it is worth stating why.
-* **Whether ordering interacts with the refresh's granularity.** R742 refreshes whole relations, so
-  order is the only sequencing concern. If a later item makes any refresh graph-partitioned, a
-  partitioned target derived from a whole one, or the reverse, needs its own reasoning.
+* **Whether ordering interacts with the refresh's granularity.** R742 refreshes a graph's partition
+  for a graph-keyed target and the whole relation for one with no graph in its key
+  (`intent_class_member_slot` is the existing case). An ordering between two targets of differing
+  granularity, a partitioned one derived from a whole one or the reverse, needs its own reasoning.
 
 ## What this item is not
 
