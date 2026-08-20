@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
@@ -703,6 +704,7 @@ class ArgmappingProjectionDefectTest {
 
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_ARGMAPPING_PROJECTION_DEFECT.fields())
             .from(INTENT_ARGMAPPING_PROJECTION_DEFECT)
             .where(INTENT_ARGMAPPING_PROJECTION_DEFECT.GRAPH_NAME.eq(GRAPH))
@@ -726,6 +728,7 @@ class ArgmappingProjectionDefectTest {
      * render, and what a consumer composing a candidate list actually reads.
      */
     private static List<String> keyColumnsOf(DSLContext dsl, String nodeTypeName) {
+        derive(dsl);
         return dsl.select(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME)
             .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
             .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPH),

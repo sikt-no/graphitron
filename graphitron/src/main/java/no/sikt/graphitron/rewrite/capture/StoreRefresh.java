@@ -228,10 +228,17 @@ final class StoreRefresh {
     /**
      * Every base relation the clear still empties outright: the generated relations less the
      * views, which hold no rows of their own, less the graph-scoped set above, less the
-     * source-partitioned families, and less the three {@code store_} relations whose lifetimes
+     * source-partitioned families, less the three {@code store_} relations whose lifetimes
      * this class is deciding ({@code store_graph}'s recipe children are graph-scoped by their
-     * column and clear there). Written in exemption polarity on purpose: a relation nobody
-     * thought about is emptied and rebuilt, never silently retained.
+     * column and clear there), and less the {@code meta_} family. Written in exemption polarity
+     * on purpose: a relation nobody thought about is emptied and rebuilt, never silently retained.
+     *
+     * <p>The {@code meta_} exemption is the one whose reason is not about cadence. Those rows are
+     * the schema's description of itself, authored in the DDL and supplied by it, so no run
+     * rewrites them and a clear would simply lose them: the family's views cannot be emptied at
+     * all and were skipped as views, but the register is a base table and would have been. A
+     * warm store would then hold the schema with its own description missing, which reads as a
+     * store that registers nothing rather than as one that was cleared.
      */
     private static Set<Table<?>> wholesale() {
         var graphScoped = graphScoped();
@@ -240,6 +247,7 @@ final class StoreRefresh {
             if (table.getOptions().type() == TableOptions.TableType.VIEW
                 || PARTITIONED.contains(table)
                 || graphScoped.contains(table)
+                || table.getName().toLowerCase(java.util.Locale.ROOT).startsWith("meta_")
                 || table.equals(STORE_GRAPH)
                 || table.equals(STORE_SOURCE)
                 || table.equals(STORE_STAMP)) {

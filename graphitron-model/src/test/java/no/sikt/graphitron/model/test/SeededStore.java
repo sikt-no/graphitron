@@ -152,22 +152,27 @@ public final class SeededStore {
     // ===== The derivation boundary =====
 
     /**
-     * Runs the capture-cadence derivations over {@code graphName}, which a case calls once its
-     * rows are seeded and before it reads a derived relation.
+     * Runs the derivations, which a case calls once its rows are seeded and before it reads a
+     * derived relation. Every read helper in this fixture's tests starts with this line.
      *
      * <p>The store's architecture has three strata: capture transcribes facts, derivation computes
      * further facts from them, and queries read. This class models the first and the third, and
      * under derive-on-read the middle one is implicit and free, so its absence never cost anything.
-     * A materialized derivation makes it visible: a target holds rows only once something fills it.
-     * This is that stratum, and it is deliberately the same entry point production calls, so the
-     * two boundaries cannot drift apart and neither holds a list of relations a later registration
-     * could invalidate.
+     * Materialize one derivation and the missing stratum becomes visible at once: a target holds
+     * rows only once something fills it. This is that stratum, and it is deliberately an entry
+     * point production also calls, so the two boundaries cannot drift apart and neither holds a
+     * list of relations a later registration could invalidate. A test never names a materialized
+     * relation, and registering a fourth or a fifth costs this fixture nothing.
      *
-     * <p>Idempotent and cheap on a seeded store, so a read helper may call it unconditionally
-     * rather than reasoning about whether an earlier one in the same case already did.
+     * <p>Every graph the store holds rather than one the caller names, which is the shape a seeded
+     * store wants: a case seeds its graphs and then reads, several of them read across graphs to
+     * assert partition isolation, and picking per helper would be a judgement each one could get
+     * wrong for no gain. Idempotent, and on a store of a dozen rows the cost does not register, so
+     * a helper calls it unconditionally rather than reasoning about whether an earlier one already
+     * did.
      */
-    public static void derive(DSLContext dsl, String graphName) {
-        Materializations.refresh(dsl, graphName);
+    public static void derive(DSLContext dsl) {
+        Materializations.refreshAll(dsl);
     }
 
     // ===== Anchors =====

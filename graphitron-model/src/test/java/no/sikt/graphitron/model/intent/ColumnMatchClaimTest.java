@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedBoundTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -261,6 +262,7 @@ class ColumnMatchClaimTest {
             seedBoundTable(dsl, OTHER_GRAPH, "Film", "film", OTHER_PKG, PUBLIC, "film");
             seedColumn(dsl, OTHER_PKG, PUBLIC, "film", "title", 1, "TITLE");
 
+            derive(dsl);
             var bySource = dsl.select(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME,
                     INTENT_COLUMN_MATCH_CLAIM.TABLE_SOURCE_NAME)
                 .from(INTENT_COLUMN_MATCH_CLAIM)
@@ -312,6 +314,7 @@ class ColumnMatchClaimTest {
             assertThat(claims(dsl).map(r -> r.getFieldName()))
                 .as("the raw structural reading survives the authored coverage")
                 .containsExactlyInAnyOrder("title", "rating");
+            derive(dsl);
             assertThat(dsl.select(INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME,
                     INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER, INTENT_RESOLVED_FIELD_CLAIM.TIER)
                 .from(INTENT_RESOLVED_FIELD_CLAIM)
@@ -463,12 +466,14 @@ class ColumnMatchClaimTest {
 
     /** Every claim the graph under test carries, the population most cases assert the whole of. */
     private static Result<IntentColumnMatchClaimRecord> claims(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_COLUMN_MATCH_CLAIM)
             .where(INTENT_COLUMN_MATCH_CLAIM.GRAPH_NAME.eq(GRAPH)).fetch();
     }
 
     /** The same for the resolution underneath, at the type grain the binding is keyed on. */
     private static Result<IntentBoundTableRecord> boundTables(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_BOUND_TABLE)
             .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(GRAPH)).fetch();
     }

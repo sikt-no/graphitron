@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_SEGMENT_BINDING;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
@@ -375,6 +376,7 @@ class ArgmappingSegmentBindingTest {
 
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_ARGMAPPING_SEGMENT_BINDING.fields())
             .from(INTENT_ARGMAPPING_SEGMENT_BINDING)
             .where(INTENT_ARGMAPPING_SEGMENT_BINDING.GRAPH_NAME.eq(GRAPH))

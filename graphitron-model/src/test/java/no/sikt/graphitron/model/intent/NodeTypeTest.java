@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_INFERRED_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
@@ -175,6 +176,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
+            derive(dsl);
             assertThat(dsl.select(INTENT_INFERRED_NODE_TYPE.TABLE_SOURCE_NAME,
                     INTENT_INFERRED_NODE_TYPE.TABLE_SCHEMA, INTENT_INFERRED_NODE_TYPE.TABLE_NAME)
                 .from(INTENT_INFERRED_NODE_TYPE)
@@ -297,6 +299,7 @@ class NodeTypeTest {
     // ===== Reads =====
 
     private static List<String> inferred(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_INFERRED_NODE_TYPE.TYPE_NAME)
             .from(INTENT_INFERRED_NODE_TYPE)
             .where(INTENT_INFERRED_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
@@ -309,6 +312,7 @@ class NodeTypeTest {
     }
 
     private static List<String> nodeTypes(DSLContext dsl, String graphName) {
+        derive(dsl);
         return dsl.select(INTENT_NODE_TYPE.TYPE_NAME)
             .from(INTENT_NODE_TYPE)
             .where(INTENT_NODE_TYPE.GRAPH_NAME.eq(graphName))

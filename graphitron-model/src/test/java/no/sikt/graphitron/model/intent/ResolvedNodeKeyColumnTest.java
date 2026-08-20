@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
@@ -353,6 +354,7 @@ class ResolvedNodeKeyColumnTest {
 
     /** The tier that answered for a type, the pick being one tier for the whole list. */
     private static String tierOf(DSLContext dsl, String typeName) {
+        derive(dsl);
         var tiers = dsl.selectDistinct(INTENT_RESOLVED_NODE_KEY_COLUMN.TIER)
             .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
             .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPH))
@@ -371,6 +373,7 @@ class ResolvedNodeKeyColumnTest {
 
     /** A type's resolved key columns in position order, in a named graph. */
     private static List<String> keyColumns(DSLContext dsl, String graphName, String typeName) {
+        derive(dsl);
         return dsl.select(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME)
             .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
             .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(graphName))

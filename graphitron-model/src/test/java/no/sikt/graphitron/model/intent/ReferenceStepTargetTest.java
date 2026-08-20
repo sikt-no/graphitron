@@ -14,6 +14,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
@@ -292,6 +293,7 @@ class ReferenceStepTargetTest {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedTablePath(dsl, "Film", "titleTexts", "film_translation");
 
+            derive(dsl);
             var resolved = dsl.select(INTENT_SPELLED_TABLE.TABLE_NAME)
                 .from(INTENT_SPELLED_TABLE)
                 .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
@@ -501,6 +503,7 @@ class ReferenceStepTargetTest {
     }
 
     private static Result<Record> chain(DSLContext dsl, String graphName) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_REFERENCE_STEP_TARGET.fields())
             .from(INTENT_FIELD_REFERENCE_STEP_TARGET)
             .where(INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
@@ -513,6 +516,7 @@ class ReferenceStepTargetTest {
 
     /** What one spelling resolves to, schema and arity, in schema order. */
     private static Result<Record2<String, Integer>> spelled(DSLContext dsl, String spelling) {
+        derive(dsl);
         return dsl.select(INTENT_SPELLED_TABLE.TABLE_SCHEMA, INTENT_SPELLED_TABLE.CANDIDATES)
             .from(INTENT_SPELLED_TABLE)
             .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))

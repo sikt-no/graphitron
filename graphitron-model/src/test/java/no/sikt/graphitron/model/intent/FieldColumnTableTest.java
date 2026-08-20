@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedError;
@@ -578,6 +579,7 @@ class FieldColumnTableTest {
 
     /** The navigation row for a coordinate, at the same grain as the override above it. */
     private static Optional<Record> scopeRow(DSLContext dsl, String typeName, String fieldName) {
+        derive(dsl);
         var rows = dsl.select(INTENT_FIELD_COLUMN_SCOPE.fields())
             .from(INTENT_FIELD_COLUMN_SCOPE)
             .where(INTENT_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(GRAPH))
@@ -598,6 +600,7 @@ class FieldColumnTableTest {
     /** The one row for a coordinate of a named graph, the relation's grain being the field. */
     private static Optional<Record> row(DSLContext dsl, String graphName, String typeName,
                                         String fieldName) {
+        derive(dsl);
         var rows = dsl.select(INTENT_FIELD_COLUMN_TABLE.fields())
             .from(INTENT_FIELD_COLUMN_TABLE)
             .where(INTENT_FIELD_COLUMN_TABLE.GRAPH_NAME.eq(graphName))

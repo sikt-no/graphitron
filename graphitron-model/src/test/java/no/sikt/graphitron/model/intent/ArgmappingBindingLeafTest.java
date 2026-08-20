@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_BINDING_LEAF;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
@@ -421,6 +422,7 @@ class ArgmappingBindingLeafTest {
 
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_ARGMAPPING_BINDING_LEAF.fields())
             .from(INTENT_ARGMAPPING_BINDING_LEAF)
             .where(INTENT_ARGMAPPING_BINDING_LEAF.GRAPH_NAME.eq(GRAPH))

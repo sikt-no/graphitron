@@ -327,6 +327,13 @@ public final class GraphitronModelStore implements AutoCloseable {
      * stack, at a depth that varies with the caller's own stack. Per-statement execution keeps
      * the boot flat regardless of how the schema grows, and a boot failure names the exact
      * statement instead of the script.
+     *
+     * <p>Commits afterwards, which is load-bearing rather than defensive. H2 implicitly commits a
+     * schema statement, so a file of nothing but {@code CREATE} and {@code COMMENT ON} needed
+     * none, but the file also seeds the authored {@code meta_} rows with an {@code INSERT}, which
+     * is ordinary DML. An in-memory store keeps the one connection and would never notice; a
+     * file-backed one closes this connection and would reopen to find the schema present and the
+     * seeded rows gone.
      */
     private static void create(Connection connection) {
         String current = null;
@@ -334,6 +341,9 @@ public final class GraphitronModelStore implements AutoCloseable {
             for (String sql : splitStatements(readDdl())) {
                 current = sql;
                 statement.execute(sql);
+            }
+            if (!connection.getAutoCommit()) {
+                connection.commit();
             }
         } catch (SQLException e) {
             closeQuietly(connection);

@@ -7,6 +7,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedBoundTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
@@ -183,6 +184,7 @@ class TypeBackingTest {
 
     /** Every backing of this graph, as {@code Type=class VIA}. */
     private static List<String> backings(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_TYPE_BACKING)
             .where(INTENT_TYPE_BACKING.GRAPH_NAME.eq(GRAPH))
             .fetch(r -> r.getTypeName() + "=" + r.getClassName() + " " + r.getDeclaredVia());
@@ -190,6 +192,7 @@ class TypeBackingTest {
 
     /** Every contested type of this graph, with the render and the arity the view adds. */
     private static List<String> conflicts(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_TYPE_BACKING_CONFLICT)
             .where(INTENT_TYPE_BACKING_CONFLICT.GRAPH_NAME.eq(GRAPH))
             .fetch(r -> r.getTypeName() + "=" + r.getClassNames() + " " + r.getCandidates());
@@ -197,12 +200,14 @@ class TypeBackingTest {
 
     /** The same two over the whole store, graph first, so the partition is read as a value. */
     private static List<String> allBackings(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_TYPE_BACKING)
             .fetch(r -> r.getGraphName() + " " + r.getTypeName() + "=" + r.getClassName()
                 + " " + r.getDeclaredVia());
     }
 
     private static List<String> allConflicts(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_TYPE_BACKING_CONFLICT)
             .fetch(r -> r.getGraphName() + " " + r.getTypeName() + "=" + r.getClassNames()
                 + " " + r.getCandidates());

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedBoundTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -299,6 +300,7 @@ class SeparateFetchRuleTest {
 
     /** Every separately fetched coordinate of this graph, as {@code Type.field=RULE}. */
     private static List<String> rules(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_FIELD_SEPARATE_FETCH)
             .where(INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq(GRAPH))
             .fetch(r -> r.getTypeName() + "." + r.getFieldName() + "=" + r.getRule());
@@ -306,6 +308,7 @@ class SeparateFetchRuleTest {
 
     /** Every rule reaching one coordinate, which is where the arity is read. */
     private static List<String> rulesFor(DSLContext dsl, String typeName, String fieldName) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_SEPARATE_FETCH.RULE)
             .from(INTENT_FIELD_SEPARATE_FETCH)
             .where(INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq(GRAPH))
@@ -316,6 +319,7 @@ class SeparateFetchRuleTest {
 
     /** The same over the whole store, graph first, so the partition is read as a value. */
     private static List<String> allRules(DSLContext dsl) {
+        derive(dsl);
         return dsl.selectFrom(INTENT_FIELD_SEPARATE_FETCH)
             .fetch(r -> r.getGraphName() + " " + r.getTypeName() + "." + r.getFieldName()
                 + "=" + r.getRule());
