@@ -7,20 +7,17 @@ import java.util.Set;
 
 /**
  * The coordinates the classification walk visited: the walked model's type and field registries
- * as membership sets. The conflict detection mints only inside this domain, a membership test
- * and nothing more, because the legacy detector sites lived on the walk and the walk's reach is
- * narrower than capture's. The gate's full rationale and removal criterion live on the reified
- * form's relation comments ({@code walk_claim_domain_type} / {@code walk_claim_domain_field},
- * written from this value by {@link ClaimDomainRows} at capture cadence), which the
- * {@code intent_authored_claim_conflict} view joins so the gate is a join on the store side.
+ * as membership sets.
  *
- * <p>This value is the unreified demand relation. The demand and exemption derivations now
- * exist in the store ({@code intent_type_domain}, the rule views and the resolved reductions
- * over them) and are diffed against exactly this value by their shadow agreement (see
- * {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest}), with the populations the store
- * cannot yet express named by {@link DemandResidue}. The gate dissolves when the detection
- * reads the demand relation instead of the walked model, which is the gate-flip follow-up's
- * work, not the shadow's.
+ * <p>This value is the unreified demand relation, and diffing against it is the only thing left
+ * that reads it. The demand and exemption derivations exist in the store (the rule views and the
+ * resolved reductions over them) and are diffed against exactly this value by their shadow
+ * agreement (see {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest}), with the populations
+ * the store cannot yet express named by {@link DemandResidue}. Nothing reifies it: the
+ * authored-claim conflict detection used to gate on a membership set written from here, and now
+ * reads a relation total over the authored claims with each consumer applying its own population,
+ * so the two membership relations this value was transcribed into were deleted rather than
+ * re-pointed. The value itself retires with the shadow that reads it.
  */
 public record ClaimDomain(Set<String> typeNames, Set<FieldCoordinates> fieldCoordinates) {
 

@@ -13,7 +13,7 @@ import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
-import no.sikt.graphitron.rewrite.derive.WalkReach;
+import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
@@ -358,9 +358,10 @@ public class GraphQLRewriteGenerator {
      * over it, and returns the {@link StoreDetections} product they share: the
      * violations for the caller's error stream, and the field-conflict claims the LSP/MCP
      * snapshot's {@code Conflicted} projection overlay consumes. Two families read the store here.
-     * The authored-claim conflict rule reports from the claim views, gated on the walked model's
-     * {@link no.sikt.graphitron.rewrite.derive.ClaimDomain}, which arrives with the rest of the
-     * walk's reach as a {@link WalkReach}; the {@code argMapping} node-id rules
+     * The authored-claim conflict rule reports from the claim views over the classification
+     * domain, a captured-fact population rather than anything the walk reached; what the walked
+     * model still contributes is the {@link ClassifiedRun} discriminator and the backing classes
+     * it carries. The {@code argMapping} node-id rules
      * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects}) report from the SDL
      * views alone and are gated on nothing of the walk's. Every other relation still shadows the
      * live pipeline unread, kept honest by the agreement tests until its own consumer migrates.
@@ -392,7 +393,7 @@ public class GraphQLRewriteGenerator {
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
-            WalkReach.of(schema));
+            ClassifiedRun.of(schema));
     }
 
     /**

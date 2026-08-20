@@ -80,8 +80,6 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
-import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_FIELD;
-import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_TYPE;
 
 /**
  * Rows, stated directly: one named helper per row family, over a store {@link FactStores} opened.
@@ -1782,33 +1780,6 @@ public final class SeededStore {
                 .set(JVM_RECORD_COMPONENT_TYPE_REF.REFERENCED_CLASS, referencedClass)
                 .set(JVM_RECORD_COMPONENT_TYPE_REF.VARIANCE, "NONE")
                 .execute());
-    }
-
-    // ===== The walk's own registries =====
-
-    /**
-     * One coordinate the classification walk registered. A relation that gates on the walk having
-     * reached a field joins this, so a case about such a gate states the membership beside the facts
-     * rather than being unable to reach the gated arm at all.
-     */
-    public static void seedClaimDomainField(DSLContext dsl, String graphName, String typeName,
-                                            String fieldName) {
-        dsl.insertInto(WALK_CLAIM_DOMAIN_FIELD)
-            .set(WALK_CLAIM_DOMAIN_FIELD.GRAPH_NAME, graphName)
-            .set(WALK_CLAIM_DOMAIN_FIELD.TYPE_NAME, typeName)
-            .set(WALK_CLAIM_DOMAIN_FIELD.FIELD_NAME, fieldName)
-            .execute();
-    }
-
-    /**
-     * The same registration at the type grain. Its own membership set rather than one derived from
-     * the field rows, exactly as the two tables are, so a case states whichever grain it is about.
-     */
-    public static void seedClaimDomainType(DSLContext dsl, String graphName, String typeName) {
-        dsl.insertInto(WALK_CLAIM_DOMAIN_TYPE)
-            .set(WALK_CLAIM_DOMAIN_TYPE.GRAPH_NAME, graphName)
-            .set(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME, typeName)
-            .execute();
     }
 
     // ===== The derivations' own tables =====

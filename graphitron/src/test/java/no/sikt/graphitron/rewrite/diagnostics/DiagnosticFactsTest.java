@@ -9,8 +9,6 @@ import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
-import no.sikt.graphitron.rewrite.derive.ClaimDomain;
-import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
 import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -319,7 +317,6 @@ class DiagnosticFactsTest {
             FactCapture.capture(dsl, graph(), FactCapture.SubjectConfig.none(),
                 RewriteSchemaLoader.load(List.of(SchemaSource.file(file))),
                 TestSchemaHelper.attribution(file));
-            ClaimDomainRows.write(dsl, GRAPH, ClaimDomain.of(TestSchemaHelper.buildSchema(sdl)));
             var expected = AuthoredClaimConflicts.detect(dsl, GRAPH).violations();
             assertThat(expected).hasSize(1);
 

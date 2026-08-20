@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.derive;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;
@@ -17,16 +18,19 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * The authored-claim conflict rule, projected from the store: the family's violations are the
  * rows of the {@code intent_authored_claim_conflict} view, and this class derives the located
  * {@link ValidationError} values from them, byte-identical in message and location to what the
  * classification walk's dissolved detector sites used to tombstone. The reduction itself (the
- * distinct-claims grouping, the routine-plus-lookup carve-out, the ordered claim render, the
- * domain gate as a join against the {@code walk_claim_domain} reach rows) lives in the view's
- * SQL; what remains here is the decode of its closed {@code verdict} / {@code directives}
- * vocabulary into the {@link Rejection} arms the report carries.
+ * distinct-claims grouping, the routine-plus-lookup carve-out, the ordered claim render) lives in
+ * the view's SQL; what remains here is the population this consumer asks about, and the decode of
+ * the view's closed {@code verdict} / {@code directives} vocabulary into the {@link Rejection}
+ * arms the report carries.
  *
  * <p>{@code @splitQuery} is a delivery-axis directive that never claims: it has no claim-view
  * arm, so a routine-with-splitQuery co-occurrence never reaches the view's reduction.
@@ -43,10 +47,13 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
  * {@code locationOf} read off the AST for the same coordinates. Each claim additionally carries
  * the claiming application's own position from the claim-view row.
  *
- * <p>Minting is gated on the reified {@link ClaimDomain} rows the view joins; the gate's
- * rationale and removal criterion live on the {@code walk_claim_domain} family's relation
- * comments, and the caller who wants the gate populated writes it through
- * {@link ClaimDomainRows} before reading.
+ * <p>The view itself is total over the authored claims. This class is the <em>build-error</em>
+ * consumer of it, so the population it asks about is the classification domain: only a coordinate
+ * the generator intends to classify can fail a build, and a contradiction outside that domain
+ * costs no emitted source. The join is {@code intent_type_domain} on the coordinate's owning type
+ * at both grains, a field's population being its type's. The editor's diagnostic arm asks a
+ * different question of the same rows and joins nothing, which is why the filter lives here rather
+ * than in the view.
  */
 public final class AuthoredClaimConflicts {
 
@@ -134,11 +141,24 @@ public final class AuthoredClaimConflicts {
     }
 
     /**
-     * Projects both grains' violations from the view over {@code graphName}'s partition. Empty
-     * for every conflict-free graph, and for any graph whose reach rows were never written.
+     * Projects both grains' violations from the view over {@code graphName}'s partition, narrowed
+     * to the classification domain. Empty for every conflict-free graph, and for any graph whose
+     * domain rows were never derived.
      */
     public static Detection detect(DSLContext dsl, String graphName) {
         return new Detection(typeGrain(dsl, graphName), fieldGrain(dsl, graphName));
+    }
+
+    /**
+     * The build-error consumer's population: the violated coordinate's owning type is a member of
+     * the classification domain. One predicate for both grains, a field coordinate being in the
+     * domain exactly when its owning type is.
+     */
+    private static Condition inDomain(String graphName) {
+        var d = INTENT_TYPE_DOMAIN;
+        var v = INTENT_AUTHORED_CLAIM_CONFLICT;
+        return exists(selectOne().from(d)
+            .where(d.GRAPH_NAME.eq(graphName), d.TYPE_NAME.eq(v.TYPE_NAME)));
     }
 
     private record FieldCoordinate(String typeName, String fieldName) {}
@@ -150,7 +170,7 @@ public final class AuthoredClaimConflicts {
         var v = INTENT_AUTHORED_CLAIM_CONFLICT;
         var verdicts = new ArrayList<FieldVerdict>();
         dsl.selectFrom(v)
-            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNotNull())
+            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNotNull(), inDomain(graphName))
             .orderBy(v.TYPE_NAME, v.FIELD_NAME)
             .forEach(row -> {
                 var coordinate = new FieldCoordinate(row.getTypeName(), row.getFieldName());
@@ -258,7 +278,7 @@ public final class AuthoredClaimConflicts {
     private static List<ValidationError> typeGrain(DSLContext dsl, String graphName) {
         var v = INTENT_AUTHORED_CLAIM_CONFLICT;
         return dsl.selectFrom(v)
-            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNull())
+            .where(v.GRAPH_NAME.eq(graphName), v.FIELD_NAME.isNull(), inDomain(graphName))
             .orderBy(v.TYPE_NAME)
             .fetch(row -> ValidationError.forType(row.getTypeName(),
                 rejectionOf(row.getVerdict(), row.getDirectives()),

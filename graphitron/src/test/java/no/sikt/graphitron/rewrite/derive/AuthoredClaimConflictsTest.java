@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.rewrite.CapturedStore;
@@ -15,11 +14,12 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
+import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,8 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * projection of itself (the shadow that proved the flip retired with the Java reduction it
  * shadowed). Beside the migrated fixtures sit the anchor that keeps the claim views' lookup arm
  * honest against its walk-side twin ({@code LookupFacts.triggersFor}), the sibling-graph scoping
- * guard, the domain gate's join pin, the undecoded presence-arm fallbacks, and the classifier
- * vocabulary round trip.
+ * guard, the build-error consumer's population pin, the undecoded presence-arm fallbacks, and the
+ * classifier vocabulary round trip.
  *
  * <p>What the two claim views return given rows is not asked here. That is the relations' own
  * algebra, their arm pairs, their per-position masks and their ordinal collapses, and it lives in
@@ -63,7 +63,7 @@ class AuthoredClaimConflictsTest {
             type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) { title: String }
             type Query { film: Film }
             """;
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         var v = violations.getFirst();
         assertThat(v.coordinate()).isEqualTo("Film");
@@ -82,7 +82,7 @@ class AuthoredClaimConflictsTest {
             }
             type Query { film: Film }
             """.formatted(SERVICE_STUB, EXTERNAL_FIELD_STUB);
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         var v = violations.getFirst();
         assertThat(v.coordinate()).isEqualTo("Film.title");
@@ -99,7 +99,7 @@ class AuthoredClaimConflictsTest {
             }
             type Query { film: Film }
             """.formatted(SERVICE_STUB);
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         assertThat(violations.getFirst().message())
             .isEqualTo("Field 'Film.id': @service, @nodeId are mutually exclusive");
@@ -114,7 +114,7 @@ class AuthoredClaimConflictsTest {
                     @service(service: {className: "%s", method: "get"})
             }
             """.formatted(SERVICE_STUB);
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         assertThat(violations.getFirst().message())
             .isEqualTo("Field 'Query.film': @service, @lookupKey are mutually exclusive");
@@ -131,7 +131,7 @@ class AuthoredClaimConflictsTest {
                     @mutation(typeName: INSERT)
             }
             """.formatted(SERVICE_STUB);
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         var v = violations.getFirst();
         assertThat(v.message())
@@ -167,7 +167,7 @@ class AuthoredClaimConflictsTest {
                     @reference(path: [{table: "film"}])
             }
             """.formatted(SERVICE_STUB, SERVICE_STUB, SERVICE_STUB);
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations)
             .extracting(ValidationError::message)
             .containsExactly(
@@ -184,7 +184,7 @@ class AuthoredClaimConflictsTest {
                 film(id: ID @lookupKey): Film @routine(name: "film_fn")
             }
             """;
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         var v = violations.getFirst();
         assertThat(v.rejection()).isInstanceOf(Rejection.Deferred.class);
@@ -204,29 +204,47 @@ class AuthoredClaimConflictsTest {
                     @routine(name: "film_fn")
             }
             """.formatted(SERVICE_STUB);
-        var violations = detectAgainstWalk(sdl);
+        var violations = detect(sdl);
         assertThat(violations).hasSize(1);
         assertThat(violations.getFirst().message())
             .isEqualTo("Field 'Query.film': @service, @lookupKey, @routine are mutually exclusive");
     }
 
-    // ===== The domain gate =====
+    // ===== The build-error consumer's population =====
 
+    /**
+     * Where the two consumers of one total relation disagree. The view holds every authored
+     * contradiction; this consumer mints only inside the classification domain, because only the
+     * emitted surface can fail a build. So a conflicted coordinate on a type no field reaches is a
+     * row (the editor's arm reads it, which is where an author most needs the signal) and not a
+     * violation.
+     */
     @Test
-    void mintingIsGatedOnDomainMembership() {
+    void theBuildErrorPopulationIsTheClassificationDomain() {
         var sdl = """
             type Film @table(name: "film") {
                 id: String @service(service: {className: "%s", method: "get"}) @nodeId
             }
+            type Unreached @table(name: "actor") {
+                id: String @service(service: {className: "%s", method: "get"}) @nodeId
+            }
             type Query { film: Film }
-            """.formatted(SERVICE_STUB);
+            """.formatted(SERVICE_STUB, SERVICE_STUB);
         withCapturedStore(tmp, sdl, dsl -> {
-            ClaimDomainRows.write(dsl, GRAPH, ClaimDomain.of(TestSchemaHelper.buildSchema(sdl)));
-            assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations()).hasSize(1);
-            ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of()));
+            assertThat(dsl.selectDistinct(INTENT_AUTHORED_CLAIM_CONFLICT.TYPE_NAME)
+                .from(INTENT_AUTHORED_CLAIM_CONFLICT)
+                .where(INTENT_AUTHORED_CLAIM_CONFLICT.GRAPH_NAME.eq(GRAPH))
+                .fetchSet(0, String.class))
+                .as("the relation is total over the authored claims, population or not")
+                .containsExactlyInAnyOrder("Film", "Unreached");
+            assertThat(dsl.fetchCount(INTENT_TYPE_DOMAIN,
+                INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(GRAPH).and(INTENT_TYPE_DOMAIN.TYPE_NAME.eq("Unreached"))))
+                .as("the unreached type is outside the classification domain")
+                .isZero();
             assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations())
-                .as("a coordinate outside the walk's reach rows must not mint, however conflicted its claims")
-                .isEmpty();
+                .extracting(ValidationError::coordinate)
+                .as("only the domain member's conflict can fail a build")
+                .containsExactly("Film.id");
         });
     }
 
@@ -243,11 +261,9 @@ class AuthoredClaimConflictsTest {
             type Query { film: Film }
             """;
         try (var store = CapturedStore.of(tmp, "own", clean).andGraph("sibling", conflicted)) {
-            var overWide = ClaimDomain.of(TestSchemaHelper.buildSchema(conflicted));
-            ClaimDomainRows.write(store.dsl(), "own", overWide);
-            ClaimDomainRows.write(store.dsl(), "sibling", overWide);
             assertThat(AuthoredClaimConflicts.detect(store.dsl(), "own").violations())
-                .as("the sibling graph's conflict must not surface in this graph's run, even with an over-wide domain")
+                .as("the sibling graph's conflict must not surface in this graph's run, the two "
+                    + "graphs' domains holding the same type name")
                 .isEmpty();
             assertThat(AuthoredClaimConflicts.detect(store.dsl(), "sibling").violations())
                 .hasSize(1);
@@ -260,8 +276,9 @@ class AuthoredClaimConflictsTest {
      * That a schema too broken to decode still reports its conflicts. {@code @mutation} without its
      * required verb and {@code @routine} without its required name never assemble, so capture reads
      * the raw registry and writes no semantic row; the claim views' presence arms keep the
-     * coordinates claiming and the violations arrive as they would from a decoded pair. The domain
-     * is hand-built because a schema this broken has no walked model to project one from.
+     * coordinates claiming and the violations arrive as they would from a decoded pair. Both
+     * coordinates sit on root operation types, so the domain the consumer joins holds them without
+     * any walked model having to be built from a schema this broken.
      *
      * <p>What those arms return given such rows is the claim views' own question and is asked in
      * {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}; what stands here is that a real
@@ -279,9 +296,6 @@ class AuthoredClaimConflictsTest {
             }
             """.formatted(SERVICE_STUB, SERVICE_STUB);
         withCapturedStore(tmp, sdl, dsl -> {
-            ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of(
-                FieldCoordinates.coordinates("Query", "broken"),
-                FieldCoordinates.coordinates("Mutation", "createFilm"))));
             assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations())
                 .extracting(ValidationError::message)
                 .containsExactly(
@@ -306,7 +320,7 @@ class AuthoredClaimConflictsTest {
                     @mutation(typeName: DELETE, table: "film")
             }
             """.formatted(SERVICE_STUB);
-        var detection = detectionAgainstWalk(sdl);
+        var detection = detection(sdl);
         assertThat(detection.fieldConflicts()).hasSize(1);
         var conflict = detection.fieldConflicts().getFirst();
         assertThat(conflict.coordinate()).isEqualTo("Mutation.deleteFilm");
@@ -344,7 +358,7 @@ class AuthoredClaimConflictsTest {
                     @mutation(typeName: DELETE)
             }
             """.formatted(SERVICE_STUB);
-        var detection = detectionAgainstWalk(sdl);
+        var detection = detection(sdl);
         assertThat(detection.fieldConflicts()).hasSize(1);
         var mutation = (FieldClaim.Mutation) detection.fieldConflicts().getFirst().claims().get(1);
         assertThat(mutation.operation()).isEqualTo("DELETE");
@@ -364,7 +378,7 @@ class AuthoredClaimConflictsTest {
                 film(id: ID @lookupKey): Film @routine(name: "film_fn")
             }
             """;
-        var detection = detectionAgainstWalk(sdl);
+        var detection = detection(sdl);
         assertThat(detection.fieldVerdicts()).hasSize(1);
         assertThat(detection.fieldVerdicts().getFirst())
             .isInstanceOf(AuthoredClaimConflicts.FieldVerdict.Deferred.class);
@@ -388,7 +402,7 @@ class AuthoredClaimConflictsTest {
                     @routine(name: "second_fn")
             }
             """.formatted(SERVICE_STUB);
-        var detection = detectionAgainstWalk(sdl);
+        var detection = detection(sdl);
         assertThat(detection.fieldConflicts()).hasSize(1);
         var conflict = detection.fieldConflicts().getFirst();
         assertThat(conflict.coordinate()).isEqualTo("Query.films");
@@ -414,7 +428,7 @@ class AuthoredClaimConflictsTest {
                     @routine(name: "second_fn")
             }
             """.formatted(SERVICE_STUB);
-        var detection = detectionAgainstWalk(sdl);
+        var detection = detection(sdl);
         assertThat(detection.fieldConflicts()).hasSize(1);
         var conflict = detection.fieldConflicts().getFirst();
         assertThat(conflict.rejection().message()).isEqualTo("@service, @routine are mutually exclusive");
@@ -436,8 +450,6 @@ class AuthoredClaimConflictsTest {
             }
             """.formatted(SERVICE_STUB);
         withCapturedStore(tmp, sdl, dsl -> {
-            ClaimDomainRows.write(dsl, GRAPH, new ClaimDomain(Set.of(), Set.of(
-                FieldCoordinates.coordinates("Mutation", "createFilm"))));
             var conflicts = AuthoredClaimConflicts.detect(dsl, GRAPH).fieldConflicts();
             assertThat(conflicts).hasSize(1);
             var mutation = (FieldClaim.Mutation) conflicts.getFirst().claims().get(1);
@@ -526,16 +538,14 @@ class AuthoredClaimConflictsTest {
 
     // ===== Helpers =====
 
-    /** Captures {@code sdl}, builds its walked model, and runs the detection gated on it. */
-    private List<ValidationError> detectAgainstWalk(String sdl) {
-        return detectionAgainstWalk(sdl).violations();
+    /** Captures {@code sdl} and runs the detection over the domain the capture derived. */
+    private List<ValidationError> detect(String sdl) {
+        return detection(sdl).violations();
     }
 
-    /** {@link #detectAgainstWalk}, keeping the whole typed {@code Detection} product. */
-    private AuthoredClaimConflicts.Detection detectionAgainstWalk(String sdl) {
-        var domain = ClaimDomain.of(TestSchemaHelper.buildSchema(sdl));
+    /** {@link #detect}, keeping the whole typed {@code Detection} product. */
+    private AuthoredClaimConflicts.Detection detection(String sdl) {
         try (var store = CapturedStore.of(tmp, sdl)) {
-            ClaimDomainRows.write(store.dsl(), GRAPH, domain);
             return AuthoredClaimConflicts.detect(store.dsl(), GRAPH);
         }
     }

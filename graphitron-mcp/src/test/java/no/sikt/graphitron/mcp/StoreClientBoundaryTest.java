@@ -92,8 +92,7 @@ class StoreClientBoundaryTest {
      * dependency this module keeps, so nothing but a guard stops a reader reaching for them. The
      * family drains on the walk's own clock and a consumer of it does not.
      */
-    private static final List<String> WALK_RELATIONS = List.of(
-        "WALK_TYPE_BACKING_CLASS", "WALK_CLAIM_DOMAIN_TYPE", "WALK_CLAIM_DOMAIN_FIELD");
+    private static final List<String> WALK_RELATIONS = List.of("WALK_TYPE_BACKING_CLASS");
 
     /** Floors on the scanned-file counts: a walk that reached nothing would otherwise pass. */
     private static final int MIN_MAIN_FILES = 20;

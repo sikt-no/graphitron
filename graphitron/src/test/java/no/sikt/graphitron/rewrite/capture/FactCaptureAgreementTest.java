@@ -89,8 +89,6 @@ import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTI
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
-import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_FIELD;
-import static no.sikt.graphitron.model.Tables.WALK_CLAIM_DOMAIN_TYPE;
 import static no.sikt.graphitron.model.Tables.WALK_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
@@ -429,8 +427,6 @@ class FactCaptureAgreementTest {
         registrations.put("meta_prefixless_relation", Arm.DERIVED);
         registrations.put("meta_relation_family", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
-        registrations.put("walk_claim_domain_type", Arm.ORACLE);
-        registrations.put("walk_claim_domain_field", Arm.ORACLE);
         registrations.put("walk_type_backing_class", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);
         registrations.put("rejection_validation_error_directive", Arm.ORACLE);
@@ -2005,7 +2001,8 @@ class FactCaptureAgreementTest {
      * The walk-reach family's lifecycle anchor, on the same terms as the javac one: seeded rows
      * under two graphs, and a warm capture empties exactly its own partition. The writer here is
      * the capture-and-detect pass rather than a post-capture round, which is the cadence widening
-     * the {@code ORACLE} arm's javadoc states.
+     * the {@code ORACLE} arm's javadoc states. One grain remains in the family, so the partition
+     * this asserts over is the backing grain alone.
      */
     @Test
     @DisplayName("a capture empties its own graph's walk-reach partition and no other's")
@@ -2023,12 +2020,8 @@ class FactCaptureAgreementTest {
                 CapturedStore.attributionOf(siblingDir));
             assertThat(walkReachPartition(store, "own")).isEmpty();
 
-            var domain = new no.sikt.graphitron.rewrite.derive.ClaimDomain(
-                Set.of("Film"), Set.of(graphql.schema.FieldCoordinates.coordinates("Film", "title")));
             var backing = new no.sikt.graphitron.rewrite.derive.TypeBackingClasses(
                 Map.of("Film", "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"));
-            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), "own", domain);
-            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), "sibling", domain);
             no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), "own", backing);
             no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), "sibling", backing);
             assertThat(walkReachPartition(store, "own")).isNotEmpty();
@@ -2051,51 +2044,32 @@ class FactCaptureAgreementTest {
     /**
      * The walk-reach family's content anchor: the same value reduced two ways, once by the
      * writer's rows and once by re-reading the
-     * {@link no.sikt.graphitron.rewrite.derive.WalkReach} components it transcribed, grain by
-     * grain. A rewrite replaces the partition rather than accreting, which is what makes the
-     * second write's smaller sets an assertion and not a subset check. The backing grain's own
-     * projection is pinned against a walked model by
-     * {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassesTest}; what is pinned here is
-     * that the writer lands exactly what it was handed.
+     * {@link no.sikt.graphitron.rewrite.derive.TypeBackingClasses} it transcribed. A rewrite
+     * replaces the partition rather than accreting, which is what makes the second write's smaller
+     * map an assertion and not a subset check. The projection itself is pinned against a walked
+     * model by {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassesTest}; what is pinned
+     * here is that the writer lands exactly what it was handed.
      */
     @Test
-    @DisplayName("the walk-reach relations' rows equal the reach's own sets, per grain")
-    void oracleContentEqualsTheClaimDomainsMembership(@TempDir Path tmp) {
+    @DisplayName("the walk-reach relation's rows equal the transcribed bindings")
+    void oracleContentEqualsTheTranscribedBindings(@TempDir Path tmp) {
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, "type Query { ping: String }"),
                 CapturedStore.attributionOf(tmp));
-            var domain = new no.sikt.graphitron.rewrite.derive.ClaimDomain(
-                Set.of("Film", "Language"),
-                Set.of(graphql.schema.FieldCoordinates.coordinates("Film", "title"),
-                    graphql.schema.FieldCoordinates.coordinates("Film", "id"),
-                    graphql.schema.FieldCoordinates.coordinates("Language", "name")));
             var backing = new no.sikt.graphitron.rewrite.derive.TypeBackingClasses(Map.of(
                 "Film", "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord",
                 "Language", "no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord"));
-            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), graph(tmp).name(), domain);
             no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), graph(tmp).name(), backing);
 
             assertThat(store.dsl().select(WALK_TYPE_BACKING_CLASS.TYPE_NAME, WALK_TYPE_BACKING_CLASS.CLASS_NAME)
                 .from(WALK_TYPE_BACKING_CLASS)
                 .fetchMap(r -> r.value1(), r -> r.value2()))
                 .isEqualTo(backing.byTypeName());
-            assertThat(store.dsl().select(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME)
-                .from(WALK_CLAIM_DOMAIN_TYPE).fetchSet(0, String.class))
-                .isEqualTo(domain.typeNames());
-            assertThat(store.dsl().select(WALK_CLAIM_DOMAIN_FIELD.TYPE_NAME, WALK_CLAIM_DOMAIN_FIELD.FIELD_NAME)
-                .from(WALK_CLAIM_DOMAIN_FIELD)
-                .fetchSet(r -> graphql.schema.FieldCoordinates.coordinates(r.value1(), r.value2())))
-                .isEqualTo(domain.fieldCoordinates());
 
-            var smaller = new no.sikt.graphitron.rewrite.derive.ClaimDomain(
-                Set.of("Film"), Set.of(graphql.schema.FieldCoordinates.coordinates("Film", "title")));
-            no.sikt.graphitron.rewrite.derive.ClaimDomainRows.write(store.dsl(), graph(tmp).name(), smaller);
             no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), graph(tmp).name(),
                 new no.sikt.graphitron.rewrite.derive.TypeBackingClasses(Map.of(
                     "Film", "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord")));
-            assertThat(store.dsl().fetchCount(WALK_CLAIM_DOMAIN_TYPE)).isEqualTo(1);
-            assertThat(store.dsl().fetchCount(WALK_CLAIM_DOMAIN_FIELD)).isEqualTo(1);
             assertThat(store.dsl().fetchCount(WALK_TYPE_BACKING_CLASS)).isEqualTo(1);
         }
     }
@@ -2316,21 +2290,13 @@ class FactCaptureAgreementTest {
         return rows;
     }
 
-    /** The graph's walk-reach rows across every grain, rendered stably for before/after comparison. */
+    /** The graph's walk-reach rows, rendered stably for before/after comparison. */
     private static List<String> walkReachPartition(GraphitronModelStore store, String graphName) {
         var rows = new ArrayList<String>();
         store.dsl().selectFrom(WALK_TYPE_BACKING_CLASS)
             .where(WALK_TYPE_BACKING_CLASS.GRAPH_NAME.eq(graphName))
             .orderBy(WALK_TYPE_BACKING_CLASS.TYPE_NAME)
             .forEach(row -> rows.add("backing|" + row.getTypeName() + "=" + row.getClassName()));
-        store.dsl().selectFrom(WALK_CLAIM_DOMAIN_TYPE)
-            .where(WALK_CLAIM_DOMAIN_TYPE.GRAPH_NAME.eq(graphName))
-            .orderBy(WALK_CLAIM_DOMAIN_TYPE.TYPE_NAME)
-            .forEach(row -> rows.add("type|" + row.getTypeName()));
-        store.dsl().selectFrom(WALK_CLAIM_DOMAIN_FIELD)
-            .where(WALK_CLAIM_DOMAIN_FIELD.GRAPH_NAME.eq(graphName))
-            .orderBy(WALK_CLAIM_DOMAIN_FIELD.TYPE_NAME, WALK_CLAIM_DOMAIN_FIELD.FIELD_NAME)
-            .forEach(row -> rows.add("field|" + row.getTypeName() + "." + row.getFieldName()));
         return rows;
     }
 

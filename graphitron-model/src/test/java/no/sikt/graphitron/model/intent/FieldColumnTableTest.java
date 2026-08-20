@@ -10,8 +10,6 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
-import static no.sikt.graphitron.model.test.SeededStore.seedClaimDomainField;
-import static no.sikt.graphitron.model.test.SeededStore.seedClaimDomainType;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedError;
@@ -354,7 +352,6 @@ class FieldColumnTableTest {
         withBoundTypes(dsl -> {
             seedField(dsl, GRAPH, "Film", "title");
             seedError(dsl, GRAPH, "Film");
-            seedClaimDomainType(dsl, GRAPH, "Film");
 
             assertThat(dsl.fetchCount(INTENT_FIELD_COLUMN_TABLE,
                 INTENT_FIELD_COLUMN_TABLE.FIELD_NAME.isNull()))
@@ -569,15 +566,14 @@ class FieldColumnTableTest {
     }
 
     /**
-     * Two mutually exclusive claims on a {@code Film} field, plus the walk's registration of the
-     * coordinate. The registration is what the conflict relation gates on, so a fixture stating the
-     * two directives alone would reach no conflict at all and the silence under assertion would be
-     * the absence of a conflict rather than the view's answer to one.
+     * Two mutually exclusive claims on a {@code Film} field. The conflict relation is total over
+     * the authored claims and gates on nothing further, so the two directives are the whole
+     * fixture and the disposition under assertion is the view's answer to a conflict rather than
+     * its silence about a coordinate no population reached.
      */
     private static void seedContestedClaims(DSLContext dsl, String fieldName) {
         seedService(dsl, GRAPH, "Film", fieldName, "no.example.Svc", "get");
         seedExternalField(dsl, GRAPH, "Film", fieldName, "no.example.Fields", "rating");
-        seedClaimDomainField(dsl, GRAPH, "Film", fieldName);
     }
 
     /** The navigation row for a coordinate, at the same grain as the override above it. */

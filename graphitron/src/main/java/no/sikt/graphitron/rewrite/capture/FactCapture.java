@@ -8,12 +8,11 @@ import no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
-import no.sikt.graphitron.rewrite.derive.ClaimDomainRows;
+import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
 import no.sikt.graphitron.rewrite.derive.TypeBackingRows;
 import no.sikt.graphitron.rewrite.derive.TypeBackingClassRows;
-import no.sikt.graphitron.rewrite.derive.WalkReach;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
@@ -49,7 +48,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * violations for the caller's error stream, and the field-conflict claims the snapshot's
  * {@code Conflicted} projection overlay consumes), so what those detections report is decided by
  * the store's content. Two families run today: the authored-claim conflict rule
- * ({@link AuthoredClaimConflicts}) and the {@code argMapping} node-id projection rules
+ * ({@link AuthoredClaimConflicts}, narrowed to the classification domain, which is the population
+ * a build can fail on) and the {@code argMapping} node-id projection rules
  * ({@link ArgmappingProjectionDefects}). Every other relation is still populated beside the live
  * pipeline and read by nothing; consumers migrate onto it one at a time.
  *
@@ -195,7 +195,7 @@ public final class FactCapture {
                            Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq, extensions,
-            null);
+            ClassifiedRun.absent());
     }
 
     /**
@@ -216,10 +216,10 @@ public final class FactCapture {
                                                           Map<String, SchemaInput> attribution,
                                                           JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
-                                                          WalkReach reach) {
-        Objects.requireNonNull(reach, "reach");
+                                                          ClassifiedRun classified) {
+        Objects.requireNonNull(classified, "classified");
         return runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq,
-            extensions, reach);
+            extensions, classified);
     }
 
     private static StoreDetections runInternal(Path storeDirectory, GraphIdentity graph,
@@ -227,19 +227,19 @@ public final class FactCapture {
                                                      TypeDefinitionRegistry registry, SdlVerdicts verdicts,
                                                      Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
-                                                     WalkReach reach) {
+                                                     ClassifiedRun classified) {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
                     capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
                         extensions);
-                    return detect(store.dsl(), graph, reach);
+                    return detect(store.dsl(), graph, classified);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
                     if (captureWithRetry(store, graph, config, registry, verdicts, attribution, jooq,
                             extensions)) {
-                        return detect(store.dsl(), graph, reach);
+                        return detect(store.dsl(), graph, classified);
                     }
                 }
             }
@@ -247,37 +247,41 @@ public final class FactCapture {
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
             capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
                 extensions);
-            return detect(store.dsl(), graph, reach);
+            return detect(store.dsl(), graph, classified);
         }
     }
 
     /**
-     * The detection pass over a freshly captured store; a {@code null} reach is {@link #run}'s
-     * no-detection arm, which also writes no {@code walk_} rows. The whole of the walk's reach
-     * lands first: the {@code walk_claim_domain} rows so the {@code intent_authored_claim_conflict}
-     * view's domain-gate join answers over exactly the domain that detection is gated on, and the
-     * backing rows because the same pass is the family's one writer and its cadence, whether or
-     * not a detection reads them.
+     * The detection pass over a freshly captured store, dispatched on whether the run has a
+     * classified model at all: {@link ClassifiedRun.Absent} is {@link #run}'s no-detection arm,
+     * which also writes no {@code walk_} rows. The walk-side backing rows land first, because the
+     * same pass is that family's one writer and its cadence, whether or not a detection reads them.
+     *
+     * <p>Nothing the detections read is gated on the walk any more. The authored-claim conflict
+     * rule reads a relation that is total over the authored claims and applies the population its
+     * own question needs (the classification domain, derived from captured SDL facts at capture
+     * cadence), so its accept line is a fact of the store rather than of the walk's reach.
      *
      * <p>Beside the two detections the pass reads the {@code argMapping} family's positive half,
      * {@link ResolvedKeyProjections}, which the plan emits from. It is read here for the reason the
      * detections are: the store handle is this method's, and a phase that wanted the fact later would
      * have to reopen the store to ask.
      *
-     * <p>The {@code argMapping} family is gated on nothing of the walk's, reading only SDL facts,
-     * and shares the {@code reach} gate anyway: a run with no classified model is a run whose
-     * verdict has already been pronounced elsewhere, and there is no build for these rejections to
-     * fail.
+     * <p>The {@code argMapping} family reads only SDL facts and shares the classified-run arm
+     * anyway: a run with no classified model is a run whose verdict has already been pronounced
+     * elsewhere, and there is no build for these rejections to fail.
      */
-    private static StoreDetections detect(DSLContext dsl, GraphIdentity graph, WalkReach reach) {
-        if (reach == null) {
-            return StoreDetections.empty();
-        }
-        ClaimDomainRows.write(dsl, graph.name(), reach.domain());
-        TypeBackingClassRows.write(dsl, graph.name(), reach.backingClasses());
-        return new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
-            ArgmappingProjectionDefects.detect(dsl, graph.name()),
-            ResolvedKeyProjections.read(dsl, graph.name()));
+    private static StoreDetections detect(DSLContext dsl, GraphIdentity graph,
+                                          ClassifiedRun classified) {
+        return switch (classified) {
+            case ClassifiedRun.Absent ignored -> StoreDetections.empty();
+            case ClassifiedRun.Present present -> {
+                TypeBackingClassRows.write(dsl, graph.name(), present.backingClasses());
+                yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
+                    ArgmappingProjectionDefects.detect(dsl, graph.name()),
+                    ResolvedKeyProjections.read(dsl, graph.name()));
+            }
+        };
     }
 
     /**

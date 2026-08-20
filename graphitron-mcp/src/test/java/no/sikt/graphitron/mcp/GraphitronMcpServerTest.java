@@ -1242,8 +1242,8 @@ class GraphitronMcpServerTest {
     @Test
     @SuppressWarnings("unchecked")
     void schemaReportsAConflictedCoordinatesDirectivesAndMessage(@TempDir Path tmp) throws Exception {
-        // The one case that needs a build rather than a capture: the conflict view's domain gate joins
-        // walk_claim_domain_field, which is written by the detection pass over the walk's own reach.
+        // A build rather than a capture, so the conflicted coordinate arrives through the same
+        // pass a consumer's build runs; the view itself is total over the authored claims.
         try (var build = StoreBackedBuild.run(tmp, "conflicted", CONFLICTED_SDL);
              var server = server(build);
              var client = connect(server.port())) {

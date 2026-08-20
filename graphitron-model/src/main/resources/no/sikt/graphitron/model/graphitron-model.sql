@@ -2856,60 +2856,32 @@ COMMENT ON COLUMN javac_diagnostic.code IS 'Diagnostic.getCode(), the compiler''
 COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root locale); a transcribed fact because the oracle authored it, but display material: never a dimension, never an agreement anchor';
 
 -- ==== Walk reach facts ============================================================
--- What the legacy classification walk registered and what it bound, in the walk's own
--- vocabulary. The writer is the capture-and-detect pass, at capture cadence, inside the
--- capture's graph-scoped ownership; a run without that pass writes no rows, and the warm
--- refresh clears the graph's partition with the rest of its ownership scope. No foreign key
--- into the graphql_ family on purpose: the writer stands on the walked model, not on captured
--- rows, and the walk's registries legitimately hold coordinates capture spells differently
--- (tombstones included).
+-- What the legacy classification walk bound, in the walk's own vocabulary. The writer is the
+-- capture-and-detect pass, at capture cadence, inside the capture's graph-scoped ownership; a
+-- run without that pass writes no rows, and the warm refresh clears the graph's partition with
+-- the rest of its ownership scope. No foreign key into the graphql_ family on purpose: the
+-- writer stands on the walked model, not on captured rows, and the walk's registries
+-- legitimately hold coordinates capture spells differently (tombstones included).
 --
--- The membership grains (walk_claim_domain_type, walk_claim_domain_field): the walked model's
--- type and field registries, one relation per grain in the claim views' own mould so neither
--- carries a column that is NULL by kind. They exist so the conflict detection's domain gate is
--- a join instead of a Java membership test: the walk's reach is narrower than capture's
--- (capture is total, with no reachability pruning), and the exemption populations the demand
--- exemption census recorded never reached a legacy detector, so an ungated detection would move
--- the accept line exactly there. The gate dissolves when the detection reads the resolved
--- demand relation instead of the walk's reach (the gate-flip follow-up's work), which drains
--- those two.
---
--- The binding grain (walk_type_backing_class): what the walk resolved each registered type's
--- backing class to. It is here so the derivation that replaces the walk's backing resolution has
--- a differential inside the store rather than a total-agreement test in Java: two relations in
+-- One relation remains, and the family header is written for it. The binding grain
+-- (walk_type_backing_class) records what the walk resolved each registered type's backing class
+-- to. It is here so the derivation that replaces the walk's backing resolution has a
+-- differential inside the store rather than a total-agreement test in Java: two relations in
 -- one store diff over any corpus a run touches, can be compared while the derivation is half
 -- built, and drain themselves. A total agreement test instead makes the walk normative and pins
 -- whatever bugs it has as invariants, which is the shape this relation exists to avoid.
 --
--- The family retires with the walk whose reach it transcribes, but its relations drain on
--- separate clocks, which is why none of them carries a foreign key into another even where one
--- population is contained in another (every bound type is a registered type). A constraint
--- across two clocks makes the earlier drainage impossible while a sibling still writes. The
--- containment is asserted where both populations are projected from one walked model instead
--- (no.sikt.graphitron.rewrite.derive.TypeBackingClassesTest), which is the only place it can be
--- checked without the constraint.
-CREATE TABLE walk_claim_domain_type (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE walk_claim_domain_type IS 'The type grain of the walk''s claim domain: every type name the classification walk registered, tombstones included. The type-grain conflict detection mints only where a row here says the walk visited; see the family header for the writer, the cadence, and the removal criterion.';
-COMMENT ON COLUMN walk_claim_domain_type.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN walk_claim_domain_type.type_name IS 'a type name the walk''s type registry holds; membership is the row''s entire assertion';
-
-CREATE TABLE walk_claim_domain_field (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE walk_claim_domain_field IS 'The field grain of the walk''s claim domain: every field coordinate the classification walk registered, tombstones included. Deliberately not derived from walk_claim_domain_type: the two registries are independent membership sets (a hand-assembled domain may hold a coordinate whose type the type registry never saw), so the field rows carry their own type_name with no FK into the type grain. See the family header for the writer, the cadence, and the removal criterion.';
-COMMENT ON COLUMN walk_claim_domain_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN walk_claim_domain_field.type_name IS 'the registered coordinate''s owning type';
-COMMENT ON COLUMN walk_claim_domain_field.field_name IS 'the registered coordinate''s field name within the owning type';
-
+-- The membership grains this family used to carry are gone. They existed only so the
+-- authored-claim conflict detection could gate on the walk's reach as a join; that detection is
+-- now total over the authored claims, with each consumer applying its own population (the
+-- build-error surface joins intent_type_domain, the editor's diagnostic arm reads the view
+-- ungated), so nothing reads a walk-shaped membership set any more and the two relations were
+-- deleted rather than re-pointed.
+--
+-- The family retires with the walk whose reach it transcribes. The containment its grains used
+-- to state among themselves is asserted where both populations are projected from one walked
+-- model instead (no.sikt.graphitron.rewrite.derive.TypeBackingClassesTest), which is the only
+-- place it can be checked without a constraint across two drainage clocks.
 CREATE TABLE walk_type_backing_class (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
@@ -2919,7 +2891,7 @@ CREATE TABLE walk_type_backing_class (
 );
 COMMENT ON TABLE walk_type_backing_class IS 'What the legacy classification walk resolved a type''s backing class to: one row per registered type the walk bound to a Java class, and no row for a type it left unbacked. The differential intent_type_backing_class checks itself against while it is built; see the family header for the writer, the cadence, and why the relation stands alone. Three populations are deliberately absent, each because another relation already owns it. A @table-bound type is absent: the walk answers it with a table rather than a class, and that population is intent_bound_table''s, so a second transcription here would be a duplicate with worse provenance. A type two producers bound to different classes is absent: the walk resolves that disagreement by refusing to bind at all, which is the population the derivation surfaces as two rows plus a conflict view, so the shadow''s silence there is a recorded behaviour difference and not a defect on either side. And the kind of backing (record, plain class, jOOQ record) is absent as a column, because it is a property of the class the census already states, and re-transcribing it would carry the leaf taxonomy this relation exists to dissolve into the relation replacing it.';
 COMMENT ON COLUMN walk_type_backing_class.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN walk_type_backing_class.type_name IS 'the SDL type the walk bound; always a member of walk_claim_domain_type, unconstrained for the reason the family header gives. One row per type rather than per type and axis: an SDL name is an output type or an input type and never both, so the walk''s two-axis bookkeeping is internal to it and not a dimension of the answer';
+COMMENT ON COLUMN walk_type_backing_class.type_name IS 'the SDL type the walk bound; always a type the walk registered, which no relation records any more, so the containment is asserted in Java where both populations are projected from one walked model. One row per type rather than per type and axis: an SDL name is an output type or an input type and never both, so the walk''s two-axis bookkeeping is internal to it and not a dimension of the answer';
 COMMENT ON COLUMN walk_type_backing_class.class_name IS 'the binary name of the class the walk bound the type to, spelled as the jvm_ census spells a class name so the two join without normalising; a class the census never reached is still a row, since what the walk resolved is the fact here and whether the scan saw it is a separate question';
 
 -- ==== Derived stratum: claims =====================================================
@@ -3959,9 +3931,7 @@ SELECT g.graph_name, g.type_name, CAST(NULL AS VARCHAR),
                  WHEN 'LOOKUP_KEY' THEN 3 WHEN 'ROUTINE' THEN 4 WHEN 'MUTATION' THEN 5
                  WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS declared
           FROM (SELECT DISTINCT a.graph_name, a.type_name, a.classifier, a.trigger
-                  FROM intent_authored_type_claim a
-                  JOIN walk_claim_domain_type d
-                    ON d.graph_name = a.graph_name AND d.type_name = a.type_name) c
+                  FROM intent_authored_type_claim a) c
          GROUP BY c.graph_name, c.type_name
         HAVING COUNT(*) >= 2) g
   LEFT JOIN graphql_type_declaration td
@@ -3984,16 +3954,13 @@ SELECT g.graph_name, g.type_name, g.field_name,
                  WHEN 'LOOKUP_KEY' THEN 3 WHEN 'ROUTINE' THEN 4 WHEN 'MUTATION' THEN 5
                  WHEN 'TABLE' THEN 6 WHEN 'ERROR' THEN 7 END) AS declared
           FROM (SELECT DISTINCT a.graph_name, a.type_name, a.field_name, a.classifier, a.trigger
-                  FROM intent_authored_field_claim a
-                  JOIN walk_claim_domain_field d
-                    ON d.graph_name = a.graph_name AND d.type_name = a.type_name
-                   AND d.field_name = a.field_name) c
+                  FROM intent_authored_field_claim a) c
          GROUP BY c.graph_name, c.type_name, c.field_name
         HAVING COUNT(*) >= 2) g
   JOIN graphql_field gf
     ON gf.graph_name = g.graph_name AND gf.type_name = g.type_name
    AND gf.field_name = g.field_name;
-COMMENT ON VIEW intent_authored_claim_conflict IS 'The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it and the walk''s reach relation for the grain holds the coordinate (the domain gate as a join against walk_claim_domain_type / walk_claim_domain_field, never against the demand views: the population is the legacy detection''s, and the demand gate-flip is its own follow-up). Two pieces of Java logic live in this SQL and are pinned by the registered agreement anchor (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest, whose per-fixture expectations are hand-written messages this view does not produce): the routine-plus-lookup carve-out (exactly that claim pair is the recognised-but-unsupported combination and yields DEFERRED instead of CONFLICT), and the message render''s claim order (its LISTAGG''s CASE restates AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order; the directives column is the sorted canonical render instead, one grouping spelling for every diagnostics arm). Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
+COMMENT ON VIEW intent_authored_claim_conflict IS 'The authored-claim conflict rule as a resident of the intent_ stratum: one row per violated coordinate, both grains, the store-native pilot of the diagnostics stratum''s derivation arms. A coordinate violates when two or more distinct classifiers claim it, and that is the whole predicate: the relation is total over the authored claims and carries no population filter of its own. An authored contradiction is a contradiction wherever it sits, so each consumer applies the population its own question needs (the build-error surface joins intent_type_domain, type grain directly and field grain through the claim''s owning type, because only the emitted surface can fail a build; the editor''s diagnostic arm reads these rows ungated, a type no field reaches being precisely where an author most needs the signal). What this relation does not carry is any accept line: a filter wearing the view''s name would substitute one consumer''s population for the fact. Two pieces of Java logic live in this SQL and are pinned by the registered agreement anchor (no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest, whose per-fixture expectations are hand-written messages this view does not produce): the routine-plus-lookup carve-out (exactly that claim pair is the recognised-but-unsupported combination and yields DEFERRED instead of CONFLICT), and the message render''s claim order (its LISTAGG''s CASE restates AuthoredClaim''s declaration order, which is the conflict messages'' fixed naming order; the directives column is the sorted canonical render instead, one grouping spelling for every diagnostics arm). Locations join as the legacy mint did: a field violation carries the field''s own declared position, a type violation the type''s base declaration site at merge ordinal 0.';
 COMMENT ON COLUMN intent_authored_claim_conflict.graph_name IS 'the owning graph''s partition, carried from the claim views';
 COMMENT ON COLUMN intent_authored_claim_conflict.type_name IS 'the violated coordinate''s owning type (the coordinate itself at the type grain)';
 COMMENT ON COLUMN intent_authored_claim_conflict.field_name IS 'the violated coordinate''s field name; NULL exactly on type-grain rows, the two-grain union''s key shape (graphql_directive_site''s member_name precedent)';

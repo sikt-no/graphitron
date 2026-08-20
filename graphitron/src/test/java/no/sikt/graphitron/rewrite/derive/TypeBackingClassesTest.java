@@ -105,10 +105,10 @@ class TypeBackingClassesTest {
             }
             """.formatted(STUB));
 
-        var reach = WalkReach.of(schema);
-        assertThat(reach.backingClasses().byTypeName()).isNotEmpty();
-        assertThat(reach.domain().typeNames())
-            .containsAll(reach.backingClasses().byTypeName().keySet());
+        var backing = TypeBackingClasses.of(schema);
+        var registered = ClaimDomain.of(schema);
+        assertThat(backing.byTypeName()).isNotEmpty();
+        assertThat(registered.typeNames()).containsAll(backing.byTypeName().keySet());
     }
 
     private static GraphitronSchema build(String sdl) {
