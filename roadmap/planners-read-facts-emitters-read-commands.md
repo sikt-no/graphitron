@@ -435,10 +435,9 @@ Four success criteria, and every deliverable is a step toward one of them:
 2. No emitter reads a classification leaf **and no emitter calls a planner**, with
    `PackageImportDirectionTest` covering the emitters' packages the way it already covers `render`.
    The second clause is not redundant: the tier rule in the opening sentence forbids both, the body
-   names five live sites where an emitter invokes a producer (one of them handing it the whole
-   model), and a criterion about leaf *reads* alone would leave the inversion standing. The
-   emitters' positive dial therefore excludes `plan`, which is also what makes the criterion
-   checkable.
+   counts thirteen live sites where an emitter invokes a producer, and a criterion about leaf
+   *reads* alone would leave the inversion standing. The emitters' positive dial therefore excludes
+   `plan`, which is also what makes the criterion checkable.
 3. Validation derives from the store: a view where SQL can state the check, a query-then-insert
    where it cannot, the error surface reading their rows either way, with the minted-name
    collision checks as the one stated exception (settled in the validator half).
@@ -484,19 +483,20 @@ and they sit at opposite ends of the work:
   An earlier draft sequenced this producer outside the order, on the ground that it moves with the
   routine-write family's emitter stage, which another item had scoped. That pointer is now dangling:
   the other item (R668) is Done, its stage landed the *emitter* half, and nothing in this item's own
-  ordering schedules the producer. The tree settles it. `TypeFetcherGenerator` calls
-  `RoutineWriteCommands` at three of the five planner-inversion sites named in the emitter half
-  below, one of them passing the whole schema, so this producer's conversion and the fetcher
-  family's cutover are the same piece of work and are sequenced together with it. It is not a
-  separate step and not an exception to the order.
+  ordering schedules the producer. The tree settles it, and settles it in this producer's favour:
+  `TypeFetcherGenerator` owns one of the two production-path inversion sites through
+  `RoutineWriteCommands.produceWithoutSchema`, the renderer is already in `render`, and the facts
+  are already captured, which is what makes this family slice one rather than an exception to the
+  order. See "Slice one" below.
 
-The six in between, in dependency order, because later relations reference the earlier ones' rows.
-Line and site counts read off trunk `7f2ff35`, the sites counted under `CommandSeamRatchetTest`'s own
-rule so they sum to `PLAN_LEAF_REFERENCES` (3 + 29 + 17 + 48 + 29 + 1, plus routine writes' 11, is
-138):
+The six in between. Line and site counts read off trunk `7f2ff35`, the sites counted under
+`CommandSeamRatchetTest`'s own rule so they sum to `PLAN_LEAF_REFERENCES` (3 + 29 + 17 + 48 + 29 + 1,
+plus routine writes' 11, is 138). This is an inventory of the work, **not** a conversion order; what
+actually constrains the order is the section after it, and the two are different:
 
-1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface and the
-   one every other relation references by glue row, so it goes first and establishes the shape.
+1. **Conditions** (`ConditionCommands`, 403 lines, 3 dispatch sites). The smallest surface, and the
+   one every other relation references by glue row. That reference is why an earlier draft put it
+   first; the next section explains why it does not have to be.
 2. **Projections** (`ProjectionCommands`, 558 lines, 29 sites).
 3. **Launchers** (`LauncherCommands`, 1,114 lines, 17 sites). The largest producer, and the one whose
    rows the fetcher generator reads to decide between the launcher emission and the legacy builder.
@@ -513,6 +513,92 @@ rule so they sum to `PLAN_LEAF_REFERENCES` (3 + 29 + 17 + 48 + 29 + 1, plus rout
 Each step is a complete unit: the relation's rows are identical before and after, which the
 pipeline-tier output expectations assert transitively. A direct row comparison against the
 leaf-derived rows is a local aid while converting, never a shipped test (see Coverage).
+
+### What actually constrains the order, measured rather than assumed
+
+The chief risk to this item is not its size. It is that a wrong ordering story makes the work
+chaotic, each increment blocked on another, the tree parked in a half-converted state nobody can
+reason about. So the ordering claim has to be measured, and when it was, the constraint the earlier
+drafts leaned on turned out not to exist.
+
+**Command-relation dependencies impose no conversion order at all.** Read `EmitPlan.produce`: of the
+seven producers, only `ConditionRelation` is consumed by others, and it feeds exactly three
+(`LauncherCommands`, `ProjectionCommands`, `FetcherEdgeCommands`). `TypeUnitCommands` and
+`RoutineWriteCommands` take no relation, and `KeyProjectionCommands` already takes store rows only.
+More to the point, that dependency is a *parameter*, and it survives conversion untouched:
+`ProjectionCommands.produce(schema, conditions, pkg)` becoming `produce(store, conditions, pkg)`
+needs nothing whatever from `ConditionCommands`. The item says as much in "Planners share relations,
+not queries", where command-referencing-command is explicitly the plan's own foreign keys and not a
+shared read. Both statements cannot do work: if the reference survives conversion, it constrains
+nothing. It does survive, so it constrains nothing, and "in dependency order" was a phantom. Any
+producer may convert whenever its facts are ready.
+
+**The production-path tier inversion is two call sites.** An emitter invokes a producer at thirteen
+sites across six files, which sounds like a thicket and is not one. Eleven are convenience overloads
+whose own javadoc says so, five of them in `generators.schema` ("derives the schema-shape rows
+through the producer so the rendered body set is the flagged-row set production uses") and six in
+`TypeFetcherGenerator`'s test-facing `generate` and `generateTypeSpec` entries. They retire by
+pointing their tests at the plan, which is mechanical and orders nothing. The genuine production
+inversion is one line-pair in `TypeFetcherGenerator`'s fetchers fold:
+`LauncherCommands.produceWithoutSchema` and `RoutineWriteCommands.produceWithoutSchema`, the
+nesting-reached fallback.
+
+**And that pair dissolves rather than blocking.** `produceWithoutSchema` exists for exactly one
+reason, stated in its own javadoc: the fetcher generator reaches a nesting-reached type holding
+fields but no schema. A producer reading the store has no such hole, because the store is available
+everywhere the walk is not. So the converted plan produces the relation once and the emitter looks up
+`rowFor(type, field)`, an API both relations already expose and which `renderRoutineWrite` already
+uses for the row it renders. Converting a producer *deletes* its inversion site; the coupling that
+looked like the hard ordering constraint is a symptom of the walk, and it goes when the walk does.
+
+What is left is one real constraint, and it is per-producer rather than a chain: **a producer
+converts when the facts it reads are relations.** That is a question asked once per producer, answered
+independently, with no ordering between the answers. Which is what makes the vertical slice below
+legitimate rather than wishful.
+
+### Slice one: the routine-write vertical, then stop and reflect
+
+Slice one is not the smallest producer. It is the smallest **complete vertical**: one family carried
+through every tier this item touches, so that what the rest of the programme costs is measured
+rather than projected. A horizontal first step (convert the cheapest producer, move on) would prove
+only the half of the recipe that is already proven by `KeyProjectionCommands`, and would leave the
+emitter cutover, the guard and the instruments unexercised until far too late to change course.
+
+The routine-write family is that vertical, and it is unusually ready:
+
+* **Store.** Its facts are already captured and derived. R704 left the routine catalog facts, the
+  chain terminus, the routine return binding and the two name-match keying relations in place when
+  it handed this step over, so slice one begins with a relation-availability check rather than a
+  modelling project. If that check finds a gap, the missing relation is slice one's first
+  deliverable and the fact model is where it lands.
+* **Planner.** `RoutineWriteCommands` is 134 lines and 11 dispatch sites, takes no command relation,
+  and its membership is a total two-arm switch over the two routine-write leaves. Small enough to
+  convert in one sitting, real enough to exercise one-statement-per-grain.
+* **Emitter.** `renderRoutineWrite` already looks its row up with `rowFor` and already delegates the
+  body to `render`. What it still does is read the leaf for the coordinate's tenancy binding through
+  `TenantDslEmitter`, which is the whole of that file's single dispatch site. So this one slice
+  retires a tail file the emitter half wanted done early, and the two orderings that used to
+  disagree converge here instead of competing.
+* **Inversion.** It deletes `RoutineWriteCommands.produceWithoutSchema`, one of the two production
+  inversion sites, proving on the smallest possible case that the coupling dissolves as claimed
+  above.
+* **Render.** `RoutineWriteFetcherRenderer` already exists and already renders from the row.
+* **Instruments.** The statement-count pin lands here first, `PLAN_LEAF_REFERENCES` drops by the
+  slice's 11 plus the tenancy site, and the emitters' positive dial gets a dry run on one file
+  before it is asked to cover a package.
+
+**Then stop.** Slice one ends at a written reflection, not at the next producer, and the reflection
+is a deliverable with the same weight as the code. It answers, with numbers from the slice rather
+than estimates: what did one vertical cost in wall clock and in review; how many statements does a
+converted producer actually issue and did the grain rule hold; did output stay byte-identical or did
+a walk bug surface, and which; was a fact missing after all, and how long did landing it take; is
+`rowFor` the right emitter-side seam or did the cutover want something else. Multiply the answers by
+the families remaining and the programme either has a credible shape or it does not.
+
+The reflection may reorder everything after it, and is expected to. Nothing below slice one is a
+commitment; the inventory above says what the work is, and slice one's numbers say in what order and
+at what granularity to take it. An item this size earns the right to plan its second half only after
+its first vertical has been measured.
 
 **Why per-relation increments are legitimate here.** An earlier plan for this work argued against a
 half-converted resting state, and that argument was right for the classifier: `BuildContext.schema`
@@ -561,13 +647,7 @@ through `RootLauncherRenderer` and its fragments, but `TypeFetcherGenerator` sti
 `DataFetcher` entry points that wrap them, drains the per-class scatter helpers
 (`SplitRowsMethodEmitter`) and the DataLoader registration wrappers (`RowsMethodCall`,
 `DataLoaderFetcherEmitter`), and invokes planners mid-emission, which the tier rule forbids. That
-inversion is wider than an earlier draft of this section said, and the width is what puts routine
-writes inside this family rather than beside it: `TypeFetcherGenerator` calls into *two* producers at
-*five* sites, `LauncherCommands.produceWithoutSchema` twice and `RoutineWriteCommands` three times,
-and one of the three is `produce(schema, outputPackage)`, an emitter handing a planner the whole
-walked model. So the emitter half cannot retire the inversion without converting
-`RoutineWriteCommands`, and the planner half cannot convert `RoutineWriteCommands` without the
-fetcher family's cutover deleting these call sites. That host tier is not a separate family;
+host tier is not a separate family;
 it is part of the fetcher family's cutover. The fetcher family's membership rows exist
 (`TypeUnitCommand.FetchersUnit`), but no relation says what a coordinate's fetcher method body is,
 for the read entry points or the DML write statements alike, so the per-coordinate fetcher command
@@ -754,6 +834,17 @@ comment anticipates), but the re-sourcing follows within the same family's arc r
 deferred to a global second pass; a minted-from-leaves relation is transitional state, not a
 resting place.
 
+**The family is therefore the unit of work throughout, and the earlier drafts' three competing
+decompositions collapse into it.** The planner half used to be ordered by relation, the emitter half
+by file, and this section by family, with no mapping between them, which is what made "what is the
+first commit" unanswerable. The inventory of producers stays an inventory; the schedule is families,
+and a family is done when its facts are relations, its producer reads them, its emitters render its
+rows, and its dispatch sites are gone. Conditions and projections are families whose emitter side
+already sits in `render` (`ConditionGlueRenderer`, `ProjectionUnitRenderer`), so converting their
+producers completes them outright. Launchers, fetcher edges, type units and routine writes all feed
+the one large fetcher family, which is why that family is the item's real weight and why slice one
+takes the corner of it that detaches cleanly.
+
 The validator half is independent of the emit tiers and advances beside them, check by check; no
 emit-family increment waits on it and it waits on none of them. The terminal deletion comes last by
 construction, since it is defined as what happens when nothing reads the walk.
@@ -819,6 +910,24 @@ derivation lives.
   emitters first means minting command relations from leaves that the planner half will then re-source.
   Per-family sequencing (settled above) is the way out; each increment's reviewer should hold the
   work to it.
+* **A wrong ordering story is the chief risk to maintainability, above size.** This is the risk the
+  item is shaped around, so it is stated as a risk and not only as a plan. A programme of this
+  length is maintainable only while the tree is comprehensible at every intermediate commit, and the
+  thing that destroys that is not the line count but a half-converted state whose rules nobody can
+  state: some producers reading the store, some the walk, some both, and no principle saying which
+  should be which. The mitigations are structural rather than diligence-based, because diligence is
+  what the leaf zoo already exhausted.
+  * The unit is the family, and a family is not left half-converted across increments. A producer
+    converted while its emitters still dispatch on leaves is the resting state the item refuses.
+  * The false ordering constraint is retired explicitly, above, with the measurement that retired
+    it. Ordering lore that nobody can re-derive is how a plan becomes chaotic; the constraint graph
+    is written down so a later session can check it rather than inherit it.
+  * The signatures carry the state. A producer either takes a `GraphitronSchema` or it does not, so
+    "how far has this got" is answered by reading `EmitPlan.produce`, never by archaeology. Keeping
+    that legible is worth more than any prose status, and it is why transitional
+    `produceWithoutSchema` pairs are deleted by their conversion rather than accumulating.
+  * Slice one exists to test this risk before the programme commits to a shape, and its reflection
+    is allowed to reorder everything after it.
 
 ## Out of scope
 
