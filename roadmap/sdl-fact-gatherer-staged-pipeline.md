@@ -13,42 +13,45 @@ last-updated: 2026-08-20
 # The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves
 
 The SDL capture load is restructured into a five-stage pipeline whose last two stages read the
-assembled `GraphQLSchema`: the composed census transcribes from assembly instead of the uncomposed
-registry (absorbing R714, discarded in this item's favour, see `roadmap/changelog.md`), and a
-rooted traversal writes the classification domain from SDL-only seeds. The authored-claim conflict
-detection becomes total over authored claims, its consumers apply their own population joins, and
-the `walk_` membership gate leaves the `intent_` stratum with its two relations deleted. One
-change, landed as a big bang: no shadow scaffolding, no strangler increments, and every place the
-new derivation differs from the walk's behaviour is decided from requirements rather than
-transcribed from the legacy code. Two design passes are recorded under Provenance: a principles
-pass that deleted the domain gate rather than re-pointing it, and the owner's correction that kept
-the fifth stage by fixing its seed rule.
+assembled `GraphQLSchema`. The composed census, the `graphql_` family's coordinate-keyed account
+of what the schema declares with extensions merged, transcribes from assembly instead of the
+uncomposed registry, absorbing R714 (discarded in this item's favour, see `roadmap/changelog.md`).
+A rooted traversal writes the classification domain, the set of types the generator intends to
+classify, from SDL-only seeds. And the authored-claim conflict detection, the rule that two
+classifying directives may not claim one coordinate, becomes total over authored claims with each
+consumer applying its own population join, so the `walk_` membership gate leaves the `intent_`
+stratum and its two relations are deleted. One change, landed as a big bang: no shadow
+scaffolding, no strangler increments, and every place the new derivation differs from the walk's
+behaviour is decided from requirements rather than transcribed from the legacy code.
 
 ## Problem
 
 Three defects, one restructure:
 
-* **The `intent_` stratum reads the retiring walk.** `intent_authored_claim_conflict` joins
-  `walk_claim_domain_type` and `walk_claim_domain_field` so conflict minting stays on the
-  population the legacy detection reached. The walk is going away (R682,
-  `roadmap/planners-read-facts-emitters-read-commands.md`, carries the deletion as its terminal
-  deliverable), and when it goes those tables lose their writer and the view's population silently
-  empties. R740 (`roadmap/retire-oracle-diff-shadow-tests.md`) declined to schedule the flip for
-  want of a reason; the walk's retirement is the reason.
-* **The composed census is a reimplementation.** The `graphql_` payload is written from
-  `attributed.preSynthesisRegistry()`, a `TypeDefinitionRegistry`, which is the uncomposed census:
-  base declarations and extensions are separate entries, and `SdlFactCapture` merges them itself,
-  deciding collisions through `FactSink.claim`'s first-wins. That merge is graphql-java's job and
-  graphql-java already does it during assembly. This was R714's whole content and it lands here as
-  stage 4.
-* **The domain is derived by restating rules other producers own.** The store's closure
-  (`ReachabilityRows` materializing `intent_type_domain`) re-enumerates graphql-java's descent
-  semantics as SQL `UNION` arms that must track every SDL feature by hand, and it narrowed its
-  node seeds to the walk's cross-corpus accept line (`intent_node_type`'s metadata conjunction),
-  a fidelity choice its predecessor comment on the relation itself calls an over-approximation
-  gap. Beside it the `walk_` membership grains transcribe the walk's registries saying nearly the
-  same thing, existing only to feed the gate above, so they retire with it. The classifier's own
-  Java twin (`SchemaReachability`) remains the walk's input and dies with the walk under R682.
+* **The `intent_` stratum reads the retiring walk.** The classification walk is the legacy Java
+  pass that turns the schema into the sealed leaf model, and it is going away: R682
+  (`roadmap/planners-read-facts-emitters-read-commands.md`) carries its deletion as the terminal
+  deliverable. `intent_authored_claim_conflict` joins `walk_claim_domain_type` and
+  `walk_claim_domain_field`, transcriptions of that walk's registries, so conflict minting stays
+  on the population the legacy detection reached; when the walk goes, those tables lose their
+  writer and the view's population silently empties. R740
+  (`roadmap/retire-oracle-diff-shadow-tests.md`) declined to schedule the flip for want of a
+  reason; the walk's retirement is the reason.
+* **The composed census is a reimplementation.** The `graphql_` payload is written from the
+  loader's pre-synthesis registry snapshot, a `TypeDefinitionRegistry`, which is the uncomposed
+  census: base declarations and extensions are separate entries, and `SdlFactCapture` merges them
+  itself, deciding collisions through `FactSink.claim`'s first-wins. That merge is graphql-java's
+  job and graphql-java already does it during assembly. This was R714's whole content and it lands
+  here as stage 4.
+* **The domain relation's rule is contested and restated.** `intent_type_domain` holds the
+  classification domain's type members, and its writer disagrees with its own DDL comment about
+  the seed rule: the comment records SDL-only seeds (calling the node arm an over-approximation of
+  node inference), while the writer (`ReachabilityRows`) narrowed nodehood to `intent_node_type`'s
+  cross-corpus conjunction, the walk's accept line. The writer also re-enumerates graphql-java's
+  descent semantics as SQL `UNION` arms that must track every SDL feature by hand. Beside it, the
+  `walk_` membership grains transcribe the walk's registries saying nearly the same thing,
+  existing only to feed the gate above, so they retire with it. The classifier's own Java twin
+  (`SchemaReachability`) remains the walk's input and dies with the walk under R682.
 
 ## The five stages
 
@@ -96,39 +99,6 @@ and the whole of stages 2 through 5. Throughout, the graphql-java objects
 collaborators, which are the only classes permitted to hold them; the staging changes what capture
 reads, not where the containment boundary sits.
 
-## Stage 5: the domain's seeds are SDL facts
-
-The filed fifth stage was briefly withdrawn on the argument that its seeds read two corpora,
-nodehood being `NodeDeclaration`'s conjunction of `implements Node` with a `@table` binding and
-well-formed catalog metadata. The owner corrected the premise: `implements Node` is required for
-the inferred arm of nodehood to take effect at all, so the SDL-only rule (a type declares `@node`,
-or declares `implements Node`) over-approximates the node seed set, and seeding is monotone, so
-the over-approximation answers the domain question correctly. The catalog conjunct decides what
-nodehood means (key columns, id shape), never whether the author declared it, and it was therefore
-not load-bearing for domain membership; narrowing the seeds to `intent_node_type`'s cross-corpus
-conjunction was `ReachabilityRows` transcribing the walk's accept line, and `intent_type_domain`'s
-own comment records the SDL-only shape as the intended one (an over-approximation whose excess the
-shadow agreement asserted empty; under big bang the excess becomes deliberate members instead of
-an asserted-empty residue).
-
-With that correction every seed arm is an SDL fact readable off the assembled schema: the
-operation roots, the `@node` carriers, the `implements Node` types, the `@key` carriers, and the
-argument types of directive definitions that survive into the emitted schema, where the survivor
-discriminator is the definition's own source (the bundled `directives.graphqls` resource name on
-its AST pointer) rather than `DeclaredDirectives.names()` bound as a constant. So stage 5 is a
-one-corpus producer and genuinely a stage of the SDL gatherer, running before and independently of
-`CatalogFactCapture`.
-
-The traversal, not the SQL closure, is the right producer, on the same ground as stage 4: the
-descent rule (field targets, argument types, input-object fields, union members, `implements` in
-both directions with the interface-to-implementor edge from `GraphQLSchema.getImplementations`) is
-graphql-java's own child semantics, and the closure's `UNION` arms restate it edge kind by edge
-kind and must track every SDL feature by hand. The fact model's stratum test is about what the
-rows are a function of, never what program computes them, and the rows stay a function of the
-captured sources. `ReachabilityRows` and its semi-naive closure retire; `intent_type_domain`
-remains the destination, its DDL comment rewritten for its new writer and its now-deliberate seed
-rule.
-
 ## Strategy: big bang, semantics from requirements
 
 The restructure lands as one change. No differential relations, no shadow tests, no residue
@@ -141,7 +111,7 @@ tombstones, its hand-assembled domains, its output-only recorded set) does not t
 relations' semantics. The purity claim is scoped to what this item touches: the authored-claim
 views' per-arm position masks are also walk transcriptions (hardcoded root-name literals and
 per-position gates, as `intent_authored_field_claim`'s own comment records), they shape the
-conflict population too, and they are deliberately out of scope here (see below), so the
+conflict population too, and they are deliberately out of scope here (see "Out of scope"), so the
 enumerated corpus diff must attribute each difference to the right cause.
 
 ## Design rule: absence means exactly one thing
@@ -210,7 +180,35 @@ Absorbed from R714; its analysis holds and lands here.
   described, for a new reader (the composed census's consumers), so it is argued here as a
   re-opening with the reader named, not as continuity.
 
-## The domain relation keeps its name and gains a grain answer
+## Stage 5: the classification domain
+
+The rooted traversal writes `intent_type_domain`, the classification domain's type members, in the
+same transaction as stage 4.
+
+* **Every seed is an SDL fact, readable off the assembled schema:** the operation roots, the
+  `@node` carriers, the `implements Node` types, the `@key` carriers, and the argument types of
+  directive definitions that survive into the emitted schema, where the survivor discriminator is
+  the definition's own source (the bundled `directives.graphqls` resource name on its AST pointer)
+  rather than `DeclaredDirectives.names()` bound as a constant. The node arm deserves its
+  justification stated: inferred nodehood requires `implements Node` to take effect at all, so
+  seeding on the declaration alone over-approximates the node seed set, and seeding is monotone,
+  so the over-approximation answers the membership question correctly. The catalog half of the
+  inference (a `@table` binding whose generated class publishes well-formed node metadata) decides
+  what nodehood means, never whether the author declared it, and stays out of the seed rule. This
+  is what makes stage 5 a one-corpus producer and genuinely a stage of the SDL gatherer, running
+  before and independently of the catalog capture.
+* **The traversal, not the SQL closure, is the producer**, on the same ground as stage 4: the
+  descent rule (field targets, argument types, input-object fields, union members, `implements` in
+  both directions with the interface-to-implementor edge from
+  `GraphQLSchema.getImplementations`) is graphql-java's own child semantics, and the closure's
+  `UNION` arms restate it edge kind by edge kind and must track every SDL feature by hand. The
+  fact model's stratum test is about what a relation's rows are a function of, never what program
+  computes them, and the rows stay a function of the captured sources. `ReachabilityRows` retires;
+  `intent_type_domain` remains the destination, its DDL comment rewritten for its new writer and
+  the now-decided seed rule, which ends the comment-versus-writer disagreement the problem
+  statement names.
+
+## The domain relation keeps its name, and the field grain is a join
 
 `intent_type_domain` is named for its assertion, not for the graph operation, because its seeds
 are generator policy rather than neutral schema reachability, and this item keeps that
@@ -343,7 +341,7 @@ Each is the requirement acting as the specification; none ships unnoticed.
 * **The containment boundary**: the graphql-java objects stay inside the capture collaborators,
   which the principles document's classification-leak rule already names; the restructure's review
   checks it explicitly since the staged design multiplies the places a `GraphQLSchema` is in hand.
-* **Documentation**: `fact-model.adoc`'s stage pipeline paragraph grows stage 4 and the
+* **Documentation**: `fact-model.adoc`'s stage pipeline paragraph grows stages 4 and 5 and the
   composed/written split; the `walk_` family header rewrite; R714's census table lands in the
   architecture docs rather than surviving only in a discarded item.
 
