@@ -1,7 +1,7 @@
 ---
 id: R743
 title: "The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: classification-model
