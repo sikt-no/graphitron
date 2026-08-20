@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
 # A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships
@@ -21,7 +21,7 @@ rejected at classify time. The author-facing message is:
 > not yet supported; reference filters emit a foreign-key correlated subquery and require every
 > hop to resolve to a foreign key
 
-Two sites enforce it: the argument arm in `FieldBuilder` (`classifyScalarArg`'s `@reference` branch,
+Two sites enforce it: the argument arm in `FieldBuilder` (`classifyArgument`'s `@reference` branch,
 guarded by an `On.ColumnPairs` test, message shared through
 `FieldBuilder.referenceFilterConditionJoinRejection`) and the input-field mirror in
 `GraphitronSchemaValidator.validateInputColumnBackedReferenceField`. The mechanical cause sits below both:
@@ -408,6 +408,116 @@ carrier field's return type has no `@table` binding" to Retired vocabulary.
   new class. That file already mixes `Table<?>` and concrete-typed methods
   (`filmActorJunctionToActor`, `splitFilterParentIncluded`), so adding methods to it is the
   established shape; one word settles it.
+
+## Open review items (second Spec review, 2026-08-20)
+
+Independent session, different from the one that last committed this file. A and B above were
+re-verified against the tree and both still stand exactly as written, so they are not restated:
+the 47 `.elements()` reads across the five named files, the nine `List<JoinStep> joinPath`
+components in `ChildField` plus its interface accessor, the eight test-side `List<JoinStep>`
+fixtures, and `CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED`'s SDL and both assertion substrings
+all match. `TestConditionStub.join` is `(org.jooq.Table<?>, org.jooq.Table<?>)`, so B's predicted
+post-collapse failure is the wildcard-parameter message, as it says. Three further items are owed.
+
+### C. Item 2 must say which hops may see a declared target
+
+Item 2's rationale, "what decides the answer is not the hop's position but the available source",
+reads as licence to hand `declaredTarget` to every hop. It is not.
+`BuildContext.resolvePathElements` threads one `targetSqlTableName` (the carrier field's return
+`@table`) past every element and uses `isTerminal` to decide which element may read it. A
+`declaredTarget` supplied uniformly would resolve an *intermediate* condition hop to the field's
+return table instead of reflecting on the method's second parameter. That is wrong on its face and
+it breaks
+`GraphitronSchemaBuilderTest.ColumnReferenceFieldCase.CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM`,
+whose path is `[{condition: TestConditionStub.intermediate}, {table: "actor"}]` on a `film` carrier
+returning `Actor` and which asserts the hop's target resolves to `film_actor` by reflection.
+
+The rule is coherent once stated precisely: `declaredTarget` is *this hop's* declared target, and
+only a chain-ending terminal element has one, so the positional test stays at the call site
+(`isTerminal ? declaredTargetRef : null`) and only the callee's branch collapses. One sentence in
+item 2 settles it. Also worth saying which way the preference points and why: preferring the
+declared target over reflection is what keeps `TestConditionStub.terminalWrongTarget` a Check 2
+finding rather than a resolution failure, which is the same fact item 2 already asserts when it
+says `validateConditionParamTables` keeps firing unchanged.
+
+Verified on the reviewer's side and recorded so the next reader need not re-derive it: the collapse
+does *not* undermine `BuildContext.computeTerminalTargetVerdict`'s `On.Predicate` arm, whose
+"Match by construction" rests on the terminal target coming from the return `@table`. Every
+`parsePath` call site passing a non-null `returnTableRef` passes that same table's name as
+`targetSqlTableName`, and the gate returns `NotApplicable` when `returnTableRef` is null, so
+wherever it actually compares, the declared target was used and the tautology holds. Only the
+arm's prose goes stale (see E).
+
+### D. Item 10's pipeline bullet names an assertion form the tier guide bans
+
+"asserting the classified carrier and the generated `TypeSpec` shape (the `EXISTS` embedding the
+two-arg method call)" is method-body content, and the pipeline-tier section of
+`docs/architecture/how-to/testing.adoc` says "Banned: code-string body matching". The same guide
+names the home this change actually wants: renderer arm tests are "the preferred home for per-arm
+structural assertions on command-driven emission", and item 5 is exactly what makes
+`ConditionGlueRenderer`'s reach dispatch total over the `On` seal. Item 10 proposes no renderer-arm
+case at all, which leaves the one genuinely new dispatch point uncovered at the tier built for it.
+
+Precedent cuts both ways, so this is a decision to record rather than a flat error:
+`ConditionGluePipelineTest` is a `@PipelineTier` class and already asserts
+`primaryBody).contains("decodeBarRowsOrThrow(")`. But the last Done-gate review in this
+neighbourhood checked "no code-string assertions on generated method bodies" explicitly, so an
+implementer following item 10 literally walks into that check. Splitting the bullet costs nothing:
+the pipeline tier asserts the classified carrier plus the command rows (SDL to reach rows, the
+`ConditionCommandsPipelineTest` shape, no javapoet), a `ConditionGlueRenderer` arm test asserts
+`hopZeroCorrelation`'s predicate arm from record literals, and the emitted `EXISTS` is pinned where
+the guide puts it, at `ConditionSqlBaselineTest` or the execution tier.
+
+### E. Retired vocabulary under-declares item 2's footprint
+
+Item 2 retires the terminal-versus-intermediate framing, not just one message, and the sweep at the
+Done gate reads this section. Add:
+
+* the "cannot resolve target table because the carrier field's return type has no `@table`
+  binding" text (already owed by B),
+* the `isTerminal` parameter and the "intermediate-hop `@condition` method" message prefix, which
+  opens all three of `resolveConditionJoinTarget`'s reflection-arm rejections, and
+* the "terminal branch" / "terminal-hop arm" / "intermediate-hop arm" framing in prose. It sits in
+  roughly ten places, four in `BuildContext` (`resolveConditionJoinTarget`'s own javadoc, the
+  `computeTerminalTargetVerdict` javadoc, that method's inline `On.Predicate` comment, and the
+  Check 2 comment in `parsePathElement`'s condition arm) and the rest in
+  `MultiSchemaConditionParamTest`, `TestConditionStub` (both the `intermediate` and
+  `terminalWrongTarget` fixtures) and `GraphitronSchemaBuilderTest`. Re-count at pickup.
+
+### Non-blocking, second pass
+
+* **A third stale claim in the same manual file.** `join-with-references.adoc`'s Pitfalls list
+  says "*`path:` must be non-empty.* `@reference(path: [])` fails graphql-java parsing. Every
+  reference declares at least one hop." It does not fail: the empty list is legal SDL, and both
+  filter surfaces classify it and bind `Local`, pinned by
+  `ReferenceFilterRemoteColumnPipelineTest.surface2_scalarArg_elementLessPath_bindsLocal` and its
+  `surface1` twin. R692 owns the decision about whether the inert form *should* be rejected; it
+  does not own the false claim. Item 9 already rewrites the neighbouring sections of this file for
+  exactly this class of staleness, so folding in the one-line correction is cheaper than a separate
+  pass. Author's call whether it rides here or goes into R692's body.
+* **Item 10's "first cases" wording.** "the input-field surface gains its first cases alongside it"
+  undersells what is there: `ReferenceFilterRemoteColumnPipelineTest` carries five `surface1` cases
+  today. What that surface lacks is a condition-hop case, and a rejection pin of any kind.
+* **The first pass's three non-blocking notes all check out.** `command/ArgBinding.java`'s class
+  javadoc does use `{@link FkHop}` rather than `{@code}`, so the reference gate does fire on the
+  retirement; `declareReachAliases`'s `IdentityHashMap` is keyed and documented as the note says;
+  and `ReferencePathConditionFixtures` already mixes wildcard and concrete parameter types.
+
+Everything else verified against the tree: both rejection sites and their message text; the walker
+and its stale javadoc sentence; its three consumers and the two candidate-hint fallbacks item 1
+deletes; `resolveConditionJoinTarget`'s two arms; `On.Lateral` minted only by `FieldBuilder`'s
+routine arm at one site and never by `parsePathElement`; `FkHop`, `narrowPath`, `reachExists`'s
+unconditional `.pairs()` reads and the `FkHop` blast radius (six main-source files, the test-side
+hits being the unrelated `isFkHop` / `filteredFkHop` helper names);
+`PathFragments.correlationWhere`'s `On.Predicate` arm verbatim, `emitBackwardBridging`'s signature,
+and both class charters as item 5 quotes them; `OnParentJoin`'s no-`condition()`-accessor javadoc
+and its dispatch instruction verbatim; item 7's corrected premise in
+`buildParentCorrelation`'s `On.ColumnPairs` arm; the `FkTargetConditionFilter` reach reaching only
+from the carrier the surviving validator block gates, and `NodeIdLeafResolver`'s FK-only-at-every-
+position loop; the four `remoteBindingUnsupported` rail sites; all three manual claims item 9
+retires plus the shipped execution fixtures that falsify them; the legacy directive snapshot's
+locations and `ReferenceElement.condition`; the changelog quote verbatim; and R485's scope note and
+R676's framing.
 
 ## Non-goals
 
