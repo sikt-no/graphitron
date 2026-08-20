@@ -236,23 +236,40 @@ speed half.
 
 ### Extending test parallelism is now a slice rather than a footnote
 
-This item carries the extension as "smaller than a slice" at the end of the unmeasured list. Measured:
-`graphitron-model`, `graphitron-lsp` and `graphitron-mcp` given the same `junit-platform.properties`
-`graphitron` already has took the build from **367.4s to 310.8s and 317.7s** on two runs, both green
-with zero failures.
+This item carries the extension as "smaller than a slice" at the end of the unmeasured list. It is
+measured now, and it is one module rather than three.
 
-Attribute it to the three modules and to nothing else. They account for **−34.6s** and they agree
-across both runs: `graphitron-model` 55.7s to 37.8s, `graphitron-lsp` 42.7s to 31.2s, `graphitron-mcp`
-29.0s to 23.8s. The remaining delta sits in `graphitron-maven-plugin`, which was not edited and whose
-wall clock reads 39.6s, 46.1s, 30.8s and 32.0s across four runs of identical work; a module that
-swings 15 seconds on its own is not evidence of anything and none of it is claimed here.
+**The first reading of this was wrong and is worth keeping as the method lesson.** Giving
+`graphitron-model`, `graphitron-lsp` and `graphitron-mcp` the same `junit-platform.properties`
+`graphitron` already has took two full builds from 367.4s to 310.8s and 317.7s, both green, and the
+three modules' spans appeared to account for 34.6s of it. Those spans are not a usable instrument on a
+4 vCPU sandbox. Over five runs of identical work `graphitron-maven-plugin` spanned 30.8s to 46.1s and
+`graphitron-model` 37.7s to 113.9s, so an 11-second "win" inside one pair of runs is noise wearing a
+number.
 
-Two cautions a Spec pass owes. Two green runs are not thread safety: `graphitron`'s own properties
+A clean per-module A/B, `mvn test -pl :<module>` with the arms alternated and repeated, says:
+
+| Module | With parallelism | Without | Verdict |
+|---|---|---|---|
+| `graphitron-model` | 45.0, 45.3, 45.8s | 66.0, 66.7, 66.7s | **−21s, landed** |
+| `graphitron-lsp` | 30.6s | 30.8s | nothing |
+| `graphitron-mcp` | 24.5s | 24.9s | nothing |
+
+So `graphitron-model` is worth more alone than the three were credited with together, and the other
+two are worth nothing. That fits what the module is: its test cost is almost entirely per-case store
+boots, 152 of them, each an independent in-memory database, which is the shape concurrency helps.
+`graphitron-lsp`'s summed class time inflating from 36.2s to 259.1s while its wall clock does not move
+is the same fact from the other side, contention rather than parallel work.
+
+One trap to know before re-running this. Removing a `junit-platform.properties` from
+`src/test/resources` does not remove the copy Maven already put in `target/test-classes`, so the arm
+meant to be sequential runs parallel and the difference vanishes. Delete the target copy explicitly,
+or the measurement will tell you parallelism does nothing.
+
+The remaining caution stands unchanged: green runs are not thread safety. `graphitron`'s own properties
 file documents the process-global hazard and carries `@Isolated` on the two classes that trip it, and
-nothing here establishes that these three modules have no such state. And `graphitron-lsp`'s summed
-class time inflates from 36.2s to 259.1s while its wall clock falls, which is severe contention rather
-than parallel work; the wall clock is still better, but a module whose classes spend seven times
-longer waiting is one to look at before trusting.
+nothing measured here establishes that `graphitron-model` has no such state; what is established is
+that every case there owns its own store.
 
 ### How to re-measure, per statement
 
@@ -284,17 +301,40 @@ behind is **845 MB** for 418,192 rows, of which about 400,000 are the census.
 
 ### What this pass leaves for whoever specs the item
 
-The first two together were measured on the same build: **410.1s to a mean of 314.3s**, 96 seconds and
-23% of the build, from one line of DDL and three configuration files, green on every run. Neither
-needs the third, and neither needs this item's guardrail; they are the cheapest things on this list by
-a wide margin and they are what a Spec pass should take first.
+The first two are the cheapest things on this list by a wide margin, neither needs the third and
+neither needs this item's guardrail. The second has since landed directly against trunk, for one
+module rather than the three first credited, at a reproducible 21 seconds; the first is filed as its
+own item at 42.7 seconds and is what a Spec pass should take first. Quote those two figures
+separately rather than adding them: they were measured with different instruments, on trunks twenty
+commits apart, and the combined 96-second figure an earlier draft of this section carried came from
+whole-build spans that the parallelism entry below shows are too noisy on this hardware to carry a
+sum.
 
 In the order the numbers argue for, and every one of them is now measured rather than bounded.
 
 1. **The store-boot alias.** 42.7s, one line, green, its own item, and a design improvement
    independently of speed.
-2. **Test parallelism in the three modules.** 34.6s attributable, green twice, with the two cautions
-   above. One module at a time, as this item already says.
+2. ~~**Test parallelism in the three modules.**~~ **Landed directly against trunk for
+   `graphitron-model` only**, on the user's explicit call that a change consisting only of a
+   `junit-platform.properties` file did not warrant a pipeline cycle. **The three-module figure this
+   pass first reported was wrong, and the correction matters more than the win.** A clean per-module
+   A/B, alternating arms and deleting the stale `target/test-classes` copy each time, gives
+   `graphitron-model` 45s against 66s over three rounds, and gives `graphitron-lsp` (30.6 vs 30.8)
+   and `graphitron-mcp` (24.5 vs 24.9) nothing at all. Only `graphitron-model` carries the file.
+
+   How the first figure went wrong is worth recording, because the same trap is waiting for the next
+   person. It was read off whole-build module spans, and those spans are not a usable instrument on a
+   4 vCPU sandbox: over five runs of identical work `graphitron-maven-plugin` spanned 30.8s to 46.1s
+   and `graphitron-model` 37.7s to 113.9s, so an 11s "win" in a single pair of runs is inside the
+   noise. Attribute a test-configuration change with `mvn test -pl :<module>`, alternating, repeated,
+   never with a module span diff. The second trap is Maven's: removing a resource file does not remove
+   the copy already in `target/test-classes`, so the arm that is supposed to be sequential runs
+   parallel and the difference disappears.
+
+   One refinement against what was measured, kept because it is strictly less change: only the four
+   parallelism keys are set, not the `extensions.autodetection.enabled` that `graphitron`'s file also
+   carries, since only `graphitron` registers an extension under `META-INF/services` and enabling it
+   elsewhere would change nothing today and quietly activate whatever is added later.
 3. **The third registration, `intent_resolved_type_binding`.** 7.4s off one class and 84% off the
    store's per-run read cost, gated on R746.
 4. **R746 itself**, whose priority and self-description both need correcting.
@@ -601,10 +641,12 @@ same `junit-platform.properties` settings to `graphitron-lsp`, `graphitron-mcp` 
 is unmeasured, and each module has its own shared-state question to answer first, so take them one at
 a time and only after R732's parallelism model has settled in the module it was measured in.
 
-*No longer unmeasured, and no longer smaller than a slice: the third pass puts it at 35.1 seconds
-attributable, second only to the store-boot alias. The one-module-at-a-time instruction and the
-shared-state question both stand, and the third pass adds a contention warning about
-`graphitron-lsp`.*
+*Done, and no longer this item's business. It landed directly against trunk for `graphitron-model`
+alone, at a reproducible 21 seconds, on the user's explicit call that a change consisting only of a
+`junit-platform.properties` file did not warrant a pipeline cycle. The one-module-at-a-time
+instruction above turned out to be the load-bearing part of this paragraph: measured per module, two
+of the three were worth nothing, and a single three-module figure would have shipped two files that
+buy no time and one contention risk that buys none either.*
 
 **6. Decide whether PR builds need `-Pcoverage`.** CI attaches the JaCoCo agent to every run
 including PRs (`mvn install -Plocal-db -Pcoverage --batch-mode -T 1C`). The stated reason, keeping the
