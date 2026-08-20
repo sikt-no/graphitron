@@ -156,6 +156,13 @@ repo's own catalog on jOOQ 3.20.11, over `film.rating` (`mpaa_rating`):
 | `"film"."title" in (?)`, byte-identical to today
 |===
 
+Two API details, measured on the same probe, that an implementer will otherwise re-derive the
+hard way. The reference at the comparison sites is a `Field<Object>`, and `Field<T>.eq` offers
+`eq(T)` and `eq(Field<T>)`; with `T = Object` a `Param<MpaaRating>` matches only `eq(T)`. That
+overload is the one that fires, and jOOQ passes the `Param` through unchanged rather than
+re-binding it, so the cast renders anyway. Do not read the apparent mismatch as a reason to
+type the reference. The `IN` site takes `in(Field<?>...)` and has no such subtlety.
+
 The cast is not incidental; it is the mechanism. `mpaa_rating = cast(? as mpaa_rating)` is
 what Postgres accepts where `mpaa_rating = character varying` is the error this item kills.
 The tree already pins the shape from the enum-filter path
@@ -237,7 +244,10 @@ this guard makes the documented behavior true.
 This guard exists because the mechanism needs it: `DSL.val` with a literal the enum does
 not know converts to null and binds NULL, which matches no rows silently. That would
 trade the loud per-query failure this item kills for the silent-wrong-answer class, so
-the guard is the mechanism's enforcer, not a second feature.
+the guard is the mechanism's enforcer, not a second feature. Measured on jOOQ 3.20.11:
+`DSL.val("NOPE", <enum DataType>).getValue()` is `null`, with no warning of any kind. The
+converse also measures as the namespace section claims: `DSL.val("PG-13", ...)` converts to
+the `PG_13` constant and binds the database literal `'PG-13'`.
 
 When the resolved discriminator column's `columnClass` is a jOOQ-generated enum
 (detected with `EnumMappingResolver`'s established reflection idiom:
@@ -269,11 +279,16 @@ a bare string:
 
 * `QueryField` (both the read-side row and `QueryServiceTableInterfaceField`)
 * `MutationField.MutationServiceTableInterfaceField`
-* `ChildField.TableInterfaceField`
+* `ChildField.TableInterfaceField` and `ChildField.BatchedTableInterfaceField`
 * `DmlReturnExpression.DiscriminatedSingle` / `DiscriminatedList`
 * `LaunchSource.DiscriminatedTable`
 * `SelectTerm.ScalarSubselect.ParentColumnEquals` (gains the column as `ColumnRef`,
   keeping `value`)
+
+Four `String discriminatorColumn` *parameter* threads carry the same fact between those
+records and the render sites, and retype with them: `LauncherCommands.discriminatedReentrySource`
+and `discriminatedBranches`, `TypeFetcherGenerator.buildTableInterfaceReprojection`, and
+`MultiTablePolymorphicEmitter.emitServiceTableInterfaceMethods` / `buildServiceTableInterfaceFetcher`.
 
 The terminal consumers are the four render sites, which want `sqlName` (the reference)
 and `javaName` (the `getDataType()` spelling). This follows "shape the type as precisely
@@ -310,7 +325,8 @@ than as matching literals a future edit can split.
 * `GraphitronType.TableInterfaceType`, `QueryField`, `MutationField`, `ChildField`,
   `DmlReturnExpression`, `LaunchSource.DiscriminatedTable`,
   `SelectTerm.ScalarSubselect.ParentColumnEquals` (the `String` to `ColumnRef` retype),
-  plus their mint sites in `FieldBuilder` and `LauncherCommands.crossTableTerms`.
+  plus their mint sites in `FieldBuilder` and `LauncherCommands.crossTableTerms` and the four
+  parameter threads listed under "Model carriage" above.
 * `DiscriminatedTableFragments` (`discriminatorRef` mint; typed binds in
   `discriminatorFilter` and `joinedDetailJoinChain`; axis-split javadoc paragraph).
 * `PathFragments.parentColumnEquals` (typed bind through the gate's `ColumnRef`).
@@ -334,15 +350,32 @@ existing families' discriminator columns convert to new Postgres enum types in `
 * `content.content_type`: covers the `IN` filter, the routing projection and read-back,
   the cross-table participant gate (`FilmContent.rating` via `content_film_id_fkey` is
   the existing `ParentColumnEquals` fixture), the DML follow-up read, and the `@service`
-  arm (the R405/R406 execution suites run over `Content`).
+  arm (`ServiceTableInterfaceReturnExecutionTest` and `DmlTableInterfaceReturnExecutionTest`
+  both run over `Content`).
 * `jti_subject.subject_kind` (re-declared on `jti_app_account` / `jti_person`, which
   convert with it): covers the joined-detail ON-clause site and the composite-shared-key
   base-qualification shape the class javadoc defends.
 
-`party_kind`, `fan_kind` (the batched-child baselines), and `signal_kind` (named schema)
-stay varchar as the control group, so both value-domain shapes stay exercised. The
-converted families' baselines gain the enum cast at each comparison site; the control
-group's baselines must come back byte-identical.
+`party_kind`, `fan_kind` and `signal_kind` (named schema) stay varchar as the control group, so
+both value-domain shapes stay exercised. The converted families' baselines gain the enum cast at
+each comparison site; the control group's baselines must come back byte-identical.
+
+The control group's *baseline* coverage is narrower than its family count suggests, and the
+implementer should know which criterion is actually checkable where. `party_kind` is the only
+varchar discriminator with SQL pins at all (six in `RootLauncherSqlBaselineTest`), and it is the
+right one to have: its statements carry both the `IN` filter and the joined-detail
+`and "party"."party_kind" = ?` ON clause, so the two rendered forms this item changes each keep
+a byte-identical varchar witness. `fan_kind` and `signal_kind` appear in no test source at all;
+their families are covered at the execution tier only (`GraphQLQueryTest`, `MultiSchemaQueryTest`),
+so "unchanged" for them means "still answers correctly", not "renders identically".
+
+Note also that `BatchedChildSqlBaselineTest` and `DmlSqlBaselineTest` pin `content_type`
+statements exclusively, so the conversion moves every pin they have: after it, the batched-child
+and DML paths keep no varchar baseline control. That is acceptable rather than merely tolerated,
+because the rendering decision is the bind's, made by jOOQ's binding at a single fragment family
+both paths reuse, and the root launcher retains the varchar witness for both forms. Do not
+"restore" the control by leaving one of the two families varchar; the joined-detail ON site has
+no other enum-capable fixture.
 
 The two converted families put a `String`-typed SDL field on the now-enum column, in
 opposite directions, and each direction resolves differently:
@@ -368,6 +401,15 @@ opposite directions, and each direction resolves differently:
 Neither direction is left for the implementer to discover; if either turns out otherwise in
 practice, that is a finding to surface rather than a fixture to retype.
 
+One coverage limit of this fixture choice, stated so it is a decision rather than an oversight.
+Every seeded value in both converted families (`FILM`, `SHORT`, `APP`, `PERSON`) is a valid Java
+identifier, so the enum literal and the Java constant name coincide and no converted fixture can
+distinguish them. The namespace decision above therefore rests on the lifted core's dashed-literal
+unit test and on the pre-existing `MpaaRating` filter path, not on the discriminator round trip
+itself. Optional, and the implementer's call: seeding one hyphenated literal into a converted
+family would pin the whole chain (bind, projection read-back, `TypeResolver` switch) against the
+database literal end to end. It costs the seeded rows and the assertions that name those values.
+
 Tier by tier:
 
 * **Unit (render arms):** `RootLauncherRendererTest`'s `DiscriminatedTable` family gains
@@ -383,7 +425,30 @@ Tier by tier:
   `@discriminate(on: "kind")`-over-`film` fixture update: the fixtures name a real
   column (the unresolvable shape is no longer a classified verdict), and a rejection row
   covers the old shape. A classification row asserts `TableInterfaceType` carries the
-  typed `ColumnRef` (enum `columnClass`) for an enum-discriminated interface.
+  typed `ColumnRef` (enum `columnClass`) for an enum-discriminated interface. Its two
+  `isEqualToIgnoringCase("CONTENT_TYPE")` assertions retype along with the sites below.
+* **Guard 1 fixture fallout, which is not compiler-enumerated.** The silent raw-string fallback
+  is load-bearing in more fixtures than the guard's own tests. Neither `film.kind` nor
+  `film.FILM_TYPE` exists (no table in the fixture has a bare `kind` column), so every interface
+  below classifies today *only* because the fallback keeps the unresolved name. Each becomes an
+  `UnclassifiedType` under Guard 1, and unlike the retype these are behavioral failures the
+  compiler cannot point at. Repoint each `on:` at a real column (`rating` or `text_rating` on
+  `film`) rather than deleting the fixture:
+** `ClassifiedCorpus`: three examples (`query-service-table-interface`,
+   `mutation-service-table-interface`, `table-interface`) whose `@classifiedType(as:
+   TableInterfaceType)` claim flips. These are the spec-by-example corpus, so they render into
+   the code-generation-triggers documentation; the corpus render and drift verification is part
+   of the fix, not a follow-on.
+** `CorrelationKeyArmPipelineTest`: `tableInterfaceField_armProjectsTheHopSourceSideColumn` and
+   its batched twin.
+** `SchemaReachabilityTest`: `MediaItem` in the shared class-level SDL, which
+   `everyReachableTypeIsClassified` reads.
+** `GraphitronSchemaClassGeneratorTest`'s `AlphaContent @table(name: "film") @discriminate(on:
+   "FILM_TYPE")` *degrades silently rather than failing*: with no `AlphaContent` resolver
+   emitted, `body.indexOf(...)` yields `-1` and the `isLessThan(zebraIdx)` ordering assertion
+   passes vacuously. Its own comment claims the fixture "uses real fixture tables (content,
+   film) so TableInterfaceType classification succeeds", which is already only half true.
+   Fix the column and keep the assertion meaningful.
 * **Mechanical retype fallout.** The `String` to `ColumnRef` change breaks every existing
   assertion that compares a discriminator accessor to a bare string, and every hand-built
   fixture that passes one positionally. Beyond `GraphitronSchemaBuilderTest` above, the known
@@ -416,8 +481,10 @@ columns, the enum literal as spelled in the database, not a Java constant name).
   (`cast(? as "public"."<enum_type>")`) at each discriminator comparison site: the `IN`
   filter, the joined-detail ON clause, the cross-table participant gate, and the DML
   `values(...)` write of `content_type`. The routing projection stays uncast.
-* The varchar control group's baselines (`party_kind`, `fan_kind`, `signal_kind`) pass
-  byte-identical. A diff there is a defect in the approach, not test maintenance.
+* `party_kind`'s baselines in `RootLauncherSqlBaselineTest` (the varchar control, covering both
+  the `IN` filter and the joined-detail ON clause) pass byte-identical. A diff there is a defect
+  in the approach, not test maintenance. The `fan_kind` and `signal_kind` families carry no SQL
+  pins, so their control is their execution suites still answering correctly.
 * An unknown `@discriminator(value:)` on an enum column fails the build with an author
   error naming the column, type, value, and literal set; an unresolvable
   `@discriminate(on:)` fails the build naming candidates.
