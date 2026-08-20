@@ -424,13 +424,21 @@ The three builds that decide it were taken after that landed, on one base, one v
 | configuration | reactor | graphitron-model
 
 | trunk, neither registration | 9:00 | 2:43
-| `intent_argument_scope_table` registered | 7:37 | 1:10
+| `intent_argument_scope_table` registered | 8:56 | 2:39
 | that plus `intent_node_id_decode_hop_column` | 10:10 | 2:48
 |===
 
-The scope table's registration is worth **1:23 against trunk**, and the hop column's **costs 2:33**.
-Same mechanism, opposite signs, which rules out both of the single-factor explanations this item
-reached for. It is not that a registration's refresh is free, and it is not that a refresh costs a
+One earlier run of the middle row came in at 7:37 with the model module at 1:10, and it is discarded
+rather than reported: three runs put that module at 2:39, 2:43 and 2:48, so a single 1:10 is an
+artefact of the machine and not of the registration. It is recorded here because a first draft of
+this section believed it and claimed the registration was worth 1:23, which is the fourth thing this
+item has had to take back for reading a difference off runs that were not comparable.
+
+The scope table's registration is **level with trunk**, 8:56 against 9:00 and inside the spread of
+repeated runs, and the hop column's **costs about 1:14** on top of it. So the reactor does not pay for
+the scope table's registration and does not pay for it either; what justifies it is the per-relation
+cost, which is same-process and reproducible where these totals are not. The two still have opposite
+signs on the build, which rules out both of the single-factor explanations this item reached for. It is not that a registration's refresh is free, and it is not that a refresh costs a
 view evaluation per store open and therefore never pays: it is refresh cost against reads avoided.
 The scope table refreshes in seventy milliseconds and four view bodies name it, so materialising it
 removes far more re-evaluation than the refresh adds. The hop column relation refreshes through the
