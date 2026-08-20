@@ -25,9 +25,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Progress | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | In Progress | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R744` | TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion | In Review | 2026-08-20 | [plan](scatter-test-syncs-on-mid-pin-connect-event.md) |
+| `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | In Review | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R753` | Accept @deprecated alias fields sharing a write column on jOOQ-record inputs | Spec | 2026-08-20 | [plan](write-input-deprecated-column-alias.md) |
 | `R746` | Order the materialization registry, so a target may be derived from another target <sub>blocked by: [determinism-ratchet-run-count](determinism-ratchet-run-count.md)</sub> | Spec | 2026-08-20 | [plan](materialization-dependency-order.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -314,7 +314,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — Spec, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
-- `R743` [**The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves**](sdl-fact-gatherer-staged-pipeline.md) — In Progress, architecture
+- `R743` [**The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves**](sdl-fact-gatherer-staged-pipeline.md) — In Review, architecture
 - `R753` [**Accept @deprecated alias fields sharing a write column on jOOQ-record inputs**](write-input-deprecated-column-alias.md) — Spec, bug
 - `R609` [**Capture-load residuals from the fact-store delivery**](capture-load-residuals.md) — Backlog, architecture
 - `R574` [**Clear the residual inaccuracies the @table-on-input deprecation reopen left behind**](table-on-input-deprecation-sweep-residuals.md) — Backlog, architecture
