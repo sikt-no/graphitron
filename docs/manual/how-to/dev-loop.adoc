@@ -41,6 +41,16 @@ That idempotence is exactly what lets `quarkus:dev` sit on top. Quarkus detects 
 
 If `8487` is already in use, pass `-Dgraphitron.dev.port=N` to `mvn graphitron:dev` and use the matching port in your editor config. The goal fails fast on a bind conflict with a message naming the property; it never silently rebinds to a port the editor would not know about.
 
+You can run ordinary builds in the same checkout while a dev session is up. Graphitron keeps a warm-start cache for the workspace, one file held by one process at a time, so a `mvn test` or `mvn package` that starts while the dev session holds it pauses for at most a second or two and then prints:
+
+....
+[WARNING] graphitron: could not use the shared fact store for this workspace, so this run captured
+its facts in memory instead of waiting for it. [...] This costs warm-start speed and nothing else:
+the generated output is identical.
+....
+
+That is the expected message, not a failure. The cache only makes a run start faster; the build reads your schema and generates exactly the same code without it, so there is nothing to configure and nothing to clean up. If you would rather have the warm start back for a long build, stop the dev session for its duration.
+
 For the full picture of how the schema watcher, classpath watcher, and generator dispatch cooperate inside the `dev` goal, see xref:../../architecture/how-to/dev-loop-internals.adoc#dev-loop-detail[the dev loop reference] in the architecture docs.
 
 [#compiled-classes]

@@ -1,7 +1,7 @@
 ---
 id: R706
 title: "A build that meets a held fact store fails fast and says so"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: dev-loop
@@ -352,47 +352,79 @@ alongside the existing port-conflict entry. `docs/manual/reference/mojo-configur
 nothing: its `storeDirectory` row promises "one store per project checkout, shared by that
 checkout's modules", and that stays true.
 
-## Implementation
+## Implementation, as it shipped
 
-- `GraphitronModelStore.fileUrl`: `AUTO_SERVER=TRUE` comes off. Its javadoc's account of mixed mode
-  is replaced by why the flag is refused, which is the finding above and not a preference: a probe
-  that cannot time out is not a cost a cache may impose. The class javadoc's mixed-mode paragraph and
-  `openAt`'s ("the first process holds the file, later ones attach transparently") go with it, and
-  `reader()`'s claim that "a file-backed one is in mixed mode and hands out connections to the same
-  process freely" needs restating, since same-process connections do not depend on the flag.
-- `GraphitronModelStore`: the lock budget in `fileUrl` becomes a named public constant so
-  `FactCapture` can restore to the same number. No signature change, no path change, nothing else.
-- `FactCapture.capture`: the two `SET LOCK_TIMEOUT` statements bracketing `writeGraph`, and the
-  anchor budget as a constant beside them. The transaction's javadoc already explains why the anchor
-  upsert leads; it gains the sentence saying that is also the only row worth failing fast on.
-- `FactCapture.captureWithRetry`: the cause-chain split above, and the `warn` message.
+Both designs above landed as written, in the four places they named.
 
-## Tests
+- `GraphitronModelStore.fileUrl`: `AUTO_SERVER=TRUE` is off, and its javadoc now carries why the flag
+  is refused rather than an account of mixed mode. The class javadoc's mixed-mode paragraph,
+  `openAt`'s attach sentence and its summary line, and `reader()`'s "in mixed mode" clause were all
+  restated: `reader()` keeps its claim and now attributes it to being in the holding process, which is
+  what it always rested on.
+- `GraphitronModelStore.FILE_LOCK_MILLIS`: the generous budget as a public constant, interpolated into
+  the URL and read back by the capture's restore. No signature, path or behaviour change beyond that.
+- `FactCapture.capture`: the two `SET LOCK_TIMEOUT` statements bracketing `writeGraph`, with
+  `ANCHOR_LOCK_MILLIS` beside them carrying the rationale for the split.
+- `FactCapture.captureWithRetry`: the cause-chain split, as a package-private `timedOutOnALock` so the
+  classification can be pinned directly rather than provoked, and the `warn`.
 
-Unit tier, in `PersistentStoreTest`, which already owns "how two writers share one file" and already
-has the in-process second-handle machinery these need. Two connections in one JVM lock identically to
-two processes (verified against h2 2.4.240 during diagnosis), so none of these needs a fork and all
-stay deterministic.
+Two things the plan did not fix in advance:
 
-- Two handles in one JVM, one holding an uncommitted write on the `store_graph` anchor row, the other
-  capturing the same graph: the capture gives up inside the anchor budget, well short of the generous
-  one, and the run completes cold with every fact present.
-- The open cannot block, which needs the forked-process machinery the class already has: a holder
-  process owns the store, and an `openAt` in this JVM returns within a bound and reports a cold store,
-  rather than attaching. This is the test that would fail today, and it is the one that keeps
-  `AUTO_SERVER` from coming back for a plausible-sounding reason later.
-- A second connection while this JVM holds the store still opens and reads the holder's rows, which is
-  `reader()`'s and the per-pass capture's contract and the one thing dropping the flag could plausibly
-  have broken. Measured above; asserting it is what stops that measurement rotting.
-- The generous budget survives the anchor. A capture whose anchor is uncontended but whose shared
-  `jvm_` rows are held uncommitted by another writer waits past the anchor budget rather than giving
-  up at it. Without this, a later edit could lower one number and silently lower both, retiring the
-  parallel-reactor case the generous budget exists for.
-- The retry split: a lock timeout is attempted once, and a non-timeout `DataAccessException` is still
-  attempted twice, so the fix cannot silently retire the retry's original purpose.
+- The open-half demotion had no log site at all, `openAt` reporting no reason for one, so the warning
+  lands at `FactCapture.runInternal`'s `location().isEmpty()` branch. That branch is reached by every
+  open failure, damaged file and unresolvable home included, so the message states what the run
+  observed and names the likely holder as the usual cause instead of asserting it. Everything else the
+  first-client draft asked of it is intact.
+- `PersistentStoreTest.aSecondProcessAttachesAndBothWritersLand` asserted the cross-process attach this
+  change removes, so it inverted rather than survived (see the test list below).
 
-The absence of a test asserting the message text is deliberate; the value is that a human reads it,
-and a string assertion on prose pins the wording rather than the behaviour.
+One correction to the cost this item priced, in the favourable direction. The parallel-reactor loss is
+smaller than "the non-first modules to open concurrently go cold": mojos run in the Maven JVM, so a
+`-T 1C` reactor's concurrent captures are same-process connections onto one `Database`, which H2 hands
+out without consulting the file lock. The genuine loss is separate JVMs, which is a build beside a dev
+session and the forked test JVMs. The row-scoped budget's rationale is unaffected, since those
+same-JVM captures are exactly the concurrent writers of the store-global families it keeps the
+generous budget for.
+
+## Tests, as they shipped
+
+Unit tier, in `PersistentStoreTest`. Two connections in one JVM lock identically to two processes, so
+the contention cases stay deterministic and unforked; only the open case forks, because in-process
+handles never reach the file lock at all.
+
+- `aHeldAnchorRowGivesUpFast`: a second handle holds the anchor row uncommitted, and the capture gives
+  up between half the anchor budget and a quarter of the generous one, with the cause it gave up on
+  asserted to be a lock timeout. Fails at 60 s without the change.
+- `aRunThatMeetsAHeldAnchorCompletesCold`: the same contention through `FactCapture.run`, which
+  completes rather than throwing and leaves the file byte-identical. Fails at 60 s without the change.
+- `aHeldFileDemotesInsteadOfBlocking`: a forked holder owns the file; this JVM's `openAt` reports a
+  cold in-memory store inside the bound instead of attaching, a `FactCapture.run` on top of it
+  completes, and the holder's file is intact and warm afterwards. Carries a JUnit timeout, because a
+  mechanism that can hang has to fail rather than wedge the build. Fails on the attach assertion with
+  `AUTO_SERVER` restored, which is what keeps the flag from coming back for a plausible-sounding
+  reason later.
+- `aSecondOpenerLeavesTheStoreIntact`: extended to assert what dropping the flag could plausibly have
+  broken, a second same-JVM `openAt` getting the file rather than the fallback, and a `reader()`
+  reading the holder's rows.
+- `theGenerousBudgetSurvivesTheAnchor`: a store-global `store_source` row held uncommitted for six
+  seconds past a free anchor; the capture waits it out and lands, where lowering one budget to the
+  other would fail it. `store_source` rather than a `jvm_` row because the fixture captures have no
+  catalog, and it is store-global for the same reason.
+- `onlyALockTimeoutSkipsTheRetry`: the cause-chain classification over the four shapes that matter,
+  including a timeout wrapped twice and a deadlock that keeps its retry.
+
+Each of the three new behaviours was verified to fail with its mechanism reverted, not merely to pass
+with it. The absence of a test asserting the message text is deliberate; the value is that a human
+reads it, and a string assertion on prose pins the wording rather than the behaviour.
+
+## Documentation, as it shipped
+
+`docs/manual/how-to/dev-loop.adoc` gains the entry beside the port-conflict one: a build in a checkout
+where a dev session runs pauses briefly, warns, and generates identical output. `mojo-configuration.adoc`
+needed nothing, as predicted. One adjacent correction: `fact-model.adoc`'s `LOCAL TEMPORARY` warning
+described its readers as sessions "attached to" one store, which now reads as sessions held on it. The
+rule it states is unchanged, that hazard being between sessions of one database rather than between
+processes.
 
 ## Considered and rejected: one store per role
 
@@ -423,11 +455,17 @@ these changes stay correct underneath it.
 
 ## Out of scope
 
-- The hard-killed-holder stamp demotion above, the `store.mv.db` half, which needs its own item. The
-  lock-file half is in scope, being half of the unbounded stall.
-- Reporting H2's own lock state to the user beyond the one warning: naming the holder's pid, reading
-  `store.lock.db` in the message, offering to clear a stale lock. All tempting once the mechanism is
-  understood, and all of it is a second item on top of a store that no longer hangs.
+- The hard-killed-holder stamp demotion above, the `store.mv.db` half, filed as R757. The lock-file
+  half was in scope, being half of the unbounded stall, and is now moot: H2 writes no lock file
+  without `AUTO_SERVER`, so a stale one cannot be left behind to wedge anybody.
+- Reporting H2's own lock state to the user beyond the one warning: naming the holder's pid, offering
+  to clear a stale lock. Tempting once the mechanism is understood, and a second item on top of a
+  store that no longer hangs. Cheaper now than it was: there is no lock file left to read.
+- Restoring cross-process sharing on top of the bounded open, whether by the watchdog sketched above
+  or by the role split rejected below. Both stay available and both are optimisations over a store
+  that no longer hangs; neither is worth doing before a real warmth loss is observed, and the
+  favourable correction above (a reactor build's modules share a JVM, so they still share the file)
+  makes that less likely than this item assumed.
 - `DevMojo`'s four writers on one connection. A documented rule broken, measured not to strand a
   lock, and not this item's cause; its own item if it earns one.
 - Eviction, freshness checking, and anything else about the store's lifecycle.

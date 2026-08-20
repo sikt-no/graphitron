@@ -37,14 +37,16 @@ import java.util.UUID;
  * subdirectory under the home, so a generator upgrade or a DDL edit opens a different file
  * rather than meeting one it cannot read, and {@code store_stamp} re-records both inside the
  * file as the integrity check for a hand-moved or hand-damaged one. A shared store is never
- * deleted by this class: any failure to open or attach falls back to {@link #open()} and leaves
+ * deleted by this class: any failure to open falls back to {@link #open()} and leaves
  * the file alone, so cache trouble costs warmth, never correctness, and never fails a build.
  * Deleting the store's cache directory by hand is always safe and never loses anything.
  *
- * <p>A file-backed store opens in H2's mixed mode ({@code AUTO_SERVER}): the first process holds
- * the file and later processes attach through it transparently, which is what lets a parallel
- * reactor build share one workspace store instead of handing every module but the first a cold
- * in-memory fallback.
+ * <p>A file-backed store is held by one process at a time. Every connection inside that process
+ * shares it, which covers a reactor build's modules (they run in the Maven JVM) and a session's
+ * readers alike; a <em>second process</em> that meets a held file learns so from the operating
+ * system in well under a second and takes the in-memory fallback. Sharing one file across
+ * processes is deliberately not offered: {@link #fileUrl} says why the flag that offered it is
+ * refused.
  *
  * <p>The build calls this too. {@code ModelCodegenDriver} opens a store through this same entry
  * point and points jOOQ's live H2 metadata generation at it, so codegen is a rehearsal of boot
@@ -75,6 +77,14 @@ public final class GraphitronModelStore implements AutoCloseable {
 
     /** Stands in for {@code store_stamp.generator_version} when no manifest declares one. */
     private static final String UNVERSIONED = "dev";
+
+    /**
+     * The lock budget a file-backed connection opens with, in milliseconds: how long a writer waits
+     * for a row another writer holds before giving up. Generous on purpose, for the reason
+     * {@link #fileUrl} states, and public because a writer that narrows it for one row has to be
+     * able to restore <em>this</em> number rather than a copy of it that can drift from it.
+     */
+    public static final long FILE_LOCK_MILLIS = 60_000;
 
     private final Connection connection;
     private final DSLContext dsl;
@@ -109,8 +119,8 @@ public final class GraphitronModelStore implements AutoCloseable {
 
     /**
      * Opens the store persisted under the home {@code storeDirectory}, creating it if there is
-     * none, attaching to it if another process already holds it, and leaving it strictly alone if
-     * it cannot be used.
+     * none, falling back to a private in-memory store if another process already holds it, and
+     * leaving it strictly alone if it cannot be used.
      *
      * <p>{@code storeDirectory} is the store's <em>home</em>, at every layer that passes it; the
      * store itself appends a {@code <ddl-hash>-<version>} segment and keeps its file there. The
@@ -123,18 +133,22 @@ public final class GraphitronModelStore implements AutoCloseable {
      * path is what makes never discarding safe: a generator upgrade or a DDL edit opens a
      * different file instead of meeting a shared store other modules' builds are still warm on.
      *
-     * <p>The file opens in H2's mixed mode, so concurrent module builds of one workspace share
-     * it: the first process holds the file, later ones attach transparently, and an attached
-     * process survives the holder closing first. An existing file is kept only when it opens and
-     * its {@code store_stamp} row names this DDL and this generator version, which under the
+     * <p>Concurrent module builds of one workspace share the file because they share a JVM: H2
+     * gives one process one database per file and hands every further connection off it, so a
+     * reactor build's modules and a session's readers all open in milliseconds onto the rows the
+     * others committed. A second <em>process</em> is refused instead, and falls back rather than
+     * waiting; {@link #fileUrl} carries the reason that is the better trade.
+     *
+     * <p>An existing file is kept only when it opens and its
+     * {@code store_stamp} row names this DDL and this generator version, which under the
      * stamped path can only fail for a hand-moved or hand-damaged file. {@link #warm()} reports
      * whether previous rows were found, and it is the caller's cue that the store already holds
      * rows a refresh has to reconcile.
      *
      * <p>It never fails, and it never deletes. Persistence is an optimisation over an in-memory
      * store that was always correct on its own, and one file is now every module's warmth, so
-     * any failure at all (no resolvable home, a read-only location, H2 server trouble, a file H2
-     * refuses for reasons it will not name) falls back to {@link #open()} and leaves the file
+     * any failure at all (no resolvable home, a read-only location, a file another process holds,
+     * a file H2 refuses for reasons it will not name) falls back to {@link #open()} and leaves the file
      * for the run that can read it. Cache trouble costs warmth, never correctness, and never
      * fails a build.
      */
@@ -164,10 +178,11 @@ public final class GraphitronModelStore implements AutoCloseable {
         } catch (RuntimeException e) {
             // Whatever went wrong is about the file, not the schema: a DDL this module cannot
             // execute fails identically on the in-memory store below, carrying the same message.
-            // This also catches the cold-start race, two processes creating the store at once:
-            // whichever executes the DDL first completes and stamps it, the other fails fast on
-            // the first CREATE and takes the fallback, losing warmth for one build and nothing
-            // else.
+            // The ordinary case here is a file another process holds, which H2 refuses in well
+            // under a second. This also catches the cold-start race, two processes creating the
+            // store at once: whichever executes the DDL first completes and stamps it, the other
+            // fails fast on the first CREATE and takes the fallback, losing warmth for one build
+            // and nothing else.
             return open();
         }
     }
@@ -192,8 +207,10 @@ public final class GraphitronModelStore implements AutoCloseable {
      *
      * <p>Both shapes admit a second connection, and the fallback needs no special case. An
      * in-memory database is named and lives in this JVM, so a reader attaches to it by URL like any
-     * other; a file-backed one is in mixed mode and hands out connections to the same process
-     * freely. That is what makes the in-memory fallback a full answer surface rather than a
+     * other; a file-backed one is already open in this process, and H2 hands a second connection off
+     * the database this store holds without consulting the file lock at all. That is a property of
+     * being in the holding process rather than of any URL flag, so it survives this store refusing
+     * cross-process sharing. That is what makes the in-memory fallback a full answer surface rather than a
      * degraded one: a session whose cache directory was unusable still captures into its private
      * store, and its reader still sees every row that session wrote. There is no configuration
      * under which a caller holds a store it cannot read.
@@ -295,18 +312,40 @@ public final class GraphitronModelStore implements AutoCloseable {
     }
 
     /**
-     * Mixed mode, and nothing else but a lock budget. H2 refuses {@code AUTO_SERVER=TRUE} in
-     * combination with {@code DB_CLOSE_ON_EXIT=FALSE}, and dropping that flag costs nothing this
-     * store relies on: it suppressed H2's shutdown hook, and the only store that needs its
-     * database to outlive a handle is the in-memory one, held open by {@code DB_CLOSE_DELAY=-1}
-     * on a different URL. A file-backed store is meant to be left on disk, so H2 closing it at
-     * JVM exit is what it wanted anyway. The lock timeout is raised from H2's one-second default
-     * because concurrent module builds sharing the file serialize on rows a whole capture
-     * transaction holds, and a writer that waits its turn beats one that falls back cold.
+     * A lock budget, and deliberately nothing else. {@code DB_CLOSE_ON_EXIT=FALSE} is absent
+     * because it suppressed H2's shutdown hook, and the only store that needs its database to
+     * outlive a handle is the in-memory one, held open by {@code DB_CLOSE_DELAY=-1} on a different
+     * URL. A file-backed store is meant to be left on disk, so H2 closing it at JVM exit is what
+     * it wanted anyway.
+     *
+     * <p>{@code AUTO_SERVER=TRUE} is absent for a stronger reason than preference: in mixed mode
+     * the holding process records the port of an embedded server in a {@code store.lock.db} beside
+     * the database, and every later opener decides whether that holder is still alive by connecting
+     * to the port and reading a handshake off the socket. H2 gives that read no timeout, so an
+     * opener that reaches something which accepts and never answers blocks forever, under a
+     * JVM-wide monitor, with no property reaching it. Two ordinary accidents are that something: a
+     * holder suspended by a Ctrl-Z or a debugger breakpoint, and a lock file outliving a
+     * {@code kill -9}'d holder whose ephemeral port some unrelated process later listens on, which
+     * wedges every opener in the workspace until somebody deletes the cache directory by hand. An
+     * open that cannot time out is not a cost a cache may impose on a build, and {@link #openAt}'s
+     * promise that any failure to open costs warmth and never correctness is defeated by exactly
+     * one outcome: a block, which is not a failure. Without the flag H2 writes no lock file at all
+     * and takes the MVStore's own operating-system lock, which is released with the process and
+     * reports a held file as {@code 90020} in well under a second, straight into the fallback that
+     * was written for it.
+     *
+     * <p>What that gives up is one file shared by two <em>processes</em>. Nothing inside a process
+     * changes, which is where the sharing that matters lives: see {@link #openAt}.
+     *
+     * <p>The lock timeout is raised from H2's one-second default because concurrent writers of one
+     * file serialize on rows a whole capture transaction holds, and a writer that waits its turn
+     * beats one that falls back cold. It is not the right budget for every row a capture takes; the
+     * capture narrows it where waiting buys nothing, which is why the value is named rather than
+     * spelled here alone.
      */
     private static String fileUrl(Path directory) {
         return "jdbc:h2:file:" + directory.toAbsolutePath().resolve(DATABASE)
-            + ";AUTO_SERVER=TRUE;LOCK_TIMEOUT=60000";
+            + ";LOCK_TIMEOUT=" + FILE_LOCK_MILLIS;
     }
 
     /**

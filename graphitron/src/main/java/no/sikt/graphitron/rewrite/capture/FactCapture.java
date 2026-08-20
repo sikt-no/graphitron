@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.sql.SQLTimeoutException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,42 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 public final class FactCapture {
 
     private static final Logger LOG = LoggerFactory.getLogger(FactCapture.class);
+
+    /**
+     * How long a capture waits for the {@code store_graph} anchor row, in milliseconds, before
+     * giving up the shared store and capturing in memory. Two seconds: long enough to absorb a
+     * commit already in flight, since a capture that has reached its own commit releases the row in
+     * milliseconds and there is no reason to lose warmth to a race that close; short enough that a
+     * human reads the pause as the build starting rather than as the build stopping.
+     *
+     * <p>Deliberately far below {@link GraphitronModelStore#FILE_LOCK_MILLIS}, which every other row
+     * a capture takes keeps, because this is the one row where waiting buys nothing. Blocking here
+     * means another writer is mid-capture of the same graph under the same base directory
+     * ({@link #ownsGraph} having already refused the other case), so waiting buys the right to
+     * delete that capture and write it again identically. Waiting on the rows a capture takes
+     * <em>after</em> the anchor is a different bargain: those are the store-global families two
+     * different graphs' captures write concurrently, where the other writer is committing rows this
+     * one also needs and a writer that waits its turn beats one that falls back cold.
+     */
+    static final long ANCHOR_LOCK_MILLIS = 2_000;
+
+    /**
+     * What a run says when it could not use the shared store and captured in memory instead. One
+     * message for both ways that happens, a file another process holds and an anchor row another
+     * writer holds, because from where the user stands they are one event with one consequence; the
+     * distinction matters to whoever fixes it, and a stack of the stalled process is how they
+     * recover it. It names the likely holder because "could not use the store" on its own sends a
+     * user looking for a stuck build rather than at the editor session they left running, says what
+     * the run did instead because a warning with no consequence attached reads as damage, and says
+     * the output is unaffected because a user who does not know the store is a cache will read a
+     * warning about a database as their schema not having generated.
+     */
+    private static final String DEMOTED_TO_MEMORY =
+        "graphitron: could not use the shared fact store for this workspace, so this run captured "
+            + "its facts in memory instead of waiting for it. The usual cause is another graphitron "
+            + "process holding it, a `mvn graphitron:dev` session in the same checkout being the "
+            + "common one. This costs warm-start speed and nothing else: the generated output is "
+            + "identical.";
 
     private FactCapture() {}
 
@@ -249,7 +286,11 @@ public final class FactCapture {
         if (storeDirectory != null) {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
-                    // openAt already fell back to an in-memory store; use it as-is.
+                    // openAt already fell back to an in-memory store; use it as-is. This is the
+                    // one demotion no other layer reports: the store declines to say why an open
+                    // failed, and a silent one is what makes a build beside a dev session look
+                    // like a build that did nothing.
+                    LOG.warn(DEMOTED_TO_MEMORY);
                     capture(store.dsl(), false, graph, config, registry, assembly, verdicts,
                         attribution, jooq, extensions);
                     return detect(store.dsl(), graph, classified);
@@ -307,6 +348,12 @@ public final class FactCapture {
      * transient concurrency casualty (cleared by the time the retry runs) is told apart from a
      * deterministic capture bug (fails the same way both times). Returns {@code true} once either
      * attempt lands; {@code false} tells the caller to fall back to an in-memory capture instead.
+     *
+     * <p>A lock timeout is the one failure that is not retried, because the retry would re-enter a
+     * wait that just expired: the budget the capture gave up on is the whole of what waiting had to
+     * offer, and doubling a silent wait is precisely what made a contended store read as a hang.
+     * The split is by cause rather than by call site so a deadlock keeps its retry, that being
+     * exactly the transient casualty the retry was written for.
      */
     private static boolean captureWithRetry(GraphitronModelStore store, GraphIdentity graph,
                                             SubjectConfig config, TypeDefinitionRegistry registry,
@@ -318,6 +365,11 @@ public final class FactCapture {
                 attribution, jooq, extensions);
             return true;
         } catch (DataAccessException first) {
+            if (timedOutOnALock(first)) {
+                LOG.warn(DEMOTED_TO_MEMORY);
+                LOG.debug("the contended row's own failure", first);
+                return false;
+            }
             LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
         }
         try {
@@ -331,6 +383,23 @@ public final class FactCapture {
                 graph.name(), second);
             return false;
         }
+    }
+
+    /**
+     * Whether {@code failure} is a writer that ran out of lock budget, anywhere in its cause chain.
+     * jOOQ wraps the driver's exception and H2 wraps its own store's, so the shape that survives
+     * both is the JDBC contract: a lock timeout arrives as a {@link SQLTimeoutException} (H2 raises
+     * error 50200, SQL state {@code HYT00}). Keying on that rather than on a message or a vendor
+     * code also keeps a deadlock out, which arrives as a
+     * {@link java.sql.SQLTransactionRollbackException} and keeps its retry.
+     */
+    static boolean timedOutOnALock(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -359,6 +428,9 @@ public final class FactCapture {
      * end to end: the {@code store_graph} upsert leads, so a concurrent writer of the same graph
      * serializes on the anchor row instead of interleaving deletes with inserts, and a run that
      * dies mid-load leaves the previous committed state instead of a half-written partition.
+     *
+     * <p>Leading with the anchor also makes it the one row worth failing fast on, which is what
+     * {@link #ANCHOR_LOCK_MILLIS} is: every row after it is worth waiting for, and this one is not.
      *
      * @param warm whether the store opened onto a previous run's rows. A cold store needs no
      *             reconciliation; a warm one is cleared of everything this run owns and rewrites,
@@ -404,7 +476,13 @@ public final class FactCapture {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name());
             var sources = new ClasspathSources();
+            // The budget is narrowed for the anchor row alone and restored the moment it is held;
+            // ANCHOR_LOCK_MILLIS carries why the two rows deserve different answers. Set per
+            // capture rather than once at open because SET LOCK_TIMEOUT is a session command and
+            // survives the transaction that failed, so the restore has to be reachable again.
+            txDsl.execute("SET LOCK_TIMEOUT " + ANCHOR_LOCK_MILLIS);
             writeGraph(txDsl, sources, graph, config);
+            txDsl.execute("SET LOCK_TIMEOUT " + GraphitronModelStore.FILE_LOCK_MILLIS);
             if (warm) {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
@@ -456,7 +534,8 @@ public final class FactCapture {
      * Upserts the graph's anchor row: its base directory, its build identity (the build file's
      * path and content hash, both null on a programmatic run), and a fresh {@code last_captured}.
      * First write of the run on purpose: every SDL root's foreign key lands on this row, and a
-     * concurrent same-graph writer blocks on it here instead of colliding later.
+     * concurrent same-graph writer blocks on it here instead of colliding later, for the short
+     * budget {@link #ANCHOR_LOCK_MILLIS} allows it and no longer.
      */
     private static void writeGraph(DSLContext dsl, ClasspathSources sources, GraphIdentity graph,
                                    SubjectConfig config) {
