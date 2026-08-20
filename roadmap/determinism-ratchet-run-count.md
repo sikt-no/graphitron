@@ -70,6 +70,7 @@ safe now, and cheap to revisit".
 | Simplified here | Correct today because | Revisited by |
 |---|---|---|
 | `meta_materialize` records no ordering | neither registered view is in the other's dependency closure; both closures are base tables only | R746, strictly additive |
+| `meta_materialize` is a constrained table while the three older `meta_` relations stay `VALUES` views | a registry is where a key and `NOT NULL` earn their keep; converting the others is not this item's subject | R751, the family's form |
 | Two relations registered | they are the two the profile named; the rest is guesswork until measured | deliverable 3, the multiplicity check |
 | The multiplicity check reports, does not gate | the ceiling is unknown and a wrong one is worse than none | itself, once a few registrations give the ceiling a basis |
 | The four Java-derived tables stay outside the mechanism | none has a view for a registry to point at, so including one is a rewrite rather than a registration | open question below |
@@ -284,16 +285,42 @@ directly, which is now a table, which nothing had populated. Under the alternati
 view kept the canonical name and consumers were repointed, that test would read the untouched view
 and could not fail. The observed failure is the evidence for this shape.
 
-* **The registry is `meta_materialize (view_name, table_name, reason)`**, authored rows in a `meta_`
-  view. `meta_family` and `meta_prefixless_relation` are `VALUES` views of exactly this kind, and
-  `meta_prefixless_relation` carries a `reason` column for the same purpose: the doctrine below moves
-  "why this is not simply a view" out of a table comment and into a registration, so the registration
-  has to be able to say it. It is unenforced prose, exactly as that column is, and deliberately: a
-  `VALUES` view takes no `NOT NULL`, and promoting the registry to a table to get one would trade a
-  constant the DDL states for a relation something has to populate, which is the one property the
-  `meta_` family exists to have. An empty reason is caught by reading the diff that adds the row,
-  which is where an authored constant is reviewed. `meta_relation_family` beside them is not a `VALUES` view but the census
-  that closes those rows against `INFORMATION_SCHEMA`, which is the shape this registry's gates take.
+* **The registry is `meta_materialize`, a table with constraints, populated by an `INSERT` in the
+  same DDL file.**
+
+  ```sql
+  CREATE TABLE meta_materialize (
+    view_name  VARCHAR NOT NULL,
+    table_name VARCHAR NOT NULL,
+    reason     VARCHAR NOT NULL,
+    PRIMARY KEY (view_name)
+  );
+  INSERT INTO meta_materialize VALUES
+    ('intent_argmapping_pair_live', 'intent_argmapping_pair', '...'),
+    ('intent_spelled_table_live',   'intent_spelled_table',   '...');
+  ```
+
+  It inherits the `meta_` family's *purpose*, which is the schema describing itself in rows authored
+  beside the DDL they describe, and departs from the family's current *form*. The three existing
+  `meta_` relations are `VALUES` views, which take no constraints at all: no key, no `NOT NULL`, and
+  column types inferred from literals, which is why `meta_prefixless_relation` has to write
+  `CAST(NULL AS VARCHAR)` to get a nullable column. A registry is precisely the case where those
+  constraints earn their keep. `reason` is `NOT NULL` because the doctrine below moves "why this is
+  not simply a view" out of a per-table comment and into the registration, so a registration that
+  cannot say it is not a registration; the earlier draft of this item proposed a build gate for that,
+  which was the wrong instrument and a symptom of the missing constraint.
+
+  Two consequences to carry rather than discover. The store's boot loop executes split statements
+  generically, so an `INSERT` needs no machinery, but the DDL today contains none and this would be
+  the first. And `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension` walks every base
+  relation carrying a primary key, expecting `graph_name` unless the name matches `sql_`, `jvm_`,
+  `java_` or an enumerated `store_` case; a `meta_` table with a key falls into the `else` and is
+  reported. The gate needs a `meta_` arm expecting the relation's own key, which is in keeping with
+  its own javadoc, that `store_` "answers the question per relation rather than per prefix". No
+  `meta_` relation has ever had a primary key for the gate to see, so this is a hole the first one
+  opens rather than a rule it breaks. `meta_relation_family`, the third, is neither an authored roster nor a table: it is the census that
+  closes the authored rows against `INFORMATION_SCHEMA`, which is the shape this registry's own gates
+  take.
 * **The materializer lives in `graphitron-model`.** That is forced rather than preferred:
   `SeededStore` is in `graphitron-model`'s test sources and cannot reach `graphitron`, where the
   existing derivation writers live, and the fixture has to call the same entry point everything else

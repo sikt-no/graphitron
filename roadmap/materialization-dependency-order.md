@@ -12,7 +12,8 @@ last-updated: 2026-08-20
 
 # Order the materialization registry, so a target may be derived from another target
 
-R742 lands `meta_materialize (view_name, table_name, reason)` and a `graphitron-model` method that
+R742 lands `meta_materialize (view_name, table_name, reason)`, a constrained table, and a
+`graphitron-model` method that
 iterates it, refreshing each target from its view inside the capture transaction and scoped to the
 graph being captured. The registry records no ordering, which is correct for what R742 registers and
 is not correct in general.
@@ -68,9 +69,11 @@ already uses:
 
 ## Worth deciding here rather than assuming
 
-* **Whether the edge set is a separate relation or a column.** A third column on `meta_materialize`
-  holding one predecessor is enough only if the dependency graph stays a forest; a sibling relation
-  keyed on the pair is the general shape and costs one more `VALUES` view.
+* **Whether the edge set is a separate relation or a column.** A fourth column on `meta_materialize`
+  holding one predecessor is enough only if the dependency graph stays a forest; a sibling table
+  keyed on the pair is the general shape, and being a table it can carry a foreign key onto
+  `meta_materialize` at both ends, which makes "every registered edge names two registered relations"
+  a constraint rather than a gate.
 * **What a cycle means.** Between *views* a cycle is impossible, H2 rejecting a recursive view
   definition, so a cycle in the registry is a registration error rather than a schema property. That
   makes failing on it straightforward, and it is worth stating why.
