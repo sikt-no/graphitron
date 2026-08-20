@@ -66,9 +66,9 @@ emitting for the whole migration window.
 
 What *is* transitional is the report's schema. `LeafCoverageReport` renders one row per sealed leaf
 over a fixed `HIERARCHIES` list, and R333 already states that the coverage net "needs restating once
-leaves are not the unit". So the row key is on borrowed time; the trace feeding it is not, and any
-re-keyed successor reads the same stream through the same writer. Fixing the writer is not work
-performed on a doomed artifact.
+leaves are not the unit". So the row key is on borrowed time, while the walk under it keeps emitting.
+Whether a re-keyed successor still reads this stream at all is a separate question, and the fact store
+has since made it a live one; the next section answers it.
 
 ### The truncated report is the published one
 
@@ -95,6 +95,44 @@ That also sharpens which columns rot, and it is not primarily the trace count. O
 columns actually carrying the truncation are `Tests`, `Fixtures`, the highest-tier-observed value and
 the `cross-cutting` flag: a leaf whose only non-cross-cutting exerciser is scheduled late reads as
 covered at a lower tier, or as cross-cutting-only, when it is neither.
+
+## What the fact store takes over, and what it does not
+
+The trace and the `@classified` corpus were both designed before the fact store existed, so the
+question is not only whether the defect outlives the leaf zoo but whether the *trace* does. Partly it
+does not, and this item is scoped so that the part with a store successor is corrected rather than
+deepened.
+
+**The payload has a store home already.** The classification walk writes into the store as the
+`walk_` family: `walk_claim_domain_type` and `walk_claim_domain_field` carry the coordinates the walk
+registered, `walk_type_backing_class` what it bound each type to, all keyed on `(graph_name,
+type_name [, field_name])` with a `store_graph` foreign key and a removal criterion stated in the
+family header. Rejections have `rejection_` and `diagnostic_` homes. So the trace's `(coordinate,
+verdict, source, rejection)` columns are a second and weaker transcription of data that now has a
+keyed, constraint-checked home. The tell is `LeafCoverageReport`'s input list: JSONL, plus a
+source-parsed sealed-leaf inventory, plus a roadmap-mention grep, joined in DuckDB. Not one of the
+three is the model.
+
+**The test axis has no store home and should not get one.** `test` and `tier` are facts about the
+test suite, not about a consumer's schema. Carrying them in the same record as the verdict is the leaf
+zoo's own mistake at the observability layer, two independent axes welded into one row. Under the fact
+reading they are two relations joined on the coordinate, and only one of them is the store's subject.
+
+**Suite-wide accumulation is the other half that does not transfer.** `CapturedStore` boots from
+`FactStores.inMemory()` and `FactCapture.run` drops the store with the pass, so a test store is
+per-test. "Coverage becomes a query over the store" therefore needs the suite to accumulate
+somewhere, and that accumulator is the process-global shared resource this item is about. A shared H2
+file reimports the hazard with worse ergonomics: R732's H2 ruling records that a global temporary
+table shares its rows across every attached session, which is the wrong default for a store the LSP,
+the MCP server and concurrent module builds all attach to. The trace's transport, per-module and
+append-only over `O_APPEND` and unified at read time by a glob, is well matched to the aggregation
+problem and is the part worth keeping.
+
+So the reading to hand the reviewer: correct the writer lifecycle, keep the transport, expect the
+`leaf` column and the report's row key to drain once the coverage net is restated, and expect the
+test-attribution axis to outlive both. This item changes a lifecycle and adds no column, no consumer
+and no new record kind, which is what keeps it from reading as an investment in the trace's
+permanence.
 
 ## The mechanism
 
@@ -204,9 +242,16 @@ recorded above: this item deliberately does not touch the row key.
 
 ## Not in scope
 
-* Re-keying the report off sealed leaves. R333's restatement owns that.
+* Re-keying the report off sealed leaves, and moving any of the trace's payload onto the `walk_`
+  family or a successor relation. R333's restatement owns both.
+* The `@classified` corpus directives. Their grain has already migrated: the operation-member,
+  synthesis and launcher arms are all stated against relation rows rather than against a welded leaf
+  (see `ClassifiedDsl`'s own javadoc), and the leaf-keyed residue is `@classifiedType(as:
+  TypeVerdict!)`, whose enum is drift-checked against the live `GraphitronType` leaf set. That residue
+  and the corpus-side coverage net are one question, and it belongs to R333's restatement.
 * R133's flip of the `leaf-coverage` profile to opt-in. This item corrects that profile's comment; it
   does not touch its activation.
 * Turning on class-level test parallelism. That is R732 slice 3, which this item wants to precede.
-* Widening what the trace records. The field set is unchanged.
+* Widening what the trace records, and giving the store a test-attribution relation. The field set is
+  unchanged and the store gains nothing here.
 
