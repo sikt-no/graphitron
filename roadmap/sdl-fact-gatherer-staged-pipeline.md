@@ -190,12 +190,13 @@ same transaction as stage 4.
   `@node` carriers, the `implements Node` types, the `@key` carriers, and the argument types of
   directive definitions that survive into the emitted schema, where the survivor discriminator is
   the definition's own source (the bundled `directives.graphqls` resource name on its AST pointer)
-  rather than `DeclaredDirectives.names()` bound as a constant. The node arm deserves its
-  justification stated: inferred nodehood requires `implements Node` to take effect at all, so
-  seeding on the declaration alone over-approximates the node seed set, and seeding is monotone,
-  so the over-approximation answers the membership question correctly. The catalog half of the
-  inference (a `@table` binding whose generated class publishes well-formed node metadata) decides
-  what nodehood means, never whether the author declared it, and stays out of the seed rule. This
+  rather than `DeclaredDirectives.names()` bound as a constant. The node seed is `implements Node`
+  alone, not `@table` conjoined with `implements Node`, settled at the owner's direction: inferred
+  nodehood requires the declaration to take effect at all, so the declaration alone yields the
+  relevant superset, and both conjuncts it drops (`@table` presence, well-formed node metadata on
+  the bound table) decide what nodehood means, never whether the author declared it. Seeding is
+  monotone, so the superset answers the membership question correctly, and the superset is
+  deliberate: later work digs into what each member's nodehood amounts to, on captured facts. This
   is what makes stage 5 a one-corpus producer and genuinely a stage of the SDL gatherer, running
   before and independently of the catalog capture.
 * **The traversal, not the SQL closure, is the producer**, on the same ground as stage 4: the
@@ -254,9 +255,17 @@ item re-points or updates as its subject moves, so the implementer's grep does n
 `DemandShadowTest`.
 
 * `ClaimDomain`, the Java projection of the walk's registries, survives this item with exactly one
-  consumer left: `DemandShadowTest` diffs the demand relations against `ClaimDomain.of`. Retiring
-  that test and this class is R740's scope; this item leaves them a clean pair with no store
-  relation behind them.
+  consumer left: `DemandShadowTest`'s demand arms diff the demand relations against
+  `ClaimDomain.of`. That test's *domain* arm does not survive: it asserts `intent_type_domain`
+  equals `SchemaReachability`'s reachable set exactly, and this item deliberately changes that
+  relation's writer and population, so the walk stops being its specification. The arm is deleted
+  here, and `intent_type_domain`'s registered agreement anchor re-points to a specification test
+  in the seeded style (hand-written expectations over captured rows, the seed fixtures riding it).
+  A named-residue subtraction instead of deletion was considered and refused: the excess is not a
+  closed population (any author can mint a member by declaring `implements Node`), and a residue
+  record is the shape the Strategy section forbids. Retiring the demand arms and `ClaimDomain`
+  itself stays R740's scope; this item leaves them a pure walk-versus-demand diff with no `walk_`
+  relation behind it.
 * `WalkReach` dissolves, and it carries more than the domain rows: `FactCapture.detect` uses its
   absence as the run-mode discriminator (a run with no classified model gets
   `StoreDetections.empty()`), a gate that also governs `ArgmappingProjectionDefects` and
@@ -289,10 +298,11 @@ Each is the requirement acting as the specification; none ships unnoticed.
    a failure graphitron's own rewrite caused.
 4. **The census's population question (introspection types) is settled openly**, whichever way it
    goes.
-5. **The domain widens at the SDL-only node seeds.** A type that declares `implements Node` over a
-   table with absent or defective node metadata is silently pruned today when no field reaches it;
-   under stage 5's seed rule it is a domain member, so it gains diagnostics instead of vanishing,
-   which is what the author's declared contract is owed. The demand reductions
+5. **The domain widens at the SDL-only node seeds.** A type that declares `implements Node` and is
+   reached by no field is silently pruned today unless the full inference conjunction holds; under
+   stage 5's seed rule it is a domain member whether it binds no `@table` at all or a table whose
+   node metadata is absent or defective, so it gains diagnostics instead of vanishing, which is
+   what the author's declared contract is owed. The demand reductions
    (`intent_resolved_field_demand`, `intent_resolved_type_demand`) join the domain, so their
    populations widen with it; both diffs are enumerated on the corpus in the landing commit.
 
@@ -340,9 +350,9 @@ Each is the requirement acting as the specification; none ships unnoticed.
   two-file duplicate fixture pinning composition-by-assembly and the quarantine's producer, an
   assembly-failure fixture pinning the provenance rows and the stale-generation read, a conflict
   fixture at a coordinate where the consumers disagree (a type no field reaches carrying two
-  claims: the editor surfaces it, the build does not), and a seed fixture pinning the widened
-  domain (an `implements Node` type over defective metadata, reached by no field: a domain member
-  with diagnostics rather than a silent prune).
+  claims: the editor surfaces it, the build does not), and seed fixtures pinning the widened
+  domain (an `implements Node` type with no `@table`, and one over defective node metadata, each
+  reached by no field: domain members with diagnostics rather than silent prunes).
 * **Error parity per verdict stage**: `graphql_syntax_error` and `graphql_schema_error` keep
   message, location and stage on the fixtures that trip them across the restructure.
 * **The naming check per new or reshaped relation** (`fact-model.adoc`): one sentence stating what
@@ -397,3 +407,17 @@ one-corpus producer and the stage is reinstated with SDL-only seeds, the closure
 reimplementation stage 4 deletes. `intent_type_domain`'s own comment had recorded the SDL-only
 seed shape as an over-approximation whose excess the shadow agreement asserted empty; under big
 bang the excess becomes deliberate membership, enumerated as behaviour change 5.
+
+An independent Spec review the same day surfaced two blocking problems, resolved at the owner's
+direction, plus five corrections applied as given (the containment rule as a doc deliverable, the
+fact-model revision named, the seam inventory's present-tense constructors, `intent_node_type`'s
+seed role retired, a forward-reference nit). The first problem: `DemandShadowTest`'s domain arm
+asserts exact walk agreement on `intent_type_domain`, which behaviour change 5 deliberately
+breaks, and the spec assigned the whole test to R740 without saying what the implementer does
+about the arm. Resolved by deleting the arm here and re-pointing the relation's anchor (the
+review's option b); a named-residue subtraction was refused as an unclosed population and the
+forbidden residue shape, and pulling the whole retirement in was refused as demand-stratum scope.
+The second: the seed rule read two ways on the `@table` conjunct. Settled as `implements Node`
+alone, the owner's original formulation taken at its word: the declaration yields the relevant
+superset, later work digs into what each member's nodehood amounts to, and behaviour change 5 now
+enumerates both widenings (no `@table` at all, and `@table` over absent or defective metadata).
