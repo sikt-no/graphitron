@@ -1,14 +1,46 @@
 ---
 id: R152
-title: "Scope @nodeId(typeName:) hover column lookup to the @node type's @table"
+title: "Pin the @nodeId(typeName:) hover's column scoping against two tables sharing a column name"
 status: Backlog
-bucket: bug
+bucket: validation
 theme: lsp
 depends-on: []
 created: 2026-05-13
-last-updated: 2026-05-13
+last-updated: 2026-08-20
 ---
 
-# Scope @nodeId(typeName:) hover column lookup to the @node type's @table
+# Pin the @nodeId(typeName:) hover's column scoping against two tables sharing a column name
 
-`Hovers.formatNodeType` (the hover popup for `@nodeId(typeName: "X")`) renders X's `NodeMetadata.keyColumns` with each column's `graphqlType`, but resolves the column type via `columnGraphqlType(CompletionData, String)` which linear-scans every table in the catalog case-insensitively and returns the first match. The lookup is not scoped to X's `@table`-backing table, so when two tables in the catalog hold a column with the same name but different `graphqlType` projections (e.g. one mapped through a custom scalar via `@scalarType`, one not; or one nullable and one non-null), the hover renders whichever table the catalog enumerated first. Latent under Sakila (Sakila's recurring column names map to identical jOOQ-generated graphql types) but a real bug for schemas where same-named columns diverge. The sibling `columnHover` for `@field(name:)` / `@reference(key:)` / `@node(keyColumns:)` at the directive's own site already scopes via `TypeContext.enclosingTypeDefinition` + `tableNameOf` + `catalog.getTable`; the R100 hover diverges because the columns it renders belong to a different type than the one the cursor sits in. Fix: extend `CompletionData.NodeMetadata` to carry the `@table` name (`CatalogBuilder.buildNodeMetadata` already walks each `@node`-bearing `GraphQLObjectType` and can read the sibling `@table` directive in the same pass), then `formatNodeType` looks up `catalog.getTable(meta.tableName())` and searches columns inside it, mirroring `columnHover`'s shape. Add a hover test with two tables that share a column name with diverging `graphqlType` to pin the scoping. Surfaced during R100's In Review → Done review.
+**Re-scoped 2026-08-20; the bug this item was filed for is fixed and only its test pin survives.
+The original body is in git history.** As filed on 2026-05-13, the item reported that
+`Hovers.formatNodeType` (the hover for `@nodeId(typeName: "X")`) typed X's key columns through a
+catalog-wide linear scan that returned the first name match, so two tables holding a same-named
+column with diverging `graphqlType` projections rendered whichever the catalog enumerated first.
+It prescribed carrying the `@table` name on `CompletionData.NodeMetadata` and scoping the lookup
+through `catalog.getTable`.
+
+The LSP's move to the fact store delivered the behaviour and deleted the prescription's whole
+vocabulary. `columnGraphqlType`, `CompletionData.NodeMetadata` in the LSP main sources, and
+`TypeContext.enclosingTypeDefinition` (the sibling shape the fix was to mirror) are all absent
+from the tree. The scoping now lives in `Hovers.nodeColumns`, which resolves the node type's own
+binding out of `graphitron_table` and returns that table's columns; its javadoc states the old
+defect in the past tense as its own reason for existing.
+
+## What is left
+
+The falsifiability. Nothing in `graphitron-lsp`'s tests distinguishes the scoped lookup from the
+catalog-wide one, so the fix rests on reading `nodeColumns` rather than on a failing assertion.
+Sakila cannot supply the case: its recurring column names project to identical jOOQ-generated
+graphql types, which is why the original bug was latent there.
+
+The pin: a hover test over two tables that both carry a column of one name whose projected types
+diverge (one mapped through a custom scalar via `@scalarType` and one not is the cheapest
+divergence), asserting the hover for a `@nodeId(typeName:)` naming the node over the first table
+renders that table's projection. Reverting `nodeColumns` to a catalog-wide first-hit lookup
+should turn it red, and saying so in the commit is the non-vacuity statement.
+
+Discarding this item outright is the reasonable alternative if the pin is judged not to earn its
+keep: the deliverable it was filed for is in the tree either way.
+
+Provenance: surfaced during R100's In Review -> Done review; re-scoped from the sweep in
+`roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`.

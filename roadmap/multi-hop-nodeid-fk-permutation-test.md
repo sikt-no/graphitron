@@ -24,4 +24,27 @@ Acceptance:
 
 Out of scope:
 
-- Relaxing the per-hop `validateLift` predicate to allow intra-chain permutations. That's R135's potential follow-on if real schemas exhibit it; today the invariant is positional at every intermediate step.
+- Relaxing the per-hop `validateLift` predicate to allow intra-chain permutations. Restated below: the predicate stops being a rejection under the relation move, so this carve-out no longer describes the alternative it was declining.
+
+## Two re-anchors (2026-08-20)
+
+Both are to the framing; the test this item asks for is unaffected and stays open.
+
+**The carrier accessor moved.** `InputField.ColumnBackedReferenceField.liftedSourceColumns()` is
+gone; `liftedSourceColumns` survives only on `NodeIdLeafResolver.Resolved.FkTarget.DirectFk`, and
+the emitted tuple is now `FilterBinding.Local`. So the acceptance bullet's "the composite
+`InputField.ColumnBackedReferenceField.liftedSourceColumns()` ends in `[k1, k2]` order" and the
+`BodyParam.{RowEq,RowIn}` sentence want re-pointing at `FilterBinding.Local`. The two
+resolver-side cites in the body are current. (From the same-day staleness audit.)
+
+**`validateLift` stops being a rejection.** This item leans twice on the per-hop lift invariant
+being a gate that fails a misaligned chain: once in the body and once in the carve-out above.
+The `@nodeId` relation move relaxes it, so an absent lift becomes absent local columns and the
+chain binds remotely through the hop-general `EXISTS` instead of rejecting. The fixture this item
+specifies is built to *satisfy* the lift at every intermediate hop, so its acceptance criterion
+survives intact and still discriminates `DirectFk` from the remote arm; what stops being true is
+the description of what happens to a chain that does not satisfy it, which is what the carve-out
+was declining to change. Restate the carve-out as "intra-chain permutation still is not
+recognized, it now binds remotely rather than rejecting" once that lands.
+
+Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Finding 4.

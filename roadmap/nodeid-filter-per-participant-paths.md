@@ -167,6 +167,39 @@ Execution tier (`graphitron-sakila-example`): a multitable interface where one p
 - R675's overload admission; no interaction, method resolution stays coordinate-invariant.
 - Replying on issue 525 happens when this ships; the reply is not a gate for Done. The `NodeIdEncoder` helpers can be pointed out to the reporter now, independent of this item.
 
+## The relation move touches three parts of this plan (2026-08-20)
+
+Read before the next Spec pass. The `@nodeId` instruction population and its encode/decode
+resolution became store relations on 2026-08-20. The relation-move item already flags one of these
+three (the lift constraint moving rather than vanishing); the other two it does not name.
+
+**The decode-rail grammar keeps one of its two named constraints.** The path-grammar bullet under
+*Semantics at the decode coordinate* inherits "hops on column pairs, the identity-carrying lift
+validation, no `{condition:}` steps (the `NodeIdLeafResolver` arms behind `LIFT_FAILURE_MARKER` and
+`CONDITION_STEP_MARKER`)". The lift conjunct goes: an absent lift becomes absent local columns and
+the chain binds remotely rather than rejecting. `CONDITION_STEP_MARKER` stays, deliberately, the
+`EXISTS` emitter being hop-general over foreign-key hops and nothing else. So the bullet should
+name one constraint, not two, and should point at the decode relation rather than at the markers.
+
+**Deliverable 2 restructures a method the relation move dissolves.** It asks for a "sealed
+route-selection outcome in `resolveFkJoinPath`" plus a fourth `Resolved` arm. The relation move
+retires `JoinPathResult`, which is what `resolveFkJoinPath` returns, and makes the class a reader
+of relation rows rather than the resolver of the facts. Two plans restructure one method from
+opposite directions: one replacing its return shape, the other moving the resolution out of Java.
+The author-owned-predicate outcome is the part worth keeping either way, since it is a decision
+about the leaf rather than a step in path resolution; where it lives is the open question.
+
+**The relations have no participant dimension.** Deliverable 3 threads `ParticipantRef.TableBound`
+down to the resolver so a route can be selected per participant. `intent_node_id_instruction` is
+keyed by use site with no participant column, and its bare-inference arms reach the slot's table
+through `intent_argument_scope_table`, which demands an unambiguous binding and therefore answers
+nothing at a multitable coordinate. Explicit `@nodeId(typeName:)` leaves, which is this item's
+reported shape, resolve on the `EXPLICIT_TYPE_NAME` arm and are unaffected, so this is not a
+blocker here; but it is a blocker for the bare-inference divergence item this plan names in its
+own Out of scope, and the participant-keyed arm those two need is the same one.
+
+Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 and 6.
+
 ## Acceptance
 
 - The reported schema shape is authorable two ways, per-participant `@referenceFor` paths and the `@condition(override: true)` escape, and both build and filter correctly per branch.

@@ -28,9 +28,18 @@ the same catalog:
 - `FieldBuilder` (key-column agreement in the reverse-join arm)
 - `TypeBuilder` (column-list equality)
 - `BuildContext` (three key-column filters and one start-vs-target table-name check)
-- `NodeIdLeafResolver` (three key-column alignment loops)
+- `NodeIdLeafResolver` (three key-column alignment loops; the count is exact at `:357`, `:522`
+  and `:561`, and the habitat is moving, see the note below)
 - `JoinedTableReprojection` (source-side slot lookup)
 - `MutationField` and `ProducerBinding` (source-vs-target column-pair checks)
+
+One census entry changes habitat rather than disappearing (2026-08-20). The `@nodeId` decode
+resolution became store relations on trunk, and the alignment those three loops perform moves into
+them, where the fold happens in SQL. The relation-move item states the same crossing from the other
+side, that every reader matching against the resolved key column's spelling folds case at the
+crossing. So a census keyed to Java call sites will silently lose this entry once the resolver
+becomes a reader of rows; re-point it at the decode relations then rather than deleting the row.
+Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Finding 7.
 
 Not in scope, named so silence does not read as a claim: `OrderByResolver`'s `"DESC"` token is an
 authored value with its own vocabulary; `TenantBindingIndex`'s two-tier match compares an authored

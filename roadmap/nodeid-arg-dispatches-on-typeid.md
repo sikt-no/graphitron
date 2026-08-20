@@ -92,6 +92,43 @@ Pipeline tier (`MultiTableFilterLoweringTest`): divergent targets lower to `Prun
 
 Execution tier (`MultiTableFilterExecutionTest`): the primary D3 pin is the list-shaped exact-set assertion (mixed Customer and Staff ids return exactly the named rows with correct `__typename`, nothing from unpruned branches) plus the nullable-argument absent case (unfiltered) and present-mismatched case, since the single-cardinality arm can mask an unpruned branch as an order-dependent `__typename`. Also: a Customer id returns the Customer row, a Staff id the Staff row (the reported repro), a Film id fails with the client error naming Customer and Staff, a malformed id fails with the malformed-branch message, the `@asConnection` sibling gives the same client error rather than an empty page (D4's second fetcher), and the existing `nodeIdFilter_wrongTypeId_surfacesClientError` on `occupantsByAddress` stays untouched and green (all branches share one expected type there, so the branch-level throw remains correct).
 
+## The relation move lands under this item (2026-08-20)
+
+Read before the next Spec pass. The `@nodeId` instruction population and its encode/decode
+resolution became store relations on 2026-08-20, and this item's mechanism sites are the ones
+that move. Every claim above still checks out against the tree: `NodeIdDecodeKeys` does read
+`permits ThrowOnMismatch` and nothing else, `PruneOnMismatch` is absent, and `inferTypeName`,
+`buildNodeIdArgPlan` and `lowerParticipantFilters` are all where this plan says they are. Three
+things change anyway.
+
+**The reported repro has no instruction row.** `applikasjon(id: ID! @nodeId): Applikasjon` is a
+bare `@nodeId` argument on a multitable-returning field, and `intent_node_id_instruction`'s two
+bare-inference arms both reach the slot's table through `intent_argument_scope_table`, which
+demands an unambiguous binding. A multitable return type has none, so the coordinate produces no
+row; the name-carried arm misses too, joining the return type to `intent_node_type`. Once the
+resolver becomes a reader of those rows, the per-participant re-run this plan's "Why it happens"
+section rests on has nothing to read. The remedy is a participant-keyed arm on the population,
+shared with R676 and R726, and it is the relation-move item's own gap as much as this one's; see
+Finding 1 of the sweep below. D2's divergence verdict is the consumer that wants it, so this item
+should state which side computes the divergence rather than inheriting the question.
+
+**`NodeIdLeafResolver`'s javadoc has a second author.** D6 rewrites its "Failure mode is fixed at
+`ThrowOnMismatch`" sentence. The relation-move item's retirement list rewrites three other
+statements in the same javadoc (the one-conjunct discriminator, in the `FkTarget` seal's arm list,
+in `TranslatedFk`'s record javadoc and in its `@param joinPath`) plus `resolveFkJoinPath`'s
+identity-carrying-lift paragraph. Neither item is wrong and neither names the other; whichever
+reaches Ready second wants a sequencing sentence.
+
+**The lift gate stops being a rejection.** D2's closing argument that a bare `@nodeId @reference`
+over divergent participants "fails classification on every branch but one rather than reaching the
+loop" leans on `resolveFkJoinPath` rejecting a path that does not terminate on the participant's
+own target. The terminal-target requirement survives; what the relation move removes is the
+per-hop lift rejection, so a chain that fails the lift binds remotely instead of rejecting. Check
+the blast-radius argument against that before relying on it, since it is what bounds this item's
+scope to the same-table arm.
+
+Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Findings 1 and 5.
+
 ## Roadmap entries
 
 None beyond this item. Nested-leaf dispatch and union-arm pruning are named out of scope above; file follow-ups only if a consumer asks.

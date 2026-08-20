@@ -51,6 +51,34 @@ Follow the shipped `LintQuickFixes` pattern (R398; the same generator-computes/L
 - The old plan's Phase 2 (filter inputs missing `@table`) and Phase 3 (author-error `@node`/`@nodeId` cleanup): those already surface as ordinary validator errors with locations, so they are visible in-editor today; whether any deserve their own quick fixes is a separate question to file per finding kind if wanted.
 - Deleting the shims and enforcing the grammar (both shipped in R473).
 
+## Re-spec target (2026-08-20)
+
+The staleness audit of 2026-08-19/20 calls this item carried and self-contradictory, and it is
+right: the "shim facts" driver is void. Re-confirmed independently here.
+`BuildContext.classifyInputFieldInternal` survives but neither the NodeId-scalar arm (site B) nor
+the FK-qualifier arm (site C) does, `SkipMismatchedElement` is absent from the tree, and site A's
+output shim went with them. So steps 1 and 2 of *Shape of the fix* name code that cannot be
+edited, and the Sequencing section's admission that "the shims are already deleted" contradicts
+the deliverable above it rather than superseding it.
+
+What that audit left open is what to re-derive the fix text from. There is now a better answer
+than either option it named. `intent_node_id_instruction`, on trunk since 2026-08-20, carries a
+`basis` column whose closed vocabulary is exactly which of the three forms of the instruction
+carried it at that coordinate (`EXPLICIT_TYPE_NAME`, `CONTAINING_NODE_TYPE`,
+`TARGET_TABLE_NODE_TYPE`, `OWN_ID_FIELD`, `TARGET_ID_NAME`), alongside `node_type_name`, the use
+site, and a source position. A migration quick fix's whole job is "this coordinate means a node
+id, and here is the directive text that says so explicitly", which is `basis` plus
+`node_type_name` plus the location. The three rows a fix would offer text for are the two
+inferred bases and the two name-carried ones; the explicit basis needs no fix.
+
+That also settles the generator-computes / LSP-renders discipline this item inherits from the
+`LintQuickFixes` pattern without a `BuildWarning` conversion at all: the fact is a row both the
+build report and the LSP read, which is what step 1 was reaching for by other means. Retitle off
+"shim facts" and re-derive the deliverable onto the relation. Step 3's type-level hint and its
+typeId-collision gate are unaffected and stay as written; so is step 4's bulk tier.
+
+Detail: `roadmap/audits/2026-08-20-nodeid-relation-impact-sweep.md`, Finding 3.
+
 ## Fact-base note (2026-08-06)
 
 The three synthesis shims derive everything the quick-fix needs and throw it away, which is the fact-base thesis at the WARN grain. Once inferred claims carry join witnesses (R589), the quick-fix text is selectable from the claim row; re-anchor the deliverable on reading that relation rather than adding `BuildWarning` calls at the shim sites.
