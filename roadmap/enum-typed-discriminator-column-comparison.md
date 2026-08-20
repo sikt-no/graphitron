@@ -1,7 +1,7 @@
 ---
 id: R750
 title: "@discriminate over an enum-typed discriminator column emits an uncast varchar comparison Postgres rejects"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 6
 theme: codegen-correctness
@@ -27,6 +27,164 @@ last-updated: 2026-08-20
 > enum), each `@discriminator(value:)` is validated against the enum's literal set. The
 > model carries the resolved `ColumnRef` end to end instead of re-collapsing it to a bare
 > SQL name.
+
+## Shipped
+
+The mechanism, both guards, the model retype and the fixture conversion all landed. The design
+sections below are kept verbatim as the specification the implementation is verified against; this
+section and the two after it are the implementer's record of what shipped, where implementation
+diverged from the spec, and what the work learned.
+
+### The mechanism
+
+Two package-local mints in `DiscriminatedTableFragments` now carry the whole idiom.
+`discriminatorRef(tableLocal, ColumnRef)` is the qualified reference, called from all four sites
+(the three comparisons and the routing projection), so the qualification argument is one decision
+rather than four literals. `discriminatorValue(tableLocal, ColumnRef, value)` is the typed operand,
+`DSL.val("<value>", <tableLocal>.<COL>.getDataType())`, called from the three comparison sites:
+`discriminatorFilter`'s `IN`, `joinedDetailJoinChain`'s ON clause, and
+`PathFragments.parentColumnEquals`, which now composes both mints instead of respelling the
+formula. The routing projection attaches `.as(...)` to the reference and stays `Object.class`; the
+axis split is stated in the class javadoc.
+
+### Guards
+
+`TypeBuilder.buildTableInterfaceType` keeps the whole `ColumnEntry` and produces the `ColumnRef`.
+An unresolvable `@discriminate(on:)` returns `UnclassifiedType` carrying
+`Rejection.unknownColumn(...)` with the table's Java column names as candidates; the raw-string
+fallback and its "the validator will report" comment are gone, and the
+`GraphitronSchemaValidator` mirror comment now names the actual enforcement (a demotion in
+`TypeBuilder`, not a validator check).
+
+`discriminatorLiteralRejection` is the closed-domain check, run after the participant list is built
+because it reads the participants' `@discriminator(value:)`. `EnumMappingResolver` grew the lifted
+comparison core the spec called for, in the shape the two callers actually needed:
+
+* `EnumConstantParity.Target(sdlValueName, runtimeValue)` is the input carrier. The two fields
+  differ when a mapping intervenes (a GraphQL enum value's `@field(name:)`) and coincide when the
+  authored spelling *is* the compared form (a `@discriminator(value:)` literal).
+* `ConstantSpelling` is the one axis the callers differ on: `JAVA_NAME` (what `valueOf` accepts,
+  the GraphQL-enum caller) versus `DATABASE_LITERAL` (`getLiteral()`, the discriminator caller).
+  The spec's lift said "given a Java enum class and a set of target names"; that is under-specified,
+  because the two callers do not compare against the same names. Naming the spelling explicitly is
+  what makes the shared core honest rather than accidentally right for one caller.
+* `constantMismatches(Class, ConstantSpelling, List<Target>)` is the walk, and
+  `constantNames(Class, ConstantSpelling)` is the candidate set. The literal read is reflective
+  (`getMethod("getLiteral")`, falling back to the constant name) rather than a cast to
+  `org.jooq.EnumType`: the class comes from the codegen loader, which need not share this
+  generator's jOOQ.
+
+### Model retype
+
+`String` to `ColumnRef` on `TableInterfaceType`, `QueryField` (both variants), `MutationField`,
+both `ChildField` variants, both `DmlReturnExpression` variants, `LaunchSource.DiscriminatedTable`
+and `SelectTerm.ScalarSubselect.ParentColumnEquals`, plus the four parameter threads. Purely
+mechanical behind the compiler, as predicted. `TestFixtures.discriminatorCol(sqlName)` is the new
+hand-built-fixture helper (varchar domain, uppercase Java name) so the retype did not scatter
+four-argument constructions through the test tree.
+
+### Fixture conversion
+
+`content.content_type` became `content_kind` and `jti_subject.subject_kind` (with the two detail
+tables' composite-key copies) became `subject_kind`, both Postgres enums.
+`graphitron-sakila-db/pom.xml`'s `jooq.codegen.schema.version` moved 2.23 to 2.24, without which
+an incremental build reuses the old catalog and the conversion is silently invisible.
+
+## Findings
+
+### The spec's read-side claim is wrong, and it is its own defect
+
+The spec asserted that `Subject.subjectKind: String!` over the converted enum column "needs no SDL
+retype" because "jOOQ converts an `EnumType` read to its literal on a `String` read". The first
+half holds; the reasoning does not. The emitted fetcher reads
+`record.get(Tables.JTI_APP_ACCOUNT.SUBJECT_KIND)`, which on an enum column returns the *Java enum
+constant*, and graphql-java's `String` coercion serialises it with `String.valueOf(...)`. A
+jOOQ-generated enum carries its literal on `getLiteral()` and does not override `toString()`, so
+the field answers the constant name. `record.get(field, String.class)` would convert; the typed
+field read does not.
+
+This is invisible in the tree because every literal in both converted families (`FILM`, `SHORT`,
+`PODCAST`, `APP`, `PERSON`) is a valid Java identifier, so the two spellings coincide and
+`subjectKind` keeps answering correctly. It is a real defect on a divergent literal, and it is a
+projection concern rather than a discriminator-comparison one, so it is filed as R754 rather than
+absorbed here.
+
+**This is also why the spec's optional hyphenated-literal seed was declined.** Seeding, say,
+`APP-ACCOUNT` would not pin the namespace chain end to end as the spec hoped; it would make
+`subjectKind` answer `"APP_ACCOUNT"` and the seed would land as a demonstration of R754 rather than
+of this item's namespace decision. The namespace rests where the spec's fallback put it: the lifted
+core's dashed-literal unit coverage (`EnumConstantParityTest`, on `MpaaRating`'s `PG-13` versus
+`PG_13`), plus `DiscriminatorColumnGuardPipelineTest`'s classification of a
+`@discriminator(value: "PG-13")` interface over `film.rating`.
+
+### `content_kind` needed a third literal
+
+`DmlTableInterfaceReturnExecutionTest.insertUnknownDiscriminator_commitsRowYetReturnsNull` writes
+`contentType: "PODCAST"` and asserts the row commits while the re-projection returns null. On an
+enum column an unknown literal binds as NULL and the NOT NULL column rejects the INSERT, which
+would destroy the test's premise rather than the behavior it pins. `content_kind` therefore carries
+`'PODCAST'` as a valid literal with no participant type. That makes the fixture better rather than
+merely surviving: the column's value domain (closed, three literals) and the known-participant set
+(two) are now visibly different facts, which is exactly the axis Guard 2 sits on.
+
+### Guard 1's fallout was wider than the spec's list
+
+The spec enumerated `ClassifiedCorpus` (three examples), `CorrelationKeyArmPipelineTest`,
+`SchemaReachabilityTest` and `GraphitronSchemaClassGeneratorTest`. Two more fixtures depended on
+the silent fallback: `GraphitronSchemaBuilderTest`'s `serviceReturningTableInterface` case and its
+`TABLE_INTERFACE_TYPE` classification row, both over the same `film` + `on: "kind"` shape.
+
+All of them repoint to `film.text_rating`, not `film.rating`. `rating` is `mpaa_rating`, so under
+Guard 2 their discriminator values (`"film"`, `"REGULAR"`) would reject; `text_rating` is varchar
+and keeps those fixtures' subject matter untouched. The enum column is exercised by dedicated
+coverage instead.
+
+### Guard 2 caught a fixture the spec did not predict
+
+`MultiTableChildReferenceForPipelineTest.misplaced_onSingleTablePolymorphicField_rejected` declared
+`@discriminator(value: "MOVIE")` over `content`. Once `content_type` is an enum that value is
+outside the domain, the interface demotes, and the test's `@referenceFor`-misplacement assertion
+fails for the wrong reason. Changed to `"FILM"`; the test's subject is unaffected.
+
+### `ValuesJoinRowBuilder`'s javadoc was narrowed
+
+Its class javadoc promised every VALUES cell "renders a plain JDBC bind, no SQL `CAST`". No VALUES
+cell targets an enum column today, so the sentence is still true of what it serves, but it read as
+a property of `DSL.val(value, dataType)`, which it is not. Narrowed to say what renders for the key
+and lookup columns these routes serve, and to name the enum binding's cast as deliberate.
+
+## Test surface
+
+* `EnumConstantParityTest` (unit): the lifted core under both spellings, including the dashed
+  literal in both directions, the authored-versus-compared split on `Target`, the plain-Java-enum
+  fallback, and declaration-order candidates.
+* `DiscriminatorColumnGuardPipelineTest` (pipeline): the resolved `ColumnRef` with its enum
+  `columnClass` on a `film`/`rating` interface, a dashed literal classifying, Guard 1's rejection
+  with attempt kind and candidates, Guard 2's message naming column / enum type / value / literal
+  set, and a varchar column keeping no value check. This is where the spec asked for a
+  `GraphitronSchemaBuilderTest` rejection row and enum classification row; a dedicated pipeline test
+  reads better than two more rows in the pure-verdict enum the corpus is migrating away from. The
+  existing `TABLE_INTERFACE_TYPE` row gained a `javaName` assertion and a pointer here.
+* `RootLauncherRendererTest` gained the joined-detail ON-clause and cross-table-gate typed-bind
+  assertions (neither site had unit-tier render coverage before) alongside the `IN` filter's, and
+  asserts the routing projection stays untyped.
+* `TypeFetcherGeneratorTest`'s discriminator carve-out pins move to the typed-bind shape.
+* Baselines: the converted families gain the enum cast at each comparison site and in the DML
+  `values(...)`; `party_kind`'s six `RootLauncherSqlBaselineTest` statements are byte-identical, as
+  the varchar control requires.
+
+One acceptance criterion is met by substitution rather than literally, and the reviewer should judge
+that call. The criterion asks that "the reproduction schema (an interface over `film` discriminating
+on `rating`) generates, compiles, and answers queries correctly". The reproduction shape classifies
+and carries its resolved enum `ColumnRef` in `DiscriminatorColumnGuardPipelineTest`, but it is not
+declared in the example schema, so it is not *executed*. Execution proof of an enum-typed
+discriminator comes from the two converted families instead, which answer correctly across
+`GraphQLQueryTest`, `MultiSchemaQueryTest`, `ServiceTableInterfaceReturnExecutionTest` and
+`DmlTableInterfaceReturnExecutionTest` at every consumer path (root, connection, batched child,
+batched connection, DML follow-up, `@service` arm, joined detail, cross-table gate). Adding the
+`film`/`rating` interface to the example schema would be a third discriminated family, which the
+spec's own test strategy declined for the same reason it declined a sixth one, and it would exercise
+no comparison site the converted families do not already cover on the enum arm.
 
 ## Reproduction
 
@@ -523,3 +681,8 @@ columns, the enum literal as spelled in the database, not a Java constant name).
 Surfaced during the trace for R749 (`participant-projection-alias-collision`), an
 unrelated defect on the same discriminated-interface family. Independent of it: this one
 fails loudly (a database error on every query) rather than silently.
+
+R754 (`string-field-over-enum-column-reads-java-constant`) was filed by this implementation: a
+`String`-typed SDL field over any jOOQ-enum column reads the Java constant name rather than the
+database literal, which is the read-side half of the same namespace question this item settles for
+the comparison operand. See the first entry under Findings.
