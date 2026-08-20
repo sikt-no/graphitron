@@ -1,9 +1,10 @@
 ---
 id: R744
 title: "TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion"
-status: Backlog
-bucket: cleanup
+status: Spec
+bucket: bug
 priority: 3
+theme: testing
 depends-on: []
 created: 2026-08-20
 last-updated: 2026-08-20
@@ -59,24 +60,95 @@ Sleeping for 400ms inside the fake's connect-phase `prepareStatement` for one te
 gap and fails the interrupt test on every run, with the event list showing the worker's own
 `abort:A` landing before the `clear()`:
 
-----
+```
 DEBUG before clear: [getConnection:A, getConnection:B, connect:B, connect:A, abort:A]
 DEBUG after releaseAll: []
-----
+```
 
-## Plan
+The delay is a diagnostic, not a proposed test fixture: it is how the interleaving was pinned
+down, and it is the check the implementer re-runs to confirm the fix closes it.
 
-Synchronize on the workers being inside the per-tenant body instead of on the connect event. A
-worker only reaches its `perTenant` function once `entryFor` has returned, which is provably
-after the post-check, so the self-abort path is closed by construction and `releaseAll` is the
-only remaining aborter.
+---
 
-. In the interrupt test, add a `CountDownLatch` of two counted down at the top of the per-tenant
-  body, and await it before interrupting the dispatch thread, replacing the poll loop over
-  `events`.
-. In the rejection test, do the same with a latch of one, awaited inside the rejecting executor
-  before it throws, replacing that test's poll loop over `events`.
-. Correct the stale comments in both tests to say what the latch actually establishes.
+## Decision: synchronize on the per-tenant body, not on a recorded event
 
-Both changes are test-only; no emitted code changes. The fix is verified by re-running the
-reproduction above: with the artificial mount delay in place, the tests must still pass.
+The spec pass asked whether the emitted runtime should change, because the cheaper-looking fix is
+to make the worker stop aborting its own entry. It should not, and saying why is what fixes the
+right thing.
+
+### The post-check is load-bearing, and both interleavings are correct
+
+`entryFor`'s re-check after `computeIfAbsent` exists because a pin can complete after the
+operation it belongs to has moved on: after the key's join deadline passed, or after `releaseAll`
+already drained the map. Without it, such a pin leaks a live connection into a finished
+operation, which is the exact leak the `closed` flag was introduced to catch. Deleting or
+weakening it to make a test deterministic would trade a real leak for a green assertion.
+
+So the contract the test is there to hold is: the tenant's connection is *aborted*, never closed
+under a possibly-live worker, and never reused. That holds in both interleavings. The only thing
+that varies is which thread performs the abort and when, and the test was written as though only
+`releaseAll` ever could.
+
+### The event is the wrong clock
+
+`connect:<tenant>` is recorded by the fake `Connection`'s `prepareStatement`, which the session
+hook runs while the pin is still being minted. Between that record and the worker becoming
+quiescent there is still: the hook's `execute`, the `DSLContext` build, the transaction-provider
+swap, the `computeIfAbsent` return, and the post-check. A test that treats the event as "the
+worker is settled" is asserting on a state the event does not report.
+
+The per-tenant body is the correct clock, and it is exact rather than approximate. A worker
+reaches `perTenant` only after `entryFor` has returned normally, which is *after* the post-check.
+Once every worker is parked in its body on the `hold` latch, no worker will call `entryFor`
+again, so the self-abort path is unreachable for the rest of the test and `releaseAll` is the
+only remaining aborter. This is a proof from the control flow, not a widened timing margin.
+
+## Implementation
+
+All test-only, in `TenantScatterSubstrateTest`. No emitted code changes.
+
+* `interruptedJoin_quarantinesKeysLikeATimeout_soReleaseAbortsNotCloses`: add a
+  `CountDownLatch pinned` of two, counted down as the first statement of the per-tenant body, and
+  await it (bounded, asserted) before `dispatch.interrupt()`. Delete the poll loop over `events`
+  and its deadline arithmetic.
+* `rejectedExecutionMidSubmit_quarantinesAlreadySubmittedKeys_andPropagates`: the same, with a
+  latch of one, awaited inside the rejecting `Executor` before it throws. The await runs on the
+  submitting thread while the accepted worker runs on the delegate pool, so it cannot self-block.
+  `Executor.execute` declares no checked exception, so the existing interrupt-handling shape
+  around the wait is kept.
+* Both tests' comments currently assert the old, false claim (the rejection test's says in as many
+  words that its wait "cannot flake the release assertion"). Replace them with what the latch
+  establishes: the workers are inside the per-tenant body, so the post-check has already run.
+* Add a one-line note at the fake connection's `prepareStatement` recording site saying the
+  connect event fires mid-pin and is not a worker-is-settled signal. That site is what misled two
+  tests; the warning belongs where the next author reads it.
+
+## Tests
+
+No new test is proposed. The two repaired tests are themselves the enforcers, and the change makes
+them assert the same contract on a sound clock rather than a lucky one. Verification is the
+reproduction above: with the artificial mount delay injected, both tests fail before the change
+and pass after it. Then the class runs clean without the delay.
+
+A guard that fails any test polling `events` as a synchronization primitive was considered and is
+not worth its weight at two call sites, both of which this item removes.
+
+## Rejected alternatives
+
+* **Drop the `events.clear()` and assert over the whole stream.** It admits either aborter, but it
+  does not close the race: when the worker wins the entry, its `abort` lands after `releaseAll`
+  has already returned, so the assertion can still run first. It weakens the assertion without
+  making it sound.
+* **Retry or sleep before asserting.** Turns a proof into a timing margin, on the same runner
+  whose load produced the failure.
+* **Make the worker skip its own abort when `releaseAll` will run anyway.** This is the emitted
+  change rejected above; it reintroduces the late-pin leak.
+
+## Not in scope
+
+* Any change to `ConnectionRuntimeClassGenerator` or the emitted carrier. The runtime is correct
+  as it stands and this item must not be read as licence to touch it.
+* The other seven tests in the class. `straggler_releaseAllAbortsItsConnection_...` reaches the
+  same quarantine state through the join deadline rather than an event poll, and its workers are
+  provably inside the per-tenant body long before the deadline fires.
+* The `execution`-tier and pipeline coverage of fan-out. This is a unit-tier synchronization fix.
