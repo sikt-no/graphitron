@@ -12,6 +12,36 @@ last-updated: 2026-08-20
 
 # The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive
 
+## Where this item stands
+
+**Implemented, and this is the reviewing reader's shortcut.** The body below was written as a plan
+and is kept as the design record, so it argues in the future tense throughout. Three places say what
+actually happened, and they are the ones to read first: **What landed, against what was planned**,
+**Settled during implementation**, and the last row of the summary table under **What the changes
+come to together**. Every deliverable in the list is marked with what became of it.
+
+The measured outcome, on a full reactor:
+
+| | Runs | Class total | Contract clauses covered |
+|---|---|---|---|
+| trunk before | 4 | 229.0s | 2 of 3 |
+| landed | 4 | **16.24s** | 3 of 3 |
+
+`FixtureWarningsGateTest` fell from 56.8s to 2.53s in the same build. That is the better number to
+carry away, being the same store reads under a different consumer, and it is the evidence that this
+was never one test's problem.
+
+Two things a reviewer should expect to differ from the plan, both deliberate and both argued below.
+The run count stayed at four rather than dropping to three, because the shared canonical tree was
+spent on the third contract clause instead of on a run. And deliverables 6 and 7 were re-measured
+rather than done, which is what this item asked of them; the measurements are in their own sections
+and they are why neither shipped.
+
+## The problem, and the plan that addressed it
+
+Everything from here down is the item as it was written before implementation, kept because the
+reasoning is the design record and the gates below were derived from it.
+
 `GeneratorDeterminismTest` is the second most expensive class in the reactor, at 229.0 seconds
 across two test methods, which is a third of the whole build. It is not slow because it asserts
 anything expensive. It is slow because it runs the entire generator over the entire fixture schema
@@ -26,12 +56,13 @@ Both halves of that sentence are wrong and this item fixes both.
 * **Lever two, how many runs there are.** The contract the class guards needs two runs at most, and
   the class performs four. The fourth buys a populated directory the first method already produced.
 
-They are independent and they compound, but no single run has measured both. **Lever one alone takes
-the class from 229.0s to 20.66s**, at four runs, with R733's two changes underneath it. Lever two is
-absent from that figure; all three together project to about 16s and nobody has run that
-configuration. And the run that produced 20.66s left thirteen `graphitron-model` classes failing,
-because the fixture work this item specs was not part of the prototype that measured it. The summary
-table below carries the per-row reactor state; quote from there rather than from this paragraph.
+They are independent and they compound. As this item was planned, no single run had measured both:
+lever one alone took the class from 229.0s to 20.66s at four runs, lever two was absent from that
+figure, and all three together projected to about 16s that nobody had run. The prototype behind the
+20.66s also left thirteen `graphitron-model` classes failing, because the fixture work this item
+specs was not part of it. Those are the numbers the plan below reasons from, and they are kept
+because the reasoning depends on them. **The landed figure is 16.24s**, and the summary table under
+*What the changes come to together* carries every row with its reactor state; quote from there.
 
 The generator's cost is not this test's problem alone, which is why lever one matters more than the
 arithmetic here suggests: the same reads run in every consumer's build, six times per reactor build,
@@ -46,6 +77,10 @@ empty deliberately, since nothing here requires R733 to land first; a reviewer w
 figure should ask for it rather than infer it.
 
 ## How to read this item: a paving step, deliberately scoped
+
+*This section argued the item's scope at the Spec gate, and is kept because the scoping decision is
+part of the design record. A reviewer at the Done gate is reading it for what was promised, not for
+what to approve; the simplification table's third column now says how each row turned out.*
 
 The obvious objection is that this is several items wearing one hat. A registry in the store's DDL, a
 doctrine change, a build gate, a fixture refactor and a test's run count do not obviously belong to
@@ -73,9 +108,9 @@ safe now, and cheap to revisit".
 | `meta_materialize` is a constrained table while the three older `meta_` relations stay `VALUES` views | a registry is where a key and `NOT NULL` earn their keep; converting the others is not this item's subject | R751, the family's form |
 | Two relations registered | they are the two the profile named; the rest is guesswork until measured | deliverable 3, the multiplicity check |
 | The multiplicity check reports, does not gate | the ceiling is unknown and a wrong one is worse than none | itself, once a few registrations give the ceiling a basis |
-| The four Java-derived tables stay outside the mechanism | none has a view for a registry to point at, so including one is a rewrite rather than a registration | open question below |
-| The defect view's six-arm union is left alone | worth 29% and independent of everything else | deliverable 6 |
-| Four generator runs become three, not two | two needs a production seam whose value drops once a run is cheap | the fork section below |
+| The four Java-derived tables stay outside the mechanism | none has a view for a registry to point at, so including one is a rewrite rather than a registration | settled below: they stay outside |
+| The defect view's six-arm union is left alone | worth 22% once the registrations land, and independent of everything else | deliverable 6, which re-measured it and declined |
+| Four generator runs become three, not two | two needs a production seam whose value drops once a run is cheap | the fork section below; in the event the count stayed at four and bought the third contract clause |
 
 **What makes it a safe step rather than a bet.** The mechanism lands with zero rows registered, so
 step one changes no behaviour and can be reviewed on its design alone. No reader is edited, because
@@ -133,6 +168,14 @@ The recommendation is to add the case. Once the run-count work has produced one 
 tree, a clean-removal case is that tree plus a single run over a schema with a type removed, which by
 then costs about five seconds; and a clause pinned only against a two-type SDL, where an orphan sweep
 has almost nothing to sweep and no chance to sweep the wrong thing, is the weakest of the three.
+
+*Settled as recommended.* The case was added, planting an orphan in every subpackage the sweep
+declares it owns and a control in one it does not, and the javadoc's claim is now true. It is also
+the part of this item that paid for itself fastest: at cross-cutting breadth it immediately found
+that the generator emits into four subpackages the sweep never visits, so a unit the schema stops
+calling for is left behind in any of them. That is a defect in the sweep and not in this item, it is
+filed as its own change, and the case deliberately asserts nothing about those four either way, so
+that fixing the sweep reads as a fix rather than as a regression.
 
 ## Lever one: what a run costs
 
@@ -429,22 +472,27 @@ fixture work in the same step as the registrations:
 
 The last row's timings are real and the classes that produced them passed. The reactor was not green,
 because the prototype registered two relations and did nothing about the fixture, which is the whole
-subject of the next section. Nobody should quote 20.66s as a landed number until that is done.
+subject of the next section, and 20.66s was not a quotable number until that was done. It has since
+been done, and the landed figure is in the summary table rather than here.
 
 The profile afterwards is healthy rather than merely smaller: H2 falls from 97% of a run to 67%, the
 four store reads from 88% to about 48%, and the largest single remaining item is the store's own DDL
 boot at 9%. No dominant pathology is left.
 
-**Route B: flatten the six-arm union into one pass.** (Re-priced after the reductions: the five
-`binding_leaf` arms now contribute 210 of the defect view's 765 instantiations, so flattening saves
-4 x 42 = 168, or 22%. The percentage barely moved but the base did, and 22% of a store read that is
-no longer the dominant cost of a four-second run is a simplification's worth of value rather than a
-performance item's. Still worth doing on its own merits, and no longer worth sequencing for speed.) The defect view's five `binding_leaf`-driven
+**Route B: flatten the six-arm union into one pass.** The defect view's five `binding_leaf`-driven
 arms differ only in predicate and verdict literal, so one pass with a `CASE` verdict and a left join
 to the segment relation would collapse them. It changes no read semantics and needs no freshness
-reasoning, which makes it tempting. The decomposition table prices it: at most 4 × 150 = 600 of 2066
-instantiations, about 29%, leaving the 1038 the two `key_column_candidate` references contribute.
-Worth doing as a simplification on its own merits; not an alternative to Route A.
+reasoning, which makes it tempting. As the item was planned the decomposition table priced it at most
+4 × 150 = 600 of 2066 instantiations, about 29%, leaving the 1038 the two `key_column_candidate`
+references contribute. Worth doing as a simplification on its own merits; not an alternative to
+Route A.
+
+*Re-priced after the registrations landed, which is why deliverable 6 declined it.* The five
+`binding_leaf` arms now contribute 210 of the defect view's 765 instantiations, so flattening saves
+4 × 42 = 168, or 22%. The percentage barely moved and the base collapsed, and 22% of a store read
+that is no longer the dominant cost of a four-second run is a simplification's worth of value rather
+than a performance item's. Still worth doing on its own merits, and no longer worth sequencing for
+speed.
 
 Take Route A. Route B is a follow-on.
 
@@ -607,28 +655,41 @@ already uses:
 * nothing outside the registry is a materialized `intent_` relation, which is what stops the next
   bespoke writer from appearing beside the mechanism instead of inside it.
 
-### Also unsettled
+### Settled during implementation
 
-* **Which relations to reduce.** Two sufficed for the measured case; the multiplicity table names
-  five more above eight. Reduce on measured need, and record what was left unreduced as a decision
-  rather than an omission.
-* **The gate's ceiling**, and whether the multiplicity check reports or fails on first landing.
-* **The `_live` suffix.** `meta_materialize` states the pair, so no convention is forced, but the
-  view is the relation being renamed and it should read as the on-demand one. `_live` is the
-  proposal; anything that does not read as "stale" or "old" works. Whether a gate gets to assume the
-  convention is a separate question, and the answer is probably not, the registry being the authority.
-* **Readers that arrive without a capture.** The language server and the MCP server open the store
-  directly. They are already callers of the materializer in this design, but "call it on open" and
-  "assume a capture ran" are different contracts, and the second one needs the "absence needs a
-  stated meaning" treatment if it is chosen.
-* **Warm and shared stores.** The persisted store is shared across a workspace's modules, which
-  build in parallel under `-T 1C`. Partition-by-graph makes concurrent refresh safe on the face of
-  it, but a warm start that skips capture because nothing changed must leave targets valid rather
-  than empty, and `WarmStartRefreshTest` and `PersistentStoreTest` are where that gets pinned.
-* **Whether the four Java-derived tables join the mechanism**, per the doctrinal section above.
-* **Whether a target carries a primary key**, which decides whether
-  `everyRelationLeadsWithItsPartitionDimension` applies and requires checking that each registered
-  view's rows are uniquely keyed.
+This section listed seven open questions while the item was a plan. Every one of them now has an
+answer, and the answers are here rather than in the commit log because a reviewer checking the
+implementation against the item needs to see what was decided as much as what was built.
+
+* **Which relations to reduce.** Two, the ones the profile named. The multiplicity report now names
+  the rest from data rather than from this item's table, which is what it exists for: the heaviest
+  remaining view is `intent_field_column_table` at 533 instantiations. Nothing further was reduced,
+  and that is a decision to reduce on measured need rather than an omission.
+* **The gate's ceiling, and whether the check reports or gates.** It reports. The metric is a static
+  over-approximation, counting textual references without knowing which arms a predicate prunes, so
+  a ceiling tight enough to be useful would also be wrong. The ceiling gets a basis once a few more
+  registrations exist, and the check's own javadoc says so.
+* **The `_live` suffix.** Adopted. The registry states the pair, so nothing is forced and no gate
+  assumes the convention; the suffix earns its place by reading as the on-demand relation rather
+  than as a stale one.
+* **Readers that arrive without a capture.** "Call it on open", which is the safer of the two
+  contracts the item posed. `Materializations.refreshAll` refreshes every graph the store holds and
+  is idempotent, so it is correct whether or not a capture ever ran; `DevMojo` calls it on the
+  session store, which is what the language server and the MCP server read through.
+* **Warm and shared stores.** Answered by the same call, plus one thing the plan did not foresee:
+  `StoreRefresh.wholesale()` is written in exemption polarity and was emptying the registry on every
+  warm capture, nothing refilling it because its rows are authored DDL. The `meta_` family is now
+  exempt. `WarmStartRefreshTest` is what caught it and is where it stays pinned.
+* **Whether the four Java-derived tables join the mechanism.** They stay outside. None has a view
+  for a registry to point at, so including one is a rewrite rather than a registration, and
+  `intent_type_domain`'s writer was itself rewritten by another item while this one sat in Spec.
+* **Whether a target carries a primary key.** No. Declined on a rule rather than on a row count,
+  which is the stronger answer and the one the item asked to be recorded either way: a target is a
+  bag its source view fills, a key is a constraint the rule does not state, and a duplicate the view
+  legitimately produced would fail a refresh instead of answering a question. Every target does
+  carry `graph_name NOT NULL` with a foreign key to `store_graph`, which the anchor gate requires.
+  With no key, `everyRelationLeadsWithItsPartitionDimension` does not reach the targets at all; the
+  arm it needed was for `meta_materialize`, the first keyed `meta_` relation the schema has had.
 
 ### What landed, against what was planned
 
@@ -636,7 +697,7 @@ The run count is the one place the plan and the outcome differ, and the differen
 Deliverable 4 takes the class to three runs by sharing one canonical tree; deliverable 5 adds the
 clean-removal case, which needs a run of its own. Together they leave the count at four and take the
 clauses covered from two to three, which is the trade the item argued for when it said the shared
-tree is what makes the third case affordable. The class is 18.13s rather than the 15.46s it would be
+tree is what makes the third case affordable. The class is 16.24s rather than the 15.46s it would be
 without the new case, against 229.0s on trunk, and the javadoc no longer claims coverage the class
 does not have.
 
@@ -649,27 +710,33 @@ Steps 1 and 2 are the paving; 3 onward are what the paving makes cheap. The simp
 the top of this item says which of these are the lesser version of something and where the fuller
 version lives.
 
-1. **The mechanism**: `meta_materialize`, the `graphitron-model` materializer, its call from the
-   capture pass and from `SeededStore`, the registry's own gates, and the two doctrine paragraphs.
-   Lands with zero rows registered and changes no timing, which is what makes it reviewable on its
-   design rather than on its numbers.
-2. **The two registrations**, `intent_argmapping_pair` and `intent_spelled_table`, plus the LSP and
-   MCP call sites and the fixture's derivation boundary. Each registration is a view rename, a
+1. **The mechanism** (*landed*): `meta_materialize`, the `graphitron-model` materializer, its call
+   from the capture pass and from `SeededStore`, the registry's own gates, and the doctrine
+   paragraphs, of which there turned out to be three rather than two. Landed with zero rows
+   registered and changed no timing, which is what made it reviewable on its design rather than on
+   its numbers.
+2. **The two registrations** (*landed*), `intent_argmapping_pair` and `intent_spelled_table`, plus
+   the reader call site and the fixture's derivation boundary. Each registration is a view rename, a
    `CREATE TABLE` with the key the anchor gate requires, and one registry row; not two rows of
-   authored data, which an earlier draft of this item claimed. This is the 229.0s to 20.66s, and the
-   fixture work belongs in this step rather than after it, since without it the step lands red.
-3. **The multiplicity check**, reporting only, so the third and fourth registrations are chosen from
-   data rather than from this item's table.
-4. **The run-count reduction**, four runs to three. Worth doing because a test should not perform
-   work its contract does not need, and worth doing *after* the above, because by then it saves about
-   five seconds rather than about sixty.
-5. **The clean-removal coverage decision**, and the javadoc correction it implies either way.
-6. **Route B**, flattening the defect view's five `binding_leaf` arms into one `CASE` pass. Priced at
-   29% of the instantiations above and independent of everything else here, so it can land whenever;
-   listed because an item that calls it worthwhile and then never schedules it is how a good idea
-   goes missing.
-7. **The duplicate-read merge and the `Files.mismatch` cleanup**, both re-measured against the shape
-   they would actually ship into rather than against today's.
+   authored data, which an earlier draft of this item claimed. This is the 229.0s to 16.24s, and the
+   fixture work belonged in this step rather than after it, since without it the step lands red.
+3. **The multiplicity check** (*landed*), reporting only, so the third and fourth registrations are
+   chosen from data rather than from this item's table.
+4. **The run-count reduction** (*landed as the shared tree, not as a lower count*), four runs to
+   three. The shared canonical tree was built and does its job; deliverable 5 then spent the run it
+   freed. See the outcome section above for why that is the trade this item argued for.
+5. **The clean-removal coverage decision** (*landed: the case was added*), and the javadoc
+   correction it implied. The case immediately found a sweep gap, filed as its own item.
+6. **Route B** (*declined on the re-measurement*), flattening the defect view's five `binding_leaf`
+   arms into one `CASE` pass. Re-priced at 22% of a store read that is no longer the dominant cost
+   of a four-second run, which turns it from a performance item into a simplification worth doing on
+   its own merits. Still listed, because an item that calls something worthwhile and then never
+   schedules it is how a good idea goes missing.
+7. **The duplicate-read merge** (*declined on the re-measurement*) **and the `Files.mismatch`
+   cleanup** (*landed*). The merge's probe fell from 8.1s per run to 0.49s, which no longer pays for
+   the wide intermediate row it would introduce across two classes. The `Files.mismatch` half landed
+   on the grounds this item gives for it, that it is a failure-message change and not a performance
+   one.
 
 ### A smaller one on the same path: the same view is read twice per run
 
@@ -701,7 +768,9 @@ the shape it will actually ship into.
 
 **Re-measured after the reductions landed, and the answer is not to do it.** The same probe, a
 redundant third read of the view added to `detect`, now costs **0.49s per run** against the 8.1s it
-cost before: the class goes from 18.13s to 20.10s over four runs. The view is 284 instantiations now
+cost before: the class goes from 18.13s to 20.10s over four runs, both figures from a standalone
+`mvn test -Dtest=GeneratorDeterminismTest` rather than from a reactor run, so the delta is the
+measurement and neither number is comparable to the summary table's class totals. The view is 284 instantiations now
 rather than the 518 it reached through `intent_argmapping_pair`, and the run it sits in is about four
 seconds rather than twenty-one. So merging the two reads would buy roughly half a second per run, and
 would pay for it with a wide intermediate row that two classes in two files pick apart in Java. That
@@ -725,14 +794,20 @@ number is quotable as landed.
 | R733 + run reduction | 3 | 62.91s | 21.0s | green |
 | R733 + the two reductions | 4 | **20.66s** | 5.2s | **red: 13 classes** |
 | all three | 3 | about 16s, projected | 5.2s | not run |
-| landed: the two registrations, on trunk | 4 | **15.46s** | 3.9s | **green** |
-| landed: plus the clean-removal case | 4 | **18.13s** | 4.5s | **green** |
+| landed: the two registrations | 4 | **15.46s** | 3.9s | **green** |
+| landed: plus the clean-removal case | 4 | **16.24s** | 4.1s | **green** |
 
-The landed row is the mechanism and both registrations as they shipped, with the fixture work in the
-same step, measured on a full green `mvn install -Plocal-db`. It beats the prototype's 20.66s because
-trunk moved underneath this item while it sat in Spec. `FixtureWarningsGateTest` fell from 56.8s to
-2.63s in the same build, which is the same reads in a different consumer and the better evidence that
-this was never one test's problem.
+The two landed rows are the mechanism and both registrations as they shipped with the fixture work in
+the same step, then the third contract clause added on top; both measured on a full green
+`mvn install -Plocal-db`, which is the only harness the whole table should be read across. They beat
+the prototype's 20.66s because trunk moved underneath this item while it sat in Spec.
+`FixtureWarningsGateTest` fell from 56.8s to 2.53s in the same build, which is the same reads in a
+different consumer and the better evidence that this was never one test's problem.
+
+One figure elsewhere in this item is not from that harness and should not be compared against this
+table: the duplicate-read probe reads 18.13s against 20.10s, both from a standalone
+`mvn test -Dtest=GeneratorDeterminismTest`, whose fixed overhead differs from a reactor run's. The
+delta between them is the measurement; neither number is a class total in this table's terms.
 
 The projected row above it is arithmetic rather than a measurement, and worth stating plainly: once a
 run costs about four seconds instead of 57, removing the fourth run saves about five seconds rather than about sixty.
@@ -796,19 +871,26 @@ it gives up nothing. Treat two as a separate question that the seam decision dri
 after R733 lands, the remaining gap between three runs and two is about 21 seconds rather than 57,
 which is a materially weaker case for adding public API.
 
+*Settled as recommended, and then spent.* The shared canonical tree landed and neither seam was
+built, so no public API was added. The run it freed went to the third contract clause rather than to
+the class total, which the outcome section at the top of this item states as the item's one
+deliberate departure from its plan. Two runs is now a weaker case still: the gap between three and
+four is about four seconds.
+
 ## Adjacent, and smaller
 
-* **The module runs nothing in parallel.** `graphitron-sakila-example` has no
+* **The module runs nothing in parallel** (*not done here, as the item says*).
+  `graphitron-sakila-example` has no
   `junit-platform.properties` at all. The two methods here hold separate temporary directories and
   are independent once the shared run exists, so concurrent methods would overlap the two remaining
   runs. R733 already carries the rule for this kind of change: one module at a time, and each module
   answers its own shared-state question first. Note it here, do it there.
-* **`readAll` slurps both trees into memory.** Two maps of 798 file contents, built to compare them
-  entry by entry. This is *not* a performance item and the section above has the number that says
-  so: the whole of the test's scaffolding is below measurement noise against the generator runs. It
-  is a failure-message item. `Files.mismatch` per path allocates nothing and reports the differing
-  byte offset, which beats an AssertJ string diff over a generated Java file when this ratchet
-  actually fires, which is the moment it exists for. Worth doing while the class is open, on those
+* **`readAll` slurps both trees into memory** (*landed*). Two maps of 798 file contents, built to
+  compare them entry by entry. This is *not* a performance item and the section above has the number
+  that says so: the whole of the test's scaffolding is below measurement noise against the generator
+  runs. It is a failure-message item. `Files.mismatch` per path allocates nothing and reports the
+  differing byte offset, which beats an AssertJ string diff over a generated Java file when this
+  ratchet actually fires, which is the moment it exists for. Done while the class was open, on those
   grounds and not on speed.
 
 ## How to re-measure
