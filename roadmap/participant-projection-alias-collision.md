@@ -170,21 +170,31 @@ three coordinated parts: the discriminated fold hands each participant a selecti
 to that type (reusing an existing generated helper), every `__rk_` alias minted inside a
 `TableBound` participant's projection unit carries the coordinate that owns the projection
 decision, and a validator census turns the residual silent shape into a build error. Vocabulary
-used below: a field on a `ParticipantRef.TableBound` participant is *participant-local* when no
-discriminated interface the type participates in declares it, and *interface-declared* when one
-does (SDL forces interface fields onto every implementer, so every participant field name is
-exactly one of the two). This spec revision incorporates a principles consultation; the joined-table
+used below: a *participant* is a type that appears as `ParticipantRef.TableBound` in some
+single-table discriminated interface's `GraphitronType.TableInterfaceType.participants()`; the
+scope is that membership, not the `TableBound` variant alone. A `TableBound` implementer of a
+directiveless multi-table `InterfaceType` or `UnionType` (`Film` in `Searchable`) is *not* a
+participant here and keeps today's bare alias for the same reason non-participants do: its
+stage-2 per-typename SELECT never merges with a sibling's select list, so qualification would be
+pure churn. A field on a participant is *participant-local* when no discriminated interface the
+type participates in declares it, and *interface-declared* when one does (SDL forces interface
+fields onto every implementer, so every participant field name is exactly one of the two). This spec revision incorporates a principles consultation; the joined-table
 route's sibling defect it surfaced is split out (see Out of scope).
 
 Where the mechanism lives, from the survey: the participant fold (`fields.addAll(...)` into a
-`LinkedHashSet<Field<?>>`, one `$project` call per branch with the shared grouped map) has two
-implementations serving five emitted bodies: `DiscriminatedTableFragments.fieldsList` (render
-tree; root launcher, batched discriminated child, the two DML follow-ups) and
-`TypeFetcherGenerator.buildTableInterfaceReprojection` (legacy tree; the child twin and, via
-`MultiTablePolymorphicEmitter`, the `@service` single-table-interface fetcher). Every `__rk_`
-write is in `ProjectionUnitRenderer`'s `$project` arms; every read is in `FetcherEmitter` (the
-single-record and pivot unwraps, and `columnByAlias`). The prefix is single-homed in
-`ReservedAliases.RESULT_KEY_PREFIX` with a legacy-tree re-read in
+`LinkedHashSet<Field<?>>`, one `$project` call per branch with the shared grouped map) is one
+assembly serving five emitted bodies: `DiscriminatedTableFragments.fieldsList` renders it (root
+launcher, batched discriminated child, the two DML follow-ups through the launcher's reentry
+arm), and `TypeFetcherGenerator.buildTableInterfaceReprojection` is a thin legacy-tree delegate
+onto `DiscriminatedTableFragments.assembly` (the child twin and, via
+`MultiTablePolymorphicEmitter`, the `@service` single-table-interface fetcher), so the fold edit
+lands once and cannot drift between trees. Every `__rk_` write inside a projection unit is in
+`ProjectionUnitRenderer`'s `$project` arms; the one write outside them is
+`DiscriminatedTableFragments`' `InheritedRef` base-slice arm, which serves only
+`JoinedTableBound` participants (`JoinedTableReprojection.of` skips every other variant) and so
+stays bare under this item (the joined route is out of scope, R752's territory). Every read is
+in `FetcherEmitter` (the single-record and pivot unwraps, and `columnByAlias`). The prefix is
+single-homed in `ReservedAliases.RESULT_KEY_PREFIX` with a legacy-tree re-read in
 `GeneratorUtils.RESERVED_RK_ALIAS_PREFIX`.
 
 ### 1. The fold hands each participant a type-scoped selection map
@@ -196,7 +206,8 @@ per-typename SELECT already feeds into the same `$project` contract (the wrapper
 because `$project` recurses through `SelectedField.getSelectionSet()`, so a bare filtered map
 would not survive the contract; see `PolymorphicSelectionSetClassGenerator`'s design note).
 Check the helper's `EmitPlan` gating: it must be emitted whenever a discriminated interface
-exists, not only when the multi-table route does.
+exists, not only when the multi-table route does (as of this revision `EmitPlan` emits it
+unconditionally, so the check should resolve trivially).
 
 What this buys beyond hygiene: a participant no longer projects a field nothing selected on it
 (the second observed property in the Backlog body); diverging per-type sub-selections
@@ -362,8 +373,10 @@ File-by-file, from the survey:
   restricted-map call per branch and the distinct aliases.
 * **Pipeline**: the owner fact's verdicts as plan data (participant-local, interface-declared,
   non-participant, a type participating while also queried directly, the multi-interface
-  representative); the write/read value enforcer (the plan's carried owner equals the fetcher
-  binding's, per coordinate); backstop 3's deferral plus an agreeing-redeclaration control. The
+  representative, and a `TableBound` implementer of a multi-table interface or union staying
+  `Shared`, pinning the vocabulary's scope); the write/read value enforcer (the plan's carried
+  owner equals the fetcher binding's, per coordinate); backstop 3's deferral plus an
+  agreeing-redeclaration control. The
   per-type `requireConsistentArguments` behaviour change is its own pin (execution tier), not a
   rider on the correctness cases.
 
