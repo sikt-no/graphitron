@@ -338,12 +338,61 @@ fewer rows than every argument does. Their spelling is safe by accident of popul
 construction, and it is the third copy of one wrapper-stripping rule that a relation should state
 once. Filed as its own Backlog item rather than widened into this one.
 
-Two consequences for the stages below. The instruction population evaluates in 0.40 s against a real
-schema, so stage 2c's first build-time reader arrives at a relation that is already cheap, and
-nothing here needs materializing: the registration stays reverted because it is unnecessary now, not
-because it is deferred. And the static metric keeps its stated standing, which is lower than this
-item gave it a paragraph ago: 2528 namings of a relation that answers in 0.4 s is not a problem, and
-83 namings of one that answered in 20 s was. The metric ranks breadth. Cost is measured.
+One consequence for the static metric, which keeps its stated standing but a lower one than this item
+gave it a paragraph ago: 2528 namings of a relation that answers in 0.4 s is not a problem, and 83
+namings of one that answered in 20 s was. The metric ranks breadth. Cost is measured.
+
+**The same probe run over the rest of the family, and the instruction population being cheap does not
+make the family cheap.** Measured after the fix above:
+
+[cols="2,1,1",options="header"]
+|===
+| relation | rows | time
+
+| `intent_node_id_instruction` | 69 | 0.38 s
+| `intent_node_id_encode` | 15 | 1.46 s
+| `intent_node_id_decode_endpoint` | 40 | 4.93 s
+| `intent_node_id_decode_hop` | 16 | 7.15 s
+| `intent_node_id_decode_hop_column` | 20 | 6.79 s
+| `intent_node_id_decode_column` | | no answer in 300 s
+|===
+
+So the destination relation stage 2c reduces over cannot be evaluated at all yet, and that is the
+gate on stage 2c rather than anything in stage 2b's own population.
+
+Three isolations locate it, and two of them refute readings this item reached for first. Snapshotting
+the lift's recursive CTE into a table and running the final `SELECT` against the snapshot is 6.69 s
+for its 54 rows, against 6.68 s for the same query with the lift left out entirely, so the final
+join's null-safe coordinate match and its folded column-name comparison cost about 0.01 s and are not
+the term. The live view exceeding 300 s where the CTE alone is 146 s and the final select is 7 s puts
+the CTE at roughly two evaluations rather than one per outer row, so the recursion is not being
+re-entered per row either, which is what the killed build's thread dump was read as saying.
+
+What is left is the recursion itself: **146 seconds to produce 20 rows.** Each evaluation of
+`intent_node_id_decode_hop_column` costs 6.8 s and 146 divided by 6.8 is about 21, which is the
+number of rows the walk accumulates. That is a nested loop inside the recursive step, evaluating the
+step's whole input once per accumulated row, and the reason there is nothing to plan instead is the
+step's join predicate: a null-safe disjunction on two coordinate columns and an `UPPER()` on both
+sides of the column match, neither of which is an equality H2 can drive an index from. The same
+predicate in the final join costs nothing, because there it is evaluated once over 54 rows rather
+than once per row of a growing relation.
+
+Two levers, and the measurement sizes both rather than leaving the choice to taste. Registering
+`intent_node_id_decode_hop_column` as a materialization takes the per-evaluation cost to about
+nothing, so 21 evaluations stop mattering whatever the plan is; this is the lever stage 2b deferred
+for want of a reader, and the recursion naming its input twice is that reader. Giving the step a
+plannable predicate, which means carrying the `use_site` column the endpoint relation already has
+down through the two hop relations and joining on it instead of on the five-column null-safe match,
+plus folding column-name case once at the producing relation instead of at the join, turns 21
+evaluations into about 2; that is roughly 14 s, better and not enough on its own. Both, and the
+recursion stops being the term. The serialized-key precedent for the first half is
+`intent_input_occurrence_path`, whose step relation already joins its parent on exactly such a
+column, with the components sitting beside it so nothing parses the key.
+
+The endpoint subtree is then the remaining floor, every relation in the chain costing about what its
+parent costs plus a little, which is around 5 s of instruction and scope re-derivation repeated per
+level. Whether that wants the same treatment is a question to ask with a number after the recursion
+is fixed, not before.
 
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
