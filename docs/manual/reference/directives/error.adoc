@@ -14,11 +14,11 @@ directive @error(handlers: [ErrorHandler!]!) on OBJECT
 
 input ErrorHandler {
     handler:     ErrorHandlerType!     # GENERIC | DATABASE | VALIDATION
-    className:   String                # FQCN of the exception (required for GENERIC; defaults to org.jooq.exception.DataAccessException for DATABASE)
+    className:   String                # FQCN of the exception (required for GENERIC; rejected for DATABASE and VALIDATION)
     code:        String                # Vendor-specific DB error code (DATABASE only)
     sqlState:    String                # Standardized SQL state (DATABASE only)
     matches:     String                # Substring the exception message must contain
-    description: String                # Override message returned to the client
+    description: String                # Message returned to the client instead of the exception's own (rejected for VALIDATION)
 }
 
 enum ErrorHandlerType { GENERIC, DATABASE, VALIDATION }
@@ -37,13 +37,15 @@ enum ErrorHandlerType { GENERIC, DATABASE, VALIDATION }
 [cols="1,1,3",options="header"]
 |===
 | Field | Required | Description
-| `handler` | yes | Selector. `DATABASE` matches `org.jooq.exception.DataAccessException` (or a configured subclass) by `code`/`sqlState`/`matches`. `GENERIC` matches by `className` plus optional `matches`. `VALIDATION` matches Bean Validation failures.
-| `className` | for `GENERIC` | Fully qualified exception class name. Required for `GENERIC`; defaults to `org.jooq.exception.DataAccessException` for `DATABASE`; ignored for `VALIDATION`.
-| `code` | no (`DATABASE` only) | Vendor-specific error code as returned by `SQLException.getErrorCode()`. PostgreSQL always returns `0`; Oracle uses meaningful codes. Pair with `sqlState` when matching across vendors.
+| `handler` | yes | Selector. `DATABASE` matches any `java.sql.SQLException` in the cause chain, narrowed by `sqlState`/`code`/`matches`; jOOQ's `DataAccessException` routes because it carries the driver's `SQLException` as its cause. `GENERIC` matches by `className` plus optional `matches`. `VALIDATION` marks the channel for a Bean Validation pre-execution step.
+| `className` | for `GENERIC` | Fully qualified exception class name. Required for `GENERIC`; rejected for `DATABASE` (which matches any `SQLException`, so use `GENERIC` when you want class-narrowed matching) and rejected for `VALIDATION`.
+| `code` | no (`DATABASE` only) | Vendor-specific error code as returned by `SQLException.getErrorCode()`. PostgreSQL always returns `0`; Oracle uses meaningful codes.
 | `sqlState` | no (`DATABASE` only) | Standardized SQL state from `SQLException.getSQLState()` (e.g. `"23503"` for foreign-key violation, `"23514"` for check-constraint violation).
 | `matches` | no | Substring the exception message must contain. Useful to narrow a broad `className` or `sqlState` to one specific error.
-| `description` | no | Static error message returned to the client. Defaults to the exception's `getMessage()`.
+| `description` | no | The message the client reads on `message:`, in place of the matched exception's own `getMessage()`. Absent, `message:` reads the source's message. Rejected on a `VALIDATION` handler: that path emits one error per constraint violation, each carrying that violation's own interpolated message, so a single client-facing string belongs on the constraint annotation's own `message` attribute instead.
 |===
+
+`description:` only changes what `message:` reads. The matched exception itself is what lands in the payload's `errors` list, so xref:#extra-fields[extra fields] keep reading the live exception and a `union` still resolves `__typename` from the exception's own class.
 
 == Canonical example
 
@@ -88,9 +90,9 @@ type Mutation {
 }
 ----
 
-When the service method throws a `DataAccessException` whose `sqlState` is `23514` and whose message contains `year_check`, the rewrite catches it, builds a `YearOutOfRange` instance with `message = description` (or the exception's own message when `description:` is absent), and appends it to `FilmPayload.errors`. The `data` field still streams to the client; only `film` is `null` for that request.
+When the service method throws an exception carrying a `java.sql.SQLException` whose `getSQLState()` is `23514` and whose message contains `year_check` (jOOQ's `DataAccessException` wrapping the driver's exception is the usual shape), the rewrite catches it, resolves the `YearOutOfRange` type with `message = description` (or the exception's own message when `description:` is absent), and appends the matched exception to `FilmPayload.errors`. The `data` field still streams to the client; only `film` is `null` for that request.
 
-`VALIDATION` handles a Bean-Validation failure raised before the service method runs:
+`VALIDATION` handles a Bean-Validation failure raised before the service method runs. It takes no other field on the entry, `description:` included:
 
 [source,graphql]
 ----
@@ -122,17 +124,18 @@ The build fails when a declared extra field cannot be populated from every handl
 == Constraints
 
 * `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload reachable from a xref:service.adoc[`@service`] field. A standalone `@error` type with no carrier is rejected at classify time.
-* The handler list is order-insensitive within a type; across types of the same channel, ties are broken by handler-tuple equality. Two `@error` types declaring the same handler tuple (same `handler`, `className`, `code`, `sqlState`, `matches`) collapse — the second is unreachable. The build rejects duplicate tuples.
-* `matches:` makes two otherwise-identical handlers distinct: `(GENERIC, IllegalArgumentException, matches: "foo")` and `(GENERIC, IllegalArgumentException)` (no `matches`) are both reachable, with the more-specific match running first.
+* Declaration order decides, and the first match wins. Handlers are walked in SDL order (the channel's `@error` types in declaration order, and within a type its `handlers:` in array order), so when two handlers both match one throwable the one declared first is the answer. Declare the narrow handler before the broad one.
+* Nothing sorts by specificity. `matches:` makes two otherwise-identical handlers distinct: `(GENERIC, IllegalArgumentException, matches: "foo")` and `(GENERIC, IllegalArgumentException)` (no `matches`) are both reachable, but the narrowed one runs first only if you declared it first. Declaring the broad one first leaves the narrow one silently unreachable.
+* Two handlers of the same variant with identical criteria (same `handler`, `className`, `code`, `sqlState`, `matches`) are rejected: the second would be unreachable. Overlap *across* variants is allowed, since a `GENERIC` handler and a `DATABASE` handler inspect orthogonal fields.
 * For `GENERIC`, `className:` is required. The build rejects a `GENERIC` handler without it.
-* For `DATABASE`, supply at least one of `code:`, `sqlState:`, or `matches:` (otherwise every `DataAccessException` on the channel routes to this type, which is rarely the intent).
-* `code:` and `sqlState:` may be combined; both must match on the exception. Vendor portability: prefer `sqlState` (PostgreSQL is specific, Oracle is generic) or pair both with a `matches:` substring.
+* For `DATABASE`, supply at least one of `code:`, `sqlState:`, or `matches:` (otherwise every `SQLException` on the channel routes to this type, which is rarely the intent).
+* `code:` and `sqlState:` cannot be combined: the build rejects a `DATABASE` entry carrying both, since the two discriminators are vendor-conflicting. Split into two entries, one per discriminator. Vendor portability: prefer `sqlState` (PostgreSQL is specific, Oracle is generic), narrowed with a `matches:` substring where needed.
 * Applies only to `OBJECT`. Interfaces and unions cannot carry `@error` directly — the union-of-error-types pattern works because the union *members* are individually `@error`-decorated.
 
 == See also
 
 * xref:service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
 * The payload type that exposes the `errors:` field is class-backed, its backing class inferred from the xref:service.adoc[`@service`] method's return type.
-* xref:../../how-to/error-channel.adoc[How-to: The errors channel] covers union vs single-type carriers, `description:` vs exception message, and the `path:` slot's contents.
+* xref:../../how-to/error-channel.adoc[How-to: The errors channel] covers union vs single-type carriers, how `message:` resolves between `description:` and the source's own message, and the `path:` slot's contents.
 
 xref:../index.adoc[← Reference index]

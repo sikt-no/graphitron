@@ -115,15 +115,16 @@ which help to map exceptions to GraphQL errors.
 """
 input ErrorHandler {
   """
-  Determines which error handler to use. DATABASE and GENERIC are the two options
-  currently available.
+  Determines which error handler to use. GENERIC matches by exception class identity,
+  DATABASE by SQL state or vendor code on any java.sql.SQLException in the cause chain,
+  and VALIDATION marks the channel for a Jakarta Bean Validation pre-execution step.
   """
   handler: ErrorHandlerType!
 
   """
   Specifies the fully qualified name of the exception class. Required for the
-  GENERIC handler and defaults to org.jooq.exception.DataAccessException if not
-  provided for the DATABASE handler.
+  GENERIC handler; rejected for DATABASE (which matches any java.sql.SQLException,
+  so use GENERIC when you want class-narrowed matching) and for VALIDATION.
   """
   className: String
 
@@ -136,7 +137,8 @@ input ErrorHandler {
   """
   For the DATABASE handler, this is the SQL state code (e.g. "23503" for foreign key violation).
   SQL state codes are standardized and work across database vendors.
-  Can be used together with or instead of 'code'.
+  Use instead of 'code', not together with it: an entry carrying both is rejected,
+  since the two discriminators are vendor-conflicting. Split into two entries instead.
   """
   sqlState: String
 
@@ -149,6 +151,11 @@ input ErrorHandler {
   """
   Provides a description of the error to be returned to the user. If not provided,
   the exception message will be used.
+
+  Rejected on a VALIDATION handler. That path emits one error per constraint
+  violation, each carrying that violation's own interpolated message, so a single
+  client-facing string belongs on the constraint annotation's own 'message'
+  attribute instead.
   """
   description: String
 }
