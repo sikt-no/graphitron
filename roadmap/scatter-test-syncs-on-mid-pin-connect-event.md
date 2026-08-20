@@ -1,7 +1,7 @@
 ---
 id: R744
 title: "TenantScatterSubstrateTest synchronizes on a connect event that fires mid-pin, so a worker's self-abort races the release assertion"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: testing
