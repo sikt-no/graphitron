@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Spec | 2026-08-19 | [plan](reference-path-fanout-verdict.md) |
-| `R755` | srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness | Spec | 2026-08-20 | [plan](srp-review-prompts-lead-with-gate-questions.md) |
+| `R755` | srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness | Ready | 2026-08-20 | [plan](srp-review-prompts-lead-with-gate-questions.md) |
 | `R686` | Surface the @error handler description: as the client-facing message instead of the raw exception message | In Review | 2026-08-20 <sub>created 2026-08-17</sub> | [plan](error-handler-description-overrides-message.md) |
 | `R687` | A DML carrier payload with an errors field loses its return-derived write target | Spec | 2026-08-20 <sub>created 2026-08-17</sub> | [plan](dml-carrier-errors-field-blocks-return-derived-table.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -585,7 +585,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R746` [**Order the materialization registry, so a target may be derived from another target**](materialization-dependency-order.md) — Backlog, dx, blocked by [determinism-ratchet-run-count](determinism-ratchet-run-count.md)
 - `R623` [**Redirect Maven output to a log file in web sessions via .mvn/maven.config**](web-session-maven-build-log.md) — Spec, dx
 - `R736` [**The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering**](trace-writer-disabled-for-rest-of-fork.md) — Spec, bug
-- `R755` [**srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness**](srp-review-prompts-lead-with-gate-questions.md) — Spec, improvement
+- `R755` [**srp review prompts lead with commit bookkeeping where the gate turns on goal, design fit, fidelity, and completeness**](srp-review-prompts-lead-with-gate-questions.md) — Ready, improvement
 - `R748` [**Decouple the roadmap tool from the generator reactor**](roadmap-tool-reactor-decoupling.md) — Spec, dx
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R568` [**Javadoc reference gate skips silently on rebuilds: the plugin up-to-date check compares options and file list, not source content**](javadoc-gate-incremental-skip.md) — Backlog, bug
