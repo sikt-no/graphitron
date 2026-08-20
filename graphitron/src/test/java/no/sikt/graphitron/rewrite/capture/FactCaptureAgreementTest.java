@@ -184,6 +184,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       which node type each names, with one case per basis because the basis is the claim: a
  *       coordinate answered by the wrong rule resolves the wrong node type wherever several rules
  *       could answer, so the assertion is which rule answered and not merely that something did;
+ *       {@code no.sikt.graphitron.model.intent.NodeIdDecodeReachTest} binds the pair a decode
+ *       navigates on ({@code intent_node_id_decode_endpoint} and
+ *       {@code intent_node_id_decode_hop}, the hop child pinned through the endpoint relation's
+ *       navigation column rather than twice), one case per navigation and one per shape that
+ *       contributes no hop, the two silences meaning different things being the claim;
  *       {@code no.sikt.graphitron.rewrite.derive.ChainTerminusTest} binds
  *       {@code intent_field_chain_terminus}, where a {@code @routine} chain lands and what kind of
  *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
@@ -420,6 +425,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_resolved_node_type_id", Arm.DERIVED);
         registrations.put("intent_argument_scope_table", Arm.DERIVED);
         registrations.put("intent_node_id_instruction", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_hop", Arm.DERIVED);
         registrations.put("intent_argmapping_pair", Arm.DERIVED);
         registrations.put("intent_argmapping_pair_live", Arm.DERIVED);
         registrations.put("intent_spelled_table_live", Arm.DERIVED);

@@ -1654,6 +1654,36 @@ public final class SeededStore {
     }
 
     /**
+     * A foreign key and the ordered columns under it, in one call: the constraint, its own columns
+     * in written order, and where it points. The referenced key must already exist, and the columns
+     * must too, the constraint's rows being anchored on them.
+     *
+     * <p>Both ends live under one classpath entry, which is the ordinary catalog. A case whose
+     * subject is a key spanning two entries states the three calls itself.
+     *
+     * <p>The column list is the key's own side. A reader pairing it with the referenced side does so
+     * by position, which is what makes the order here the subject of any case about a lift.
+     */
+    public static void seedForeignKey(DSLContext dsl, String sourceName, String tableSchema,
+                                      String tableName, String constraintName,
+                                      String referencedTable, String referencedConstraintName,
+                                      String... columnNames) {
+        seedConstraint(dsl, sourceName, tableSchema, tableName, constraintName, "FOREIGN KEY", null);
+        for (int position = 0; position < columnNames.length; position++) {
+            dsl.insertInto(SQL_CONSTRAINT_COLUMN)
+                .set(SQL_CONSTRAINT_COLUMN.SOURCE_NAME, sourceName)
+                .set(SQL_CONSTRAINT_COLUMN.TABLE_SCHEMA, tableSchema)
+                .set(SQL_CONSTRAINT_COLUMN.TABLE_NAME, tableName)
+                .set(SQL_CONSTRAINT_COLUMN.CONSTRAINT_NAME, constraintName)
+                .set(SQL_CONSTRAINT_COLUMN.POSITION, position)
+                .set(SQL_CONSTRAINT_COLUMN.COLUMN_NAME, columnNames[position])
+                .execute();
+        }
+        seedReferentialConstraint(dsl, sourceName, tableSchema, tableName, constraintName,
+            sourceName, tableSchema, referencedTable, referencedConstraintName);
+    }
+
+    /**
      * Where a foreign key points. Both ends must already be constraints, so seed the referenced
      * key before the reference to it.
      */
