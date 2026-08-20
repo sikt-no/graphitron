@@ -1,9 +1,9 @@
 ---
 id: R746
 title: "Order the materialization registry, so a target may be derived from another target"
-status: Spec
+status: Ready
 bucket: dx
-priority: 4
+priority: 3
 theme: tooling
 depends-on: []
 created: 2026-08-20
@@ -46,8 +46,8 @@ the source view so it sorts last), that one registration takes `GeneratorDetermi
 to 11.61s and the store's read time per generator run from 2.55s to 0.40s, both green. Those are the
 generator's own reads, so every consumer's build pays them, and nothing else measured in the store is
 close. Read the closing section's "not a performance item at all" as "this item changes no timing
-itself", which is true, rather than as "no timing depends on it", which is not. The Spec pass may want
-to revisit `priority: 4` on that basis.
+itself", which is true, rather than as "no timing depends on it", which is not. The Spec pass
+revisited the priority on that basis: it now carries 3, matching the item blocked on it.
 
 *One case for the test section below.* R742's rework gave
 `FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` real rows, so it would now catch a target
