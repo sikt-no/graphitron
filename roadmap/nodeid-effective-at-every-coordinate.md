@@ -324,9 +324,27 @@ there; `collectJooqBindings` and `buildRecordKeyDecode` do the same on the recor
 neither has an arm for the scalar member, because there is nowhere to put the values. The silence is
 not an oversight about the directive. It is an unanswered question about the destination.
 
-<!-- OPEN FORK: whether a bare @nodeId auto-projects a single-key node type at these two
-coordinates is with the owner. This section is written to the reject answer and gets rewritten to
-the auto-project answer if that is the call. -->
+**One decision is open, and it is the only one in this plan.** Where the named node type has exactly
+one key column, nothing about which value goes in the slot is ambiguous: the decode yields one value
+and the parameter takes it. So these two coordinates could *cross* rather than refuse, with the
+`NAMED_KEY_COLUMN` destination reached by inference instead of by an authored trailing segment, and
+only a composite key left to refuse with a message naming the arity. That would serve the reporter's
+case without them respelling anything.
+
+What it costs is a verdict that shipped. `ArgmappingProjectionDefects`' `BARE_NODE_ID` rejects
+precisely this shape at `argMapping` sites, with the text "binds a `@nodeId` and names no key column,
+so the encoded node id would reach the database verbatim", and its remedy is to name the column.
+Auto-projection makes that verdict wrong for single-key node types and shrinks its population to
+composites. The case for it is that refusing a case the generator can answer unambiguously is what
+"complete" is meant to rule out, and that a node type later gaining a second key column turns into a
+build error telling the author to name one rather than into wrong generated code. The case against is
+that the SDL should say what it binds, and that one spelling documents more cleanly than "explicit,
+unless the arity happens to be one".
+
+Until that is settled this section is written to the refusing answer, and stage 5's arms are
+`Rejection.structural` accordingly. If auto-projection is chosen, these two coordinates move out of
+stage 5 into stage 2 as an inference arm on the crossing relation, stage 5 keeps only the
+composite-arity refusal at them, and `BARE_NODE_ID`'s own text needs the same edit.
 
 ## Stages
 
