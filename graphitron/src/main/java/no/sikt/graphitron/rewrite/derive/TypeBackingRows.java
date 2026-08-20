@@ -20,7 +20,7 @@ import static org.jooq.impl.DSL.val;
  * {@code intent_field_accessor_hop}'s edges. Runs inside capture's own transaction after the
  * flush, clears the run's graph partition first (the cadence doctrine's clearing rule), and
  * re-derives, so on any settled store the relation is current for every captured graph. The
- * relation is a table rather than a view for {@link ReachabilityRows}' reason exactly: the closure
+ * relation is a table rather than a view for the classification domain's reason exactly: the closure
  * is over the SDL type graph, which is cyclic, and H2 has no safe recursive view form for one.
  *
  * <p>The rule is the relation's, not this class's. Every statement below is joins over relations

@@ -1,20 +1,23 @@
 package no.sikt.graphitron.rewrite.schema;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Everything the SDL toolchain concluded about one pass's schema document: the sources the parser
- * refused, and the verdicts the two document-wide stages returned.
+ * What the two stages ahead of assembly concluded about one pass's schema document: the sources the
+ * parser refused, and the declarations the combining registry refused.
  *
- * <p>Reading a schema is a pipeline of three stages, and they contribute to the store very
- * differently. Parsing is the stage that produces facts: every source that parses contributes its
- * declarations, and that is where the transcription families come from. Combining and assembling
- * produce no declarations at all; their entire contribution is a verdict on what parsing produced,
- * which is why one carrier holds the refusals of all three and why the two later stages share a
- * single relation.
+ * <p>Reading a schema is a pipeline whose stages contribute to the store very differently. Parsing
+ * is the stage that produces the per-site declaration facts: every source that parses contributes
+ * its own, and that is where the transcription families come from. Combining produces no
+ * declaration at all; its entire contribution is a verdict on what parsing produced, which is why
+ * it shares a relation with the assembly verdict downstream of it.
+ *
+ * <p>Assembly's verdict is deliberately not a component here. The gatherer runs that stage itself,
+ * because the stages after it read the schema it produces, and taking the transcription and the
+ * verdict from one assembly is what keeps the store from judging a document it does not hold. A
+ * caller hands over the assembly beside these verdicts instead.
  *
  * <p>A stage's refusals never stop the next stage from running. That is the property the whole
  * arrangement rests on: a parse refusal costs its own source and no other, a registry refusal costs
@@ -24,8 +27,7 @@ import java.util.stream.Collectors;
  * is mid-edit and needs them.
  *
  * @param syntaxFailures the sources the parser refused, in parse order
- * @param schemaErrors   the document-wide verdicts, in the order their stages ran, so every
- *                       registry verdict precedes every assembly verdict
+ * @param schemaErrors   the combining stage's verdicts, in the order the declarations were offered
  */
 public record SdlVerdicts(List<RewriteSchemaLoader.SyntaxFailure> syntaxFailures,
                           List<SchemaError> schemaErrors) {
@@ -44,15 +46,9 @@ public record SdlVerdicts(List<RewriteSchemaLoader.SyntaxFailure> syntaxFailures
         return new SdlVerdicts(List.of(), List.of());
     }
 
-    /**
-     * The verdicts of a full read: the parse and registry stages from {@code read}, the assembly
-     * stage from {@code assembly}. Concatenates the two document-wide stages in the order they ran,
-     * which is the order the store keys them in.
-     */
-    public static SdlVerdicts of(RewriteSchemaLoader.PerSourceParse read, SchemaAssembly assembly) {
-        var schemaErrors = new ArrayList<>(read.registryErrors());
-        schemaErrors.addAll(assembly.errors());
-        return new SdlVerdicts(read.failures(), schemaErrors);
+    /** The verdicts of a read's first two stages, as the loader reported them. */
+    public static SdlVerdicts of(RewriteSchemaLoader.PerSourceParse read) {
+        return new SdlVerdicts(read.failures(), read.registryErrors());
     }
 
     /**
@@ -66,7 +62,10 @@ public record SdlVerdicts(List<RewriteSchemaLoader.SyntaxFailure> syntaxFailures
             .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** Whether any stage refused anything, so a caller whose contract is to fail knows to. */
+    /**
+     * Whether either stage here refused anything. A caller whose contract is to fail asks this and
+     * the assembly separately, assembly being the gatherer's own stage rather than one of these.
+     */
     public boolean anyRefusal() {
         return !syntaxFailures.isEmpty() || !schemaErrors.isEmpty();
     }

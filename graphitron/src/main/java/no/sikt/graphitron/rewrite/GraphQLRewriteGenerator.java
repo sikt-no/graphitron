@@ -218,7 +218,7 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        var detection = captureFactsAndDetect(attributed, read.verdicts(), bundle.model(), jooq,
+        var detection = captureFactsAndDetect(attributed, read, bundle.model(), jooq,
             catalog.externalReferences());
         var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(bundle.model()));
         var errors = new ArrayList<>(walkErrors);
@@ -254,7 +254,7 @@ public class GraphQLRewriteGenerator {
         var schema = bundle.model();
         logWarnings(withLintFindings(schema, attributed));
         var errors = validateAndLogErrors(schema,
-            captureFactsAndDetect(attributed, read.verdicts(), schema).violations());
+            captureFactsAndDetect(attributed, read, schema).violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -317,13 +317,39 @@ public class GraphQLRewriteGenerator {
      * emptiness this method would have recorded, derived from the stages rather than assumed.
      */
     private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed) {
-        var assembly = SchemaAssembly.of(attributed.registry());
-        var verdicts = SdlVerdicts.of(attributed.read(), assembly);
-        if (verdicts.anyRefusal()) {
-            captureFacts(attributed, verdicts);
+        // The assembly that judges the document is the one over the registry the store transcribes,
+        // before the synthesis rewrites. Judging the post-synthesis registry instead let a verdict
+        // blame the author for a declaration graphitron's own rewrite injected; a verdict is a fact
+        // about what the author wrote, so it comes from the same registry the facts do.
+        var assembly = SchemaAssembly.of(attributed.preSynthesisRegistry());
+        var verdicts = SdlVerdicts.of(attributed.read());
+        if (verdicts.anyRefusal() || !assembly.errors().isEmpty()) {
+            captureFacts(attributed, assembly, verdicts);
             RewriteSchemaLoader.throwIfRejected(attributed.read());
+            // Nothing above threw, so the refusal was assembly's own: rethrow it as the stage
+            // raised it, which is the exception this path has always failed with.
+            GraphitronSchemaBuilder.assembleOrFail(assembly);
         }
-        return new ReadSchema(GraphitronSchemaBuilder.assembleOrFail(assembly), verdicts);
+        return new ReadSchema(assembleForPipeline(attributed, assembly), verdicts, assembly);
+    }
+
+    /**
+     * The schema the pipeline classifies, which is the post-synthesis one: the federation key and
+     * node declarations {@link KeyNodeSynthesiser} injected are part of what the generator emits.
+     * A second assembly is paid for only when that rewrite ran at all; with no injected names the
+     * pre-synthesis registry is the same document, so the assembly above is reused.
+     *
+     * <p>A post-synthesis registry that will not assemble while the pre-synthesis one did is
+     * graphitron's own rewrite breaking a schema the author wrote correctly. That fails the build
+     * loudly, as it always has, and deliberately leaves no {@code ASSEMBLY} verdict row: the store's
+     * verdicts are about the author's document.
+     */
+    private static GraphQLSchema assembleForPipeline(AttributedRegistry attributed,
+                                                     SchemaAssembly preSynthesis) {
+        if (attributed.injectedNames().isEmpty()) {
+            return GraphitronSchemaBuilder.assembleOrFail(preSynthesis);
+        }
+        return GraphitronSchemaBuilder.assembleOrFail(SchemaAssembly.of(attributed.registry()));
     }
 
     /**
@@ -332,7 +358,8 @@ public class GraphQLRewriteGenerator {
      * fatal upstream, but they are carried rather than re-synthesised so the capture downstream
      * writes a fact about this read instead of a constant.
      */
-    private record ReadSchema(GraphQLSchema assembled, SdlVerdicts verdicts) {}
+    private record ReadSchema(GraphQLSchema assembled, SdlVerdicts verdicts,
+                              SchemaAssembly preSynthesisAssembly) {}
 
     /**
      * The run's inputs projected onto what the loader can open. The switch is checked for coverage
@@ -371,9 +398,9 @@ public class GraphQLRewriteGenerator {
      * hands back), the jOOQ catalog projection, and the classpath scan.
      */
     private StoreDetections captureFactsAndDetect(
-            AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema) {
+            AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        return captureFactsAndDetect(attributed, verdicts, schema, jooq,
+        return captureFactsAndDetect(attributed, read, schema, jooq,
             CatalogBuilder.buildExternalReferences(ctx));
     }
 
@@ -383,13 +410,14 @@ public class GraphQLRewriteGenerator {
      * pass, the build paths use the convenience overload above.
      */
     private StoreDetections captureFactsAndDetect(
-            AttributedRegistry attributed, SdlVerdicts verdicts, GraphitronSchema schema,
+            AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema,
             JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         return FactCapture.runWithDetections(ctx.storeDirectory(),
             graphIdentity(),
             subjectConfig(),
             attributed.preSynthesisRegistry(),
-            verdicts,
+            read.preSynthesisAssembly(),
+            read.verdicts(),
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
@@ -402,12 +430,14 @@ public class GraphQLRewriteGenerator {
      * writes everything the surviving declarations support plus the stages' verdicts, which is the
      * whole point of running it here rather than giving up.
      */
-    private void captureFacts(AttributedRegistry attributed, SdlVerdicts verdicts) {
+    private void captureFacts(AttributedRegistry attributed, SchemaAssembly assembly,
+                              SdlVerdicts verdicts) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         FactCapture.run(ctx.storeDirectory(),
             graphIdentity(),
             subjectConfig(),
             attributed.preSynthesisRegistry(),
+            assembly,
             verdicts,
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
@@ -445,7 +475,7 @@ public class GraphQLRewriteGenerator {
         // Capture runs ahead of validation: the store-backed detections feed the error stream,
         // so the store has to be filled before the verdict is pronounced. The product is kept
         // rather than consumed inline, its key projections being the plan's one store-side input.
-        var storeFacts = captureFactsAndDetect(attributed, read.verdicts(), schema);
+        var storeFacts = captureFactsAndDetect(attributed, read, schema);
         var errors = validateAndLogErrors(schema, storeFacts.violations());
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);

@@ -10,11 +10,11 @@ import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
-import no.sikt.graphitron.rewrite.derive.ReachabilityRows;
 import no.sikt.graphitron.rewrite.derive.TypeBackingRows;
 import no.sikt.graphitron.rewrite.derive.TypeBackingClassRows;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
 import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
@@ -194,8 +194,23 @@ public final class FactCapture {
                            TypeDefinitionRegistry registry, SdlVerdicts verdicts,
                            Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
-        runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq, extensions,
-            ClassifiedRun.absent());
+        run(storeDirectory, graph, config, registry, SchemaAssembly.of(registry), verdicts,
+            attribution, jooq, extensions);
+    }
+
+    /**
+     * {@link #run(Path, GraphIdentity, SubjectConfig, TypeDefinitionRegistry, SdlVerdicts, Map,
+     * JooqCatalog, List)} for a caller that has already assembled {@code registry} and would
+     * otherwise pay for a second assembly. The two arguments have to describe one read: the
+     * gatherer's assembly stage is where the {@code ASSEMBLY} verdicts come from, so handing over an
+     * assembly of a different registry would record a verdict on a document the store does not hold.
+     */
+    public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
+                           TypeDefinitionRegistry registry, SchemaAssembly assembly,
+                           SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
+                           JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
+        runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution, jooq,
+            extensions, ClassifiedRun.absent());
     }
 
     /**
@@ -212,19 +227,21 @@ public final class FactCapture {
     public static StoreDetections runWithDetections(Path storeDirectory, GraphIdentity graph,
                                                           SubjectConfig config,
                                                           TypeDefinitionRegistry registry,
+                                                          SchemaAssembly assembly,
                                                           SdlVerdicts verdicts,
                                                           Map<String, SchemaInput> attribution,
                                                           JooqCatalog jooq,
                                                           List<CompletionData.ExternalReference> extensions,
                                                           ClassifiedRun classified) {
         Objects.requireNonNull(classified, "classified");
-        return runInternal(storeDirectory, graph, config, registry, verdicts, attribution, jooq,
-            extensions, classified);
+        return runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution,
+            jooq, extensions, classified);
     }
 
     private static StoreDetections runInternal(Path storeDirectory, GraphIdentity graph,
                                                      SubjectConfig config,
-                                                     TypeDefinitionRegistry registry, SdlVerdicts verdicts,
+                                                     TypeDefinitionRegistry registry,
+                                                     SchemaAssembly assembly, SdlVerdicts verdicts,
                                                      Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                                      List<CompletionData.ExternalReference> extensions,
                                                      ClassifiedRun classified) {
@@ -232,21 +249,21 @@ public final class FactCapture {
             try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
                 if (store.location().isEmpty()) {
                     // openAt already fell back to an in-memory store; use it as-is.
-                    capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
-                        extensions);
+                    capture(store.dsl(), false, graph, config, registry, assembly, verdicts,
+                        attribution, jooq, extensions);
                     return detect(store.dsl(), graph, classified);
                 }
                 if (!store.warm() || ownsGraph(store.dsl(), graph)) {
-                    if (captureWithRetry(store, graph, config, registry, verdicts, attribution, jooq,
-                            extensions)) {
+                    if (captureWithRetry(store, graph, config, registry, assembly, verdicts,
+                            attribution, jooq, extensions)) {
                         return detect(store.dsl(), graph, classified);
                     }
                 }
             }
         }
         try (GraphitronModelStore store = GraphitronModelStore.open()) {
-            capture(store.dsl(), false, graph, config, registry, verdicts, attribution, jooq,
-                extensions);
+            capture(store.dsl(), false, graph, config, registry, assembly, verdicts, attribution,
+                jooq, extensions);
             return detect(store.dsl(), graph, classified);
         }
     }
@@ -292,19 +309,19 @@ public final class FactCapture {
      */
     private static boolean captureWithRetry(GraphitronModelStore store, GraphIdentity graph,
                                             SubjectConfig config, TypeDefinitionRegistry registry,
-                                            SdlVerdicts verdicts,
+                                            SchemaAssembly assembly, SdlVerdicts verdicts,
                                             Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                             List<CompletionData.ExternalReference> extensions) {
         try {
-            capture(store.dsl(), store.warm(), graph, config, registry, verdicts, attribution, jooq,
-                extensions);
+            capture(store.dsl(), store.warm(), graph, config, registry, assembly, verdicts,
+                attribution, jooq, extensions);
             return true;
         } catch (DataAccessException first) {
             LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
         }
         try {
-            capture(store.dsl(), store.warm(), graph, config, registry, verdicts, attribution, jooq,
-                extensions);
+            capture(store.dsl(), store.warm(), graph, config, registry, assembly, verdicts,
+                attribution, jooq, extensions);
             return true;
         } catch (DataAccessException second) {
             LOG.warn("shared fact store write for graph '{}' failed twice in a row; this looks like a "
@@ -361,9 +378,27 @@ public final class FactCapture {
                                SdlVerdicts verdicts,
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions) {
+        capture(dsl, warm, graph, config, registry, SchemaAssembly.of(registry), verdicts,
+            attribution, jooq, extensions);
+    }
+
+    /**
+     * {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
+     * SdlVerdicts, Map, JooqCatalog, List)} for a caller holding the assembly of {@code registry}
+     * already. The gatherer's own stages run in order here: the per-source declarations, the two
+     * document-wide verdicts, the assembly verdict, and last the rooted traversal over what
+     * assembled. Handing over an assembly of some other registry would record a verdict on a
+     * document this store does not hold.
+     */
+    public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
+                               SubjectConfig config, TypeDefinitionRegistry registry,
+                               SchemaAssembly assembly, SdlVerdicts verdicts,
+                               Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                               List<CompletionData.ExternalReference> extensions) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(verdicts, "verdicts");
+        Objects.requireNonNull(assembly, "assembly");
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name());
@@ -373,15 +408,17 @@ public final class FactCapture {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
             ConfigurationFactCapture.capture(sink, config);
-            SdlFactCapture.capture(sink, registry, sources, attribution,
+            var expansions = SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
-            SdlVerdictCapture.capture(sink, verdicts);
+            SdlVerdictCapture.capture(sink, verdicts, assembly);
             CatalogFactCapture.capture(sink, jooq, extensions, sources);
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when
             // the partition they derive from is.
-            ReachabilityRows.derive(txDsl, graph.name());
+            ClassificationDomainCapture.derive(txDsl, graph.name(),
+                assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null,
+                expansions.synthesizedEdges());
             InputOccurrencePaths.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
             sources.commitStamps(txDsl);

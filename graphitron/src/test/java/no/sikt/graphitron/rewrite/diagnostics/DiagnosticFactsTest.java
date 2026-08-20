@@ -348,13 +348,14 @@ class DiagnosticFactsTest {
 
         var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
         var read = RewriteSchemaLoader.parsePerSource(sources);
-        var verdicts = SdlVerdicts.of(read, SchemaAssembly.of(read.registry()));
+        var assembly = SchemaAssembly.of(read.registry());
+        var verdicts = SdlVerdicts.of(read);
         assertThat(verdicts.syntaxFailures()).hasSize(1);
-        assertThat(verdicts.schemaErrors()).isNotEmpty();
+        assertThat(assembly.errors()).isNotEmpty();
 
         withStore(dsl -> {
             FactCapture.capture(dsl, false, graph(), FactCapture.SubjectConfig.none(),
-                read.registry(), verdicts,
+                read.registry(), assembly, verdicts,
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
                 null, List.of());
 

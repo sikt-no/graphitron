@@ -246,7 +246,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against {@code walk_type_backing_class} on both axes, over public fixture
  *       classes both sides can see;
- *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the domain and the
+ *       {@code no.sikt.graphitron.rewrite.capture.ClassificationDomainTest} states
+ *       {@code intent_type_domain}'s membership as hand-written expectations over a real capture,
+ *       whole sets where the schema is small enough to write one out, with the two node-seed
+ *       widenings and the assembly cliff each carrying their own case, so the relation is pinned to
+ *       what its seed rule promises rather than to what the retiring walk reached;
+ *       {@code no.sikt.graphitron.rewrite.derive.DemandShadowTest} binds the
  *       resolved reductions to the walked registries via {@code ClaimDomain} over a real capture
  *       of every corpus example, residues named and disagreement directions pinned, with
  *       {@code no.sikt.graphitron.model.intent.DemandRuleTest} carrying the other half of that
@@ -2148,17 +2153,17 @@ class FactCaptureAgreementTest {
             SchemaSource.file(redefining));
         var read = RewriteSchemaLoader.parsePerSource(sources);
         var assembly = no.sikt.graphitron.rewrite.schema.SchemaAssembly.of(read.registry());
-        var verdicts = no.sikt.graphitron.rewrite.schema.SdlVerdicts.of(read, assembly);
+        var verdicts = no.sikt.graphitron.rewrite.schema.SdlVerdicts.of(read);
 
         // All three stages refused something, so no arm of the anchor below is vacuous.
         assertThat(read.failures()).hasSize(1);
-        assertThat(verdicts.schemaErrors()).extracting(e -> e.stage().name())
-            .contains("REGISTRY", "ASSEMBLY");
+        assertThat(verdicts.schemaErrors()).extracting(e -> e.stage().name()).contains("REGISTRY");
+        assertThat(assembly.errors()).isNotEmpty();
 
         var graph = new FactCapture.GraphIdentity("own", tmp);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), false, graph, FactCapture.SubjectConfig.none(),
-                read.registry(), verdicts,
+                read.registry(), assembly, verdicts,
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
                 null, List.of());
 
@@ -2177,7 +2182,7 @@ class FactCaptureAgreementTest {
                 .orderBy(GRAPHQL_SCHEMA_ERROR.ORDINAL).fetch()
                 .map(row -> row.getOrdinal() + "|" + row.getStage() + "|" + row.getErrorClass()
                     + "|" + row.getMessage()))
-                .containsExactlyElementsOf(renderExpectedSchemaErrors(verdicts));
+                .containsExactlyElementsOf(renderExpectedSchemaErrors(verdicts, assembly));
 
             // The stages refusing did not cost the surviving sources their facts, and the source
             // that did not parse contributed none: the property the whole arrangement rests on.
@@ -2188,12 +2193,18 @@ class FactCaptureAgreementTest {
         }
     }
 
-    /** The schema-error rows the verdicts entail, in the same rendering the assertion reads. */
+    /**
+     * The schema-error rows the verdicts and the assembly entail, in the same rendering the
+     * assertion reads. Both stages in the order they ran, which is the order the ordinal keys.
+     */
     private static List<String> renderExpectedSchemaErrors(
-            no.sikt.graphitron.rewrite.schema.SdlVerdicts verdicts) {
+            no.sikt.graphitron.rewrite.schema.SdlVerdicts verdicts,
+            no.sikt.graphitron.rewrite.schema.SchemaAssembly assembly) {
         var expected = new ArrayList<String>();
+        var errors = new ArrayList<>(verdicts.schemaErrors());
+        errors.addAll(assembly.errors());
         int ordinal = 0;
-        for (var error : verdicts.schemaErrors()) {
+        for (var error : errors) {
             expected.add(ordinal++ + "|" + error.stage().name() + "|" + error.errorClass()
                 + "|" + error.message());
         }
@@ -2244,8 +2255,7 @@ class FactCaptureAgreementTest {
         java.nio.file.Files.writeString(broken, "strayTokenHere\n");
         var sources = List.of(SchemaSource.file(missingType), SchemaSource.file(broken));
         var read = RewriteSchemaLoader.parsePerSource(sources);
-        var verdicts = no.sikt.graphitron.rewrite.schema.SdlVerdicts.of(read,
-            no.sikt.graphitron.rewrite.schema.SchemaAssembly.of(read.registry()));
+        var verdicts = no.sikt.graphitron.rewrite.schema.SdlVerdicts.of(read);
         FactCapture.capture(store.dsl(), false, graph, FactCapture.SubjectConfig.none(),
             read.registry(), verdicts,
             SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),

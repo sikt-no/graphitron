@@ -54,17 +54,19 @@ added.
 
 "Decide once" is also a statement about *where* raw external types may live at all. At capture
 the containment is structural: a relation stores values, so no live `Table<?>`, `ForeignKey` or
-`Class<?>` crosses into the store. On the transitional
-walk it is a convention: reflection `Type`-tree reads live only at builder-side classifiers,
-discoverable by searching for the reads themselves (`java.lang.reflect.Type`,
-`getGenericReturnType`, `getGenericParameterTypes`); `JooqCatalog` is the canonical holder of raw
-jOOQ types, the deliberate exceptions importing `org.jooq` at their own boundary. Everything
-downstream switches on captured or pre-classified values and never touches the raw types. If a
-consumer needs information not yet decoded, add a column or a component and extract it at the
-boundary ; never reach past it.
+`Class<?>` crosses into the store. The graphql-java schema types carry the same rule: a
+`TypeDefinitionRegistry`, a `GraphQLSchema` or a traversal's elements may be held only by the
+capture collaborators (`SdlFactCapture`, `GraphitronFactCapture`, `ClassificationDomainCapture`,
+`CatalogFactCapture`) and, on the walk, by `ServiceCatalog` / `JooqCatalog` / `TypeBuilder` /
+`FieldBuilder`.
+
+Off capture it is a convention: reflection `Type`-tree reads live only at builder-side classifiers.
+Everything downstream switches on captured or pre-classified values. If a consumer needs
+information not yet decoded, add a column or a component and extract it at the boundary; never
+reach past it.
 
 *Enforced by:* the store's shape at capture (relations hold values, never live handles); review
-only on the walk, via the grep-able recipes above.
+only off capture, against the named holders above.
 
 === Shape the type as precisely as the fact allows
 

@@ -132,7 +132,38 @@ Where a macro rewrote a fact, read the written type expression rather than walki
 
 Violations are located facts, not log lines. A violation is a row, not an act: the diagnostics stratum records rejection, lint, advisory, SDL-toolchain and compile rows (the `rejection_`, `lint_`, `build_warning_` and `javac_` families, plus the two verdict residents of `graphql_`), and the deliberately prefix-less `diagnostic` view unions them into one read surface with the rendered coordinate computed from the stored columns. Keeping the violation a relation makes every surface a projection of it (the LSP diagnostic, the MCP triage tools, a build report); baking it into one consumer's output would force every other consumer to recompute the rule.
 
-Reading the schema is itself a pipeline of judging stages, and a stage's refusal never cancels the next stage. The parser judges one file at a time, then the registry judges the combined declarations, then assembly judges the registry against the GraphQL specification's structural rules. Only the first stage produces declarations; the two after it are validation stages whose entire contribution to the store is a verdict, which is why `graphql_syntax_error` and `graphql_schema_error` hold all three stages' refusals between them and why the later two share one relation. Each stage keeps what survived it, so a source that will not parse costs its own declarations and no others, and a declaration the registry will not admit costs itself. That is what makes assembly worth running unconditionally, whether or not a pass has any use for the assembled schema: it is the only place the specification's structural rules get checked at all, so its verdict is a fact about the consumer's schema worth as much as the declarations it judges. Aborting at the first refusal instead is what lets one freshly broken file blank every fact about every file beside it, which is precisely when an author needs those facts most.
+Gathering the schema is itself a staged pipeline, and a stage's refusal never cancels the next stage. Five stages, each with its own unit:
+
+[cols="1,2,3"]
+|===
+| Stage | Unit | Owns
+
+| 1. Per-file parse
+| one file
+| source membership, `graphql_syntax_error`, and the per-site declaration facts, which carry the file's own cadence and therefore survive any later stage's refusal
+
+| 2. Combined registry
+| the file set
+| the declarations admitted together, and `graphql_schema_error` at stage `REGISTRY` for what the registry refused
+
+| 3. Assembly
+| the whole schema
+| the registry assembled into a `GraphQLSchema`, and `graphql_schema_error` at stage `ASSEMBLY` where it did not
+
+| 4. Coordinate-keyed census
+| the file set
+| the merged effective element set: one row per coordinate, the losing occurrence of a duplicated one quarantined in `graphql_duplicate_declaration`
+
+| 5. Rooted traversal
+| the assembled schema
+| `intent_type_domain`, the classification domain's type members, from the seeds the document states
+|===
+
+The first four judge, and the three that judge a document write their verdicts down. The parser judges one file at a time, then the registry judges the combined declarations, then assembly judges the registry against the GraphQL specification's structural rules; `graphql_syntax_error` and `graphql_schema_error` hold all three refusals between them, and the later two share one relation because neither produces a declaration. Each stage keeps what survived it, so a source that will not parse costs its own declarations and no others, and a declaration the registry will not admit costs itself. That is what makes assembly worth running unconditionally, whether or not a pass has any use for the assembled schema: it is the only place the specification's structural rules get checked at all, so its verdict is a fact about the consumer's schema worth as much as the declarations it judges. Aborting at the first refusal instead is what lets one freshly broken file blank every fact about every file beside it, which is precisely when an author needs those facts most.
+
+Assembly is the gatherer's own stage, not something a caller hands it a verdict about. Stage 5 reads the schema stage 3 produced, so taking the transcription and the verdict from one assembly is what keeps the store from judging a document it does not hold. It also decides *which* registry gets assembled: the one the store transcribes, before the synthesis rewrites that inject declarations. Judging the post-synthesis registry instead let a verdict blame the author for a declaration graphitron's own rewrite added.
+
+Composed versus written is decided per relation, never per stage. The per-site declaration facts are stage 1's and stay verbatim at their source's cadence. What composition *adds* over them is either a view (an argument default is deliberately one join away, and filling it in at capture would store a derivation where a view answers) or its own coordinate-keyed relation whose comment owns why it is not a view. Stage 5 is the case that earned a relation: the closure over a cyclic type graph has no safe H2 view form, and the descent rule is graphql-java's own child semantics rather than something SQL should restate edge kind by edge kind. Only what genuinely cannot exist without an assembled schema sits behind the assembly stage, which is why `intent_type_domain` is empty on a run whose registry did not assemble while every declaration fact beside it is current: absence there is read together with the `ASSEMBLY` verdict, never alone.
 
 Freshness is not a property any consumer carries. It used to be carried once, on the snapshot handle a consumer held, along two axes: whether a pass had produced a projection at all, and whether the one in hand was the latest parse or the last good one before a regression. The consumer split was purely which precondition each read imposed, and the editor's was to tolerate the previous projection and tag what it showed, rather than punish an author for a half-typed edit. Two-stage capture removed the state that axis described. A file the parser refuses and a schema the assembler refuses are both rows, so there is no moment at which the store withholds an answer and nothing for a consumer to tag; the axis retired with its last reader. What is left is a lag of stated size rather than a state to switch on: the store answers for a file's last saved content, one save behind the buffer, and a surface needing the unsaved text reads the buffer for it directly. The referenced namespaces (the jOOQ catalog, the classpath census) still lag their sources, and that lag is now visible as each family's own capture cadence rather than as an axis on a handle.
 

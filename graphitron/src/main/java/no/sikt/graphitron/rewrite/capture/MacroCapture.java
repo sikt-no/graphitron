@@ -12,8 +12,10 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.model.ConnectionNaming;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
@@ -101,6 +103,37 @@ final class MacroCapture {
 
     void expand() {
         expandConnections();
+    }
+
+    /**
+     * The edges this expansion adds to the schema the store describes, source type name to the type
+     * names its synthesized members reference. The rooted traversal follows them because the
+     * schema it walks is the one capture read, before the pipeline's own rewrite mints these shapes:
+     * without them a minted Connection would be a census member no traversal reaches.
+     *
+     * <p>Stated from the carriers rather than from what the mint landed, so a name the author had
+     * already declared still carries its edge: the carrier's field type is rewritten to the
+     * connection name either way, and whether the type behind that name is the author's or this
+     * expansion's is not this map's question.
+     */
+    Map<String, Set<String>> synthesizedEdges() {
+        var edges = new LinkedHashMap<String, Set<String>>();
+        for (Carrier carrier : carriers) {
+            edge(edges, carrier.parentTypeName(), carrier.connectionName());
+            edge(edges, carrier.connectionName(), carrier.edgeName());
+            edge(edges, carrier.connectionName(), PAGE_INFO);
+            edge(edges, carrier.connectionName(), carrier.elementTypeName());
+            edge(edges, carrier.connectionName(), "Int");
+            edge(edges, carrier.edgeName(), carrier.elementTypeName());
+            edge(edges, carrier.edgeName(), "String");
+            edge(edges, PAGE_INFO, "Boolean");
+            edge(edges, PAGE_INFO, "String");
+        }
+        return edges;
+    }
+
+    private static void edge(Map<String, Set<String>> edges, String from, String to) {
+        edges.computeIfAbsent(from, key -> new LinkedHashSet<>()).add(to);
     }
 
     /**

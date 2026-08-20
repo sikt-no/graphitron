@@ -18,7 +18,7 @@ import static org.jooq.impl.DSL.val;
  * an input object and expanded through input-object-typed fields. Runs inside capture's own
  * transaction after the flush, clears the run's graph partition first (the cadence doctrine's
  * clearing rule, steps before paths for the foreign key), and re-derives. Materialized for the
- * same reason as {@link ReachabilityRows}' domain: cyclic input nesting is legal GraphQL and H2
+ * same reason the classification domain is materialized: cyclic input nesting is legal GraphQL and H2
  * has no safe recursive view form over a cyclic graph.
  *
  * <p>The expansion is depth-stratified: pass {@code d} descends only from paths at depth

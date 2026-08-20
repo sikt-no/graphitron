@@ -145,9 +145,9 @@ public final class SdlFactCapture {
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    static void capture(FactSink sink, TypeDefinitionRegistry registry,
+    static Expansions capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution) {
-        capture(sink, registry, sources, attribution, Set.of());
+        return capture(sink, registry, sources, attribution, Set.of());
     }
 
     /**
@@ -155,18 +155,38 @@ public final class SdlFactCapture {
      * plus the sources the parser refused, which the walk has no other way to learn about: a
      * refused source contributes no declaration, so nothing in the registry points back at it.
      */
-    static void capture(FactSink sink, TypeDefinitionRegistry registry,
+    static Expansions capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution,
                         Set<String> refusedSources) {
-        new SdlFactCapture(sink, registry, sources, attribution, refusedSources).run();
+        return new SdlFactCapture(sink, registry, sources, attribution, refusedSources).run();
     }
 
-    private void run() {
+    /**
+     * What the walk's own expansions added beyond the document, for the stages that read the
+     * assembled schema and would otherwise not know about it. One value rather than a bare map so a
+     * second expansion is a component here instead of a second return.
+     *
+     * @param synthesizedEdges source type name to the type names an expansion's synthesized
+     *                         members reference; see {@link MacroCapture#synthesizedEdges()}
+     */
+    record Expansions(Map<String, Set<String>> synthesizedEdges) {
+        Expansions {
+            synthesizedEdges = Map.copyOf(synthesizedEdges);
+        }
+
+        /** The expansions of a walk that ran no expansion, or of a caller that has none in hand. */
+        static Expansions none() {
+            return new Expansions(Map.of());
+        }
+    }
+
+    private Expansions run() {
         captureDirectiveDefinitions();
         captureSchema();
         captureTypes();
         macros.expand();
         captureSources();
+        return new Expansions(macros.synthesizedEdges());
     }
 
     /**

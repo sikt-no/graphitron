@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
 import no.sikt.graphitron.rewrite.schema.SchemaError;
 import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
 
@@ -12,7 +13,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
  * Transcribes what the SDL toolchain concluded about the document, beside
  * {@link SdlFactCapture}'s transcription of what the document says. Three stages judge a schema on
  * the way in, and each writes here on refusal: the parser one source at a time, then the registry
- * over the combined definitions, then assembly over the registry.
+ * over the combined definitions, then assembly over the registry. The assembly the gatherer ran is
+ * handed over rather than pre-reduced to verdicts, so the stage that produced the verdict here and
+ * the stage the traversal downstream reads are one assembly.
  *
  * <p>Written on every pass, on either outcome, which is what the two relations' emptiness means.
  * A stage that refused nothing leaves no rows, so empty partitions read as "the document was read
@@ -29,13 +32,20 @@ final class SdlVerdictCapture {
 
     private SdlVerdictCapture() {}
 
-    /** Writes both relations from one pass's stage verdicts. */
-    static void capture(FactSink sink, SdlVerdicts verdicts) {
+    /**
+     * Writes both relations from one pass's stage verdicts and its assembly outcome. The ordinal
+     * runs across both document-wide stages in the order they ran, so a registry refusal always
+     * precedes an assembly verdict from the same pass.
+     */
+    static void capture(FactSink sink, SdlVerdicts verdicts, SchemaAssembly assembly) {
         for (var failure : verdicts.syntaxFailures()) {
             writeSyntaxError(sink, failure);
         }
         int ordinal = 0;
         for (var error : verdicts.schemaErrors()) {
+            writeSchemaError(sink, ordinal++, error);
+        }
+        for (var error : assembly.errors()) {
             writeSchemaError(sink, ordinal++, error);
         }
     }

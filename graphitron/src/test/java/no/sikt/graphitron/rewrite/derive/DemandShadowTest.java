@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.derive;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
@@ -29,11 +28,17 @@ import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The shadow reader of the demand stratum, and the registered agreement anchor for
- * {@code intent_type_domain}, the demand and exemption rule views, and the resolved reductions
- * over them. The other side of the diff is {@link ClaimDomain}, the unreified demand relation
- * those relations exist to replace, with {@link DemandResidue} naming the populations the store
- * cannot express yet.
+ * The shadow reader of the demand stratum, and the registered agreement anchor for the demand and
+ * exemption rule views and the resolved reductions over them. The other side of the diff is
+ * {@link ClaimDomain}, the unreified demand relation those relations exist to replace, with
+ * {@link DemandResidue} naming the populations the store cannot express yet.
+ *
+ * <p>{@code intent_type_domain} is no longer pinned here. Its seed rule was decided from what the
+ * requirement says rather than from what the walk reached, so an equality against the walk's
+ * reachable set would make the walk that relation's specification again; the relation's own anchor
+ * is {@code no.sikt.graphitron.rewrite.capture.ClassificationDomainTest}, which states its
+ * membership rather than diffing it. The domain still bounds what this sweep reads, the reductions
+ * joining it, and the coverage gate below is where that shows.
  *
  * <p>The rules state the intended model, not the walk's incidental holes, so the sweep is not a
  * plain equality: it asserts equality outside the named residues and pins each disagreement
@@ -60,7 +65,6 @@ class DemandShadowTest {
 
     private static final Set<String> CONVENTIONAL_ROOTS = Set.of("Query", "Mutation", "Subscription");
     private static final Set<String> SPEC_BUILT_IN_SCALARS = Set.of("String", "Int", "Float", "Boolean", "ID");
-    private static final Set<String> COMPOSITE_KINDS = Set.of("OBJECT", "INTERFACE", "UNION");
     private static final Set<String> FIELD_BEARING_KINDS = Set.of("OBJECT", "INTERFACE", "INPUT_OBJECT");
     private static final Set<String> DEMAND_RULES =
         Set.of("ROOT_OPERATION", "TABLE_TYPE", "ERROR_TYPE", "PRODUCER_PAYLOAD");
@@ -77,20 +81,15 @@ class DemandShadowTest {
     // ===== The corpus sweep =====
 
     /**
-     * Per corpus example, captured as its own graph in one store: the domain equals the legacy
-     * reachable set on the composite kinds (both sides post macro expansion, since capture
-     * expands and the bundle's assembled schema is rebuilt; this equality is also the enforcer
-     * for the node-inference seed's over-approximation, which must add nothing on the corpus);
-     * the resolved field reduction covers every domain coordinate exactly once (the coverage
-     * gate, so a rule-arm drift that opens a gap fails as a count rather than a silent drop);
-     * the demanded set agrees with the walked registry outside the named residues, both
-     * directions pinned; and the type grain agrees under the same discipline, with the
-     * machinery and leaf populations carried as rows. The closed vocabularies are asserted over
-     * everything the sweep produced.
+     * Per corpus example, captured as its own graph in one store: the resolved field reduction
+     * covers every domain coordinate exactly once (the coverage gate, so a rule-arm drift that
+     * opens a gap fails as a count rather than a silent drop); the demanded set agrees with the
+     * walked registry outside the named residues, both directions pinned; and the type grain agrees
+     * under the same discipline, with the machinery and leaf populations carried as rows. The closed
+     * vocabularies are asserted over everything the sweep produced.
      */
     @Test
     void demandShadowAgreesWithTheWalkedRegistriesOverTheCorpus() {
-        var nodes = TestSchemaHelper.nodeDeclaration();
         int comparedFields = 0;
         var seenVerdicts = new LinkedHashSet<String>();
         var seenRules = new LinkedHashSet<String>();
@@ -100,19 +99,7 @@ class DemandShadowTest {
                 var legacy = ClaimDomain.of(bundle.model());
                 var residue = DemandResidue.of(bundle.model());
 
-                // 1. The domain, on the kinds the legacy reachable set records. The facet
-                // shapes are subtracted as a named population: capture's connection expansion
-                // records the @asFacet marker but does not synthesize the facet types yet, so
-                // the walk's rebuilt schema reaches names the store cannot hold; the population
-                // is the walk's own facet verdicts and closes when capture expands facets.
-                var expectedReach = new LinkedHashSet<>(
-                    SchemaReachability.reachableTypeNames(bundle.assembled(), nodes));
-                expectedReach.removeAll(facetShapes(bundle.model()));
-                assertThat(domainComposites(store.dsl(), example.id()))
-                    .as("intent_type_domain vs SchemaReachability on composites (%s)", example.id())
-                    .containsExactlyInAnyOrderElementsOf(expectedReach);
-
-                // 2. The field grain: one resolved row per coordinate, covering the domain.
+                // 1. The field grain: one resolved row per coordinate, covering the domain.
                 var resolved = new LinkedHashMap<String, String>();
                 store.dsl().selectFrom(INTENT_RESOLVED_FIELD_DEMAND)
                     .where(INTENT_RESOLVED_FIELD_DEMAND.GRAPH_NAME.eq(example.id()))
@@ -130,7 +117,7 @@ class DemandShadowTest {
                     .as("the coverage gate: every domain coordinate resolves (%s)", example.id())
                     .hasSize(domainFieldCoordinateCount(store.dsl(), example.id()));
 
-                // 3. The two disagreement directions, each pinned to its store-derived population.
+                // 2. The two disagreement directions, each pinned to its store-derived population.
                 var demanded = new LinkedHashSet<String>();
                 resolved.forEach((coordinate, verdict) -> {
                     if (verdict.startsWith("DEMANDED:")) demanded.add(coordinate);
@@ -158,7 +145,7 @@ class DemandShadowTest {
                 }
                 comparedFields += registered.size();
 
-                // 4. The type grain, same discipline; machinery and leaf populations are data.
+                // 3. The type grain, same discipline; machinery and leaf populations are data.
                 var demandedTypes = new LinkedHashSet<String>();
                 var exemptTypes = new LinkedHashSet<String>();
                 store.dsl().selectFrom(INTENT_RESOLVED_TYPE_DEMAND)
@@ -184,12 +171,12 @@ class DemandShadowTest {
                         || residue.reflectionBound().contains(typeName)
                         || residue.embeddingDecided().contains(typeName)
                         || machinery.contains(typeName)
-                        // Spec built-ins are engine-provided: their verdicts are engine-owned,
-                        // and one of their reaching edges (a built-in directive's argument,
-                        // @include(if: Boolean!)) exists only in the assembled schema, never in
-                        // the registry capture transcribes, so the domain cannot always hold
-                        // them. A closed five-name population, acceptable as registered without
-                        // a demand reading.
+                        // Spec built-ins are engine-provided and their verdicts are engine-owned.
+                        // The gatherer's traversal reads the assembled schema, so the edges that
+                        // reach some of them (a built-in directive's argument, @include(if:
+                        // Boolean!)) are followed; which of the five a given corpus example
+                        // reaches is still the example's business. A closed five-name population,
+                        // acceptable as registered without a demand reading.
                         || SPEC_BUILT_IN_SCALARS.contains(typeName);
                     assertThat(accounted)
                         .as("registered type %s in %s is demanded, exempt-as-data, residue, "
@@ -269,6 +256,7 @@ class DemandShadowTest {
                 .contains("DeleteFilmPayload");
         }
         var succeeding = """
+            interface Node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
             input FilmActorRef { id: ID! @nodeId }
             type DeletedPayload { deletedId: ID }
@@ -290,18 +278,6 @@ class DemandShadowTest {
     }
 
     // ===== Helpers =====
-
-    /** The domain's members restricted to the kinds the legacy reachable set records. */
-    private static Set<String> domainComposites(DSLContext dsl, String graphName) {
-        return new LinkedHashSet<>(dsl.select(INTENT_TYPE_DOMAIN.TYPE_NAME)
-            .from(INTENT_TYPE_DOMAIN)
-            .join(GRAPHQL_TYPE)
-            .on(GRAPHQL_TYPE.GRAPH_NAME.eq(INTENT_TYPE_DOMAIN.GRAPH_NAME)
-                .and(GRAPHQL_TYPE.TYPE_NAME.eq(INTENT_TYPE_DOMAIN.TYPE_NAME)))
-            .where(INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(graphName))
-            .and(GRAPHQL_TYPE.KIND.in(COMPOSITE_KINDS))
-            .fetch(org.jooq.Record1::value1));
-    }
 
     /** The count the coverage gate compares against: the domain's field-bearing coordinates. */
     private static int domainFieldCoordinateCount(DSLContext dsl, String graphName) {
@@ -357,18 +333,6 @@ class DemandShadowTest {
             }
         });
         return machinery;
-    }
-
-    /** The facet half of the machinery: the types capture's expansion does not synthesize yet. */
-    private static Set<String> facetShapes(no.sikt.graphitron.rewrite.GraphitronSchema schema) {
-        var facets = new LinkedHashSet<String>();
-        schema.types().forEach((name, verdict) -> {
-            if (verdict instanceof GraphitronType.FacetsType
-                || verdict instanceof GraphitronType.FacetValueType) {
-                facets.add(name);
-            }
-        });
-        return facets;
     }
 
     private static String fetchResolvedField(DSLContext dsl, String typeName, String fieldName) {

@@ -276,9 +276,11 @@ class AuthoredClaimConflictsTest {
      * That a schema too broken to decode still reports its conflicts. {@code @mutation} without its
      * required verb and {@code @routine} without its required name never assemble, so capture reads
      * the raw registry and writes no semantic row; the claim views' presence arms keep the
-     * coordinates claiming and the violations arrive as they would from a decoded pair. Both
-     * coordinates sit on root operation types, so the domain the consumer joins holds them without
-     * any walked model having to be built from a schema this broken.
+     * coordinates claiming and the violations arrive as they would from a decoded pair. The domain
+     * the build-error consumer joins is stated by the fixture rather than derived: a directive
+     * missing a required argument does not assemble, so a schema this broken has no assembled
+     * schema for the gatherer's traversal to walk, and the population is the one a run whose
+     * document did assemble would have had.
      *
      * <p>What those arms return given such rows is the claim views' own question and is asked in
      * {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}; what stands here is that a real
@@ -296,6 +298,7 @@ class AuthoredClaimConflictsTest {
             }
             """.formatted(SERVICE_STUB, SERVICE_STUB);
         withCapturedStore(tmp, sdl, dsl -> {
+            stateDomain(dsl, "Query", "Mutation");
             assertThat(AuthoredClaimConflicts.detect(dsl, GRAPH).violations())
                 .extracting(ValidationError::message)
                 .containsExactly(
@@ -450,6 +453,7 @@ class AuthoredClaimConflictsTest {
             }
             """.formatted(SERVICE_STUB);
         withCapturedStore(tmp, sdl, dsl -> {
+            stateDomain(dsl, "Mutation");
             var conflicts = AuthoredClaimConflicts.detect(dsl, GRAPH).fieldConflicts();
             assertThat(conflicts).hasSize(1);
             var mutation = (FieldClaim.Mutation) conflicts.getFirst().claims().get(1);
@@ -537,6 +541,19 @@ class AuthoredClaimConflictsTest {
     }
 
     // ===== Helpers =====
+
+    /**
+     * States the classification domain a fixture needs, for the schemas too broken to assemble and
+     * so to have a traversal derive one. Rows the gatherer's own stage would have written.
+     */
+    private static void stateDomain(org.jooq.DSLContext dsl, String... typeNames) {
+        for (String typeName : typeNames) {
+            dsl.insertInto(INTENT_TYPE_DOMAIN)
+                .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, GRAPH)
+                .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)
+                .execute();
+        }
+    }
 
     /** Captures {@code sdl} and runs the detection over the domain the capture derived. */
     private List<ValidationError> detect(String sdl) {
