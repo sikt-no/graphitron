@@ -86,6 +86,41 @@ The write cost scales with rows kept, so this item's split predicts it directly:
 409,175 rows should take roughly half of the 8.1 seconds with it. That is a prediction and not a
 measurement, and the re-measurement section below is where it should be checked.
 
+### How much of the census any schema actually names
+
+The figures above count what the census costs. This counts what it is asked for, which is the
+sharper form of the same argument and was measured against the persisted workspace store a full
+reactor build leaves behind: 169 graph/source pairs, every fixture graph the reactor captures.
+
+**417,225 census rows against 1,437 rows of everything else, so 99.66% of the store is census.** The
+census holds 11,782 classes. Across every column in every non-`jvm_` relation that can carry a Java
+class or method name, the store references **151 distinct dotted names**, of which 149 are census
+rows. So **1.3% of the census is named by anything at all**, and the great majority of those 151 are
+jOOQ's own generated `Tables`, `Keys` and `*Record` classes named by the catalog rather than by an
+author: `graphitron_service.class_name` across all 169 graph/source pairs holds **one** distinct
+class name.
+
+Two cautions on reading that. It is a lower bound on what the census is *for*, not a measure of
+waste, and the width cut this item proposes is the right response where a per-name cut is not:
+completion has to answer before a name is written, which the "Rejected: extract less per dependency
+class" section below settles and this measurement does not reopen. And the 1.3% is the reactor's own
+fixture graphs, which name fewer classes than a real consumer would.
+
+What it does establish is the asymmetry the item is built on, and it is larger than the row split
+alone suggests: the build writes the whole census on every capture and reads back only what its
+schema names, every generator-side read over the `jvm_` family being anchored through a
+`graphitron_` or `graphql_` relation rather than enumerative. The enumerative reads are the editor's
+and the MCP server's. That is not an argument for a build/editor split in what gets captured, one
+store serving both being the point of the design, but it is why the write cost above lands entirely
+on the party that benefits least.
+
+Two disk figures for the same store, which is the surface a consumer notices. The store is **858 MB**
+on disk for those 417,225 rows. And the store path carries a DDL hash, so a schema edit starts a
+fresh segment and orphans the previous one: this sandbox held **6.5 GB across nine segments** in
+`~/.cache/graphitron/model/`, plus 2.2 GB of integration-test stores under
+`graphitron-maven-plugin/target/`. Neither is this item's subject, and nothing here proposes a
+reaper; both are recorded because they scale with the row count this item cuts.
+
 ## What the tail must not take with it
 
 The census was widened from compile-output directories to the whole classpath to fix a real bug:

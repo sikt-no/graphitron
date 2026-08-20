@@ -299,6 +299,26 @@ of everything the store holds), and the store-*write* cost of those same rows is
 adding there as evidence. One more figure for the same item: the persisted store the plugin leaves
 behind is **845 MB** for 418,192 rows, of which about 400,000 are the census.
 
+### A fourth pass dug into the census read side and found no win there
+
+Recorded because it is a negative result and the next person should not pay for it twice. The
+question was whether the census, which is written enumeratively and mostly serves the editor, is also
+read enumeratively on the build path, which would have made a read-side cut available on top of
+R685's width cut. It is not. Fourteen views depend transitively on the `jvm_` family, and every one
+the generator reads (`intent_field_producer_method`, `intent_type_backing_seed`,
+`intent_resolved_node_key_projection`, `intent_field_accessor_hop`,
+`intent_argmapping_projection_defect`) reaches the census through a join on a `graphitron_` or
+`graphql_` relation, so it is already anchored to the names the schema wrote. The enumerative readers
+are the editor's and the MCP server's. There is no build-path read to narrow, and the write cost
+above stays the whole of the census's contribution to build wall clock. The row-share figures the dig
+produced went to R685, whose case they strengthen.
+
+The dig did turn up one thing, and it is a correctness hazard rather than a win: the census's
+transitive closure view `intent_class_assignable` does not return on a real census, filed as R760
+with a validated rewrite. It costs no wall clock today precisely because nothing reads it, so it is
+not a slice of this item; it is on this list only so that a later pass measuring the census does not
+rediscover it as a mystery hang.
+
 ### What this pass leaves for whoever specs the item
 
 The first two are the cheapest things on this list by a wide margin, neither needs the third and
