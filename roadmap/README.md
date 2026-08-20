@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R742` | The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive | In Review | 2026-08-20 | [plan](determinism-ratchet-run-count.md) |
 | `R675` | @condition resolves its method by name alone, so per-participant overloads on a multitable filter are inexpressible | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](condition-method-overload-selection.md) |
-| `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | Spec | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R673` | A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-arg-dispatches-on-typeid.md) |
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-20 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
@@ -25,6 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R685` | The class census scans the transitive dependency closure | Spec | 2026-08-16 | [plan](census-scans-transitive-closure.md) |
 | `R721` | The transaction demarcation difference between @mutation and @service is undocumented | Spec | 2026-08-19 | [plan](service-transaction-demarcation-undocumented.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | Ready | 2026-08-20 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
+| `R728` | @nodeId encode and decode become store relations, and an instruction the generator drops fails the build | Ready | 2026-08-20 <sub>created 2026-08-19</sub> | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R743` | The SDL fact gatherer becomes a staged pipeline, and the walk_ gate dissolves | Ready | 2026-08-20 | [plan](sdl-fact-gatherer-staged-pipeline.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | In Progress | 2026-08-20 <sub>created 2026-08-18</sub> | [plan](store-contention-fails-fast.md) |
@@ -395,7 +395,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
-- `R728` [**@nodeId encode and decode become store relations, and an instruction the generator drops fails the build**](nodeid-effective-at-every-coordinate.md) — Spec, feature
+- `R728` [**@nodeId encode and decode become store relations, and an instruction the generator drops fails the build**](nodeid-effective-at-every-coordinate.md) — Ready, feature
 - `R673` [**A @nodeId argument on a polymorphic-returning field binds one node type per branch instead of dispatching on the decoded typeId**](nodeid-arg-dispatches-on-typeid.md) — Spec, bug
 - `R676` [**A @nodeId filter input on a multitable query cannot state a per-participant join path**](nodeid-filter-per-participant-paths.md) — Spec, bug
 - `R726` [**Bare @nodeId inference on a multitable filter can answer differently per participant with no diagnostic**](nodeid-bare-inference-per-participant-divergence.md) — Backlog, bug
