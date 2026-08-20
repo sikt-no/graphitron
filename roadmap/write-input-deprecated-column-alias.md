@@ -89,8 +89,8 @@ alias.
 
 This is the shape the SDL fact actually has: the author declared one column reachable
 through two names. It also means no all-plain shared column ever reaches
-`JooqRecordInstantiationEmitter`: `ColumnOverlap.groupByColumn` sees one writer per column,
-the `emitWithAgreement` branch keeps its invariant that every overlap reaching it involves a
+`JooqRecordInstantiationEmitter`: `ColumnOverlap.groupByColumn` sees at most one plain
+writer per column, the `emitWithAgreement` branch keeps its invariant that every overlap reaching it involves a
 `@nodeId` decode (its `orElseThrow` on the encoder class stays sound; the comment there
 should name the classify-time merge as the reason), and generated output for schemas without
 alias overlap is unchanged. The multi-path component is body-affecting, so
@@ -103,10 +103,17 @@ dedup/contention identity honest.
 `ColumnOverlap.groupByColumn`, the same fold `MutationInputResolver`,
 `TypeFetcherGenerator`, and `JooqRecordInstantiationEmitter` already read, so the
 classifier's admission predicate and the emitter's dispatch consume one grouping by
-construction. Per group: not shared, pass through; shared with a decode among the writers,
-pass through (existing runtime value-agreement deferral); shared all-plain with at most one
-live field, merge into the multi-read-path binding; shared all-plain with two or more live
-fields, reject.
+construction. Per group: not shared, pass through. Shared: the acceptance rule applies to
+the group's **plain** writers whether or not a decode also lands on the column, so this fold
+does not reuse the sibling paths' `shared() && allPlain()` reject predicate verbatim. Two or
+more live plain fields reject (the current `@service` fold already rejects a plain-plain
+overlap even when a decode shares the column; that guard survives). A plain subgroup the
+acceptance rule admits merges into the multi-read-path binding. A decode among the writers
+changes nothing about the plain-subset dispatch; the decode-vs-plain overlap keeps its
+existing runtime value-agreement deferral, with the merged binding contributing its
+first-present value in precedence order to the agreement check (this is what makes the
+agreement path's read-path iteration under Implementation sites load-bearing, not dead
+generality).
 
 ### The surviving rejection becomes a typed arm
 
@@ -114,7 +121,7 @@ The `@service`-path collision reject is today an untyped `Rejection.structural` 
 INSERT and UPDATE siblings are respectively untyped prose and a typed arm with an LSP code
 (`UpdateRowsError.PlainColumnCollision`). The surviving reject (two or more live fields on
 one column) becomes a typed arm on the `@service` axis, sibling to `ServiceMethodCallError`'s
-family (exact seal home per that file's dimensional-model-pivot note), carrying the colliding
+family (exact seal home per that file's sibling sub-seal note), carrying the colliding
 field paths, the column, the table, and each side's deprecation status, with an `lspCode()`.
 The rendered message teaches the carve-out as a third remedy: "... remove one, point its
 `@field(name:)` at a different column, or mark the superseded field `@deprecated` to declare
@@ -175,7 +182,10 @@ body text), with execution proving the end-to-end behaviour.
   binding whose read paths order live-first; deprecated + deprecated + live orders live
   first then reverse declaration; two live + one deprecated still rejects; an all-deprecated
   group classifies with reverse-declaration precedence; an alias pair split across a nested
-  grouping input and a top-level field merges with full access paths; the typed arm carries
+  grouping input and a top-level field merges with full access paths; an alias pair sharing
+  a column with a `@nodeId` decode still merges into one multi-path binding (the group
+  defers to the runtime agreement check, not exempt from the merge); a decode plus two live
+  plain fields on one column still rejects; the typed arm carries
   paths, column, table, and deprecation status, and its rendered message names the
   `@deprecated` remedy.
 - **Execution**: a `@service` mutation with an alias pair; send old only (old value lands),
