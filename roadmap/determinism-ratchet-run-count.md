@@ -197,9 +197,10 @@ rather than a tight one.
 the same shape under the original name, populate it once per capture with
 `DELETE FROM <name> WHERE graph_name = ?` then
 `INSERT INTO <name> SELECT * FROM <name>_rule WHERE graph_name = ?`. Every existing reader keeps its
-spelling and the rule stays stated exactly once, in the view. This is the shape `fact-model.adoc`
-already sanctions, and the store already has four written `intent_` tables plus
-`ReachabilityRows.write` as the delete-by-graph-then-insert cadence to copy.
+spelling and the rule stays stated exactly once, in the view. `fact-model.adoc` sanctions the
+mechanism and the store already has four written `intent_` tables, with `ReachabilityRows.write` as
+the delete-by-graph-then-insert cadence. It does not sanction the *justification*, which is the
+reviewable part and has its own section below.
 
 Measured, with `intent_argmapping_pair` and `intent_spelled_table` reduced, on top of R733's two
 changes:
@@ -281,11 +282,77 @@ production, which is the "two readings of one population" drift this schema's ow
 repeatedly. One new test pinning that a reduction equals its rule after a refresh is the honest
 version of that instinct.
 
-Open for the Spec pass: **which** relations to reduce (two sufficed for the measured case; the table
-names five more above eight, and what is left unreduced should be recorded as a decision rather than
-an omission); the gate's ceiling; whether the language server and MCP server, which open the store
-without running a capture, always arrive after one, or need a stated behaviour when they do not, per
-the "absence needs a stated meaning" rule.
+### The doctrinal question, which is the one a reviewer actually has to answer
+
+The store already materialises a derivation on the capture cadence, so the *mechanism* needs no
+argument. What needs one is the *justification*, and the existing precedent does not supply it.
+
+`intent_type_domain` is the incumbent, and its comment states why it is a table in terms this item
+cannot borrow: "Materialized, not a view: the closure over cyclic type graphs has no safe H2 view
+form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple
+paths)." That is materialisation justified by **impossibility**. Every relation this item proposes to
+reduce has a perfectly good view form that returns the right answer; it is merely expensive. So the
+proposal extends the doctrine from "materialise what a view cannot express" to "materialise what a
+view expresses too slowly", and that extension is the reviewable decision. It belongs in the DDL
+header's cadence paragraph, which today says only that a post-capture family has its own writer on
+its own cadence and says nothing about why a family would be post-capture in the first place.
+
+The shape is also new rather than copied, which the earlier draft of this item got wrong.
+`intent_type_domain` is computed in Java by `ReachabilityRows` and written; there is no view stating
+its rule and no `INSERT ... SELECT`. The `<name>_rule` view plus `INSERT INTO <name> SELECT * FROM
+<name>_rule` shape proposed here is a second variant, and on one axis a better one, since the rule
+stays declarative and stated exactly once where the incumbent's rule lives in Java. Two variants of
+one pattern want a stated relationship rather than silent coexistence: either the naming convention
+covers both, or the item says why the Java-derived case stays as it is.
+
+### Gates the change has to clear, none of them optional
+
+Four beyond the compile, and the item should not discover them one build at a time.
+
+* **`FactSchemaGateTest`, comments.** Every relation and every column in `PUBLIC` must carry a
+  non-null `REMARKS`. A renamed rule view arrives uncommented because its comments moved with its
+  name to the reduction.
+* **`FactSchemaGateTest`, documentation home.** Every relation must resolve to exactly one family
+  page through `meta_relation_family`, or carry an exemption row in `meta_prefixless_relation`, and
+  no relation may match two family prefixes. An `intent_`-prefixed rule view should house itself,
+  but that is a prediction and the gate is the authority.
+* **`FactCaptureAgreementTest`, arm registration.** Every relation is classified into an arm, and the
+  `DERIVED` arm's javadoc enumerates "views, and the materialized capture-cadence derivation
+  `intent_type_domain`". Each new reduction joins that sentence and that registration.
+* **`CommentRenderabilityGateTest` and `SchemaReferencePagesTest`.** The comment text has to render,
+  not merely exist.
+
+### Also unsettled
+
+* **Which relations to reduce.** Two sufficed for the measured case; the multiplicity table names
+  five more above eight. Reduce on measured need, and record what was left unreduced as a decision
+  rather than an omission.
+* **The gate's ceiling**, and whether the multiplicity check reports or fails on first landing.
+* **Which name is canonical.** This item proposes the reduction keeps the original name so no reader
+  changes, and the rule takes the suffix. That is a decision rather than an obvious default: it means
+  the name every consumer reads is the materialised copy and the rule is the thing you have to know
+  to look for.
+* **Readers that arrive without a capture.** The language server and the MCP server open the store
+  directly. Establish that they always follow a capture, or give the reduction a stated behaviour
+  when they do not, per the "absence needs a stated meaning" rule.
+* **Warm and shared stores.** The persisted store is shared across a workspace's modules, which
+  build in parallel under `-T 1C`. Partition-by-graph makes concurrent `DELETE`/`INSERT` safe on the
+  face of it, but a warm start that skips capture because nothing changed must leave the reduction
+  valid rather than empty, and `WarmStartRefreshTest` and `PersistentStoreTest` are where that gets
+  pinned.
+
+### Deliverables, in the order the numbers argue for
+
+1. The two reductions, their writer on the capture cadence, the fixture's derivation boundary, and
+   the doctrine paragraph. This is the 229.0s to 20.66s.
+2. The multiplicity check, reporting only, so the next reduction is chosen from data rather than from
+   this item's table.
+3. The run-count reduction, four to three. Worth doing because a test should not perform work its
+   contract does not need, and worth doing *after* the above, because by then it saves about five
+   seconds rather than about sixty.
+4. The clean-removal coverage decision, and the javadoc correction it implies either way.
+5. The duplicate-read merge and the `Files.mismatch` cleanup, both re-measured against the shape they
+   would actually ship into rather than against today's.
 
 ### A smaller one on the same path: the same view is read twice per run
 
