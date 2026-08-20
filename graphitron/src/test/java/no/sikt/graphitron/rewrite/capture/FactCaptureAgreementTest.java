@@ -245,12 +245,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       owner key, through one class name declared by two classpath entries, the parameter
  *       anti-join's descriptor, through a bean accessor overloaded with a parameterised twin, and
  *       the record arm's gate, through a component under a class no compiler would pair it with;
- *       {@code no.sikt.graphitron.model.intent.ClassAssignableTest} binds
- *       {@code intent_class_assignable}, the closure over those declarations, to a census stated
- *       row by row, the chains a closure has to get right (one crossing classpath entries, one
- *       ending at a name no entry declares, one reaching a type two ways) being ones a scan of
- *       compiled fixtures cannot arrange; it reads the relation seeded in the module whose DDL
- *       declares it, the walk having no side to bring to a question about a closure over rows;
  *       {@code no.sikt.graphitron.model.intent.FieldProducerMethodTest} binds the producer pair,
  *       {@code intent_field_producer_reference} naming the method an authored Java reference spells
  *       and {@code intent_field_producer_method} the census method it resolves to, to rows stated on
@@ -457,7 +451,6 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_column_table", Arm.DERIVED);
         registrations.put("intent_field_separate_fetch", Arm.DERIVED);
         registrations.put("intent_class_member_slot", Arm.DERIVED);
-        registrations.put("intent_class_assignable", Arm.DERIVED);
         registrations.put("intent_field_producer_reference", Arm.DERIVED);
         registrations.put("intent_field_producer_method", Arm.DERIVED);
         registrations.put("intent_field_routine_method", Arm.DERIVED);

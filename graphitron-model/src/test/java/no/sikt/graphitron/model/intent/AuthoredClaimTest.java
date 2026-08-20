@@ -2,8 +2,10 @@ package no.sikt.graphitron.model.intent;
 
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
@@ -54,7 +56,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The closure itself is the one recursive thing here: an argument claims when its named type
  * carries a lookup marker, or names an input object that reaches one. Three of its edges only show
  * up under inputs a fixture has to state deliberately, an input object cycle, which must terminate
- * rather than answer, and an object type in the middle of a chain, which must stop it.
+ * rather than answer, and an object type in the middle of a chain, which must stop it. A fourth is
+ * about cost rather than about an answer: two fields of one named type are two edges the recursion
+ * would carry as identical rows, so a deep chain of ordinary input objects is what tells a
+ * deduplicated edge relation from a raw one.
  *
  * <p>What the walk makes of these claims, and which pairs of them are mutually exclusive, is a
  * different question with a different home: {@code intent_authored_claim_conflict} reads these
@@ -396,6 +401,42 @@ class AuthoredClaimTest {
 
             assertThat(claims(dsl, "Query", "byA")).containsExactly("LOOKUP_KEY lookupKey true");
             assertThat(claims(dsl, "Query", "byB")).containsExactly("LOOKUP_KEY lookupKey true");
+        });
+    }
+
+    /**
+     * The closure recurses over the field edges deduplicated to the pairs they denote, and this is
+     * the fixture that can tell the difference. Twenty input objects stacked over the marked one,
+     * each declaring two fields of the level below, give every hop two edges projecting the same
+     * declaring type: identical output rows, which a {@code UNION ALL} keeps and re-expands, so
+     * undeduplicated the frontier doubles per level and twenty levels do not return. Two fields of
+     * one type is the ordinary shape of an input object rather than a contrived one, which is why
+     * the depth is the only deliberate part of the fixture. The timeout is the mechanism rather
+     * than a comment, on the terms
+     * {@code no.sikt.graphitron.rewrite.capture.PersistentStoreTest} uses it: a recursion that can
+     * hang has to fail this test instead of wedging the build.
+     */
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void aDeepInputChainWhoseLevelsRepeatTheirFieldTypeStillAnswers() {
+        withSeededStore(GRAPH, dsl -> {
+            seedLookupBearingInput(dsl, "Level0");
+            for (int level = 1; level <= 20; level++) {
+                seedDeclaredType(dsl, GRAPH, "Level" + level, "INPUT_OBJECT");
+                seedField(dsl, GRAPH, "Level" + level, "first", "Level" + (level - 1), false);
+                seedField(dsl, GRAPH, "Level" + level, "second", "Level" + (level - 1), false);
+            }
+
+            seedField(dsl, GRAPH, "Query", "byTop");
+            seedArgument(dsl, GRAPH, "Query", "byTop", "in", "Level20");
+            seedField(dsl, GRAPH, "Query", "byMiddle");
+            seedArgument(dsl, GRAPH, "Query", "byMiddle", "in", "Level10");
+            seedField(dsl, GRAPH, "Query", "untouched");
+            seedArgument(dsl, GRAPH, "Query", "untouched", "in", "ID");
+
+            assertThat(claims(dsl, "Query", "byTop")).containsExactly("LOOKUP_KEY lookupKey true");
+            assertThat(claims(dsl, "Query", "byMiddle")).containsExactly("LOOKUP_KEY lookupKey true");
+            assertThat(claims(dsl, "Query", "untouched")).isEmpty();
         });
     }
 
