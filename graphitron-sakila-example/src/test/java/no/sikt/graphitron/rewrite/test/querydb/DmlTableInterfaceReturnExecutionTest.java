@@ -89,8 +89,12 @@ class DmlTableInterfaceReturnExecutionTest {
     }
 
     private long contentRowsOfType(String contentType) {
+        // content_type is a Postgres enum (content_kind), so a bare varchar comparison finds no
+        // operator; casting to varchar in this test-owned probe keeps the assertion on the literal.
+        // The generated code takes the other route and types the bind instead, which is the very
+        // mechanism the enum-discriminated fixture exists to exercise.
         return dsl.selectCount().from(DSL.table("content"))
-            .where(DSL.field("content_type", String.class).eq(contentType))
+            .where(DSL.field("CAST(content_type AS varchar)", String.class).eq(contentType))
             .fetchOne(0, long.class);
     }
 
@@ -202,7 +206,10 @@ class DmlTableInterfaceReturnExecutionTest {
         int filmId = film.get("film_id", Integer.class);
         String rating = film.get("rating", String.class);
         int contentId = dsl.insertInto(DSL.table("content"))
-            .set(DSL.field("content_type"), "FILM")
+            // content_type is the content_kind enum; this test-owned raw INSERT casts the literal
+            // itself, where the generator types the bind instead.
+            .set(DSL.field("content_type", String.class),
+                DSL.field("CAST('FILM' AS content_kind)", String.class))
             .set(DSL.field("title"), "R406 Update Before")
             .set(DSL.field("film_id"), filmId)
             .returningResult(DSL.field("content_id", Integer.class))

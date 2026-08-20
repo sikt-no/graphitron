@@ -248,7 +248,7 @@ class RootLauncherSqlBaselineTest {
                 "select \"content\".\"content_type\" as \"__discriminator__\", "
                     + "\"public\".\"content\".\"title\" "
                     + "from \"public\".\"content\" "
-                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "where \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"public\".\"content\".\"content_id\" asc");
     }
 
@@ -286,10 +286,10 @@ class RootLauncherSqlBaselineTest {
                     + "(select \"content_f0\".\"rating\" "
                     + "from \"public\".\"film\" as \"content_f0\" "
                     + "where (\"content_f0\".\"film_id\" = \"public\".\"content\".\"film_id\" "
-                    + "and \"content\".\"content_type\" = ?) "
+                    + "and \"content\".\"content_type\" = cast(? as \"public\".\"content_kind\")) "
                     + "fetch next ? rows only) as \"filmcontent_rating\" "
                     + "from \"public\".\"content\" "
-                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "where \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"public\".\"content\".\"content_id\" asc");
     }
 
@@ -310,8 +310,8 @@ class RootLauncherSqlBaselineTest {
                     + "left outer join \"public\".\"jti_app_account\" as \"appaccount_detail\" "
                     + "on (\"appaccount_detail\".\"jti_subject_id\" = \"public\".\"jti_subject\".\"jti_subject_id\" "
                     + "and \"appaccount_detail\".\"subject_kind\" = \"public\".\"jti_subject\".\"subject_kind\" "
-                    + "and \"jti_subject\".\"subject_kind\" = ?) "
-                    + "where \"jti_subject\".\"subject_kind\" in (?, ?) "
+                    + "and \"jti_subject\".\"subject_kind\" = cast(? as \"public\".\"subject_kind\")) "
+                    + "where \"jti_subject\".\"subject_kind\" in (cast(? as \"public\".\"subject_kind\"), cast(? as \"public\".\"subject_kind\")) "
                     + "order by \"public\".\"jti_subject\".\"jti_subject_id\" asc");
     }
 
@@ -328,7 +328,7 @@ class RootLauncherSqlBaselineTest {
                     + "\"public\".\"content\".\"title\", "
                     + "\"public\".\"content\".\"content_id\" "
                     + "from \"public\".\"content\" "
-                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "where \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"public\".\"content\".\"content_id\" asc "
                     + "fetch next ? rows only");
     }
@@ -344,11 +344,11 @@ class RootLauncherSqlBaselineTest {
                     + "\"public\".\"content\".\"title\", "
                     + "\"public\".\"content\".\"content_id\" "
                     + "from \"public\".\"content\" "
-                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "where \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"public\".\"content\".\"content_id\" asc "
                     + "fetch next ? rows only",
                 "select count(*) from \"public\".\"content\" "
-                    + "where \"content\".\"content_type\" in (?, ?)");
+                    + "where \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\"))");
     }
 
     @Test

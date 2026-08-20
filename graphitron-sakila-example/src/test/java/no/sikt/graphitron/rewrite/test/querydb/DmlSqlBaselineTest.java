@@ -248,13 +248,13 @@ class DmlSqlBaselineTest {
             .containsExactly(
                 "insert into \"public\".\"content\" "
                     + "(\"title\", \"content_type\", \"length\", \"short_description\", \"film_id\") "
-                    + "values (?, ?, default, default, ?) "
+                    + "values (?, cast(? as \"public\".\"content_kind\"), default, default, ?) "
                     + "returning \"public\".\"content\".\"content_id\"",
                 "select \"content\".\"content_type\" as \"__discriminator__\", "
                     + "\"public\".\"content\".\"content_id\", \"public\".\"content\".\"title\" "
                     + "from \"public\".\"content\" "
                     + "where (\"public\".\"content\".\"content_id\" = ? "
-                    + "and \"content\".\"content_type\" in (?, ?))");
+                    + "and \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")))");
     }
 
     @Test
@@ -268,14 +268,14 @@ class DmlSqlBaselineTest {
             .containsExactly(
                 "insert into \"public\".\"content\" "
                     + "(\"title\", \"content_type\", \"length\", \"short_description\", \"film_id\") "
-                    + "values (?, ?, default, default, ?), (?, ?, default, ?, default) "
+                    + "values (?, cast(? as \"public\".\"content_kind\"), default, default, ?), (?, cast(? as \"public\".\"content_kind\"), default, ?, default) "
                     + "returning \"public\".\"content\".\"content_id\"",
                 "select \"content\".\"content_type\" as \"__discriminator__\", "
                     + "\"public\".\"content\".\"content_id\", \"public\".\"content\".\"short_description\" "
                     + "from \"public\".\"content\" "
                     + "join (values (?, ?), (?, ?)) as \"keysinput\" (\"idx\", \"content_id\") "
                     + "on \"public\".\"content\".\"content_id\" = \"keysinput\".\"content_id\" "
-                    + "where \"content\".\"content_type\" in (?, ?) "
+                    + "where \"content\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"keysinput\".\"idx\"");
     }
 

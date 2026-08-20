@@ -203,11 +203,24 @@ CREATE TABLE film_list (
 -- content: discriminated-interface fixture for TableInterfaceType tests.
 -- content_type distinguishes FilmContent ('FILM') from ShortContent ('SHORT').
 -- film_id optionally links a content entry back to a film (used by ChildField.TableInterfaceField fixture).
+--
+-- The discriminator column is a Postgres ENUM, not a varchar: it is one of the two
+-- enum-discriminated families (jti_subject.subject_kind is the other), so the typed
+-- @discriminator(value:) bind and the enum cast jOOQ renders from it are exercised at the SQL
+-- baseline and execution tiers rather than assumed. party_kind / fan_kind / signal_kind stay
+-- varchar as the open-value-domain control group.
+--
+-- 'PODCAST' is a deliberate third literal with no participant type: the column's value domain
+-- (closed, three literals) and the known-participant set (two) are different facts, and a content
+-- row whose kind names no participant is what DmlTableInterfaceReturnExecutionTest writes to prove
+-- the re-projection's discriminator filter drops it.
 -- -------------------------
+
+CREATE TYPE content_kind AS ENUM ('FILM', 'SHORT', 'PODCAST');
 
 CREATE TABLE content (
     content_id        serial       PRIMARY KEY,
-    content_type      varchar(10)  NOT NULL,
+    content_type      content_kind NOT NULL,
     title             varchar(255) NOT NULL,
     length            smallint,
     short_description varchar(255),
@@ -243,11 +256,19 @@ CREATE TABLE film_endorsement (
 -- removes it, and R389 preserves that stress under a participant declaring its own detail @table.
 -- The UNIQUE(jti_subject_id, subject_kind) on the base backs the detail composite FK. Each detail
 -- table also has a detail-only column (client_id / full_name) projected off the detail alias.
+--
+-- The discriminator is a Postgres ENUM here (content.content_type is the other enum-discriminated
+-- family), which puts the joined-detail LEFT JOIN's ON-clause discriminator equality on the enum
+-- arm: that comparison site has no other enum-capable fixture, and its operand has to bind through
+-- the column's own data type for PostgreSQL to accept it. The detail tables re-declare the column
+-- in their composite key, so they carry the same enum type.
 -- -------------------------
+
+CREATE TYPE subject_kind AS ENUM ('APP', 'PERSON');
 
 CREATE TABLE jti_subject (
     jti_subject_id  serial       PRIMARY KEY,
-    subject_kind    varchar(20)  NOT NULL,
+    subject_kind    subject_kind NOT NULL,
     display_name    varchar(255) NOT NULL,
     UNIQUE (jti_subject_id, subject_kind)
 );
@@ -259,7 +280,7 @@ CREATE TABLE jti_subject (
 -- the base-only displayName does).
 CREATE TABLE jti_app_account (
     jti_subject_id  int          NOT NULL,
-    subject_kind    varchar(20)  NOT NULL,
+    subject_kind    subject_kind NOT NULL,
     client_id       varchar(255),
     PRIMARY KEY (jti_subject_id, subject_kind),
     CONSTRAINT jti_app_account_subject_fk
@@ -268,7 +289,7 @@ CREATE TABLE jti_app_account (
 
 CREATE TABLE jti_person (
     jti_subject_id  int          NOT NULL,
-    subject_kind    varchar(20)  NOT NULL,
+    subject_kind    subject_kind NOT NULL,
     full_name       varchar(255),
     PRIMARY KEY (jti_subject_id, subject_kind),
     CONSTRAINT jti_person_subject_fk
@@ -288,6 +309,11 @@ CREATE TABLE jti_person (
 
 CREATE TABLE party (
     party_id     serial       PRIMARY KEY,
+    -- Deliberately varchar, not an enum: this is the open-value-domain control for the two
+    -- enum-discriminated families (content.content_type, jti_subject.subject_kind), and the only
+    -- varchar discriminator with SQL baseline pins on both rendered comparison forms (the IN filter
+    -- and the joined-detail ON clause). Those pins must stay byte-identical when the enum families'
+    -- move to a cast; a diff there is a defect, not test maintenance.
     party_kind   varchar(20)  NOT NULL,   -- discriminator: 'INDIVIDUAL' | 'COMPANY'
     display_name varchar(255) NOT NULL
 );

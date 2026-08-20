@@ -130,7 +130,7 @@ class BatchedChildSqlBaselineTest {
                     + "from (values (0, ?), (1, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
                     + "join \"public\".\"content\" as \"filmcontents_c0\" "
                     + "on \"filmcontents_c0\".\"film_id\" = \"parentinput\".\"film_id\" "
-                    + "where \"filmcontents_c0\".\"content_type\" in (?, ?) "
+                    + "where \"filmcontents_c0\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"filmcontents_c0\".\"content_id\" asc");
     }
 
@@ -177,7 +177,7 @@ class BatchedChildSqlBaselineTest {
                     + "from (values (0, ?)) as \"parentinput\" (\"idx\", \"film_id\") "
                     + "join \"public\".\"content\" as \"filmcontentsconnection_c0\" "
                     + "on \"filmcontentsconnection_c0\".\"film_id\" = \"parentinput\".\"film_id\" "
-                    + "where \"filmcontentsconnection_c0\".\"content_type\" in (?, ?) "
+                    + "where \"filmcontentsconnection_c0\".\"content_type\" in (cast(? as \"public\".\"content_kind\"), cast(? as \"public\".\"content_kind\")) "
                     + "order by \"filmcontentsconnection_c0\".\"content_id\" asc) as \"ranked\" "
                     + "where \"ranked\".\"__rn__\" <= ?");
     }

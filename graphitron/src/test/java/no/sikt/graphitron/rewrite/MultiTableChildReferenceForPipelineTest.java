@@ -224,7 +224,7 @@ class MultiTableChildReferenceForPipelineTest {
             interface Content @table(name: "content") @discriminate(on: "content_type") {
               rowId: Int @field(name: "content_id")
             }
-            type Movie implements Content @table(name: "content") @discriminator(value: "MOVIE") {
+            type Movie implements Content @table(name: "content") @discriminator(value: "FILM") {
               rowId: Int @field(name: "content_id")
             }
             type Film @table(name: "film") {
