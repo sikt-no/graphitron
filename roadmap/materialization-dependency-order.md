@@ -1,7 +1,7 @@
 ---
 id: R746
 title: "Order the materialization registry, so a target may be derived from another target"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 3
 theme: tooling
