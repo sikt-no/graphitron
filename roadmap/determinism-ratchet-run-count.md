@@ -58,9 +58,8 @@ times, and that materialising on the capture cadence is the mechanism that fixes
 settle is how far that goes: how many relations end up registered, whether ordering becomes load
 bearing soon or never, whether a refresh ever wants to be incremental rather than a full re-derive of
 the graph's partition, or whether the doctrine eventually swallows the four hand-written Java
-derivations too. Waiting until
-those are known means either shipping nothing or shipping two bespoke reductions and discovering the
-mechanism later, from a worse position.
+derivations too. Waiting until those are known means either shipping nothing, or shipping two
+bespoke reductions and discovering the mechanism later from a worse position.
 
 **So the item builds the smallest thing that is correct for what it registers, and makes every
 simplification visible.** The table below is the contract: each row is a place where this item
@@ -73,8 +72,8 @@ safe now, and cheap to revisit".
 | `meta_materialize` records no ordering | neither registered view is in the other's dependency closure; both closures are base tables only | R746, strictly additive |
 | Two relations registered | they are the two the profile named; the rest is guesswork until measured | deliverable 3, the multiplicity check |
 | The multiplicity check reports, does not gate | the ceiling is unknown and a wrong one is worse than none | itself, once a few registrations give the ceiling a basis |
-| `intent_type_domain` stays outside the mechanism | it has no view for a registry to point at, so including it is a rewrite rather than a registration | open question below |
-| The defect view's six-arm union is left alone | worth 28% and independent of everything else | deliverable 6 |
+| The four Java-derived tables stay outside the mechanism | none has a view for a registry to point at, so including one is a rewrite rather than a registration | open question below |
+| The defect view's six-arm union is left alone | worth 29% and independent of everything else | deliverable 6 |
 | Four generator runs become three, not two | two needs a production seam whose value drops once a run is cheap | the fork section below |
 
 **What makes it a safe step rather than a bet.** The mechanism lands with zero rows registered, so
@@ -289,7 +288,11 @@ and could not fail. The observed failure is the evidence for this shape.
   view. `meta_family` and `meta_prefixless_relation` are `VALUES` views of exactly this kind, and
   `meta_prefixless_relation` carries a `reason` column for the same purpose: the doctrine below moves
   "why this is not simply a view" out of a table comment and into a registration, so the registration
-  has to be able to say it. `meta_relation_family` beside them is not a `VALUES` view but the census
+  has to be able to say it. It is unenforced prose, exactly as that column is, and deliberately: a
+  `VALUES` view takes no `NOT NULL`, and promoting the registry to a table to get one would trade a
+  constant the DDL states for a relation something has to populate, which is the one property the
+  `meta_` family exists to have. An empty reason is caught by reading the diff that adds the row,
+  which is where an authored constant is reviewed. `meta_relation_family` beside them is not a `VALUES` view but the census
   that closes those rows against `INFORMATION_SCHEMA`, which is the shape this registry's gates take.
 * **The materializer lives in `graphitron-model`.** That is forced rather than preferred:
   `SeededStore` is in `graphitron-model`'s test sources and cannot reach `graphitron`, where the
@@ -513,8 +516,6 @@ Each is a closure of authored intent against observed schema, the shape `meta_re
 already uses:
 
 * every registered view exists, and every target table exists with a column list matching its view;
-* every registration carries a non-empty `reason`, which is what the doctrine change below trades the
-  per-table comment for;
 * every target's rows equal its view's rows on a settled store, which is the equality the whole
   design rests on and the one thing no amount of prose can substitute for;
 * nothing outside the registry is a materialized `intent_` relation, which is what stops the next
