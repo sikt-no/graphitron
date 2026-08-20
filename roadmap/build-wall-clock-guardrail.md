@@ -132,11 +132,12 @@ and a broad "index the hot columns" sweep is not the shape of the work.
    constraint on it.
 2. **Batch the key-column read, and give the rule an enforcer.** This is the first of the three
    unenforced rules below, with a worked violation to point at.
-3. **Reduce `intent_spelled_table`.** Slice 5 below keeps its place and finally has a named
-   subject: the 469-plan-node expansion is what a reduction would collapse. Its stated
-   justification should change, though. Slice 5 says its honest justification is reader latency in
-   the dev loop rather than build time; on these numbers it is squarely build time, and consumer
-   build time at that.
+3. **Reduce the high-multiplicity relations. Moved to R742, which owns it now.** Slice 5 below was
+   the reduction slice and has become a pointer: the subject turned out to be the whole `intent_`
+   stratum rather than one relation, with a measured 24.5s to 0.72s on the hottest read, so it wants
+   the spec cycle it now has in R742 rather than a bullet here. What stays this item's business is
+   the enforcer question, since the statically computable multiplicity metric R742 proposes is the
+   missing enforcer for the derived-read rules named below.
 4. Slices 1, 2 and 4 stay on the list and drop below those three. Their bounds hold (slice 4's
    `GraphitronMcpServerTest` measured 15.85s here against the 15.5s claimed) but each is about 2%
    of the build, where the three above are 27% together and not yet exhausted.
@@ -289,23 +290,18 @@ materialized view, along with the trap that H2's bare `CREATE TEMPORARY TABLE` d
 and its global temporary tables share rows across every attached session. This slice is that ruling's
 first consumer, so if the page does not yet carry it, R732 did not finish.
 
-*Measured on the second pass.* The relation is `intent_spelled_table`, and picking it is no longer a
-judgement call: it carries a `COUNT(*) OVER (PARTITION BY graph_name, spelling)` window over a
-six-arm `UNION` joined to the catalog, every relation that resolves a table spelling reaches it, and
-one `authorDefects` query expands it at 469 plan nodes while scanning about 2.57 million rows to
-return a handful of defects. The paragraph above is also wrong about its own justification in one
-respect worth correcting rather than quietly dropping: it says the honest case is reader latency
-rather than build time. On these numbers it is build time, and specifically *consumer* build time,
-since the generator is what reads it. The dev-loop, LSP and MCP latency case still holds and is now
-the smaller half.
+*Measured on the second pass, then moved out of this item.* The subject turned out to be an
+architectural property of the whole `intent_` stratum rather than one relation's tuning: H2 inlines
+every view reference with no common-subexpression elimination, so one read of
+`intent_argmapping_projection_defect` expands to 2149 relation instantiations and takes 24.5
+seconds. Reducing two relations takes it to 0.72s. R742 carries that work, with the measurements,
+the statically computable selection rule proposed as this item's missing derived-read enforcer, and
+what the migration costs. This slice stays here as the pointer; do not spec it twice.
 
-There is a precedent to copy rather than invent: the store already has four written `intent_` tables
-(`intent_type_backing_class`, `intent_type_domain`, `intent_input_occurrence_path` and its step
-sibling), and `ReachabilityRows.write` is the delete-by-graph-then-insert cadence a reduction wants.
-The ordering question the paragraph above raises is real and unchanged: the reduction has to be
-populated after every relation it reads and before any reader, which on the capture path means
-`FactCapture`'s detection pass, and a reader that reaches the store outside a capture (the LSP, the
-MCP server) has to be shown to arrive after one.
+One correction worth keeping even so, since the paragraph above states the opposite: it says the
+honest justification is reader latency in the dev loop rather than build time. On the measured
+numbers it is build time, and specifically *consumer* build time, the generator being what reads
+these relations. The dev-loop, LSP and MCP latency case still holds and is now the smaller half.
 
 **Also carried across, smaller than a slice.** R732 turns on class-level test parallelism in
 `graphitron` only, because that is the module the 170.5s to 117.1s number was taken in. Extending the

@@ -1,6 +1,6 @@
 ---
 id: R742
-title: "The determinism ratchet pays for four full-fixture generator runs and needs two"
+title: "The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive"
 status: Spec
 bucket: dx
 priority: 3
@@ -10,17 +10,30 @@ created: 2026-08-20
 last-updated: 2026-08-20
 ---
 
-# The determinism ratchet pays for four full-fixture generator runs and needs two
+# The determinism ratchet costs 229 seconds: too many generator runs, and each run too expensive
 
 `GeneratorDeterminismTest` is the second most expensive class in the reactor, at 229.0 seconds
 across two test methods, which is a third of the whole build. It is not slow because it asserts
 anything expensive. It is slow because it runs the entire generator over the entire fixture schema
-four times, and the contract it guards needs two of those runs at most.
+four times, and each of those runs costs 57 seconds.
 
-This item is the run count, the per-run cost that survives R733, and the coverage question next to
-them. R733 owns the generator's store reads and the two measured changes that make a run cheaper;
-this item removes runs. They compound rather than compete and neither waits on the other:
-**together, measured, they take the class from 229.0s to 62.91s.**
+Both halves of that sentence are wrong and this item fixes both.
+
+* **Lever one, what a run costs.** A run is 97% the fact store re-evaluating its own derived
+  relations. The deepest of them expands to 2149 relation instantiations per read, because H2 inlines
+  every view reference and eliminates no common subexpression. Reducing two relations takes the
+  hottest read from 24.5s to 0.72s.
+* **Lever two, how many runs there are.** The contract the class guards needs two runs at most, and
+  the class performs four. The fourth buys a populated directory the first method already produced.
+
+They are independent and they compound. **Measured together, with both tests green: 229.0s to
+20.66s.** The generator's cost is not this test's problem alone, which is why lever one matters more
+than the arithmetic here suggests: the same reads run in every consumer's build, six times per
+reactor build, and once per `graphitron:generate` a consumer performs.
+
+R733 carries the store's other read work and the two changes that are the baseline for every figure
+below (a batched key-column read and one index). This item is the remaining derived-read cost and
+the run count. Neither waits on the other.
 
 ## What the test is actually for
 
@@ -62,11 +75,11 @@ populated tree and a re-run, and this item produces a shared populated tree anyw
 javadoc to claim the two clauses it holds. What is not defensible is leaving a javadoc that asserts
 coverage the class does not have, since the next reader takes it at its word.
 
-## Why it is slow
+## Lever one: what a run costs
 
-One full run over the fixture costs 57.3 seconds. About 95 percent of that is the fact store
-re-evaluating its own derived relations, which is R733's subject and not restated here. Emission and
-the writing of 798 generated files is the remaining few seconds.
+One full run over the fixture costs 57.3 seconds, and 97 percent of it is the fact store
+re-evaluating its own derived relations. Emission and the writing of 798 generated files is the
+remaining second or two.
 
 The test runs the generator four times, so 4 × 57.3 ≈ 229.0s. That is the arithmetic in full; there
 is nothing else in the class.
@@ -109,16 +122,150 @@ percent.
 
 Nothing *outside* the store is worth attacking: store boot at 1.8% is 0.4 seconds, emission and the
 writing of 798 files are together under one percent, and the schema parse and classpath scan do not
-register.
+register. Everything below is therefore about the four store reads.
 
-But that is a statement about where the time is not, and it should not be read as "a run cannot get
-cheaper". It can, by a lot, and R745 is that finding: the four rows above are deep view stacks that
-H2 inlines without common-subexpression elimination, one of them expanding to 2149 relation
-instantiations per read. Reducing two relations takes that read from 24.5s to 0.72s and this class
-from 229.0s to **20.66s**, measured. Read R745 before assuming the per-run figure in this item is
-fixed; the run-count arithmetic here holds whatever a run ends up costing.
+### Why those four reads are slow
 
-### One exception, and it is worth taking: the same view is read twice per run
+H2 inlines a view wherever it is named and performs no common-subexpression elimination. The
+`intent_` stratum is twenty-two views deep, so multiplicities compound down the tree: a view named
+four times is evaluated far more than four times.
+
+Reading `intent_argmapping_projection_defect` once expands to **2149 relation instantiations**.
+Inside that single query `intent_argmapping_pair` appears **55 times** and `intent_spelled_table`
+**39 times**. It scans about 2.57 million rows to return a handful of defects.
+
+Three measurements rule out the alternative explanations, and each of them closes off a fix that
+would otherwise look attractive.
+
+**It is not query compilation.** `EXPLAIN` on that statement, which compiles without executing, costs
+0.20 to 0.36 seconds against 24.5 seconds of execution. The enormous plan is a symptom, not the bill.
+
+**It is not something a cache would absorb.** The identical statement executed twice in a row costs
+24.52s then 24.53s. Nothing memoises and nothing can; each reader is a fresh statement.
+
+**It is not predicate pushdown a rewrite would restore.** Several relations in the tree carry window
+functions (`intent_spelled_table` a `COUNT(*) OVER`, `intent_resolved_node_key_column` and
+`intent_resolved_node_type_id` a `DENSE_RANK() OVER`), and a window sees its whole partition whatever
+predicate the reader applies outside it. `docs/architecture/explanation/fact-model.adoc` states this
+rule already and states the remedy: take the relation once and pair it on its key. What that page
+does not say, and what this item adds, is that the arithmetic applies just as much to a view a
+*derivation* names repeatedly as to one a Java caller reads in a loop. The Java-side version of this
+defect is visible at the call site. The SQL-side version is invisible at every call site.
+
+### The selection rule, which is the reusable part
+
+Inline multiplicity is computable statically from `graphitron-model.sql`: parse the `CREATE VIEW`
+bodies, count each relation's textual references, multiply down the tree. No database, no profiler.
+It ranked the two relations worth reducing before any of them were measured.
+
+| Relation | Instantiations in one defect read |
+|---|---|
+| `intent_argmapping_pair` | 55 |
+| `intent_spelled_table` | 39 |
+| `intent_argmapping_segment_binding` | 14 |
+| `intent_field_reference_step_hop` | 12 |
+| `intent_name_matched_key_pair` | 12 |
+| `intent_bound_table` | 8 |
+| `intent_argmapping_binding_leaf` | 7 |
+
+And where the 2149 come from, which prices what a rewrite could buy:
+
+| Direct child of the defect view | Times named | Subtree size | Contribution |
+|---|---|---|---|
+| `intent_argmapping_key_column_candidate` | 2 | 518 | 1036 |
+| `intent_argmapping_binding_leaf` | 5 | 149 | 745 |
+| `intent_argmapping_bound_parameter_type` | 1 | 157 | 157 |
+| `intent_argmapping_pair` | 6 | 18 | 108 |
+| `diagnostic` | 1 | 42 | 42 |
+| `intent_authored_claim_conflict` | 1 | 34 | 34 |
+
+The five and six are the view's six `UNION ALL` arms, each re-joining the same driving relations with
+a different `WHERE` and a different verdict literal.
+
+**That metric should become a build gate.** It is the answer to the "every invariant has an enforcer"
+gap R733 names for the derived-read rules: a `roadmap-tool` check in the family of
+`AdocXrefAnchorCheck` and `ModuleEnumerationCheck` computes multiplicity from the DDL and fails on a
+relation over a stated ceiling, reduced relations being exempt by construction since a table has no
+subtree. Two things for the Spec pass to fix: the ceiling, and whether it reports or gates on first
+landing. The metric is a static over-approximation, counting textual references without knowing which
+arms a predicate prunes, which argues for a generous ceiling that catches order-of-magnitude cases
+rather than a tight one.
+
+### Two routes, and the trade is not close
+
+**Route A: reduce the high-multiplicity relations.** Rename the view to `<name>_rule`, add a table of
+the same shape under the original name, populate it once per capture with
+`DELETE FROM <name> WHERE graph_name = ?` then
+`INSERT INTO <name> SELECT * FROM <name>_rule WHERE graph_name = ?`. Every existing reader keeps its
+spelling and the rule stays stated exactly once, in the view. This is the shape `fact-model.adoc`
+already sanctions, and the store already has four written `intent_` tables plus
+`ReachabilityRows.write` as the delete-by-graph-then-insert cadence to copy.
+
+Measured, with `intent_argmapping_pair` and `intent_spelled_table` reduced, on top of R733's two
+changes:
+
+| | Defect-view query | `FixtureWarningsGateTest` | `GeneratorDeterminismTest` |
+|---|---|---|---|
+| trunk | | 56.8s | 229.0s |
+| R733's two changes | 24.5s | 23.5s | about 93s |
+| plus these two reductions | **0.72s** | **6.85s** | **20.66s** |
+
+The profile afterwards is healthy rather than merely smaller: H2 falls from 97% of a run to 67%, the
+four store reads from 88% to about 48%, and the largest single remaining item is the store's own DDL
+boot at 9%. No dominant pathology is left.
+
+**Route B: flatten the six-arm union into one pass.** The defect view's five `binding_leaf`-driven
+arms differ only in predicate and verdict literal, so one pass with a `CASE` verdict and a left join
+to the segment relation would collapse them. It changes no read semantics and needs no freshness
+reasoning, which makes it tempting. The decomposition table prices it: at most 4 × 149 = 596 of 2149
+instantiations, about 28%, leaving the 1036 the two `key_column_candidate` references contribute.
+Worth doing as a simplification on its own merits; not an alternative to Route A.
+
+Take Route A. Route B is a follow-on.
+
+### What Route A costs, which is the part to design rather than discover
+
+The prototype broke **thirteen `graphitron-model` test classes**, and the reason is structural rather
+than a prototype defect. Those classes seed rows into base tables and read a derived relation
+directly, with no capture pass anywhere in the fixture, so a reduction nothing populated returns zero
+rows: `ArgmappingPairTest`, `ArgmappingProjectionDefectTest`, `ArgmappingBindingLeafTest`,
+`ArgmappingSegmentBindingTest`, `ColumnMatchClaimTest`, `FieldColumnTableTest`,
+`FieldRoutineMethodTest`, `NodeTypeTest`, `ReferenceStepTargetTest`, `ResolvedNodeKeyColumnTest`,
+`ResolvedNodeKeyProjectionTest`, `SeparateFetchRuleTest`, `TypeBackingTest`.
+
+That is the freshness invariant made visible, and it is a feature of the finding rather than an
+obstacle to it. Four things follow.
+
+**The refresh belongs on the capture cadence, not the detection cadence.** The prototype populated
+inside `FactCapture`'s detection pass, which is skipped when a run has no walk reach. A capture that
+writes rows and leaves a reduction stale is the failure mode the design has to exclude, so the
+population goes immediately after capture, unconditionally, with the order written down rather than
+inferred.
+
+**The seeded tests have to call the refresh, and they should.** Each of the thirteen classes reads
+through a small per-class helper (`rows(dsl)`, `only(dsl)`, `rowFor(dsl, ...)`), so the edit is on the
+order of thirty insertions rather than the ninety-six `withSeededStore` call sites. Making it
+explicit is the right outcome: these tests pin what a rule returns given rows, and under a reduction
+"given rows" acquires a second half, which is "and after the reduction was refreshed".
+
+**Every `_rule` view needs its own comment text.** `SchemaReferencePagesTest` fails the build on any
+relation or column with a blank comment, so renaming a view moves its comments to the reduction and
+leaves the rule undocumented. That is the gate working: the rule and the reduction are two relations
+a reader can land on and they owe different sentences. Budget the prose.
+
+**Do not split the readers.** The tempting shortcut is to let the seeded tests keep reading the
+`_rule` view while the runtime reads the reduction. That makes the tests exercise different SQL from
+production, which is the "two readings of one population" drift this schema's own comments warn about
+repeatedly. One new test pinning that a reduction equals its rule after a refresh is the honest
+version of that instinct.
+
+Open for the Spec pass: **which** relations to reduce (two sufficed for the measured case; the table
+names five more above eight, and what is left unreduced should be recorded as a decision rather than
+an omission); the gate's ceiling; whether the language server and MCP server, which open the store
+without running a capture, always arrive after one, or need a stated behaviour when they do not, per
+the "absence needs a stated meaning" rule.
+
+### A smaller one on the same path: the same view is read twice per run
 
 Rows three and two of that table read the *same relation* over the *same graph*, from two calls
 `FactCapture.detect` makes back to back on the same `DSLContext`.
@@ -142,28 +289,30 @@ than approximate: a left join never drops a row of the view, so the five-column 
 unchanged, and it produces the same row multiset the inner join did for the rows that do match, so
 the twelve-column distinct is unchanged too.
 
-**A scope note the reviewer should settle.** This is derived-read work, and its natural home is
-R733, which already carries the store's read discipline and the other two measured fixes. It is
-recorded here because it is the honest answer to "why is this test slow", and because R742 is the
-item in motion while R733 is still Backlog. Moving it to R733 and leaving R742 purely about run
-count is a defensible call and costs nothing but a cross-reference.
+Order it after the reductions rather than before: 4.5s is 19% of a 21.0s run and a much smaller share
+of a 5.2s one, and the merged query is the kind of change whose value should be re-measured against
+the shape it will actually ship into.
 
-### What the three changes come to together
+### What the changes come to together
+
+Every row measured on one 4 vCPU sandbox with both tests green, except where marked.
 
 | Configuration | Runs | Class total | Per run |
 |---|---|---|---|
 | trunk | 4 | 229.0s | 57.3s |
-| R742's run reduction alone | 3 | 167.3s | 55.8s |
+| run reduction alone | 3 | 167.3s | 55.8s |
 | R733's two changes alone | 4 | about 93s, derived | 23.3s |
-| R733 + R742, measured | 3 | **62.91s** | 21.0s |
-| and the duplicate read removed | 3 | about 56s, ceiling | 18.8s |
-| R733 + R745's two reductions, 4 runs, measured | 4 | **20.66s** | 5.2s |
+| R733 + run reduction | 3 | 62.91s | 21.0s |
+| R733 + the two reductions | 4 | **20.66s** | 5.2s |
+| all three | 3 | about 16s, projected | 5.2s |
 
-229.0s to 62.91s is measured with both tests green. The last row is a ceiling rather than a
-measurement: it was taken by skipping one read outright, which is not a legal implementation, and
-the merged query will land slightly above it by the cost of the left join.
+The last row is arithmetic rather than a measurement, and worth stating plainly: once a run costs
+5.2 seconds instead of 57, removing the fourth run saves about five seconds rather than about sixty.
+The run-count work is still worth doing, on the grounds that a test should not perform work its
+contract does not need, but it stops being the lever it looks like today and the Spec pass should
+sequence the store work first.
 
-## Why four runs, and how many the contract needs
+## Lever two: why four runs, and how many the contract needs
 
 Reading the two methods for what each genuinely requires:
 
@@ -182,7 +331,7 @@ the shared tree stays pristine, takes the class to three runs.
 **Measured, with both tests still green: 229.0s to 167.3s.** Exactly one run's worth, as predicted.
 The change is local to the test class and needs nothing from production code.
 
-## The fork the Spec pass has to settle: is three the floor, or is it two?
+### The fork the Spec pass has to settle: is three the floor, or is it two?
 
 Three is the floor *without touching production code*. Two is reachable, by two different routes,
 and each gives something up. The Spec pass should pick one and record why, because "just get it to
@@ -245,6 +394,24 @@ time mvn test -pl :graphitron-sakila-example -Plocal-db -Dleaf-coverage.skip \
 The per-run cost is the class total divided by the run count, the runs being uniform. Cross-check
 against `FixtureWarningsGateTest`, which is one pipeline run with no emission, so the difference
 between the two is emission plus the write of 798 files.
+
+Two recipes the store half of this item needs, neither of which a profiler supplies.
+
+**Splitting compile from execution, inside the real populated store.** Temporarily print, beside the
+read under test and behind an environment-variable guard, an `EXPLAIN` of the same statement and two
+consecutive executions of it. `dsl.resultQuery("EXPLAIN " + dsl.renderInlined(query))` compiles
+without executing; run the statement twice to show whether anything memoises. Use
+`EXPLAIN ANALYZE` instead when the question is which relation is being scanned and how often, since
+H2 reports a `scanCount` per plan node, and read it with `fetchOne(0, String.class)` rather than
+through a jOOQ `Result`, which truncates the plan text. Note that JFR's default `stackdepth=64`
+truncates below the H2 frames and hides every caller, so pass
+`-XX:FlightRecorderOptions=stackdepth=1024` when profiling instead.
+
+**Inline multiplicity, which needs no build at all.** Parse the `CREATE VIEW` bodies out of
+`graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`, count each
+relation's word-boundary references per body, and multiply down the tree from the relation under
+study. This is the metric the selection-rule section proposes turning into a gate, and it is worth
+running by hand first on any relation a reader suspects.
 
 Standing caveats, both of which will produce nonsense if ignored: pass `-Plocal-db` or the jOOQ
 catalog jar is silently emptied and the failures will be unrelated cascades, and measure against a
