@@ -268,31 +268,36 @@ alternative spelling of the lift names more rather than fewer relations. The red
 model prescribes is to materialize, and the relation to materialize is the instruction population,
 which every number here is a multiple of.
 
-**And that registration is the case this item predicted would make R746 load-bearing, arriving.**
-`intent_node_id_instruction` reaches `intent_spelled_table`, a registered target, through the
-argument scope relation, so registering it was the first dependent derivation in the registry. Under
-the gate as it stood that was a build failure rather than a judgement call; R746's ordering landed
-first, derived from the catalog rather than declared, so the registration is ordinary. One
-registration, and the numbers after it:
+**That registration was made, measured, and reverted, and what it found is the more important
+number.** R746's ordering had landed, derived from the catalog rather than declared, so registering
+the first dependent derivation in the registry was ordinary rather than blocked. The static metric
+improved exactly as arithmetic said: `intent_node_id_decode_column` 2528 to 761,
+`intent_node_id_decode_hop_column` 828 to 239, `intent_node_id_decode_hop` 823 to 234,
+`intent_node_id_encode` 808 to 219, the whole family under the tree's previous heaviest read.
 
-* `intent_node_id_decode_column` 2528 to **761**, `intent_node_id_decode_hop_column` 828 to 239,
-  `intent_node_id_decode_hop` 823 to 234, `intent_node_id_encode` 808 to 219, and the endpoint
-  relation out of the ranking entirely.
-* The whole family now sits under the tree's existing heaviest read,
-  `intent_argmapping_projection_defect` at 765, rather than at 3.3 times it. The instruction
-  population is evaluated once per capture instead of once per naming, which is the trade a
-  registration is, and it pays here because the family already has two readers and the decode
-  parent and the defect view make four.
+Then the reactor went from eight minutes to still-running at thirty-one, and a thread dump of the
+stuck fork said why: one H2 query, ten minutes of CPU, nested `EXISTS` predicates driving a
+recursive CTE through `RecursiveIndex.find`. The refresh of the instruction population against the
+sakila schema is that query. So the registration did not create a cost, it *revealed* one, and the
+revealed cost is the finding: **the instruction population as authored cannot be evaluated against a
+real schema in acceptable time, and no amount of materialization fixes that, because materializing
+is what makes it be evaluated once rather than never.**
 
-The hop-column relation is the next lever if a profile ever asks: registering it would take the
-deepest read to roughly 320. It is deliberately not taken now, because the case for a registration
-is a read count and the readers that would justify it do not exist yet.
+Which reframes the whole depth question for this item. Every number in the ranking above is a cost
+per read, and nothing reads any of these relations during a build yet, so the eight-minute reactor
+was measuring zero evaluations of a family whose single evaluation costs ten minutes. Stage 2c is
+where the first build-time reader lands, so that is when the cost arrives whether or not anything is
+registered, and the registration is reverted only so trunk stays fast in the meantime.
 
-Registering the first dependent derivation also falsified the premise `MaterializationOrderTest`
-was written on, that the production registry holds no edges, so its assertions about the dependency
-relation's contents are now scoped to their own fixture and its identity case establishes the
-row-free state rather than inheriting it. That is the consumer audit the same-commit rule asks for,
-and it makes those cases about the mechanism rather than about what the registry happens to hold.
+**Making the instruction population cheap is therefore a prerequisite of stage 2c rather than a
+follow-on.** The static metric is not what to optimise against, and the reason is in the stack: the
+cost is not breadth of naming, it is that the argument-site and field-site reference-target views are
+recursive CTEs, which H2 evaluates whole and cannot push a predicate into, and `slot_table` drives
+them with a correlated `MAX(position)` subquery per row. Two readings follow. The static metric
+counts namings and is blind to a recursive relation being unprunable, so a low number there is not
+evidence of a cheap read; and the reduction wanted here is to stop naming the recursive views under
+a correlated predicate, not to reduce how often they are named. What replaces it is the next
+increment's question rather than something to guess at here.
 
 **One piece of navigation has to be authored first.** `intent_field_reference_step_hop` and
 `intent_field_reference_step_target` resolve reference-path hops, and they are field-site only. An
