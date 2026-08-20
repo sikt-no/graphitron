@@ -513,6 +513,65 @@ which is where Jakarta already puts that authoring surface. With move 1 in place
 out structurally rather than by convention: `ValidationHandler` has no `ClientMessage`, and
 the SDL-to-model lift is where the rejection lands.
 
+## Implementation record
+
+Landed as planned, five moves, with the two open questions resolved as recommended. What a
+reviewer should know beyond the diff:
+
+**Both open questions took the recommendation.** The emitted `Mapping.description()` slot stays and
+becomes a read accessor (option 1): a `Static` arm emits
+`if (ByType.<TYPE>[i].match(thr)) return ByType.<TYPE>[i].description();`, so the authored string has
+one spelling in the emitted output. And the per-type table rides the command row: `@error` fetchers
+moved to their own arm, `TypeUnitCommand.ErrorFetchersUnit(typeName, unit, errorMappings)`, carrying
+the ref its body names. `TypeFetcherGenerator`'s fork on `ErrorType` goes away with it, and
+`TypeUnitRelation` gained the narrowing accessor plus the write-set entry.
+
+**The walk is emitted only for a type that declares an override.** Move 4 says one
+`if (ARR[i].match(thr)) return ...;` per handler; the implementation emits them only up to the
+*last* `Static` arm, and emits no guarded block at all when the type has none. First-match-wins
+makes every arm after the last override resolve identically to the block's own
+`thr.getMessage()` tail, so the dropped branches are dead weight rather than a behaviour
+difference; and a type with no override emits exactly the body it did before this item, which
+keeps the arm reorder out of every schema that never authored a `description:`.
+
+**The membership invariant move 3 asks the implementer to confirm was made unnecessary instead.**
+Rather than resting the concatenation on `mappedErrorTypes()` and `schema.types()` agreeing, the
+`ByType` mint takes the union of both populations, which is total by construction. The union also
+covers the `ErrorMappingsClassGeneratorTest` fixtures, which synthesise channels without
+registering their `@error` types. A name reaching the mint twice with two different handler lists
+throws an internal-bug `IllegalStateException` rather than silently picking one.
+
+Two adjacent facts fell out and are worth naming because they are not in the plan. "Which types are
+`@error` types" became one fold on `GraphitronSchema` (`errorTypes()`), because the per-type mint and
+the fetchers-row producer were about to be two askers of the same question; that drops the plan-side
+leaf-dispatch ratchet by one, which is a deliberate pin update. And `MappingsConstantNameDedup`'s
+digest bytes change with the `description` field's removal, which would change a hash suffix if any
+fixture produced one. None does, so no emitted constant name changes, and
+`MappingsConstantNameDedupTest` stayed green as the plan predicted.
+
+**Deferred, with evidence: the execution-tier assertion on an interpolated violation message.** The
+Coverage section asks for a VALIDATION fixture whose query test asserts a constraint violation's
+interpolated message arrives in the errors slot. That assertion is not constructible today, and the
+reason is structural rather than a matter of fixture effort. The pre-step validates the
+*graphitron-emitted* input record (`TypeFetcherGenerator.resolveInputArgClass` resolves the generated
+class for an input-typed SDL arg, and the raw value otherwise), graphitron emits no constraint
+annotations onto that record, and `GraphitronContext` is a sealed interface whose `getValidator` is a
+`default` method, so a consumer cannot attach a programmatic `ConstraintMapping` either. With no
+constraints on what is validated, the walk yields no violations by construction.
+
+What did land instead is the fixture minus that one assertion, which still buys most of what the
+section wanted: `Query.filmLookupValidated` carries the suite's only `{handler: VALIDATION}` channel,
+so the wrapper's validator pre-step, the generated `ConstraintViolations` helper, and the emitted
+`GraphQLError` arm of `message()` are all compiled and executed for the first time, and two query
+tests assert that the channel still dispatches and still returns its happy path. The both-shapes
+fixture the same section asks for did land in full: `FilmLookupClientFacingException` is a
+`Throwable` and a `graphql.GraphQLError` whose `getMessage()` deliberately differs from its handler's
+`description:`, so the arm precedence is a tested decision in both directions.
+
+Emitting constraint annotations onto generated input records (or opening a validator hook) is the
+work that would make the missing assertion constructible. It is a feature in its own right, not
+cover for this item, and belongs in its own Backlog entry.
+
 ## Open for the implementer
 
 **What happens to the emitted `Mapping.description()` slot.** Decide this before writing move 4;

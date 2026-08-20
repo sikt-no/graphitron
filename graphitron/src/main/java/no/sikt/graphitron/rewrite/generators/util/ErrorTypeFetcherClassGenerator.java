@@ -36,13 +36,16 @@ import javax.lang.model.element.Modifier;
  * <ol>
  *   <li>A dispatch-table walk, guarded by {@code src instanceof Throwable}. Emitted only when
  *       some handler on this type declares a {@code description:}, since a type with no authored
- *       override has nothing to resolve. Each contributing handler emits its own
- *       {@code if (ByType.<TYPE>[i].match(thr)) return "...";} against the type's own
- *       {@code Mapping[]} constant on {@code ErrorMappings}, so the returned statement is chosen
+ *       override has nothing to resolve. Each handler emits its own
+ *       {@code if (ByType.<TYPE>[i].match(thr)) return ...;} against the type's own
+ *       {@code Mapping[]} constant on {@code ErrorMappings}, so the returned expression is chosen
  *       at build time from that handler's {@link ClientMessage} arm rather than by a runtime test
- *       on the mapping. The guard is load-bearing: {@code Mapping.match} takes a
- *       {@code Throwable}, and a {@code ConstraintViolations}-produced {@code GraphQLError} need
- *       not be one.</li>
+ *       on the mapping: an override arm returns the mapping's own {@code description()}, and a
+ *       source-message arm returns {@code thr.getMessage()}. Reading the authored string back off
+ *       the mapping rather than inlining it keeps one spelling of that string in the emitted
+ *       output, and is what makes {@code Mapping.description()} a read accessor. The guard is
+ *       load-bearing: {@code Mapping.match} takes a {@code Throwable}, and a
+ *       {@code ConstraintViolations}-produced {@code GraphQLError} need not be one.</li>
  *   <li>The {@code GraphQLError} arm, {@code ge.getMessage()}. This is the validation path:
  *       {@code ConstraintViolations.toGraphQLError} puts {@code GraphQLError} instances in the
  *       errors slot, and graphql-java's {@code GraphQLError} is an interface its implementations
@@ -124,8 +127,9 @@ public final class ErrorTypeFetcherClassGenerator {
                 // source-message ones: dispatch is first-match-wins, so skipping an earlier
                 // source-message handler would let a later override fire in its place.
                 switch (clientMessageOf(handler)) {
-                    case ClientMessage.Static s -> method.addStatement(
-                        "if ($T.$L[$L].match(thr)) return $S", byType, constant, index, s.message());
+                    case ClientMessage.Static ignored -> method.addStatement(
+                        "if ($T.$L[$L].match(thr)) return $T.$L[$L].description()",
+                        byType, constant, index, byType, constant, index);
                     case ClientMessage.FromSource ignored -> method.addStatement(
                         "if ($T.$L[$L].match(thr)) return thr.getMessage()", byType, constant, index);
                 }
