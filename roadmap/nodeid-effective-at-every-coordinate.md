@@ -584,7 +584,8 @@ replacement.
    stage. `NodeIdLeafResolver` becomes a reader of the rows rather than the resolver of the facts. Exit: every `@nodeId` shape that generates today has a row naming the
    destination or source it actually uses; a `@service` method whose parameter type matches a
    single-column node key receives the decoded value and never the base64; and the tree's existing
-   `@nodeId` behaviour suite stays green without modification. Each relation added here states its
+   `@nodeId` behaviour suite stays green apart from the four `BARE_NODE_ID` cases the arity rule
+   deliberately retargets, which the Tests section names so a fifth red is a finding. Each relation added here states its
    own inline multiplicity, computed statically from the DDL, and none of them introduces a
    per-verdict or per-destination `UNION ALL` arm that re-joins the driving relations.
 3. **The junction chain.** With the relation in place this is the absence of a rejection rather than
@@ -632,6 +633,23 @@ accept set: if a resolution relation fails to enumerate a shape that works today
 pipeline or execution test goes red, because the build now rejects a schema that used to generate.
 That is what makes a total census safe to attempt.
 
+**The guard runs in one direction, and stage 2 deliberately moves the other, so the expected reds are
+named here rather than discovered.** The accept set catches a resolution the relations miss. The arity
+rule runs the opposite way at `argMapping` sites: a single-key node type bound without a key column
+stops being a defect and starts resolving, so four shipped cases standing on that fixture change with
+the rule rather than around it. Three assert the rejection at arity 1 and move to a composite-key node
+type along with `BARE_NODE_ID`'s own population:
+`ArgmappingProjectionDefectsTest.aNodeIdBoundWithNoKeyColumnIsRejectedNamingTheKeyColumns` and
+`aServiceArgMappingReportsUnderItsOwnDirective`, and
+`ArgmappingProjectionRejectionPipelineTest.aBareNodeIdBindingFailsTheBuild`. The fourth needs more than
+a fixture swap and is worth reading before touching:
+`ArgmappingProjectionDefectsTest.theUseSiteClauseAppearsOnlyWhereItSaysMoreThanTheCoordinate` reads the
+*first* violation to test use-site clause suppression, which is orthogonal to this item, so it needs a
+node type that still mints a violation rather than a rewritten assertion. The two bare cases with no
+`typeName:` to resolve are untouched, no node type meaning no arity. Those four are the whole of the
+expected churn, which is what lets a red anywhere else in stage 2 read as a missed resolution instead
+of as more of the same.
+
 * **Pipeline tier**, carrying the primary behavioural weight. The junction chain lowering to a remote
   binding with a two-hop path, on both the argument and the input-field surfaces. Each of the four
   write rails refusing a remote-bound junction carrier, asserting the text that rail actually
@@ -676,7 +694,10 @@ a null payload and no committed row.
   total and it is the item's main risk. It is bounded rather than open: the tree's existing `@nodeId`
   behaviour suite is the accept set, so a missed resolution is a red test during stage 2 and not a
   shipped false rejection. What the guard cannot cover is a shape no fixture exercises, which
-  is why stage 2's exit condition is stated over the suite rather than over a count.
+  is why stage 2's exit condition is stated over the suite rather than over a count. The guard also
+  runs in one direction only: the four shipped `BARE_NODE_ID` cases the arity rule turns from
+  rejections into resolutions go red on purpose, and the Tests section enumerates them so that
+  signal stays readable.
 * **A consumer that decodes by hand today stops compiling, and that is the point.** The invariant is
   that the consumer never sees the wire format, so a `@service` method or an exception constructor
   typed `String` against a `Long` key column no longer receives base64: it draws a type-disagreement
