@@ -110,12 +110,12 @@ class FactSchemaGateTest {
      */
     private static final String MATERIALIZED_FIXTURE = """
         type Query {
-          films: [Film!]!
+          films(sequelTo: ID @nodeId(typeName: "Film")): [Film!]!
           filmsForActor(actorId: ID!, minLength: Int): [Film!]!
             @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
         }
 
-        type Film @table(name: "film") {
+        type Film @table(name: "film") @node {
           filmId: ID! @field(name: "film_id")
           title: String
         }
@@ -711,10 +711,13 @@ class FactSchemaGateTest {
     }
 
     /**
-     * A capture that populates every registered target. The catalog is what
-     * {@code intent_spelled_table} resolves its table spellings against, and the {@code @routine}
-     * application is what gives {@code intent_argmapping_pair} an arm that fires; without either,
-     * the case above passes over empty relations.
+     * A capture that populates every registered target, which is a property of the fixture SDL and
+     * the fixture catalog together and has to be maintained as registrations are added. The catalog
+     * is what {@code intent_spelled_table} resolves its table spellings against; the
+     * {@code @routine} application is what gives {@code intent_argmapping_pair} an arm that fires;
+     * and the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
+     * {@code intent_node_id_instruction}. Without any of them the case above passes over an empty
+     * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.
      */
     private static void captureMaterializationFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
