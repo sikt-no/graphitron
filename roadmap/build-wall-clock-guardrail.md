@@ -152,10 +152,12 @@ instruction to change their own SDL, which is the worst available failure mode f
 mechanism. The 11.61s above was measured by renaming the source view so it sorts last, which is a
 measurement trick and not a fix.
 
-Two consequences for R746, and both are edits to that item rather than work for this one. Its
-priority of 4 is wrong: it is now the gate on the largest measured saving left in the store. And its
+Two consequences for R746, and both are that item's business rather than work for this one. Its
+`priority: 4` looks wrong now that it gates the largest measured saving left in the store. And its
 closing claim that it "is not a performance item at all" is true of the registry as it stands and
-false of the registry anyone will want next.
+false of the registry anyone will want next. R746 entered Spec under another session while this pass
+was running, so both are recorded in its body as arguments for its Spec pass to weigh rather than
+applied over it; the priority field is untouched.
 
 **The gate that should catch it cannot yet exercise it, and that is a third consequence.**
 `FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` is the case that holds a target against its
