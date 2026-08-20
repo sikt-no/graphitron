@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R676` | A @nodeId filter input on a multitable query cannot state a per-participant join path | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](nodeid-filter-per-participant-paths.md) |
 | `R706` | A build that meets a held fact store fails fast and says so | Spec | 2026-08-18 | [plan](store-contention-fails-fast.md) |
 | `R705` | A condition-join hop in a reference filter path is rejected, though the emitter it needs already ships | Spec | 2026-08-19 <sub>created 2026-08-18</sub> | [plan](condition-join-hops-in-reference-filter-paths.md) |
-| `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
+| `R666` | Delivery verdict derives from the store, not from a hand-maintained negative-space switch | Spec | 2026-08-20 <sub>created 2026-08-14</sub> | [plan](delivery-verdict-derives-from-the-store.md) |
 | `R728` | Four @nodeId sites where the directive binds nothing or its join shape cannot be emitted | Spec | 2026-08-19 | [plan](nodeid-effective-at-every-coordinate.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: close the seam on both tiers <sub>blocked by: [delivery-verdict-derives-from-the-store](delivery-verdict-derives-from-the-store.md)</sub> | Spec | 2026-08-19 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |

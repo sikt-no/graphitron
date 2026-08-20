@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-08-19
+last-updated: 2026-08-20
 ---
 
 # Delivery verdict derives from the store, not from a hand-maintained negative-space switch
@@ -342,8 +342,9 @@ a capture project, and it survives a relation-by-relation check, but only a chec
 inventory is wider than a first read suggests, and picking the relation whose *name* matches an arm's
 vocabulary is how three successive drafts got an entry wrong. The arms need
 `graphitron_split_query`, `graphitron_tenant_fan_out`,
-`graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (raw for the
-discriminated presence test; for a *binding* the arms read `intent_resolved_type_binding`, which is a
+`graphitron_pivot`, `graphitron_routine`, `graphitron_discriminate`, `graphitron_table` (raw at two
+arms, the discriminated presence test and the fan-in's participant conjunct, each for its own reason
+the arms section gives; for a *binding* the arms read `intent_resolved_type_binding`, which is a
 fourth entry a draft got wrong the same way and the arms section settles), `graphitron_service`,
 `intent_type_backing_class` (the record-handed
 arm, and the entry the third draft got wrong; the second predicate below is where that is
@@ -620,6 +621,21 @@ sentence are corrections a review made against a shipped witness, and each has i
 below: the relation is the resolution rather than `intent_bound_table`, and the connection element
 is a residue rather than a join.
 
+**The fan-in arm's participant conjunct reads the raw marker, and that is not the lapse the
+paragraph above corrects.** It looks like one: the conjunct asks a table question, and three sibling
+arms answer their table question with the resolution rather than with `graphitron_table`. The raw
+marker is the matching relation here, and the reason is on the walk's side of the join.
+`DeliveryFactRelation.anyTableBoundParticipant` matches `ParticipantRef.TableBound`, which
+`TypeBuilder.buildParticipantList` mints only from a `TableBackedType` verdict returned by
+`TypeBuilder`'s participant classification, and that pass resolves through `classifyType` alone;
+`TypeBuilder.routineReturnVerdict` is reached elsewhere in that class and never from the participant
+pass. So an implementor bound only by a `@routine` chain's return is `ParticipantRef.Unbound`
+walk-side and carries no `graphitron_table` row store-side, and the two sides already agree. Routing
+this join through the resolution to match its siblings would fire the arm where the walk's
+participant scan does not, which is the manufactured disagreement the fan-in section declines on the
+connection shape, met again from the participant side. Read the raw marker and say why in the view
+comment, so the next reader does not repair the asymmetry.
+
 Two earlier drafts coined a `table-anchored target` predicate here instead, folding four things into
 one hand-named concept: the target's kind, its binding arity, whether it carries `@discriminate`, and
 the connection element walk. The language-server fact-store item (R638, since Done; its record is in
@@ -706,14 +722,27 @@ INTERFACE` while `TypeBuilder` mints a `TableInterfaceType` only when an interfa
 read while `mint` sends it to the polymorphic arm and returns `Inline`. Whether that mask is a rule
 or an artefact of switch order is a real question; a residue asks it, where a hand-written exclusion
 would have answered it silently. Two narrowings belong in that entry, both read off `mint` rather
-than assumed. Only the *single-valued* coordinate disagrees: at list cardinality the walk's
-polymorphic arm and the store's `POLYMORPHIC_FAN_IN` arm fire on the same table-bound participants
-and report the same literal. And the single-valued half disagrees only where a rule arm fires at
+than assumed, and the first of them is conditional rather than flat.
+
+At list cardinality the walk's polymorphic arm and the store's `POLYMORPHIC_FAN_IN` arm fire on the
+same table-bound participants and report the same literal, *where the interface has one*. It need
+not, and the tree already names the case: `TypeBuilder.buildParticipantList` admits a directiveless
+implementor of a plain interface as `ParticipantRef.Unbound` with no rejection, and `FieldBuilder`'s
+polymorphic child arm calls the resulting all-unbound set out by name as a shape that fetches inline
+at list cardinality, minting `InterfaceField` rather than `BatchedInterfaceField`. So a `@table`-alone
+interface over implementors that carry no `@table` has no table-bound participant, the walk's fan-in
+arm returns `Inline` at either cardinality, and the store's `POLYMORPHIC_FAN_IN` arm does not fire
+while the marker and record-handed arms still read the interface's own binding. The coordinate is a
+classified `InterfaceField` and therefore inside the compared domain, so this is a second disagreeing
+shape rather than a boundary case: the entry's population is the single-valued `@table`-alone
+interface child at any participant set, *and* the list-valued one over participants that carry no
+`@table`. Only the list half over `@table` participants agrees.
+
+The second narrowing holds across both halves: a coordinate disagrees only where a rule arm fires at
 all, which is a marker on the coordinate or a record-handed parent; with neither, both sides say
-`INLINE` and there is nothing to pin. So the shape that populates the residue is a single-valued
-`@table`-alone interface child under `@splitQuery`, and the corpus carries none: every `@table`
-interface in `ClassifiedCorpus` carries `@discriminate` beside it. This is therefore the second
-residue owing a fixture, per the Implementation section.
+`INLINE` and there is nothing to pin. The corpus carries neither shape, every `@table` interface in
+`ClassifiedCorpus` carrying `@discriminate` beside it. This is therefore the second residue owing a
+fixture, per the Implementation section.
 
 [cols="2,4,2"]
 |===
@@ -889,9 +918,13 @@ set acquiring an enforcer that is not another switch.**
   single-valued such child under a marker or a record-handed parent disagrees. Its removal criterion
   is the walk gaining a table-backed reading of a `@table` interface that carries no
   `@discriminate`, which is the question the residue exists to ask rather than one this item
-  answers; narrow the entry to single cardinality, the list half agreeing on `POLYMORPHIC_FAN_IN`
-  through both sides' polymorphic arms. The joined-table
-  participant is explicitly *not* a residue candidate, per the fan-in trace above.
+  answers. The entry covers two shapes rather than one, per the polymorphic-mask paragraph: the
+  single-valued child at any participant set, and the list-valued child over implementors that carry
+  no `@table`, where the walk's fan-in arm finds no table-bound participant and returns `Inline`
+  while the marker and record-handed arms still read the interface's binding. Only the list half over
+  `@table` participants agrees, both sides' polymorphic arms reporting `POLYMORPHIC_FAN_IN` there, so
+  a flat narrowing to single cardinality would state the population narrower than it is. The
+  joined-table participant is explicitly *not* a residue candidate, per the fan-in trace above.
 * **Every residue this item declares needs a shape that populates it, and two of them have none
   today.** The non-empty rule in the shadow bullet below is not satisfiable by a residue whose
   population the corpus cannot reach, so each such residue owes a fixture beside the shadow test in
@@ -909,8 +942,13 @@ set acquiring an enforcer that is not another switch.**
   Nothing in `ClassifiedCorpus` is one, every `@table` interface there carrying `@discriminate`
   beside it, and nothing beside a shadow test is either; the shape is authorable and reaches
   `GraphitronType.InterfaceType` with no rejection, `TypeBuilder`'s interface arm falling through to
-  the plain build when only one of the two markers is present. It can ride the same beside-the-test
-  fixture as the connection child rather than needing a file of its own.
+  the plain build when only one of the two markers is present. Its second shape costs a second
+  interface beside that one, per the polymorphic-mask paragraph: a `@table` interface *all* of whose
+  implementors are directiveless, returned list-valued and marked, which is where the participant
+  conjunct rather than the cardinality is what the two sides disagree over. One interface cannot
+  carry both shapes, a single `@table` participant beside the directiveless ones being enough to make
+  the walk's fan-in arm fire. Both ride the same beside-the-test fixture as the connection child
+  rather than needing a file of their own.
 * `DeliveryShadowTest` in `DemandShadowTest`'s mould, registered in `FactCaptureAgreementTest` under
   `Arm.DERIVED` for all three views. Per that test's stated residue discipline: equality outside the
   named residues, each disagreement direction pinned against a store-derived population rather than
@@ -955,7 +993,9 @@ set acquiring an enforcer that is not another switch.**
     per-shape fixtures beside its corpus sweep. The unmarked list child needs nothing, the corpus
     sweep reaching it already.
   * **The `@tenantFanOut` arm has no witness anywhere in the corpus.** `@tenantFanOut` occurs zero
-    times in `ClassifiedCorpus` (against eight `@splitQuery`, seven `@routine`, four `@pivot`), and
+    times in `ClassifiedCorpus`, against three `@splitQuery` coordinates, three `@routine` and two
+    `@pivot`; count the SDL blocks rather than grepping the file, whose javadoc prose mentions each
+    marker several times over and inflates every figure but the zero. And
     `DeliveryFactPinTest`'s own `MARKER_FIXTURE` covers only the split-query half, by its comment
     "an authored split child riding a table parent". With `TENANT_FAN_OUT` now its own rule literal
     (settled below), an unwitnessed arm would ship a vocabulary entry no coordinate can reach:
